@@ -161,6 +161,10 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd = exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
+		By("deleting the metrics ClusterRoleBinding")
+		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
+		_, _ = utils.Run(cmd)
+
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
 		_, _ = utils.Run(cmd)
@@ -407,8 +411,13 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
 				"--clusterrole=paprika-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
+				"--dry-run=client", "-o", "yaml",
 			)
-			_, err := utils.Run(cmd)
+			manifest, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to generate ClusterRoleBinding manifest")
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(manifest)
+			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
 
 			By("validating that the metrics service is available")
@@ -529,7 +538,7 @@ var _ = Describe("Manager", Ordered, func() {
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create api namespace")
 
-			By("deploying the manager in api mode via Helm")
+			By("deploying the manager in api mode via Helm (CRDs already installed, skip)")
 			cmd = exec.Command("helm", "upgrade", "--install", "paprika-api", "./charts/chart",
 				"--namespace", apiNamespace,
 				"--create-namespace",
@@ -537,15 +546,50 @@ var _ = Describe("Manager", Ordered, func() {
 				"--set", fmt.Sprintf("manager.image.tag=%s", strings.Split(managerImage, ":")[1]),
 				"--set", "mode=api",
 				"--set", "metrics.enable=false",
+				"--set", "crd.enable=false",
 				"--wait",
 				"--timeout", "3m",
 			)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to deploy api-mode via Helm")
 
+			By("granting api service account access to list pipelines")
+			saName := "paprika-api-controller-manager"
+			rbacYAML := fmt.Sprintf(`---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-api-list-pipelines
+rules:
+- apiGroups: ["pipelines.paprika.io"]
+  resources: ["pipelines"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: paprika-api-list-pipelines
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: paprika-api-list-pipelines
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+`, saName, apiNamespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(rbacYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create api RBAC")
+
 			By("starting port-forward for the api server (port 3000)")
+			getDeploy := exec.Command("kubectl", "get", "deployment", "-n", apiNamespace,
+				"-l", "control-plane=controller-manager", "-o", "name")
+			deployName, err := utils.Run(getDeploy)
+			Expect(err).NotTo(HaveOccurred(), "Failed to get api deployment name")
 			pfCmd := exec.Command("kubectl", "port-forward", "-n", apiNamespace,
-				"deployment/paprika-controller-manager", fmt.Sprintf("%d:3000", apiPort))
+				strings.TrimSpace(deployName), fmt.Sprintf("%d:3000", apiPort))
 			err = pfCmd.Start()
 			Expect(err).NotTo(HaveOccurred(), "Failed to start port-forward for api server")
 			apiPortForwardCmd = pfCmd
@@ -567,8 +611,14 @@ var _ = Describe("Manager", Ordered, func() {
 				_, _ = apiPortForwardCmd.Process.Wait()
 			}
 
+			By("deleting the api RBAC")
+			cmd := exec.Command("kubectl", "delete", "clusterrolebinding", "paprika-api-list-pipelines", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "clusterrole", "paprika-api-list-pipelines", "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+
 			By("uninstalling the api-mode Helm release")
-			cmd := exec.Command("helm", "uninstall", "paprika-api", "--namespace", apiNamespace)
+			cmd = exec.Command("helm", "uninstall", "paprika-api", "--namespace", apiNamespace)
 			_, _ = utils.Run(cmd)
 
 			By("removing api namespace")

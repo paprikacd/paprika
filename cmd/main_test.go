@@ -26,11 +26,12 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 	}
 	tokenFile.Close()
 
-	addr := freePort()
+	ports := freePorts(2)
+	addr, probeAddr := ports[0], ports[1]
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runAPIMode(fakeK8s.URL, tokenFile.Name(), addr)
+		errCh <- runAPIMode(fakeK8s.URL, tokenFile.Name(), addr, probeAddr)
 	}()
 
 	select {
@@ -52,13 +53,19 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 }
 
 func freePort() string {
-	for port := 10000; port < 11000; port++ {
-		addr := fmt.Sprintf("localhost:%d", port)
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			ln.Close()
-			return addr
-		}
+	ln, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		panic(fmt.Sprintf("no free port found: %v", err))
 	}
-	panic("no free port found")
+	addr := ln.Addr().String()
+	ln.Close()
+	return addr
+}
+
+func freePorts(n int) []string {
+	addrs := make([]string, n)
+	for i := 0; i < n; i++ {
+		addrs[i] = freePort()
+	}
+	return addrs
 }

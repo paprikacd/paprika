@@ -110,7 +110,7 @@ func main() {
 	}
 
 	if mode == "api" {
-		if err := runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr); err != nil {
+		if err := runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr); err != nil {
 			setupLog.Error(err, "API mode failed")
 			os.Exit(1)
 		}
@@ -266,7 +266,7 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	}
 }
 
-func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr string) error {
+func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
 	var config *rest.Config
 	var err error
 
@@ -316,6 +316,24 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr string) error {
 		fmt.Fprintln(w, "ok")
 	}))
 	mux.Handle("/", api.UIHandler())
+
+	healthMux := http.NewServeMux()
+	healthMux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ok")
+	}))
+	healthMux.Handle("/readyz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ok")
+	}))
+
+	healthServer := &http.Server{Addr: probeAddr, Handler: healthMux}
+	go func() {
+		setupLog.Info("Starting health probe server", "addr", probeAddr)
+		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			setupLog.Error(err, "Health probe server error")
+		}
+	}()
 
 	server := &http.Server{Addr: uiAddr, Handler: mux}
 
