@@ -516,6 +516,101 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(body).To(ContainSubstring("Paprika"), "Dashboard should contain the title")
 		})
 	})
+
+	const apiNamespace = "paprika-api-system"
+	const apiPort = 4001
+
+	var apiPortForwardCmd *exec.Cmd
+
+	Context("APIServer", Ordered, func() {
+		BeforeAll(func() {
+			By("creating api-server namespace")
+			cmd := exec.Command("kubectl", "create", "ns", apiNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create api namespace")
+
+			By("deploying the manager in api mode via Helm")
+			cmd = exec.Command("helm", "upgrade", "--install", "paprika-api", "./charts/chart",
+				"--namespace", apiNamespace,
+				"--create-namespace",
+				"--set", fmt.Sprintf("manager.image.repository=%s", strings.Split(managerImage, ":")[0]),
+				"--set", fmt.Sprintf("manager.image.tag=%s", strings.Split(managerImage, ":")[1]),
+				"--set", "mode=api",
+				"--set", "metrics.enable=false",
+				"--wait",
+				"--timeout", "3m",
+			)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to deploy api-mode via Helm")
+
+			By("starting port-forward for the api server (port 3000)")
+			pfCmd := exec.Command("kubectl", "port-forward", "-n", apiNamespace,
+				"deployment/paprika-controller-manager", fmt.Sprintf("%d:3000", apiPort))
+			err = pfCmd.Start()
+			Expect(err).NotTo(HaveOccurred(), "Failed to start port-forward for api server")
+			apiPortForwardCmd = pfCmd
+
+			By("waiting for the port-forward to be ready")
+			verifyPortForward := func(g Gomega) {
+				resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", apiPort))
+				g.Expect(err).NotTo(HaveOccurred(), "Port-forward not yet ready")
+				defer resp.Body.Close()
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			}
+			Eventually(verifyPortForward, 30*time.Second, time.Second).Should(Succeed())
+		})
+
+		AfterAll(func() {
+			By("stopping port-forward for the api server")
+			if apiPortForwardCmd != nil && apiPortForwardCmd.Process != nil {
+				_ = apiPortForwardCmd.Process.Signal(syscall.SIGTERM)
+				_, _ = apiPortForwardCmd.Process.Wait()
+			}
+
+			By("uninstalling the api-mode Helm release")
+			cmd := exec.Command("helm", "uninstall", "paprika-api", "--namespace", apiNamespace)
+			_, _ = utils.Run(cmd)
+
+			By("removing api namespace")
+			cmd = exec.Command("kubectl", "delete", "ns", apiNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should respond to health checks", func() {
+			By("requesting the healthz endpoint")
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/healthz", apiPort))
+			Expect(err).NotTo(HaveOccurred(), "Failed to reach healthz endpoint")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "healthz should return 200")
+		})
+
+		It("should serve the dashboard UI", func() {
+			By("requesting the UI dashboard")
+			resp, err := http.Get(fmt.Sprintf("http://localhost:%d/", apiPort))
+			Expect(err).NotTo(HaveOccurred(), "Failed to reach UI dashboard")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "UI dashboard should return 200")
+
+			By("checking for the expected title")
+			buf := make([]byte, 4096)
+			n, err := resp.Body.Read(buf)
+			Expect(err).To(Or(BeNil(), HaveOccurred()))
+			body := string(buf[:n])
+			Expect(body).To(ContainSubstring("Paprika"), "Dashboard should contain the title")
+		})
+
+		It("should serve the connect-gRPC API", func() {
+			By("sending a POST to the PaprikaService RPC endpoint")
+			resp, err := http.Post(
+				fmt.Sprintf("http://localhost:%d/paprika.v1.PaprikaService/ListPipelines", apiPort),
+				"application/json",
+				strings.NewReader("{}"),
+			)
+			Expect(err).NotTo(HaveOccurred(), "Failed to call ListPipelines RPC")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "ListPipelines RPC should return 200")
+		})
+	})
 })
 
 func serviceAccountToken() (string, error) {
