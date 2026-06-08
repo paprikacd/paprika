@@ -1,0 +1,91 @@
+{{- if eq .Values.mode "operator" }}
+apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.rbac.namespaced }}
+kind: Role
+{{- else }}
+kind: ClusterRole
+{{- end }}
+metadata:
+{{- if .Values.rbac.namespaced }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "manager-role" "context" $) }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts
+  - pipelines
+  - releases
+  - stages
+  - templates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/finalizers
+  - pipelines/finalizers
+  - releases/finalizers
+  - stages/finalizers
+  - templates/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/status
+  - pipelines/status
+  - releases/status
+  - stages/status
+  - templates/status
+  verbs:
+  - get
+  - patch
+  - update
+{{- end }}

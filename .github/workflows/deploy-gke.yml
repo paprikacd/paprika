@@ -1,0 +1,52 @@
+name: Deploy GKE Dev
+
+on:
+  workflow_run:
+    workflows: [Build & Push]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency: deploy-gke-dev
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    name: Deploy operator to GKE dev
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ vars.GKE_CLUSTER_NAME }} \
+            --zone ${{ vars.GKE_CLUSTER_ZONE }} \
+            --project ${{ vars.GKE_CLUSTER_PROJECT }}
+
+      - name: Install CRDs
+        run: make install
+
+      - name: Deploy via Helm
+        run: |
+          helm upgrade --install paprika-dev ./charts/chart \
+            --set image.repository=ghcr.io/benebsworth/paprika \
+            --set image.tag=sha-${{ github.sha }} \
+            --set mode=operator \
+            --wait \
+            --timeout 5m

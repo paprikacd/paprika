@@ -1,0 +1,20 @@
+# More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
+# Ignore everything by default and re-include only needed files
+**
+
+# Re-include Go source files (but not *_test.go)
+!**/*.go
+**/*_test.go
+
+# Re-include Go module files
+!go.mod
+!go.sum
+
+# Re-include generated protobuf stubs
+!internal/api/paprika/**
+!internal/api/server.go
+!internal/api/uihandler.go
+
+# Re-include UI source for static export build
+!ui/**
+ui/**/node_modules/

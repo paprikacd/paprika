@@ -1,0 +1,11 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Artifact
+metadata:
+  name: app-image-42
+spec:
+  type: oci
+  reference: registry.example.com/app:v1.2.3
+  digest: sha256:abc123def456
+  provenance:
+    pipeline: app-pipeline
+    build: build-1234

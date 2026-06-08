@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package paprika.v1;
+
+option go_package = "github.com/benebsworth/paprika/internal/api/paprika/v1";
+
+message Step {
+  string name = 1;
+  string image = 2;
+  string script = 3;
+  repeated string depends = 4;
+}
+
+message StepStatus {
+  string name = 1;
+  string phase = 2;
+  optional int64 started_at = 3;
+  optional int64 completed_at = 4;
+}
+
+message ArtifactRef {
+  string name = 1;
+  string path = 2;
+}
+
+message Pipeline {
+  string name = 1;
+  string namespace = 2;
+  int64 created_at = 3;
+  repeated Step steps = 4;
+  int32 max_parallel = 5;
+  string phase = 6;
+  repeated StepStatus step_statuses = 7;
+  repeated ArtifactRef artifacts = 8;
+}
+
+message Release {
+  string name = 1;
+  string namespace = 2;
+  int64 created_at = 3;
+  string pipeline = 4;
+  string target = 5;
+  string phase = 6;
+  string current_stage = 7;
+  repeated Promotion promotion_history = 8;
+}
+
+message Promotion {
+  string stage = 1;
+  string result = 2;
+  int64 timestamp = 3;
+}
+
+message Stage {
+  string name = 1;
+  string namespace = 2;
+  int64 created_at = 3;
+  int32 ring = 4;
+  string phase = 5;
+  string stage_name = 6;
+}
+
+message ListPipelinesRequest {
+  optional string namespace = 1;
+}
+
+message ListPipelinesResponse {
+  repeated Pipeline pipelines = 1;
+}
+
+message ListReleasesRequest {
+  optional string namespace = 1;
+}
+
+message ListReleasesResponse {
+  repeated Release releases = 1;
+}
+
+message ListStagesRequest {
+  optional string namespace = 1;
+}
+
+message ListStagesResponse {
+  repeated Stage stages = 1;
+}
+
+service PaprikaService {
+  rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
+  rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+  rpc ListStages(ListStagesRequest) returns (ListStagesResponse);
+}

@@ -1,0 +1,10 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Template
+metadata:
+  name: app-template
+spec:
+  type: helm
+  chart:
+    repo: https://charts.example.com
+    name: my-app
+    version: 3.2.1

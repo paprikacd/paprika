@@ -1,0 +1,14 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-us-east
+spec:
+  name: prod-us-east
+  ring: 3
+  cluster:
+    name: prod-us-east-1
+  templates:
+    - app-template
+  gates:
+    - type: smoke-test
+    - type: duration

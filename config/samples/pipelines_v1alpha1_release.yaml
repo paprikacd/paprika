@@ -1,0 +1,16 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: release-42
+spec:
+  pipeline: app-pipeline
+  target: prod-us-east
+  from: staging
+  verify:
+    - type: smoke-test
+      endpoint: https://app.example.com/healthz
+      timeout: 60
+  on_failure:
+    action: rollback
+    notify:
+      - "slack:#alerts"

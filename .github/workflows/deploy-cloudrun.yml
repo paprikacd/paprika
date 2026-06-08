@@ -1,0 +1,57 @@
+name: Deploy Cloud Run Dev
+
+on:
+  workflow_run:
+    workflows: [Build & Push]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency: deploy-cloudrun-dev
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    name: Deploy API server to Cloud Run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - id: gke-info
+        name: Discover GKE API endpoint
+        run: |
+          ENDPOINT=$(gcloud container clusters describe ${{ vars.GKE_CLUSTER_NAME }} \
+            --zone ${{ vars.GKE_CLUSTER_ZONE }} \
+            --project ${{ vars.GKE_CLUSTER_PROJECT }} \
+            --format 'value(endpoint)')
+          echo "endpoint=https://${ENDPOINT}:443"
+          echo "endpoint=https://${ENDPOINT}:443" >> $GITHUB_OUTPUT
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy paprika-api-dev \
+            --image=ghcr.io/benebsworth/paprika:sha-${{ github.sha }} \
+            --args="--mode=api,--k8s-api-server=${{ steps.gke-info.outputs.endpoint }}" \
+            --region=${{ vars.CLOUDRUN_REGION }} \
+            --service-account=${{ vars.CLOUDRUN_SA }} \
+            --allow-unauthenticated \
+            --cpu=1 \
+            --memory=256Mi \
+            --min-instances=0 \
+            --max-instances=5

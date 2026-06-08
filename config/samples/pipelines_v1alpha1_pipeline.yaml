@@ -1,0 +1,20 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: app-pipeline
+spec:
+  maxParallel: 10
+  sources:
+    - type: git
+      url: https://github.com/example/app
+  steps:
+    - name: build
+      image: golang:1.22
+      script: go build -o app .
+    - name: test
+      depends: [build]
+      image: golang:1.22
+      script: go test ./...
+  artifacts:
+    - name: image
+      path: registry.example.com/app:latest

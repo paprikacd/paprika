@@ -1,0 +1,1223 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+    control-plane: controller-manager
+  name: paprika-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: artifacts.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Artifact
+    listKind: ArtifactList
+    plural: artifacts
+    singular: artifact
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              digest:
+                type: string
+              provenance:
+                properties:
+                  build:
+                    type: string
+                  pipeline:
+                    type: string
+                type: object
+              reference:
+                type: string
+              type:
+                enum:
+                - oci
+                type: string
+            required:
+            - reference
+            - type
+            type: object
+          status:
+            properties:
+              verified:
+                type: boolean
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: pipelines.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Pipeline
+    listKind: PipelineList
+    plural: pipelines
+    singular: pipeline
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              artifacts:
+                items:
+                  properties:
+                    name:
+                      type: string
+                    path:
+                      type: string
+                  required:
+                  - name
+                  - path
+                  type: object
+                type: array
+              maxParallel:
+                type: integer
+              sources:
+                items:
+                  properties:
+                    secretRef:
+                      type: string
+                    type:
+                      enum:
+                      - git
+                      type: string
+                    url:
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+              steps:
+                items:
+                  properties:
+                    depends:
+                      items:
+                        type: string
+                      type: array
+                    image:
+                      type: string
+                    name:
+                      type: string
+                    retry:
+                      type: integer
+                    script:
+                      type: string
+                    timeout:
+                      type: integer
+                  required:
+                  - image
+                  - name
+                  - script
+                  type: object
+                type: array
+            required:
+            - steps
+            type: object
+          status:
+            properties:
+              lastExecutionID:
+                type: string
+              lastExecutionTime:
+                format: date-time
+                type: string
+              phase:
+                enum:
+                - Running
+                - Succeeded
+                - Failed
+                type: string
+              stepStatuses:
+                items:
+                  properties:
+                    completedAt:
+                      format: date-time
+                      type: string
+                    logRef:
+                      type: string
+                    name:
+                      type: string
+                    phase:
+                      enum:
+                      - Pending
+                      - Running
+                      - Succeeded
+                      - Failed
+                      - Skipped
+                      type: string
+                    startedAt:
+                      format: date-time
+                      type: string
+                  required:
+                  - name
+                  - phase
+                  type: object
+                type: array
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: releases.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Release
+    listKind: ReleaseList
+    plural: releases
+    singular: release
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              from:
+                type: string
+              on_failure:
+                properties:
+                  action:
+                    enum:
+                    - rollback
+                    - halt
+                    - ignore
+                    type: string
+                  notify:
+                    items:
+                      type: string
+                    type: array
+                required:
+                - action
+                type: object
+              pipeline:
+                type: string
+              target:
+                type: string
+              verify:
+                items:
+                  properties:
+                    endpoint:
+                      type: string
+                    timeout:
+                      type: integer
+                    type:
+                      enum:
+                      - smoke-test
+                      - duration
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+            required:
+            - pipeline
+            - target
+            type: object
+          status:
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentStage:
+                type: string
+              phase:
+                enum:
+                - Pending
+                - Promoting
+                - Verifying
+                - Complete
+                - Failed
+                - RolledBack
+                - Superseded
+                type: string
+              promotionHistory:
+                items:
+                  properties:
+                    manifestSnapshot:
+                      type: string
+                    result:
+                      type: string
+                    stage:
+                      type: string
+                    timestamp:
+                      format: date-time
+                      type: string
+                  required:
+                  - result
+                  - stage
+                  - timestamp
+                  type: object
+                type: array
+              renderedManifestSnapshot:
+                type: string
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: stages.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Stage
+    listKind: StageList
+    plural: stages
+    singular: stage
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              cluster:
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              gates:
+                items:
+                  properties:
+                    endpoint:
+                      type: string
+                    timeout:
+                      type: integer
+                    type:
+                      enum:
+                      - smoke-test
+                      - duration
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+              name:
+                type: string
+              ring:
+                type: integer
+              templates:
+                items:
+                  type: string
+                type: array
+            required:
+            - name
+            - ring
+            - templates
+            type: object
+          status:
+            properties:
+              lastPromotion:
+                format: date-time
+                type: string
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: templates.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Template
+    listKind: TemplateList
+    plural: templates
+    singular: template
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              chart:
+                properties:
+                  name:
+                    type: string
+                  repo:
+                    type: string
+                  version:
+                    type: string
+                required:
+                - name
+                - repo
+                - version
+                type: object
+              type:
+                enum:
+                - helm
+                type: string
+            required:
+            - type
+            type: object
+          status:
+            properties:
+              lastRenderHash:
+                type: string
+              lastRendered:
+                format: date-time
+                type: string
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-controller-manager
+  namespace: paprika-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-leader-election-role
+  namespace: paprika-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-artifact-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-artifact-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-artifact-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+  - list
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts
+  - pipelines
+  - releases
+  - stages
+  - templates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/finalizers
+  - pipelines/finalizers
+  - releases/finalizers
+  - stages/finalizers
+  - templates/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - artifacts/status
+  - pipelines/status
+  - releases/status
+  - stages/status
+  - templates/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-pipeline-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-pipeline-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-pipeline-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - pipelines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-release-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-release-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-release-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - releases/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-stage-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-stage-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-stage-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - stages/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-template-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-template-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-template-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - templates/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-leader-election-rolebinding
+  namespace: paprika-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: paprika-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: paprika-controller-manager
+  namespace: paprika-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: paprika-manager-role
+subjects:
+- kind: ServiceAccount
+  name: paprika-controller-manager
+  namespace: paprika-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: paprika-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: paprika-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: paprika-controller-manager
+  namespace: paprika-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+    control-plane: controller-manager
+  name: paprika-controller-manager-metrics-service
+  namespace: paprika-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: paprika
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+    control-plane: controller-manager
+  name: paprika-controller-manager
+  namespace: paprika-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: paprika
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: paprika
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --ui-bind-address=:3000
+        command:
+        - /manager
+        image: controller:latest
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 3000
+          name: ui
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: paprika-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - emptyDir: {}
+        name: tmp
