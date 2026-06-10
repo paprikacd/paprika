@@ -6,6 +6,7 @@ cliVersion: 4.14.0
 domain: paprika.io
 layout:
 - go.kubebuilder.io/v4
+multigroup: true
 plugins:
   helm.kubebuilder.io/v2-alpha:
     manifests: dist/install.yaml
@@ -20,8 +21,12 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Pipeline
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -29,8 +34,12 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Stage
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -38,8 +47,12 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Release
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -47,8 +60,12 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Template
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -56,6 +73,6 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Artifact
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
 version: "3"

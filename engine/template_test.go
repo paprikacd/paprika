@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	paprika "github.com/benebsworth/paprika/api/v1alpha1"
+	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
 func TestSanitizeRepoName(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 
 	"k8s.io/client-go/kubernetes/fake"
 
-	paprika "github.com/benebsworth/paprika/api/v1alpha1"
+	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
 func TestLinearDAG(t *testing.T) {

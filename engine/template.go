@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	paprika "github.com/benebsworth/paprika/api/v1alpha1"
+	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
 type TemplateRenderer struct {

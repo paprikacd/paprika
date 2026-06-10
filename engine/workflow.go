@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
-	paprika "github.com/benebsworth/paprika/api/v1alpha1"
+	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
 type Node struct {
@@ -83,9 +84,7 @@ func (g *Graph) TopologicalSort() ([][]paprika.PipelineStep, error) {
 
 	var batches [][]paprika.PipelineStep
 	remaining := make(map[string]*Node)
-	for k, v := range g.Nodes {
-		remaining[k] = v
-	}
+	maps.Copy(remaining, g.Nodes)
 
 	for len(remaining) > 0 {
 		var batch []paprika.PipelineStep
@@ -155,10 +154,7 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 
 func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
 	for i := 0; i < len(batch); i += maxParallel {
-		end := i + maxParallel
-		if end > len(batch) {
-			end = len(batch)
-		}
+		end := min(i+maxParallel, len(batch))
 		subBatch := batch[i:end]
 
 		if err := e.executeSubBatch(ctx, subBatch, pipelineName, completed, stepStatuses); err != nil {

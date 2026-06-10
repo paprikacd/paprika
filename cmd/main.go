@@ -36,10 +36,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/v1alpha1"
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
-	"github.com/benebsworth/paprika/internal/controller"
+	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
+	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -227,6 +228,25 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "artifact")
 		os.Exit(1)
+	}
+	// +kubebuilder:scaffold:webhook
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookpipelinesv1alpha1.SetupPipelineWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "Pipeline")
+			os.Exit(1)
+		}
+		if err := webhookpipelinesv1alpha1.SetupStageWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "Stage")
+			os.Exit(1)
+		}
+		if err := webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "Release")
+			os.Exit(1)
+		}
+		if err := webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to create webhook", "webhook", "Template")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 

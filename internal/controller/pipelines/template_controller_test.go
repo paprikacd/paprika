@@ -27,10 +27,10 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/v1alpha1"
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-var _ = Describe("Stage Controller", func() {
+var _ = Describe("Template Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -40,13 +40,13 @@ var _ = Describe("Stage Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		stage := &pipelinesv1alpha1.Stage{}
+		template := &pipelinesv1alpha1.Template{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind Stage")
-			err := k8sClient.Get(ctx, typeNamespacedName, stage)
+			By("creating the custom resource for the Kind Template")
+			err := k8sClient.Get(ctx, typeNamespacedName, template)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &pipelinesv1alpha1.Stage{
+				resource := &pipelinesv1alpha1.Template{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
@@ -59,16 +59,16 @@ var _ = Describe("Stage Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &pipelinesv1alpha1.Stage{}
+			resource := &pipelinesv1alpha1.Template{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Stage")
+			By("Cleanup the specific resource instance Template")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &StageReconciler{
+			controllerReconciler := &TemplateReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}

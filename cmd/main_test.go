@@ -64,7 +64,7 @@ func freePort() string {
 
 func freePorts(n int) []string {
 	addrs := make([]string, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		addrs[i] = freePort()
 	}
 	return addrs
