@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -119,7 +120,7 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			if updateErr := r.Status().Update(ctx, &release); updateErr != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
 			}
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, err
 		}
 		release.Status.Phase = pipelinesv1alpha1.ReleaseVerifying
 		if err := r.Status().Update(ctx, &release); err != nil {
@@ -352,6 +353,8 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *pipelinesv1alp
 func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Release{}).
+		Owns(&corev1.ConfigMap{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Named("release").
 		Complete(r)
 }

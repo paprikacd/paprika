@@ -6,6 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -39,6 +40,7 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *TemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Template{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Named("template").
 		Complete(r)
 }

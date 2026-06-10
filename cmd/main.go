@@ -172,7 +172,10 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	cfg.QPS = 50
+	cfg.Burst = 100
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,

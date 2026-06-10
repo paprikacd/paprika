@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -84,7 +85,7 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if updateErr := r.Status().Update(ctx, &pipeline); updateErr != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
 		}
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, err
 	}
 
 	allSucceeded := true
@@ -143,6 +144,7 @@ func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Pipeline{}).
 		Owns(&corev1.Pod{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Named("pipeline").
 		Complete(r)
 }
