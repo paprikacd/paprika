@@ -19,6 +19,9 @@ package v1alpha1
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -26,12 +29,9 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-// log is for logging in this package.
-//
 //nolint:unused
 var releaselog = logf.Log.WithName("release-resource")
 
-// SetupReleaseWebhookWithManager registers the webhook for Release in the manager.
 func SetupReleaseWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Release{}).
 		WithValidator(&ReleaseCustomValidator{}).
@@ -39,64 +39,76 @@ func SetupReleaseWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-release,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=releases,verbs=create;update,versions=v1alpha1,name=mrelease-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// ReleaseCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind Release when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type ReleaseCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
+type ReleaseCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Release.
 func (d *ReleaseCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Release) error {
 	releaselog.Info("Defaulting for Release", "name", obj.GetName())
-
-	// TODO(user): fill in your defaulting logic.
-
 	return nil
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-release,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=releases,verbs=create;update,versions=v1alpha1,name=vrelease-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// ReleaseCustomValidator struct is responsible for validating the Release resource
-// when it is created, updated, or deleted.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
-type ReleaseCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
-}
+type ReleaseCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Release.
 func (v *ReleaseCustomValidator) ValidateCreate(_ context.Context, obj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
 	releaselog.Info("Validation for Release upon creation", "name", obj.GetName())
-
-	// TODO(user): fill in your validation logic upon object creation.
-
+	if errs := v.validateReleaseCreate(obj); len(errs) > 0 {
+		return nil, apierrors.NewInvalid(
+			schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Release"},
+			obj.Name,
+			errs,
+		)
+	}
 	return nil, nil
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Release.
 func (v *ReleaseCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
 	releaselog.Info("Validation for Release upon update", "name", newObj.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
+	if oldObj.Spec.Pipeline != newObj.Spec.Pipeline {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("pipeline"), "Pipeline reference is immutable"))
+	}
+
+	if oldObj.Spec.Target != newObj.Spec.Target {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("target"), "Target stage is immutable"))
+	}
+
+	if createErrs := v.validateReleaseCreate(newObj); len(createErrs) > 0 {
+		allErrs = append(allErrs, createErrs...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil, nil
+	}
+
+	return nil, apierrors.NewInvalid(
+		schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Release"},
+		newObj.Name,
+		allErrs,
+	)
+}
+
+func (v *ReleaseCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
+	releaselog.Info("Validation for Release upon deletion", "name", obj.GetName())
 	return nil, nil
 }
 
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Release.
-func (v *ReleaseCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
-	releaselog.Info("Validation for Release upon deletion", "name", obj.GetName())
+func (v *ReleaseCustomValidator) validateReleaseCreate(r *pipelinesv1alpha1.Release) field.ErrorList {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	if r.Spec.Pipeline == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("pipeline"), "Pipeline reference is required"))
+	}
 
-	return nil, nil
+	if r.Spec.Target == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("target"), "Target stage is required"))
+	}
+
+	return allErrs
 }

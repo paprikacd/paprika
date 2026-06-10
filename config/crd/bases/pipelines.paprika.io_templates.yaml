@@ -53,6 +53,8 @@ spec:
               type:
                 enum:
                 - helm
+                - kubernetes
+                - kustomize
                 type: string
             required:
             - type

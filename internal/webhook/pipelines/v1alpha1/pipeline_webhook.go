@@ -19,6 +19,9 @@ package v1alpha1
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -26,12 +29,9 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-// log is for logging in this package.
-//
 //nolint:unused
 var pipelinelog = logf.Log.WithName("pipeline-resource")
 
-// SetupPipelineWebhookWithManager registers the webhook for Pipeline in the manager.
 func SetupPipelineWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Pipeline{}).
 		WithValidator(&PipelineCustomValidator{}).
@@ -39,64 +39,66 @@ func SetupPipelineWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-pipeline,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=pipelines,verbs=create;update,versions=v1alpha1,name=mpipeline-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// PipelineCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind Pipeline when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type PipelineCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
+type PipelineCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Pipeline.
 func (d *PipelineCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Pipeline) error {
 	pipelinelog.Info("Defaulting for Pipeline", "name", obj.GetName())
-
-	// TODO(user): fill in your defaulting logic.
-
 	return nil
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-pipeline,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=pipelines,verbs=create;update,versions=v1alpha1,name=vpipeline-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// PipelineCustomValidator struct is responsible for validating the Pipeline resource
-// when it is created, updated, or deleted.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
-type PipelineCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
-}
+type PipelineCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Pipeline.
 func (v *PipelineCustomValidator) ValidateCreate(_ context.Context, obj *pipelinesv1alpha1.Pipeline) (admission.Warnings, error) {
 	pipelinelog.Info("Validation for Pipeline upon creation", "name", obj.GetName())
-
-	// TODO(user): fill in your validation logic upon object creation.
-
-	return nil, nil
+	return nil, v.validatePipeline(obj)
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Pipeline.
 func (v *PipelineCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *pipelinesv1alpha1.Pipeline) (admission.Warnings, error) {
 	pipelinelog.Info("Validation for Pipeline upon update", "name", newObj.GetName())
+	return nil, v.validatePipeline(newObj)
+}
 
-	// TODO(user): fill in your validation logic upon object update.
-
+func (v *PipelineCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Pipeline) (admission.Warnings, error) {
+	pipelinelog.Info("Validation for Pipeline upon deletion", "name", obj.GetName())
 	return nil, nil
 }
 
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Pipeline.
-func (v *PipelineCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Pipeline) (admission.Warnings, error) {
-	pipelinelog.Info("Validation for Pipeline upon deletion", "name", obj.GetName())
+func (v *PipelineCustomValidator) validatePipeline(p *pipelinesv1alpha1.Pipeline) error {
+	var allErrs field.ErrorList
+	stepsPath := field.NewPath("spec").Child("steps")
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	if len(p.Spec.Steps) == 0 {
+		allErrs = append(allErrs, field.Invalid(stepsPath, p.Spec.Steps, "Must have at least one step"))
+	}
 
-	return nil, nil
+	names := make(map[string]bool)
+	for i, step := range p.Spec.Steps {
+		stepPath := stepsPath.Index(i)
+		if step.Name == "" {
+			allErrs = append(allErrs, field.Required(stepPath.Child("name"), "Step name is required"))
+		} else if names[step.Name] {
+			allErrs = append(allErrs, field.Invalid(stepPath.Child("name"), step.Name, "Step name must be unique"))
+		}
+		names[step.Name] = true
+
+		if step.Image == "" {
+			allErrs = append(allErrs, field.Required(stepPath.Child("image"), "Step image is required"))
+		}
+		if step.Script == "" {
+			allErrs = append(allErrs, field.Required(stepPath.Child("script"), "Step script is required"))
+		}
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return apierrors.NewInvalid(
+		schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Pipeline"},
+		p.Name,
+		allErrs,
+	)
 }

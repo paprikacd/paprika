@@ -21,7 +21,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	// TODO (user): Add any additional imports if needed
+)
+
+const (
+	testPipelineRef = "my-pipeline"
+	testTargetStage = "production"
 )
 
 var _ = Describe("Release Webhook", func() {
@@ -36,51 +40,82 @@ var _ = Describe("Release Webhook", func() {
 		obj = &pipelinesv1alpha1.Release{}
 		oldObj = &pipelinesv1alpha1.Release{}
 		validator = ReleaseCustomValidator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		defaulter = ReleaseCustomDefaulter{}
-		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
-		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-	})
-
-	AfterEach(func() {
-		// TODO (user): Add any teardown logic common to all tests
 	})
 
 	Context("When creating Release under Defaulting Webhook", func() {
-		// TODO (user): Add logic for defaulting webhooks
-		// Example:
-		// It("Should apply defaults when a required field is empty", func() {
-		//     By("simulating a scenario where defaults should be applied")
-		//     obj.SomeFieldWithDefault = ""
-		//     By("calling the Default method to apply defaults")
-		//     defaulter.Default(ctx, obj)
-		//     By("checking that the default values are set")
-		//     Expect(obj.SomeFieldWithDefault).To(Equal("default_value"))
-		// })
+		It("Should apply no defaults and succeed", func() {
+			Expect(defaulter.Default(ctx, obj)).To(Succeed())
+		})
 	})
 
 	Context("When creating or updating Release under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
-	})
+		Describe("ValidateCreate", func() {
+			It("Should admit creation with valid fields", func() {
+				obj.Spec.Pipeline = testPipelineRef
+				obj.Spec.Target = testTargetStage
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
 
+			It("Should reject creation with empty pipeline reference", func() {
+				obj.Spec.Target = testTargetStage
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Pipeline reference is required"))
+			})
+
+			It("Should reject creation with empty target stage", func() {
+				obj.Spec.Pipeline = testPipelineRef
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Target stage is required"))
+			})
+
+			It("Should reject creation with both fields empty", func() {
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Pipeline reference is required"))
+				Expect(err.Error()).To(ContainSubstring("Target stage is required"))
+			})
+		})
+
+		Describe("ValidateUpdate", func() {
+			BeforeEach(func() {
+				oldObj.Spec.Pipeline = testPipelineRef
+				oldObj.Spec.Target = testTargetStage
+				obj.Spec.Pipeline = testPipelineRef
+				obj.Spec.Target = testTargetStage
+			})
+
+			It("Should admit update with no changes to immutable fields", func() {
+				warnings, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should reject update that changes pipeline reference", func() {
+				obj.Spec.Pipeline = "different-pipeline"
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Pipeline reference is immutable"))
+			})
+
+			It("Should reject update that changes target stage", func() {
+				obj.Spec.Target = "staging"
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Target stage is immutable"))
+			})
+		})
+
+		Describe("ValidateDelete", func() {
+			It("Should always admit deletion", func() {
+				warnings, err := validator.ValidateDelete(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+		})
+	})
 })

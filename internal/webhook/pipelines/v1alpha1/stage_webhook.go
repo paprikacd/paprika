@@ -18,7 +18,11 @@ package v1alpha1
 
 import (
 	"context"
+	"reflect"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -26,12 +30,9 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-// log is for logging in this package.
-//
 //nolint:unused
 var stagelog = logf.Log.WithName("stage-resource")
 
-// SetupStageWebhookWithManager registers the webhook for Stage in the manager.
 func SetupStageWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Stage{}).
 		WithValidator(&StageCustomValidator{}).
@@ -39,64 +40,82 @@ func SetupStageWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-stage,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=stages,verbs=create;update,versions=v1alpha1,name=mstage-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// StageCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind Stage when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type StageCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
+type StageCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Stage.
 func (d *StageCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Stage) error {
 	stagelog.Info("Defaulting for Stage", "name", obj.GetName())
-
-	// TODO(user): fill in your defaulting logic.
-
 	return nil
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-stage,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=stages,verbs=create;update,versions=v1alpha1,name=vstage-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// StageCustomValidator struct is responsible for validating the Stage resource
-// when it is created, updated, or deleted.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
-type StageCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
-}
+type StageCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Stage.
 func (v *StageCustomValidator) ValidateCreate(_ context.Context, obj *pipelinesv1alpha1.Stage) (admission.Warnings, error) {
 	stagelog.Info("Validation for Stage upon creation", "name", obj.GetName())
-
-	// TODO(user): fill in your validation logic upon object creation.
-
+	if errs := v.validateStageCreate(obj); len(errs) > 0 {
+		return nil, apierrors.NewInvalid(
+			schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Stage"},
+			obj.Name,
+			errs,
+		)
+	}
 	return nil, nil
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Stage.
 func (v *StageCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *pipelinesv1alpha1.Stage) (admission.Warnings, error) {
 	stagelog.Info("Validation for Stage upon update", "name", newObj.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
+	if !reflect.DeepEqual(oldObj.Spec.Templates, newObj.Spec.Templates) {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("templates"), "Template list is immutable"))
+	}
+
+	if !reflect.DeepEqual(oldObj.Spec.Cluster, newObj.Spec.Cluster) {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("cluster"), "Cluster reference is immutable"))
+	}
+
+	if createErrs := v.validateStageCreate(newObj); len(createErrs) > 0 {
+		allErrs = append(allErrs, createErrs...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil, nil
+	}
+
+	return nil, apierrors.NewInvalid(
+		schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Stage"},
+		newObj.Name,
+		allErrs,
+	)
+}
+
+func (v *StageCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Stage) (admission.Warnings, error) {
+	stagelog.Info("Validation for Stage upon deletion", "name", obj.GetName())
 	return nil, nil
 }
 
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Stage.
-func (v *StageCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Stage) (admission.Warnings, error) {
-	stagelog.Info("Validation for Stage upon deletion", "name", obj.GetName())
+func (v *StageCustomValidator) validateStageCreate(s *pipelinesv1alpha1.Stage) field.ErrorList {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	if s.Spec.Name == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("name"), "Stage name is required"))
+	}
 
-	return nil, nil
+	templatesPath := specPath.Child("templates")
+	if len(s.Spec.Templates) == 0 {
+		allErrs = append(allErrs, field.Invalid(templatesPath, s.Spec.Templates, "Must have at least one template"))
+	}
+	for i, tmpl := range s.Spec.Templates {
+		if tmpl == "" {
+			allErrs = append(allErrs, field.Required(templatesPath.Index(i), "Template name must not be empty"))
+		}
+	}
+
+	return allErrs
 }

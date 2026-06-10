@@ -21,7 +21,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	// TODO (user): Add any additional imports if needed
 )
 
 var _ = Describe("Template Webhook", func() {
@@ -36,51 +35,116 @@ var _ = Describe("Template Webhook", func() {
 		obj = &pipelinesv1alpha1.Template{}
 		oldObj = &pipelinesv1alpha1.Template{}
 		validator = TemplateCustomValidator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		defaulter = TemplateCustomDefaulter{}
-		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
-		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-	})
-
-	AfterEach(func() {
-		// TODO (user): Add any teardown logic common to all tests
 	})
 
 	Context("When creating Template under Defaulting Webhook", func() {
-		// TODO (user): Add logic for defaulting webhooks
-		// Example:
-		// It("Should apply defaults when a required field is empty", func() {
-		//     By("simulating a scenario where defaults should be applied")
-		//     obj.SomeFieldWithDefault = ""
-		//     By("calling the Default method to apply defaults")
-		//     defaulter.Default(ctx, obj)
-		//     By("checking that the default values are set")
-		//     Expect(obj.SomeFieldWithDefault).To(Equal("default_value"))
-		// })
+		It("Should default type to helm when empty", func() {
+			obj.Spec.Type = ""
+			Expect(defaulter.Default(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Type).To(Equal(defaultTemplateType))
+		})
+
+		It("Should preserve type when already set", func() {
+			obj.Spec.Type = "kubernetes"
+			Expect(defaulter.Default(ctx, obj)).To(Succeed())
+			Expect(obj.Spec.Type).To(Equal("kubernetes"))
+		})
 	})
 
 	Context("When creating or updating Template under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
-	})
+		Describe("ValidateCreate", func() {
+			BeforeEach(func() {
+				obj.Spec.Type = defaultTemplateType
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{Repo: "https://charts.example.com", Name: "nginx"}
+			})
 
+			It("Should admit creation with helm type and valid chart", func() {
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should admit creation with kubernetes type without chart", func() {
+				obj.Spec.Type = "kubernetes"
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should admit creation with kustomize type without chart", func() {
+				obj.Spec.Type = "kustomize"
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should reject creation with helm type and missing chart repo", func() {
+				obj.Spec.Chart.Repo = ""
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Chart repo is required"))
+			})
+
+			It("Should reject creation with empty type", func() {
+				obj.Spec.Type = ""
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template type is required"))
+			})
+
+			It("Should reject creation with invalid type", func() {
+				obj.Spec.Type = "invalid"
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template type must be one of: helm, kubernetes, kustomize"))
+			})
+
+			It("Should reject creation with helm type and missing chart name", func() {
+				obj.Spec.Chart.Name = ""
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Chart name is required"))
+			})
+
+			It("Should reject creation with helm type and no chart", func() {
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Chart repo is required"))
+			})
+		})
+
+		Describe("ValidateUpdate", func() {
+			BeforeEach(func() {
+				oldObj.Spec.Type = defaultTemplateType
+				oldObj.Spec.Chart = pipelinesv1alpha1.ChartRef{Repo: "https://charts.example.com", Name: "nginx"}
+				obj.Spec.Type = defaultTemplateType
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{Repo: "https://charts.example.com", Name: "nginx"}
+			})
+
+			It("Should admit update with no changes to immutable fields", func() {
+				warnings, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should reject update that changes type", func() {
+				obj.Spec.Type = "kustomize"
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template type is immutable"))
+			})
+		})
+
+		Describe("ValidateDelete", func() {
+			It("Should always admit deletion", func() {
+				warnings, err := validator.ValidateDelete(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+		})
+	})
 })

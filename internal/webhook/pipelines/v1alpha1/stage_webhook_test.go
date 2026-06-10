@@ -21,8 +21,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	// TODO (user): Add any additional imports if needed
 )
+
+const testStageName = "canary"
 
 var _ = Describe("Stage Webhook", func() {
 	var (
@@ -36,51 +37,108 @@ var _ = Describe("Stage Webhook", func() {
 		obj = &pipelinesv1alpha1.Stage{}
 		oldObj = &pipelinesv1alpha1.Stage{}
 		validator = StageCustomValidator{}
-		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
 		defaulter = StageCustomDefaulter{}
-		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
-		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
-		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
-	})
-
-	AfterEach(func() {
-		// TODO (user): Add any teardown logic common to all tests
 	})
 
 	Context("When creating Stage under Defaulting Webhook", func() {
-		// TODO (user): Add logic for defaulting webhooks
-		// Example:
-		// It("Should apply defaults when a required field is empty", func() {
-		//     By("simulating a scenario where defaults should be applied")
-		//     obj.SomeFieldWithDefault = ""
-		//     By("calling the Default method to apply defaults")
-		//     defaulter.Default(ctx, obj)
-		//     By("checking that the default values are set")
-		//     Expect(obj.SomeFieldWithDefault).To(Equal("default_value"))
-		// })
+		It("Should apply no defaults and succeed", func() {
+			Expect(defaulter.Default(ctx, obj)).To(Succeed())
+		})
 	})
 
 	Context("When creating or updating Stage under Validating Webhook", func() {
-		// TODO (user): Add logic for validating webhooks
-		// Example:
-		// It("Should deny creation if a required field is missing", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = ""
-		//     Expect(validator.ValidateCreate(ctx, obj)).Error().To(HaveOccurred())
-		// })
-		//
-		// It("Should admit creation if all required fields are present", func() {
-		//     By("simulating an invalid creation scenario")
-		//     obj.SomeRequiredField = "valid_value"
-		//     Expect(validator.ValidateCreate(ctx, obj)).To(BeNil())
-		// })
-		//
-		// It("Should validate updates correctly", func() {
-		//     By("simulating a valid update scenario")
-		//     oldObj.SomeRequiredField = "updated_value"
-		//     obj.SomeRequiredField = "updated_value"
-		//     Expect(validator.ValidateUpdate(ctx, oldObj, obj)).To(BeNil())
-		// })
-	})
+		Describe("ValidateCreate", func() {
+			It("Should admit creation with valid fields", func() {
+				obj.Spec.Name = testStageName
+				obj.Spec.Templates = []string{"nginx-template"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
 
+			It("Should reject creation with empty name", func() {
+				obj.Spec.Templates = []string{"nginx-template"}
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Stage name is required"))
+			})
+
+			It("Should reject creation with no templates", func() {
+				obj.Spec.Name = testStageName
+				obj.Spec.Templates = []string{}
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Must have at least one template"))
+			})
+
+			It("Should reject creation with nil templates", func() {
+				obj.Spec.Name = testStageName
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Must have at least one template"))
+			})
+
+			It("Should reject creation with empty template name", func() {
+				obj.Spec.Name = testStageName
+				obj.Spec.Templates = []string{""}
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template name must not be empty"))
+			})
+
+			It("Should admit creation with cluster set", func() {
+				obj.Spec.Name = testStageName
+				obj.Spec.Templates = []string{"nginx-template"}
+				obj.Spec.Cluster = pipelinesv1alpha1.ClusterRef{Name: "prod-cluster"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+		})
+
+		Describe("ValidateUpdate", func() {
+			BeforeEach(func() {
+				oldObj.Spec.Name = testStageName
+				oldObj.Spec.Templates = []string{"nginx-template"}
+				obj.Spec.Name = testStageName
+				obj.Spec.Templates = []string{"nginx-template"}
+			})
+
+			It("Should admit update with no changes to immutable fields", func() {
+				warnings, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should reject update that changes template list", func() {
+				obj.Spec.Templates = []string{"different-template"}
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template list is immutable"))
+			})
+
+			It("Should reject update that changes cluster", func() {
+				oldObj.Spec.Cluster = pipelinesv1alpha1.ClusterRef{Name: "old-cluster"}
+				obj.Spec.Cluster = pipelinesv1alpha1.ClusterRef{Name: "new-cluster"}
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Cluster reference is immutable"))
+			})
+
+			It("Should reject update that makes templates empty", func() {
+				obj.Spec.Templates = []string{}
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Template list is immutable"))
+			})
+		})
+
+		Describe("ValidateDelete", func() {
+			It("Should always admit deletion", func() {
+				warnings, err := validator.ValidateDelete(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+		})
+	})
 })

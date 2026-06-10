@@ -11,7 +11,7 @@ type ChartRef struct {
 }
 
 type TemplateSpec struct {
-	// +kubebuilder:validation:Enum=helm
+	// +kubebuilder:validation:Enum=helm;kubernetes;kustomize
 	Type  string   `json:"type"`
 	Chart ChartRef `json:"chart,omitempty"`
 }

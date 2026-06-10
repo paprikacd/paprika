@@ -19,6 +19,9 @@ package v1alpha1
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -26,12 +29,17 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-// log is for logging in this package.
-//
+const defaultTemplateType = "helm"
+
+var validTemplateTypes = map[string]bool{
+	"helm":       true,
+	"kubernetes": true,
+	"kustomize":  true,
+}
+
 //nolint:unused
 var templatelog = logf.Log.WithName("template-resource")
 
-// SetupTemplateWebhookWithManager registers the webhook for Template in the manager.
 func SetupTemplateWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Template{}).
 		WithValidator(&TemplateCustomValidator{}).
@@ -39,64 +47,84 @@ func SetupTemplateWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-template,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=templates,verbs=create;update,versions=v1alpha1,name=mtemplate-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// TemplateCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind Template when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type TemplateCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
+type TemplateCustomDefaulter struct{}
 
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Template.
 func (d *TemplateCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Template) error {
 	templatelog.Info("Defaulting for Template", "name", obj.GetName())
 
-	// TODO(user): fill in your defaulting logic.
+	if obj.Spec.Type == "" {
+		obj.Spec.Type = defaultTemplateType
+	}
 
 	return nil
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
-// NOTE: If you want to customise the 'path', use the flags '--defaulting-path' or '--validation-path'.
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-template,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=templates,verbs=create;update,versions=v1alpha1,name=vtemplate-v1alpha1.kb.io,admissionReviewVersions=v1
 
-// TemplateCustomValidator struct is responsible for validating the Template resource
-// when it is created, updated, or deleted.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
-type TemplateCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
-}
+type TemplateCustomValidator struct{}
 
-// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Template.
 func (v *TemplateCustomValidator) ValidateCreate(_ context.Context, obj *pipelinesv1alpha1.Template) (admission.Warnings, error) {
 	templatelog.Info("Validation for Template upon creation", "name", obj.GetName())
-
-	// TODO(user): fill in your validation logic upon object creation.
-
+	if errs := v.validateTemplateCreate(obj); len(errs) > 0 {
+		return nil, apierrors.NewInvalid(
+			schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Template"},
+			obj.Name,
+			errs,
+		)
+	}
 	return nil, nil
 }
 
-// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Template.
 func (v *TemplateCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *pipelinesv1alpha1.Template) (admission.Warnings, error) {
 	templatelog.Info("Validation for Template upon update", "name", newObj.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
+	if oldObj.Spec.Type != newObj.Spec.Type {
+		allErrs = append(allErrs, field.Forbidden(specPath.Child("type"), "Template type is immutable"))
+	}
+
+	if createErrs := v.validateTemplateCreate(newObj); len(createErrs) > 0 {
+		allErrs = append(allErrs, createErrs...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil, nil
+	}
+
+	return nil, apierrors.NewInvalid(
+		schema.GroupKind{Group: "pipelines.paprika.io", Kind: "Template"},
+		newObj.Name,
+		allErrs,
+	)
+}
+
+func (v *TemplateCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Template) (admission.Warnings, error) {
+	templatelog.Info("Validation for Template upon deletion", "name", obj.GetName())
 	return nil, nil
 }
 
-// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Template.
-func (v *TemplateCustomValidator) ValidateDelete(_ context.Context, obj *pipelinesv1alpha1.Template) (admission.Warnings, error) {
-	templatelog.Info("Validation for Template upon deletion", "name", obj.GetName())
+func (v *TemplateCustomValidator) validateTemplateCreate(t *pipelinesv1alpha1.Template) field.ErrorList {
+	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 
-	// TODO(user): fill in your validation logic upon object deletion.
+	if t.Spec.Type == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("type"), "Template type is required"))
+	} else if !validTemplateTypes[t.Spec.Type] {
+		allErrs = append(allErrs, field.Invalid(specPath.Child("type"), t.Spec.Type, "Template type must be one of: helm, kubernetes, kustomize"))
+	}
 
-	return nil, nil
+	if t.Spec.Type == "helm" {
+		if t.Spec.Chart.Repo == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("repo"), "Chart repo is required"))
+		}
+		if t.Spec.Chart.Name == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("name"), "Chart name is required"))
+		}
+	}
+
+	return allErrs
 }
