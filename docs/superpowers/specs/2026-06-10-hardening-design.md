@@ -62,7 +62,7 @@ One validating webhook per CRD. Each validates cross-field constraints that cann
 
 #### Artifact
 
-No validating webhook needed — leaf CRD with no inter-field dependencies.
+No validating webhook needed — leaf CRD with no inter-field dependencies. This is a deliberate exclusion: Artifact has only identity fields (name, digest, repo) with no cross-field constraints.
 
 ### 1.2 Defaulting Webhooks
 
@@ -71,7 +71,7 @@ One defaulting webhook per CRD. Sets sensible defaults for unset fields.
 | CRD | Defaults |
 |-----|----------|
 | **Application** | `strategy: "rolling"`, `syncPolicy: "auto"`, `pollInterval: "30s"` |
-| **Stage** | If strategy is canary and steps are empty: `steps: [10, 25, 50, 75, 100]`. If trafficRouter is set but no provider: default to `"istio"`. Stable service defaults to `"<release-name>-stable"`, canary service defaults to `"<release-name>-canary"` |
+| **Stage** | If strategy is canary and steps are empty: `steps: [10, 25, 50, 75, 100]` (weights represent traffic percentage). If trafficRouter is set but no provider: default to `"istio"`. Stable service and canary service names are not defaulted at the Stage level — they're resolved at runtime in `routerForStage` using the release name (existing `servicePrefix` logic in `traffic/`). |
 | **Release** | `canaryWeight: 0`, `canaryStepIndex: 0` |
 | **Pipeline** | `timeout: "30m"` for each step if unset |
 | **Template** | No defaults needed |
@@ -144,6 +144,16 @@ Using `sigs.k8s.io/controller-runtime/pkg/controller/controllerutil` for `AddFin
 
 ### 2.3 Release Cleanup
 
+The GVRs managed by a Release (Deployment, Service, Ingress) are defined as a package-level variable:
+
+```go
+var managedGVRs = []schema.GroupVersionResource{
+    {Group: "apps", Version: "v1", Resource: "deployments"},
+    {Group: "", Version: "v1", Resource: "services"},
+    {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+}
+```
+
 ```go
 func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Release) error {
     // Delete manifest snapshot ConfigMap
@@ -155,41 +165,32 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
         return fmt.Errorf("deleting manifest snapshot: %w", err)
     }
 
-    // Delete canary resources (Deployments, Services, Ingresses with track=canary label)
+    // Delete canary resources owned by this release
     selector := labels.SelectorFromSet(labels.Set{"track": "canary", "paprika.io/release": release.Name})
-    r.cleanupResourcesBySelector(ctx, release.Namespace, selector)
-
+    for _, gvr := range managedGVRs {
+        if err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).DeleteCollection(
+            ctx, metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: selector.String()},
+        ); err != nil && !apierrors.IsMethodNotSupported(err) {
+            return fmt.Errorf("cleaning up canary resources: %w", err)
+        }
+    }
     return nil
 }
 ```
 
 ### 2.4 Application Cleanup
 
-```go
-func (r *ApplicationReconciler) cleanup(ctx context.Context, app *paprikav1.Application) error {
-    // Delete child Releases
-    r.deleteAllInNamespace(ctx, &paprikav1.ReleaseList{}, app.Namespace, ...)
-    // Delete child Stages
-    r.deleteAllInNamespace(ctx, &paprikav1.StageList{}, app.Namespace, ...)
-    // Delete child Pipelines
-    r.deleteAllInNamespace(ctx, &paprikav1.PipelineList{}, app.Namespace, ...)
-    // Delete child Templates
-    r.deleteAllInNamespace(ctx, &paprikav1.TemplateList{}, app.Namespace, ...)
-    return nil
-}
-```
+Applications create child CRs (Template, Pipeline, Stage, Release) using **owner references** (`metav1.OwnerReference` set via `controllerutil.SetControllerReference`). Kubernetes garbage collection handles deletion:
 
-Child resources are garbage collected via owner references set during creation, but explicit deletion is more robust for CRD-managed resources.
+1. Application is deleted → GC sets `deletionTimestamp` on child Template, Pipeline, Stage, Release
+2. Each child's controller sees the timestamp, runs its own finalizer, removes the finalizer
+3. GC removes the child objects
+
+No explicit child deletion is needed in the Application finalizer itself. The Application finalizer only blocks deletion until all child finalizers have completed (which GC ensures by setting child deletion timestamps before removing the parent).
 
 ### 2.5 Pipeline Cleanup
 
-```go
-func (r *PipelineReconciler) cleanup(ctx context.Context, pipeline *paprikav1.Pipeline) error {
-    // Delete Jobs with pipline=<name> label
-    selector := labels.SelectorFromSet(labels.Set{"pipeline": pipeline.Name})
-    return r.deleteJobsBySelector(ctx, pipeline.Namespace, selector)
-}
-```
+Pipeline Jobs are already created with owner references pointing to the Pipeline (see `engine/workflow.go`). When the Pipeline is deleted, GC removes the Jobs. No explicit cleanup needed in the Pipeline finalizer — the finalizer exists only to block deletion until in-flight Jobs complete.
 
 ---
 
@@ -208,10 +209,10 @@ Every error in controller reconciliation is classified as either:
 
 | Controller | Location | Current | Fix |
 |-----------|----------|---------|-----|
-| ReleaseReconciler | `handlePromotingPhase` (line ~213) | `return ctrl.Result{}, nil` after log.Error | `return ctrl.Result{}, err` |
-| ReleaseReconciler | `handleFailedRollback` (line ~268) | `result = resultError; return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
-| PipelineReconciler | Pipeline failure (line ~87) | `return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
-| ReleaseReconciler | `checkConcurrentRelease` errors (line ~98) | `return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
+| ReleaseReconciler | `handlePromotingPhase` | `return ctrl.Result{}, nil` after log.Error | `return ctrl.Result{}, err` |
+| ReleaseReconciler | `handleFailedRollback` | `result = resultError; return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
+| PipelineReconciler | Pipeline failure in `Reconcile` | `return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
+| ReleaseReconciler | `checkConcurrentRelease` errors | `return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
 | All controllers | Status update failures | `log.Error(err, ...); return ctrl.Result{}, nil` | `return ctrl.Result{}, err` |
 | ReleaseReconciler | `storeManifestSnapshot` conflict | `log.Error(err, ...); return nil` then caller returns `ctrl.Result{}, nil` | Propagate error |
 
@@ -250,3 +251,5 @@ After implementation:
 - Manual: create Application with invalid spec → validating webhook rejects it
 - Manual: create Application with minimal spec → defaulting webhook fills defaults
 - Manual: delete Release → finalizer triggers cleanup, ConfigMap deleted
+- Manual: create Application (with owner references on child CRs) → delete Application → verify child CRs are garbage collected (deletionTimestamp set, finalizers run, objects removed)
+- Observe: rate limiting via metrics endpoint — verify QPS/burst config is applied
