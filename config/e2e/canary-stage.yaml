@@ -1,0 +1,22 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: canary-prod
+spec:
+  name: canary-prod
+  ring: 4
+  templates:
+    - demo-app-local
+  gates:
+    - type: duration
+      timeout: 30
+  canary:
+    steps: [10, 30, 60, 100]
+    intervalSeconds: 15
+    analysis:
+      checks:
+        - type: podMetrics
+          metric: restartRate
+          threshold: "3"
+          windowSeconds: 60
+      rollbackOnFail: true

@@ -1,0 +1,27 @@
+# Global settings
+replicaCount: 2
+canaryWeight: 0
+
+image:
+  repository: nginx
+  tag: alpine
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+
+# Feature flags — toggled per release/stage
+features:
+  canary:
+    enabled: false
+    weight: 10
+  monitoring:
+    enabled: false
+    sidecarImage: "prom/node-exporter:v1.7.0"
+  ingress:
+    enabled: false
+    host: demo-app.example.com
+  metrics:
+    enabled: false
+    path: /metrics

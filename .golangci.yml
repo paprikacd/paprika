@@ -1,61 +1,148 @@
 version: "2"
 run:
-  allow-parallel-runners: true
+  timeout: 5m
 linters:
   default: none
   enable:
-    - copyloopvar
+    - bodyclose
+    - contextcheck
+    - cyclop
+    - dogsled
     - dupl
+    - durationcheck
     - errcheck
-    - ginkgolinter
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - funlen
+    - gocognit
     - goconst
+    - gocritic
     - gocyclo
+    - goprintffuncname
+    - gosec
     - govet
     - ineffassign
-    - lll
-    - modernize
-    - misspell
-    - nakedret
+    - mirror
+    - nestif
+    - noctx
+    - nolintlint
+    - perfsprint
     - prealloc
+    - reassign
     - revive
     - staticcheck
-    - unconvert
-    - unparam
+    - tagalign
+    - tagliatelle
+    - testableexamples
     - unused
-    - logcheck
+    - usestdlibvars
+    - wastedassign
+    - wrapcheck
   settings:
-    custom:
-      logcheck:
-        type: "module"
-        description: Checks Go logging calls for Kubernetes logging conventions.
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+    gocyclo:
+      min-complexity: 20
+    cyclop:
+      max-complexity: 10
+    funlen:
+      lines: 100
+      statements: 60
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 5
+    gocritic:
+      enabled-tags:
+        - performance
+        - style
+      disabled-checks:
+        - wrapperFunc
+        - dupImport
+        - ifElseChain
+        - assignOp
+        - octalLiteral
+        - importShadow
     revive:
       rules:
-        - name: comment-spacings
-        - name: import-shadowing
-    modernize:
-      disable:
-        - omitzero
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: receiver-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
   exclusions:
-    generated: lax
-    rules:
-      - linters:
-          - lll
-        path: api/*
-      - linters:
-          - dupl
-          - lll
-        path: internal/*
     paths:
-      - third_party$
-      - builtin$
-      - examples$
+      - ui/node_modules
+    rules:
+      - path: api/v1alpha1/.*
+        regex: true
+        linters:
+          - wrapcheck
+          - gocyclo
+          - cyclop
+          - funlen
+          - gocognit
+          - nestif
+      - path: internal/api/paprika/.*
+        regex: true
+        linters:
+          - all
+      - path: test/
+        linters:
+          - testpackage
+          - wrapcheck
+      - path: _test\.go
+        regex: true
+        linters:
+          - wrapcheck
+          - cyclop
+          - funlen
+          - gocognit
+      - path: _test\.go
+        regex: true
+        text: dot-imports
+        linters:
+          - revive
+      - text: weak cryptographic primitive
+        linters:
+          - gosec
+      - text: G114
+        linters:
+          - gosec
+      - text: G204
+        linters:
+          - gosec
+      - text: G306
+        linters:
+          - gosec
+      - text: G304
+        linters:
+          - gosec
+      - text: type name will be used as
+        linters:
+          - revive
 formatters:
   enable:
     - gofmt
     - goimports
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/benebsworth/paprika

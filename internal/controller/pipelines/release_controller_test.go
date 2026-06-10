@@ -1,19 +1,3 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
@@ -38,22 +22,36 @@ var _ = Describe("Release Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		release := &pipelinesv1alpha1.Release{}
+		stageName := "test-stage"
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind Release")
 			err := k8sClient.Get(ctx, typeNamespacedName, release)
 			if err != nil && errors.IsNotFound(err) {
+				By("creating the Stage resource needed by the Release")
+				Expect(k8sClient.Create(ctx, &pipelinesv1alpha1.Stage{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      stageName,
+						Namespace: "default",
+					},
+					Spec: pipelinesv1alpha1.StageSpec{
+						Name:      stageName,
+						Ring:      1,
+						Templates: []string{},
+					},
+				})).To(Succeed())
+
 				resource := &pipelinesv1alpha1.Release{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
 					Spec: pipelinesv1alpha1.ReleaseSpec{
-						Pipeline: resourceName,
-						Target:   "production",
+						Pipeline: "test-pipeline",
+						Target:   stageName,
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
@@ -67,8 +65,14 @@ var _ = Describe("Release Controller", func() {
 				return
 			}
 			Expect(err).NotTo(HaveOccurred())
+			By("Cleanup the specific resource instance Release")
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 
-			_ = k8sClient.Delete(ctx, resource)
+			By("Cleanup the Stage resource")
+			stage := &pipelinesv1alpha1.Stage{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: stageName, Namespace: "default"}, stage); err == nil {
+				Expect(k8sClient.Delete(ctx, stage)).To(Succeed())
+			}
 		})
 		It("should add finalizer on creation and handle cleanup on deletion", func() {
 			By("Reconciling the created resource")
@@ -82,7 +86,6 @@ var _ = Describe("Release Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-
 			updated := &pipelinesv1alpha1.Release{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
 			Expect(updated.Finalizers).To(ContainElement("paprika.io/release-cleanup"))

@@ -14,7 +14,9 @@ message Step {
 message StepStatus {
   string name = 1;
   string phase = 2;
+  // Seconds since Unix epoch.
   optional int64 started_at = 3;
+  // Seconds since Unix epoch.
   optional int64 completed_at = 4;
 }
 
@@ -23,9 +25,119 @@ message ArtifactRef {
   string path = 2;
 }
 
+message ChartRef {
+  string repo = 1;
+  string name = 2;
+  string version = 3;
+  string path = 4;
+}
+
+message ApplicationSource {
+  string type = 1;
+  string repo_url = 2;
+  string revision = 3;
+  string path = 4;
+  ChartRef chart = 5;
+  // S3 source fields
+  string bucket = 6;
+  string key = 7;
+  string region = 8;
+  string endpoint = 9;
+  // Shared fields
+  string secret_ref = 10;
+  string poll_interval = 11;
+}
+
+message ApplicationStage {
+  string name = 1;
+  int32 ring = 2;
+  string phase = 3;
+  string release = 4;
+  string revision = 5;
+}
+
+message HTTPProbe {
+  string url = 1;
+  string method = 2;
+  map<string, string> headers = 3;
+  string body = 4;
+  int32 expected_status = 5;
+  int32 timeout = 6;
+}
+
+message HealthCheck {
+  string name = 1;
+  string expression = 2;
+  HTTPProbe http_probe = 3;
+  string interval = 4;
+}
+
+message HealthCheckResult {
+  string name = 1;
+  string status = 2;
+  string message = 3;
+  // Seconds since Unix epoch.
+  optional int64 checked_at = 4;
+  int32 http_status_code = 5;
+  string http_body = 6;
+}
+
+message ResourceSync {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string status = 4;
+}
+
+message ResourceHealth {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string health = 4;
+  string message = 5;
+}
+
+message GateStatus {
+  string name = 1;
+  string stage = 2;
+  string status = 3;
+  string approved_by = 4;
+}
+
+message Application {
+  string name = 1;
+  string namespace = 2;
+  string phase = 3;
+  string current_stage = 4;
+  string revision = 5;
+  bool synced = 6;
+  string template_ref = 7;
+  string pipeline_ref = 8;
+  string release_ref = 9;
+  repeated ApplicationStage stages = 10;
+  ApplicationSource source = 11;
+  string strategy = 12;
+  string sync_policy = 13;
+  map<string, string> parameters = 14;
+  // Source change detection
+  string source_hash = 15;
+  string source_revision = 16;
+  // Health check results
+  string health = 17;
+  repeated HealthCheckResult health_checks = 18;
+  // Resource sync status
+  repeated ResourceSync resources = 19;
+  repeated ResourceHealth resource_health = 20;
+  int32 out_of_sync = 21;
+  int32 pruned_resources = 22;
+  // Approval gates
+  repeated GateStatus gates = 23;
+}
+
 message Pipeline {
   string name = 1;
   string namespace = 2;
+  // Seconds since Unix epoch.
   int64 created_at = 3;
   repeated Step steps = 4;
   int32 max_parallel = 5;
@@ -37,6 +149,7 @@ message Pipeline {
 message Release {
   string name = 1;
   string namespace = 2;
+  // Seconds since Unix epoch.
   int64 created_at = 3;
   string pipeline = 4;
   string target = 5;
@@ -48,16 +161,38 @@ message Release {
 message Promotion {
   string stage = 1;
   string result = 2;
+  // Seconds since Unix epoch.
   int64 timestamp = 3;
 }
 
 message Stage {
   string name = 1;
   string namespace = 2;
+  // Seconds since Unix epoch.
   int64 created_at = 3;
   int32 ring = 4;
   string phase = 5;
   string stage_name = 6;
+}
+
+message TrafficRouter {
+  string provider = 1;
+  IstioRouterConfig istio = 2;
+  GatewayAPIRouterConfig gateway_api = 3;
+}
+
+message IstioRouterConfig {
+  string virtual_service = 1;
+  repeated string routes = 2;
+  repeated string hosts = 3;
+  string stable_service = 4;
+  string canary_service = 5;
+}
+
+message GatewayAPIRouterConfig {
+  string http_route = 1;
+  string stable_service = 2;
+  string canary_service = 3;
 }
 
 message ListPipelinesRequest {
@@ -84,8 +219,48 @@ message ListStagesResponse {
   repeated Stage stages = 1;
 }
 
+message ListApplicationsRequest {
+  optional string namespace = 1;
+}
+
+message ListApplicationsResponse {
+  repeated Application applications = 1;
+}
+
+message GetApplicationRequest {
+  string name = 1;
+  string namespace = 2;
+}
+
+message GetApplicationResponse {
+  Application application = 1;
+}
+
+message SyncApplicationRequest {
+  string name = 1;
+  string namespace = 2;
+}
+
+message SyncApplicationResponse {
+  Application application = 1;
+}
+
+message ApproveGateRequest {
+  string name = 1;
+  string namespace = 2;
+  string gate = 3;
+}
+
+message ApproveGateResponse {
+  Application application = 1;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
   rpc ListStages(ListStagesRequest) returns (ListStagesResponse);
+  rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
+  rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
+  rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
+  rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);
 }

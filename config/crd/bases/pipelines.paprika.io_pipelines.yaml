@@ -17,6 +17,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Pipeline represents a CI/CD pipeline.
         properties:
           apiVersion:
             description: |-
@@ -36,9 +37,11 @@ spec:
           metadata:
             type: object
           spec:
+            description: PipelineSpec defines the specification for a pipeline.
             properties:
               artifacts:
                 items:
+                  description: PipelineOutput defines an output artifact of a pipeline.
                   properties:
                     name:
                       type: string
@@ -53,6 +56,7 @@ spec:
                 type: integer
               sources:
                 items:
+                  description: Source defines a source for the pipeline.
                   properties:
                     secretRef:
                       type: string
@@ -68,6 +72,7 @@ spec:
                 type: array
               steps:
                 items:
+                  description: PipelineStep defines a step in a pipeline.
                   properties:
                     depends:
                       items:
@@ -93,13 +98,17 @@ spec:
             - steps
             type: object
           status:
+            description: PipelineStatus represents the status of a pipeline.
             properties:
-              lastExecutionID:
+              lastExecutionId:
                 type: string
               lastExecutionTime:
                 format: date-time
                 type: string
               phase:
+                description: |-
+                  PipelinePhase represents the phase of a pipeline.
+                  PipelinePhase represents the phase of a pipeline.
                 enum:
                 - Running
                 - Succeeded
@@ -107,6 +116,7 @@ spec:
                 type: string
               stepStatuses:
                 items:
+                  description: StepStatus represents the status of a pipeline step.
                   properties:
                     completedAt:
                       format: date-time
@@ -116,6 +126,7 @@ spec:
                     name:
                       type: string
                     phase:
+                      description: StepPhase represents the phase of a pipeline step.
                       enum:
                       - Pending
                       - Running

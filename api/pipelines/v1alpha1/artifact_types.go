@@ -4,11 +4,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ArtifactProvenance tracks the origin of an artifact.
+// ArtifactProvenance tracks the origin of an artifact.
 type ArtifactProvenance struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	Build    string `json:"build,omitempty"`
 }
 
+// ArtifactSpec defines the specification for an artifact.
 type ArtifactSpec struct {
 	// +kubebuilder:validation:Enum=oci
 	Type       string             `json:"type"`
@@ -17,6 +20,7 @@ type ArtifactSpec struct {
 	Provenance ArtifactProvenance `json:"provenance,omitempty"`
 }
 
+// ArtifactStatus represents the status of an artifact.
 type ArtifactStatus struct {
 	Verified bool `json:"verified,omitempty"`
 }
@@ -24,6 +28,7 @@ type ArtifactStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
+// Artifact represents a build artifact.
 type Artifact struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
@@ -34,6 +39,7 @@ type Artifact struct {
 
 // +kubebuilder:object:root=true
 
+// ArtifactList is a list of Artifacts.
 type ArtifactList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitzero"`

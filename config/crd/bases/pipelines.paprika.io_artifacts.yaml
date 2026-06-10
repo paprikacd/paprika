@@ -17,6 +17,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Artifact represents a build artifact.
         properties:
           apiVersion:
             description: |-
@@ -36,10 +37,14 @@ spec:
           metadata:
             type: object
           spec:
+            description: ArtifactSpec defines the specification for an artifact.
             properties:
               digest:
                 type: string
               provenance:
+                description: |-
+                  ArtifactProvenance tracks the origin of an artifact.
+                  ArtifactProvenance tracks the origin of an artifact.
                 properties:
                   build:
                     type: string
@@ -57,6 +62,7 @@ spec:
             - type
             type: object
           status:
+            description: ArtifactStatus represents the status of an artifact.
             properties:
               verified:
                 type: boolean

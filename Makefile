@@ -109,9 +109,18 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
+.PHONY: build-ui
+build-ui: ## Build the Next.js UI and copy static assets into the Go embed directory.
+	cd ui && npm ci && npm run build
+	rm -rf internal/api/uistatic/*
+	cp -r ui/out/* internal/api/uistatic/
+
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
+
+.PHONY: build-with-ui
+build-with-ui: build-ui build ## Build UI then build manager with embedded static assets.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

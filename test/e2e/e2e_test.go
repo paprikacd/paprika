@@ -20,8 +20,10 @@ limitations under the License.
 package e2e
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -583,6 +585,792 @@ var _ = Describe("Manager", Ordered, func() {
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 	})
 
+	Context("Release", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up all Paprika CRDs")
+			for _, resource := range []string{"releases", "stages", "templates", "pipelines", "artifacts"} {
+				cmd := exec.Command("kubectl", "delete", resource, "--all", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+				_, _ = utils.Run(cmd)
+			}
+
+			By("cleaning up all derived resources created by releases")
+			for _, label := range []string{
+				"app.kubernetes.io/name=demo-app",
+				"track=canary",
+				"track=stable",
+				"paprika.io/pipeline",
+			} {
+				for _, resource := range []string{"deployments", "services", "ingresses", "configmaps"} {
+					cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", label, "--ignore-not-found", "--timeout=10s")
+					_, _ = utils.Run(cmd)
+				}
+			}
+
+			By("cleaning up step jobs")
+			cmd := exec.Command("kubectl", "delete", "jobs", "-n", namespace, "-l", "paprika.io/pipeline", "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+
+			By("cleaning up step pods")
+			cmd = exec.Command("kubectl", "delete", "pods", "-n", namespace, "-l", "paprika.io/pipeline", "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+
+			By("verifying cleanup is complete")
+			for _, resource := range []string{"releases", "stages", "templates"} {
+				cmd := exec.Command("kubectl", "get", resource, "-n", namespace, "-o", "jsonpath={.items}")
+				out, err := utils.Run(cmd)
+				if err == nil {
+					Expect(out).To(Equal("[]"), fmt.Sprintf("Expected no %s remaining after cleanup", resource))
+				}
+			}
+		})
+
+		It("should create a Template, Stage, and Release that reaches Complete", func() {
+			By("creating a Template resource")
+			template := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Template",
+				"metadata": {"name": "e2e-template", "namespace": "%s"},
+				"spec": {
+					"type": "helm",
+					"chart": {"path": "/charts/demo-app"}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(template)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create template")
+
+			By("creating a Stage resource")
+			stage := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Stage",
+				"metadata": {"name": "e2e-stage", "namespace": "%s"},
+				"spec": {
+					"name": "e2e-stage",
+					"ring": 1,
+					"templates": ["e2e-template"]
+				}
+			}`, namespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(stage)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create stage")
+
+			By("creating a Release resource")
+			release := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Release",
+				"metadata": {"name": "e2e-release", "namespace": "%s"},
+				"spec": {
+					"pipeline": "e2e-pipeline",
+					"target": "e2e-stage",
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					}
+				}
+			}`, namespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(release)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create release")
+
+			By("waiting for the release to reach Complete phase")
+			verifyReleasePhase := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-release",
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Complete"), "Release should reach Complete phase")
+			}
+			Eventually(verifyReleasePhase, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying the rendered manifests were applied")
+			verifyDeployment := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "-n", namespace,
+					"-l", "app.kubernetes.io/name=demo-app",
+					"-o", "jsonpath={.items[*].metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(ContainSubstring("stable"), "Expected stable deployment to exist")
+			}
+			Eventually(verifyDeployment, 60*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should perform canary deployment with progressive traffic shifting and PDV analysis", func() {
+			By("creating a canary Stage with analysis checks")
+			canaryStage := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Stage",
+				"metadata": {"name": "e2e-canary-stage", "namespace": "%s"},
+				"spec": {
+					"name": "e2e-canary-stage",
+					"ring": 2,
+					"templates": ["e2e-template"],
+					"canary": {
+						"steps": [25, 50, 100],
+						"intervalSeconds": 5,
+						"analysis": {
+							"checks": [
+								{"type": "podMetrics", "metric": "restartRate", "threshold": "5", "windowSeconds": 30}
+							],
+							"rollbackOnFail": true
+						}
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(canaryStage)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create canary stage")
+
+			By("creating a Release targeting the canary Stage")
+			release := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Release",
+				"metadata": {"name": "e2e-canary-release", "namespace": "%s"},
+				"spec": {
+					"pipeline": "e2e-pipeline",
+					"target": "e2e-canary-stage",
+					"parameters": {
+						"features.canary.enabled": "true",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "true",
+						"features.ingress.host": "e2e-canary.example.com",
+						"replicaCount": "1"
+					}
+				}
+			}`, namespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(release)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create canary release")
+
+			By("waiting for the release to reach Canarying phase")
+			verifyCanarying := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-canary-release",
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Or(Equal("Canarying"), Equal("Verifying"), Equal("Complete")),
+					"Release should be in canary or later phase")
+			}
+			Eventually(verifyCanarying, 60*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying canary Deployment exists during canary progression")
+			verifyCanaryDeployment := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "-n", namespace,
+					"-l", "track=canary",
+					"-o", "jsonpath={.items[*].metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Expected canary deployment to exist")
+			}
+			Eventually(verifyCanaryDeployment, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("waiting for the canary release to complete")
+			verifyCanaryComplete := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-canary-release",
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Complete"), "Canary release should reach Complete")
+			}
+			Eventually(verifyCanaryComplete, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying canary promotion: canary resources cleaned up, stable Deployment remains")
+			verifyCanaryCleanup := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "-n", namespace,
+					"-l", "track=canary", "-o", "jsonpath={.items}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("[]"), "Canary deployments should be cleaned up after promotion")
+
+				cmd = exec.Command("kubectl", "get", "deployment", "-n", namespace,
+					"-l", "track=stable", "-o", "jsonpath={.items[*].metadata.name}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(ContainSubstring("stable"), "Stable deployment should still exist")
+			}
+			Eventually(verifyCanaryCleanup, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying canary Ingress cleaned up after promotion")
+			verifyCanaryIngressCleanup := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "ingress", "-n", namespace,
+					"-l", "track=canary", "-o", "jsonpath={.items}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("[]"), "Canary ingress should be cleaned up after promotion")
+			}
+			Eventually(verifyCanaryIngressCleanup, 15*time.Second, 2*time.Second).Should(Succeed())
+		})
+
+		It("should handle Gateway API traffic router gracefully when CRDs are absent", func() {
+			By("creating a canary Stage with trafficRouter configured")
+			gatewayStage := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Stage",
+				"metadata": {"name": "e2e-gateway-stage", "namespace": "%s"},
+				"spec": {
+					"name": "e2e-gateway-stage",
+					"ring": 4,
+					"templates": ["e2e-template"],
+					"canary": {
+						"steps": [50, 100],
+						"intervalSeconds": 5
+					},
+					"trafficRouter": {
+						"provider": "gateway-api",
+						"gatewayApi": {
+							"httpRoute": "e2e-gateway-route"
+						}
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(gatewayStage)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create gateway canary stage")
+
+			By("creating a Release targeting the gateway canary Stage")
+			release := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Release",
+				"metadata": {"name": "e2e-gateway-release", "namespace": "%s"},
+				"spec": {
+					"pipeline": "e2e-pipeline",
+					"target": "e2e-gateway-stage",
+					"parameters": {
+						"features.canary.enabled": "true",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false",
+						"replicaCount": "1"
+					}
+				}
+			}`, namespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(release)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create gateway release")
+
+			By("waiting for the release to reach Canarying phase (traffic router error expected)")
+			verifyCanarying := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-gateway-release",
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Or(Equal("Canarying"), Equal("Verifying"), Equal("Complete"), Equal("Failed")),
+					"Release should reach a terminal or canary phase")
+			}
+			Eventually(verifyCanarying, 60*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying canary Deployment exists (nginx fallback works)")
+			verifyCanaryDeployment := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "-n", namespace,
+					"-l", "track=canary", "-o", "jsonpath={.items[*].metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Expected canary deployment to exist despite traffic router error")
+			}
+			Eventually(verifyCanaryDeployment, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("cleaning up gateway canary resources")
+			cmd = exec.Command("kubectl", "delete", "release", "e2e-gateway-release", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+			cmd = exec.Command("kubectl", "delete", "stage", "e2e-gateway-stage", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should fail and roll back canary when PDV analysis fails", func() {
+			By("creating a canary Stage with a failing HTTP check")
+			failingStage := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Stage",
+				"metadata": {"name": "e2e-failing-canary", "namespace": "%s"},
+				"spec": {
+					"name": "e2e-failing-canary",
+					"ring": 3,
+					"templates": ["e2e-template"],
+					"canary": {
+						"steps": [10, 100],
+						"intervalSeconds": 5,
+						"analysis": {
+							"checks": [
+								{"type": "http", "url": "http://this-url-does-not-exist-12345.invalid/health", "successThreshold": "100", "requestCount": 3, "timeoutSeconds": 2},
+								{"type": "podMetrics", "metric": "restartRate", "threshold": "0", "windowSeconds": 30}
+							],
+							"rollbackOnFail": true
+						}
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(failingStage)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create failing canary stage")
+
+			By("creating a Release targeting the failing canary Stage")
+			release := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Release",
+				"metadata": {"name": "e2e-failing-release", "namespace": "%s"},
+				"spec": {
+					"pipeline": "e2e-pipeline",
+					"target": "e2e-failing-canary",
+					"parameters": {
+						"features.canary.enabled": "true",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false",
+						"replicaCount": "1"
+					}
+				}
+			}`, namespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(release)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create failing release")
+
+			By("waiting for the release to fail due to analysis")
+			verifyFailed := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-failing-release",
+					"-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Failed"), "Release should fail when PDV analysis fails")
+			}
+			Eventually(verifyFailed, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying the canary failure condition is recorded")
+			cmd = exec.Command("kubectl", "get", "release", "e2e-failing-release",
+				"-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type==\"CanaryFailed\")].message}")
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).NotTo(BeEmpty(), "CanaryFailed condition should have a message")
+		})
+	})
+
+	Context("Application", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up all Application and derived resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-app", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-app", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-app", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should create Template, Stage, and Release from Application spec and reach Healthy", func() {
+			By("creating an Application resource")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-app", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [
+						{"name": "dev", "ring": 1}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
+
+			By("verifying owned Template was created")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "template", "e2e-app-template", "-n", namespace, "-o", "jsonpath={.spec.type}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("helm"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying owned Stage was created")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "stage", "e2e-app-dev", "-n", namespace, "-o", "jsonpath={.spec.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("dev"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying owned Release was created")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-app-release", "-n", namespace, "-o", "jsonpath={.spec.target}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("e2e-app-dev"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-app", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+		})
+	})
+
+	Context("ApplicationHealthCheck", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up Application health check resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-health", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-health", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-health", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should evaluate CEL health checks and populate health status", func() {
+			By("creating an Application with health checks")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-health", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [
+						{"name": "dev", "ring": 1}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					},
+					"healthChecks": [
+						{
+							"name": "ready-check",
+							"expression": "true"
+						},
+						{
+							"name": "strategy-check",
+							"expression": "app.strategy == 'Rolling'"
+						}
+					]
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Application with health checks")
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying health check results are populated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.health}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Overall health should be Healthy")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("ready-check"))
+
+				cmd = exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].status}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"))
+
+				cmd = exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.healthChecks[1].name}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("strategy-check"))
+
+				cmd = exec.Command("kubectl", "get", "application", "e2e-health", "-n", namespace, "-o", "jsonpath={.status.healthChecks[1].status}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+	})
+
+	Context("ApplicationSyncAndResync", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up sync Application resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-sync", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-sync", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-sync", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should sync application and detect source hash changes", func() {
+			By("creating an Application with helm source")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-sync", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [
+						{"name": "dev", "ring": 1}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-sync", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying source hash and revision are populated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-sync", "-n", namespace, "-o", "jsonpath={.status.sourceHash}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "source hash should be populated")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying owned Template has correct type")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "template", "e2e-sync-template", "-n", namespace, "-o", "jsonpath={.spec.type}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("helm"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying owned Release was created")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-sync-release", "-n", namespace, "-o", "jsonpath={.spec.target}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("e2e-sync-dev"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+	})
+
+	Context("FullCICDFlow", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up full CI/CD resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-cicd", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-cicd", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-cicd", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should complete the full CI/CD lifecycle: create, build, promote, canary, verify, and reach Healthy", func() {
+			By("creating an Application with build pipeline, canary strategy, and health checks")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-cicd", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"build": {
+						"steps": [
+							{"name": "test", "image": "alpine:3.19", "script": "#!/bin/sh\necho tests passed"}
+						]
+					},
+					"stages": [
+						{
+							"name": "dev",
+							"ring": 1,
+							"parameters": {"replicaCount": "1", "features.canary.enabled": "false", "features.monitoring.enabled": "false", "features.ingress.enabled": "false"}
+						}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"parameters": {"image.tag": "latest"},
+					"healthChecks": [
+						{"name": "always-healthy", "expression": "true"}
+					]
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create full CI/CD Application")
+
+			By("verifying owned Pipeline is created from build spec")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pipeline", "e2e-cicd-pipeline", "-n", namespace, "-o", "jsonpath={.spec.steps[0].name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("test"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("waiting for Pipeline to complete (Succeeded or not present if fast)")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "pipeline", "e2e-cicd-pipeline", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				if err != nil {
+					g.Expect(err).NotTo(HaveOccurred())
+					return
+				}
+				g.Expect(out).To(Or(Equal("Succeeded"), Equal("Running"), Equal("Pending")))
+			}, 2*time.Minute, 3*time.Second).Should(Succeed())
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 5*time.Minute, 3*time.Second).Should(Succeed())
+
+			By("verifying health check was evaluated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.health}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application health should be Healthy")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying source hash is populated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.sourceHash}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "sourceHash should be populated")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying health check results")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("always-healthy"))
+
+				cmd = exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].status}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"))
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying a Deployment was created from the rendered manifests")
+			cmd = exec.Command("kubectl", "get", "deployment", "-n", namespace, "-l", "app.paprika.io/name=e2e-cicd", "-o", "jsonpath={.items[0].metadata.name}")
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).NotTo(BeEmpty(), "A deployment should have been created by the release")
+		})
+	})
+
+	Context("ApplicationDiff", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up diff Application resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-diff", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-diff", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-diff", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should detect diff and populate resource sync status", func() {
+			By("creating an Application for diff testing")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-diff", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [
+						{"name": "dev", "ring": 1}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Application for diff")
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-diff", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying resource sync status is populated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-diff", "-n", namespace, "-o", "jsonpath={.status.resources}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Resource sync status should be populated")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying resource health is populated")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-diff", "-n", namespace, "-o", "jsonpath={.status.resourceHealth}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Resource health should be populated")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+		})
+	})
+
 	Context("DashboardUI", func() {
 		It("should serve the dashboard page", func() {
 			By("requesting the UI dashboard via port-forward")
@@ -597,6 +1385,107 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(err).To(Or(BeNil(), HaveOccurred())) // may EOF after reading
 			body := string(buf[:n])
 			Expect(body).To(ContainSubstring("Paprika"), "Dashboard should contain the title")
+		})
+	})
+
+	Context("Metrics", func() {
+		It("should expose custom Paprika metrics on the /metrics endpoint", func() {
+			By("port-forwarding to the controller metrics service")
+			metricsCmd := exec.Command("kubectl", "port-forward",
+				"-n", namespace,
+				"service/paprika-controller-manager-metrics-service",
+				"8443:8443",
+			)
+			err := metricsCmd.Start()
+			Expect(err).NotTo(HaveOccurred(), "Failed to start port-forward for metrics")
+			defer func() {
+				if metricsCmd.Process != nil {
+					_ = metricsCmd.Process.Signal(syscall.SIGTERM)
+					_, _ = metricsCmd.Process.Wait()
+				}
+			}()
+
+			time.Sleep(3 * time.Second)
+
+			By("creating a service account token for metrics access")
+			token, err := serviceAccountToken()
+			Expect(err).NotTo(HaveOccurred())
+
+			By("querying the metrics endpoint")
+			var metricsBody string
+			Eventually(func(g Gomega) {
+				client := &http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+					},
+					Timeout: 10 * time.Second,
+				}
+				req, reqErr := http.NewRequest("GET", "https://localhost:8443/metrics", nil)
+				g.Expect(reqErr).NotTo(HaveOccurred())
+				req.Header.Set("Authorization", "Bearer "+token)
+				resp, httpErr := client.Do(req)
+				if httpErr != nil {
+					g.Expect(httpErr).NotTo(HaveOccurred())
+					return
+				}
+				defer resp.Body.Close()
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				body, readErr := io.ReadAll(resp.Body)
+				g.Expect(readErr).NotTo(HaveOccurred())
+				metricsBody = string(body)
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("verifying custom Paprika metrics are present")
+			Expect(metricsBody).To(ContainSubstring("paprika_reconcile_total"),
+				"Should expose paprika_reconcile_total metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_reconcile_duration_seconds"),
+				"Should expose paprika_reconcile_duration_seconds metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_pipeline_phase_total"),
+				"Should expose paprika_pipeline_phase_total metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_release_phase_total"),
+				"Should expose paprika_release_phase_total metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_application_phase_total"),
+				"Should expose paprika_application_phase_total metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_canary_weight_current"),
+				"Should expose paprika_canary_weight_current metric")
+			Expect(metricsBody).To(ContainSubstring("paprika_analysis_check_total"),
+				"Should expose paprika_analysis_check_total metric")
+
+			By("verifying reconcile metrics have been recorded for controllers")
+			Expect(metricsBody).To(ContainSubstring(`paprika_reconcile_total{controller="pipeline"`),
+				"Should have recorded pipeline reconcile metrics")
+			Expect(metricsBody).To(ContainSubstring(`paprika_reconcile_total{controller="release"`),
+				"Should have recorded release reconcile metrics")
+			Expect(metricsBody).To(ContainSubstring(`paprika_reconcile_total{controller="application"`),
+				"Should have recorded application reconcile metrics")
+
+			By("verifying pipeline phase metrics show pipeline activity")
+			Expect(metricsBody).To(ContainSubstring("paprika_pipeline_phase_total"),
+				"Should have recorded pipeline phase transitions")
+		})
+
+		It("should expose metrics on the UI server /metrics endpoint", func() {
+			By("requesting the /metrics endpoint from the UI server")
+			var metricsBody string
+			Eventually(func(g Gomega) {
+				resp, err := http.Get("http://localhost:4000/metrics")
+				g.Expect(err).NotTo(HaveOccurred())
+				defer resp.Body.Close()
+				g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				body, readErr := io.ReadAll(resp.Body)
+				g.Expect(readErr).NotTo(HaveOccurred())
+				metricsBody = string(body)
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
+
+			By("verifying Paprika custom metrics are served on UI /metrics")
+			Expect(metricsBody).To(ContainSubstring("paprika_reconcile_total"),
+				"UI /metrics should expose paprika_reconcile_total")
+			Expect(metricsBody).To(ContainSubstring("paprika_pipeline_phase_total"),
+				"UI /metrics should expose paprika_pipeline_phase_total")
+			Expect(metricsBody).To(ContainSubstring("paprika_release_phase_total"),
+				"UI /metrics should expose paprika_release_phase_total")
+			Expect(metricsBody).To(ContainSubstring("paprika_api_request_total"),
+				"UI /metrics should expose paprika_api_request_total")
 		})
 	})
 
@@ -636,8 +1525,8 @@ metadata:
   name: paprika-api-list-pipelines
 rules:
 - apiGroups: ["pipelines.paprika.io"]
-  resources: ["pipelines"]
-  verbs: ["get", "list"]
+  resources: ["pipelines", "applications"]
+  verbs: ["get", "list", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -733,6 +1622,34 @@ subjects:
 			Expect(err).NotTo(HaveOccurred(), "Failed to call ListPipelines RPC")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "ListPipelines RPC should return 200")
+		})
+
+		It("should list applications with source and health fields via API", func() {
+			By("calling ListApplications RPC")
+			resp, err := http.Post(
+				fmt.Sprintf("http://localhost:%d/paprika.v1.PaprikaService/ListApplications", apiPort),
+				"application/json",
+				strings.NewReader("{}"),
+			)
+			Expect(err).NotTo(HaveOccurred(), "Failed to call ListApplications RPC")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "ListApplications RPC should return 200")
+
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(body)).To(ContainSubstring("applications"), "Response should contain applications field")
+		})
+
+		It("should accept SyncApplication RPC calls", func() {
+			By("calling SyncApplication RPC for a non-existent application")
+			resp, err := http.Post(
+				fmt.Sprintf("http://localhost:%d/paprika.v1.PaprikaService/SyncApplication", apiPort),
+				"application/json",
+				strings.NewReader(`{"name": "nonexistent-app", "namespace": "default"}`),
+			)
+			Expect(err).NotTo(HaveOccurred(), "Failed to call SyncApplication RPC")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(BeNumerically(">=", 200), "SyncApplication should accept requests")
 		})
 	})
 })

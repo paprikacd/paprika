@@ -1,0 +1,21 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-git-source
+  namespace: paprika-system
+spec:
+  source:
+    type: git
+    repoURL: https://github.com/benebsworth/paprika.git
+    revision: main
+    path: charts/demo-app
+    pollInterval: 60s
+  stages:
+    - name: dev
+      ring: 1
+      parameters:
+        replicaCount: "1"
+  strategy: Rolling
+  syncPolicy: Auto
+  parameters:
+    replicaCount: "2"

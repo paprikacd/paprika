@@ -7,6 +7,7 @@ resources:
 - bases/pipelines.paprika.io_releases.yaml
 - bases/pipelines.paprika.io_templates.yaml
 - bases/pipelines.paprika.io_artifacts.yaml
+- bases/pipelines.paprika.io_applications.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -11,9 +12,9 @@ import (
 )
 
 func TestAPIModeStartsWithoutError(t *testing.T) {
-	fakeK8s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fakeK8s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer fakeK8s.Close()
 
@@ -21,10 +22,10 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(tokenFile.Name(), []byte("fake-token"), 0600); err != nil {
-		t.Fatal(err)
+	if wErr := os.WriteFile(tokenFile.Name(), []byte("fake-token"), 0o600); wErr != nil {
+		t.Fatal(wErr)
 	}
-	tokenFile.Close()
+	_ = tokenFile.Close()
 
 	ports := freePorts(2)
 	addr, probeAddr := ports[0], ports[1]
@@ -35,30 +36,38 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 	}()
 
 	select {
-	case err := <-errCh:
-		if err != nil {
-			t.Fatalf("runAPIMode returned error: %v", err)
+	case e := <-errCh:
+		if e != nil {
+			t.Fatalf("runAPIMode returned error: %v", e)
 		}
 	case <-time.After(3 * time.Second):
 	}
 
-	resp, err := http.Get("http://" + addr + "/healthz")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", http.NoBody)
+	if err != nil {
+		t.Fatalf("build healthz request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("healthz request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("healthz returned status %d", resp.StatusCode)
 	}
 }
 
 func freePort() string {
-	ln, err := net.Listen("tcp", "localhost:0")
+	lc := net.ListenConfig{}
+	ctx := context.Background()
+	ln, err := lc.Listen(ctx, "tcp", "localhost:0")
 	if err != nil {
 		panic(fmt.Sprintf("no free port found: %v", err))
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 	return addr
 }
 

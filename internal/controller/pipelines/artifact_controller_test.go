@@ -19,8 +19,8 @@ package controller
 import (
 	"context"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo/v2"
+	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -30,20 +30,20 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-var _ = Describe("Artifact Controller", func() {
-	Context("When reconciling a resource", func() {
+var _ = ginkgo.Describe("Artifact Controller", func() {
+	ginkgo.Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: "default",
 		}
 		artifact := &pipelinesv1alpha1.Artifact{}
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind Artifact")
+		ginkgo.BeforeEach(func() {
+			ginkgo.By("creating the custom resource for the Kind Artifact")
 			err := k8sClient.Get(ctx, typeNamespacedName, artifact)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &pipelinesv1alpha1.Artifact{
@@ -53,25 +53,24 @@ var _ = Describe("Artifact Controller", func() {
 					},
 					Spec: pipelinesv1alpha1.ArtifactSpec{
 						Type:      "oci",
-						Reference: "nginx:latest",
+						Reference: "test:v1",
 					},
 				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+				gomega.Expect(k8sClient.Create(ctx, resource)).To(gomega.Succeed())
 			}
 		})
 
-		AfterEach(func() {
+		ginkgo.AfterEach(func() {
 			resource := &pipelinesv1alpha1.Artifact{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			if err != nil && errors.IsNotFound(err) {
-				return
-			}
-			Expect(err).NotTo(HaveOccurred())
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-			_ = k8sClient.Delete(ctx, resource)
+			ginkgo.By("Cleanup the specific resource instance Artifact")
+			gomega.Expect(k8sClient.Delete(ctx, resource)).To(gomega.Succeed())
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
+
+		ginkgo.It("should successfully reconcile the resource", func() {
+			ginkgo.By("Reconciling the created resource")
 			controllerReconciler := &ArtifactReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
@@ -80,9 +79,7 @@ var _ = Describe("Artifact Controller", func() {
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
 		})
 	})
 })

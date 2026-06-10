@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,10 +17,12 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/metrics"
 )
 
 const pipelineFinalizer = "paprika.io/pipeline-cleanup"
 
+// PipelineReconciler reconciles Pipeline resources.
 type PipelineReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
@@ -34,12 +37,24 @@ type PipelineReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods/log,verbs=get;list
 
+// Reconcile handles Pipeline reconciliation.
 func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	result := resultSuccess
+	start := metrics.Timer()
+	defer func() {
+		metrics.ReconcileTotal.WithLabelValues("pipeline", result).Inc()
+		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(start))
+	}()
+
 	log := logf.FromContext(ctx)
 
 	var pipeline pipelinesv1alpha1.Pipeline
 	if err := r.Get(ctx, req.NamespacedName, &pipeline); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		result = resultError
+		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
+			return ctrl.Result{}, fmt.Errorf("getting pipeline: %w", k8sErr)
+		}
+		return ctrl.Result{}, nil
 	}
 
 	if !pipeline.DeletionTimestamp.IsZero() {
@@ -67,10 +82,12 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if pipeline.Status.Phase == "" {
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
-		pipeline.Status.LastExecutionID = fmt.Sprintf("run-%s", req.Name)
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Running").Inc()
+		pipeline.Status.LastExecutionID = "run-" + req.Name
 		now := metav1.Now()
 		pipeline.Status.LastExecutionTime = &now
 		if err := r.Status().Update(ctx, &pipeline); err != nil {
+			result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
 		}
 	}
@@ -81,13 +98,20 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err != nil {
 		log.Error(err, "Pipeline execution failed", "pipeline", req.Name)
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
 		pipeline.Status.StepStatuses = stepStatuses
 		if updateErr := r.Status().Update(ctx, &pipeline); updateErr != nil {
+			result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
 		}
 		return ctrl.Result{}, err
 	}
 
+	return r.handlePipelineResult(ctx, &pipeline, stepStatuses, start, &result)
+}
+
+func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepStatuses []pipelinesv1alpha1.StepStatus, start time.Time, result *string) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	allSucceeded := true
 	for _, s := range stepStatuses {
 		if s.Phase == pipelinesv1alpha1.StepFailed {
@@ -98,31 +122,35 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if allSucceeded {
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineSucceeded
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Succeeded").Inc()
+		metrics.PipelineDuration.WithLabelValues(pipeline.Name, pipeline.Namespace).Observe(metrics.Since(start))
 		pipeline.Status.StepStatuses = stepStatuses
-		if err := r.Status().Update(ctx, &pipeline); err != nil {
+		if err := r.Status().Update(ctx, pipeline); err != nil {
+			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to succeeded: %w", err)
 		}
 
 		for _, output := range pipeline.Spec.Artifacts {
-			if err := r.createArtifact(ctx, &pipeline, output); err != nil {
+			if err := r.createArtifact(ctx, pipeline, output); err != nil {
 				log.Error(err, "Failed to create artifact", "artifact", output.Name)
 			}
 		}
 	} else {
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
 		pipeline.Status.StepStatuses = stepStatuses
-		if err := r.Status().Update(ctx, &pipeline); err != nil {
+		if err := r.Status().Update(ctx, pipeline); err != nil {
+			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", err)
 		}
 	}
-
 	return ctrl.Result{}, nil
 }
 
 func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, output pipelinesv1alpha1.PipelineOutput) error {
 	artifact := &pipelinesv1alpha1.Artifact{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: fmt.Sprintf("%s-artifact-", pipeline.Name),
+			GenerateName: pipeline.Name + "-artifact-",
 			Namespace:    pipeline.Namespace,
 			Labels: map[string]string{
 				"paprika.io/pipeline": pipeline.Name,
@@ -137,14 +165,21 @@ func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipel
 			},
 		},
 	}
-	return r.Create(ctx, artifact)
+	if err := r.Create(ctx, artifact); err != nil {
+		return fmt.Errorf("creating artifact: %w", err)
+	}
+	return nil
 }
 
+// SetupWithManager sets up the controller with the Manager.
 func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Pipeline{}).
 		Owns(&corev1.Pod{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Named("pipeline").
-		Complete(r)
+		Complete(r); err != nil {
+		return fmt.Errorf("setting up pipeline controller: %w", err)
+	}
+	return nil
 }

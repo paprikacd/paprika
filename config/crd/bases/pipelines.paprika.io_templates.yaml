@@ -17,6 +17,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Template represents a renderable template.
         properties:
           apiVersion:
             description: |-
@@ -36,35 +37,84 @@ spec:
           metadata:
             type: object
           spec:
+            description: TemplateSpec defines the specification for a template.
             properties:
               chart:
+                description: ChartRef references a Helm chart.
                 properties:
                   name:
+                    type: string
+                  path:
+                    description: Path to a local Helm chart directory (alternative
+                      to Repo+Name)
                     type: string
                   repo:
                     type: string
                   version:
                     type: string
+                type: object
+              git:
+                description: GitSourceSpec defines a git source specification.
+                properties:
+                  path:
+                    type: string
+                  repoUrl:
+                    type: string
+                  revision:
+                    type: string
+                  secretRef:
+                    type: string
                 required:
-                - name
-                - repo
-                - version
+                - repoUrl
+                type: object
+              namespace:
+                description: Namespace to pass to helm --namespace
+                type: string
+              s3:
+                description: S3SourceSpec defines an S3 source specification.
+                properties:
+                  bucket:
+                    type: string
+                  endpoint:
+                    type: string
+                  key:
+                    type: string
+                  path:
+                    type: string
+                  region:
+                    type: string
+                  secretRef:
+                    type: string
+                required:
+                - bucket
+                - key
                 type: object
               type:
                 enum:
                 - helm
                 - kubernetes
                 - kustomize
+                - git
+                - s3
+                type: string
+              valuesFile:
+                description: Inline YAML values file content (merged with Release
+                  parameters)
                 type: string
             required:
             - type
             type: object
           status:
+            description: TemplateStatus represents the status of a template.
             properties:
               lastRenderHash:
                 type: string
               lastRendered:
                 format: date-time
+                type: string
+              sourceHash:
+                type: string
+              sourceRevision:
                 type: string
             type: object
         required:

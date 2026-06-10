@@ -66,8 +66,15 @@ make generate   # Regenerate DeepCopy methods
 
 **After editing `*.go` files:**
 ```
-make lint-fix   # Auto-fix code style
-make test       # Run unit tests
+make lint       # Run golangci-lint (v2, uses bin/golangci-lint run)
+make lint-fix   # Auto-fix lint issues (bin/golangci-lint run --fix)
+make lint-config# Validate golangci-lint v2 config (bin/golangci-lint config verify)
+make test       # Run unit tests (skips e2e, uses envtest)
+```
+
+**For e2e tests (on isolated Kind cluster):**
+```
+make test-e2e   # Setup kind + run e2e + cleanup
 ```
 
 ## CLI Commands Cheat Sheet

@@ -1,0 +1,43 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: dev-release
+spec:
+  pipeline: e2e-demo
+  target: dev
+  parameters:
+    features.canary.enabled: "false"
+    features.monitoring.enabled: "false"
+    features.ingress.enabled: "false"
+    replicaCount: "1"
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: staging-release
+spec:
+  pipeline: e2e-demo
+  target: staging
+  parameters:
+    features.canary.enabled: "true"
+    features.monitoring.enabled: "true"
+    features.ingress.enabled: "false"
+    replicaCount: "2"
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: prod-release
+spec:
+  pipeline: e2e-demo
+  target: prod-us-east
+  verify:
+    - type: duration
+      timeout: 60
+  parameters:
+    features.canary.enabled: "true"
+    features.monitoring.enabled: "true"
+    features.ingress.enabled: "true"
+    features.ingress.host: "demo-app.example.com"
+    features.metrics.enabled: "true"
+    replicaCount: "3"

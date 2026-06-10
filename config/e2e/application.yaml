@@ -1,0 +1,58 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      path: /charts/demo-app
+  stages:
+    - name: dev
+      ring: 1
+      parameters:
+        replicaCount: "1"
+        features.canary.enabled: "false"
+        features.monitoring.enabled: "false"
+        features.ingress.enabled: "false"
+    - name: staging
+      ring: 2
+      parameters:
+        replicaCount: "2"
+        features.canary.enabled: "true"
+        features.monitoring.enabled: "true"
+        features.ingress.enabled: "false"
+    - name: prod
+      ring: 3
+      canary:
+        steps: [10, 30, 60, 100]
+        intervalSeconds: 30
+        analysis:
+          checks:
+            - type: http
+              url: http://demo-app-staging:8080/health
+              successThreshold: "99"
+              requestCount: 10
+              timeoutSeconds: 5
+            - type: podMetrics
+              metric: restartRate
+              threshold: "3"
+              windowSeconds: 60
+          rollbackOnFail: true
+      gates:
+        - type: smoke-test
+          endpoint: http://demo-app-staging:8080/health
+          timeout: 60
+      parameters:
+        replicaCount: "3"
+        features.canary.enabled: "true"
+        features.monitoring.enabled: "true"
+        features.ingress.enabled: "true"
+        features.ingress.host: demo-app.example.com
+  strategy: Canary
+  syncPolicy: Auto
+  parameters:
+    image.tag: latest
+  onFailure:
+    action: rollback

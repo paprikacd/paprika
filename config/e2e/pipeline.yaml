@@ -1,0 +1,37 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: e2e-demo
+spec:
+  sources:
+    - type: git
+      url: https://github.com/nginx/nginx.git
+  steps:
+    - name: clone
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        echo "=== Cloning source repository ==="
+        echo "Source: https://github.com/nginx/nginx.git"
+        mkdir -p /workspace && cd /workspace
+        git clone --depth 1 https://github.com/nginx/nginx.git source 2>&1 || echo "Clone simulated (network may be restricted)"
+        echo "Clone step complete"
+    - name: build
+      image: alpine:3.19
+      depends: [clone]
+      script: |
+        #!/bin/sh
+        echo "=== Building application ==="
+        echo "Compiling artifacts..."
+        sleep 2
+        echo "Build complete"
+    - name: test
+      image: alpine:3.19
+      depends: [build]
+      script: |
+        #!/bin/sh
+        echo "=== Running tests ==="
+        echo "Unit tests... PASSED"
+        echo "Integration tests... PASSED"
+        sleep 1
+        echo "All tests passed"

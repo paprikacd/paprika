@@ -42,6 +42,18 @@ const (
 	// PaprikaServiceListStagesProcedure is the fully-qualified name of the PaprikaService's ListStages
 	// RPC.
 	PaprikaServiceListStagesProcedure = "/paprika.v1.PaprikaService/ListStages"
+	// PaprikaServiceListApplicationsProcedure is the fully-qualified name of the PaprikaService's
+	// ListApplications RPC.
+	PaprikaServiceListApplicationsProcedure = "/paprika.v1.PaprikaService/ListApplications"
+	// PaprikaServiceGetApplicationProcedure is the fully-qualified name of the PaprikaService's
+	// GetApplication RPC.
+	PaprikaServiceGetApplicationProcedure = "/paprika.v1.PaprikaService/GetApplication"
+	// PaprikaServiceSyncApplicationProcedure is the fully-qualified name of the PaprikaService's
+	// SyncApplication RPC.
+	PaprikaServiceSyncApplicationProcedure = "/paprika.v1.PaprikaService/SyncApplication"
+	// PaprikaServiceApproveGateProcedure is the fully-qualified name of the PaprikaService's
+	// ApproveGate RPC.
+	PaprikaServiceApproveGateProcedure = "/paprika.v1.PaprikaService/ApproveGate"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -49,6 +61,10 @@ type PaprikaServiceClient interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
 	ListReleases(context.Context, *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error)
 	ListStages(context.Context, *connect.Request[v1.ListStagesRequest]) (*connect.Response[v1.ListStagesResponse], error)
+	ListApplications(context.Context, *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error)
+	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
+	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
+	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -80,14 +96,42 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("ListStages")),
 			connect.WithClientOptions(opts...),
 		),
+		listApplications: connect.NewClient[v1.ListApplicationsRequest, v1.ListApplicationsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListApplicationsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListApplications")),
+			connect.WithClientOptions(opts...),
+		),
+		getApplication: connect.NewClient[v1.GetApplicationRequest, v1.GetApplicationResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetApplicationProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetApplication")),
+			connect.WithClientOptions(opts...),
+		),
+		syncApplication: connect.NewClient[v1.SyncApplicationRequest, v1.SyncApplicationResponse](
+			httpClient,
+			baseURL+PaprikaServiceSyncApplicationProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("SyncApplication")),
+			connect.WithClientOptions(opts...),
+		),
+		approveGate: connect.NewClient[v1.ApproveGateRequest, v1.ApproveGateResponse](
+			httpClient,
+			baseURL+PaprikaServiceApproveGateProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ApproveGate")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // paprikaServiceClient implements PaprikaServiceClient.
 type paprikaServiceClient struct {
-	listPipelines *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
-	listReleases  *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
-	listStages    *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
+	listPipelines    *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
+	listReleases     *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
+	listStages       *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
+	listApplications *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
+	getApplication   *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
+	syncApplication  *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
+	approveGate      *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -105,11 +149,35 @@ func (c *paprikaServiceClient) ListStages(ctx context.Context, req *connect.Requ
 	return c.listStages.CallUnary(ctx, req)
 }
 
+// ListApplications calls paprika.v1.PaprikaService.ListApplications.
+func (c *paprikaServiceClient) ListApplications(ctx context.Context, req *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error) {
+	return c.listApplications.CallUnary(ctx, req)
+}
+
+// GetApplication calls paprika.v1.PaprikaService.GetApplication.
+func (c *paprikaServiceClient) GetApplication(ctx context.Context, req *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error) {
+	return c.getApplication.CallUnary(ctx, req)
+}
+
+// SyncApplication calls paprika.v1.PaprikaService.SyncApplication.
+func (c *paprikaServiceClient) SyncApplication(ctx context.Context, req *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error) {
+	return c.syncApplication.CallUnary(ctx, req)
+}
+
+// ApproveGate calls paprika.v1.PaprikaService.ApproveGate.
+func (c *paprikaServiceClient) ApproveGate(ctx context.Context, req *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error) {
+	return c.approveGate.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
 	ListReleases(context.Context, *connect.Request[v1.ListReleasesRequest]) (*connect.Response[v1.ListReleasesResponse], error)
 	ListStages(context.Context, *connect.Request[v1.ListStagesRequest]) (*connect.Response[v1.ListStagesResponse], error)
+	ListApplications(context.Context, *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error)
+	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
+	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
+	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -137,6 +205,30 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("ListStages")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListApplicationsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListApplicationsProcedure,
+		svc.ListApplications,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListApplications")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetApplicationHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetApplicationProcedure,
+		svc.GetApplication,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetApplication")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceSyncApplicationHandler := connect.NewUnaryHandler(
+		PaprikaServiceSyncApplicationProcedure,
+		svc.SyncApplication,
+		connect.WithSchema(paprikaServiceMethods.ByName("SyncApplication")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceApproveGateHandler := connect.NewUnaryHandler(
+		PaprikaServiceApproveGateProcedure,
+		svc.ApproveGate,
+		connect.WithSchema(paprikaServiceMethods.ByName("ApproveGate")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -145,6 +237,14 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceListReleasesHandler.ServeHTTP(w, r)
 		case PaprikaServiceListStagesProcedure:
 			paprikaServiceListStagesHandler.ServeHTTP(w, r)
+		case PaprikaServiceListApplicationsProcedure:
+			paprikaServiceListApplicationsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetApplicationProcedure:
+			paprikaServiceGetApplicationHandler.ServeHTTP(w, r)
+		case PaprikaServiceSyncApplicationProcedure:
+			paprikaServiceSyncApplicationHandler.ServeHTTP(w, r)
+		case PaprikaServiceApproveGateProcedure:
+			paprikaServiceApproveGateHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -164,4 +264,20 @@ func (UnimplementedPaprikaServiceHandler) ListReleases(context.Context, *connect
 
 func (UnimplementedPaprikaServiceHandler) ListStages(context.Context, *connect.Request[v1.ListStagesRequest]) (*connect.Response[v1.ListStagesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListStages is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListApplications(context.Context, *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListApplications is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplication is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.SyncApplication is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ApproveGate is not implemented"))
 }

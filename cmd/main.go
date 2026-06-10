@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main is the entry point for the Paprika operator and API server.
 package main
 
 import (
@@ -22,9 +23,11 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -38,6 +41,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/health"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
@@ -57,7 +62,6 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// nolint:gocyclo
 func main() {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
@@ -127,50 +131,9 @@ func main() {
 func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
 	metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace string,
 	enableLeaderElection, secureMetrics, enableHTTP2 bool) {
-	var tlsOpts []func(*tls.Config)
-	disableHTTP2 := func(c *tls.Config) {
-		setupLog.Info("Disabling HTTP/2")
-		c.NextProtos = []string{"http/1.1"}
-	}
-
-	if !enableHTTP2 {
-		tlsOpts = append(tlsOpts, disableHTTP2)
-	}
-
-	webhookTLSOpts := tlsOpts
-	webhookServerOptions := webhook.Options{
-		TLSOpts: webhookTLSOpts,
-	}
-
-	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
-
-		webhookServerOptions.CertDir = webhookCertPath
-		webhookServerOptions.CertName = webhookCertName
-		webhookServerOptions.KeyName = webhookCertKey
-	}
-
-	webhookServer := webhook.NewServer(webhookServerOptions)
-
-	metricsServerOptions := metricsserver.Options{
-		BindAddress:   metricsAddr,
-		SecureServing: secureMetrics,
-		TLSOpts:       tlsOpts,
-	}
-
-	if secureMetrics {
-		metricsServerOptions.FilterProvider = filters.WithAuthenticationAndAuthorization
-	}
-
-	if len(metricsCertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
-
-		metricsServerOptions.CertDir = metricsCertPath
-		metricsServerOptions.CertName = metricsCertName
-		metricsServerOptions.KeyName = metricsCertKey
-	}
+	tlsOpts := buildOperatorTLSOptions(enableHTTP2)
+	webhookServer := buildOperatorWebhookServer(tlsOpts, webhookCertPath, webhookCertName, webhookCertKey)
+	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, metricsAddr, metricsCertPath, metricsCertName, metricsCertKey, secureMetrics)
 
 	cfg := ctrl.GetConfigOrDie()
 	cfg.QPS = 50
@@ -194,51 +157,123 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		os.Exit(1)
 	}
 
-	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		setupLog.Error(err, "Failed to create dynamic client")
+	setupOperatorControllers(mgr, k8sClient, operatorNamespace)
+	startOperatorUI(mgr, uiAddr)
+
+	setupLog.Info("Starting manager")
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
+	}
+}
+
+func buildOperatorTLSOptions(enableHTTP2 bool) []func(*tls.Config) {
+	if enableHTTP2 {
+		return nil
+	}
+	setupLog.Info("Disabling HTTP/2")
+	return []func(*tls.Config){func(c *tls.Config) {
+		c.NextProtos = []string{"http/1.1"}
+	}}
+}
+
+func buildOperatorWebhookServer(tlsOpts []func(*tls.Config), certPath, certName, certKey string) webhook.Server {
+	options := webhook.Options{TLSOpts: tlsOpts}
+	if certPath != "" {
+		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", certPath, "webhook-cert-name", certName, "webhook-cert-key", certKey)
+		options.CertDir = certPath
+		options.CertName = certName
+		options.KeyName = certKey
+	}
+	return webhook.NewServer(options)
+}
+
+func buildOperatorMetricsOptions(tlsOpts []func(*tls.Config), bindAddr, certPath, certName, certKey string, secure bool) metricsserver.Options {
+	options := metricsserver.Options{
+		BindAddress:   bindAddr,
+		SecureServing: secure,
+		TLSOpts:       tlsOpts,
+	}
+	if secure {
+		options.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+	if certPath != "" {
+		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
+			"metrics-cert-path", certPath, "metrics-cert-name", certName, "metrics-cert-key", certKey)
+		options.CertDir = certPath
+		options.CertName = certName
+		options.KeyName = certKey
+	}
+	return options
+}
+
+func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) {
+	controllers := []struct {
+		name  string
+		setup func() error
+	}{
+		{"pipeline", func() error {
+			return (&controller.PipelineReconciler{
+				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+				K8sClient: k8sClient, Namespace: operatorNamespace,
+			}).SetupWithManager(mgr)
+		}},
+		{"stage", func() error {
+			return (&controller.StageReconciler{
+				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+			}).SetupWithManager(mgr)
+		}},
+		{"release", func() error {
+			dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
+			if err != nil {
+				return fmt.Errorf("failed to create dynamic client: %w", err)
+			}
+			return (&controller.ReleaseReconciler{
+				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+				K8sClient: k8sClient, Namespace: operatorNamespace,
+				DynamicClient: dynamicClient,
+			}).SetupWithManager(mgr)
+		}},
+		{"template", func() error {
+			return (&controller.TemplateReconciler{
+				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+			}).SetupWithManager(mgr)
+		}},
+		{"artifact", func() error {
+			return (&controller.ArtifactReconciler{
+				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+			}).SetupWithManager(mgr)
+		}},
+		{"application", func() error {
+			dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
+			if err != nil {
+				return fmt.Errorf("creating dynamic client: %w", err)
+			}
+			k8sClientset, ok := k8sClient.(*kubernetes.Clientset)
+			if !ok {
+				return fmt.Errorf("expected *kubernetes.Clientset, got %T", k8sClient)
+			}
+			return (&controller.ApplicationReconciler{
+				Client:     mgr.GetClient(),
+				Scheme:     mgr.GetScheme(),
+				K8sClient:  k8sClientset,
+				Namespace:  operatorNamespace,
+				RestConfig: mgr.GetConfig(),
+				WorkDir:    "/tmp/paprika-sources",
+				HealthEval: health.NewEvaluator(),
+				DiffEngine: engine.NewDiffEngine(dynClient, discovery.NewDiscoveryClientForConfigOrDie(mgr.GetConfig())),
+				ResHealth:  health.NewResourceHealthChecker(mgr.GetClient()),
+				ClusterMgr: controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
+			}).SetupWithManager(mgr)
+		}},
 	}
 
-	if err := (&controller.PipelineReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		K8sClient: k8sClient,
-		Namespace: operatorNamespace,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "pipeline")
-		os.Exit(1)
-	}
-	if err := (&controller.StageReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "stage")
-		os.Exit(1)
-	}
-	if err := (&controller.ReleaseReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		K8sClient:     k8sClient,
-		DynamicClient: dynamicClient,
-		Namespace:     operatorNamespace,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "release")
-		os.Exit(1)
-	}
-	if err := (&controller.TemplateReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "template")
-		os.Exit(1)
-	}
-	if err := (&controller.ArtifactReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "artifact")
-		os.Exit(1)
+	for _, c := range controllers {
+		if err := c.setup(); err != nil {
+			setupLog.Error(err, "Failed to create controller", "controller", c.name)
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:webhook
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
@@ -269,7 +304,9 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		setupLog.Error(err, "Failed to set up ready check")
 		os.Exit(1)
 	}
+}
 
+func startOperatorUI(mgr ctrl.Manager, uiAddr string) {
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient())
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer)
 
@@ -278,8 +315,9 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	uiMux.Handle("/", api.UIHandler())
 
 	uiServer := &http.Server{
-		Addr:    uiAddr,
-		Handler: uiMux,
+		Addr:              uiAddr,
+		Handler:           uiMux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
@@ -289,85 +327,117 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 			os.Exit(1)
 		}
 	}()
-
-	setupLog.Info("Starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "Failed to run manager")
-		os.Exit(1)
-	}
 }
 
 func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
-	var config *rest.Config
-	var err error
-
-	if k8sAPIServer != "" {
-		token := ""
-		if k8sTokenFile != "" {
-			data, err := os.ReadFile(k8sTokenFile)
-			if err != nil {
-				return fmt.Errorf("read token file: %w", err)
-			}
-			token = string(data)
-		} else {
-			data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
-			if err != nil {
-				return fmt.Errorf("no token file or in-cluster token: %w", err)
-			}
-			token = string(data)
-		}
-		config = &rest.Config{
-			Host:            k8sAPIServer,
-			BearerToken:     token,
-			TLSClientConfig: rest.TLSClientConfig{Insecure: false},
-		}
-	} else {
-		config, err = rest.InClusterConfig()
-		if err != nil {
-			return fmt.Errorf("get in-cluster config (use --k8s-api-server): %w", err)
-		}
+	config, err := buildAPIConfig(k8sAPIServer, k8sTokenFile)
+	if err != nil {
+		return err
 	}
 
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
-
-	apiClient, err := client.New(config, client.Options{Scheme: scheme})
+	apiClient, err := createAPIClient(config)
 	if err != nil {
-		return fmt.Errorf("create k8s client: %w", err)
+		return err
 	}
 
 	paprikaServer := api.NewPaprikaServer(apiClient)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer)
 
+	mux := buildAPIMux(connectHandler)
+	healthMux := buildHealthMux()
+
+	startHealthProbeServer(healthMux, probeAddr)
+	return startAPIServer(mux, uiAddr)
+}
+
+func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
+	if k8sAPIServer == "" {
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, fmt.Errorf("get in-cluster config (use --k8s-api-server): %w", err)
+		}
+		return config, nil
+	}
+
+	token, err := readBearerToken(k8sTokenFile)
+	if err != nil {
+		return nil, err
+	}
+	return &rest.Config{
+		Host:            k8sAPIServer,
+		BearerToken:     token,
+		TLSClientConfig: rest.TLSClientConfig{Insecure: false},
+	}, nil
+}
+
+func readBearerToken(k8sTokenFile string) (string, error) {
+	if k8sTokenFile == "" {
+		// #nosec G304 -- hardcoded in-cluster token path
+		data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token")
+		if err != nil {
+			return "", fmt.Errorf("no token file or in-cluster token: %w", err)
+		}
+		return string(data), nil
+	}
+	// #nosec G304 -- k8sTokenFile is from a command-line flag
+	data, err := os.ReadFile(k8sTokenFile)
+	if err != nil {
+		return "", fmt.Errorf("read token file: %w", err)
+	}
+	return string(data), nil
+}
+
+func createAPIClient(config *rest.Config) (client.Client, error) {
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
+	apiClient, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("create k8s client: %w", err)
+	}
+	return apiClient, nil
+}
+
+func buildAPIMux(connectHandler http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
-	mux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	}))
+	mux.Handle("/healthz", http.HandlerFunc(healthzHandler))
 	mux.Handle("/", api.UIHandler())
+	return mux
+}
 
+func buildHealthMux() *http.ServeMux {
 	healthMux := http.NewServeMux()
-	healthMux.Handle("/healthz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	}))
-	healthMux.Handle("/readyz", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
-	}))
+	healthMux.Handle("/healthz", http.HandlerFunc(healthzHandler))
+	healthMux.Handle("/readyz", http.HandlerFunc(healthzHandler))
+	return healthMux
+}
 
-	healthServer := &http.Server{Addr: probeAddr, Handler: healthMux}
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintln(w, "ok")
+}
+
+func startHealthProbeServer(healthMux *http.ServeMux, probeAddr string) {
+	healthServer := &http.Server{
+		Addr:              probeAddr,
+		Handler:           healthMux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	go func() {
 		setupLog.Info("Starting health probe server", "addr", probeAddr)
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			setupLog.Error(err, "Health probe server error")
 		}
 	}()
+}
 
-	server := &http.Server{Addr: uiAddr, Handler: mux}
-
+func startAPIServer(mux *http.ServeMux, uiAddr string) error {
+	server := &http.Server{
+		Addr:              uiAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 	setupLog.Info("Starting API server", "addr", uiAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("api server error: %w", err)

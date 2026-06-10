@@ -1,0 +1,45 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-with-ci
+  namespace: paprika-system
+spec:
+  source:
+    type: git
+    repoURL: https://github.com/nginx/nginx.git
+    revision: main
+    path: /
+  build:
+    steps:
+      - name: clone
+        image: alpine:3.19
+        script: |
+          #!/bin/sh
+          echo "Cloning source..."
+          mkdir -p /workspace && cd /workspace
+          git clone --depth 1 https://github.com/nginx/nginx.git source 2>&1 || echo "Clone simulated"
+          echo "Clone complete"
+      - name: build
+        image: alpine:3.19
+        depends: [clone]
+        script: |
+          #!/bin/sh
+          echo "Building..."
+          sleep 2
+          echo "Build complete"
+      - name: test
+        image: alpine:3.19
+        depends: [build]
+        script: |
+          #!/bin/sh
+          echo "Running tests..."
+          sleep 1
+          echo "All tests passed"
+    maxParallel: 5
+  stages:
+    - name: dev
+      ring: 1
+      parameters:
+        replicaCount: "1"
+  strategy: Rolling
+  syncPolicy: Auto

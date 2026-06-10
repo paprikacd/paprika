@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package utils provides test utilities for Paprika e2e tests.
 package utils
 
 import (
@@ -24,7 +25,7 @@ import (
 	"os/exec"
 	"strings"
 
-	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
+	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // dot-import for Ginkgo table tests
 )
 
 const (
@@ -61,6 +62,7 @@ func Run(cmd *exec.Cmd) (string, error) {
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
+	//nolint:noctx // test utility executing kubectl commands
 	cmd := exec.Command("kubectl", "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
@@ -72,6 +74,7 @@ func UninstallCertManager() {
 		"cert-manager-controller",
 	}
 	for _, lease := range kubeSystemLeases {
+		//nolint:noctx // test utility executing kubectl commands
 		cmd = exec.Command("kubectl", "delete", "lease", lease,
 			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0")
 		if _, err := Run(cmd); err != nil {
@@ -83,12 +86,14 @@ func UninstallCertManager() {
 // InstallCertManager installs the cert manager bundle.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
+	//nolint:noctx // test utility executing kubectl commands
 	cmd := exec.Command("kubectl", "apply", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		return err
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
 	// was re-installed after uninstalling on a cluster.
+	//nolint:noctx // test utility executing kubectl commands
 	cmd = exec.Command("kubectl", "wait", "deployment.apps/cert-manager-webhook",
 		"--for", "condition=Available",
 		"--namespace", "cert-manager",
@@ -113,6 +118,7 @@ func IsCertManagerCRDsInstalled() bool {
 	}
 
 	// Execute the kubectl command to get all CRDs
+	//nolint:noctx // test utility executing kubectl commands
 	cmd := exec.Command("kubectl", "get", "crds")
 	output, err := Run(cmd)
 	if err != nil {
@@ -139,6 +145,7 @@ func LoadImageToKindClusterWithName(name, cluster string) error {
 	if v, ok := os.LookupEnv("KIND"); ok {
 		kindBinary = v
 	}
+	//nolint:noctx // test utility executing kind commands
 	cmd := exec.Command(kindBinary, kindOptions...)
 	_, err := Run(cmd)
 	return err
@@ -171,51 +178,60 @@ func GetProjectDir() (string, error) {
 // UncommentCode searches for target in the file and remove the comment prefix
 // of the target content. The target content may span multiple lines.
 func UncommentCode(filename, target, prefix string) error {
-	// false positive
-	// nolint:gosec
-	content, err := os.ReadFile(filename)
+	content, err := os.ReadFile(filename) // #nosec G304 -- test utility
 	if err != nil {
 		return fmt.Errorf("failed to read file %q: %w", filename, err)
 	}
-	strContent := string(content)
 
-	idx := strings.Index(strContent, target)
+	idx := bytes.Index(content, []byte(target))
 	if idx < 0 {
 		return fmt.Errorf("unable to find the code %q to be uncommented", target)
 	}
 
-	out := new(bytes.Buffer)
-	_, err = out.Write(content[:idx])
+	out, err := buildUncommentedContent(content, idx, target, prefix)
 	if err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
+		return err
 	}
 
-	scanner := bufio.NewScanner(bytes.NewBufferString(target))
-	if !scanner.Scan() {
-		return nil
-	}
-	for {
-		if _, err = out.WriteString(strings.TrimPrefix(scanner.Text(), prefix)); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
-		}
-		// Avoid writing a newline in case the previous line was the last in target.
-		if !scanner.Scan() {
-			break
-		}
-		if _, err = out.WriteString("\n"); err != nil {
-			return fmt.Errorf("failed to write to output: %w", err)
-		}
-	}
-
-	if _, err = out.Write(content[idx+len(target):]); err != nil {
-		return fmt.Errorf("failed to write to output: %w", err)
-	}
-
-	// false positive
-	// nolint:gosec
-	if err = os.WriteFile(filename, out.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filename, out.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("failed to write file %q: %w", filename, err)
 	}
 
 	return nil
+}
+
+func buildUncommentedContent(content []byte, idx int, target, prefix string) (*bytes.Buffer, error) {
+	out := new(bytes.Buffer)
+	if _, err := out.Write(content[:idx]); err != nil {
+		return nil, fmt.Errorf("failed to write to output: %w", err)
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBufferString(target))
+	if !scanner.Scan() {
+		return out, nil
+	}
+
+	if err := writeUncommentedLines(out, scanner, prefix); err != nil {
+		return nil, err
+	}
+
+	if _, err := out.Write(content[idx+len(target):]); err != nil {
+		return nil, fmt.Errorf("failed to write to output: %w", err)
+	}
+	return out, nil
+}
+
+func writeUncommentedLines(out *bytes.Buffer, scanner *bufio.Scanner, prefix string) error {
+	for {
+		if _, err := out.WriteString(strings.TrimPrefix(scanner.Text(), prefix)); err != nil {
+			return fmt.Errorf("failed to write to output: %w", err)
+		}
+		// Avoid writing a newline in case the previous line was the last in target.
+		if !scanner.Scan() {
+			return nil
+		}
+		if _, err := out.WriteString("\n"); err != nil {
+			return fmt.Errorf("failed to write to output: %w", err)
+		}
+	}
 }

@@ -1,3 +1,4 @@
+//nolint:staticcheck // NewSimpleClientset deprecated but NewClientset requires --with-applyconfig
 package engine
 
 import (
@@ -113,7 +114,7 @@ func TestCreateStepJob_DefaultNamespace(t *testing.T) {
 	engine := NewWorkflowEngine(fakeClient, "default")
 
 	step := paprika.PipelineStep{Name: "build", Image: "golang:1.22", Script: "go build"}
-	job, err := engine.CreateStepJob(context.Background(), step, "test-pipeline")
+	job, err := engine.CreateStepJob(context.Background(), &step, "test-pipeline")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -137,7 +138,7 @@ func TestCreateStepJob_RetryLimit(t *testing.T) {
 	engine := NewWorkflowEngine(fakeClient, "default")
 
 	step := paprika.PipelineStep{Name: "test", Image: "golang:1.22", Script: "go test", Retry: 2}
-	job, err := engine.CreateStepJob(context.Background(), step, "test-pipeline")
+	job, err := engine.CreateStepJob(context.Background(), &step, "test-pipeline")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestCreateStepJob_Timeout(t *testing.T) {
 	engine := NewWorkflowEngine(fakeClient, "default")
 
 	step := paprika.PipelineStep{Name: "build", Image: "golang:1.22", Script: "go build", Timeout: 600}
-	job, err := engine.CreateStepJob(context.Background(), step, "test-pipeline")
+	job, err := engine.CreateStepJob(context.Background(), &step, "test-pipeline")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +168,7 @@ func TestCreateStepJob_DefaultTimeout(t *testing.T) {
 	engine := NewWorkflowEngine(fakeClient, "default")
 
 	step := paprika.PipelineStep{Name: "build", Image: "golang:1.22", Script: "go build"}
-	job, err := engine.CreateStepJob(context.Background(), step, "test-pipeline")
+	job, err := engine.CreateStepJob(context.Background(), &step, "test-pipeline")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +195,7 @@ func TestExecuteStep_Command(t *testing.T) {
 	engine := NewWorkflowEngine(fakeClient, "default")
 
 	step := paprika.PipelineStep{Name: "build", Image: "golang:1.22", Script: "make build"}
-	job, err := engine.ExecuteStep(context.Background(), step, "test-pipeline")
+	job, err := engine.ExecuteStep(context.Background(), &step, "test-pipeline")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

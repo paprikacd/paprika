@@ -1,0 +1,31 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-health
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      path: /charts/demo-app
+  stages:
+    - name: dev
+      ring: 1
+      parameters:
+        replicaCount: "1"
+  strategy: Rolling
+  syncPolicy: Auto
+  parameters:
+    replicaCount: "2"
+  healthChecks:
+    - name: http-health
+      expression: "http.statusCode == 200"
+      httpProbe:
+        url: "http://demo-health-paprika-system:80/health"
+        method: GET
+        expectedStatus: 200
+        timeout: 5
+      interval: "30s"
+    - name: ready-replicas
+      expression: "true"
+      interval: "15s"

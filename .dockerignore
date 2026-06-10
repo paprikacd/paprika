@@ -15,6 +15,9 @@
 !internal/api/server.go
 !internal/api/uihandler.go
 
+# Re-include Helm charts
+!charts/**
+
 # Re-include UI source for static export build
 !ui/**
 ui/**/node_modules/

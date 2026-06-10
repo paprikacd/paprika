@@ -1,0 +1,14 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: canary-release
+spec:
+  pipeline: e2e-demo
+  target: canary-prod
+  parameters:
+    features.canary.enabled: "true"
+    features.monitoring.enabled: "true"
+    features.ingress.enabled: "true"
+    features.ingress.host: "canary-demo.example.com"
+    features.metrics.enabled: "true"
+    replicaCount: "2"

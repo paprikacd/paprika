@@ -1,0 +1,51 @@
+{{- if .Values.features.ingress.enabled -}}
+{{- $canaryWeight := .Values.canaryWeight | int -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-demo-app-stable
+  labels:
+    app.kubernetes.io/name: demo-app
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    track: stable
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.features.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-demo-app-stable
+                port:
+                  number: {{ .Values.service.port }}
+---
+{{- if gt $canaryWeight 0 }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-demo-app-canary
+  labels:
+    app.kubernetes.io/name: demo-app
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    track: canary
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: {{ $canaryWeight | quote }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.features.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-demo-app-canary
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
+{{- end }}

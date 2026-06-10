@@ -1,0 +1,23 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-s3-source
+  namespace: paprika-system
+spec:
+  source:
+    type: s3
+    bucket: paprika-charts
+    key: demo-app-0.1.0.tgz
+    endpoint: http://localstack:4566
+    region: us-east-1
+    path: demo-app
+    pollInterval: 30s
+  stages:
+    - name: dev
+      ring: 1
+      parameters:
+        replicaCount: "1"
+  strategy: Rolling
+  syncPolicy: Auto
+  parameters:
+    replicaCount: "2"

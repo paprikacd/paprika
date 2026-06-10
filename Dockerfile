@@ -42,6 +42,7 @@ RUN apk add --no-cache curl && \
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/manager .
+COPY --from=builder /workspace/charts /charts
 COPY --from=helm-builder /helm /usr/local/bin/helm
 ENV HELM_CACHE_HOME=/tmp/helm/cache \
     HELM_CONFIG_HOME=/tmp/helm/config \

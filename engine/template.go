@@ -1,56 +1,123 @@
 package engine
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/yaml"
+
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/source"
 )
 
-type TemplateRenderer struct {
+// TemplateRendererImpl renders Helm charts and resolves sources for templates.
+type TemplateRendererImpl struct {
 	WorkDir string
 }
 
-func NewTemplateRenderer(workDir string) *TemplateRenderer {
-	return &TemplateRenderer{WorkDir: workDir}
+// NewTemplateRenderer creates a new TemplateRendererImpl with the given working directory.
+func NewTemplateRenderer(workDir string) *TemplateRendererImpl {
+	return &TemplateRendererImpl{WorkDir: workDir}
 }
 
-func (r *TemplateRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
-	if tmpl.Spec.Type != "helm" {
-		return nil, fmt.Errorf("unsupported template type %q (Phase 1: helm only)", tmpl.Spec.Type)
+func ensureHelmDirs() error {
+	dirs := []string{
+		"/tmp/helm/cache",
+		"/tmp/helm/config",
+		"/tmp/helm/data",
+	}
+	for _, d := range dirs {
+		// #nosec G301 -- helm requires world-readable cache directories
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return fmt.Errorf("failed to create helm dir %s: %w", d, err)
+		}
+	}
+	return nil
+}
+
+// ResolveSource resolves a template source (git, S3, etc.) and returns the local path.
+func (r *TemplateRendererImpl) ResolveSource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
+	switch tmpl.Spec.Type {
+	case "git":
+		gitSrc := tmpl.Spec.Git
+		if gitSrc == nil {
+			return nil, errors.New("git source spec is required for type=git")
+		}
+		result, err := (&source.GitSource{
+			RepoURL:   gitSrc.RepoURL,
+			Revision:  gitSrc.Revision,
+			Path:      gitSrc.Path,
+			WorkDir:   r.WorkDir,
+			SecretRef: gitSrc.SecretRef,
+		}).Resolve(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve git source: %w", err)
+		}
+		return result, nil
+	case "s3":
+		s3Src := tmpl.Spec.S3
+		if s3Src == nil {
+			return nil, errors.New("s3 source spec is required for type=s3")
+		}
+		result, err := (&source.S3Source{
+			Bucket:   s3Src.Bucket,
+			Key:      s3Src.Key,
+			Region:   s3Src.Region,
+			Endpoint: s3Src.Endpoint,
+			WorkDir:  r.WorkDir,
+			Path:     s3Src.Path,
+		}).Resolve(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("resolve s3 source: %w", err)
+		}
+		return result, nil
+	default:
+		return nil, nil
+	}
+}
+
+// Render renders a single Helm template and returns the resulting YAML manifests.
+func (r *TemplateRendererImpl) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
+	if err := ensureHelmDirs(); err != nil {
+		return nil, err
 	}
 
-	chart := tmpl.Spec.Chart
-	repoName := sanitizeRepoName(chart.Repo)
-
-	addCmd := exec.CommandContext(ctx, "helm", "repo", "add", repoName, chart.Repo, "--no-update")
-	if out, err := addCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("helm repo add failed: %w\nOutput: %s", err, string(out))
+	chart, localPath, err := r.resolveChartPath(ctx, tmpl)
+	if err != nil {
+		return nil, err
 	}
 
-	updateCmd := exec.CommandContext(ctx, "helm", "repo", "update")
-	if out, err := updateCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("helm repo update failed: %w\nOutput: %s", err, string(out))
+	var args []string
+
+	if localPath != "" {
+		args = []string{"template", localPath}
+	} else {
+		args, err = r.resolveChartFromRepo(ctx, chart)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	chartRef := fmt.Sprintf("%s/%s", repoName, chart.Name)
-	args := []string{"template", chartRef}
-
-	if chart.Version != "" {
-		args = append(args, "--version", chart.Version)
+	if tmpl.Spec.Namespace != "" {
+		args = append(args, "--namespace", tmpl.Spec.Namespace)
 	}
 
-	var valueArgs []string
-	for k, v := range params {
-		valueArgs = append(valueArgs, fmt.Sprintf("%s=%s", k, v))
+	valuesFile, err := r.writeValuesFile(params, tmpl.Spec.ValuesFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to write values file: %w", err)
 	}
-	if len(valueArgs) > 0 {
-		args = append(args, "--set", strings.Join(valueArgs, ","))
+	if valuesFile != "" {
+		args = append(args, "--values", valuesFile)
 	}
 
+	// #nosec G204 -- helm template with user-provided args from chart spec
 	templateCmd := exec.CommandContext(ctx, "helm", args...)
 	var stdout, stderr bytes.Buffer
 	templateCmd.Stdout = &stdout
@@ -63,13 +130,80 @@ func (r *TemplateRenderer) Render(ctx context.Context, tmpl *paprika.Template, p
 	return stdout.Bytes(), nil
 }
 
-func (r *TemplateRenderer) RenderAll(ctx context.Context, templates []paprika.Template, params map[string]string) ([]byte, error) {
+func (r *TemplateRendererImpl) resolveChartPath(ctx context.Context, tmpl *paprika.Template) (paprika.ChartRef, string, error) {
+	if tmpl.Spec.Type == "helm" {
+		chart := tmpl.Spec.Chart
+		if chart.Path != "" {
+			return chart, chart.Path, nil
+		}
+		return chart, "", nil
+	}
+
+	result, err := r.ResolveSource(ctx, tmpl)
+	if err != nil {
+		return paprika.ChartRef{}, "", fmt.Errorf("resolve source: %w", err)
+	}
+
+	return paprika.ChartRef{Path: result.LocalPath}, result.LocalPath, nil
+}
+
+func (r *TemplateRendererImpl) writeValuesFile(params map[string]string, baseContent string) (string, error) {
+	if len(params) == 0 && baseContent == "" {
+		return "", nil
+	}
+
+	f, err := os.CreateTemp("", "paprika-values-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("create temp values file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if baseContent != "" {
+		if _, err := f.WriteString(baseContent); err != nil {
+			return "", fmt.Errorf("write values base content: %w", err)
+		}
+		if len(params) > 0 && !strings.HasSuffix(baseContent, "\n") {
+			_, _ = f.WriteString("\n")
+		}
+	}
+
+	for k, v := range params {
+		if _, err := fmt.Fprintf(f, "%s: %q\n", k, v); err != nil {
+			return "", fmt.Errorf("write values param: %w", err)
+		}
+	}
+
+	return f.Name(), nil
+}
+
+func (r *TemplateRendererImpl) resolveChartFromRepo(ctx context.Context, chart paprika.ChartRef) ([]string, error) {
+	repoName := sanitizeRepoName(chart.Repo)
+	// #nosec G204 -- helm repo commands with trusted chart repo URLs
+	addCmd := exec.CommandContext(ctx, "helm", "repo", "add", repoName, chart.Repo, "--no-update")
+	if out, addErr := addCmd.CombinedOutput(); addErr != nil {
+		return nil, fmt.Errorf("helm repo add failed: %w\nOutput: %s", addErr, string(out))
+	}
+	// #nosec G204 -- helm repo update is a static command
+	updateCmd := exec.CommandContext(ctx, "helm", "repo", "update")
+	if out, updateErr := updateCmd.CombinedOutput(); updateErr != nil {
+		return nil, fmt.Errorf("helm repo update failed: %w\nOutput: %s", updateErr, string(out))
+	}
+	chartRef := fmt.Sprintf("%s/%s", repoName, chart.Name)
+	args := []string{"template", chartRef}
+	if chart.Version != "" {
+		args = append(args, "--version", chart.Version)
+	}
+	return args, nil
+}
+
+// RenderAll renders all templates and joins the resulting manifests.
+func (r *TemplateRendererImpl) RenderAll(ctx context.Context, templates []paprika.Template, params map[string]string) ([]byte, error) {
 	var allManifests [][]byte
 
-	for i, tmpl := range templates {
-		rendered, err := r.Render(ctx, &tmpl, params)
+	for i := range templates {
+		rendered, err := r.Render(ctx, &templates[i], params)
 		if err != nil {
-			return nil, fmt.Errorf("template %d (%s) render failed: %w", i, tmpl.Name, err)
+			return nil, fmt.Errorf("template %d (%s) render failed: %w", i, templates[i].Name, err)
 		}
 		allManifests = append(allManifests, rendered)
 	}
@@ -77,7 +211,8 @@ func (r *TemplateRenderer) RenderAll(ctx context.Context, templates []paprika.Te
 	return bytes.Join(allManifests, []byte("\n---\n")), nil
 }
 
-func (r *TemplateRenderer) RenderHelmChart(ctx context.Context, chartName, chartRepo, chartVersion string, values map[string]string) ([]byte, error) {
+// RenderHelmChart renders a Helm chart from a repository and returns the resulting YAML.
+func (r *TemplateRendererImpl) RenderHelmChart(ctx context.Context, chartName, chartRepo, chartVersion string, values map[string]string) ([]byte, error) {
 	tmpl := &paprika.Template{
 		Spec: paprika.TemplateSpec{
 			Type: "helm",
@@ -89,6 +224,28 @@ func (r *TemplateRenderer) RenderHelmChart(ctx context.Context, chartName, chart
 		},
 	}
 	return r.Render(ctx, tmpl, values)
+}
+
+// SplitYAMLDocuments splits a multi-document YAML into individual documents.
+func SplitYAMLDocuments(manifests []byte) [][]byte {
+	var documents [][]byte
+	reader := bufio.NewReader(bytes.NewReader(manifests))
+	decoder := yaml.NewYAMLReader(reader)
+	for {
+		doc, err := decoder.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			continue
+		}
+		doc = bytes.TrimSpace(doc)
+		if len(doc) == 0 {
+			continue
+		}
+		documents = append(documents, doc)
+	}
+	return documents
 }
 
 func sanitizeRepoName(repoURL string) string {

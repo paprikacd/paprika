@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the paprika itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- application_admin_role.yaml
+- application_editor_role.yaml
+- application_viewer_role.yaml
 - artifact_admin_role.yaml
 - artifact_editor_role.yaml
 - artifact_viewer_role.yaml

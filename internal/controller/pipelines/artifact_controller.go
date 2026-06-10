@@ -18,15 +18,19 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/metrics"
 )
+
+const resultSuccess = "success"
+const resultError = "error"
 
 // ArtifactReconciler reconciles a Artifact object
 type ArtifactReconciler struct {
@@ -47,19 +51,25 @@ type ArtifactReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
-func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
-
-	// TODO(user): your logic here
+func (r *ArtifactReconciler) Reconcile(_ context.Context, _ ctrl.Request) (ctrl.Result, error) {
+	result := resultSuccess
+	start := metrics.Timer()
+	defer func() {
+		metrics.ReconcileTotal.WithLabelValues("artifact", result).Inc()
+		metrics.ReconcileDuration.WithLabelValues("artifact").Observe(metrics.Since(start))
+	}()
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Artifact{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Named("artifact").
-		Complete(r)
+		Complete(r); err != nil {
+		return fmt.Errorf("setting up artifact controller: %w", err)
+	}
+	return nil
 }

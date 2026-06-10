@@ -1,0 +1,124 @@
+{{- $canaryWeight := .Values.canaryWeight | int -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-demo-app-stable
+  labels:
+    app.kubernetes.io/name: demo-app
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    track: stable
+    features.canary: {{ .Values.features.canary.enabled | quote }}
+    features.monitoring: {{ .Values.features.monitoring.enabled | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-app
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      track: stable
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo-app
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        track: stable
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: FEATURE_CANARY
+              value: {{ .Values.features.canary.enabled | quote }}
+            - name: FEATURE_MONITORING
+              value: {{ .Values.features.monitoring.enabled | quote }}
+            - name: TRACK
+              value: "stable"
+            {{- if .Values.features.metrics.enabled }}
+            - name: METRICS_PATH
+              value: {{ .Values.features.metrics.path }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          {{- if .Values.features.monitoring.enabled }}
+        - name: sidecar
+          image: "{{ .Values.features.monitoring.sidecarImage }}"
+          ports:
+            - containerPort: 9100
+              name: metrics
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          {{- end }}
+---
+{{- if gt $canaryWeight 0 }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-demo-app-canary
+  labels:
+    app.kubernetes.io/name: demo-app
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    track: canary
+    features.canary: {{ .Values.features.canary.enabled | quote }}
+    features.monitoring: {{ .Values.features.monitoring.enabled | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: demo-app
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      track: canary
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: demo-app
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        track: canary
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: FEATURE_CANARY
+              value: {{ .Values.features.canary.enabled | quote }}
+            - name: FEATURE_MONITORING
+              value: {{ .Values.features.monitoring.enabled | quote }}
+            - name: TRACK
+              value: "canary"
+            {{- if .Values.features.metrics.enabled }}
+            - name: METRICS_PATH
+              value: {{ .Values.features.metrics.path }}
+            {{- end }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          {{- if .Values.features.monitoring.enabled }}
+        - name: sidecar
+          image: "{{ .Values.features.monitoring.sidecarImage }}"
+          ports:
+            - containerPort: 9100
+              name: metrics
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          {{- end }}
+{{- end }}

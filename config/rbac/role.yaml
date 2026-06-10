@@ -57,6 +57,26 @@ rules:
   - update
   - watch
 - apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - virtualservices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - networking.k8s.io
   resources:
   - ingresses
@@ -71,6 +91,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications
   - artifacts
   - pipelines
   - releases
@@ -87,6 +108,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/finalizers
   - artifacts/finalizers
   - pipelines/finalizers
   - releases/finalizers
@@ -97,6 +119,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/status
   - artifacts/status
   - pipelines/status
   - releases/status

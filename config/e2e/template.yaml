@@ -1,0 +1,8 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Template
+metadata:
+  name: demo-app-local
+spec:
+  type: helm
+  chart:
+    path: /charts/demo-app

@@ -1,0 +1,35 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+spec:
+  name: dev
+  ring: 1
+  templates:
+    - demo-app-local
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: staging
+spec:
+  name: staging
+  ring: 2
+  templates:
+    - demo-app-local
+  gates:
+    - type: duration
+      timeout: 30
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-us-east
+spec:
+  name: prod-us-east
+  ring: 3
+  templates:
+    - demo-app-local
+  gates:
+    - type: duration
+      timeout: 60

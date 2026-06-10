@@ -54,8 +54,9 @@ var _ = Describe("Template Controller", func() {
 					Spec: pipelinesv1alpha1.TemplateSpec{
 						Type: "helm",
 						Chart: pipelinesv1alpha1.ChartRef{
-							Repo: "https://charts.example.com",
-							Name: "nginx",
+							Name:    "test-chart",
+							Repo:    "https://example.com/charts",
+							Version: "1.0.0",
 						},
 					},
 				}

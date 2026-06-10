@@ -17,6 +17,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Release represents a deployment release.
         properties:
           apiVersion:
             description: |-
@@ -36,10 +37,12 @@ spec:
           metadata:
             type: object
           spec:
+            description: ReleaseSpec defines the specification for a release.
             properties:
               from:
                 type: string
-              on_failure:
+              onFailure:
+                description: FailureAction defines the action to take on failure.
                 properties:
                   action:
                     enum:
@@ -54,12 +57,20 @@ spec:
                 required:
                 - action
                 type: object
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Feature flag overrides passed as Helm --set values
+                type: object
               pipeline:
                 type: string
               target:
                 type: string
               verify:
                 items:
+                  description: |-
+                    GateConfig defines a gate for stage promotion.
+                    GateConfig defines a gate for stage promotion.
                   properties:
                     endpoint:
                       type: string
@@ -79,7 +90,14 @@ spec:
             - target
             type: object
           status:
+            description: ReleaseStatus represents the status of a release.
             properties:
+              canaryStepIndex:
+                description: Index into the canary steps array
+                type: integer
+              canaryWeight:
+                description: Current canary traffic weight (0-100)
+                type: integer
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -139,9 +157,11 @@ spec:
               currentStage:
                 type: string
               phase:
+                description: ReleasePhase represents the phase of a release.
                 enum:
                 - Pending
                 - Promoting
+                - Canarying
                 - Verifying
                 - Complete
                 - Failed
@@ -150,6 +170,8 @@ spec:
                 type: string
               promotionHistory:
                 items:
+                  description: PromotionEntry represents an entry in the promotion
+                    history.
                   properties:
                     manifestSnapshot:
                       type: string
