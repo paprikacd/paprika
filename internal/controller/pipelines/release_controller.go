@@ -5,12 +5,17 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -18,11 +23,20 @@ import (
 	"github.com/benebsworth/paprika/gates"
 )
 
+const releaseFinalizer = "paprika.io/release-cleanup"
+
+var managedGVRs = []schema.GroupVersionResource{
+	{Group: "apps", Version: "v1", Resource: "deployments"},
+	{Group: "", Version: "v1", Resource: "services"},
+	{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+}
+
 type ReleaseReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	K8sClient kubernetes.Interface
-	Namespace string
+	Scheme        *runtime.Scheme
+	K8sClient     kubernetes.Interface
+	DynamicClient dynamic.Interface
+	Namespace     string
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
@@ -31,6 +45,9 @@ type ReleaseReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -38,6 +55,27 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	var release pipelinesv1alpha1.Release
 	if err := r.Get(ctx, req.NamespacedName, &release); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !release.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&release, releaseFinalizer) {
+			if err := r.cleanup(ctx, &release); err != nil {
+				return ctrl.Result{}, err
+			}
+			controllerutil.RemoveFinalizer(&release, releaseFinalizer)
+			if err := r.Update(ctx, &release); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(&release, releaseFinalizer) {
+		controllerutil.AddFinalizer(&release, releaseFinalizer)
+		if err := r.Update(ctx, &release); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	if release.Status.Phase == pipelinesv1alpha1.ReleaseComplete ||
@@ -272,6 +310,43 @@ func (r *ReleaseReconciler) rollback(ctx context.Context, release *pipelinesv1al
 	}
 
 	return r.Status().Update(ctx, release)
+}
+
+func (r *ReleaseReconciler) cleanup(ctx context.Context, release *pipelinesv1alpha1.Release) error {
+	log := logf.FromContext(ctx)
+
+	// Use the name recorded in status; fall back to label-based search if empty
+	cmName := release.Status.RenderedManifestSnapshot
+	if cmName != "" {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cmName,
+				Namespace: r.Namespace,
+			},
+		}
+		if err := r.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting manifest snapshot ConfigMap: %w", err)
+		}
+		log.Info("Deleted manifest snapshot ConfigMap", "configmap", cmName)
+	}
+
+	labelSelector := labels.Set{"paprika.io/release": release.Name}.String()
+	for _, gvr := range managedGVRs {
+		items, err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: labelSelector,
+		})
+		if err != nil {
+			return fmt.Errorf("listing %s: %w", gvr.Resource, err)
+		}
+		for _, item := range items.Items {
+			if err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
+			}
+			log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
+		}
+	}
+
+	return nil
 }
 
 func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {

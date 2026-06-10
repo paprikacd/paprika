@@ -10,11 +10,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 )
+
+const pipelineFinalizer = "paprika.io/pipeline-cleanup"
 
 type PipelineReconciler struct {
 	client.Client
@@ -36,6 +39,24 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	var pipeline pipelinesv1alpha1.Pipeline
 	if err := r.Get(ctx, req.NamespacedName, &pipeline); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !pipeline.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(&pipeline, pipelineFinalizer) {
+			controllerutil.RemoveFinalizer(&pipeline, pipelineFinalizer)
+			if err := r.Update(ctx, &pipeline); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(&pipeline, pipelineFinalizer) {
+		controllerutil.AddFinalizer(&pipeline, pipelineFinalizer)
+		if err := r.Update(ctx, &pipeline); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	if pipeline.Status.Phase == pipelinesv1alpha1.PipelineSucceeded ||

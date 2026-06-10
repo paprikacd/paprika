@@ -25,6 +25,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -190,6 +191,12 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		os.Exit(1)
 	}
 
+	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "Failed to create dynamic client")
+		os.Exit(1)
+	}
+
 	if err := (&controller.PipelineReconciler{
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
@@ -207,10 +214,11 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		os.Exit(1)
 	}
 	if err := (&controller.ReleaseReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		K8sClient: k8sClient,
-		Namespace: operatorNamespace,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		K8sClient:     k8sClient,
+		DynamicClient: dynamicClient,
+		Namespace:     operatorNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "release")
 		os.Exit(1)
