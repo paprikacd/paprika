@@ -51,20 +51,25 @@ var _ = Describe("Stage Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: pipelinesv1alpha1.StageSpec{
+						Name:      "production",
+						Ring:      0,
+						Templates: []string{"nginx-template"},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &pipelinesv1alpha1.Stage{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			if err != nil && errors.IsNotFound(err) {
+				return
+			}
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Stage")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			_ = k8sClient.Delete(ctx, resource)
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")

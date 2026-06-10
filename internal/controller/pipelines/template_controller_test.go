@@ -51,20 +51,27 @@ var _ = Describe("Template Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: pipelinesv1alpha1.TemplateSpec{
+						Type: "helm",
+						Chart: pipelinesv1alpha1.ChartRef{
+							Repo: "https://charts.example.com",
+							Name: "nginx",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &pipelinesv1alpha1.Template{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			if err != nil && errors.IsNotFound(err) {
+				return
+			}
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Template")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			_ = k8sClient.Delete(ctx, resource)
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")

@@ -51,22 +51,27 @@ var _ = Describe("Pipeline Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: pipelinesv1alpha1.PipelineSpec{
+						Steps: []pipelinesv1alpha1.PipelineStep{
+							{Name: "build", Image: "golang:1.22", Script: "go build"},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &pipelinesv1alpha1.Pipeline{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			if err != nil && errors.IsNotFound(err) {
+				return
+			}
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Pipeline")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			_ = k8sClient.Delete(ctx, resource)
 		})
-		It("should successfully reconcile the resource", func() {
+		It("should add finalizer on creation", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &PipelineReconciler{
 				Client: k8sClient,
@@ -77,8 +82,10 @@ var _ = Describe("Pipeline Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			updated := &pipelinesv1alpha1.Pipeline{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Finalizers).To(ContainElement("paprika.io/pipeline-cleanup"))
 		})
 	})
 })

@@ -129,6 +129,19 @@ var _ = Describe("Pipeline Webhook", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Must have at least one step"))
 			})
+
+			It("Should reject update with duplicate step names", func() {
+				oldObj.Spec.Steps = []pipelinesv1alpha1.PipelineStep{
+					{Name: "build", Image: "golang:1.22", Script: "go build"},
+				}
+				obj.Spec.Steps = []pipelinesv1alpha1.PipelineStep{
+					{Name: "build", Image: "golang:1.22", Script: "go build"},
+					{Name: "build", Image: "node:20", Script: "npm build"},
+				}
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Step name must be unique"))
+			})
 		})
 
 		Describe("ValidateDelete", func() {

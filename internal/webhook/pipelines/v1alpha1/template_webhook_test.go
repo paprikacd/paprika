@@ -137,6 +137,13 @@ var _ = Describe("Template Webhook", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Template type is immutable"))
 			})
+
+			It("Should reject update that removes chart on helm type", func() {
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				_, err := validator.ValidateUpdate(ctx, oldObj, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Chart repo is required"))
+			})
 		})
 
 		Describe("ValidateDelete", func() {
