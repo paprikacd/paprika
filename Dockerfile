@@ -31,7 +31,7 @@ COPY --from=ui-builder /ui/out/ internal/api/uistatic/
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Install helm in a separate stage
-FROM alpine:3.19 AS helm-builder
+FROM alpine:3.24 AS helm-builder
 RUN apk add --no-cache curl && \
     ARCH=$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/') && \
     curl -fsSL https://get.helm.sh/helm-v3.16.1-linux-${ARCH}.tar.gz -o /tmp/helm.tar.gz && \
