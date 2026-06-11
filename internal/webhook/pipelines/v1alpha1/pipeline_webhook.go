@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -29,14 +30,16 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-//nolint:unused
 var pipelinelog = logf.Log.WithName("pipeline-resource")
 
 func SetupPipelineWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Pipeline{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Pipeline{}).
 		WithValidator(&PipelineCustomValidator{}).
 		WithDefaulter(&PipelineCustomDefaulter{}).
-		Complete()
+		Complete(); err != nil {
+		return fmt.Errorf("setting up pipeline webhook: %w", err)
+	}
+	return nil
 }
 
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-pipeline,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=pipelines,verbs=create;update,versions=v1alpha1,name=mpipeline-v1alpha1.kb.io,admissionReviewVersions=v1

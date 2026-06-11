@@ -99,7 +99,7 @@ var _ = Describe("Template Webhook", func() {
 				obj.Spec.Type = "invalid"
 				_, err := validator.ValidateCreate(ctx, obj)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Template type must be one of: helm, kubernetes, kustomize"))
+				Expect(err.Error()).To(ContainSubstring("Template type must be one of: helm, kubernetes, kustomize, git, s3"))
 			})
 
 			It("Should reject creation with helm type and missing chart name", func() {
@@ -114,6 +114,31 @@ var _ = Describe("Template Webhook", func() {
 				_, err := validator.ValidateCreate(ctx, obj)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Chart repo is required"))
+			})
+
+			It("Should admit creation with helm type and local chart path", func() {
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{Path: "/charts/local"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should admit creation with git type", func() {
+				obj.Spec.Type = "git"
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				obj.Spec.Git = &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://github.com/example/repo"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
+
+			It("Should admit creation with s3 type", func() {
+				obj.Spec.Type = "s3"
+				obj.Spec.Chart = pipelinesv1alpha1.ChartRef{}
+				obj.Spec.S3 = &pipelinesv1alpha1.S3SourceSpec{Bucket: "my-bucket", Key: "path/to/source.tgz"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
 			})
 		})
 

@@ -77,8 +77,8 @@ var _ = Describe("Release Controller", func() {
 		It("should add finalizer on creation and handle cleanup on deletion", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ReleaseReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
 				Namespace: "default",
 			}
 

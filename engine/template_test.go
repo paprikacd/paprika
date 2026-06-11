@@ -2,7 +2,6 @@ package engine
 
 import (
 	"testing"
-
 )
 
 func TestSplitYAMLDocuments(t *testing.T) {

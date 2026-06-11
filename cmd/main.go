@@ -40,13 +40,16 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	"github.com/benebsworth/paprika/analysis"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/health"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/traffic"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -208,65 +211,102 @@ func buildOperatorMetricsOptions(tlsOpts []func(*tls.Config), bindAddr, certPath
 	return options
 }
 
+func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+	if err := (&controller.PipelineReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		K8sClient: k8sClient, Namespace: operatorNamespace,
+		WorkflowEngine: engine.NewWorkflowEngine(k8sClient, operatorNamespace),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up pipeline controller: %w", err)
+	}
+	return nil
+}
+
+func setupStageController(mgr ctrl.Manager) error {
+	if err := (&controller.StageReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up stage controller: %w", err)
+	}
+	return nil
+}
+
+func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+	if err := (&controller.ReleaseReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		K8sClient: k8sClient, Namespace: operatorNamespace,
+		DynamicClient:        dynamicClient,
+		RestConfig:           mgr.GetConfig(),
+		ClusterMgr:           controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
+		GateExecutor:         gates.NewSmokeGate(),
+		Analyzer:             analysis.NewAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig()),
+		TemplateRenderer:     engine.NewTemplateRenderer("/tmp/paprika-helm"),
+		TrafficRouterFactory: traffic.NewRouter,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up release controller: %w", err)
+	}
+	return nil
+}
+
+func setupTemplateController(mgr ctrl.Manager) error {
+	if err := (&controller.TemplateReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up template controller: %w", err)
+	}
+	return nil
+}
+
+func setupArtifactController(mgr ctrl.Manager) error {
+	if err := (&controller.ArtifactReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up artifact controller: %w", err)
+	}
+	return nil
+}
+
+func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("creating dynamic client: %w", err)
+	}
+	k8sClientset, ok := k8sClient.(*kubernetes.Clientset)
+	if !ok {
+		return fmt.Errorf("expected *kubernetes.Clientset, got %T", k8sClient)
+	}
+	if err := (&controller.ApplicationReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		K8sClient:  k8sClientset,
+		Namespace:  operatorNamespace,
+		RestConfig: mgr.GetConfig(),
+		WorkDir:    "/tmp/paprika-sources",
+		HealthEval: health.NewEvaluator(),
+		DiffEngine: engine.NewDiffEngine(dynClient, discovery.NewDiscoveryClientForConfigOrDie(mgr.GetConfig())),
+		ResHealth:  health.NewResourceHealthChecker(mgr.GetClient()),
+		ClusterMgr: controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up application controller: %w", err)
+	}
+	return nil
+}
+
 func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) {
 	controllers := []struct {
 		name  string
 		setup func() error
 	}{
-		{"pipeline", func() error {
-			return (&controller.PipelineReconciler{
-				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-				K8sClient: k8sClient, Namespace: operatorNamespace,
-			}).SetupWithManager(mgr)
-		}},
-		{"stage", func() error {
-			return (&controller.StageReconciler{
-				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-			}).SetupWithManager(mgr)
-		}},
-		{"release", func() error {
-			dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
-			if err != nil {
-				return fmt.Errorf("failed to create dynamic client: %w", err)
-			}
-			return (&controller.ReleaseReconciler{
-				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-				K8sClient: k8sClient, Namespace: operatorNamespace,
-				DynamicClient: dynamicClient,
-			}).SetupWithManager(mgr)
-		}},
-		{"template", func() error {
-			return (&controller.TemplateReconciler{
-				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-			}).SetupWithManager(mgr)
-		}},
-		{"artifact", func() error {
-			return (&controller.ArtifactReconciler{
-				Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-			}).SetupWithManager(mgr)
-		}},
-		{"application", func() error {
-			dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
-			if err != nil {
-				return fmt.Errorf("creating dynamic client: %w", err)
-			}
-			k8sClientset, ok := k8sClient.(*kubernetes.Clientset)
-			if !ok {
-				return fmt.Errorf("expected *kubernetes.Clientset, got %T", k8sClient)
-			}
-			return (&controller.ApplicationReconciler{
-				Client:     mgr.GetClient(),
-				Scheme:     mgr.GetScheme(),
-				K8sClient:  k8sClientset,
-				Namespace:  operatorNamespace,
-				RestConfig: mgr.GetConfig(),
-				WorkDir:    "/tmp/paprika-sources",
-				HealthEval: health.NewEvaluator(),
-				DiffEngine: engine.NewDiffEngine(dynClient, discovery.NewDiscoveryClientForConfigOrDie(mgr.GetConfig())),
-				ResHealth:  health.NewResourceHealthChecker(mgr.GetClient()),
-				ClusterMgr: controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
-			}).SetupWithManager(mgr)
-		}},
+		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace) }},
+		{"stage", func() error { return setupStageController(mgr) }},
+		{"release", func() error { return setupReleaseController(mgr, k8sClient, operatorNamespace) }},
+		{"template", func() error { return setupTemplateController(mgr) }},
+		{"artifact", func() error { return setupArtifactController(mgr) }},
+		{"application", func() error { return setupApplicationController(mgr, k8sClient, operatorNamespace) }},
 	}
 
 	for _, c := range controllers {

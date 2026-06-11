@@ -135,22 +135,22 @@ func ResolveDAG(steps []paprika.PipelineStep) ([][]paprika.PipelineStep, error) 
 	return g.TopologicalSort()
 }
 
-// WorkflowEngine executes pipeline workflows by creating Kubernetes jobs.
-type WorkflowEngine struct {
+// WorkflowEngineImpl executes pipeline workflows by creating Kubernetes jobs.
+type WorkflowEngineImpl struct {
 	Client    kubernetes.Interface
 	Namespace string
 }
 
-// NewWorkflowEngine creates a new WorkflowEngine with the given Kubernetes client and namespace.
-func NewWorkflowEngine(client kubernetes.Interface, namespace string) *WorkflowEngine {
-	return &WorkflowEngine{
+// NewWorkflowEngine creates a new WorkflowEngineImpl with the given Kubernetes client and namespace.
+func NewWorkflowEngine(client kubernetes.Interface, namespace string) *WorkflowEngineImpl {
+	return &WorkflowEngineImpl{
 		Client:    client,
 		Namespace: namespace,
 	}
 }
 
 // RunPipeline executes all steps in a pipeline, respecting the DAG and parallelism.
-func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipeline) ([]paprika.StepStatus, error) {
+func (e *WorkflowEngineImpl) RunPipeline(ctx context.Context, pipeline *paprika.Pipeline) ([]paprika.StepStatus, error) {
 	batches, err := ResolveDAG(pipeline.Spec.Steps)
 	if err != nil {
 		return nil, fmt.Errorf("DAG resolution failed: %w", err)
@@ -173,7 +173,7 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 	return stepStatuses, nil
 }
 
-func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
+func (e *WorkflowEngineImpl) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
 	for i := 0; i < len(batch); i += maxParallel {
 		end := min(i+maxParallel, len(batch))
 		subBatch := batch[i:end]
@@ -185,7 +185,7 @@ func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.Pipel
 	return nil
 }
 
-func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
+func (e *WorkflowEngineImpl) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(batch))
@@ -207,7 +207,7 @@ func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.Pi
 	return nil
 }
 
-func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, errCh chan error) {
+func (e *WorkflowEngineImpl) runStepJob(ctx context.Context, s *paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, errCh chan error) {
 	for dep := range s.Depends {
 		if completed[s.Depends[dep]] {
 			continue
@@ -252,7 +252,7 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep
 	}
 }
 
-func (e *WorkflowEngine) retryStep(ctx context.Context, s *paprika.PipelineStep, pipelineName string, status *paprika.StepStatus, startedAt *metav1.Time, errCh chan error) {
+func (e *WorkflowEngineImpl) retryStep(ctx context.Context, s *paprika.PipelineStep, pipelineName string, status *paprika.StepStatus, startedAt *metav1.Time, errCh chan error) {
 	for attempt := 0; attempt < s.Retry; attempt++ {
 		status.StartedAt = startedAt
 		job, err := e.CreateStepJob(ctx, s, pipelineName)
@@ -273,7 +273,7 @@ type stepResult struct {
 	CompletedAt *metav1.Time
 }
 
-func (e *WorkflowEngine) watchJob(ctx context.Context, job *batchv1.Job, _ string) stepResult {
+func (e *WorkflowEngineImpl) watchJob(ctx context.Context, job *batchv1.Job, _ string) stepResult {
 	watcher, err := e.Client.BatchV1().Jobs(e.Namespace).Watch(ctx, metav1.SingleObject(metav1.ObjectMeta{
 		Name:      job.Name,
 		Namespace: e.Namespace,
@@ -320,7 +320,7 @@ func processJobEvent(event watch.Event) *stepResult {
 }
 
 // CreateStepJob creates a Kubernetes Job for a single pipeline step.
-func (e *WorkflowEngine) CreateStepJob(ctx context.Context, step *paprika.PipelineStep, pipelineName string) (*batchv1.Job, error) {
+func (e *WorkflowEngineImpl) CreateStepJob(ctx context.Context, step *paprika.PipelineStep, pipelineName string) (*batchv1.Job, error) {
 	timeoutSeconds := int64(step.Timeout)
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 3600
@@ -381,7 +381,7 @@ func (e *WorkflowEngine) CreateStepJob(ctx context.Context, step *paprika.Pipeli
 }
 
 // GetStepLogs retrieves logs for a specific step in a pipeline.
-func (e *WorkflowEngine) GetStepLogs(ctx context.Context, pipelineName, stepName string) (string, error) {
+func (e *WorkflowEngineImpl) GetStepLogs(ctx context.Context, pipelineName, stepName string) (string, error) {
 	pods, err := e.Client.CoreV1().Pods(e.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("paprika.io/pipeline=%s,paprika.io/step=%s", pipelineName, stepName),
 	})
@@ -405,6 +405,6 @@ func (e *WorkflowEngine) GetStepLogs(ctx context.Context, pipelineName, stepName
 }
 
 // ExecuteStep creates a step job and returns it without watching.
-func (e *WorkflowEngine) ExecuteStep(ctx context.Context, step *paprika.PipelineStep, pipelineName string) (*batchv1.Job, error) {
+func (e *WorkflowEngineImpl) ExecuteStep(ctx context.Context, step *paprika.PipelineStep, pipelineName string) (*batchv1.Job, error) {
 	return e.CreateStepJob(ctx, step, pipelineName)
 }

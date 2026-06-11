@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -30,14 +31,16 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-//nolint:unused
 var stagelog = logf.Log.WithName("stage-resource")
 
 func SetupStageWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Stage{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Stage{}).
 		WithValidator(&StageCustomValidator{}).
 		WithDefaulter(&StageCustomDefaulter{}).
-		Complete()
+		Complete(); err != nil {
+		return fmt.Errorf("setting up stage webhook: %w", err)
+	}
+	return nil
 }
 
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-stage,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=stages,verbs=create;update,versions=v1alpha1,name=mstage-v1alpha1.kb.io,admissionReviewVersions=v1

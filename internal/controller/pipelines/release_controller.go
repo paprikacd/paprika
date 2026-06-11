@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,8 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,8 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/analysis"
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/metrics"
@@ -59,15 +60,22 @@ var knownGVRs = map[string]schema.GroupVersionResource{
 	"PersistentVolumeClaim": {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
 }
 
+// TrafficRouterFactory creates a traffic router for the given configuration.
+type TrafficRouterFactory func(cfg *paprikav1.TrafficRouter, client dynamic.Interface, stableSvc, canarySvc, ns string) (traffic.Router, error)
+
 // ReleaseReconciler reconciles Release resources.
 type ReleaseReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	K8sClient     kubernetes.Interface
-	Namespace     string
-	RestConfig    *rest.Config
-	ClusterMgr    ClusterClientManager
-	DynamicClient dynamic.Interface
+	Scheme               *runtime.Scheme
+	K8sClient            kubernetes.Interface
+	Namespace            string
+	RestConfig           *rest.Config
+	ClusterMgr           ClusterClientManager
+	DynamicClient        dynamic.Interface
+	GateExecutor         gates.GateExecutor
+	Analyzer             analysis.Analyzer
+	TemplateRenderer     engine.TemplateRenderer
+	TrafficRouterFactory TrafficRouterFactory
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
@@ -98,57 +106,51 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	if !release.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&release, releaseFinalizer) {
-			if err := r.cleanup(ctx, &release); err != nil {
-				return ctrl.Result{}, err
-			}
-			controllerutil.RemoveFinalizer(&release, releaseFinalizer)
-			if err := r.Update(ctx, &release); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
+		return r.handleReleaseDeletion(ctx, &release)
 	}
 
 	if !controllerutil.ContainsFinalizer(&release, releaseFinalizer) {
-		controllerutil.AddFinalizer(&release, releaseFinalizer)
-		if err := r.Update(ctx, &release); err != nil {
+		if err := r.ensureReleaseFinalizer(ctx, &release); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if r.isReleaseTerminal(&release) {
+	return r.reconcileReleasePhase(ctx, req, &release, start, &result)
+}
+
+func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.Request, release *paprikav1.Release, start time.Time, result *string) (ctrl.Result, error) {
+	if r.isReleaseTerminal(release) {
 		return ctrl.Result{}, nil
 	}
 
 	if release.Status.Phase == paprikav1.ReleasePending {
-		return r.handlePendingPhase(ctx, &release, &result)
+		return r.handlePendingPhase(ctx, release, result)
 	}
 
-	if err := r.checkConcurrentRelease(ctx, &release); err != nil {
-		result = resultError
+	if err := r.checkConcurrentRelease(ctx, release); err != nil {
+		*result = resultError
 		return ctrl.Result{}, err
 	}
 
 	if release.Status.Phase == "" {
-		return r.initiateRelease(ctx, &release, req.Namespace, &result)
+		return r.initiateRelease(ctx, release, req.Namespace, result)
 	}
 
 	if release.Status.Phase == paprikav1.ReleasePromoting {
-		return r.handlePromotingPhase(ctx, &release, &result)
+		return r.handlePromotingPhase(ctx, release, result)
 	}
 
 	if release.Status.Phase == paprikav1.ReleaseCanarying {
-		return r.reconcileCanary(ctx, &release, start, &result)
+		return r.reconcileCanary(ctx, release, start, result)
 	}
 
 	if release.Status.Phase == paprikav1.ReleaseVerifying {
-		return r.handleVerifyingPhase(ctx, &release, &result)
+		return r.handleVerifyingPhase(ctx, release, result)
 	}
 
-	if r.shouldRollback(&release) {
-		return r.handleFailedRollback(ctx, &release, &result)
+	if r.shouldRollback(release) {
+		return r.handleFailedRollback(ctx, release, result)
 	}
 
 	return ctrl.Result{}, nil
@@ -163,6 +165,31 @@ func (r *ReleaseReconciler) getRelease(ctx context.Context, req ctrl.Request) (p
 		return release, nil
 	}
 	return release, nil
+}
+
+func (r *ReleaseReconciler) ensureReleaseFinalizer(ctx context.Context, release *paprikav1.Release) error {
+	if controllerutil.ContainsFinalizer(release, releaseFinalizer) {
+		return nil
+	}
+	controllerutil.AddFinalizer(release, releaseFinalizer)
+	if err := r.Update(ctx, release); err != nil {
+		return fmt.Errorf("adding release finalizer: %w", err)
+	}
+	return nil
+}
+
+func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *paprikav1.Release) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(release, releaseFinalizer) {
+		return ctrl.Result{}, nil
+	}
+	if err := r.cleanup(ctx, release); err != nil {
+		return ctrl.Result{}, fmt.Errorf("cleaning up release: %w", err)
+	}
+	controllerutil.RemoveFinalizer(release, releaseFinalizer)
+	if err := r.Update(ctx, release); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing release finalizer: %w", err)
+	}
+	return ctrl.Result{}, nil
 }
 
 func (r *ReleaseReconciler) isReleaseTerminal(release *paprikav1.Release) bool {
@@ -369,8 +396,7 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 		params[k] = v
 	}
 
-	renderer := engine.NewTemplateRenderer("/tmp/paprika-helm")
-	manifests, err := renderer.RenderAll(ctx, templates, params)
+	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
 	if err != nil {
 		return fmt.Errorf("template rendering failed: %w", err)
 	}
@@ -562,7 +588,7 @@ func (r *ReleaseReconciler) verify(ctx context.Context, release *paprikav1.Relea
 			Endpoint: cfg.Endpoint,
 			Timeout:  cfg.Timeout,
 		}
-		result := gates.ExecuteGate(ctx, gateCfg)
+		result := r.GateExecutor.Execute(ctx, gateCfg)
 		if !result.Passed {
 			log.Info("Gate failed", "type", cfg.Type, "message", result.Message)
 			return false
@@ -759,7 +785,7 @@ func (r *ReleaseReconciler) routerForStage(ctx context.Context, stage *paprikav1
 	if canarySvc == "" {
 		canarySvc = release.Name + "-canary"
 	}
-	routerObj, err := traffic.NewRouter(stage.Spec.TrafficRouter, r.DynamicClient, stableSvc, canarySvc, release.Namespace)
+	routerObj, err := r.TrafficRouterFactory(stage.Spec.TrafficRouter, r.DynamicClient, stableSvc, canarySvc, release.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating traffic router: %w", err)
 	}
@@ -771,8 +797,7 @@ func (r *ReleaseReconciler) runCanaryAnalysis(ctx context.Context, release *papr
 		return false, nil
 	}
 
-	analyzer := analysis.NewAnalyzer(r.K8sClient, release.Namespace, r.RestConfig)
-	results := analyzer.RunChecks(ctx, canaryCfg.Analysis.Checks)
+	results := r.Analyzer.RunChecks(ctx, canaryCfg.Analysis.Checks)
 
 	for i, chkResult := range results {
 		checkType := ""
@@ -870,8 +895,7 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	params["features.canary.enabled"] = "true"
 	params["canaryWeight"] = strconv.Itoa(weight)
 
-	renderer := engine.NewTemplateRenderer("/tmp/paprika-helm")
-	manifests, err := renderer.RenderAll(ctx, templates, params)
+	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
 	if err != nil {
 		return fmt.Errorf("canary template rendering failed: %w", err)
 	}
@@ -901,8 +925,7 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return err
 	}
 
-	renderer := engine.NewTemplateRenderer("/tmp/paprika-helm")
-	manifests, err := renderer.RenderAll(ctx, templates, r.promotionParams(release))
+	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, r.promotionParams(release))
 	if err != nil {
 		return fmt.Errorf("canary promotion template rendering failed: %w", err)
 	}
@@ -1002,7 +1025,7 @@ func (r *ReleaseReconciler) cleanupCanaryResources(ctx context.Context, namespac
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("errors during canary cleanup: %v", errs)
+		return fmt.Errorf("errors during canary cleanup: %w", errors.Join(errs...))
 	}
 	return nil
 }

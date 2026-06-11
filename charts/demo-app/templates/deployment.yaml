@@ -23,6 +23,11 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         track: stable
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -41,6 +46,15 @@ spec:
             - name: METRICS_PATH
               value: {{ .Values.features.metrics.path }}
             {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 50m
@@ -54,6 +68,15 @@ spec:
           ports:
             - containerPort: 9100
               name: metrics
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 10m
@@ -85,6 +108,11 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         track: canary
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -103,6 +131,15 @@ spec:
             - name: METRICS_PATH
               value: {{ .Values.features.metrics.path }}
             {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 50m
@@ -116,6 +153,15 @@ spec:
           ports:
             - containerPort: 9100
               name: metrics
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 10m

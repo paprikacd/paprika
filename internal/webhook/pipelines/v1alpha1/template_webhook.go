@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -35,16 +36,20 @@ var validTemplateTypes = map[string]bool{
 	"helm":       true,
 	"kubernetes": true,
 	"kustomize":  true,
+	"git":        true,
+	"s3":         true,
 }
 
-//nolint:unused
 var templatelog = logf.Log.WithName("template-resource")
 
 func SetupTemplateWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Template{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Template{}).
 		WithValidator(&TemplateCustomValidator{}).
 		WithDefaulter(&TemplateCustomDefaulter{}).
-		Complete()
+		Complete(); err != nil {
+		return fmt.Errorf("setting up template webhook: %w", err)
+	}
+	return nil
 }
 
 // +kubebuilder:webhook:path=/mutate-pipelines-paprika-io-v1alpha1-template,mutating=true,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=templates,verbs=create;update,versions=v1alpha1,name=mtemplate-v1alpha1.kb.io,admissionReviewVersions=v1
@@ -114,17 +119,26 @@ func (v *TemplateCustomValidator) validateTemplateCreate(t *pipelinesv1alpha1.Te
 	if t.Spec.Type == "" {
 		allErrs = append(allErrs, field.Required(specPath.Child("type"), "Template type is required"))
 	} else if !validTemplateTypes[t.Spec.Type] {
-		allErrs = append(allErrs, field.Invalid(specPath.Child("type"), t.Spec.Type, "Template type must be one of: helm, kubernetes, kustomize"))
+		allErrs = append(allErrs, field.Invalid(specPath.Child("type"), t.Spec.Type, "Template type must be one of: helm, kubernetes, kustomize, git, s3"))
 	}
 
-	if t.Spec.Type == "helm" {
+	allErrs = append(allErrs, v.validateHelmChart(specPath, t)...)
+
+	return allErrs
+}
+
+func (v *TemplateCustomValidator) validateHelmChart(specPath *field.Path, t *pipelinesv1alpha1.Template) field.ErrorList {
+	var allErrs field.ErrorList
+	if t.Spec.Type != "helm" {
+		return allErrs
+	}
+	if t.Spec.Chart.Path == "" {
 		if t.Spec.Chart.Repo == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("repo"), "Chart repo is required"))
+			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("repo"), "Chart repo is required (or set chart.path for local chart)"))
 		}
 		if t.Spec.Chart.Name == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("name"), "Chart name is required"))
+			allErrs = append(allErrs, field.Required(specPath.Child("chart").Child("name"), "Chart name is required (or set chart.path for local chart)"))
 		}
 	}
-
 	return allErrs
 }

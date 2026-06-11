@@ -25,9 +25,10 @@ const pipelineFinalizer = "paprika.io/pipeline-cleanup"
 // PipelineReconciler reconciles Pipeline resources.
 type PipelineReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	K8sClient kubernetes.Interface
-	Namespace string
+	Scheme         *runtime.Scheme
+	K8sClient      kubernetes.Interface
+	Namespace      string
+	WorkflowEngine engine.WorkflowEngine
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -46,8 +47,6 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(start))
 	}()
 
-	log := logf.FromContext(ctx)
-
 	var pipeline pipelinesv1alpha1.Pipeline
 	if err := r.Get(ctx, req.NamespacedName, &pipeline); err != nil {
 		result = resultError
@@ -58,56 +57,20 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if !pipeline.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(&pipeline, pipelineFinalizer) {
-			controllerutil.RemoveFinalizer(&pipeline, pipelineFinalizer)
-			if err := r.Update(ctx, &pipeline); err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := r.handlePipelineDeletion(ctx, &pipeline); err != nil {
+			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
 	}
 
 	if !controllerutil.ContainsFinalizer(&pipeline, pipelineFinalizer) {
-		controllerutil.AddFinalizer(&pipeline, pipelineFinalizer)
-		if err := r.Update(ctx, &pipeline); err != nil {
+		if err := r.ensurePipelineFinalizer(ctx, &pipeline); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if pipeline.Status.Phase == pipelinesv1alpha1.PipelineSucceeded ||
-		pipeline.Status.Phase == pipelinesv1alpha1.PipelineFailed {
-		return ctrl.Result{}, nil
-	}
-
-	if pipeline.Status.Phase == "" {
-		pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
-		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Running").Inc()
-		pipeline.Status.LastExecutionID = "run-" + req.Name
-		now := metav1.Now()
-		pipeline.Status.LastExecutionTime = &now
-		if err := r.Status().Update(ctx, &pipeline); err != nil {
-			result = resultError
-			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
-		}
-	}
-
-	workflowEngine := engine.NewWorkflowEngine(r.K8sClient, r.Namespace)
-
-	stepStatuses, err := workflowEngine.RunPipeline(ctx, &pipeline)
-	if err != nil {
-		log.Error(err, "Pipeline execution failed", "pipeline", req.Name)
-		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
-		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
-		pipeline.Status.StepStatuses = stepStatuses
-		if updateErr := r.Status().Update(ctx, &pipeline); updateErr != nil {
-			result = resultError
-			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
-		}
-		return ctrl.Result{}, err
-	}
-
-	return r.handlePipelineResult(ctx, &pipeline, stepStatuses, start, &result)
+	return r.reconcilePipeline(ctx, req, &pipeline, start, &result)
 }
 
 func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepStatuses []pipelinesv1alpha1.StepStatus, start time.Time, result *string) (ctrl.Result, error) {
@@ -145,6 +108,63 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 		}
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *PipelineReconciler) handlePipelineDeletion(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) error {
+	if !controllerutil.ContainsFinalizer(pipeline, pipelineFinalizer) {
+		return nil
+	}
+	controllerutil.RemoveFinalizer(pipeline, pipelineFinalizer)
+	if err := r.Update(ctx, pipeline); err != nil {
+		return fmt.Errorf("removing pipeline finalizer: %w", err)
+	}
+	return nil
+}
+
+func (r *PipelineReconciler) ensurePipelineFinalizer(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) error {
+	if controllerutil.ContainsFinalizer(pipeline, pipelineFinalizer) {
+		return nil
+	}
+	controllerutil.AddFinalizer(pipeline, pipelineFinalizer)
+	if err := r.Update(ctx, pipeline); err != nil {
+		return fmt.Errorf("adding pipeline finalizer: %w", err)
+	}
+	return nil
+}
+
+func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Request, pipeline *pipelinesv1alpha1.Pipeline, start time.Time, result *string) (ctrl.Result, error) {
+	if pipeline.Status.Phase == pipelinesv1alpha1.PipelineSucceeded ||
+		pipeline.Status.Phase == pipelinesv1alpha1.PipelineFailed {
+		return ctrl.Result{}, nil
+	}
+
+	if pipeline.Status.Phase == "" {
+		pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Running").Inc()
+		pipeline.Status.LastExecutionID = "run-" + req.Name
+		now := metav1.Now()
+		pipeline.Status.LastExecutionTime = &now
+		if err := r.Status().Update(ctx, pipeline); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
+		}
+	}
+
+	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipeline)
+	if err != nil {
+		log := logf.FromContext(ctx)
+		log.Error(err, "Pipeline execution failed", "pipeline", req.Name)
+		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
+		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
+		pipeline.Status.StepStatuses = stepStatuses
+		if updateErr := r.Status().Update(ctx, pipeline); updateErr != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
+		}
+		return ctrl.Result{}, fmt.Errorf("running pipeline workflow: %w", err)
+	}
+
+	return r.handlePipelineResult(ctx, pipeline, stepStatuses, start, result)
 }
 
 func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, output pipelinesv1alpha1.PipelineOutput) error {

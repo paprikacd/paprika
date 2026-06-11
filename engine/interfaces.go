@@ -1,9 +1,10 @@
-// Package engine provides template rendering and diff computation.
+// Package engine provides template rendering, diff computation, and workflow execution.
 package engine
 
 import (
 	"context"
 
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -13,6 +14,7 @@ import (
 //go:generate mockgen -destination=mocks/template_renderer.go -package=mocks . TemplateRenderer
 //go:generate mockgen -destination=mocks/diff_engine.go -package=mocks . DiffEngine
 //go:generate mockgen -destination=mocks/source_resolver.go -package=mocks . SourceResolver
+//go:generate mockgen -destination=mocks/workflow_engine.go -package=mocks . WorkflowEngine
 
 // TemplateRenderer renders templates to Kubernetes manifests.
 type TemplateRenderer interface {
@@ -31,3 +33,17 @@ type DiffEngine interface {
 type SourceResolver interface {
 	Resolve(ctx context.Context) (*source.ResolveResult, error)
 }
+
+// WorkflowEngine executes pipeline workflows by creating Kubernetes jobs.
+type WorkflowEngine interface {
+	RunPipeline(ctx context.Context, pipeline *paprikav1.Pipeline) ([]paprikav1.StepStatus, error)
+	CreateStepJob(ctx context.Context, step *paprikav1.PipelineStep, pipelineName string) (*batchv1.Job, error)
+	GetStepLogs(ctx context.Context, pipelineName, stepName string) (string, error)
+}
+
+// Compile-time interface checks.
+var (
+	_ TemplateRenderer = (*TemplateRendererImpl)(nil)
+	_ DiffEngine       = (*DiffEngineImpl)(nil)
+	_ WorkflowEngine   = (*WorkflowEngineImpl)(nil)
+)

@@ -24,17 +24,17 @@ type Result struct {
 	Detail  string
 }
 
-// Analyzer runs analysis checks against Kubernetes resources and HTTP endpoints.
-type Analyzer struct {
+// AnalyzerImpl runs analysis checks against Kubernetes resources and HTTP endpoints.
+type AnalyzerImpl struct {
 	K8sClient  kubernetes.Interface
 	Namespace  string
 	RESTConfig *rest.Config
 	HTTPClient *http.Client
 }
 
-// NewAnalyzer creates a new Analyzer with the given Kubernetes client and config.
-func NewAnalyzer(k8sClient kubernetes.Interface, namespace string, config *rest.Config) *Analyzer {
-	return &Analyzer{
+// NewAnalyzer creates a new AnalyzerImpl with the given Kubernetes client and config.
+func NewAnalyzer(k8sClient kubernetes.Interface, namespace string, config *rest.Config) *AnalyzerImpl {
+	return &AnalyzerImpl{
 		K8sClient:  k8sClient,
 		Namespace:  namespace,
 		RESTConfig: config,
@@ -49,7 +49,7 @@ func NewAnalyzer(k8sClient kubernetes.Interface, namespace string, config *rest.
 }
 
 // RunChecks executes all specified analysis checks concurrently and returns their results.
-func (a *Analyzer) RunChecks(ctx context.Context, checks []pipelinesv1alpha1.AnalysisCheck) []Result {
+func (a *AnalyzerImpl) RunChecks(ctx context.Context, checks []pipelinesv1alpha1.AnalysisCheck) []Result {
 	var results []Result
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -76,7 +76,7 @@ func (a *Analyzer) RunChecks(ctx context.Context, checks []pipelinesv1alpha1.Ana
 	return results
 }
 
-func (a *Analyzer) runHTTPCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck) Result {
+func (a *AnalyzerImpl) runHTTPCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck) Result {
 	count := check.RequestCount
 	if count <= 0 {
 		count = 5
@@ -99,7 +99,7 @@ func (a *Analyzer) runHTTPCheck(ctx context.Context, check *pipelinesv1alpha1.An
 	return a.buildHTTPResult(check.URL, successes, failures, count, threshold)
 }
 
-func (a *Analyzer) executeHTTPChecks(ctx context.Context, client *http.Client, check *pipelinesv1alpha1.AnalysisCheck, count int) (successes, failures int) {
+func (a *AnalyzerImpl) executeHTTPChecks(ctx context.Context, client *http.Client, check *pipelinesv1alpha1.AnalysisCheck, count int) (successes, failures int) {
 	for i := 0; i < count; i++ {
 		if a.executeSingleHTTPCheck(ctx, client, check) {
 			successes++
@@ -110,7 +110,7 @@ func (a *Analyzer) executeHTTPChecks(ctx context.Context, client *http.Client, c
 	return successes, failures
 }
 
-func (a *Analyzer) executeSingleHTTPCheck(ctx context.Context, client *http.Client, check *pipelinesv1alpha1.AnalysisCheck) bool {
+func (a *AnalyzerImpl) executeSingleHTTPCheck(ctx context.Context, client *http.Client, check *pipelinesv1alpha1.AnalysisCheck) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, check.URL, http.NoBody)
 	if err != nil {
 		return false
@@ -126,7 +126,7 @@ func (a *Analyzer) executeSingleHTTPCheck(ctx context.Context, client *http.Clie
 	return resp.StatusCode >= 200 && resp.StatusCode < 400
 }
 
-func (a *Analyzer) buildHTTPResult(url string, successes, failures, count int, threshold float64) Result {
+func (a *AnalyzerImpl) buildHTTPResult(url string, successes, failures, count int, threshold float64) Result {
 	successRate := float64(0)
 	if count > 0 {
 		successRate = float64(successes) / float64(count) * 100
@@ -139,7 +139,7 @@ func (a *Analyzer) buildHTTPResult(url string, successes, failures, count int, t
 	}
 }
 
-func (a *Analyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck) Result {
+func (a *AnalyzerImpl) runPodMetricsCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck) Result {
 	threshold, _ := strconv.ParseFloat(check.Threshold, 64)
 	windowSeconds := check.WindowSeconds
 	if windowSeconds <= 0 {
@@ -165,7 +165,7 @@ func (a *Analyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1alp
 	}
 }
 
-func (a *Analyzer) checkRestartRate(ctx context.Context, threshold float64, _ int) Result {
+func (a *AnalyzerImpl) checkRestartRate(ctx context.Context, threshold float64, _ int) Result {
 	pods, err := a.K8sClient.CoreV1().Pods(a.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/name=demo-app",
 	})
@@ -194,7 +194,7 @@ func (a *Analyzer) checkRestartRate(ctx context.Context, threshold float64, _ in
 	}
 }
 
-func (a *Analyzer) checkPodStatusRate(ctx context.Context, threshold float64, _ int) Result {
+func (a *AnalyzerImpl) checkPodStatusRate(ctx context.Context, threshold float64, _ int) Result {
 	pods, err := a.K8sClient.CoreV1().Pods(a.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/name=demo-app",
 	})
