@@ -1,0 +1,27 @@
+{{- if eq .Values.deploymentMode "split" }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: webhook-receiver
+  name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.webhookReceiver.service.type }}
+  ports:
+  - name: webhook
+    port: {{ .Values.webhookReceiver.service.port }}
+    targetPort: 8080
+    protocol: TCP
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/component: webhook-receiver
+{{- end }}

@@ -17,6 +17,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 )
 
@@ -29,6 +30,7 @@ type PipelineReconciler struct {
 	K8sClient      kubernetes.Interface
 	Namespace      string
 	WorkflowEngine engine.WorkflowEngine
+	ShardFilter    *sharding.Filter
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -53,6 +55,12 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting pipeline: %w", k8sErr)
 		}
+		return ctrl.Result{}, nil
+	}
+
+	log := logf.FromContext(ctx)
+	if r.ShardFilter != nil && !r.ShardFilter.Matches(req.Namespace) {
+		log.Info("Skipping pipeline not in shard", "namespace", req.Namespace, "shard", r.ShardFilter.ShardID())
 		return ctrl.Result{}, nil
 	}
 

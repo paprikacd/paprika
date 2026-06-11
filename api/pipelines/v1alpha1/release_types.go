@@ -64,6 +64,9 @@ type ReleaseStatus struct {
 	CanaryWeight int `json:"canaryWeight,omitempty"`
 	// Index into the canary steps array
 	CanaryStepIndex int `json:"canaryStepIndex,omitempty"`
+	// When the current canary step started (used to throttle step advancement
+	// to the configured intervalSeconds, preventing watch-event-driven fast-forward).
+	CanaryStepStartedAt *metav1.Time `json:"canaryStepStartedAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

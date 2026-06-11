@@ -114,8 +114,127 @@ manager:
     - mountPath: /tmp
       name: tmp
 
-# -- Deployment mode: "operator" (full controller manager) or "api" (API server only)
+# -- Deployment architecture: "monolith" (single pod with everything)
+# or "split" (separate controller-manager, api-server, webhook-receiver pods)
+deploymentMode: monolith
+
+# -- Deployment mode for the manager container: "operator" (controllers + API + webhook)
+# In split mode this is automatically set to "operator" for the controller-manager pod.
+# In monolith mode this controls the single pod behavior.
 mode: operator
+
+## API server configuration (used only when deploymentMode=split)
+##
+apiServer:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: controller
+    ## Image tag (defaults to Chart.appVersion if not set)
+    ##
+    # tag: ""
+    pullPolicy: IfNotPresent
+
+  args:
+    - --ui-bind-address=:3000
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  extraVolumes:
+    - emptyDir: {}
+      name: tmp
+
+  extraVolumeMounts:
+    - mountPath: /tmp
+      name: tmp
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 75
+
+## Webhook receiver configuration (used only when deploymentMode=split)
+##
+webhookReceiver:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: controller
+    ## Image tag (defaults to Chart.appVersion if not set)
+    ##
+    # tag: ""
+    pullPolicy: IfNotPresent
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+
+  extraVolumes:
+    - emptyDir: {}
+      name: tmp
+
+  extraVolumeMounts:
+    - mountPath: /tmp
+      name: tmp
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 75
+
+  secret:
+    # -- Name of an existing secret containing the webhook secret key
+    existingSecretName: ""
+    # -- Key inside the secret that holds the webhook secret
+    existingSecretKey: "secret"
 
 # Remote cluster connection (api mode only)
 remoteCluster:

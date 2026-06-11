@@ -45,7 +45,7 @@ func NewDiffEngine(dynClient *dynamic.DynamicClient, discovery discovery.Discove
 }
 
 // ComputeDiff computes the diff between desired and live resources in the given namespace.
-func (d *DiffEngineImpl) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, namespace string) (*DiffResult, error) {
+func (d *DiffEngineImpl) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
 
 	desiredMap := make(map[string]unstructured.Unstructured)
@@ -54,7 +54,7 @@ func (d *DiffEngineImpl) ComputeDiff(ctx context.Context, desired []unstructured
 		desiredMap[key] = obj
 	}
 
-	liveMap, err := d.fetchLiveResources(ctx, namespace)
+	liveMap, err := d.fetchLiveResources(ctx, opts.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("fetch live resources: %w", err)
 	}

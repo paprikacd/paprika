@@ -1,17 +1,13 @@
 package engine
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
-
-	"k8s.io/apimachinery/pkg/util/yaml"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/source"
@@ -94,15 +90,21 @@ func (r *TemplateRendererImpl) Render(ctx context.Context, tmpl *paprika.Templat
 		return nil, err
 	}
 
+	releaseName := params["release-name"]
+	if releaseName == "" {
+		releaseName = "paprika-release"
+	}
+
 	var args []string
 
 	if localPath != "" {
-		args = []string{"template", localPath}
+		args = []string{"template", releaseName, localPath}
 	} else {
 		args, err = r.resolveChartFromRepo(ctx, chart)
 		if err != nil {
 			return nil, err
 		}
+		args = append([]string{args[0], releaseName}, args[1:]...)
 	}
 
 	if tmpl.Spec.Namespace != "" {
@@ -224,38 +226,4 @@ func (r *TemplateRendererImpl) RenderHelmChart(ctx context.Context, chartName, c
 		},
 	}
 	return r.Render(ctx, tmpl, values)
-}
-
-// SplitYAMLDocuments splits a multi-document YAML into individual documents.
-func SplitYAMLDocuments(manifests []byte) [][]byte {
-	var documents [][]byte
-	reader := bufio.NewReader(bytes.NewReader(manifests))
-	decoder := yaml.NewYAMLReader(reader)
-	for {
-		doc, err := decoder.Read()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			continue
-		}
-		doc = bytes.TrimSpace(doc)
-		if len(doc) == 0 {
-			continue
-		}
-		documents = append(documents, doc)
-	}
-	return documents
-}
-
-func sanitizeRepoName(repoURL string) string {
-	replacer := strings.NewReplacer(
-		"https://", "",
-		"http://", "",
-		"/", "-",
-		".", "-",
-		":", "-",
-	)
-	name := replacer.Replace(repoURL)
-	return strings.TrimSuffix(name, "-")
 }

@@ -58,7 +58,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	// Disable webhooks during controller tests to avoid fixture rejection
-	os.Setenv("ENABLE_WEBHOOKS", "false") //nolint:errcheck
+	Expect(os.Setenv("ENABLE_WEBHOOKS", "false")).To(Succeed())
 
 	ctx, cancel = context.WithCancel(context.TODO())
 

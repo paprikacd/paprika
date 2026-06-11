@@ -53,6 +53,13 @@ const (
 	StrategyBlueGreen DeliveryStrategy = "BlueGreen"
 )
 
+// Source type constants.
+const (
+	SourceTypeGit  = "git"
+	SourceTypeHelm = "helm"
+	SourceTypeS3   = "s3"
+)
+
 // ApplicationSource defines the source of an application.
 // ApplicationSource defines the source of an application.
 type ApplicationSource struct {

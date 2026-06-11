@@ -1,0 +1,23 @@
+{{- if eq .Values.deploymentMode "monolith" }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: webhook
+  name: {{ include "paprika.resourceName" (dict "suffix" "webhook" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  ports:
+  - name: webhook
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    control-plane: controller-manager
+{{- end }}

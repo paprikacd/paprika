@@ -24,9 +24,16 @@ type TemplateRenderer interface {
 	RenderHelmChart(ctx context.Context, chartName, chartRepo, chartVersion string, values map[string]string) ([]byte, error)
 }
 
+// DiffOptions configures how ComputeDiff fetches live resources.
+type DiffOptions struct {
+	Namespace     string
+	LabelSelector string
+	FieldSelector string
+}
+
 // DiffEngine computes differences between desired and actual cluster state.
 type DiffEngine interface {
-	ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, namespace string) (*DiffResult, error)
+	ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error)
 }
 
 // SourceResolver resolves source locations.

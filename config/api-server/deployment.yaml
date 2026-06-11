@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: system
+  labels:
+    app.kubernetes.io/component: api-server
+    app.kubernetes.io/name: paprika
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: api-server
+      app.kubernetes.io/name: paprika
+  replicas: 2
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: api-server
+      labels:
+        app.kubernetes.io/component: api-server
+        app.kubernetes.io/name: paprika
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - command:
+        - /manager
+        args:
+          - --mode=api
+          - --health-probe-bind-address=:8081
+          - --ui-bind-address=:3000
+        image: controller:latest
+        name: api-server
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 3000
+          name: api
+          protocol: TCP
+        env:
+        - name: PAPRIKA_CACHE_BACKEND
+          value: "redis"
+        - name: PAPRIKA_REDIS_ADDR
+          value: "paprika-redis:6379"
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
