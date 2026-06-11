@@ -27,7 +27,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -47,8 +46,13 @@ import (
 	"github.com/benebsworth/paprika/health"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/cache"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/observability"
+	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/sharding"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
+	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
 	"github.com/benebsworth/paprika/traffic"
 	// +kubebuilder:scaffold:imports
 )
@@ -97,14 +101,17 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&operatorNamespace, "operator-namespace", "paprika-system",
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
+	var webhookAddr string
 	flag.StringVar(&uiAddr, "ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
 	flag.StringVar(&mode, "mode", "operator",
-		"Running mode: 'operator' (controllers + API) or 'api' (API server only).")
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), or 'webhook' (webhook receiver only).")
 	flag.StringVar(&k8sAPIServer, "k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
 	flag.StringVar(&k8sTokenFile, "k8s-token-file", "",
 		"Path to Kubernetes service account token. Only used in 'api' mode.")
+	flag.StringVar(&webhookAddr, "webhook-bind-address", ":8080",
+		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -113,8 +120,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	if mode != "operator" && mode != "api" {
-		setupLog.Error(fmt.Errorf("invalid mode: %s", mode), "Must be 'operator' or 'api'")
+	if mode != "operator" && mode != "api" && mode != "webhook" {
+		setupLog.Error(fmt.Errorf("invalid mode: %s", mode), "Must be 'operator', 'api', or 'webhook'")
 		os.Exit(1)
 	}
 
@@ -126,14 +133,25 @@ func main() {
 		os.Exit(0)
 	}
 
-	runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
+	if mode == "webhook" {
+		if err := runWebhookMode(webhookAddr, probeAddr); err != nil {
+			setupLog.Error(err, "Webhook mode failed")
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	if err := runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
 		metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace,
-		enableLeaderElection, secureMetrics, enableHTTP2)
+		enableLeaderElection, secureMetrics, enableHTTP2); err != nil {
+		setupLog.Error(err, "Failed to run operator mode")
+		os.Exit(1)
+	}
 }
 
 func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
 	metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace string,
-	enableLeaderElection, secureMetrics, enableHTTP2 bool) {
+	enableLeaderElection, secureMetrics, enableHTTP2 bool) error {
 	tlsOpts := buildOperatorTLSOptions(enableHTTP2)
 	webhookServer := buildOperatorWebhookServer(tlsOpts, webhookCertPath, webhookCertName, webhookCertKey)
 	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, metricsAddr, metricsCertPath, metricsCertName, metricsCertKey, secureMetrics)
@@ -150,24 +168,71 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		LeaderElectionID:       "paprika-operator.paprika.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "Failed to start manager")
-		os.Exit(1)
+		return fmt.Errorf("failed to start manager: %w", err)
 	}
 
 	k8sClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
-		setupLog.Error(err, "Failed to create kubernetes clientset")
-		os.Exit(1)
+		return fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
-	setupOperatorControllers(mgr, k8sClient, operatorNamespace)
-	startOperatorUI(mgr, uiAddr)
+	c, err := cache.NewFromEnv()
+	if err != nil {
+		setupLog.Error(err, "Failed to create cache, falling back to in-memory")
+		c = cache.NewMemoryCache()
+	}
+	defer func() { _ = c.Close() }()
+
+	shutdownTracing, err := observability.InitTracing()
+	if err != nil {
+		setupLog.Error(err, "Failed to initialize tracing")
+	} else {
+		defer shutdownTracing()
+		if observability.IsTracingEnabled() {
+			setupLog.Info("OpenTelemetry tracing enabled")
+		}
+	}
+
+	shardFilter := sharding.NewFilterFromEnv()
+	if shardFilter.Enabled() {
+		setupLog.Info("Controller sharding enabled", "shard", shardFilter.ShardID(), "total", shardFilter.TotalShards())
+	}
+
+	rateLimiter := ratelimit.NewControllerRateLimit()
+	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
+
+	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter); err != nil {
+		return err
+	}
+	if err := startOperatorUI(mgr, uiAddr); err != nil {
+		return err
+	}
+
+	startInlineWebhook(mgr.GetClient())
 
 	setupLog.Info("Starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "Failed to run manager")
-		os.Exit(1)
+		return fmt.Errorf("failed to run manager: %w", err)
 	}
+	return nil
+}
+
+func startInlineWebhook(c client.Client) {
+	go func() {
+		secret := os.Getenv("PAPRIKA_WEBHOOK_SECRET")
+		handler := webhookreceiver.NewHandler(c, secret)
+		webhookMux := http.NewServeMux()
+		webhookMux.Handle("/webhook", handler)
+		webhookSrv := &http.Server{
+			Addr:              ":8080",
+			Handler:           webhookMux,
+			ReadHeaderTimeout: 10 * time.Second,
+		}
+		setupLog.Info("Starting inline webhook receiver", "addr", ":8080")
+		if srvErr := webhookSrv.ListenAndServe(); srvErr != nil && srvErr != http.ErrServerClosed {
+			setupLog.Error(srvErr, "Inline webhook receiver error")
+		}
+	}()
 }
 
 func buildOperatorTLSOptions(enableHTTP2 bool) []func(*tls.Config) {
@@ -211,66 +276,74 @@ func buildOperatorMetricsOptions(tlsOpts []func(*tls.Config), bindAddr, certPath
 	return options
 }
 
-func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter) error {
 	if err := (&controller.PipelineReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
 		WorkflowEngine: engine.NewWorkflowEngine(k8sClient, operatorNamespace),
+		ShardFilter:    shardFilter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up pipeline controller: %w", err)
 	}
 	return nil
 }
 
-func setupStageController(mgr ctrl.Manager) error {
+func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
 	if err := (&controller.StageReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		ShardFilter: shardFilter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up stage controller: %w", err)
 	}
 	return nil
 }
 
-func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
 	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
+	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-helm")
+	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-helm", 0)
 	if err := (&controller.ReleaseReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
 		DynamicClient:        dynamicClient,
 		RestConfig:           mgr.GetConfig(),
-		ClusterMgr:           controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
+		ClusterMgr:           controller.NewClusterConnectionPool(mgr.GetClient(), mgr.GetConfig()),
 		GateExecutor:         gates.NewSmokeGate(),
 		Analyzer:             analysis.NewAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig()),
-		TemplateRenderer:     engine.NewTemplateRenderer("/tmp/paprika-helm"),
+		TemplateRenderer:     cachedRenderer,
 		TrafficRouterFactory: traffic.NewRouter,
+		ShardFilter:          shardFilter,
+		RateLimiter:          rateLimiter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
 	return nil
 }
 
-func setupTemplateController(mgr ctrl.Manager) error {
+func setupTemplateController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
 	if err := (&controller.TemplateReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		ShardFilter: shardFilter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up template controller: %w", err)
 	}
 	return nil
 }
 
-func setupArtifactController(mgr ctrl.Manager) error {
+func setupArtifactController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
 	if err := (&controller.ArtifactReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		ShardFilter: shardFilter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up artifact controller: %w", err)
 	}
 	return nil
 }
 
-func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) error {
+func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("creating dynamic client: %w", err)
@@ -279,74 +352,77 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 	if !ok {
 		return fmt.Errorf("expected *kubernetes.Clientset, got %T", k8sClient)
 	}
+	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-sources")
+	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-sources", 0)
 	if err := (&controller.ApplicationReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		K8sClient:  k8sClientset,
-		Namespace:  operatorNamespace,
-		RestConfig: mgr.GetConfig(),
-		WorkDir:    "/tmp/paprika-sources",
-		HealthEval: health.NewEvaluator(),
-		DiffEngine: engine.NewDiffEngine(dynClient, discovery.NewDiscoveryClientForConfigOrDie(mgr.GetConfig())),
-		ResHealth:  health.NewResourceHealthChecker(mgr.GetClient()),
-		ClusterMgr: controller.NewClusterClientManager(mgr.GetClient(), mgr.GetConfig()),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		K8sClient:        k8sClientset,
+		Namespace:        operatorNamespace,
+		RestConfig:       mgr.GetConfig(),
+		WorkDir:          "/tmp/paprika-sources",
+		HealthEval:       health.NewEvaluator(),
+		DiffEngine:       engine.NewScalableDiffEngine(dynClient),
+		ResHealth:        health.NewResourceHealthChecker(mgr.GetClient()),
+		ClusterMgr:       controller.NewClusterConnectionPool(mgr.GetClient(), mgr.GetConfig()),
+		TemplateRenderer: cachedRenderer,
+		ShardFilter:      shardFilter,
+		RateLimiter:      rateLimiter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}
 	return nil
 }
 
-func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string) {
+func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
 	controllers := []struct {
 		name  string
 		setup func() error
 	}{
-		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace) }},
-		{"stage", func() error { return setupStageController(mgr) }},
-		{"release", func() error { return setupReleaseController(mgr, k8sClient, operatorNamespace) }},
-		{"template", func() error { return setupTemplateController(mgr) }},
-		{"artifact", func() error { return setupArtifactController(mgr) }},
-		{"application", func() error { return setupApplicationController(mgr, k8sClient, operatorNamespace) }},
+		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, shardFilter) }},
+		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
+		{"release", func() error {
+			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter)
+		}},
+		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
+		{"artifact", func() error { return setupArtifactController(mgr, shardFilter) }},
+		{"application", func() error {
+			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter)
+		}},
 	}
 
 	for _, c := range controllers {
 		if err := c.setup(); err != nil {
-			setupLog.Error(err, "Failed to create controller", "controller", c.name)
-			os.Exit(1)
+			return fmt.Errorf("failed to create controller %s: %w", c.name, err)
 		}
 	}
 	// +kubebuilder:scaffold:webhook
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err := webhookpipelinesv1alpha1.SetupPipelineWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "Pipeline")
-			os.Exit(1)
+			return fmt.Errorf("failed to create webhook Pipeline: %w", err)
 		}
 		if err := webhookpipelinesv1alpha1.SetupStageWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "Stage")
-			os.Exit(1)
+			return fmt.Errorf("failed to create webhook Stage: %w", err)
 		}
 		if err := webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "Release")
-			os.Exit(1)
+			return fmt.Errorf("failed to create webhook Release: %w", err)
 		}
 		if err := webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Failed to create webhook", "webhook", "Template")
-			os.Exit(1)
+			return fmt.Errorf("failed to create webhook Template: %w", err)
 		}
 	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "Failed to set up health check")
-		os.Exit(1)
+		return fmt.Errorf("failed to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "Failed to set up ready check")
-		os.Exit(1)
+		return fmt.Errorf("failed to set up ready check: %w", err)
 	}
+	return nil
 }
 
-func startOperatorUI(mgr ctrl.Manager, uiAddr string) {
+func startOperatorUI(mgr ctrl.Manager, uiAddr string) error {
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient())
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer)
 
@@ -364,9 +440,9 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string) {
 		setupLog.Info("Starting UI server", "addr", uiAddr)
 		if err := uiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			setupLog.Error(err, "UI server error")
-			os.Exit(1)
 		}
 	}()
+	return nil
 }
 
 func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
@@ -388,6 +464,40 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
 
 	startHealthProbeServer(healthMux, probeAddr)
 	return startAPIServer(mux, uiAddr)
+}
+
+func runWebhookMode(webhookAddr, probeAddr string) error {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		config = ctrl.GetConfigOrDie()
+	}
+
+	apiClient, err := createAPIClient(config)
+	if err != nil {
+		return err
+	}
+
+	secret := os.Getenv("PAPRIKA_WEBHOOK_SECRET")
+	handler := webhookreceiver.NewHandler(apiClient, secret)
+
+	mux := http.NewServeMux()
+	mux.Handle("/webhook", handler)
+	mux.Handle("/healthz", http.HandlerFunc(healthzHandler))
+	mux.Handle("/readyz", http.HandlerFunc(healthzHandler))
+
+	healthMux := buildHealthMux()
+	startHealthProbeServer(healthMux, probeAddr)
+
+	server := &http.Server{
+		Addr:              webhookAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	setupLog.Info("Starting webhook receiver", "addr", webhookAddr)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("webhook server error: %w", err)
+	}
+	return nil
 }
 
 func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {

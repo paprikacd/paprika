@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -20,6 +21,9 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/health"
+	"github.com/benebsworth/paprika/internal/observability"
+	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 )
 
@@ -28,15 +32,18 @@ const defaultRequeue = 5 * time.Second
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	K8sClient  *kubernetes.Clientset
-	Namespace  string
-	RestConfig *rest.Config
-	WorkDir    string
-	HealthEval health.HealthEvaluator
-	DiffEngine engine.DiffEngine
-	ResHealth  health.ResourceHealthChecker
-	ClusterMgr ClusterClientManager
+	Scheme           *runtime.Scheme
+	K8sClient        *kubernetes.Clientset
+	Namespace        string
+	RestConfig       *rest.Config
+	WorkDir          string
+	HealthEval       health.HealthEvaluator
+	DiffEngine       engine.DiffEngine
+	ResHealth        health.ResourceHealthChecker
+	ClusterMgr       ClusterClientManager
+	TemplateRenderer engine.TemplateRenderer
+	ShardFilter      *sharding.Filter
+	RateLimiter      *ratelimit.ControllerRateLimit
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -50,6 +57,12 @@ type ApplicationReconciler struct {
 
 // Reconcile handles Application reconciliation.
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx, span := observability.StartSpan(ctx, "ApplicationReconcile",
+		attribute.String("namespace", req.Namespace),
+		attribute.String("name", req.Name),
+	)
+	defer span.End()
+
 	var app paprikav1.Application
 	start := metrics.Timer()
 	defer func() {
@@ -65,34 +78,56 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	if r.ShardFilter != nil && !r.ShardFilter.Matches(req.Namespace) {
+		log.Info("Skipping application not in shard", "namespace", req.Namespace, "shard", r.ShardFilter.ShardID())
+		return ctrl.Result{}, nil
+	}
+
+	if r.RateLimiter != nil {
+		if !r.RateLimiter.AllowGlobal() {
+			log.Info("Global rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		if !r.RateLimiter.AllowApp(ratelimit.ReconcileKey(req.Namespace, req.Name)) {
+			log.Info("Per-application rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+	}
+
+	return r.reconcileApp(ctx, &app)
+}
+
+func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
 	if _, ok := app.Annotations["paprika.io/resync"]; ok {
-		return r.handleResync(ctx, &app)
+		return r.handleResync(ctx, app)
 	}
 
 	if app.Status.Phase == paprikav1.ApplicationHealthy {
-		return r.handleHealthyPhase(ctx, &app)
+		return r.handleHealthyPhase(ctx, app)
 	}
 
-	if err := r.reconcileTemplate(ctx, &app); err != nil {
+	if err := r.reconcileTemplate(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile Template")
-		r.updatePhase(ctx, &app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
+		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
-	if ctrlResult, err := r.reconcileAppPipeline(ctx, &app); ctrlResult != nil || err != nil {
+	if ctrlResult, err := r.reconcileAppPipeline(ctx, app); ctrlResult != nil || err != nil {
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		return *ctrlResult, nil
 	}
 
-	if err := r.reconcileStages(ctx, &app); err != nil {
+	if err := r.reconcileStages(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile Stages")
-		r.updatePhase(ctx, &app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
+		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
-	return r.reconcileReleaseFlow(ctx, &app)
+	return r.reconcileReleaseFlow(ctx, app)
 }
 
 func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
@@ -144,6 +179,7 @@ func (r *ApplicationReconciler) handleResync(ctx context.Context, app *paprikav1
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	if app.Spec.Build == nil || len(app.Spec.Build.Steps) == 0 {
+		app.Status.PipelineRef = ""
 		return nil, nil
 	}
 
@@ -177,14 +213,14 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	}
 
 	switch app.Spec.Source.Type {
-	case "git":
+	case paprikav1.SourceTypeGit:
 		spec.Git = &paprikav1.GitSourceSpec{
 			RepoURL:   app.Spec.Source.RepoURL,
 			Revision:  app.Spec.Source.Revision,
 			Path:      app.Spec.Source.Path,
 			SecretRef: app.Spec.Source.SecretRef,
 		}
-	case "s3":
+	case paprikav1.SourceTypeS3:
 		spec.S3 = &paprikav1.S3SourceSpec{
 			Bucket:    app.Spec.Source.Bucket,
 			Key:       app.Spec.Source.Key,
@@ -567,11 +603,14 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
-	if app.Spec.Source.Type != "git" && app.Spec.Source.Type != "s3" {
+	if app.Spec.Source.Type != paprikav1.SourceTypeGit && app.Spec.Source.Type != paprikav1.SourceTypeS3 {
 		return false, nil
 	}
 
-	renderer := engine.NewTemplateRenderer(r.WorkDir)
+	renderer := r.TemplateRenderer
+	if renderer == nil {
+		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+	}
 
 	templateName := app.Name + "-template"
 	var tmpl paprikav1.Template
@@ -657,7 +696,10 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		return
 	}
 
-	renderer := engine.NewTemplateRenderer(r.WorkDir)
+	renderer := r.TemplateRenderer
+	if renderer == nil {
+		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+	}
 	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
 	if err != nil {
 		log.Error(err, "Failed to render template for diff")
@@ -678,7 +720,11 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		desired = append(desired, u)
 	}
 
-	result, err := r.DiffEngine.ComputeDiff(ctx, desired, app.Namespace)
+	labelSelector := engine.ManagedByAppSelector(app.Name).String()
+	result, err := r.DiffEngine.ComputeDiff(ctx, desired, engine.DiffOptions{
+		Namespace:     app.Namespace,
+		LabelSelector: labelSelector,
+	})
 	if err != nil {
 		log.Error(err, "Failed to compute diff")
 		return

@@ -1,4 +1,4 @@
-{{- if eq .Values.mode "api" }}
+{{- if or (eq .Values.mode "api") (eq .Values.deploymentMode "monolith") }}
 apiVersion: v1
 kind: Service
 metadata:

@@ -95,6 +95,12 @@ spec:
               canaryStepIndex:
                 description: Index into the canary steps array
                 type: integer
+              canaryStepStartedAt:
+                description: |-
+                  When the current canary step started (used to throttle step advancement
+                  to the configured intervalSeconds, preventing watch-event-driven fast-forward).
+                format: date-time
+                type: string
               canaryWeight:
                 description: Current canary traffic weight (0-100)
                 type: integer

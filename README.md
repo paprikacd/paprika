@@ -1,164 +1,206 @@
 # paprika
-// TODO(user): Add simple overview of use/purpose
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/benebsworth/paprika/actions/workflows/test.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/test.yml)
+[![Lint](https://github.com/benebsworth/paprika/actions/workflows/lint.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/lint.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/benebsworth/paprika)](https://goreportcard.com/report/github.com/benebsworth/paprika)
 
-## Getting Started
+**paprika** is a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single operator. It replaces the need for separate ArgoCD, Argo Rollouts, and Argo Workflows deployments with a unified, controller-driven approach.
+
+Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika extends Kubernetes with Custom Resource Definitions (CRDs) that model the entire application lifecycle in familiar Kubernetes YAML.
+
+## Features
+
+- **Unified Application CRD** — Define your application, its source, pipelines, stages, and releases in a single manifest
+- **Progressive Delivery** — Canary and rolling deployments with configurable step weights and interval throttling
+- **Pluggable Traffic Router** — Built-in support for Istio (VirtualService) and Gateway API (HTTPRoute) traffic splitting
+- **Multi-Source Support** — Helm charts (local or remote), Git repositories, and S3 buckets as template sources
+- **Multi-Cluster Deployments** — Stage-level cluster references with kubeconfig-based authentication
+- **Health Evaluation** — CEL-based health checks with a library of built-in resource health rules
+- **Change Detection** — Diff engine with label-selector scoping to detect and report drift
+- **Approval Gates** — Manual approval gates that pause promotion between stages
+- **Pipeline Workflows** — Sequential step execution (build, test, deploy) with Kubernetes Job backing
+- **Dashboard UI** — Next.js dashboard with real-time application, release, and resource status
+- **Prometheus Metrics** — Controller-runtime metrics for reconciliation duration, phase transitions, and resource counts
+
+## Architecture
+
+```
+                    ┌─────────────────────────────────────┐
+                    │          paprika Application         │
+                    │  (single manifest for everything)    │
+                    └──────────┬──────────────────────────┘
+                               │
+               ┌───────────────┼───────────────┐
+               ▼               ▼               ▼
+         ┌──────────┐   ┌──────────┐   ┌──────────────┐
+         │ Template │   │ Pipeline │   │ Stage(s)     │
+         │ (source) │   │ (steps)  │   │ (env + ring) │
+         └──────────┘   └──────────┘   └──────┬───────┘
+                                              │
+                                     ┌────────▼────────┐
+                                     │    Release       │
+                                     │ (reconcile +     │
+                                     │  promote)        │
+                                     └────────┬────────┘
+                                              │
+                    ┌─────────────────────────┼────────────┐
+                    ▼                         ▼            ▼
+            ┌────────────┐          ┌──────────────┐ ┌──────────┐
+            │  Traffic   │          │  Apply       │ │  Verify  │
+            │  Router    │          │  Manifests   │ │  Health  │
+            │ (Istio/GA) │          │              │ │  (CEL)   │
+            └────────────┘          └──────────────┘ └──────────┘
+```
+
+### CRDs
+
+| Kind | Purpose |
+|------|---------|
+| `Application` | Top-level resource, owns template + pipeline + stages + releases |
+| `Template` | Source configuration (Helm/Git/S3) for rendering manifests |
+| `Pipeline` | Sequential build/test/deploy steps as Kubernetes Jobs |
+| `Stage` | Environment definition with cluster ref, canary config, gates |
+| `Release` | Promotion of rendered manifests through a stage lifecycle |
+| `Artifact` | Build artifact reference (image, binary) |
+
+## Quickstart
 
 ### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Go 1.25+, Docker, kubectl
+- Access to a Kubernetes cluster (v1.29+ recommended)
+- [cert-manager](https://cert-manager.io/docs/installation/) installed on the cluster (for webhook certificates)
 
-```sh
-make docker-build docker-push IMG=ghcr.io/benebsworth/paprika:sha-<commit>
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+### Build & Deploy
 
 ```sh
+# Clone the repository
+git clone https://github.com/benebsworth/paprika.git
+cd paprika
+
+# Install CRDs
 make install
+
+# Build and deploy the operator
+make docker-build docker-push IMG=ghcr.io/benebsworth/paprika:latest
+make deploy IMG=ghcr.io/benebsworth/paprika:latest
+
+# Verify the operator is running
+kubectl get pods -n paprika-system
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+### Deploy a Sample Application
 
 ```sh
-make deploy IMG=ghcr.io/benebsworth/paprika:sha-<commit>
+kubectl apply -f config/samples/
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+This creates an `Application` resource that deploys a demo Helm chart, creating a Template, Stage, and Release automatically.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+### Run Locally
 
 ```sh
-kubectl apply -k config/samples/
+# Run the operator on your host (uses current kubeconfig context)
+ENABLE_WEBHOOKS=false make run
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+### Run Tests
 
 ```sh
-kubectl delete -k config/samples/
-```
+# Unit tests (Kubernetes envtest)
+make test
 
-**Delete the APIs(CRDs) from the cluster:**
+# Lint
+make lint
 
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
+# E2E tests (creates an isolated Kind cluster)
+make test-e2e
 ```
 
 ## Project Distribution
 
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
+### Single YAML Bundle
 
 ```sh
 make build-installer IMG=ghcr.io/benebsworth/paprika:<tag>
+# Generates dist/install.yaml — apply with:
+kubectl apply -f dist/install.yaml
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
+### Helm Chart
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/paprika/<tag or branch>/dist/install.yaml
+# Generate Helm chart from Kustomize manifests
+make helm-generate
+
+# Deploy via Helm
+helm install paprika charts/chart --namespace paprika-system --create-namespace
 ```
 
-### By providing a Helm Chart
+## Development
 
-1. Build the chart using the optional helm plugin
+### Project Structure
+
+```
+api/pipelines/v1alpha1/       CRD type definitions
+cmd/main.go                   Entrypoint (operator + API server modes)
+internal/controller/          Reconciliation controllers
+internal/webhook/             Admission webhooks
+engine/                       Template rendering, diff computation, workflow
+traffic/                      Traffic router implementations (Istio, Gateway API)
+health/                       CEL health evaluation, resource health checks
+source/                       Git/S3 source resolution
+gates/                        Approval gate execution
+analysis/                     Canary analysis
+charts/                       Helm charts (demo app, operator chart)
+ui/                           Next.js dashboard
+config/                       Kustomize manifests for deployment
+docs/                         Design docs, plans, guides
+```
+
+### Key Commands
 
 ```sh
-kubebuilder edit --plugins=helm/v2-alpha
+make help              # Show all available targets
+make manifests         # Regenerate CRDs + RBAC from kubebuilder markers
+make generate          # Regenerate DeepCopy methods
+make test              # Run unit tests
+make lint              # Run linter
+make run               # Run operator locally (no webhooks)
+make deploy            # Deploy to current cluster
+make docker-build      # Build Docker image
+make build-installer   # Build single-file YAML bundle
 ```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## CI/CD
-
-This project uses GitHub Actions for CI/CD and GHCR for container registry.
 
 ### Workflows
+
+This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
 | Lint | push, PR | golangci-lint |
 | Tests | push, PR | Unit tests with coverage |
-| E2E Tests | push, PR | End-to-end tests on Kind |
+| E2E | push, PR | End-to-end tests on Kind |
 | Build & Push | push to main | Build and push image to GHCR |
-| Deploy GKE Dev | after Build & Push | Deploy full operator to GKE dev cluster |
-| Deploy Cloud Run Dev | after Build & Push | Deploy API server to Cloud Run dev |
+| Deploy GKE Dev | after Build & Push | Deploy to GKE dev cluster |
 | Release | tag push (v*) | Build, release, deploy to production |
 
-### Manual Deployment
+## Roadmap
 
-```sh
-# Build and push
-make docker-build docker-push IMG=ghcr.io/benebsworth/paprika:sha-<commit>
-
-# Deploy full operator to any cluster
-make deploy IMG=ghcr.io/benebsworth/paprika:sha-<commit>
-
-# Deploy API server mode
-docker run --rm -p 3000:3000 ghcr.io/benebsworth/paprika:sha-<commit> --mode=api
-```
+See [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md) for the production readiness plan,
+including scaling the diff engine, adding source caching, splitting the monolith, and
+multi-tenancy support.
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+## Security
+
+Report vulnerabilities to benebsworth@gmail.com. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Apache 2.0. See [LICENSE](LICENSE).

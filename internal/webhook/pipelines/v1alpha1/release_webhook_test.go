@@ -59,11 +59,11 @@ var _ = Describe("Release Webhook", func() {
 				Expect(warnings).To(BeNil())
 			})
 
-			It("Should reject creation with empty pipeline reference", func() {
+			It("Should admit creation with empty pipeline reference (direct chart deploy)", func() {
 				obj.Spec.Target = testTargetStage
-				_, err := validator.ValidateCreate(ctx, obj)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Pipeline reference is required"))
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
 			})
 
 			It("Should reject creation with empty target stage", func() {
@@ -76,7 +76,6 @@ var _ = Describe("Release Webhook", func() {
 			It("Should reject creation with both fields empty", func() {
 				_, err := validator.ValidateCreate(ctx, obj)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Pipeline reference is required"))
 				Expect(err.Error()).To(ContainSubstring("Target stage is required"))
 			})
 		})

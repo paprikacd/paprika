@@ -43,16 +43,16 @@ func (m *MockDiffEngine) EXPECT() *MockDiffEngineMockRecorder {
 }
 
 // ComputeDiff mocks base method.
-func (m *MockDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, namespace string) (*engine.DiffResult, error) {
+func (m *MockDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts engine.DiffOptions) (*engine.DiffResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ComputeDiff", ctx, desired, namespace)
+	ret := m.ctrl.Call(m, "ComputeDiff", ctx, desired, opts)
 	ret0, _ := ret[0].(*engine.DiffResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ComputeDiff indicates an expected call of ComputeDiff.
-func (mr *MockDiffEngineMockRecorder) ComputeDiff(ctx, desired, namespace any) *gomock.Call {
+func (mr *MockDiffEngineMockRecorder) ComputeDiff(ctx, desired, opts any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ComputeDiff", reflect.TypeOf((*MockDiffEngine)(nil).ComputeDiff), ctx, desired, namespace)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ComputeDiff", reflect.TypeOf((*MockDiffEngine)(nil).ComputeDiff), ctx, desired, opts)
 }

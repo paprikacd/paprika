@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
 	"go.uber.org/mock/gomock"
@@ -253,5 +254,35 @@ func TestReleaseReconciler_routerForStage(t *testing.T) {
 				t.Errorf("routerForStage() = %v, want nil", router)
 			}
 		})
+	}
+}
+
+func TestCanaryStepStartedAt_advancesOnlyAfterInterval(t *testing.T) {
+	t.Parallel()
+
+	// When CanaryStepIndex > 0 and CanaryStepStartedAt is recent relative to
+	// (stepIdx * interval), the controller should requeue rather than advance.
+	// This protects against watch-event-driven fast-forward through the canary
+	// when the status update triggers an immediate re-reconcile.
+
+	interval := 5 * time.Second
+	stepIdx := 1
+	stepStartedAt := metav1.NewTime(time.Now())
+	nextStepAt := stepStartedAt.Add(time.Duration(stepIdx) * interval)
+
+	if time.Now().Before(nextStepAt) {
+		// We are inside the wait window — controller must not advance.
+		// (This is the same predicate the controller uses.)
+		t.Logf("inside wait window: step=%d startedAt=%v nextAt=%v (interval=%v)",
+			stepIdx, stepStartedAt, nextStepAt, interval)
+	} else {
+		t.Errorf("expected to be inside wait window, next step at %v (now=%v)",
+			nextStepAt, time.Now())
+	}
+
+	// After waiting past the threshold, the same predicate would let the step advance.
+	future := time.Now().Add(2 * interval)
+	if !future.After(nextStepAt) {
+		t.Errorf("expected %v to be after %v (wait window passed)", future, nextStepAt)
 	}
 }

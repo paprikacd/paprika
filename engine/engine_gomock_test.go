@@ -98,10 +98,11 @@ func TestDiffEngineMock(t *testing.T) {
 		Summary: "+1 ~0 -0",
 	}
 
-	mockEngine.EXPECT().ComputeDiff(gomock.Any(), desired, "default").
+	opts := engine.DiffOptions{Namespace: "default"}
+	mockEngine.EXPECT().ComputeDiff(gomock.Any(), desired, opts).
 		Return(expectedResult, nil).Times(1)
 
-	result, err := mockEngine.ComputeDiff(context.Background(), desired, "default")
+	result, err := mockEngine.ComputeDiff(context.Background(), desired, opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

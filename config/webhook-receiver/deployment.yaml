@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-receiver
+  namespace: system
+  labels:
+    app.kubernetes.io/component: webhook-receiver
+    app.kubernetes.io/name: paprika
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: webhook-receiver
+      app.kubernetes.io/name: paprika
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: webhook-receiver
+        app.kubernetes.io/name: paprika
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - command:
+        - /manager
+        args:
+          - --mode=webhook
+          - --health-probe-bind-address=:8081
+          - --webhook-bind-address=:8080
+        image: controller:latest
+        name: webhook-receiver
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        - containerPort: 8080
+          name: webhook
+          protocol: TCP
+        env:
+        - name: PAPRIKA_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: paprika-webhook-secret
+              key: secret
+              optional: true
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 200m
+            memory: 64Mi
+          requests:
+            cpu: 50m
+            memory: 32Mi
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10

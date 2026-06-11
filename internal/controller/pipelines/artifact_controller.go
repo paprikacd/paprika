@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 )
 
@@ -35,7 +36,8 @@ const resultError = "error"
 // ArtifactReconciler reconciles a Artifact object
 type ArtifactReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme      *runtime.Scheme
+	ShardFilter *sharding.Filter
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch;create;update;patch;delete

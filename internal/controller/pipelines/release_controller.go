@@ -9,6 +9,7 @@ import (
 	"time"
 
 	logr "github.com/go-logr/logr"
+	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +32,9 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
+	"github.com/benebsworth/paprika/internal/observability"
+	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 	"github.com/benebsworth/paprika/traffic"
 )
@@ -76,6 +80,8 @@ type ReleaseReconciler struct {
 	Analyzer             analysis.Analyzer
 	TemplateRenderer     engine.TemplateRenderer
 	TrafficRouterFactory TrafficRouterFactory
+	ShardFilter          *sharding.Filter
+	RateLimiter          *ratelimit.ControllerRateLimit
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
@@ -92,12 +98,35 @@ type ReleaseReconciler struct {
 
 // Reconcile handles Release reconciliation.
 func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx, span := observability.StartSpan(ctx, "ReleaseReconcile",
+		attribute.String("namespace", req.Namespace),
+		attribute.String("name", req.Name),
+	)
+	defer span.End()
+
 	result := resultSuccess
 	start := metrics.Timer()
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("release", result).Inc()
 		metrics.ReconcileDuration.WithLabelValues("release").Observe(metrics.Since(start))
 	}()
+
+	logger := logf.FromContext(ctx)
+	if r.ShardFilter != nil && !r.ShardFilter.Matches(req.Namespace) {
+		logger.Info("Skipping release not in shard", "namespace", req.Namespace, "shard", r.ShardFilter.ShardID())
+		return ctrl.Result{}, nil
+	}
+
+	if r.RateLimiter != nil {
+		if !r.RateLimiter.AllowGlobal() {
+			logger.Info("Global rate limit exceeded, requeueing", "release", req.Name)
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+		if !r.RateLimiter.AllowApp(ratelimit.ReconcileKey(req.Namespace, req.Name)) {
+			logger.Info("Per-application rate limit exceeded, requeueing", "release", req.Name)
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+	}
 
 	release, getErr := r.getRelease(ctx, req)
 	if getErr != nil {
@@ -388,7 +417,9 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 		templates = append(templates, tmpl)
 	}
 
-	params := map[string]string{}
+	params := map[string]string{
+		"release-name": release.Name,
+	}
 	if release.Spec.From != "" {
 		params["from"] = release.Spec.From
 	}
@@ -412,7 +443,8 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	if stage.Spec.Cluster.KubeconfigSecret != "" {
 		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
 	}
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret); err != nil {
+	appName := release.Labels["app.paprika.io/name"]
+	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
 		return fmt.Errorf("failed to apply manifests: %w", err)
 	}
 	log.Info("Applied rendered manifests to cluster", "stage", stage.Name, "bytes", len(manifests))
@@ -421,7 +453,7 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	return nil
 }
 
-func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret string) error {
+func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string) error {
 	log := logf.FromContext(ctx)
 
 	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, namespace)
@@ -430,7 +462,7 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	}
 
 	docs := engine.SplitYAMLDocuments(manifests)
-	applied := r.applyAllDocuments(ctx, log, dynClient, docs, namespace)
+	applied := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName)
 	log.Info("Successfully applied manifests", "count", applied)
 	return nil
 }
@@ -450,14 +482,14 @@ func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfig
 	return dynClient, nil
 }
 
-func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace string) int {
+func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string) int {
 	applied := 0
 	for _, doc := range docs {
 		obj, ok := r.parseManifest(doc)
 		if !ok {
 			continue
 		}
-		if r.applyDocument(ctx, log, dynClient, obj, namespace) {
+		if r.applyDocument(ctx, log, dynClient, obj, namespace, appName) {
 			applied++
 		}
 	}
@@ -478,7 +510,7 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 	return obj, true
 }
 
-func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace string) bool {
+func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName string) bool {
 	kind, ok := obj["kind"].(string)
 	if !ok || kind == "" {
 		return false
@@ -495,6 +527,7 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 		return false
 	}
 
+	setPaprikaLabels(metadata, appName)
 	targetNamespace := setTargetNamespace(obj, metadata, namespace)
 
 	gvr, err := r.gvrFromKind(kind, group, version)
@@ -510,6 +543,18 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 		return false
 	}
 	return true
+}
+
+func setPaprikaLabels(metadata map[string]interface{}, appName string) {
+	labelsRaw, ok := metadata["labels"].(map[string]interface{})
+	if !ok || labelsRaw == nil {
+		labelsRaw = make(map[string]interface{})
+		metadata["labels"] = labelsRaw
+	}
+	labelsRaw[engine.ManagedByLabelKey] = engine.ManagedByLabelValue
+	if appName != "" {
+		labelsRaw[engine.ApplicationNameLabelKey] = appName
+	}
 }
 
 func parseAPIVersion(apiVersion string) (group, version string) {
@@ -726,32 +771,42 @@ func (r *ReleaseReconciler) reconcileCanary(ctx context.Context, release *paprik
 		return r.handleCanaryPromotion(ctx, release, &stage, result)
 	}
 
+	if requeue, ok := r.checkCanaryThrottle(log, release, canaryCfg, stepIdx); ok {
+		return requeue, nil
+	}
+
 	currentWeight := canaryCfg.Steps[stepIdx]
 	log.Info("Canary step", "release", release.Name, "step", stepIdx, "weight", currentWeight)
 	metrics.CanaryStepTotal.WithLabelValues(release.Name, release.Namespace, stage.Name).Inc()
 	metrics.CanaryWeightGauge.WithLabelValues(release.Name, release.Namespace, stage.Name).Set(float64(currentWeight))
 
+	return r.advanceCanaryStep(ctx, release, &stage, canaryCfg, stepIdx, currentWeight, log, result)
+}
+
+func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, canaryCfg *paprikav1.CanaryConfig, stepIdx, currentWeight int, log logr.Logger, result *string) (ctrl.Result, error) {
 	if stop, analysisErr := r.runCanaryAnalysis(ctx, release, canaryCfg, result, log); analysisErr != nil {
 		return ctrl.Result{}, analysisErr
 	} else if stop {
 		return ctrl.Result{}, nil
 	}
 
-	if err := r.applyCanaryWeight(ctx, release, &stage, currentWeight); err != nil {
+	if err := r.applyCanaryWeight(ctx, release, stage, currentWeight); err != nil {
 		log.Error(err, "Failed to apply canary weight")
 		*result = resultError
 		return ctrl.Result{}, err
 	}
 
-	if err := r.applyTrafficWeight(ctx, &stage, release, currentWeight, log, result); err != nil {
+	if err := r.applyTrafficWeight(ctx, stage, release, currentWeight, log, result); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	release.Status.CanaryWeight = currentWeight
 	release.Status.CanaryStepIndex = stepIdx + 1
+	now := metav1.Now()
+	release.Status.CanaryStepStartedAt = &now
 
 	if r.canPromoteCanary(stepIdx, canaryCfg.Steps, currentWeight) {
-		return r.handleCanaryPromotion(ctx, release, &stage, result)
+		return r.handleCanaryPromotion(ctx, release, stage, result)
 	}
 
 	if err := r.Status().Update(ctx, release); err != nil {
@@ -760,6 +815,19 @@ func (r *ReleaseReconciler) reconcileCanary(ctx context.Context, release *paprik
 	}
 
 	return ctrl.Result{RequeueAfter: r.getCanaryInterval(canaryCfg)}, nil
+}
+
+func (r *ReleaseReconciler) checkCanaryThrottle(log logr.Logger, release *paprikav1.Release, canaryCfg *paprikav1.CanaryConfig, stepIdx int) (ctrl.Result, bool) {
+	if stepIdx <= 0 || release.Status.CanaryStepStartedAt == nil {
+		return ctrl.Result{}, false
+	}
+	interval := r.getCanaryInterval(canaryCfg)
+	nextStepAt := release.Status.CanaryStepStartedAt.Add(time.Duration(stepIdx) * interval)
+	if time.Now().Before(nextStepAt) {
+		log.Info("Waiting for canary interval", "release", release.Name, "step", stepIdx, "nextAt", nextStepAt)
+		return ctrl.Result{RequeueAfter: time.Until(nextStepAt)}, true
+	}
+	return ctrl.Result{}, false
 }
 
 func (r *ReleaseReconciler) canPromoteCanary(stepIdx int, steps []int, currentWeight int) bool {
@@ -885,7 +953,9 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		templates = append(templates, tmpl)
 	}
 
-	params := map[string]string{}
+	params := map[string]string{
+		"release-name": release.Name,
+	}
 	if release.Spec.From != "" {
 		params["from"] = release.Spec.From
 	}
@@ -909,7 +979,8 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	if stage.Spec.Cluster.KubeconfigSecret != "" {
 		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
 	}
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret); err != nil {
+	appName := release.Labels["app.paprika.io/name"]
+	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -939,7 +1010,8 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 	if stage.Spec.Cluster.KubeconfigSecret != "" {
 		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
 	}
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret); err != nil {
+	appName := release.Labels["app.paprika.io/name"]
+	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 
@@ -968,7 +1040,9 @@ func (r *ReleaseReconciler) fetchStageTemplates(ctx context.Context, release *pa
 }
 
 func (r *ReleaseReconciler) promotionParams(release *paprikav1.Release) map[string]string {
-	params := map[string]string{}
+	params := map[string]string{
+		"release-name": release.Name,
+	}
 	if release.Spec.From != "" {
 		params["from"] = release.Spec.From
 	}

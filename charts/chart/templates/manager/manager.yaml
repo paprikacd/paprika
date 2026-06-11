@@ -74,7 +74,6 @@ spec:
       {{- end }}
       containers:
       - args:
-        {{- if eq .Values.mode "operator" }}
         {{- if .Values.metrics.enable }}
         - --metrics-bind-address=:{{ .Values.metrics.port }}
         {{- if not .Values.metrics.secure }}
@@ -85,9 +84,12 @@ spec:
         - --metrics-bind-address=0
         {{- end }}
         - --leader-elect
-        {{- end }}
         - --health-probe-bind-address=:8081
+        {{- if eq .Values.deploymentMode "split" }}
+        - --mode=operator
+        {{- else }}
         - --mode={{ .Values.mode }}
+        {{- end }}
         {{- if and (eq .Values.mode "api") (ne .Values.remoteCluster.apiServer "") }}
         - --k8s-api-server={{ .Values.remoteCluster.apiServer }}
         {{- end }}
@@ -114,9 +116,14 @@ spec:
         - containerPort: 8081
           name: health
           protocol: TCP
+        {{- if eq .Values.deploymentMode "monolith" }}
         - containerPort: 3000
           name: ui
           protocol: TCP
+        - containerPort: 8080
+          name: webhook
+          protocol: TCP
+        {{- end }}
         readinessProbe:
           httpGet:
             path: /readyz

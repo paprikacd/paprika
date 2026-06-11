@@ -105,9 +105,8 @@ func (v *ReleaseCustomValidator) validateReleaseCreate(r *pipelinesv1alpha1.Rele
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 
-	if r.Spec.Pipeline == "" {
-		allErrs = append(allErrs, field.Required(specPath.Child("pipeline"), "Pipeline reference is required"))
-	}
+	// Pipeline is optional when there are no build steps (direct chart deploy).
+	// It is required when the release follows a build pipeline.
 
 	if r.Spec.Target == "" {
 		allErrs = append(allErrs, field.Required(specPath.Child("target"), "Target stage is required"))

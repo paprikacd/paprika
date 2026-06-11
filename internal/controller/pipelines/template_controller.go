@@ -11,13 +11,15 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 )
 
 // TemplateReconciler reconciles Template resources.
 type TemplateReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme      *runtime.Scheme
+	ShardFilter *sharding.Filter
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch;create;update;patch;delete
@@ -42,6 +44,11 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get template: %w", k8sErr)
 		}
+		return ctrl.Result{}, nil
+	}
+
+	if r.ShardFilter != nil && !r.ShardFilter.Matches(req.Namespace) {
+		log.Info("Skipping template not in shard", "namespace", req.Namespace, "shard", r.ShardFilter.ShardID())
 		return ctrl.Result{}, nil
 	}
 

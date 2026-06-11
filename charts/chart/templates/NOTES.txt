@@ -1,15 +1,26 @@
 Thank you for installing {{ .Chart.Name }}.
 
 Your release is named {{ .Release.Name }}.
-
 The controller and CRDs have been installed in namespace {{ .Release.Namespace }}.
 
-To verify the installation:
+Deployment mode: {{ .Values.deploymentMode }}
+{{- if eq .Values.deploymentMode "split" }}
 
+Components deployed:
+  - controller-manager (reconcilers only)
+  - api-server (API + UI on port 3000)
+  - webhook-receiver (Git webhooks on port 8080)
+
+Services:
+  kubectl get svc -n {{ .Release.Namespace }}
+{{- else }}
+All services run in a single pod (monolith mode).
+{{- end }}
+
+To verify the installation:
   kubectl get pods -n {{ .Release.Namespace }}
   kubectl get customresourcedefinitions
 
 To learn more about the release, try:
-
   $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
   $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}

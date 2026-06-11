@@ -11,13 +11,15 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
 )
 
 // StageReconciler reconciles Stage resources.
 type StageReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme      *runtime.Scheme
+	ShardFilter *sharding.Filter
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
@@ -43,6 +45,11 @@ func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get stage: %w", k8sErr)
 		}
+		return ctrl.Result{}, nil
+	}
+
+	if r.ShardFilter != nil && !r.ShardFilter.Matches(req.Namespace) {
+		log.Info("Skipping stage not in shard", "namespace", req.Namespace, "shard", r.ShardFilter.ShardID())
 		return ctrl.Result{}, nil
 	}
 
