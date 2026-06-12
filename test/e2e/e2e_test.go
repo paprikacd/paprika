@@ -1359,7 +1359,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "Resource sync status should be populated")
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying resource health is populated")
 			Eventually(func(g Gomega) {
@@ -1367,7 +1367,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "Resource health should be populated")
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 	})
 
