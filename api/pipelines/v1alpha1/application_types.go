@@ -226,6 +226,10 @@ type HealthCheckResult struct {
 // ApplicationSpec defines the specification for an application.
 // ApplicationSpec defines the specification for an application.
 type ApplicationSpec struct {
+	// Project references the AppProject that governs this application.
+	// +optional
+	Project string `json:"project,omitempty"`
+
 	// Source defines where the application code/chart lives.
 	Source ApplicationSource `json:"source"`
 

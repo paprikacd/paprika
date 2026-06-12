@@ -304,6 +304,9 @@ spec:
                   type: string
                 description: Parameters are Helm value overrides passed to all releases.
                 type: object
+              project:
+                description: Project references the AppProject that governs this application.
+                type: string
               source:
                 description: Source defines where the application code/chart lives.
                 properties:

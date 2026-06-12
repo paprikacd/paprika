@@ -21,17 +21,24 @@ import (
 
 // Server provides cached source resolution and manifest rendering.
 type Server struct {
-	renderer engine.TemplateRenderer
-	workDir  string
+	renderer    engine.TemplateRenderer
+	workDir     string
+	cache       cache.Cache
+	invalidator *cache.Invalidator
 }
 
 // NewServer creates a repo server with the given working directory and cache.
 func NewServer(workDir string, c cache.Cache) *Server {
 	base := engine.NewHelmSDKRenderer(workDir)
-	return &Server{
+	s := &Server{
 		renderer: engine.NewCachedTemplateRenderer(base, c, workDir, 0),
 		workDir:  workDir,
+		cache:    c,
 	}
+	if c != nil {
+		s.invalidator = cache.NewInvalidator(c)
+	}
+	return s
 }
 
 // ResolveSource resolves a template source.
@@ -85,11 +92,40 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	_, handler := v1connect.NewPaprikaServiceHandler(s)
 	mux.Handle("/paprika.v1.PaprikaService/", handler)
+	mux.HandleFunc("/invalidate", s.handleInvalidate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 	return mux
+}
+
+type invalidateRequest struct {
+	SourceType string `json:"sourceType"`
+	SourceURL  string `json:"sourceUrl"`
+	Revision   string `json:"revision"`
+}
+
+func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.invalidator == nil {
+		http.Error(w, "cache invalidation not available", http.StatusServiceUnavailable)
+		return
+	}
+	var req invalidateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := s.invalidator.Invalidate(r.Context(), req.SourceType, req.SourceURL, req.Revision); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 // Run starts the repo server on the given address.

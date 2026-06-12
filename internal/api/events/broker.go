@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,6 +43,36 @@ func NewRedisBroker(client redis.UniversalClient) (*Broker, error) {
 		go b.receiveLoop(ctx)
 	}
 	return b, nil
+}
+
+// NewBrokerFromEnv creates a broker from environment variables.
+// PAPRIKA_CACHE_BACKEND=redis enables Redis pub/sub; otherwise an in-memory broker is used.
+// PAPRIKA_REDIS_ADDR, PAPRIKA_REDIS_PASSWORD, PAPRIKA_REDIS_DB configure Redis.
+func NewBrokerFromEnv() (*Broker, error) {
+	backend := os.Getenv("PAPRIKA_CACHE_BACKEND")
+	if backend == "" {
+		backend = "memory"
+	}
+	if backend != "redis" {
+		return NewBroker(), nil
+	}
+	addr := os.Getenv("PAPRIKA_REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+	db, _ := strconv.Atoi(os.Getenv("PAPRIKA_REDIS_DB"))
+	client := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: os.Getenv("PAPRIKA_REDIS_PASSWORD"),
+		DB:       db,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("redis ping failed: %w", err)
+	}
+	return NewRedisBroker(client)
 }
 
 // Subscribe creates a channel that receives events for the given topic.

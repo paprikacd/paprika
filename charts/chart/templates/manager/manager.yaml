@@ -147,11 +147,11 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-        {{- $hasEnv := or (and .Values.repoServer.enabled (eq .Values.deploymentMode "monolith")) .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
+        {{- $hasEnv := or .Values.repoServer.enabled .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
         {{- if $hasEnv }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
-        {{- if and .Values.repoServer.enabled (eq .Values.deploymentMode "monolith") }}
+        {{- if .Values.repoServer.enabled }}
         - name: PAPRIKA_REPO_SERVER_ADDR
           value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
         {{- end }}

@@ -36,6 +36,9 @@ func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace
 	if err := checkDenyList(project.Spec.SourceReposDeny, sourceRepo, globMatch, "source repo %q denied by project %s", sourceRepo, appProject); err != nil {
 		return err
 	}
+	if kind == "" {
+		return nil
+	}
 	if err := checkList(project.Spec.Kinds, kind, kindMatch, "kind %q not allowed by project %s", kind, appProject); err != nil {
 		return err
 	}

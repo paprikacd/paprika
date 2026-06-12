@@ -2,6 +2,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 
 // Client calls a repo server.
 type Client struct {
+	baseURL       string
 	resolveSource v1connect.PaprikaServiceClient
 	render        v1connect.PaprikaServiceClient
 }
@@ -28,6 +30,7 @@ type Client struct {
 func New(baseURL string) *Client {
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	return &Client{
+		baseURL:       baseURL,
 		resolveSource: v1connect.NewPaprikaServiceClient(httpClient, baseURL),
 		render:        v1connect.NewPaprikaServiceClient(httpClient, baseURL),
 	}
@@ -44,6 +47,37 @@ func NewFromEnv() *Client {
 
 // Enabled returns true if a repo server is configured.
 func (c *Client) Enabled() bool { return c != nil }
+
+type invalidateRequest struct {
+	SourceType string `json:"sourceType"`
+	SourceURL  string `json:"sourceUrl"`
+	Revision   string `json:"revision"`
+}
+
+// Invalidate requests the repo server to invalidate cached entries for a source.
+func (c *Client) Invalidate(ctx context.Context, sourceType, sourceURL, revision string) error {
+	if c == nil {
+		return nil
+	}
+	payload, err := json.Marshal(invalidateRequest{SourceType: sourceType, SourceURL: sourceURL, Revision: revision})
+	if err != nil {
+		return fmt.Errorf("marshal invalidate request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/invalidate", bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("create invalidate request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("repo server invalidate: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("repo server invalidate returned status %d", resp.StatusCode)
+	}
+	return nil
+}
 
 // ResolveSource resolves a template source via the repo server.
 func (c *Client) ResolveSource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {

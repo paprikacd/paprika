@@ -63,6 +63,7 @@ import (
 	"github.com/benebsworth/paprika/internal/reposerver"
 	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
 	"github.com/benebsworth/paprika/internal/sharding"
+	webhookcorev1alpha1 "github.com/benebsworth/paprika/internal/webhook/core/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
 	"github.com/benebsworth/paprika/traffic"
@@ -438,6 +439,8 @@ func setupWebhooks(mgr ctrl.Manager) error {
 		{"Stage", webhookpipelinesv1alpha1.SetupStageWebhookWithManager},
 		{"Release", webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager},
 		{"Template", webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager},
+		{"Application", webhookpipelinesv1alpha1.SetupApplicationWebhookWithManager},
+		{"AppProject", webhookcorev1alpha1.SetupAppProjectWebhookWithManager},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
@@ -507,7 +510,13 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string,
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
-	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), nil)
+	broker, err := events.NewBrokerFromEnv()
+	if err != nil {
+		return fmt.Errorf("create event broker: %w", err)
+	}
+	defer broker.Close()
+
+	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), broker)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	uiMux := http.NewServeMux()
@@ -550,7 +559,13 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
-	paprikaServer := api.NewPaprikaServer(apiClient, nil)
+	broker, err := events.NewBrokerFromEnv()
+	if err != nil {
+		return fmt.Errorf("create event broker: %w", err)
+	}
+	defer broker.Close()
+
+	paprikaServer := api.NewPaprikaServer(apiClient, broker)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	mux := buildAPIMux(connectHandler, paprikaServer.Broker())
@@ -582,7 +597,7 @@ func runWebhookMode(webhookAddr, probeAddr string) error {
 		inv = cache.NewInvalidator(cacheClient)
 		defer func() { _ = cacheClient.Close() }()
 	}
-	handler := webhookreceiver.NewHandlerWithCache(apiClient, secret, inv)
+	handler := webhookreceiver.NewHandlerWithCacheAndRepo(apiClient, secret, inv, repoclient.NewFromEnv())
 
 	mux := http.NewServeMux()
 	mux.Handle("/webhook", handler)

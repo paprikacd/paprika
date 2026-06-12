@@ -36,13 +36,19 @@ const (
 
 // Handler processes incoming Git webhooks and triggers application reconciliation.
 type Handler struct {
-	client client.Client
-	secret string
-	cache  cacheInvalidator
+	client    client.Client
+	secret    string
+	cache     cacheInvalidator
+	repoCache repoInvalidator
 }
 
 // cacheInvalidator invalidates cached manifests and source resolutions.
 type cacheInvalidator interface {
+	Invalidate(ctx context.Context, sourceType, sourceURL, revision string) error
+}
+
+// repoInvalidator forwards invalidation to a remote repo server.
+type repoInvalidator interface {
 	Invalidate(ctx context.Context, sourceType, sourceURL, revision string) error
 }
 
@@ -54,6 +60,11 @@ func NewHandler(c client.Client, secret string) *Handler {
 // NewHandlerWithCache creates a new webhook handler that can invalidate caches.
 func NewHandlerWithCache(c client.Client, secret string, inv cacheInvalidator) *Handler {
 	return &Handler{client: c, secret: secret, cache: inv}
+}
+
+// NewHandlerWithCacheAndRepo creates a handler that invalidates both local and repo-server caches.
+func NewHandlerWithCacheAndRepo(c client.Client, secret string, inv cacheInvalidator, repo repoInvalidator) *Handler {
+	return &Handler{client: c, secret: secret, cache: inv, repoCache: repo}
 }
 
 // ServeHTTP implements http.Handler for Git webhooks.
@@ -144,6 +155,11 @@ func (h *Handler) triggerReconciliation(ctx context.Context, repoURL, branch str
 	if h.cache != nil {
 		if err := h.cache.Invalidate(ctx, "git", repoURL, branch); err != nil {
 			log.Error(err, "Failed to invalidate cache", "repo", repoURL, "branch", branch)
+		}
+	}
+	if h.repoCache != nil {
+		if err := h.repoCache.Invalidate(ctx, "git", repoURL, branch); err != nil {
+			log.Error(err, "Failed to invalidate repo server cache", "repo", repoURL, "branch", branch)
 		}
 	}
 

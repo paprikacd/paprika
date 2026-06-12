@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -50,4 +51,36 @@ func TestBroker_Close(t *testing.T) {
 	assert.False(t, ok)
 
 	assert.Nil(t, b.Subscribe(context.Background(), "apps"))
+}
+
+func TestNewBrokerFromEnv_Memory(t *testing.T) {
+	t.Setenv("PAPRIKA_CACHE_BACKEND", "")
+	t.Setenv("PAPRIKA_REDIS_ADDR", "")
+	b, err := NewBrokerFromEnv()
+	require.NoError(t, err)
+	require.NotNil(t, b)
+	defer b.Close()
+
+	ch := b.Subscribe(context.Background(), "apps")
+	require.NotNil(t, ch)
+
+	evt, err := NewEvent("app.updated", map[string]string{"name": "test"})
+	require.NoError(t, err)
+	b.Publish(context.Background(), "apps", evt)
+
+	select {
+	case got := <-ch:
+		assert.Equal(t, "app.updated", got.Type)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for event")
+	}
+}
+
+func TestNewBrokerFromEnv_RedisInvalid(t *testing.T) {
+	t.Setenv("PAPRIKA_CACHE_BACKEND", "redis")
+	t.Setenv("PAPRIKA_REDIS_ADDR", "127.0.0.1:1")
+	_, err := NewBrokerFromEnv()
+	require.Error(t, err)
+	_ = os.Unsetenv("PAPRIKA_CACHE_BACKEND")
+	_ = os.Unsetenv("PAPRIKA_REDIS_ADDR")
 }

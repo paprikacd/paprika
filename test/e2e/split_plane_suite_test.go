@@ -49,19 +49,31 @@ var _ = BeforeSuite(func() {
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to switch kubectl context")
 	}
 
-	By("building the manager image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", splitManagerImage))
-	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
+	By("building the manager image (skipped if SKIP_IMAGE_BUILD=true)")
+	if os.Getenv("SKIP_IMAGE_BUILD") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping image build (SKIP_IMAGE_BUILD=true)\n")
+		cmd := exec.Command("docker", "image", "inspect", splitManagerImage)
+		_, err = cmd.CombinedOutput()
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(),
+			fmt.Sprintf("Image %s not found locally; cannot skip build", splitManagerImage))
+	} else {
+		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", splitManagerImage))
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
+	}
 
 	By("loading the manager image on Kind")
 	err = utils.LoadImageToKindClusterWithName(splitManagerImage, splitClusterName)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
-	By("installing cert-manager on Kind")
-	Expect(utils.IsCertManagerCRDsInstalled()).To(BeFalse())
-	err = utils.InstallCertManager()
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install cert-manager")
+	By("installing cert-manager on Kind (skip if CERT_MANAGER_INSTALL_SKIP=true)")
+	if os.Getenv("CERT_MANAGER_INSTALL_SKIP") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping CertManager installation (CERT_MANAGER_INSTALL_SKIP=true)\n")
+	} else {
+		Expect(utils.IsCertManagerCRDsInstalled()).To(BeFalse())
+		err = utils.InstallCertManager()
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install cert-manager")
+	}
 
 	By("creating manager namespace")
 	cmd = exec.Command("kubectl", "create", "ns", splitNamespace)

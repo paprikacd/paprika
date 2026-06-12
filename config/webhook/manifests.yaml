@@ -10,6 +10,46 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-application
+  failurePolicy: Fail
+  name: mapplication-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applications
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-core-paprika-io-v1alpha1-appproject
+  failurePolicy: Fail
+  name: mappproject-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - appprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-pipelines-paprika-io-v1alpha1-pipeline
   failurePolicy: Fail
   name: mpipeline-v1alpha1.kb.io
@@ -90,6 +130,46 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: validating-webhook-configuration
 webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-application
+  failurePolicy: Fail
+  name: vapplication-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applications
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-core-paprika-io-v1alpha1-appproject
+  failurePolicy: Fail
+  name: vappproject-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - appprojects
+  sideEffects: None
 - admissionReviewVersions:
   - v1
   clientConfig:
