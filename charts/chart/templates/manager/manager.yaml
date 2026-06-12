@@ -96,6 +96,9 @@ spec:
         {{- if and (eq .Values.mode "api") (ne .Values.remoteCluster.tokenFile "") }}
         - --k8s-token-file={{ .Values.remoteCluster.tokenFile }}
         {{- end }}
+        {{- if eq .Values.deploymentMode "monolith" }}
+        {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
@@ -144,6 +147,14 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+        {{- if and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+        env:
+        - name: PAPRIKA_AUTH_RBAC_RULES
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
+              key: rbac.json
+        {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}

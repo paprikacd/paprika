@@ -1,0 +1,16 @@
+{{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: auth
+data:
+  rbac.json: |
+    {{ .Values.auth.rbac | toJson }}
+{{- end }}

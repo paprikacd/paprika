@@ -61,3 +61,30 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- include "paprika.resourceName" (dict "suffix" "controller-manager" "context" .) }}
 {{- end }}
 {{- end }}
+
+{{/*
+Auth CLI args shared between manager (monolith) and api-server deployments.
+*/}}
+{{- define "paprika.authArgs" -}}
+{{- if .Values.auth.enabled }}
+- --auth-enabled=true
+{{- if .Values.auth.basic.enabled }}
+- --auth-basic-username={{ .Values.auth.basic.username }}
+{{- if .Values.auth.basic.passwordHash }}
+- --auth-basic-password-hash={{ .Values.auth.basic.passwordHash }}
+{{- else if .Values.auth.basic.password }}
+- --auth-basic-password={{ .Values.auth.basic.password }}
+{{- end }}
+{{- end }}
+{{- if .Values.auth.oidc.enabled }}
+- --auth-oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
+- --auth-oidc-client-id={{ .Values.auth.oidc.clientID }}
+{{- if .Values.auth.oidc.clientSecret }}
+- --auth-oidc-client-secret={{ .Values.auth.oidc.clientSecret }}
+{{- end }}
+{{- end }}
+{{- if .Values.auth.allowUnauthenticated }}
+- --auth-allow-unauthenticated=true
+{{- end }}
+{{- end }}
+{{- end }}

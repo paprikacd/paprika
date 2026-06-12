@@ -32,28 +32,29 @@ provider "github" {
   owner = var.repo_owner
 }
 
+# Import existing repo (run: terraform import github_repository.paprika paprika)
 resource "github_repository" "paprika" {
-  name        = var.repo_name
-  description = "Kubernetes-native application delivery — progressive deployment, traffic routing, multi-cluster"
+  name = var.repo_name
 
   visibility = "public"
 
-  has_issues    = true
-  has_wiki      = false
-  has_projects  = false
+  has_issues      = true
+  has_wiki        = false
+  has_projects    = false
   has_discussions = false
 
   allow_merge_commit     = true
   allow_squash_merge     = true
   allow_rebase_merge     = true
   delete_branch_on_merge = true
+}
 
-  # GitHub Pages: serve docs from gh-pages branch
-  pages {
-    build_type = "legacy"
-    source {
-      branch = "gh-pages"
-      path   = "/"
-    }
+# Separate pages resource (pages block in github_repository is deprecated)
+resource "github_repository_pages" "paprika" {
+  repository = github_repository.paprika.name
+  build_type = "legacy"
+  source {
+    branch = "gh-pages"
+    path   = "/"
   }
 }

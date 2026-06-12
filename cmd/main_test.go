@@ -32,7 +32,8 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runAPIMode(fakeK8s.URL, tokenFile.Name(), addr, probeAddr)
+		errCh <- runAPIMode(fakeK8s.URL, tokenFile.Name(), addr, probeAddr,
+			false, "", "", "", "", "", "", false)
 	}()
 
 	select {

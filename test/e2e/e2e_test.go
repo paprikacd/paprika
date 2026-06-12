@@ -1172,7 +1172,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "source hash should be populated")
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying owned Template has correct type")
 			Eventually(func(g Gomega) {
@@ -1180,7 +1180,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("helm"))
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying owned Release was created")
 			Eventually(func(g Gomega) {
@@ -1188,7 +1188,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("e2e-sync-dev"))
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 

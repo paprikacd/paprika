@@ -35,6 +35,7 @@ spec:
       - args:
         - --mode=api
         - --health-probe-bind-address=:8081
+        {{- include "paprika.authArgs" . | nindent 8 }}
         {{- range .Values.apiServer.args }}
         - {{ . }}
         {{- end }}
@@ -78,6 +79,14 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.apiServer.extraVolumeMounts | nindent 10 }}
+        {{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+        env:
+        - name: PAPRIKA_AUTH_RBAC_RULES
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
+              key: rbac.json
+        {{- end }}
       securityContext:
         {{- if .Values.apiServer.podSecurityContext }}
         {{- toYaml .Values.apiServer.podSecurityContext | nindent 8 }}

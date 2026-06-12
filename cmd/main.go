@@ -19,12 +19,14 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
+	"connectrpc.com/connect"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
@@ -45,6 +47,7 @@ import (
 	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/health"
 	"github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
@@ -69,89 +72,115 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+type cliConfig struct {
+	metricsAddr, metricsCertPath, metricsCertName, metricsCertKey string
+	webhookCertPath, webhookCertName, webhookCertKey              string
+	probeAddr, uiAddr, webhookAddr                                string
+	operatorNamespace, mode, k8sAPIServer, k8sTokenFile           string
+	enableLeaderElection, secureMetrics, enableHTTP2              bool
+	authEnabled, authAllowUnauth                                  bool
+	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
+	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
+	zapOptions                                                    zap.Options
+}
+
 func main() {
-	var metricsAddr string
-	var metricsCertPath, metricsCertName, metricsCertKey string
-	var webhookCertPath, webhookCertName, webhookCertKey string
-	var enableLeaderElection bool
-	var probeAddr string
-	var secureMetrics bool
-	var enableHTTP2 bool
-	var operatorNamespace string
-	var uiAddr string
-	var mode string
-	var k8sAPIServer string
-	var k8sTokenFile string
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
-		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	flag.StringVar(&webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	flag.StringVar(&webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	flag.StringVar(&webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
-		"The directory that contains the metrics server certificate.")
-	flag.StringVar(&metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	flag.BoolVar(&enableHTTP2, "enable-http2", false,
-		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&operatorNamespace, "operator-namespace", "paprika-system",
-		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
-	var webhookAddr string
-	flag.StringVar(&uiAddr, "ui-bind-address", ":3000",
-		"The address the UI dashboard server binds to.")
-	flag.StringVar(&mode, "mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), or 'webhook' (webhook receiver only).")
-	flag.StringVar(&k8sAPIServer, "k8s-api-server", "",
-		"Kubernetes API server URL. Only used in 'api' mode.")
-	flag.StringVar(&k8sTokenFile, "k8s-token-file", "",
-		"Path to Kubernetes service account token. Only used in 'api' mode.")
-	flag.StringVar(&webhookAddr, "webhook-bind-address", ":8080",
-		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
-	flag.Parse()
+	cfg := registerFlags()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cfg.zapOptions)))
 
-	if mode != "operator" && mode != "api" && mode != "webhook" {
-		setupLog.Error(fmt.Errorf("invalid mode: %s", mode), "Must be 'operator', 'api', or 'webhook'")
+	if cfg.mode != "operator" && cfg.mode != "api" && cfg.mode != "webhook" {
+		setupLog.Error(fmt.Errorf("invalid mode: %s", cfg.mode), "Must be 'operator', 'api', or 'webhook'")
 		os.Exit(1)
 	}
 
-	if mode == "api" {
-		if err := runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr); err != nil {
+	if cfg.mode == "api" {
+		if err := runAPIMode(cfg.k8sAPIServer, cfg.k8sTokenFile, cfg.uiAddr, cfg.probeAddr,
+			cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+			cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth); err != nil {
 			setupLog.Error(err, "API mode failed")
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
-	if mode == "webhook" {
-		if err := runWebhookMode(webhookAddr, probeAddr); err != nil {
+	if cfg.mode == "webhook" {
+		if err := runWebhookMode(cfg.webhookAddr, cfg.probeAddr); err != nil {
 			setupLog.Error(err, "Webhook mode failed")
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
-	if err := runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
-		metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace,
-		enableLeaderElection, secureMetrics, enableHTTP2); err != nil {
+	if err := runOperatorMode(cfg.uiAddr, cfg.metricsAddr, cfg.probeAddr,
+		cfg.webhookCertPath, cfg.webhookCertName, cfg.webhookCertKey,
+		cfg.metricsCertPath, cfg.metricsCertName, cfg.metricsCertKey, cfg.operatorNamespace,
+		cfg.enableLeaderElection, cfg.secureMetrics, cfg.enableHTTP2,
+		cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth); err != nil {
 		setupLog.Error(err, "Failed to run operator mode")
 		os.Exit(1)
 	}
 }
 
+func registerFlags() cliConfig {
+	var cfg cliConfig
+	flag.StringVar(&cfg.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	flag.StringVar(&cfg.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
+		"Enable leader election for controller manager. "+
+			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
+		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
+	flag.StringVar(&cfg.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	flag.StringVar(&cfg.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	flag.StringVar(&cfg.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	flag.StringVar(&cfg.metricsCertPath, "metrics-cert-path", "",
+		"The directory that contains the metrics server certificate.")
+	flag.StringVar(&cfg.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	flag.StringVar(&cfg.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	flag.BoolVar(&cfg.enableHTTP2, "enable-http2", false,
+		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&cfg.operatorNamespace, "operator-namespace", "paprika-system",
+		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
+	flag.StringVar(&cfg.uiAddr, "ui-bind-address", ":3000",
+		"The address the UI dashboard server binds to.")
+	flag.StringVar(&cfg.mode, "mode", "operator",
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), or 'webhook' (webhook receiver only).")
+	flag.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
+		"Kubernetes API server URL. Only used in 'api' mode.")
+	flag.StringVar(&cfg.k8sTokenFile, "k8s-token-file", "",
+		"Path to Kubernetes service account token. Only used in 'api' mode.")
+	flag.StringVar(&cfg.webhookAddr, "webhook-bind-address", ":8080",
+		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
+	flag.BoolVar(&cfg.authEnabled, "auth-enabled", false,
+		"Enable authentication and authorization for the API server.")
+	flag.StringVar(&cfg.authBasicUsername, "auth-basic-username", "",
+		"Basic auth username. Only used when --auth-enabled=true.")
+	flag.StringVar(&cfg.authBasicPassword, "auth-basic-password", "",
+		"Basic auth plain-text password. Only used when --auth-enabled=true and --auth-basic-password-hash is empty.")
+	flag.StringVar(&cfg.authBasicPasswordHash, "auth-basic-password-hash", "",
+		"Basic auth SHA-256 password hash (hex). Only used when --auth-enabled=true.")
+	flag.StringVar(&cfg.authOIDCIssuerURL, "auth-oidc-issuer-url", "",
+		"OIDC issuer URL. Only used when --auth-enabled=true.")
+	flag.StringVar(&cfg.authOIDCClientID, "auth-oidc-client-id", "",
+		"OIDC client ID. Only used when --auth-enabled=true.")
+	flag.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
+		"OIDC client secret. Only used when --auth-enabled=true.")
+	flag.BoolVar(&cfg.authAllowUnauth, "auth-allow-unauthenticated", false,
+		"Allow unauthenticated requests through when no credentials are provided. Only used when --auth-enabled=true.")
+	cfg.zapOptions = zap.Options{Development: true}
+	cfg.zapOptions.BindFlags(flag.CommandLine)
+	flag.Parse()
+	return cfg
+}
+
 func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
 	metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace string,
-	enableLeaderElection, secureMetrics, enableHTTP2 bool) error {
+	enableLeaderElection, secureMetrics, enableHTTP2 bool,
+	authEnabled bool, authBasicUsername, authBasicPassword, authBasicPasswordHash string,
+	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret string, authAllowUnauth bool) error {
 	tlsOpts := buildOperatorTLSOptions(enableHTTP2)
 	webhookServer := buildOperatorWebhookServer(tlsOpts, webhookCertPath, webhookCertName, webhookCertKey)
 	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, metricsAddr, metricsCertPath, metricsCertName, metricsCertKey, secureMetrics)
@@ -204,7 +233,8 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter); err != nil {
 		return err
 	}
-	if err := startOperatorUI(mgr, uiAddr); err != nil {
+	if err := startOperatorUI(mgr, uiAddr, authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
+		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth); err != nil {
 		return err
 	}
 
@@ -422,9 +452,18 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 	return nil
 }
 
-func startOperatorUI(mgr ctrl.Manager, uiAddr string) error {
+func startOperatorUI(mgr ctrl.Manager, uiAddr string,
+	authEnabled bool, authBasicUsername, authBasicPassword, authBasicPasswordHash string,
+	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret string, authAllowUnauth bool) error {
+	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
+		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
+	authInterceptor, err := auth.Interceptor(authCfg)
+	if err != nil {
+		return fmt.Errorf("failed to build auth interceptor: %w", err)
+	}
+
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient())
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer)
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
@@ -445,7 +484,9 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string) error {
 	return nil
 }
 
-func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
+func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
+	authEnabled bool, authBasicUsername, authBasicPassword, authBasicPasswordHash string,
+	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret string, authAllowUnauth bool) error {
 	config, err := buildAPIConfig(k8sAPIServer, k8sTokenFile)
 	if err != nil {
 		return err
@@ -456,8 +497,15 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string) error {
 		return err
 	}
 
+	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
+		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
+	authInterceptor, err := auth.Interceptor(authCfg)
+	if err != nil {
+		return fmt.Errorf("failed to build auth interceptor: %w", err)
+	}
+
 	paprikaServer := api.NewPaprikaServer(apiClient)
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer)
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	mux := buildAPIMux(connectHandler)
 	healthMux := buildHealthMux()
@@ -593,4 +641,37 @@ func startAPIServer(mux *http.ServeMux, uiAddr string) error {
 		return fmt.Errorf("api server error: %w", err)
 	}
 	return nil
+}
+
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, allowUnauth bool) auth.Config {
+	cfg := auth.Config{
+		Enabled:     enabled,
+		AllowUnauth: allowUnauth,
+	}
+	if !enabled {
+		return cfg
+	}
+	if basicUsername != "" {
+		cfg.BasicAuth = &auth.BasicAuthConfig{
+			Username:     basicUsername,
+			Password:     basicPassword,
+			PasswordHash: basicPasswordHash,
+		}
+	}
+	if oidcIssuerURL != "" {
+		cfg.OIDC = &auth.OIDCConfig{
+			IssuerURL:    oidcIssuerURL,
+			ClientID:     oidcClientID,
+			ClientSecret: oidcClientSecret,
+		}
+	}
+	if data := os.Getenv("PAPRIKA_AUTH_RBAC_RULES"); data != "" {
+		var rules []auth.RBACRule
+		if err := json.Unmarshal([]byte(data), &rules); err != nil {
+			setupLog.Error(err, "Failed to parse PAPRIKA_AUTH_RBAC_RULES, ignoring RBAC rules")
+		} else {
+			cfg.RBACRules = rules
+		}
+	}
+	return cfg
 }

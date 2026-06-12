@@ -243,6 +243,49 @@ remoteCluster:
   # -- Path to mounted service account token file
   tokenFile: ""
 
+## API server authentication and authorization
+##
+auth:
+  # -- Enable authentication and authorization for the API server
+  enabled: false
+
+  # -- Allow unauthenticated requests when no credentials are provided
+  allowUnauthenticated: false
+
+  ## HTTP Basic authentication
+  ##
+  basic:
+    enabled: false
+    username: ""
+    # -- Plain-text password (not recommended for production)
+    password: ""
+    # -- SHA-256 hash of the password, hex-encoded
+    passwordHash: ""
+
+  ## OpenID Connect authentication
+  ##
+  oidc:
+    enabled: false
+    issuerURL: ""
+    clientID: ""
+    clientSecret: ""
+
+  ## RBAC authorization rules
+  ## Subjects may be user names or "group:<group-name>".
+  ## Actions: read, write, admin (or * for all).
+  ## Resources: applications, pipelines, releases, stages, templates, artifacts (or *).
+  ## Namespaces: specific namespace or * for all.
+  ##
+  rbac: []
+  # - subjects: ["admin"]
+  #   actions: ["*"]
+  #   resources: ["*"]
+  #   namespaces: ["*"]
+  # - subjects: ["group:readers"]
+  #   actions: ["read"]
+  #   resources: ["applications"]
+  #   namespaces: ["default"]
+
 ## RBAC configuration
 ##
 rbac:

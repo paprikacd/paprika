@@ -4,7 +4,7 @@ import { DocsSidebar } from "@/components/docs/sidebar"
 export const metadata: Metadata = {
   title: {
     template: "%s | Paprika Docs",
-    default: "Documentation | Paprika",
+    default: "Documentation",
   },
 }
 
