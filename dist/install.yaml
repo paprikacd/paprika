@@ -312,6 +312,9 @@ spec:
                   type: string
                 description: Parameters are Helm value overrides passed to all releases.
                 type: object
+              project:
+                description: Project references the AppProject that governs this application.
+                type: string
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -3119,6 +3122,46 @@ webhooks:
     service:
       name: paprika-webhook-service
       namespace: paprika-system
+      path: /mutate-pipelines-paprika-io-v1alpha1-application
+  failurePolicy: Fail
+  name: mapplication-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applications
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /mutate-core-paprika-io-v1alpha1-appproject
+  failurePolicy: Fail
+  name: mappproject-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - appprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
       path: /mutate-pipelines-paprika-io-v1alpha1-pipeline
   failurePolicy: Fail
   name: mpipeline-v1alpha1.kb.io
@@ -3201,6 +3244,46 @@ metadata:
     cert-manager.io/inject-ca-from: paprika-system/paprika-serving-cert
   name: paprika-validating-webhook-configuration
 webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-pipelines-paprika-io-v1alpha1-application
+  failurePolicy: Fail
+  name: vapplication-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applications
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-core-paprika-io-v1alpha1-appproject
+  failurePolicy: Fail
+  name: vappproject-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - appprojects
+  sideEffects: None
 - admissionReviewVersions:
   - v1
   clientConfig:

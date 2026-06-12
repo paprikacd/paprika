@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/gates"
 	gatesmocks "github.com/benebsworth/paprika/gates/mocks"
+	agentserver "github.com/benebsworth/paprika/internal/agent/server"
+	"github.com/benebsworth/paprika/internal/controller/pipelines/mocks"
 	"github.com/benebsworth/paprika/traffic"
 	trafficmocks "github.com/benebsworth/paprika/traffic/mocks"
 )
@@ -284,5 +287,116 @@ func TestCanaryStepStartedAt_advancesOnlyAfterInterval(t *testing.T) {
 	future := time.Now().Add(2 * interval)
 	if !future.After(nextStepAt) {
 		t.Errorf("expected %v to be after %v (wait window passed)", future, nextStepAt)
+	}
+}
+
+func TestReleaseReconciler_applyViaAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		cluster     pipelinesv1alpha1.ClusterRef
+		setupMock   func(m *mocks.MockAgentClient)
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "successful apply via explicit agent address",
+			cluster: pipelinesv1alpha1.ClusterRef{
+				Name:         "remote",
+				Namespace:    "ns",
+				Mode:         pipelinesv1alpha1.ClusterModeAgent,
+				AgentAddress: "http://agent.example:8083",
+			},
+			setupMock: func(m *mocks.MockAgentClient) {
+				m.EXPECT().Apply(gomock.Any(), &agentserver.ApplyRequest{
+					Namespace: "default",
+					AppName:   "my-app",
+					Manifests: []byte("kind: ConfigMap\n"),
+				}).Return(&agentserver.ApplyResponse{}, nil)
+			},
+		},
+		{
+			name: "agent errors are wrapped",
+			cluster: pipelinesv1alpha1.ClusterRef{
+				Name:         "remote",
+				Namespace:    "ns",
+				Mode:         pipelinesv1alpha1.ClusterModeAgent,
+				AgentAddress: "http://agent.example:8083",
+			},
+			setupMock: func(m *mocks.MockAgentClient) {
+				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
+					Return(nil, errors.New("connection refused"))
+			},
+			wantErr:     true,
+			errContains: "agent apply",
+		},
+		{
+			name: "agent returns apply errors",
+			cluster: pipelinesv1alpha1.ClusterRef{
+				Name:         "remote",
+				Namespace:    "ns",
+				Mode:         pipelinesv1alpha1.ClusterModeAgent,
+				AgentAddress: "http://agent.example:8083",
+			},
+			setupMock: func(m *mocks.MockAgentClient) {
+				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
+					Return(&agentserver.ApplyResponse{Errors: []string{"forbidden"}}, nil)
+			},
+			wantErr:     true,
+			errContains: "forbidden",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			mockClient := mocks.NewMockAgentClient(ctrl)
+			tc.setupMock(mockClient)
+
+			r := &ReleaseReconciler{
+				AgentClientBuilder: func(_ string) AgentClient {
+					return mockClient
+				},
+			}
+
+			err := r.applyViaAgent(context.Background(), &tc.cluster, "default", "my-app", []byte("kind: ConfigMap\n"))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tc.errContains) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.errContains)
+				}
+			} else if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockClient := mocks.NewMockAgentClient(ctrl)
+	mockClient.EXPECT().Apply(gomock.Any(), gomock.Any()).
+		Return(&agentserver.ApplyResponse{}, nil)
+
+	r := &ReleaseReconciler{
+		AgentClientBuilder: func(_ string) AgentClient {
+			return mockClient
+		},
+	}
+
+	cluster := pipelinesv1alpha1.ClusterRef{
+		Name:         "remote",
+		Namespace:    "ns",
+		Mode:         pipelinesv1alpha1.ClusterModeAgent,
+		AgentAddress: "http://agent.example:8083",
+	}
+
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n")); err != nil {
+		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }
