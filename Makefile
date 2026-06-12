@@ -93,7 +93,7 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 
 .PHONY: test-e2e-split
 test-e2e-split: manifests generate fmt vet ## Run the split-plane e2e tests. Kind is created/cleaned by the suite.
-	go test -tags=e2e_split ./test/e2e/ -v -ginkgo.v -timeout=15m
+	go test -tags=e2e_split ./test/e2e/ -v -ginkgo.v -timeout=60m
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests

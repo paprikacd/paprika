@@ -70,6 +70,31 @@ spec:
               namespace:
                 description: Namespace to pass to helm --namespace
                 type: string
+              oci:
+                description: OCISourceSpec defines an OCI registry source (for Helm
+                  charts or artifacts).
+                properties:
+                  insecure:
+                    description: Insecure allows plain HTTP for the OCI registry
+                    type: boolean
+                  secretRef:
+                    description: SecretRef references a Secret with dockerconfigjson
+                      or .dockerconfigjson
+                    type: string
+                  tag:
+                    description: Tag or digest of the artifact (e.g. "1.2.3", "@sha256:...")
+                    type: string
+                  url:
+                    description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                    type: string
+                required:
+                - url
+                type: object
+              repoRef:
+                description: |-
+                  RepoRef references a core.paprika.io Repository by name. When set, takes
+                  precedence over the inline source spec fields.
+                type: string
               s3:
                 description: S3SourceSpec defines an S3 source specification.
                 properties:
@@ -96,6 +121,7 @@ spec:
                 - kustomize
                 - git
                 - s3
+                - oci
                 type: string
               valuesFile:
                 description: Inline YAML values file content (merged with Release

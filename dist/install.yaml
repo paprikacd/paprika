@@ -339,6 +339,12 @@ spec:
                     description: S3 endpoint URL (for type=s3, use LocalStack endpoint
                       for testing)
                     type: string
+                  image:
+                    description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                    type: string
+                  insecure:
+                    description: Insecure allows plain HTTP for OCI registries (type=oci)
+                    type: boolean
                   key:
                     description: S3 object key (for type=s3)
                     type: string
@@ -352,6 +358,11 @@ spec:
                     type: string
                   region:
                     description: S3 region (for type=s3)
+                    type: string
+                  repoRef:
+                    description: |-
+                      RepoRef references a core.paprika.io Repository by name. When set, takes
+                      precedence over inline URL/credentials fields.
                     type: string
                   repoUrl:
                     description: Git repository URL (for type=git)
@@ -367,6 +378,7 @@ spec:
                     - git
                     - helm
                     - s3
+                    - oci
                     type: string
                 required:
                 - type
@@ -877,6 +889,13 @@ spec:
                 type: array
               kindsDeny:
                 description: KindsDeny denies matching kinds.
+                items:
+                  type: string
+                type: array
+              repositories:
+                description: |-
+                  Repositories restricts which core.paprika.io Repository names are allowed.
+                  Applications/Templates referencing a Repository must use one of these names.
                 items:
                   type: string
                 type: array
@@ -1952,6 +1971,31 @@ spec:
               namespace:
                 description: Namespace to pass to helm --namespace
                 type: string
+              oci:
+                description: OCISourceSpec defines an OCI registry source (for Helm
+                  charts or artifacts).
+                properties:
+                  insecure:
+                    description: Insecure allows plain HTTP for the OCI registry
+                    type: boolean
+                  secretRef:
+                    description: SecretRef references a Secret with dockerconfigjson
+                      or .dockerconfigjson
+                    type: string
+                  tag:
+                    description: Tag or digest of the artifact (e.g. "1.2.3", "@sha256:...")
+                    type: string
+                  url:
+                    description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                    type: string
+                required:
+                - url
+                type: object
+              repoRef:
+                description: |-
+                  RepoRef references a core.paprika.io Repository by name. When set, takes
+                  precedence over the inline source spec fields.
+                type: string
               s3:
                 description: S3SourceSpec defines an S3 source specification.
                 properties:
@@ -1978,6 +2022,7 @@ spec:
                 - kustomize
                 - git
                 - s3
+                - oci
                 type: string
               valuesFile:
                 description: Inline YAML values file content (merged with Release
@@ -2430,6 +2475,7 @@ rules:
   - core.paprika.io
   resources:
   - appprojects
+  - repositories
   verbs:
   - create
   - delete
@@ -2448,6 +2494,7 @@ rules:
   - core.paprika.io
   resources:
   - appprojects/status
+  - repositories/status
   verbs:
   - get
   - patch
@@ -3202,6 +3249,26 @@ webhooks:
     service:
       name: paprika-webhook-service
       namespace: paprika-system
+      path: /mutate-core-paprika-io-v1alpha1-repository
+  failurePolicy: Fail
+  name: mrepository-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
       path: /mutate-pipelines-paprika-io-v1alpha1-stage
   failurePolicy: Fail
   name: mstage-v1alpha1.kb.io
@@ -3323,6 +3390,26 @@ webhooks:
     - UPDATE
     resources:
     - releases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-core-paprika-io-v1alpha1-repository
+  failurePolicy: Fail
+  name: vrepository-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - repositories
   sideEffects: None
 - admissionReviewVersions:
   - v1

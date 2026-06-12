@@ -89,7 +89,7 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 	}
 
 	if app.Spec.Project != "" && v.enforcer != nil {
-		if err := v.enforcer.AuthorizeApplication(ctx, app.Namespace, app.Spec.Project, app.Spec.Source.RepoURL, ""); err != nil {
+		if err := v.enforcer.AuthorizeApplication(ctx, app.Namespace, app.Spec.Project, app.Spec.Source.RepoURL, app.Spec.Source.RepoRef, ""); err != nil {
 			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("project"), err.Error()))
 		}
 	}

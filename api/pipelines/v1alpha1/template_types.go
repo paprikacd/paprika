@@ -13,6 +13,19 @@ type ChartRef struct {
 	Path string `json:"path,omitempty"`
 }
 
+// OCISourceSpec defines an OCI registry source (for Helm charts or artifacts).
+type OCISourceSpec struct {
+	// URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+	URL string `json:"url"`
+	// Tag or digest of the artifact (e.g. "1.2.3", "@sha256:...")
+	Tag string `json:"tag,omitempty"`
+	// Insecure allows plain HTTP for the OCI registry
+	// +optional
+	Insecure bool `json:"insecure,omitempty"`
+	// SecretRef references a Secret with dockerconfigjson or .dockerconfigjson
+	SecretRef string `json:"secretRef,omitempty"`
+}
+
 // GitSourceSpec defines a git source specification.
 type GitSourceSpec struct {
 	RepoURL   string `json:"repoUrl"`
@@ -33,11 +46,16 @@ type S3SourceSpec struct {
 
 // TemplateSpec defines the specification for a template.
 type TemplateSpec struct {
-	// +kubebuilder:validation:Enum=helm;kubernetes;kustomize;git;s3
+	// +kubebuilder:validation:Enum=helm;kubernetes;kustomize;git;s3;oci
 	Type  string         `json:"type"`
 	Chart ChartRef       `json:"chart,omitempty"`
 	Git   *GitSourceSpec `json:"git,omitempty"`
 	S3    *S3SourceSpec  `json:"s3,omitempty"`
+	OCI   *OCISourceSpec `json:"oci,omitempty"`
+	// RepoRef references a core.paprika.io Repository by name. When set, takes
+	// precedence over the inline source spec fields.
+	// +optional
+	RepoRef string `json:"repoRef,omitempty"`
 	// Namespace to pass to helm --namespace
 	Namespace string `json:"namespace,omitempty"`
 	// Inline YAML values file content (merged with Release parameters)

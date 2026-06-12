@@ -30,6 +30,11 @@ type AppProjectSpec struct {
 	// SourceReposDeny denies matching repository URLs.
 	SourceReposDeny []string `json:"sourceReposDeny,omitempty"`
 
+	// Repositories restricts which core.paprika.io Repository names are allowed.
+	// Applications/Templates referencing a Repository must use one of these names.
+	// +optional
+	Repositories []string `json:"repositories,omitempty"`
+
 	// Destinations restricts target cluster/server and namespace combinations.
 	Destinations []AppProjectDestination `json:"destinations,omitempty"`
 

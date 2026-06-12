@@ -33,32 +33,34 @@ func TestSplitPlaneE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	var cmd *exec.Cmd
 	By("checking for existing Kind cluster")
 	clusterExists, err := kindClusterExists(splitClusterName)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to check Kind clusters")
 
 	if !clusterExists {
 		By(fmt.Sprintf("creating Kind cluster %q", splitClusterName))
-		cmd := exec.Command("kind", "create", "cluster", "--name", splitClusterName)
-		_, err := utils.Run(cmd)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to create Kind cluster")
+		cmd = exec.Command("kind", "create", "cluster", "--name", splitClusterName)
+		_, runErr := utils.Run(cmd)
+		ExpectWithOffset(1, runErr).NotTo(HaveOccurred(), "Failed to create Kind cluster")
+		waitForClusterReady()
 	} else {
 		By("switching kubectl context to existing Kind cluster")
-		cmd := exec.Command("kubectl", "config", "use-context", fmt.Sprintf("kind-%s", splitClusterName))
-		_, err := utils.Run(cmd)
-		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to switch kubectl context")
+		cmd = exec.Command("kubectl", "config", "use-context", "kind-"+splitClusterName)
+		_, runErr := utils.Run(cmd)
+		ExpectWithOffset(1, runErr).NotTo(HaveOccurred(), "Failed to switch kubectl context")
 	}
 
 	By("building the manager image (skipped if SKIP_IMAGE_BUILD=true)")
 	if os.Getenv("SKIP_IMAGE_BUILD") == "true" {
 		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping image build (SKIP_IMAGE_BUILD=true)\n")
-		cmd := exec.Command("docker", "image", "inspect", splitManagerImage)
-		_, err = cmd.CombinedOutput()
-		ExpectWithOffset(1, err).NotTo(HaveOccurred(),
-			fmt.Sprintf("Image %s not found locally; cannot skip build", splitManagerImage))
+		inspectCmd := exec.Command("docker", "image", "inspect", splitManagerImage)
+		_, inspectErr := inspectCmd.CombinedOutput()
+		ExpectWithOffset(1, inspectErr).NotTo(HaveOccurred(),
+			"Image "+splitManagerImage+" not found locally; cannot skip build")
 	} else {
-		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", splitManagerImage))
-		_, err = utils.Run(cmd)
+		buildCmd := exec.Command("make", "docker-build", "IMG="+splitManagerImage)
+		_, err = utils.Run(buildCmd)
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
 	}
 
@@ -86,16 +88,27 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 	By("deploying the controller-manager (controllers only, UI served by cloud-run)")
-	cmd = exec.Command("kubectl", "apply", "--context", fmt.Sprintf("kind-%s", splitClusterName),
-		"-k", "config/default")
+	cmd = exec.Command("make", "deploy", "IMG="+splitManagerImage)
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 
 	By("waiting for the operator deployment to be ready")
 	cmd = exec.Command("kubectl", "wait", "--for=condition=available", "-n", splitNamespace,
-		"deployment/paprika-controller-manager", "--timeout=120s")
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred(), "Operator deployment not available")
+		"deployment/paprika-controller-manager", "--timeout=300s")
+	_, waitErr := utils.Run(cmd)
+	if waitErr != nil {
+		By("dumping operator pod status for debugging")
+		runDebug := func(name string, debugCmd *exec.Cmd) {
+			out, debugErr := utils.Run(debugCmd)
+			_, _ = fmt.Fprintf(GinkgoWriter, "--- %s ---\n%s\nerr: %v\n", name, out, debugErr)
+		}
+		runDebug("pods", exec.Command("kubectl", "get", "pods", "-n", splitNamespace, "-o", "wide"))
+		runDebug("deployment", exec.Command("kubectl", "describe", "deployment", "paprika-controller-manager", "-n", splitNamespace))
+		runDebug("events", exec.Command("kubectl", "get", "events", "-n", splitNamespace, "--sort-by=.lastTimestamp"))
+		runDebug("logs", exec.Command("kubectl", "logs", "-n", splitNamespace,
+			"-l", "control-plane=controller-manager", "--tail=50"))
+	}
+	Expect(waitErr).NotTo(HaveOccurred(), "Operator deployment not available")
 
 	By("building the cloud-run binary")
 	cmd = exec.Command("go", "build", "-o", "/tmp/paprika-cloud-run-e2e", "./cmd/cloud-run/")
@@ -155,8 +168,24 @@ var _ = AfterSuite(func() {
 	_, _ = utils.Run(cmd)
 })
 
+func waitForClusterReady() {
+	By("waiting for Kind cluster to be ready")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "--raw", "/healthz") //nolint:noctx // test utility
+		_, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+	By("waiting for default cluster roles to be bootstrapped")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "clusterrole", "cluster-admin") //nolint:noctx // test utility
+		_, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+}
+
 func kindClusterExists(name string) (bool, error) {
-	cmd := exec.Command("kind", "get", "clusters")
+	cmd := exec.Command("kind", "get", "clusters") //nolint:noctx // test utility
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("failed to list Kind clusters: %w", err)
@@ -170,7 +199,7 @@ func kindClusterExists(name string) (bool, error) {
 }
 
 func kindKubeconfig(cluster string) string {
-	cmd := exec.Command("kind", "get", "kubeconfig", "--name", cluster)
+	cmd := exec.Command("kind", "get", "kubeconfig", "--name", cluster) //nolint:noctx // test utility
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

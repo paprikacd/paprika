@@ -19,8 +19,8 @@ import (
 )
 
 var _ = Describe("Split-plane cloud-run API", Ordered, func() {
-	cloudRunBase := fmt.Sprintf("http://localhost:%s", cloudRunPort)
-	connectRPC := fmt.Sprintf("%s/paprika.v1.PaprikaService", cloudRunBase)
+	cloudRunBase := "http://localhost:" + cloudRunPort
+	connectRPC := cloudRunBase + "/paprika.v1.PaprikaService"
 
 	AfterAll(func() {
 		By("cleaning up test resources")
@@ -33,20 +33,22 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 		It("should respond 200 on healthz", func() {
 			resp, err := http.Get(cloudRunBase + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.TrimSpace(string(body))).To(Equal("ok"))
 		})
 
 		It("should serve the UI index page", func() {
 			resp, err := http.Get(cloudRunBase + "/")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(string(body)).To(ContainSubstring("<!DOCTYPE html>"))
 		})
 	})
@@ -61,9 +63,10 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 				strings.NewReader(reqBody),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
 				"ListPipelines should succeed: %s", string(body))
 
@@ -85,9 +88,10 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 				strings.NewReader(reqBody),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
 				"ListApplications should succeed: %s", string(body))
 
@@ -121,10 +125,10 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 
 			By("waiting for the controller to reconcile the pipeline")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pipeline", "split-e2e-pipeline",
+				phaseCmd := exec.Command("kubectl", "get", "pipeline", "split-e2e-pipeline",
 					"-n", splitNamespace, "-o", "jsonpath={.status.phase}")
-				out, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
+				out, phaseErr := utils.Run(phaseCmd)
+				g.Expect(phaseErr).NotTo(HaveOccurred())
 				g.Expect(out).To(Or(Equal("Succeeded"), Equal("Failed")),
 					"Pipeline should have reached terminal state")
 			}, 3*time.Minute, time.Second).Should(Succeed())
@@ -136,9 +140,10 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 				strings.NewReader(`{}`),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			var envelope struct {
@@ -175,12 +180,13 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 				strings.NewReader(payload),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusAccepted),
 				"Webhook should be accepted")
 
-			body, _ := io.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
 			var result map[string]string
 			err = json.Unmarshal(body, &result)
 			Expect(err).NotTo(HaveOccurred())
@@ -193,14 +199,14 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 			By("connecting to the SSE endpoint")
 			resp, err := http.Get(cloudRunBase + "/events?topic=test")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(resp.Header.Get("Content-Type")).To(Equal("text/event-stream"))
 
 			buf := make([]byte, 256)
-			n, err := resp.Body.Read(buf)
-			Expect(err).NotTo(HaveOccurred())
+			n, readErr := resp.Body.Read(buf)
+			Expect(readErr).NotTo(HaveOccurred())
 			Expect(string(buf[:n])).To(ContainSubstring(":ok"))
 		})
 	})

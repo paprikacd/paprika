@@ -441,6 +441,7 @@ func setupWebhooks(mgr ctrl.Manager) error {
 		{"Template", webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager},
 		{"Application", webhookpipelinesv1alpha1.SetupApplicationWebhookWithManager},
 		{"AppProject", webhookcorev1alpha1.SetupAppProjectWebhookWithManager},
+		{"Repository", webhookcorev1alpha1.SetupRepositoryWebhookWithManager},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
@@ -487,6 +488,13 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "core-appproject")
+		os.Exit(1)
+	}
+	if err := (&corecontroller.RepositoryReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "core-repository")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

@@ -90,6 +90,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-core-paprika-io-v1alpha1-repository
+  failurePolicy: Fail
+  name: mrepository-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-pipelines-paprika-io-v1alpha1-stage
   failurePolicy: Fail
   name: mstage-v1alpha1.kb.io
@@ -209,6 +229,26 @@ webhooks:
     - UPDATE
     resources:
     - releases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-core-paprika-io-v1alpha1-repository
+  failurePolicy: Fail
+  name: vrepository-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - repositories
   sideEffects: None
 - admissionReviewVersions:
   - v1

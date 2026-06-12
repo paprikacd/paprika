@@ -87,6 +87,7 @@ rules:
   - core.paprika.io
   resources:
   - appprojects
+  - repositories
   verbs:
   - create
   - delete
@@ -105,6 +106,7 @@ rules:
   - core.paprika.io
   resources:
   - appprojects/status
+  - repositories/status
   verbs:
   - get
   - patch

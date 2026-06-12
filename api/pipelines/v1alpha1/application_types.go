@@ -58,13 +58,18 @@ const (
 	SourceTypeGit  = "git"
 	SourceTypeHelm = "helm"
 	SourceTypeS3   = "s3"
+	SourceTypeOCI  = "oci"
 )
 
 // ApplicationSource defines the source of an application.
 // ApplicationSource defines the source of an application.
 type ApplicationSource struct {
-	// +kubebuilder:validation:Enum=git;helm;s3
+	// +kubebuilder:validation:Enum=git;helm;s3;oci
 	Type string `json:"type"`
+	// RepoRef references a core.paprika.io Repository by name. When set, takes
+	// precedence over inline URL/credentials fields.
+	// +optional
+	RepoRef string `json:"repoRef,omitempty"`
 	// Git repository URL (for type=git)
 	RepoURL string `json:"repoUrl,omitempty"`
 	// Git branch, tag, or commit (for type=git)
@@ -73,6 +78,8 @@ type ApplicationSource struct {
 	Path string `json:"path,omitempty"`
 	// Helm chart reference (for type=helm)
 	Chart ChartRef `json:"chart,omitempty"`
+	// OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+	Image string `json:"image,omitempty"`
 	// S3 bucket (for type=s3)
 	Bucket string `json:"bucket,omitempty"`
 	// S3 object key (for type=s3)
@@ -83,6 +90,9 @@ type ApplicationSource struct {
 	Endpoint string `json:"endpoint,omitempty"`
 	// Secret reference for private repos or S3 credentials
 	SecretRef string `json:"secretRef,omitempty"`
+	// Insecure allows plain HTTP for OCI registries (type=oci)
+	// +optional
+	Insecure bool `json:"insecure,omitempty"`
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
 	PollInterval string `json:"pollInterval,omitempty"`

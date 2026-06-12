@@ -331,6 +331,12 @@ spec:
                     description: S3 endpoint URL (for type=s3, use LocalStack endpoint
                       for testing)
                     type: string
+                  image:
+                    description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                    type: string
+                  insecure:
+                    description: Insecure allows plain HTTP for OCI registries (type=oci)
+                    type: boolean
                   key:
                     description: S3 object key (for type=s3)
                     type: string
@@ -344,6 +350,11 @@ spec:
                     type: string
                   region:
                     description: S3 region (for type=s3)
+                    type: string
+                  repoRef:
+                    description: |-
+                      RepoRef references a core.paprika.io Repository by name. When set, takes
+                      precedence over inline URL/credentials fields.
                     type: string
                   repoUrl:
                     description: Git repository URL (for type=git)
@@ -359,6 +370,7 @@ spec:
                     - git
                     - helm
                     - s3
+                    - oci
                     type: string
                 required:
                 - type

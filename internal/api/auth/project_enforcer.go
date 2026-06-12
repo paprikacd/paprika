@@ -20,7 +20,8 @@ func NewProjectEnforcer(c client.Client) *ProjectEnforcer {
 }
 
 // AuthorizeApplication checks whether an application conforms to its project's constraints.
-func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace, appProject, sourceRepo, kind string) error {
+// repoRef is the optional name of a core.paprika.io Repository referenced by the application.
+func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace, appProject, sourceRepo, repoRef, kind string) error {
 	if appProject == "" {
 		return nil
 	}
@@ -36,6 +37,11 @@ func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace
 	if err := checkDenyList(project.Spec.SourceReposDeny, sourceRepo, globMatch, "source repo %q denied by project %s", sourceRepo, appProject); err != nil {
 		return err
 	}
+	if repoRef != "" {
+		if err := checkList(project.Spec.Repositories, repoRef, stringEqual, "repository %q not allowed by project %s", repoRef, appProject); err != nil {
+			return err
+		}
+	}
 	if kind == "" {
 		return nil
 	}
@@ -47,6 +53,10 @@ func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace
 
 func kindMatch(a, b string) bool {
 	return a == b || a == "*"
+}
+
+func stringEqual(a, b string) bool {
+	return a == b
 }
 
 func checkList(items []string, value string, match func(string, string) bool, format string, args ...any) error {

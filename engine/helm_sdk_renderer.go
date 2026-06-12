@@ -29,6 +29,7 @@ const (
 	sourceTypeGit  = "git"
 	sourceTypeS3   = "s3"
 	sourceTypeHelm = "helm"
+	sourceTypeOCI  = "oci"
 )
 
 var (
@@ -63,9 +64,28 @@ func (r *HelmSDKRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Templ
 		return r.resolveGitSource(ctx, tmpl)
 	case sourceTypeS3:
 		return r.resolveS3Source(ctx, tmpl)
+	case sourceTypeOCI:
+		return r.resolveOCISource(ctx, tmpl)
 	default:
 		return nil, nil
 	}
+}
+
+func (r *HelmSDKRenderer) resolveOCISource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
+	ociSrc := tmpl.Spec.OCI
+	if ociSrc == nil {
+		return nil, errors.New("oci source spec is required for type=oci")
+	}
+	result, err := (&source.OCISource{
+		URL:      ociSrc.URL,
+		Tag:      ociSrc.Tag,
+		Insecure: ociSrc.Insecure,
+		WorkDir:  r.WorkDir,
+	}).Resolve(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve oci source: %w", err)
+	}
+	return result, nil
 }
 
 func (r *HelmSDKRenderer) resolveGitSource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
@@ -179,10 +199,17 @@ func (r *HelmSDKRenderer) downloadChart(ctx context.Context, chartRef paprika.Ch
 		return "", errors.New("chart repo and name are required for remote charts")
 	}
 
+	if source.IsOCIURL(chartRef.Repo) {
+		return r.downloadOCIChart(ctx, chartRef)
+	}
+
 	if err := r.ensureRepo(ctx, chartRef.Repo); err != nil {
 		return "", fmt.Errorf("ensure repo: %w", err)
 	}
+	return r.downloadHTTPChart(ctx, chartRef)
+}
 
+func (r *HelmSDKRenderer) downloadHTTPChart(ctx context.Context, chartRef paprika.ChartRef) (string, error) {
 	chartURL, err := repo.FindChartInAuthRepoURL(
 		chartRef.Repo, "", "",
 		chartRef.Name, chartRef.Version,
@@ -218,6 +245,25 @@ func (r *HelmSDKRenderer) downloadChart(ctx context.Context, chartRef paprika.Ch
 	}
 
 	return tmpFile, nil
+}
+
+func (r *HelmSDKRenderer) downloadOCIChart(ctx context.Context, chartRef paprika.ChartRef) (string, error) {
+	chartURL := chartRef.Repo
+	if !strings.HasSuffix(chartURL, "/") {
+		chartURL += "/"
+	}
+	chartURL += chartRef.Name
+	tag := chartRef.Version
+
+	result, err := (&source.OCISource{
+		URL:     chartURL,
+		Tag:     tag,
+		WorkDir: r.WorkDir,
+	}).Resolve(ctx)
+	if err != nil {
+		return "", fmt.Errorf("download OCI chart %s: %w", chartURL, err)
+	}
+	return result.LocalPath, nil
 }
 
 func (r *HelmSDKRenderer) ensureRepo(_ context.Context, repoURL string) error {

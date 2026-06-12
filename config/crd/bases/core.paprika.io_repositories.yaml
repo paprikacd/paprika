@@ -4,25 +4,36 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: appprojects.core.paprika.io
+  name: repositories.core.paprika.io
 spec:
   group: core.paprika.io
   names:
-    kind: AppProject
-    listKind: AppProjectList
-    plural: appprojects
-    singular: appproject
+    kind: Repository
+    listKind: RepositoryList
+    plural: repositories
+    singular: repository
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .status.connectionState.status
+      name: Status
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: AppProject groups applications into a multi-tenant project with
-          source, destination, and resource constraints.
+        description: |-
+          Repository is a named, reusable configuration for an external source (git, helm, or OCI).
+          Applications and Templates can reference a Repository by name instead of inlining URLs
+          and credentials, and AppProjects can constrain which Repositories are allowed.
         properties:
           apiVersion:
             description: |-
@@ -42,87 +53,65 @@ spec:
           metadata:
             type: object
           spec:
-            description: AppProjectSpec defines tenant boundaries and resource constraints
-              for applications.
+            description: RepositorySpec defines the specification for a Repository.
             properties:
-              clusterResourceBlacklist:
-                description: ClusterResourceBlacklist denies cluster-scoped resources.
-                items:
-                  type: string
-                type: array
-              clusterResourceWhitelist:
-                description: ClusterResourceWhitelist permits cluster-scoped resources.
-                items:
-                  type: string
-                type: array
-              description:
+              enableLfs:
+                description: EnableLFS enables Git Large File Storage fetch (git type).
+                type: boolean
+              forceHttpBasicAuth:
+                description: ForceHTTPBasicAuth forces HTTP basic auth even if credentials
+                  look like a token.
+                type: boolean
+              githubApp:
+                description: GitHubApp credentials (git type only).
+                properties:
+                  appId:
+                    description: AppID is the GitHub App ID.
+                    type: string
+                  enterpriseUrl:
+                    description: EnterpriseURL is the base URL for GitHub Enterprise
+                      (e.g. https://github.example.com).
+                    type: string
+                  installationId:
+                    description: InstallationID is the GitHub App installation ID.
+                    type: string
+                type: object
+              insecure:
+                description: Insecure allows plain HTTP/registry (no TLS) for oci
+                  and helm types.
+                type: boolean
+              noProxy:
+                description: NoProxy disables proxy usage for this repository.
+                type: boolean
+              secretRef:
+                description: SecretRef references credentials for the repository.
+                properties:
+                  name:
+                    description: Name of the Secret in the same namespace.
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: 'Type of repository: git, helm, or oci.'
+                enum:
+                - git
+                - helm
+                - oci
                 type: string
-              destinations:
-                description: Destinations restricts target cluster/server and namespace
-                  combinations.
-                items:
-                  description: AppProjectDestination restricts where applications
-                    may deploy.
-                  properties:
-                    name:
-                      type: string
-                    namespace:
-                      type: string
-                    server:
-                      type: string
-                  type: object
-                type: array
-              kinds:
-                description: Kinds restricts which Kubernetes kinds may be deployed.
-                  Empty means all.
-                items:
-                  type: string
-                type: array
-              kindsDeny:
-                description: KindsDeny denies matching kinds.
-                items:
-                  type: string
-                type: array
-              repositories:
+              url:
                 description: |-
-                  Repositories restricts which core.paprika.io Repository names are allowed.
-                  Applications/Templates referencing a Repository must use one of these names.
-                items:
-                  type: string
-                type: array
-              roles:
-                description: Roles define project-level RBAC subjects.
-                items:
-                  description: AppProjectRole defines project-level access.
-                  properties:
-                    actions:
-                      items:
-                        type: string
-                      type: array
-                    name:
-                      type: string
-                    subjects:
-                      items:
-                        type: string
-                      type: array
-                  required:
-                  - name
-                  type: object
-                type: array
-              sourceRepos:
-                description: SourceRepos restricts which repository URLs are allowed.
-                  Empty means all.
-                items:
-                  type: string
-                type: array
-              sourceReposDeny:
-                description: SourceReposDeny denies matching repository URLs.
-                items:
-                  type: string
-                type: array
+                  URL of the repository. Examples:
+                    git:  https://github.com/org/repo, git@github.com:org/repo.git
+                    helm: https://charts.example.com
+                    oci:  oci://registry.example.com/charts
+                type: string
+            required:
+            - type
+            - url
             type: object
           status:
-            description: AppProjectStatus defines the observed state of AppProject.
+            description: RepositoryStatus defines the observed state of Repository.
             properties:
               conditions:
                 items:
@@ -180,9 +169,24 @@ spec:
                   - type
                   type: object
                 type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
+              connectionState:
+                description: ConnectionState describes the result of the most recent
+                  connection attempt.
+                properties:
+                  attemptedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  responseTime:
+                    type: string
+                  revision:
+                    type: string
+                  status:
+                    description: ConnectionStatus represents the health of a Repository's
+                      last connection attempt.
+                    type: string
+                type: object
               observedGeneration:
                 format: int64
                 type: integer
@@ -190,6 +194,7 @@ spec:
         required:
         - metadata
         - spec
+        - status
         type: object
     served: true
     storage: true
