@@ -255,6 +255,31 @@ message ApproveGateResponse {
   Application application = 1;
 }
 
+message ResolveSourceRequest {
+  string namespace = 1;
+  string name = 2;
+  string type = 3;
+  bytes spec_json = 4;
+}
+
+message ResolveSourceResponse {
+  string local_path = 1;
+  string hash = 2;
+  string revision = 3;
+}
+
+message RenderRequest {
+  string namespace = 1;
+  string name = 2;
+  string type = 3;
+  bytes spec_json = 4;
+  bytes values_json = 5;
+}
+
+message RenderResponse {
+  bytes manifests = 1;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -263,4 +288,6 @@ service PaprikaService {
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);
+  rpc ResolveSource(ResolveSourceRequest) returns (ResolveSourceResponse);
+  rpc Render(RenderRequest) returns (RenderResponse);
 }

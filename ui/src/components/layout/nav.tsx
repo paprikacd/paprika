@@ -5,8 +5,9 @@ import { Cpu } from "lucide-react"
 import { useConnection } from "@/lib/connection-context"
 
 const navItems = [
-  { label: "Dashboard", href: "/" },
+  { label: "Dashboard", href: "/dashboard" },
   { label: "Docs", href: "/docs" },
+  { label: "Blog", href: "/blog" },
   { label: "API", href: "/docs/api" },
 ]
 
@@ -18,7 +19,7 @@ export function Nav() {
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Cpu className="size-4" />
+              <Cpu className="size-4" aria-hidden="true" />
             </span>
             <span className="text-base font-semibold tracking-tight">Paprika</span>
           </Link>

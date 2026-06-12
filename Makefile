@@ -91,6 +91,10 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
+.PHONY: test-e2e-split
+test-e2e-split: manifests generate fmt vet ## Run the split-plane e2e tests. Kind is created/cleaned by the suite.
+	go test -tags=e2e_split ./test/e2e/ -v -ginkgo.v -timeout=15m
+
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
@@ -326,3 +330,81 @@ helm-history: ## Show Helm release history.
 .PHONY: helm-rollback
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+##@ Kind Split-Plane
+
+KIND_CLUSTER_SPLIT ?= paprika-split
+
+.PHONY: kind-split-up
+kind-split-up: ## Start split-plane dev env: Kind cluster + operator + local cloud-run binary.
+	./hack/kind-split.sh up
+
+.PHONY: kind-split-down
+kind-split-down: ## Tear down split-plane dev env.
+	./hack/kind-split.sh down
+
+.PHONY: kind-split-restart
+kind-split-restart: ## Rebuild and restart the local cloud-run binary (no Kind rebuild).
+	./hack/kind-split.sh restart
+
+##@ Cloud Run
+
+CLOUD_RUN_IMAGE ?= gcr.io/rosy-clover-477102-t5/paprika-cloud-run:latest
+CLOUD_RUN_SERVICE ?= paprika-cloud-run
+CLOUD_RUN_REGION ?= australia-southeast2
+CLOUD_RUN_K8S_API ?= https://$(shell gcloud container clusters list --format='value(endpoint)' --filter='name:paprika-cluster' --region=$(CLOUD_RUN_REGION) 2>/dev/null)
+
+.PHONY: build-cloud-run-ui
+build-cloud-run-ui: build-ui ## Build UI for the Cloud Run image.
+
+.PHONY: docker-build-cloudrun
+docker-build-cloudrun: build-cloud-run-ui ## Build paprik Cloud Run docker image.
+	$(CONTAINER_TOOL) build -t $(CLOUD_RUN_IMAGE) -f Dockerfile.cloudrun .
+
+.PHONY: docker-push-cloudrun
+docker-push-cloudrun: ## Push the Cloud Run docker image.
+	$(CONTAINER_TOOL) push $(CLOUD_RUN_IMAGE)
+
+.PHONY: cloud-run-deploy
+cloud-run-deploy: docker-push-cloudrun ## Deploy to Cloud Run.
+	gcloud run deploy $(CLOUD_RUN_SERVICE) \
+		--image=$(CLOUD_RUN_IMAGE) \
+		--region=$(CLOUD_RUN_REGION) \
+		--allow-unauthenticated \
+		--set-env-vars="PAPRIKA_REPO_SERVER_ADDR=$(PAPRIKA_REPO_SERVER_ADDR)" \
+		$(if $(CLOUD_RUN_K8S_API),--set-env-vars="KUBERNETES_SERVICE_HOST=$(CLOUD_RUN_K8S_API)") \
+		--concurrency=80 \
+		--cpu=2 \
+		--memory=512Mi \
+		--min-instances=0 \
+		--max-instances=10 \
+		--timeout=300s \
+		--service-account=paprika-cloud-run@rosy-clover-477102-t5.iam.gserviceaccount.com
+
+##@ Release
+
+GORELEASER ?= $(LOCALBIN)/goreleaser
+GORELEASER_VERSION ?= v2.8.2
+
+.PHONY: goreleaser
+goreleaser: $(GORELEASER) ## Download goreleaser locally if necessary.
+$(GORELEASER): $(LOCALBIN)
+	$(call go-install-tool,$(GORELEASER),github.com/goreleaser/goreleaser/v2,$(GORELEASER_VERSION))
+
+.PHONY: release-dry-run
+release-dry-run: goreleaser ## Run goreleaser in dry-run mode (simulate a release).
+	"$(GORELEASER)" release --snapshot --clean
+
+.PHONY: release
+release: goreleaser ## Run goreleaser (requires a git tag).
+	"$(GORELEASER)" release --clean
+
+CHART_VERSION ?= $(shell grep '^version:' charts/chart/Chart.yaml | awk '{print $$2}')
+CHART_REGISTRY ?= oci://ghcr.io/paprikacd/charts
+
+.PHONY: helm-package
+helm-package: ## Package and push the Helm chart to OCI registry.
+	@echo "Packaging Helm chart $(CHART_VERSION)..."
+	helm package charts/chart --destination .dist/ --version $(CHART_VERSION) --app-version $(CHART_VERSION)
+	@echo "Pushing to $(CHART_REGISTRY)..."
+	helm push .dist/paprika-$(CHART_VERSION).tgz $(CHART_REGISTRY)

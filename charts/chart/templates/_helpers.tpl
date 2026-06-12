@@ -63,6 +63,24 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- end }}
 
 {{/*
+Cache environment variables shared across all components.
+*/}}
+{{- define "paprika.cacheEnv" -}}
+{{- if .Values.redis.enabled }}
+- name: PAPRIKA_CACHE_BACKEND
+  value: "redis"
+- name: PAPRIKA_REDIS_ADDR
+  value: {{ .Values.redis.addr | quote }}
+{{- if .Values.redis.password }}
+- name: PAPRIKA_REDIS_PASSWORD
+  value: {{ .Values.redis.password | quote }}
+{{- end }}
+- name: PAPRIKA_REDIS_DB
+  value: {{ .Values.redis.db | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}

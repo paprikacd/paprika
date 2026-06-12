@@ -83,6 +83,10 @@ type PipelineSpec struct {
 
 // PipelineStatus represents the status of a pipeline.
 type PipelineStatus struct {
+	// ObservedGeneration is the last observed generation of the spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// +kubebuilder:validation:Enum=Running;Succeeded;Failed
 	Phase             PipelinePhase `json:"phase,omitempty"`
 	StepStatuses      []StepStatus  `json:"stepStatuses,omitempty"`

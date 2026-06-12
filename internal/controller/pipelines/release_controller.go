@@ -29,9 +29,12 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/analysis"
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
+	agentclient "github.com/benebsworth/paprika/internal/agent/client"
+	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -82,8 +85,10 @@ type ReleaseReconciler struct {
 	TrafficRouterFactory TrafficRouterFactory
 	ShardFilter          *sharding.Filter
 	RateLimiter          *ratelimit.ControllerRateLimit
+	AgentClientBuilder   func(baseURL string) AgentClient
 }
 
+// +kubebuilder:rbac:groups=clusters.paprika.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/finalizers,verbs=update
@@ -235,7 +240,7 @@ func (r *ReleaseReconciler) hasCanarySteps(stage *paprikav1.Stage) bool {
 func (r *ReleaseReconciler) transitionToVerifying(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	release.Status.Phase = paprikav1.ReleaseVerifying
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
@@ -261,7 +266,7 @@ func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *pap
 	}
 	release.Status.Phase = paprikav1.ReleasePromoting
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Promoting").Inc()
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to transition from pending to promoting: %w", err)
 	}
 	return ctrl.Result{Requeue: true}, nil
@@ -282,7 +287,7 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 		Result:    "Pending",
 		Timestamp: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release promoting: %w", err)
 	}
@@ -295,7 +300,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
-		if updateErr := r.Status().Update(ctx, release); updateErr != nil {
+		if updateErr := r.patchReleaseStatus(ctx, release); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
 		}
@@ -317,7 +322,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		release.Status.Phase = paprikav1.ReleaseVerifying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
 	}
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update release phase: %w", err)
 	}
@@ -337,7 +342,7 @@ func (r *ReleaseReconciler) completeRelease(ctx context.Context, release *paprik
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "Passed"
 	}
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release complete: %w", err)
 	}
@@ -350,7 +355,7 @@ func (r *ReleaseReconciler) failRelease(ctx context.Context, release *paprikav1.
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "Failed"
 	}
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", err)
 	}
@@ -364,6 +369,12 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 	}
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "RolledBack").Inc()
 	return ctrl.Result{}, nil
+}
+
+func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release) error {
+	patch := client.MergeFromWithOptions(release.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	release.Status.ObservedGeneration = release.Generation
+	return r.Status().Patch(ctx, release, patch) //nolint:wrapcheck // wrapped by callers
 }
 
 func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, release *paprikav1.Release) (bool, error) {
@@ -393,7 +404,7 @@ func (r *ReleaseReconciler) checkConcurrentRelease(ctx context.Context, release 
 	}
 	if hasActive && release.Status.Phase == "" {
 		release.Status.Phase = paprikav1.ReleasePending
-		if err := r.Status().Update(ctx, release); err != nil {
+		if err := r.patchReleaseStatus(ctx, release); err != nil {
 			return fmt.Errorf("failed to set release pending: %w", err)
 		}
 	}
@@ -403,29 +414,12 @@ func (r *ReleaseReconciler) checkConcurrentRelease(ctx context.Context, release 
 func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
 
-	var stage paprikav1.Stage
-	if err := r.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage); err != nil {
-		return fmt.Errorf("failed to fetch stage %q: %w", release.Spec.Target, err)
+	stage, templates, err := r.fetchStageAndTemplates(ctx, release)
+	if err != nil {
+		return err
 	}
 
-	var templates []paprikav1.Template
-	for _, tmplName := range stage.Spec.Templates {
-		var tmpl paprikav1.Template
-		if err := r.Get(ctx, types.NamespacedName{Name: tmplName, Namespace: release.Namespace}, &tmpl); err != nil {
-			return fmt.Errorf("failed to fetch template %q: %w", tmplName, err)
-		}
-		templates = append(templates, tmpl)
-	}
-
-	params := map[string]string{
-		"release-name": release.Name,
-	}
-	if release.Spec.From != "" {
-		params["from"] = release.Spec.From
-	}
-	for k, v := range release.Spec.Parameters {
-		params[k] = v
-	}
+	params := r.buildPromoteParams(release)
 
 	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
 	if err != nil {
@@ -433,19 +427,14 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	}
 
 	snapshotName := stage.Name + "-manifest-snapshot"
-	if err := r.storeManifestSnapshot(ctx, release, &stage, snapshotName, manifests); err != nil {
+	if err = r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
 		return fmt.Errorf("failed to store manifest snapshot: %w", err)
 	}
 
 	release.Status.RenderedManifestSnapshot = snapshotName
 
-	kubeconfigSecret := ""
-	if stage.Spec.Cluster.KubeconfigSecret != "" {
-		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
-	}
-	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
-		return fmt.Errorf("failed to apply manifests: %w", err)
+	if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
+		return err
 	}
 	log.Info("Applied rendered manifests to cluster", "stage", stage.Name, "bytes", len(manifests))
 
@@ -467,6 +456,86 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	return nil
 }
 
+func (r *ReleaseReconciler) fetchStageAndTemplates(ctx context.Context, release *paprikav1.Release) (*paprikav1.Stage, []paprikav1.Template, error) {
+	var stage paprikav1.Stage
+	if err := r.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage); err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch stage %q: %w", release.Spec.Target, err)
+	}
+
+	var templates []paprikav1.Template
+	for _, tmplName := range stage.Spec.Templates {
+		var tmpl paprikav1.Template
+		if err := r.Get(ctx, types.NamespacedName{Name: tmplName, Namespace: release.Namespace}, &tmpl); err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch template %q: %w", tmplName, err)
+		}
+		templates = append(templates, tmpl)
+	}
+
+	return &stage, templates, nil
+}
+
+func (r *ReleaseReconciler) buildPromoteParams(release *paprikav1.Release) map[string]string {
+	params := map[string]string{
+		"release-name": release.Name,
+	}
+	if release.Spec.From != "" {
+		params["from"] = release.Spec.From
+	}
+	for k, v := range release.Spec.Parameters {
+		params[k] = v
+	}
+	return params
+}
+
+func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, manifests []byte) error {
+	resolvedCluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve cluster ref: %w", err)
+	}
+	appName := release.Labels["app.paprika.io/name"]
+	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests)
+}
+
+func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName string, manifests []byte) error {
+	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
+		return r.applyViaAgent(ctx, cluster, namespace, appName, manifests)
+	}
+	kubeconfigSecret := ""
+	if cluster.KubeconfigSecret != "" {
+		kubeconfigSecret = cluster.KubeconfigSecret
+	}
+	if err := r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName); err != nil {
+		return fmt.Errorf("failed to apply manifests: %w", err)
+	}
+	return nil
+}
+
+func (r *ReleaseReconciler) applyViaAgent(ctx context.Context, cluster *paprikav1.ClusterRef, namespace, appName string, manifests []byte) error {
+	baseURL := cluster.AgentAddress
+	if baseURL == "" {
+		baseURL = fmt.Sprintf("http://%s.%s.svc.cluster.local:8083", cluster.Name, cluster.Namespace)
+	}
+	builder := r.AgentClientBuilder
+	if builder == nil {
+		builder = func(baseURL string) AgentClient {
+			return agentclient.NewControllerClient(baseURL)
+		}
+	}
+	cli := builder(baseURL)
+	resp, err := cli.Apply(ctx, &agentserver.ApplyRequest{
+		Namespace: namespace,
+		AppName:   appName,
+		Manifests: manifests,
+	})
+	if err != nil {
+		return fmt.Errorf("agent apply to %s failed: %w", baseURL, err)
+	}
+	if len(resp.Errors) > 0 {
+		return fmt.Errorf("agent apply to %s returned errors: %v", baseURL, resp.Errors)
+	}
+	return nil
+}
+
 func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfigSecret, namespace string) (dynamic.Interface, error) {
 	if r.ClusterMgr != nil && kubeconfigSecret != "" {
 		dynClient, err := r.ClusterMgr.GetClient(ctx, kubeconfigSecret, namespace)
@@ -480,6 +549,39 @@ func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfig
 		return nil, fmt.Errorf("creating dynamic client: %w", err)
 	}
 	return dynClient, nil
+}
+
+func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, error) {
+	if ref.Name == "" {
+		return *ref, nil
+	}
+	ns := ref.Namespace
+	if ns == "" {
+		ns = defaultNs
+	}
+
+	var cluster clustersv1alpha1.Cluster
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ns}, &cluster); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return *ref, fmt.Errorf("getting cluster %s/%s: %w", ns, ref.Name, err)
+		}
+		return *ref, nil
+	}
+
+	out := *ref
+	if cluster.Spec.KubeconfigSecretRef != nil {
+		out.KubeconfigSecret = cluster.Spec.KubeconfigSecretRef.Name
+		if cluster.Spec.KubeconfigSecretRef.Namespace != "" {
+			out.Namespace = cluster.Spec.KubeconfigSecretRef.Namespace
+		}
+	}
+	if cluster.Spec.Server != "" {
+		out.Server = cluster.Spec.Server
+	}
+	if cluster.Spec.ServiceAccount != "" {
+		out.ServiceAccount = cluster.Spec.ServiceAccount
+	}
+	return out, nil
 }
 
 func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string) int {
@@ -660,7 +762,7 @@ func (r *ReleaseReconciler) rollback(ctx context.Context, release *paprikav1.Rel
 		if len(release.Status.PromotionHistory) > 0 {
 			release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "RolledBack"
 		}
-		if err := r.Status().Update(ctx, release); err != nil {
+		if err := r.patchReleaseStatus(ctx, release); err != nil {
 			return fmt.Errorf("updating release status for rollback: %w", err)
 		}
 		return nil
@@ -688,7 +790,7 @@ func (r *ReleaseReconciler) rollback(ctx context.Context, release *paprikav1.Rel
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "RolledBack"
 	}
 
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		return fmt.Errorf("updating release status after rollback: %w", err)
 	}
 	return nil
@@ -809,7 +911,7 @@ func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *papr
 		return r.handleCanaryPromotion(ctx, release, stage, result)
 	}
 
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update canary status: %w", err)
 	}
@@ -904,7 +1006,7 @@ func (r *ReleaseReconciler) handleAnalysisRollback(ctx context.Context, release 
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "CanaryFailed"
 	}
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return fmt.Errorf("failed to set release failed: %w", err)
 	}
@@ -924,7 +1026,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 			Reason:             "PromotionFailed",
 			Message:            fmt.Sprintf("Canary promotion failed: %v", err),
 		})
-		if updateErr := r.Status().Update(ctx, release); updateErr != nil {
+		if updateErr := r.patchReleaseStatus(ctx, release); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
 		}
@@ -934,7 +1036,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
 	release.Status.CanaryWeight = 100
 	metrics.CanaryWeightGauge.WithLabelValues(release.Name, release.Namespace, stage.Name).Set(100)
-	if err := r.Status().Update(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
@@ -971,16 +1073,16 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	}
 
 	snapshotName := fmt.Sprintf("%s-canary-%d", stage.Name, weight)
-	if err := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
-		return fmt.Errorf("failed to store canary manifest snapshot: %w", err)
+	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); storeErr != nil {
+		return fmt.Errorf("failed to store canary manifest snapshot: %w", storeErr)
 	}
 
-	kubeconfigSecret := ""
-	if stage.Spec.Cluster.KubeconfigSecret != "" {
-		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
+	resolvedCluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -1002,16 +1104,16 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 	}
 
 	snapshotName := stage.Name + "-manifest-snapshot"
-	if err := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
-		return fmt.Errorf("failed to store promoted manifest snapshot: %w", err)
+	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); storeErr != nil {
+		return fmt.Errorf("failed to store promoted manifest snapshot: %w", storeErr)
 	}
 
-	kubeconfigSecret := ""
-	if stage.Spec.Cluster.KubeconfigSecret != "" {
-		kubeconfigSecret = stage.Spec.Cluster.KubeconfigSecret
+	resolvedCluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifests(ctx, manifests, release.Namespace, kubeconfigSecret, appName); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 

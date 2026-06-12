@@ -79,3 +79,47 @@ func freePorts(n int) []string {
 	}
 	return addrs
 }
+
+func TestRepoServerHealthEndpoint(t *testing.T) {
+	addr, probeAddr := freePort(), freePort()
+	go func() {
+		_ = runRepoServerMode(addr, probeAddr)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := waitForHealthz(ctx, probeAddr); err != nil {
+		t.Fatalf("healthz probe failed: %v", err)
+	}
+}
+
+func waitForHealthz(ctx context.Context, probeAddr string) error {
+	url := "http://" + probeAddr + "/healthz"
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+			lastErr = fmt.Errorf("healthz returned status %d", resp.StatusCode)
+		} else {
+			lastErr = err
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: %w", ctx.Err(), lastErr)
+		case <-ticker.C:
+		}
+	}
+}

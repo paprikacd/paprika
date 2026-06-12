@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -73,6 +73,24 @@ export const PaprikaService = {
       name: "ApproveGate",
       I: ApproveGateRequest,
       O: ApproveGateResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ResolveSource
+     */
+    resolveSource: {
+      name: "ResolveSource",
+      I: ResolveSourceRequest,
+      O: ResolveSourceResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.Render
+     */
+    render: {
+      name: "Render",
+      I: RenderRequest,
+      O: RenderResponse,
       kind: MethodKind.Unary,
     },
   }

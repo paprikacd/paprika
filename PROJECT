@@ -84,4 +84,22 @@ resources:
   kind: Application
   path: github.com/benebsworth/paprika/api/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: clusters
+  kind: Cluster
+  path: github.com/benebsworth/paprika/api/clusters/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: core
+  kind: AppProject
+  path: github.com/benebsworth/paprika/api/core/v1alpha1
+  version: v1alpha1
 version: "3"

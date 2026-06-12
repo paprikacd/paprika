@@ -155,6 +155,10 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
 
+	if err := r.patchAppStatus(ctx, app); err != nil {
+		log.Error(err, "Failed to update application status after evaluation")
+	}
+
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 }
 
@@ -166,16 +170,22 @@ func (r *ApplicationReconciler) handleResync(ctx context.Context, app *paprikav1
 	if len(app.Annotations) == 0 {
 		app.Annotations = nil
 	}
-	app.Status.Phase = paprikav1.ApplicationPending
 	if err := r.Patch(ctx, app, patch); err != nil {
 		log.Error(err, "Failed to remove resync annotation")
 		return ctrl.Result{}, fmt.Errorf("removing resync annotation: %w", err)
 	}
-	if err := r.Status().Update(ctx, app); err != nil {
+	app.Status.Phase = paprikav1.ApplicationPending
+	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update status after resync")
 		return ctrl.Result{}, fmt.Errorf("updating status after resync: %w", err)
 	}
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+}
+
+func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
+	patch := client.MergeFromWithOptions(app.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	app.Status.ObservedGeneration = app.Generation
+	return r.Status().Patch(ctx, app, patch) //nolint:wrapcheck // wrapped by callers
 }
 
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
@@ -599,7 +609,7 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 		}
 	}
 
-	if err := r.Status().Update(ctx, app); err != nil {
+	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status", "phase", phase)
 	}
 }
@@ -618,7 +628,7 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 
 	app.Status.SourceHash = newHash
 	app.Status.SourceRevision = newRevision
-	if err := r.Status().Update(ctx, app); err != nil {
+	if err := r.patchAppStatus(ctx, app); err != nil {
 		return false, fmt.Errorf("failed to update source hash: %w", err)
 	}
 
@@ -687,10 +697,6 @@ func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprika
 
 	app.Status.HealthChecks = results
 	app.Status.Health = health.AggregateHealth(evalResults)
-
-	if err := r.Status().Update(ctx, app); err != nil {
-		log.Error(err, "Failed to update health check results")
-	}
 }
 
 func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) {
@@ -734,8 +740,9 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
 	result, err := r.DiffEngine.ComputeDiff(ctx, desired, engine.DiffOptions{
-		Namespace:     app.Namespace,
-		LabelSelector: labelSelector,
+		Namespace:       app.Namespace,
+		LabelSelector:   labelSelector,
+		ApplicationName: app.Name,
 	})
 	if err != nil {
 		log.Error(err, "Failed to compute diff")
@@ -745,10 +752,6 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
 	app.Status.OutOfSync = result.OutOfSyncCount()
 	app.Status.PrunedResources = len(result.Deleted)
-
-	if err := r.Status().Update(ctx, app); err != nil {
-		log.Error(err, "Failed to update diff results")
-	}
 }
 
 func convertDiffToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.ResourceSync {
@@ -765,8 +768,6 @@ func convertDiffToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.Resourc
 }
 
 func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application) {
-	log := log.FromContext(ctx)
-
 	if r.ResHealth == nil {
 		return
 	}
@@ -780,10 +781,6 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 	}
 
 	app.Status.ResourceHealth = healthResults
-
-	if err := r.Status().Update(ctx, app); err != nil {
-		log.Error(err, "Failed to update resource health")
-	}
 }
 
 func (r *ApplicationReconciler) checkGates(ctx context.Context, app *paprikav1.Application) (blocked bool, reason string) {
@@ -841,7 +838,7 @@ func (r *ApplicationReconciler) recordPendingGate(ctx context.Context, app *papr
 		Stage:  gate.Stage,
 		Status: "Pending",
 	})
-	if err := r.Status().Update(ctx, app); err != nil {
+	if err := r.patchAppStatus(ctx, app); err != nil {
 		return fmt.Errorf("recording pending gate: %w", err)
 	}
 	return nil

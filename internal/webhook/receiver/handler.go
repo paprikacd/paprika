@@ -38,11 +38,22 @@ const (
 type Handler struct {
 	client client.Client
 	secret string
+	cache  cacheInvalidator
+}
+
+// cacheInvalidator invalidates cached manifests and source resolutions.
+type cacheInvalidator interface {
+	Invalidate(ctx context.Context, sourceType, sourceURL, revision string) error
 }
 
 // NewHandler creates a new webhook handler.
 func NewHandler(c client.Client, secret string) *Handler {
-	return &Handler{client: c, secret: secret}
+	return NewHandlerWithCache(c, secret, nil)
+}
+
+// NewHandlerWithCache creates a new webhook handler that can invalidate caches.
+func NewHandlerWithCache(c client.Client, secret string, inv cacheInvalidator) *Handler {
+	return &Handler{client: c, secret: secret, cache: inv}
 }
 
 // ServeHTTP implements http.Handler for Git webhooks.
@@ -129,6 +140,12 @@ func (h *Handler) handleGitLabPush(ctx context.Context, r *http.Request, body []
 
 func (h *Handler) triggerReconciliation(ctx context.Context, repoURL, branch string) error {
 	log := log.FromContext(ctx)
+
+	if h.cache != nil {
+		if err := h.cache.Invalidate(ctx, "git", repoURL, branch); err != nil {
+			log.Error(err, "Failed to invalidate cache", "repo", repoURL, "branch", branch)
+		}
+	}
 
 	updated, err := h.annotateMatchingApplications(ctx, repoURL, branch)
 	if err != nil {

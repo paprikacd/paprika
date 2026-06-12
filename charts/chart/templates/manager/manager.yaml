@@ -1,4 +1,4 @@
-{{- if or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled) }}
+{{- if and (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) (not .Values.manager.sharding.enabled) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -147,13 +147,21 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-        {{- if and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+        {{- $hasEnv := or (and .Values.repoServer.enabled (eq .Values.deploymentMode "monolith")) .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
+        {{- if $hasEnv }}
         env:
+        {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- if and .Values.repoServer.enabled (eq .Values.deploymentMode "monolith") }}
+        - name: PAPRIKA_REPO_SERVER_ADDR
+          value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
+        {{- end }}
+        {{- if and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
         - name: PAPRIKA_AUTH_RBAC_RULES
           valueFrom:
             configMapKeyRef:
               name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
               key: rbac.json
+        {{- end }}
         {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}

@@ -1,0 +1,19 @@
+{{- if .Values.repoServer.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: repo-server
+spec:
+  minAvailable: {{ .Values.repoServer.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: repo-server
+{{- end }}

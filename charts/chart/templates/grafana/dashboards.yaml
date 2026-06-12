@@ -1,0 +1,18 @@
+{{- if .Values.grafana.dashboards.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "grafana-dashboards" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- range $k, $v := .Values.grafana.dashboards.labelSelectors }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+data:
+  paprika-overview.json: |
+{{ .Files.Get "grafana/overview.json" | nindent 4 }}
+{{- end }}

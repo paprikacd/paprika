@@ -1,0 +1,89 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "agent" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/name: {{ include "paprika.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: agent
+    spec:
+      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      securityContext:
+        {{- if .Values.agent.podSecurityContext }}
+        {{- toYaml .Values.agent.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+      containers:
+        - name: agent
+          command:
+            - /manager
+          image: "{{ .Values.agent.image.repository }}{{- if not (contains "@" .Values.agent.image.repository) }}:{{ .Values.agent.image.tag | default .Chart.AppVersion }}{{- end }}"
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+          args:
+            {{- range .Values.agent.args }}
+            - {{ . }}
+            {{- end }}
+          env:
+            {{- include "paprika.cacheEnv" . | nindent 12 }}
+            - name: PAPRIKA_AGENT_CLUSTER_ID
+              value: {{ .Values.agent.clusterID | default .Release.Name | quote }}
+          ports:
+            - name: http
+              containerPort: 8083
+              protocol: TCP
+            - name: probe
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: probe
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- if .Values.agent.resources }}
+            {{- toYaml .Values.agent.resources | nindent 12 }}
+            {{- else }}
+            {}
+            {{- end }}
+          securityContext:
+            {{- if .Values.agent.securityContext }}
+            {{- toYaml .Values.agent.securityContext | nindent 12 }}
+            {{- else }}
+            {}
+            {{- end }}
+          volumeMounts:
+            {{- toYaml .Values.agent.extraVolumeMounts | nindent 12 }}
+      volumes:
+        {{- toYaml .Values.agent.extraVolumes | nindent 8 }}
+      nodeSelector:
+        {{- toYaml .Values.agent.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.agent.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.agent.affinity | nindent 8 }}
+{{- end }}

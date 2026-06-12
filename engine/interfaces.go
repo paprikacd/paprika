@@ -26,9 +26,10 @@ type TemplateRenderer interface {
 
 // DiffOptions configures how ComputeDiff fetches live resources.
 type DiffOptions struct {
-	Namespace     string
-	LabelSelector string
-	FieldSelector string
+	Namespace       string
+	LabelSelector   string
+	FieldSelector   string
+	ApplicationName string
 }
 
 // DiffEngine computes differences between desired and actual cluster state.

@@ -12,6 +12,7 @@ import (
 const (
 	shardIDEnv    = "PAPRIKA_SHARD_ID"
 	shardTotalEnv = "PAPRIKA_SHARD_TOTAL"
+	podNameEnv    = "POD_NAME"
 )
 
 // Filter determines whether a resource belongs to this controller shard.
@@ -108,27 +109,37 @@ func extractOrdinalFromPodName(name string) int {
 
 // ValidateShardEnv validates shard environment variables and returns an error if misconfigured.
 func ValidateShardEnv() error {
+	_, err := MustLoadFromEnvOrPod()
+	return err
+}
+
+// MustLoadFromEnvOrPod creates a shard filter from explicit env vars or from the pod name.
+// If PAPRIKA_SHARD_ID is unset and POD_NAME ends with an ordinal, the ordinal is used.
+func MustLoadFromEnvOrPod() (*Filter, error) {
+	idStr := os.Getenv(shardIDEnv)
+	if idStr == "" {
+		idStr = os.Getenv(podNameEnv)
+	}
 	totalStr := os.Getenv(shardTotalEnv)
 	if totalStr == "" {
-		return nil
+		return NewFilterFromEnv(), nil
 	}
 
 	total, err := strconv.Atoi(totalStr)
 	if err != nil {
-		return fmt.Errorf("invalid %s: %w", shardTotalEnv, err)
+		return nil, fmt.Errorf("invalid %s: %w", shardTotalEnv, err)
 	}
 	if total <= 1 {
-		return nil
+		return NewFilterFromEnv(), nil
 	}
 
-	idStr := os.Getenv(shardIDEnv)
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		id = extractOrdinalFromPodName(idStr)
 	}
 	if id < 0 || id >= total {
-		return fmt.Errorf("shard ID %d out of range [0, %d)", id, total)
+		return nil, fmt.Errorf("shard ID %d out of range [0, %d)", id, total)
 	}
 
-	return nil
+	return NewFilter(id, total), nil
 }

@@ -302,6 +302,10 @@ type ApplicationStageStatus struct {
 // ApplicationStatus represents the status of an application.
 // ApplicationStatus represents the status of an application.
 type ApplicationStatus struct {
+	// ObservedGeneration is the last observed generation of the spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// +kubebuilder:validation:Enum=Pending;Building;Promoting;Canarying;Verifying;Healthy;Degraded;Failed;RolledBack
 	Phase ApplicationPhase `json:"phase,omitempty"`
 

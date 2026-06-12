@@ -128,6 +128,41 @@ func TestValidateShardEnv_OutOfRange(t *testing.T) {
 	require.Error(t, ValidateShardEnv())
 }
 
+func TestMustLoadFromEnvOrPod(t *testing.T) {
+	t.Setenv(podNameEnv, "paprika-controller-manager-2")
+	t.Setenv(shardTotalEnv, "4")
+	_ = os.Unsetenv(shardIDEnv)
+
+	f, err := MustLoadFromEnvOrPod()
+	require.NoError(t, err)
+	assert.True(t, f.Enabled())
+	assert.Equal(t, 2, f.ShardID())
+	assert.Equal(t, 4, f.TotalShards())
+}
+
+func TestMustLoadFromEnvOrPod_NoSharding(t *testing.T) {
+	_ = os.Unsetenv(shardTotalEnv)
+	_ = os.Unsetenv(shardIDEnv)
+	_ = os.Unsetenv(podNameEnv)
+
+	f, err := MustLoadFromEnvOrPod()
+	require.NoError(t, err)
+	assert.False(t, f.Enabled())
+}
+
+func TestMustLoadFromEnvOrPod_InvalidTotal(t *testing.T) {
+	t.Setenv(shardTotalEnv, "abc")
+	_, err := MustLoadFromEnvOrPod()
+	require.Error(t, err)
+}
+
+func TestMustLoadFromEnvOrPod_OutOfRange(t *testing.T) {
+	t.Setenv(podNameEnv, "paprika-controller-manager-10")
+	t.Setenv(shardTotalEnv, "4")
+	_, err := MustLoadFromEnvOrPod()
+	require.Error(t, err)
+}
+
 func TestExtractOrdinalFromPodName(t *testing.T) {
 	assert.Equal(t, 0, extractOrdinalFromPodName("controller-manager-0"))
 	assert.Equal(t, 5, extractOrdinalFromPodName("my-pod-5"))

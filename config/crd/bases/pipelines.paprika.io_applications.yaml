@@ -450,17 +450,21 @@ spec:
                     cluster:
                       description: Cluster to deploy to (defaults to same cluster)
                       properties:
+                        agentAddress:
+                          type: string
                         kubeconfigSecret:
-                          description: Kubeconfig secret reference (for external clusters)
+                          type: string
+                        mode:
+                          description: ClusterMode defines how the controller connects
+                            to a cluster.
                           type: string
                         name:
                           type: string
+                        namespace:
+                          type: string
                         server:
-                          description: Server URL for the cluster (optional, for direct
-                            connection)
                           type: string
                         serviceAccount:
-                          description: Service account to use for in-cluster deployments
                           type: string
                       required:
                       - name
@@ -645,6 +649,11 @@ spec:
                   - status
                   type: object
                 type: array
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               outOfSync:
                 description: OutOfSync resources count
                 type: integer

@@ -1,0 +1,33 @@
+{{- if and .Values.manager.hpa.enabled (not .Values.manager.sharding.enabled) (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  minReplicas: {{ .Values.manager.hpa.minReplicas }}
+  maxReplicas: {{ .Values.manager.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.manager.hpa.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.manager.hpa.targetMemoryUtilizationPercentage }}
+{{- end }}

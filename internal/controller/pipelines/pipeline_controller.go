@@ -81,6 +81,12 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return r.reconcilePipeline(ctx, req, &pipeline, start, &result)
 }
 
+func (r *PipelineReconciler) patchPipelineStatus(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) error {
+	patch := client.MergeFromWithOptions(pipeline.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	pipeline.Status.ObservedGeneration = pipeline.Generation
+	return r.Status().Patch(ctx, pipeline, patch) //nolint:wrapcheck // wrapped by callers
+}
+
 func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepStatuses []pipelinesv1alpha1.StepStatus, start time.Time, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	allSucceeded := true
@@ -96,7 +102,7 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Succeeded").Inc()
 		metrics.PipelineDuration.WithLabelValues(pipeline.Name, pipeline.Namespace).Observe(metrics.Since(start))
 		pipeline.Status.StepStatuses = stepStatuses
-		if err := r.Status().Update(ctx, pipeline); err != nil {
+		if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to succeeded: %w", err)
 		}
@@ -110,7 +116,7 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
 		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
 		pipeline.Status.StepStatuses = stepStatuses
-		if err := r.Status().Update(ctx, pipeline); err != nil {
+		if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", err)
 		}
@@ -152,7 +158,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		pipeline.Status.LastExecutionID = "run-" + req.Name
 		now := metav1.Now()
 		pipeline.Status.LastExecutionTime = &now
-		if err := r.Status().Update(ctx, pipeline); err != nil {
+		if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
 		}
@@ -165,7 +171,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
 		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
 		pipeline.Status.StepStatuses = stepStatuses
-		if updateErr := r.Status().Update(ctx, pipeline); updateErr != nil {
+		if updateErr := r.patchPipelineStatus(ctx, pipeline); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
 		}

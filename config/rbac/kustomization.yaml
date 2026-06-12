@@ -22,6 +22,12 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the paprika itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- core_appproject_admin_role.yaml
+- core_appproject_editor_role.yaml
+- core_appproject_viewer_role.yaml
+- clusters_cluster_admin_role.yaml
+- clusters_cluster_editor_role.yaml
+- clusters_cluster_viewer_role.yaml
 - application_admin_role.yaml
 - application_editor_role.yaml
 - application_viewer_role.yaml

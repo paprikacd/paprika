@@ -4,16 +4,24 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClusterRef references a Kubernetes cluster.
+// ClusterMode defines how the controller connects to a cluster.
+type ClusterMode string
+
+const (
+	ClusterModeDirect    ClusterMode = "direct"
+	ClusterModeAgent     ClusterMode = "agent"
+	ClusterModeInCluster ClusterMode = "in-cluster"
+)
+
 // ClusterRef references a Kubernetes cluster.
 type ClusterRef struct {
-	Name string `json:"name"`
-	// Kubeconfig secret reference (for external clusters)
-	KubeconfigSecret string `json:"kubeconfigSecret,omitempty"`
-	// Service account to use for in-cluster deployments
-	ServiceAccount string `json:"serviceAccount,omitempty"`
-	// Server URL for the cluster (optional, for direct connection)
-	Server string `json:"server,omitempty"`
+	Name             string      `json:"name"`
+	Namespace        string      `json:"namespace,omitempty"`
+	Mode             ClusterMode `json:"mode,omitempty"`
+	AgentAddress     string      `json:"agentAddress,omitempty"`
+	KubeconfigSecret string      `json:"kubeconfigSecret,omitempty"`
+	ServiceAccount   string      `json:"serviceAccount,omitempty"`
+	Server           string      `json:"server,omitempty"`
 }
 
 // GateConfig defines a gate for stage promotion.

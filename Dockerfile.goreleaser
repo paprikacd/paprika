@@ -1,0 +1,16 @@
+FROM alpine:3.19 AS helm-builder
+RUN apk add --no-cache curl && \
+    ARCH=$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/') && \
+    curl -fsSL https://get.helm.sh/helm-v3.16.1-linux-${ARCH}.tar.gz -o /tmp/helm.tar.gz && \
+    tar -xzf /tmp/helm.tar.gz -C /tmp && \
+    mv /tmp/linux-${ARCH}/helm /helm
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY paprika .
+COPY --from=helm-builder /helm /usr/local/bin/helm
+ENV HELM_CACHE_HOME=/tmp/helm/cache \
+    HELM_CONFIG_HOME=/tmp/helm/config \
+    HELM_DATA_HOME=/tmp/helm/data
+USER 65532:65532
+ENTRYPOINT ["/paprika"]

@@ -1,0 +1,60 @@
+{{- if .Values.prometheus.rules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "alerts" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  groups:
+    - name: paprika
+      rules:
+        - alert: PaprikaReconcileErrors
+          expr: rate(controller_runtime_reconcile_errors_total{service="{{ include "paprika.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}"}[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika controller reconcile error rate is high
+            description: Controller {{ "{{ $labels.controller }}" }} has an elevated error rate.
+
+        - alert: PaprikaReconcileLatencyHigh
+          expr: histogram_quantile(0.95, rate(controller_runtime_reconcile_time_seconds_bucket{service="{{ include "paprika.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}"}[5m])) > 30
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika reconcile latency is high
+            description: Controller {{ "{{ $labels.controller }}" }} 95th percentile latency exceeds 30s.
+
+        - alert: PaprikaReleaseFailed
+          expr: increase(paprika_release_phase_total{phase="Failed"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: Paprika release failed
+            description: Release {{ "{{ $labels.release }}" }} in namespace {{ "{{ $labels.namespace }}" }} failed.
+
+        - alert: PaprikaApplicationDegraded
+          expr: increase(paprika_application_phase_total{phase="Degraded"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika application degraded
+            description: Application {{ "{{ $labels.application }}" }} in namespace {{ "{{ $labels.namespace }}" }} is degraded.
+
+        - alert: PaprikaClusterUnhealthy
+          expr: paprika_cluster_phase{phase="Unhealthy"} == 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika registered cluster is unhealthy
+            description: Cluster {{ "{{ $labels.cluster }}" }} in namespace {{ "{{ $labels.namespace }}" }} is unhealthy.
+{{- end }}

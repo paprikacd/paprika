@@ -1,0 +1,86 @@
+---
+title: "Hello, Paprika"
+description: "Introducing Paprika — a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, and traffic routing into a single operator."
+date: "2026-06-12"
+author: "The Paprika Team"
+tags: [introduction, announcement]
+---
+
+Welcome to Paprika — a **Kubernetes-native application delivery platform** that brings together CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management under a single operator.
+
+## Why Paprika?
+
+Existing tools like ArgoCD, Argo Rollouts, and Argo Workflows each solve a piece of the deployment puzzle, but running them together means:
+
+- Multiple operators to install and maintain
+- Inconsistent reconciliation patterns
+- No unified resource model
+- Complex cross-tool integration
+
+Paprika replaces all three with a single operator and a coherent set of CRDs.
+
+<Callout type="tip">
+Paprika is **not** a fork or fork of any existing project. It's a from-scratch implementation that applies lessons learned from operating ArgoCD at scale.
+</Callout>
+
+## Core Resources
+
+Paprika models the application delivery lifecycle with six resources:
+
+| Resource    | Purpose                                              |
+| ----------- | ---------------------------------------------------- |
+| Application | Top-level resource that owns a complete delivery pipeline |
+| Template    | Source configuration (Helm, Git, S3)                  |
+| Pipeline    | Sequential build/test/deploy steps                   |
+| Stage       | Environment definition with traffic routing          |
+| Release     | Promotion lifecycle through stages                   |
+
+## What Makes Paprika Different?
+
+### Unified Resource Model
+
+Instead of managing Applications, Rollouts, WorkflowTemplates, and Workflows separately, Paprika uses a single `Application` CRD that composes all the pieces:
+
+```yaml
+apiVersion: pipelines.papriko.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+spec:
+  source:
+    git:
+      url: https://github.com/example/my-app
+      revision: main
+  strategy: Canary
+  stages:
+    - name: staging
+      clusterRef:
+        name: staging-cluster
+      canary:
+        steps:
+          - weight: 10
+          - weight: 50
+          - weight: 100
+    - name: production
+      gates:
+        - name: approve-production
+          type: ManualApproval
+```
+
+### Pluggable Traffic Routing
+
+Paprika supports **Istio** (VirtualService) and **Gateway API** (HTTPRoute) for traffic shaping during canary deployments. The traffic router is configured per-stage, giving you fine-grained control over how traffic flows through your environments.
+
+### Idempotent by Design
+
+Every controller in Paprika follows Kubernetes best practices for idempotent reconciliation. Running the same state multiple times produces the same result — safe to retry, safe to replay.
+
+### Multi-Cluster from Day One
+
+Stage-level `clusterRef` fields let you target different Kubernetes clusters for each environment. Paprika manages the client connections dynamically, so you don't need to pre-configure cluster secrets in the operator.
+
+## Getting Started
+
+Ready to try Paprika? Head over to the [Getting Started guide](/docs/getting-started) to install the operator and deploy your first application in under 5 minutes.
+
+We're excited to see what you build with Paprika!

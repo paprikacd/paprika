@@ -891,6 +891,118 @@ export declare class Stage extends Message<Stage> {
 }
 
 /**
+ * @generated from message paprika.v1.TrafficRouter
+ */
+export declare class TrafficRouter extends Message<TrafficRouter> {
+  /**
+   * @generated from field: string provider = 1;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: paprika.v1.IstioRouterConfig istio = 2;
+   */
+  istio?: IstioRouterConfig;
+
+  /**
+   * @generated from field: paprika.v1.GatewayAPIRouterConfig gateway_api = 3;
+   */
+  gatewayApi?: GatewayAPIRouterConfig;
+
+  constructor(data?: PartialMessage<TrafficRouter>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.TrafficRouter";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): TrafficRouter;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): TrafficRouter;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): TrafficRouter;
+
+  static equals(a: TrafficRouter | PlainMessage<TrafficRouter> | undefined, b: TrafficRouter | PlainMessage<TrafficRouter> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.IstioRouterConfig
+ */
+export declare class IstioRouterConfig extends Message<IstioRouterConfig> {
+  /**
+   * @generated from field: string virtual_service = 1;
+   */
+  virtualService: string;
+
+  /**
+   * @generated from field: repeated string routes = 2;
+   */
+  routes: string[];
+
+  /**
+   * @generated from field: repeated string hosts = 3;
+   */
+  hosts: string[];
+
+  /**
+   * @generated from field: string stable_service = 4;
+   */
+  stableService: string;
+
+  /**
+   * @generated from field: string canary_service = 5;
+   */
+  canaryService: string;
+
+  constructor(data?: PartialMessage<IstioRouterConfig>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.IstioRouterConfig";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): IstioRouterConfig;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): IstioRouterConfig;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): IstioRouterConfig;
+
+  static equals(a: IstioRouterConfig | PlainMessage<IstioRouterConfig> | undefined, b: IstioRouterConfig | PlainMessage<IstioRouterConfig> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GatewayAPIRouterConfig
+ */
+export declare class GatewayAPIRouterConfig extends Message<GatewayAPIRouterConfig> {
+  /**
+   * @generated from field: string http_route = 1;
+   */
+  httpRoute: string;
+
+  /**
+   * @generated from field: string stable_service = 2;
+   */
+  stableService: string;
+
+  /**
+   * @generated from field: string canary_service = 3;
+   */
+  canaryService: string;
+
+  constructor(data?: PartialMessage<GatewayAPIRouterConfig>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GatewayAPIRouterConfig";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GatewayAPIRouterConfig;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GatewayAPIRouterConfig;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GatewayAPIRouterConfig;
+
+  static equals(a: GatewayAPIRouterConfig | PlainMessage<GatewayAPIRouterConfig> | undefined, b: GatewayAPIRouterConfig | PlainMessage<GatewayAPIRouterConfig> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.ListPipelinesRequest
  */
 export declare class ListPipelinesRequest extends Message<ListPipelinesRequest> {
@@ -1244,5 +1356,146 @@ export declare class ApproveGateResponse extends Message<ApproveGateResponse> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApproveGateResponse;
 
   static equals(a: ApproveGateResponse | PlainMessage<ApproveGateResponse> | undefined, b: ApproveGateResponse | PlainMessage<ApproveGateResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResolveSourceRequest
+ */
+export declare class ResolveSourceRequest extends Message<ResolveSourceRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 3;
+   */
+  type: string;
+
+  /**
+   * @generated from field: bytes spec_json = 4;
+   */
+  specJson: Uint8Array;
+
+  constructor(data?: PartialMessage<ResolveSourceRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResolveSourceRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResolveSourceRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResolveSourceRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResolveSourceRequest;
+
+  static equals(a: ResolveSourceRequest | PlainMessage<ResolveSourceRequest> | undefined, b: ResolveSourceRequest | PlainMessage<ResolveSourceRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResolveSourceResponse
+ */
+export declare class ResolveSourceResponse extends Message<ResolveSourceResponse> {
+  /**
+   * @generated from field: string local_path = 1;
+   */
+  localPath: string;
+
+  /**
+   * @generated from field: string hash = 2;
+   */
+  hash: string;
+
+  /**
+   * @generated from field: string revision = 3;
+   */
+  revision: string;
+
+  constructor(data?: PartialMessage<ResolveSourceResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResolveSourceResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResolveSourceResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResolveSourceResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResolveSourceResponse;
+
+  static equals(a: ResolveSourceResponse | PlainMessage<ResolveSourceResponse> | undefined, b: ResolveSourceResponse | PlainMessage<ResolveSourceResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RenderRequest
+ */
+export declare class RenderRequest extends Message<RenderRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 3;
+   */
+  type: string;
+
+  /**
+   * @generated from field: bytes spec_json = 4;
+   */
+  specJson: Uint8Array;
+
+  /**
+   * @generated from field: bytes values_json = 5;
+   */
+  valuesJson: Uint8Array;
+
+  constructor(data?: PartialMessage<RenderRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RenderRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RenderRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RenderRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RenderRequest;
+
+  static equals(a: RenderRequest | PlainMessage<RenderRequest> | undefined, b: RenderRequest | PlainMessage<RenderRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RenderResponse
+ */
+export declare class RenderResponse extends Message<RenderResponse> {
+  /**
+   * @generated from field: bytes manifests = 1;
+   */
+  manifests: Uint8Array;
+
+  constructor(data?: PartialMessage<RenderResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RenderResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RenderResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RenderResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RenderResponse;
+
+  static equals(a: RenderResponse | PlainMessage<RenderResponse> | undefined, b: RenderResponse | PlainMessage<RenderResponse> | undefined): boolean;
 }
 

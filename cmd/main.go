@@ -18,6 +18,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"flag"
@@ -42,17 +43,25 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/benebsworth/paprika/analysis"
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/health"
+	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
+	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/reposerver"
+	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
 	"github.com/benebsworth/paprika/internal/sharding"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
@@ -69,6 +78,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -77,6 +88,7 @@ type cliConfig struct {
 	webhookCertPath, webhookCertName, webhookCertKey              string
 	probeAddr, uiAddr, webhookAddr                                string
 	operatorNamespace, mode, k8sAPIServer, k8sTokenFile           string
+	repoServerAddr                                                string
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
 	authEnabled, authAllowUnauth                                  bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
@@ -89,38 +101,43 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cfg.zapOptions)))
 
-	if cfg.mode != "operator" && cfg.mode != "api" && cfg.mode != "webhook" {
-		setupLog.Error(fmt.Errorf("invalid mode: %s", cfg.mode), "Must be 'operator', 'api', or 'webhook'")
+	if err := dispatchMode(&cfg); err != nil {
+		setupLog.Error(err, "Failed to start")
 		os.Exit(1)
 	}
+}
 
-	if cfg.mode == "api" {
-		if err := runAPIMode(cfg.k8sAPIServer, cfg.k8sTokenFile, cfg.uiAddr, cfg.probeAddr,
+func dispatchMode(cfg *cliConfig) error {
+	if err := validateMode(cfg.mode); err != nil {
+		return err
+	}
+
+	switch cfg.mode {
+	case "agent":
+		return runAgentMode(cfg.uiAddr, cfg.probeAddr)
+	case "repo-server":
+		return runRepoServerMode(cfg.uiAddr, cfg.probeAddr)
+	case "api":
+		return runAPIMode(cfg.k8sAPIServer, cfg.k8sTokenFile, cfg.uiAddr, cfg.probeAddr,
 			cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-			cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth); err != nil {
-			setupLog.Error(err, "API mode failed")
-			os.Exit(1)
-		}
-		os.Exit(0)
+			cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth)
+	case "webhook":
+		return runWebhookMode(cfg.webhookAddr, cfg.probeAddr)
+	default:
+		return runOperatorMode(cfg.uiAddr, cfg.metricsAddr, cfg.probeAddr,
+			cfg.webhookCertPath, cfg.webhookCertName, cfg.webhookCertKey,
+			cfg.metricsCertPath, cfg.metricsCertName, cfg.metricsCertKey, cfg.operatorNamespace,
+			cfg.enableLeaderElection, cfg.secureMetrics, cfg.enableHTTP2,
+			cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+			cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth)
 	}
+}
 
-	if cfg.mode == "webhook" {
-		if err := runWebhookMode(cfg.webhookAddr, cfg.probeAddr); err != nil {
-			setupLog.Error(err, "Webhook mode failed")
-			os.Exit(1)
-		}
-		os.Exit(0)
+func validateMode(mode string) error {
+	if mode != "operator" && mode != "api" && mode != "webhook" && mode != "repo-server" && mode != "agent" {
+		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', or 'agent')", mode)
 	}
-
-	if err := runOperatorMode(cfg.uiAddr, cfg.metricsAddr, cfg.probeAddr,
-		cfg.webhookCertPath, cfg.webhookCertName, cfg.webhookCertKey,
-		cfg.metricsCertPath, cfg.metricsCertName, cfg.metricsCertKey, cfg.operatorNamespace,
-		cfg.enableLeaderElection, cfg.secureMetrics, cfg.enableHTTP2,
-		cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth); err != nil {
-		setupLog.Error(err, "Failed to run operator mode")
-		os.Exit(1)
-	}
+	return nil
 }
 
 func registerFlags() cliConfig {
@@ -147,13 +164,15 @@ func registerFlags() cliConfig {
 	flag.StringVar(&cfg.uiAddr, "ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
 	flag.StringVar(&cfg.mode, "mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), or 'webhook' (webhook receiver only).")
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent).")
 	flag.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
 	flag.StringVar(&cfg.k8sTokenFile, "k8s-token-file", "",
 		"Path to Kubernetes service account token. Only used in 'api' mode.")
 	flag.StringVar(&cfg.webhookAddr, "webhook-bind-address", ":8080",
 		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
+	flag.StringVar(&cfg.repoServerAddr, "repo-server-addr", os.Getenv("PAPRIKA_REPO_SERVER_ADDR"),
+		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
 	flag.BoolVar(&cfg.authEnabled, "auth-enabled", false,
 		"Enable authentication and authorization for the API server.")
 	flag.StringVar(&cfg.authBasicUsername, "auth-basic-username", "",
@@ -335,6 +354,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 	}
 	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-helm")
 	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-helm", 0)
+	renderer := engine.NewRepoServerRenderer(repoclient.NewFromEnv(), cachedRenderer)
 	if err := (&controller.ReleaseReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
@@ -343,7 +363,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		ClusterMgr:           controller.NewClusterConnectionPool(mgr.GetClient(), mgr.GetConfig()),
 		GateExecutor:         gates.NewSmokeGate(),
 		Analyzer:             analysis.NewAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig()),
-		TemplateRenderer:     cachedRenderer,
+		TemplateRenderer:     renderer,
 		TrafficRouterFactory: traffic.NewRouter,
 		ShardFilter:          shardFilter,
 		RateLimiter:          rateLimiter,
@@ -384,6 +404,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 	}
 	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-sources")
 	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-sources", 0)
+	renderer := engine.NewRepoServerRenderer(repoclient.NewFromEnv(), cachedRenderer)
 	if err := (&controller.ApplicationReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
@@ -395,11 +416,33 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		DiffEngine:       engine.NewScalableDiffEngine(dynClient),
 		ResHealth:        health.NewResourceHealthChecker(mgr.GetClient()),
 		ClusterMgr:       controller.NewClusterConnectionPool(mgr.GetClient(), mgr.GetConfig()),
-		TemplateRenderer: cachedRenderer,
+		TemplateRenderer: renderer,
 		ShardFilter:      shardFilter,
 		RateLimiter:      rateLimiter,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
+	}
+	return nil
+}
+
+func setupWebhooks(mgr ctrl.Manager) error {
+	if os.Getenv("ENABLE_WEBHOOKS") == "false" {
+		return nil
+	}
+	// +kubebuilder:scaffold:webhook
+	webhooks := []struct {
+		name string
+		fn   func(ctrl.Manager) error
+	}{
+		{"Pipeline", webhookpipelinesv1alpha1.SetupPipelineWebhookWithManager},
+		{"Stage", webhookpipelinesv1alpha1.SetupStageWebhookWithManager},
+		{"Release", webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager},
+		{"Template", webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager},
+	}
+	for _, w := range webhooks {
+		if err := w.fn(mgr); err != nil {
+			return fmt.Errorf("failed to create webhook %s: %w", w.name, err)
+		}
 	}
 	return nil
 }
@@ -426,20 +469,22 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 			return fmt.Errorf("failed to create controller %s: %w", c.name, err)
 		}
 	}
-	// +kubebuilder:scaffold:webhook
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := webhookpipelinesv1alpha1.SetupPipelineWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("failed to create webhook Pipeline: %w", err)
-		}
-		if err := webhookpipelinesv1alpha1.SetupStageWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("failed to create webhook Stage: %w", err)
-		}
-		if err := webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("failed to create webhook Release: %w", err)
-		}
-		if err := webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("failed to create webhook Template: %w", err)
-		}
+	if err := setupWebhooks(mgr); err != nil {
+		return err
+	}
+	if err := (&clusterscontroller.ClusterReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "clusters-cluster")
+		os.Exit(1)
+	}
+	if err := (&corecontroller.AppProjectReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "core-appproject")
+		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
 
@@ -462,11 +507,12 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string,
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
-	paprikaServer := api.NewPaprikaServer(mgr.GetClient())
+	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), nil)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	uiMux.Handle("/events", api.NewSSEHandler(paprikaServer.Broker()))
 	uiMux.Handle("/", api.UIHandler())
 
 	uiServer := &http.Server{
@@ -504,10 +550,10 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
-	paprikaServer := api.NewPaprikaServer(apiClient)
+	paprikaServer := api.NewPaprikaServer(apiClient, nil)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
-	mux := buildAPIMux(connectHandler)
+	mux := buildAPIMux(connectHandler, paprikaServer.Broker())
 	healthMux := buildHealthMux()
 
 	startHealthProbeServer(healthMux, probeAddr)
@@ -526,7 +572,17 @@ func runWebhookMode(webhookAddr, probeAddr string) error {
 	}
 
 	secret := os.Getenv("PAPRIKA_WEBHOOK_SECRET")
-	handler := webhookreceiver.NewHandler(apiClient, secret)
+	cacheClient, err := cache.NewFromEnv()
+	if err != nil {
+		setupLog.Error(err, "Failed to create webhook cache client, continuing without cache invalidation")
+		cacheClient = nil
+	}
+	var inv *cache.Invalidator
+	if cacheClient != nil {
+		inv = cache.NewInvalidator(cacheClient)
+		defer func() { _ = cacheClient.Close() }()
+	}
+	handler := webhookreceiver.NewHandlerWithCache(apiClient, secret, inv)
 
 	mux := http.NewServeMux()
 	mux.Handle("/webhook", handler)
@@ -596,9 +652,10 @@ func createAPIClient(config *rest.Config) (client.Client, error) {
 	return apiClient, nil
 }
 
-func buildAPIMux(connectHandler http.Handler) *http.ServeMux {
+func buildAPIMux(connectHandler http.Handler, broker *events.Broker) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	mux.Handle("/events", api.NewSSEHandler(broker))
 	mux.Handle("/healthz", http.HandlerFunc(healthzHandler))
 	mux.Handle("/", api.UIHandler())
 	return mux
@@ -639,6 +696,55 @@ func startAPIServer(mux *http.ServeMux, uiAddr string) error {
 	setupLog.Info("Starting API server", "addr", uiAddr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("api server error: %w", err)
+	}
+	return nil
+}
+
+func runRepoServerMode(addr, probeAddr string) error {
+	workDir := os.Getenv("PAPRIKA_REPO_WORKDIR")
+	if workDir == "" {
+		workDir = "/tmp/paprika-repo"
+	}
+
+	c, err := cache.NewFromEnv()
+	if err != nil {
+		setupLog.Error(err, "Failed to create cache, falling back to in-memory")
+		c = cache.NewMemoryCache()
+	}
+	defer func() { _ = c.Close() }()
+
+	srv := reposerver.NewServer(workDir, c)
+
+	healthMux := buildHealthMux()
+	startHealthProbeServer(healthMux, probeAddr)
+
+	if err := srv.Run(context.Background(), addr); err != nil {
+		return fmt.Errorf("repo server run: %w", err)
+	}
+	return nil
+}
+
+func runAgentMode(addr, probeAddr string) error {
+	clusterID := os.Getenv("PAPRIKA_AGENT_CLUSTER_ID")
+	if clusterID == "" {
+		clusterID = "default"
+	}
+
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return fmt.Errorf("load in-cluster config: %w", err)
+	}
+
+	srv, err := agentserver.NewServer(clusterID, cfg)
+	if err != nil {
+		return fmt.Errorf("create agent server: %w", err)
+	}
+
+	healthMux := buildHealthMux()
+	startHealthProbeServer(healthMux, probeAddr)
+
+	if err := srv.Run(context.Background(), addr); err != nil {
+		return fmt.Errorf("agent server run: %w", err)
 	}
 	return nil
 }

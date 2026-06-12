@@ -116,21 +116,23 @@ spec:
                 - steps
                 type: object
               cluster:
-                description: |-
-                  ClusterRef references a Kubernetes cluster.
-                  ClusterRef references a Kubernetes cluster.
+                description: ClusterRef references a Kubernetes cluster.
                 properties:
+                  agentAddress:
+                    type: string
                   kubeconfigSecret:
-                    description: Kubeconfig secret reference (for external clusters)
+                    type: string
+                  mode:
+                    description: ClusterMode defines how the controller connects to
+                      a cluster.
                     type: string
                   name:
                     type: string
+                  namespace:
+                    type: string
                   server:
-                    description: Server URL for the cluster (optional, for direct
-                      connection)
                     type: string
                   serviceAccount:
-                    description: Service account to use for in-cluster deployments
                     type: string
                 required:
                 - name

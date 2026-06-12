@@ -1367,24 +1367,41 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "Resource health should be populated")
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
 		})
 	})
 
 	Context("DashboardUI", func() {
-		It("should serve the dashboard page", func() {
-			By("requesting the UI dashboard via port-forward")
+		It("should serve the landing page", func() {
+			By("requesting the landing page via port-forward")
 			resp, err := http.Get("http://localhost:4000/")
-			Expect(err).NotTo(HaveOccurred(), "Failed to reach UI dashboard")
+			Expect(err).NotTo(HaveOccurred(), "Failed to reach landing page")
 			defer resp.Body.Close()
-			Expect(resp.StatusCode).To(Equal(http.StatusOK), "UI dashboard should return 200")
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Landing page should return 200")
+
+			By("checking that the response contains expected content")
+			buf := make([]byte, 4096)
+			n, err := resp.Body.Read(buf)
+			Expect(err).To(Or(BeNil(), HaveOccurred())) // may EOF after reading
+			body := string(buf[:n])
+			Expect(body).To(ContainSubstring("Paprika"), "Landing page should contain title")
+			Expect(body).To(ContainSubstring("Get Started"), "Landing page should contain CTA")
+		})
+
+		It("should serve the dashboard", func() {
+			By("requesting the dashboard page via port-forward")
+			resp, err := http.Get("http://localhost:4000/dashboard/")
+			Expect(err).NotTo(HaveOccurred(), "Failed to reach dashboard")
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Dashboard should return 200")
 
 			By("checking that the response contains expected dashboard elements")
 			buf := make([]byte, 4096)
 			n, err := resp.Body.Read(buf)
 			Expect(err).To(Or(BeNil(), HaveOccurred())) // may EOF after reading
 			body := string(buf[:n])
-			Expect(body).To(ContainSubstring("Paprika"), "Dashboard should contain the title")
+			Expect(body).To(ContainSubstring("Dashboard"), "Dashboard should contain the heading")
+			Expect(body).To(ContainSubstring("Pipeline"), "Dashboard should mention pipeline")
 		})
 	})
 

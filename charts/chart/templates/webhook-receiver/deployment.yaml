@@ -75,6 +75,7 @@ spec:
           {}
           {{- end }}
         env:
+        {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- if .Values.webhookReceiver.secret.existingSecretName }}
         - name: PAPRIKA_WEBHOOK_SECRET
           valueFrom:

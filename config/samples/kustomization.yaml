@@ -6,4 +6,6 @@ resources:
 - pipelines_v1alpha1_template.yaml
 - pipelines_v1alpha1_artifact.yaml
 - pipelines_v1alpha1_application.yaml
+- clusters_v1alpha1_cluster.yaml
+- core_v1alpha1_appproject.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

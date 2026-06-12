@@ -266,6 +266,44 @@ export const Stage = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.TrafficRouter
+ */
+export const TrafficRouter = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.TrafficRouter",
+  () => [
+    { no: 1, name: "provider", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "istio", kind: "message", T: IstioRouterConfig },
+    { no: 3, name: "gateway_api", kind: "message", T: GatewayAPIRouterConfig },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.IstioRouterConfig
+ */
+export const IstioRouterConfig = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.IstioRouterConfig",
+  () => [
+    { no: 1, name: "virtual_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "routes", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 3, name: "hosts", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 4, name: "stable_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "canary_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GatewayAPIRouterConfig
+ */
+export const GatewayAPIRouterConfig = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GatewayAPIRouterConfig",
+  () => [
+    { no: 1, name: "http_route", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "stable_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "canary_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.ListPipelinesRequest
  */
 export const ListPipelinesRequest = /*@__PURE__*/ proto3.makeMessageType(
@@ -406,6 +444,55 @@ export const ApproveGateResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ApproveGateResponse",
   () => [
     { no: 1, name: "application", kind: "message", T: Application },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResolveSourceRequest
+ */
+export const ResolveSourceRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResolveSourceRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "spec_json", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResolveSourceResponse
+ */
+export const ResolveSourceResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResolveSourceResponse",
+  () => [
+    { no: 1, name: "local_path", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "hash", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RenderRequest
+ */
+export const RenderRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RenderRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "spec_json", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 5, name: "values_json", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RenderResponse
+ */
+export const RenderResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RenderResponse",
+  () => [
+    { no: 1, name: "manifests", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
   ],
 );
 

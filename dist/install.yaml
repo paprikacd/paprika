@@ -12,19 +12,35 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: artifacts.pipelines.paprika.io
+  name: applications.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
   names:
-    kind: Artifact
-    listKind: ArtifactList
-    plural: artifacts
-    singular: artifact
+    kind: Application
+    listKind: ApplicationList
+    plural: applications
+    singular: application
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.currentStage
+      name: Stage
+      type: string
+    - jsonPath: .status.revision
+      name: Revision
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: |-
+          Application represents a Paprika application.
+          Application represents a Paprika application.
         properties:
           apiVersion:
             description: |-
@@ -44,10 +60,975 @@ spec:
           metadata:
             type: object
           spec:
+            description: |-
+              ApplicationSpec defines the specification for an application.
+              ApplicationSpec defines the specification for an application.
+            properties:
+              approvalGates:
+                description: ApprovalGates define manual approval gates for stage
+                  transitions.
+                items:
+                  description: ApprovalGate defines a manual or automated approval
+                    gate for stage transitions.
+                  properties:
+                    name:
+                      description: Name of the gate
+                      type: string
+                    required:
+                      default: true
+                      description: Whether the gate is required (default true)
+                      type: boolean
+                    stage:
+                      description: Stage at which this gate applies (e.g., "prod")
+                      type: string
+                    type:
+                      description: 'Type of gate: manual, webhook, slack'
+                      enum:
+                      - manual
+                      - webhook
+                      - slack
+                      type: string
+                  required:
+                  - name
+                  - stage
+                  - type
+                  type: object
+                type: array
+              build:
+                description: Build defines the CI pipeline steps (optional — skip
+                  if no build needed).
+                properties:
+                  artifacts:
+                    items:
+                      description: PipelineOutput defines an output artifact of a
+                        pipeline.
+                      properties:
+                        name:
+                          type: string
+                        path:
+                          type: string
+                      required:
+                      - name
+                      - path
+                      type: object
+                    type: array
+                  maxParallel:
+                    type: integer
+                  sources:
+                    items:
+                      description: Source defines a source for the pipeline.
+                      properties:
+                        secretRef:
+                          type: string
+                        type:
+                          enum:
+                          - git
+                          type: string
+                        url:
+                          type: string
+                      required:
+                      - type
+                      type: object
+                    type: array
+                  steps:
+                    items:
+                      description: |-
+                        ApplicationBuildStep defines a step in the build pipeline.
+                        ApplicationBuildStep defines a step in the build pipeline.
+                      properties:
+                        depends:
+                          items:
+                            type: string
+                          type: array
+                        image:
+                          type: string
+                        name:
+                          type: string
+                        retry:
+                          type: integer
+                        script:
+                          type: string
+                        timeout:
+                          type: integer
+                      required:
+                      - image
+                      - name
+                      - script
+                      type: object
+                    type: array
+                required:
+                - steps
+                type: object
+              canary:
+                description: |-
+                  Canary defines the default canary configuration.
+                  Overridden by per-stage canary config.
+                properties:
+                  analysis:
+                    description: PDV analysis configuration
+                    properties:
+                      checks:
+                        items:
+                          description: |-
+                            AnalysisCheck defines a check for canary analysis.
+                            AnalysisCheck defines a check for canary analysis.
+                          properties:
+                            httpHeaders:
+                              additionalProperties:
+                                type: string
+                              description: HTTP headers to send with the request
+                              type: object
+                            metric:
+                              description: 'Pod metric to check (for type=podMetrics):
+                                errorRate, latencyP99, restartRate'
+                              enum:
+                              - errorRate
+                              - latencyP99
+                              - restartRate
+                              type: string
+                            requestCount:
+                              description: Number of requests to make per analysis
+                                cycle
+                              type: integer
+                            successThreshold:
+                              description: Fraction of requests that must succeed
+                                as a percentage string (e.g. "99" = 99%)
+                              type: string
+                            threshold:
+                              description: 'Threshold as a string (errorRate: "0.01"
+                                = 1%, latencyP99: "500" = 500ms, restartRate: "3"
+                                = count)'
+                              type: string
+                            timeoutSeconds:
+                              description: Timeout per request in seconds
+                              type: integer
+                            type:
+                              enum:
+                              - http
+                              - podMetrics
+                              type: string
+                            url:
+                              description: URL to probe (for type=http)
+                              type: string
+                            windowSeconds:
+                              description: Time window in seconds to evaluate the
+                                metric
+                              type: integer
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      intervalSeconds:
+                        type: integer
+                      rollbackOnFail:
+                        type: boolean
+                    type: object
+                  intervalSeconds:
+                    description: Seconds to wait between canary weight steps
+                    type: integer
+                  steps:
+                    description: Traffic weight percentages at each canary step, e.g.
+                      [10, 30, 60, 100]
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - steps
+                type: object
+              healthChecks:
+                description: HealthChecks define custom CEL-based health checks for
+                  the application.
+                items:
+                  description: |-
+                    HealthCheck defines a health check.
+                    HealthCheck defines a health check.
+                  properties:
+                    expression:
+                      description: |-
+                        CEL expression to evaluate. Available variables:
+                          app (Application spec), status (Application status), http (HTTP probe results).
+                        Expression must return a boolean or a string matching HealthStatus.
+                      type: string
+                    httpProbe:
+                      description: |-
+                        Optional HTTP probe to run before evaluating the expression.
+                        Results available in CEL as http.status, http.body, http.headers.
+                      properties:
+                        body:
+                          description: Request body (for POST/PUT)
+                          type: string
+                        expectedStatus:
+                          description: Expected HTTP status code (default 200)
+                          type: integer
+                        headers:
+                          additionalProperties:
+                            type: string
+                          description: Request headers
+                          type: object
+                        method:
+                          default: GET
+                          description: HTTP method (GET, POST, PUT, DELETE, HEAD)
+                          type: string
+                        timeout:
+                          default: 5
+                          description: Timeout in seconds (default 5)
+                          type: integer
+                        url:
+                          description: URL to probe
+                          type: string
+                      required:
+                      - url
+                      type: object
+                    interval:
+                      default: 30s
+                      description: How often to run this check (default 30s)
+                      type: string
+                    name:
+                      description: Name of the health check
+                      type: string
+                  required:
+                  - expression
+                  - name
+                  type: object
+                type: array
+              onFailure:
+                description: OnFailure defines the action when a promotion fails.
+                properties:
+                  action:
+                    enum:
+                    - rollback
+                    - halt
+                    - ignore
+                    type: string
+                  notify:
+                    items:
+                      type: string
+                    type: array
+                required:
+                - action
+                type: object
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Parameters are Helm value overrides passed to all releases.
+                type: object
+              source:
+                description: Source defines where the application code/chart lives.
+                properties:
+                  bucket:
+                    description: S3 bucket (for type=s3)
+                    type: string
+                  chart:
+                    description: Helm chart reference (for type=helm)
+                    properties:
+                      name:
+                        type: string
+                      path:
+                        description: Path to a local Helm chart directory (alternative
+                          to Repo+Name)
+                        type: string
+                      repo:
+                        type: string
+                      version:
+                        type: string
+                    type: object
+                  endpoint:
+                    description: S3 endpoint URL (for type=s3, use LocalStack endpoint
+                      for testing)
+                    type: string
+                  key:
+                    description: S3 object key (for type=s3)
+                    type: string
+                  path:
+                    description: Path within the repo to the chart/source (for type=git
+                      or type=s3)
+                    type: string
+                  pollInterval:
+                    default: 30s
+                    description: Poll interval for change detection (default 30s)
+                    type: string
+                  region:
+                    description: S3 region (for type=s3)
+                    type: string
+                  repoUrl:
+                    description: Git repository URL (for type=git)
+                    type: string
+                  revision:
+                    description: Git branch, tag, or commit (for type=git)
+                    type: string
+                  secretRef:
+                    description: Secret reference for private repos or S3 credentials
+                    type: string
+                  type:
+                    enum:
+                    - git
+                    - helm
+                    - s3
+                    type: string
+                required:
+                - type
+                type: object
+              stages:
+                description: Stages defines the promotion environments (dev, staging,
+                  prod, etc.).
+                items:
+                  description: |-
+                    ApplicationPromotionStage defines a promotion stage.
+                    ApplicationPromotionStage defines a promotion stage.
+                  properties:
+                    autoPromote:
+                      description: Auto-promote to the next ring after this stage
+                        is healthy
+                      type: boolean
+                    canary:
+                      description: Canary config for this stage (overrides spec.canary
+                        if set)
+                      properties:
+                        analysis:
+                          description: PDV analysis configuration
+                          properties:
+                            checks:
+                              items:
+                                description: |-
+                                  AnalysisCheck defines a check for canary analysis.
+                                  AnalysisCheck defines a check for canary analysis.
+                                properties:
+                                  httpHeaders:
+                                    additionalProperties:
+                                      type: string
+                                    description: HTTP headers to send with the request
+                                    type: object
+                                  metric:
+                                    description: 'Pod metric to check (for type=podMetrics):
+                                      errorRate, latencyP99, restartRate'
+                                    enum:
+                                    - errorRate
+                                    - latencyP99
+                                    - restartRate
+                                    type: string
+                                  requestCount:
+                                    description: Number of requests to make per analysis
+                                      cycle
+                                    type: integer
+                                  successThreshold:
+                                    description: Fraction of requests that must succeed
+                                      as a percentage string (e.g. "99" = 99%)
+                                    type: string
+                                  threshold:
+                                    description: 'Threshold as a string (errorRate:
+                                      "0.01" = 1%, latencyP99: "500" = 500ms, restartRate:
+                                      "3" = count)'
+                                    type: string
+                                  timeoutSeconds:
+                                    description: Timeout per request in seconds
+                                    type: integer
+                                  type:
+                                    enum:
+                                    - http
+                                    - podMetrics
+                                    type: string
+                                  url:
+                                    description: URL to probe (for type=http)
+                                    type: string
+                                  windowSeconds:
+                                    description: Time window in seconds to evaluate
+                                      the metric
+                                    type: integer
+                                required:
+                                - type
+                                type: object
+                              type: array
+                            intervalSeconds:
+                              type: integer
+                            rollbackOnFail:
+                              type: boolean
+                          type: object
+                        intervalSeconds:
+                          description: Seconds to wait between canary weight steps
+                          type: integer
+                        steps:
+                          description: Traffic weight percentages at each canary step,
+                            e.g. [10, 30, 60, 100]
+                          items:
+                            type: integer
+                          type: array
+                      required:
+                      - steps
+                      type: object
+                    cluster:
+                      description: Cluster to deploy to (defaults to same cluster)
+                      properties:
+                        agentAddress:
+                          type: string
+                        kubeconfigSecret:
+                          type: string
+                        mode:
+                          description: ClusterMode defines how the controller connects
+                            to a cluster.
+                          type: string
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        server:
+                          type: string
+                        serviceAccount:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    gates:
+                      description: Verification gates to run after promotion
+                      items:
+                        description: |-
+                          GateConfig defines a gate for stage promotion.
+                          GateConfig defines a gate for stage promotion.
+                        properties:
+                          endpoint:
+                            type: string
+                          timeout:
+                            type: integer
+                          type:
+                            enum:
+                            - smoke-test
+                            - duration
+                            type: string
+                        required:
+                        - type
+                        type: object
+                      type: array
+                    name:
+                      type: string
+                    parameters:
+                      additionalProperties:
+                        type: string
+                      description: Feature flag / parameter overrides for this stage
+                      type: object
+                    ring:
+                      description: Ring number (lower = earlier environment)
+                      type: integer
+                    strategy:
+                      description: Delivery strategy for this stage (overrides spec.strategy
+                        if set)
+                      type: string
+                  required:
+                  - name
+                  - ring
+                  type: object
+                type: array
+              strategy:
+                default: Rolling
+                description: |-
+                  Strategy is the default delivery strategy for all stages.
+                  Can be overridden per-stage.
+                enum:
+                - Rolling
+                - Canary
+                - BlueGreen
+                type: string
+              syncPolicy:
+                default: Auto
+                description: SyncPolicy controls whether changes are applied automatically.
+                enum:
+                - Auto
+                - Manual
+                type: string
+            required:
+            - source
+            - stages
+            type: object
+          status:
+            description: |-
+              ApplicationStatus represents the status of an application.
+              ApplicationStatus represents the status of an application.
+            properties:
+              canaryStepIndex:
+                description: Index into the canary steps array
+                type: integer
+              canaryWeight:
+                description: Canary weight if currently canarying
+                type: integer
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentStage:
+                description: Current stage being promoted/verified
+                type: string
+              gates:
+                description: Approval gate status
+                items:
+                  description: GateStatus represents the current status of an approval
+                    gate.
+                  properties:
+                    approvedBy:
+                      type: string
+                    name:
+                      type: string
+                    stage:
+                      type: string
+                    status:
+                      type: string
+                  required:
+                  - name
+                  - stage
+                  - status
+                  type: object
+                type: array
+              health:
+                description: Overall health status computed from health checks
+                type: string
+              healthChecks:
+                description: Results of health check evaluations
+                items:
+                  description: HealthCheckResult contains the result of a single health
+                    check evaluation.
+                  properties:
+                    checkedAt:
+                      format: date-time
+                      type: string
+                    httpBody:
+                      type: string
+                    httpStatusCode:
+                      description: HTTP probe results
+                      type: integer
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    status:
+                      description: HealthStatus represents the health status of an
+                        application or resource.
+                      type: string
+                  required:
+                  - name
+                  - status
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
+              outOfSync:
+                description: OutOfSync resources count
+                type: integer
+              phase:
+                description: |-
+                  ApplicationPhase represents the phase of an application.
+                  ApplicationPhase represents the phase of an application.
+                enum:
+                - Pending
+                - Building
+                - Promoting
+                - Canarying
+                - Verifying
+                - Healthy
+                - Degraded
+                - Failed
+                - RolledBack
+                type: string
+              pipelineRef:
+                type: string
+              prunedResources:
+                description: Pruned resources count
+                type: integer
+              releaseRef:
+                type: string
+              resourceHealth:
+                description: ResourceHealth tracks the health status of each deployed
+                  resource
+                items:
+                  description: ResourceHealth tracks the health status of a deployed
+                    Kubernetes resource.
+                  properties:
+                    health:
+                      enum:
+                      - Healthy
+                      - Degraded
+                      - Progressing
+                      - Unknown
+                      - Missing
+                      type: string
+                    kind:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                  required:
+                  - health
+                  - kind
+                  - name
+                  type: object
+                type: array
+              resources:
+                description: ResourceSync tracks the diff status of each managed resource
+                items:
+                  description: ResourceSync tracks the sync status of a managed Kubernetes
+                    resource.
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    status:
+                      enum:
+                      - Synced
+                      - OutOfSync
+                      - Missing
+                      - Pruned
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - status
+                  type: object
+                type: array
+              revision:
+                description: Last deployed revision (git commit hash or chart version)
+                type: string
+              sourceHash:
+                description: Owned resource references
+                type: string
+              sourceRevision:
+                type: string
+              stageRefs:
+                items:
+                  type: string
+                type: array
+              stages:
+                description: Per-stage status
+                items:
+                  description: |-
+                    ApplicationStageStatus represents the status of an application stage.
+                    ApplicationStageStatus represents the status of an application stage.
+                  properties:
+                    name:
+                      type: string
+                    phase:
+                      type: string
+                    release:
+                      type: string
+                    revision:
+                      type: string
+                    ring:
+                      type: integer
+                    updatedAt:
+                      format: date-time
+                      type: string
+                  required:
+                  - name
+                  - ring
+                  type: object
+                type: array
+              synced:
+                description: Whether the source has been synced
+                type: boolean
+              templateRef:
+                type: string
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: appprojects.core.paprika.io
+spec:
+  group: core.paprika.io
+  names:
+    kind: AppProject
+    listKind: AppProjectList
+    plural: appprojects
+    singular: appproject
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: AppProject groups applications into a multi-tenant project with
+          source, destination, and resource constraints.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AppProjectSpec defines tenant boundaries and resource constraints
+              for applications.
+            properties:
+              clusterResourceBlacklist:
+                description: ClusterResourceBlacklist denies cluster-scoped resources.
+                items:
+                  type: string
+                type: array
+              clusterResourceWhitelist:
+                description: ClusterResourceWhitelist permits cluster-scoped resources.
+                items:
+                  type: string
+                type: array
+              description:
+                type: string
+              destinations:
+                description: Destinations restricts target cluster/server and namespace
+                  combinations.
+                items:
+                  description: AppProjectDestination restricts where applications
+                    may deploy.
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    server:
+                      type: string
+                  type: object
+                type: array
+              kinds:
+                description: Kinds restricts which Kubernetes kinds may be deployed.
+                  Empty means all.
+                items:
+                  type: string
+                type: array
+              kindsDeny:
+                description: KindsDeny denies matching kinds.
+                items:
+                  type: string
+                type: array
+              roles:
+                description: Roles define project-level RBAC subjects.
+                items:
+                  description: AppProjectRole defines project-level access.
+                  properties:
+                    actions:
+                      items:
+                        type: string
+                      type: array
+                    name:
+                      type: string
+                    subjects:
+                      items:
+                        type: string
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+              sourceRepos:
+                description: SourceRepos restricts which repository URLs are allowed.
+                  Empty means all.
+                items:
+                  type: string
+                type: array
+              sourceReposDeny:
+                description: SourceReposDeny denies matching repository URLs.
+                items:
+                  type: string
+                type: array
+            type: object
+          status:
+            description: AppProjectStatus defines the observed state of AppProject.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: artifacts.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: Artifact
+    listKind: ArtifactList
+    plural: artifacts
+    singular: artifact
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Artifact represents a build artifact.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ArtifactSpec defines the specification for an artifact.
             properties:
               digest:
                 type: string
               provenance:
+                description: |-
+                  ArtifactProvenance tracks the origin of an artifact.
+                  ArtifactProvenance tracks the origin of an artifact.
                 properties:
                   build:
                     type: string
@@ -65,9 +1046,212 @@ spec:
             - type
             type: object
           status:
+            description: ArtifactStatus represents the status of an artifact.
             properties:
               verified:
                 type: boolean
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: clusters.clusters.paprika.io
+spec:
+  group: clusters.paprika.io
+  names:
+    kind: Cluster
+    listKind: ClusterList
+    plural: clusters
+    singular: cluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.mode
+      name: Mode
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.server
+      name: Server
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Cluster registers a Kubernetes cluster for Paprika deployments.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ClusterSpec defines the desired state of a Cluster.
+            properties:
+              connectionTimeout:
+                default: 30s
+                type: string
+              disabled:
+                type: boolean
+              displayName:
+                type: string
+              healthCheck:
+                description: HealthCheckConfig configures periodic cluster health
+                  probes.
+                properties:
+                  interval:
+                    default: 30s
+                    type: string
+                  timeout:
+                    default: 10s
+                    type: string
+                type: object
+              kubeconfigSecretRef:
+                description: SecretRef references a Kubernetes Secret.
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - name
+                type: object
+              labels:
+                additionalProperties:
+                  type: string
+                type: object
+              mode:
+                default: in-cluster
+                description: ClusterMode defines how the controller connects to a
+                  cluster.
+                enum:
+                - direct
+                - agent
+                - in-cluster
+                type: string
+              server:
+                type: string
+              serviceAccount:
+                type: string
+            required:
+            - mode
+            type: object
+          status:
+            description: ClusterStatus defines the observed state of a Cluster.
+            properties:
+              agentInfo:
+                description: AgentInfo reports the status of an in-cluster agent.
+                properties:
+                  address:
+                    type: string
+                  connected:
+                    format: date-time
+                    type: string
+                  version:
+                    type: string
+                type: object
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastHealthCheckTime:
+                format: date-time
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              phase:
+                description: ClusterPhase represents the lifecycle phase of a Cluster.
+                enum:
+                - Pending
+                - Healthy
+                - Unhealthy
+                - Disabled
+                type: string
+              version:
+                type: string
             type: object
         required:
         - metadata
@@ -96,6 +1280,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Pipeline represents a CI/CD pipeline.
         properties:
           apiVersion:
             description: |-
@@ -115,9 +1300,11 @@ spec:
           metadata:
             type: object
           spec:
+            description: PipelineSpec defines the specification for a pipeline.
             properties:
               artifacts:
                 items:
+                  description: PipelineOutput defines an output artifact of a pipeline.
                   properties:
                     name:
                       type: string
@@ -132,6 +1319,7 @@ spec:
                 type: integer
               sources:
                 items:
+                  description: Source defines a source for the pipeline.
                   properties:
                     secretRef:
                       type: string
@@ -147,6 +1335,7 @@ spec:
                 type: array
               steps:
                 items:
+                  description: PipelineStep defines a step in a pipeline.
                   properties:
                     depends:
                       items:
@@ -172,13 +1361,22 @@ spec:
             - steps
             type: object
           status:
+            description: PipelineStatus represents the status of a pipeline.
             properties:
-              lastExecutionID:
+              lastExecutionId:
                 type: string
               lastExecutionTime:
                 format: date-time
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               phase:
+                description: |-
+                  PipelinePhase represents the phase of a pipeline.
+                  PipelinePhase represents the phase of a pipeline.
                 enum:
                 - Running
                 - Succeeded
@@ -186,6 +1384,7 @@ spec:
                 type: string
               stepStatuses:
                 items:
+                  description: StepStatus represents the status of a pipeline step.
                   properties:
                     completedAt:
                       format: date-time
@@ -195,6 +1394,7 @@ spec:
                     name:
                       type: string
                     phase:
+                      description: StepPhase represents the phase of a pipeline step.
                       enum:
                       - Pending
                       - Running
@@ -238,6 +1438,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Release represents a deployment release.
         properties:
           apiVersion:
             description: |-
@@ -257,10 +1458,12 @@ spec:
           metadata:
             type: object
           spec:
+            description: ReleaseSpec defines the specification for a release.
             properties:
               from:
                 type: string
-              on_failure:
+              onFailure:
+                description: FailureAction defines the action to take on failure.
                 properties:
                   action:
                     enum:
@@ -275,12 +1478,20 @@ spec:
                 required:
                 - action
                 type: object
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Feature flag overrides passed as Helm --set values
+                type: object
               pipeline:
                 type: string
               target:
                 type: string
               verify:
                 items:
+                  description: |-
+                    GateConfig defines a gate for stage promotion.
+                    GateConfig defines a gate for stage promotion.
                   properties:
                     endpoint:
                       type: string
@@ -300,7 +1511,20 @@ spec:
             - target
             type: object
           status:
+            description: ReleaseStatus represents the status of a release.
             properties:
+              canaryStepIndex:
+                description: Index into the canary steps array
+                type: integer
+              canaryStepStartedAt:
+                description: |-
+                  When the current canary step started (used to throttle step advancement
+                  to the configured intervalSeconds, preventing watch-event-driven fast-forward).
+                format: date-time
+                type: string
+              canaryWeight:
+                description: Current canary traffic weight (0-100)
+                type: integer
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -359,10 +1583,17 @@ spec:
                 type: array
               currentStage:
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               phase:
+                description: ReleasePhase represents the phase of a release.
                 enum:
                 - Pending
                 - Promoting
+                - Canarying
                 - Verifying
                 - Complete
                 - Failed
@@ -371,6 +1602,8 @@ spec:
                 type: string
               promotionHistory:
                 items:
+                  description: PromotionEntry represents an entry in the promotion
+                    history.
                   properties:
                     manifestSnapshot:
                       type: string
@@ -417,6 +1650,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Stage represents a deployment stage.
         properties:
           apiVersion:
             description: |-
@@ -436,16 +1670,111 @@ spec:
           metadata:
             type: object
           spec:
+            description: StageSpec defines the specification for a stage.
             properties:
-              cluster:
+              canary:
+                description: |-
+                  CanaryConfig defines the configuration for canary deployments.
+                  CanaryConfig defines the configuration for canary deployments.
                 properties:
+                  analysis:
+                    description: PDV analysis configuration
+                    properties:
+                      checks:
+                        items:
+                          description: |-
+                            AnalysisCheck defines a check for canary analysis.
+                            AnalysisCheck defines a check for canary analysis.
+                          properties:
+                            httpHeaders:
+                              additionalProperties:
+                                type: string
+                              description: HTTP headers to send with the request
+                              type: object
+                            metric:
+                              description: 'Pod metric to check (for type=podMetrics):
+                                errorRate, latencyP99, restartRate'
+                              enum:
+                              - errorRate
+                              - latencyP99
+                              - restartRate
+                              type: string
+                            requestCount:
+                              description: Number of requests to make per analysis
+                                cycle
+                              type: integer
+                            successThreshold:
+                              description: Fraction of requests that must succeed
+                                as a percentage string (e.g. "99" = 99%)
+                              type: string
+                            threshold:
+                              description: 'Threshold as a string (errorRate: "0.01"
+                                = 1%, latencyP99: "500" = 500ms, restartRate: "3"
+                                = count)'
+                              type: string
+                            timeoutSeconds:
+                              description: Timeout per request in seconds
+                              type: integer
+                            type:
+                              enum:
+                              - http
+                              - podMetrics
+                              type: string
+                            url:
+                              description: URL to probe (for type=http)
+                              type: string
+                            windowSeconds:
+                              description: Time window in seconds to evaluate the
+                                metric
+                              type: integer
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      intervalSeconds:
+                        type: integer
+                      rollbackOnFail:
+                        type: boolean
+                    type: object
+                  intervalSeconds:
+                    description: Seconds to wait between canary weight steps
+                    type: integer
+                  steps:
+                    description: Traffic weight percentages at each canary step, e.g.
+                      [10, 30, 60, 100]
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - steps
+                type: object
+              cluster:
+                description: ClusterRef references a Kubernetes cluster.
+                properties:
+                  agentAddress:
+                    type: string
+                  kubeconfigSecret:
+                    type: string
+                  mode:
+                    description: ClusterMode defines how the controller connects to
+                      a cluster.
+                    type: string
                   name:
+                    type: string
+                  namespace:
+                    type: string
+                  server:
+                    type: string
+                  serviceAccount:
                     type: string
                 required:
                 - name
                 type: object
               gates:
                 items:
+                  description: |-
+                    GateConfig defines a gate for stage promotion.
+                    GateConfig defines a gate for stage promotion.
                   properties:
                     endpoint:
                       type: string
@@ -468,12 +1797,73 @@ spec:
                 items:
                   type: string
                 type: array
+              trafficRouter:
+                description: TrafficRouter defines the traffic router configuration
+                  for canary rollouts.
+                properties:
+                  gatewayApi:
+                    description: GatewayAPIRouterConfig defines the Gateway API HTTPRoute
+                      configuration for traffic routing.
+                    properties:
+                      canaryService:
+                        description: Explicit canary service name. If empty, derived
+                          from release name.
+                        type: string
+                      httpRoute:
+                        description: Name of the existing HTTPRoute to manage. If
+                          empty, derived from release name.
+                        type: string
+                      stableService:
+                        description: Explicit stable service name. If empty, derived
+                          from release name.
+                        type: string
+                    type: object
+                  istio:
+                    description: IstioRouterConfig defines the Istio VirtualService
+                      configuration for traffic routing.
+                    properties:
+                      canaryService:
+                        description: Explicit canary service name. If empty, derived
+                          from release name.
+                        type: string
+                      hosts:
+                        description: Hosts to match in spec.hosts. If empty, patches
+                          all HTTP routes on the VirtualService.
+                        items:
+                          type: string
+                        type: array
+                      routes:
+                        description: Route names within the VirtualService to patch.
+                          If empty, patches the first unnamed route.
+                        items:
+                          type: string
+                        type: array
+                      stableService:
+                        description: Explicit stable service name. If empty, derived
+                          from release name.
+                        type: string
+                      virtualService:
+                        description: Name of the existing VirtualService to manage.
+                          If empty, derived from release name.
+                        type: string
+                    type: object
+                  provider:
+                    description: Provider specifies the traffic router provider ("istio"
+                      or "gateway-api").
+                    enum:
+                    - istio
+                    - gateway-api
+                    type: string
+                required:
+                - provider
+                type: object
             required:
             - name
             - ring
             - templates
             type: object
           status:
+            description: StageStatus represents the status of a stage.
             properties:
               lastPromotion:
                 format: date-time
@@ -506,6 +1896,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Template represents a renderable template.
         properties:
           apiVersion:
             description: |-
@@ -525,33 +1916,84 @@ spec:
           metadata:
             type: object
           spec:
+            description: TemplateSpec defines the specification for a template.
             properties:
               chart:
+                description: ChartRef references a Helm chart.
                 properties:
                   name:
+                    type: string
+                  path:
+                    description: Path to a local Helm chart directory (alternative
+                      to Repo+Name)
                     type: string
                   repo:
                     type: string
                   version:
                     type: string
+                type: object
+              git:
+                description: GitSourceSpec defines a git source specification.
+                properties:
+                  path:
+                    type: string
+                  repoUrl:
+                    type: string
+                  revision:
+                    type: string
+                  secretRef:
+                    type: string
                 required:
-                - name
-                - repo
-                - version
+                - repoUrl
+                type: object
+              namespace:
+                description: Namespace to pass to helm --namespace
+                type: string
+              s3:
+                description: S3SourceSpec defines an S3 source specification.
+                properties:
+                  bucket:
+                    type: string
+                  endpoint:
+                    type: string
+                  key:
+                    type: string
+                  path:
+                    type: string
+                  region:
+                    type: string
+                  secretRef:
+                    type: string
+                required:
+                - bucket
+                - key
                 type: object
               type:
                 enum:
                 - helm
+                - kubernetes
+                - kustomize
+                - git
+                - s3
+                type: string
+              valuesFile:
+                description: Inline YAML values file content (merged with Release
+                  parameters)
                 type: string
             required:
             - type
             type: object
           status:
+            description: TemplateStatus represents the status of a template.
             properties:
               lastRenderHash:
                 type: string
               lastRendered:
                 format: date-time
+                type: string
+              sourceHash:
+                type: string
+              sourceRevision:
                 type: string
             type: object
         required:
@@ -612,6 +2054,77 @@ rules:
   verbs:
   - create
   - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-application-admin-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications
+  verbs:
+  - '*'
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-application-editor-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-application-viewer-role
+rules:
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - applications/status
+  verbs:
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -687,12 +2200,155 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-clusters-cluster-admin-role
+rules:
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters
+  verbs:
+  - '*'
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-clusters-cluster-editor-role
+rules:
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-clusters-cluster-viewer-role
+rules:
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-core-appproject-admin-role
+rules:
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects
+  verbs:
+  - '*'
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-core-appproject-editor-role
+rules:
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-core-appproject-viewer-role
+rules:
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
   name: paprika-manager-role
 rules:
 - apiGroups:
   - ""
   resources:
   - configmaps
+  - services
   verbs:
   - create
   - delete
@@ -705,6 +2361,7 @@ rules:
   - ""
   resources:
   - pods
+  - secrets
   verbs:
   - get
   - list
@@ -716,6 +2373,18 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - batch
   resources:
@@ -729,8 +2398,93 @@ rules:
   - update
   - watch
 - apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - virtualservices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications
   - artifacts
   - pipelines
   - releases
@@ -747,6 +2501,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/finalizers
   - artifacts/finalizers
   - pipelines/finalizers
   - releases/finalizers
@@ -757,6 +2512,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/status
   - artifacts/status
   - pipelines/status
   - releases/status
@@ -1144,6 +2900,23 @@ spec:
     app.kubernetes.io/name: paprika
     control-plane: controller-manager
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-webhook-service
+  namespace: paprika-system
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 9443
+  selector:
+    app.kubernetes.io/name: paprika
+    control-plane: controller-manager
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1173,9 +2946,21 @@ spec:
         - --leader-elect
         - --health-probe-bind-address=:8081
         - --ui-bind-address=:3000
+        - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
         command:
         - /manager
-        image: controller:latest
+        env:
+        - name: PAPRIKA_CACHE_BACKEND
+          value: redis
+        - name: PAPRIKA_REDIS_ADDR
+          value: paprika-redis:6379
+        - name: PAPRIKA_WEBHOOK_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: secret
+              name: paprika-webhook-secret
+              optional: true
+        image: ghcr.io/benebsworth/paprika:v0.0.1
         livenessProbe:
           httpGet:
             path: /healthz
@@ -1187,8 +2972,14 @@ spec:
         - containerPort: 8081
           name: health
           protocol: TCP
+        - containerPort: 8080
+          name: webhook
+          protocol: TCP
         - containerPort: 3000
-          name: ui
+          name: api
+          protocol: TCP
+        - containerPort: 9443
+          name: webhook-server
           protocol: TCP
         readinessProbe:
           httpGet:
@@ -1198,11 +2989,11 @@ spec:
           periodSeconds: 10
         resources:
           limits:
-            cpu: 500m
-            memory: 128Mi
+            cpu: 1000m
+            memory: 512Mi
           requests:
-            cpu: 10m
-            memory: 64Mi
+            cpu: 100m
+            memory: 128Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -1212,6 +3003,9 @@ spec:
         volumeMounts:
         - mountPath: /tmp
           name: tmp
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-certs
+          readOnly: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -1221,3 +3015,269 @@ spec:
       volumes:
       - emptyDir: {}
         name: tmp
+      - name: webhook-certs
+        secret:
+          secretName: webhook-server-cert
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  labels:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: paprika
+  name: paprika-controller-manager
+  namespace: paprika-system
+spec:
+  behavior:
+    scaleDown:
+      policies:
+      - periodSeconds: 60
+        type: Percent
+        value: 50
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      policies:
+      - periodSeconds: 30
+        type: Percent
+        value: 100
+      stabilizationWindowSeconds: 60
+  maxReplicas: 3
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  - resource:
+      name: memory
+      target:
+        averageUtilization: 80
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: paprika-controller-manager
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-metrics-certs
+  namespace: paprika-system
+spec:
+  dnsNames:
+  - SERVICE_NAME.SERVICE_NAMESPACE.svc
+  - SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: paprika-selfsigned-issuer
+  secretName: metrics-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-serving-cert
+  namespace: paprika-system
+spec:
+  dnsNames:
+  - paprika-webhook-service.paprika-system.svc
+  - paprika-webhook-service.paprika-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: paprika-selfsigned-issuer
+  secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-selfsigned-issuer
+  namespace: paprika-system
+spec:
+  selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: paprika-system/paprika-serving-cert
+  name: paprika-mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /mutate-pipelines-paprika-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: mpipeline-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /mutate-pipelines-paprika-io-v1alpha1-release
+  failurePolicy: Fail
+  name: mrelease-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - releases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /mutate-pipelines-paprika-io-v1alpha1-stage
+  failurePolicy: Fail
+  name: mstage-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - stages
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /mutate-pipelines-paprika-io-v1alpha1-template
+  failurePolicy: Fail
+  name: mtemplate-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - templates
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: paprika-system/paprika-serving-cert
+  name: paprika-validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-pipelines-paprika-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: vpipeline-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-pipelines-paprika-io-v1alpha1-release
+  failurePolicy: Fail
+  name: vrelease-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - releases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-pipelines-paprika-io-v1alpha1-stage
+  failurePolicy: Fail
+  name: vstage-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - stages
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-pipelines-paprika-io-v1alpha1-template
+  failurePolicy: Fail
+  name: vtemplate-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - templates
+  sideEffects: None

@@ -1,0 +1,117 @@
+{{- if and (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) .Values.manager.sharding.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  serviceName: {{ .Values.manager.sharding.serviceName }}
+  replicas: {{ .Values.manager.sharding.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: {{ include "paprika.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        control-plane: controller-manager
+    spec:
+      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      containers:
+      - args:
+        {{- if .Values.metrics.enable }}
+        - --metrics-bind-address=:{{ .Values.metrics.port }}
+        {{- if not .Values.metrics.secure }}
+        - --metrics-secure=false
+        {{- end }}
+        {{- else }}
+        - --metrics-bind-address=0
+        {{- end }}
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --mode=operator
+        {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- range .Values.manager.args }}
+        - {{ . }}
+        {{- end }}
+        command:
+        - /manager
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: PAPRIKA_SHARD_TOTAL
+          value: {{ .Values.manager.sharding.replicas | quote }}
+        - name: PAPRIKA_SHARD_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- if .Values.repoServer.enabled }}
+        - name: PAPRIKA_REPO_SERVER_ADDR
+          value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
+        {{- end }}
+        {{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+        - name: PAPRIKA_AUTH_RBAC_RULES
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
+              key: rbac.json
+        {{- end }}
+        image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- with .Values.manager.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- if .Values.manager.resources }}
+          {{- toYaml .Values.manager.resources | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        securityContext:
+          {{- if .Values.manager.securityContext }}
+          {{- toYaml .Values.manager.securityContext | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
+        volumeMounts:
+          {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+      securityContext:
+        {{- if .Values.manager.podSecurityContext }}
+        {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+      volumes:
+        {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+{{- end }}

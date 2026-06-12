@@ -42,13 +42,20 @@ func ManagedByAppSelector(appName string) labels.Selector {
 // Unlike the basic DiffEngineImpl, it does not scan all resources in a namespace.
 type ScalableDiffEngineImpl struct {
 	DynClient dynamic.Interface
+	liveCache *LiveResourceCache
 }
 
 // NewScalableDiffEngine creates a new ScalableDiffEngineImpl with the given dynamic client.
 func NewScalableDiffEngine(dynClient dynamic.Interface) *ScalableDiffEngineImpl {
 	return &ScalableDiffEngineImpl{
 		DynClient: dynClient,
+		liveCache: NewLiveResourceCache(dynClient),
 	}
+}
+
+// SetLiveCache allows injecting a shared live resource cache.
+func (d *ScalableDiffEngineImpl) SetLiveCache(c *LiveResourceCache) {
+	d.liveCache = c
 }
 
 // ComputeDiff computes the diff between desired and live resources using label selectors.
@@ -58,10 +65,14 @@ func (d *ScalableDiffEngineImpl) ComputeDiff(ctx context.Context, desired []unst
 
 	desiredMap := make(map[string]unstructured.Unstructured)
 	gvrSet := make(map[schema.GroupVersionResource]struct{})
-	for _, obj := range desired {
-		key := resourceKey(&obj)
-		desiredMap[key] = obj
-		if gvr, err := gvrForObject(&obj); err == nil {
+	for i := range desired {
+		obj := &desired[i]
+		if err := ensureManagedLabels(obj, opts); err != nil {
+			return nil, fmt.Errorf("ensure managed labels: %w", err)
+		}
+		key := resourceKey(obj)
+		desiredMap[key] = *obj
+		if gvr, err := gvrForObject(obj); err == nil {
 			gvrSet[gvr] = struct{}{}
 		}
 	}
@@ -114,20 +125,34 @@ func (d *ScalableDiffEngineImpl) ComputeDiff(ctx context.Context, desired []unst
 
 func (d *ScalableDiffEngineImpl) fetchLiveResources(ctx context.Context, opts DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
-	listOpts := metav1.ListOptions{
-		LabelSelector: opts.LabelSelector,
-		FieldSelector: opts.FieldSelector,
+	selector, err := labels.Parse(opts.LabelSelector)
+	if err != nil {
+		return nil, fmt.Errorf("parse label selector: %w", err)
 	}
 
 	for gvr := range gvrSet {
-		list, err := d.DynClient.Resource(gvr).Namespace(opts.Namespace).List(ctx, listOpts)
-		if err != nil {
-			// Some CRDs may not exist; skip them gracefully.
-			continue
+		var list *unstructured.UnstructuredList
+		var err error
+		if d.liveCache != nil {
+			items, cacheErr := d.liveCache.Get(ctx, gvr, opts.Namespace, selector)
+			if cacheErr == nil {
+				list = &unstructured.UnstructuredList{Items: items}
+			}
 		}
-		for _, item := range list.Items {
-			key := resourceKey(&item)
-			result[key] = item
+		if list == nil {
+			listOpts := metav1.ListOptions{
+				LabelSelector: opts.LabelSelector,
+				FieldSelector: opts.FieldSelector,
+			}
+			list, err = d.DynClient.Resource(gvr).Namespace(opts.Namespace).List(ctx, listOpts)
+			if err != nil {
+				continue
+			}
+		}
+		for i := range list.Items {
+			item := &list.Items[i]
+			key := resourceKey(item)
+			result[key] = *item
 		}
 	}
 
@@ -149,6 +174,19 @@ func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, 
 
 	resourceName := regularPlural(strings.ToLower(kind))
 	return schema.GroupVersionResource{Group: group, Version: version, Resource: resourceName}, nil
+}
+
+func ensureManagedLabels(obj *unstructured.Unstructured, opts DiffOptions) error {
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels[ManagedByLabelKey] = ManagedByLabelValue
+	if opts.ApplicationName != "" {
+		labels[ApplicationNameLabelKey] = opts.ApplicationName
+	}
+	obj.SetLabels(labels)
+	return nil
 }
 
 var irregularPlurals = map[string]string{

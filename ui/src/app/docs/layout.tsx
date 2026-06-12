@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { DocsSidebar } from "@/components/docs/sidebar"
+import { DocTOC } from "@/components/docs/table-of-contents"
 
 export const metadata: Metadata = {
   title: {
@@ -30,6 +31,7 @@ export default function DocsLayout({
           {children}
         </div>
       </div>
+      <DocTOC />
     </div>
   )
 }

@@ -162,6 +162,11 @@ spec:
                 type: array
               currentStage:
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               phase:
                 description: ReleasePhase represents the phase of a release.
                 enum:

@@ -1,0 +1,24 @@
+{{- if and .Values.manager.vpa.enabled (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    control-plane: controller-manager
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    {{- if .Values.manager.sharding.enabled }}
+    kind: StatefulSet
+    {{- else }}
+    kind: Deployment
+    {{- end }}
+    name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  updatePolicy:
+    updateMode: {{ .Values.manager.vpa.mode | quote }}
+{{- end }}

@@ -1,0 +1,108 @@
+version: 2
+
+project_name: paprika
+
+before:
+  hooks:
+    - make build-ui
+    - go mod tidy
+
+builds:
+  - main: ./cmd/main.go
+    binary: paprika
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+dockers:
+  - image_templates:
+      - "ghcr.io/paprikacd/paprika:{{ .Version }}"
+      - "ghcr.io/paprikacd/paprika:latest"
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title=paprika"
+      - "--label=org.opencontainers.image.description=Kubernetes-native application delivery platform"
+      - "--label=org.opencontainers.image.url=https://github.com/paprikacd/paprika"
+      - "--label=org.opencontainers.image.source=https://github.com/paprikacd/paprika"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Version }}-next"
+
+changelog:
+  enabled: true
+  use: github
+  filters:
+    include:
+      - "^feat:"
+      - "^fix:"
+      - "^perf:"
+      - "^refactor:"
+      - "^docs:"
+  groups:
+    - title: Features
+      regexp: "^.*feat[^:]*:.*$"
+      order: 0
+    - title: Bug fixes
+      regexp: "^.*fix[^:]*:.*$"
+      order: 1
+    - title: Performance
+      regexp: "^.*perf[^:]*:.*$"
+      order: 2
+    - title: Refactoring
+      regexp: "^.*refactor[^:]*:.*$"
+      order: 3
+    - title: Documentation
+      regexp: "^.*docs[^:]*:.*$"
+      order: 4
+    - title: Other changes
+      order: 999
+
+release:
+  github:
+    owner: paprikacd
+    name: paprika
+  header: |
+    ## Paprika {{ .Version }}
+
+    {{ .Changelog }}
+
+    ### Installation
+
+    ```bash
+    # Helm
+    helm repo add paprika https://paprikacd.github.io/paprika
+    helm install paprika paprika/paprika --namespace paprika-system --create-namespace
+
+    # Kustomize
+    kubectl apply -f https://github.com/paprikacd/paprika/releases/download/{{ .Version }}/install.yaml
+    ```
+  footer: |
+    **Full Changelog**: https://github.com/paprikacd/paprika/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ---
+
+    _Built with 💜 by the Paprika team_

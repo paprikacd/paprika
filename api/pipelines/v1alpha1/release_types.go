@@ -54,6 +54,10 @@ type ReleaseSpec struct {
 
 // ReleaseStatus represents the status of a release.
 type ReleaseStatus struct {
+	// ObservedGeneration is the last observed generation of the spec.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// +kubebuilder:validation:Enum=Pending;Promoting;Canarying;Verifying;Complete;Failed;RolledBack;Superseded
 	Phase                    ReleasePhase       `json:"phase,omitempty"`
 	CurrentStage             string             `json:"currentStage,omitempty"`

@@ -6,6 +6,11 @@
 ##
 # fullnameOverride: ""
 
+## NetworkPolicy configuration.
+##
+networkPolicy:
+  enabled: false
+
 ## Configure the controller manager deployment
 ##
 manager:
@@ -52,11 +57,11 @@ manager:
   ##
   resources:
     limits:
-      cpu: 500m
-      memory: 128Mi
+      cpu: 1000m
+      memory: 512Mi
     requests:
-      cpu: 10m
-      memory: 64Mi
+      cpu: 100m
+      memory: 128Mi
 
   ## Manager pod's affinity
   ##
@@ -114,6 +119,28 @@ manager:
     - mountPath: /tmp
       name: tmp
 
+  # -- Enable controller sharding. When true, manager is deployed as a StatefulSet
+  # with per-pod PAPRIKA_SHARD_ID/PAPRIKA_SHARD_TOTAL env vars.
+  sharding:
+    enabled: false
+    replicas: 3
+    serviceName: controller-manager-headless
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 75
+
+  vpa:
+    enabled: false
+    mode: "Off"
+
+  pdb:
+    enabled: false
+    minAvailable: 1
+
 # -- Deployment architecture: "monolith" (single pod with everything)
 # or "split" (separate controller-manager, api-server, webhook-receiver pods)
 deploymentMode: monolith
@@ -153,11 +180,11 @@ apiServer:
 
   resources:
     limits:
-      cpu: 500m
-      memory: 128Mi
+      cpu: 1000m
+      memory: 256Mi
     requests:
       cpu: 100m
-      memory: 64Mi
+      memory: 128Mi
 
   extraVolumes:
     - emptyDir: {}
@@ -177,6 +204,14 @@ apiServer:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 60
     targetMemoryUtilizationPercentage: 75
+
+  vpa:
+    enabled: false
+    mode: "Off"
+
+  pdb:
+    enabled: false
+    minAvailable: 1
 
 ## Webhook receiver configuration (used only when deploymentMode=split)
 ##
@@ -205,11 +240,11 @@ webhookReceiver:
 
   resources:
     limits:
-      cpu: 200m
-      memory: 64Mi
+      cpu: 500m
+      memory: 128Mi
     requests:
       cpu: 50m
-      memory: 32Mi
+      memory: 64Mi
 
   extraVolumes:
     - emptyDir: {}
@@ -230,6 +265,14 @@ webhookReceiver:
     targetCPUUtilizationPercentage: 60
     targetMemoryUtilizationPercentage: 75
 
+  vpa:
+    enabled: false
+    mode: "Off"
+
+  pdb:
+    enabled: false
+    minAvailable: 1
+
   secret:
     # -- Name of an existing secret containing the webhook secret key
     existingSecretName: ""
@@ -242,6 +285,138 @@ remoteCluster:
   apiServer: ""
   # -- Path to mounted service account token file
   tokenFile: ""
+
+## Repo server caches git/S3 sources and renders manifests.
+##
+repoServer:
+  enabled: false
+  replicas: 2
+
+  image:
+    repository: controller
+    ## Image tag (defaults to Chart.appVersion if not set)
+    ##
+    # tag: ""
+    pullPolicy: IfNotPresent
+
+  args:
+    - --mode=repo-server
+    - --ui-bind-address=:8082
+    - --health-probe-bind-address=:8081
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  extraVolumes:
+    - emptyDir: {}
+      name: tmp
+
+  extraVolumeMounts:
+    - mountPath: /tmp
+      name: tmp
+
+  service:
+    type: ClusterIP
+    port: 8082
+
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 75
+
+  vpa:
+    enabled: false
+    mode: "Off"
+
+  pdb:
+    enabled: false
+    minAvailable: 1
+
+## In-cluster agent for remote cluster deployments.
+## The agent runs as a DaemonSet and applies manifests sent by the controller.
+##
+agent:
+  enabled: false
+
+  tls:
+    enabled: false
+    certSecret: ""
+    caSecret: ""
+
+  image:
+    repository: controller
+    ## Image tag (defaults to Chart.appVersion if not set)
+    ##
+    # tag: ""
+    pullPolicy: IfNotPresent
+
+  args:
+    - --mode=agent
+    - --ui-bind-address=:8083
+    - --health-probe-bind-address=:8081
+
+  clusterID: ""
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  extraVolumes:
+    - emptyDir: {}
+      name: tmp
+
+  extraVolumeMounts:
+    - mountPath: /tmp
+      name: tmp
+
+  service:
+    type: ClusterIP
+    port: 8083
+
+  nodeSelector: {}
+
+  tolerations: []
+
+  affinity: {}
+
+  vpa:
+    enabled: false
+    mode: "Off"
 
 ## API server authentication and authorization
 ##
@@ -351,4 +526,24 @@ certManager:
 ##
 prometheus:
   enable: false
+
+  rules:
+    enabled: false
+
+grafana:
+  dashboards:
+    enabled: false
+    ## Labels used by Grafana sidecar to discover dashboards.
+    ##
+    labelSelectors:
+      grafana_dashboard: "1"
+
+## Redis cache configuration.
+## When enabled, components use Redis for rendered manifest and source caching.
+##
+redis:
+  enabled: false
+  addr: "redis:6379"
+  password: ""
+  db: 0
 

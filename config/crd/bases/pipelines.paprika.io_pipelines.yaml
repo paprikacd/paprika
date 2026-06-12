@@ -105,6 +105,11 @@ spec:
               lastExecutionTime:
                 format: date-time
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               phase:
                 description: |-
                   PipelinePhase represents the phase of a pipeline.

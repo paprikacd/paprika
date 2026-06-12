@@ -2,15 +2,20 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/redis/go-redis/v9"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
@@ -18,14 +23,40 @@ import (
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
 	client.Client
+	broker   *events.Broker
+	renderer engine.TemplateRenderer
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
-func NewPaprikaServer(c client.Client) *PaprikaServer {
-	return &PaprikaServer{Client: c}
+// If broker is nil, an in-memory broker is created. Pass a Redis UniversalClient
+// via NewPaprikaServerWithRedis to fan-out events across API server replicas.
+func NewPaprikaServer(c client.Client, broker *events.Broker) *PaprikaServer {
+	if broker == nil {
+		broker = events.NewBroker()
+	}
+	return &PaprikaServer{Client: c, broker: broker}
+}
+
+// NewPaprikaServerWithRedis creates an API server backed by Redis pub/sub events.
+func NewPaprikaServerWithRedis(c client.Client, redisClient redis.UniversalClient) (*PaprikaServer, error) {
+	broker, err := events.NewRedisBroker(redisClient)
+	if err != nil {
+		return nil, fmt.Errorf("create redis broker: %w", err)
+	}
+	return &PaprikaServer{Client: c, broker: broker}, nil
+}
+
+// SetRenderer sets the template renderer for ResolveSource and Render methods.
+func (s *PaprikaServer) SetRenderer(r engine.TemplateRenderer) {
+	s.renderer = r
 }
 
 var _ v1connect.PaprikaServiceHandler = (*PaprikaServer)(nil)
+
+// Broker returns the event broker used by the API server.
+func (s *PaprikaServer) Broker() *events.Broker {
+	return s.broker
+}
 
 // ListPipelines returns a list of pipelines.
 func (s *PaprikaServer) ListPipelines(
@@ -45,6 +76,55 @@ func (s *PaprikaServer) ListPipelines(
 		pipelines = append(pipelines, convertPipeline(&list.Items[i]))
 	}
 	return connect.NewResponse(&paprikav1.ListPipelinesResponse{Pipelines: pipelines}), nil
+}
+
+// ResolveSource resolves a template source. Requires a renderer (via SetRenderer).
+func (s *PaprikaServer) ResolveSource(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ResolveSourceRequest],
+) (*connect.Response[paprikav1.ResolveSourceResponse], error) {
+	if s.renderer == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ResolveSource is not available on this server"))
+	}
+	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
+	}
+	result, err := s.renderer.ResolveSource(ctx, tmpl)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source: %w", err)
+	}
+	if result == nil {
+		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("source type %q produced no result", req.Msg.Type))
+	}
+	return connect.NewResponse(&paprikav1.ResolveSourceResponse{
+		LocalPath: result.LocalPath,
+		Hash:      result.Hash,
+		Revision:  result.Revision,
+	}), nil
+}
+
+// Render renders a template into manifests. Requires a renderer (via SetRenderer).
+func (s *PaprikaServer) Render(
+	ctx context.Context,
+	req *connect.Request[paprikav1.RenderRequest],
+) (*connect.Response[paprikav1.RenderResponse], error) {
+	if s.renderer == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("Render is not available on this server"))
+	}
+	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
+	}
+	values, err := decodeValues(req.Msg.ValuesJson)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode values: %w", err))
+	}
+	manifests, err := s.renderer.Render(ctx, tmpl, values)
+	if err != nil {
+		return nil, fmt.Errorf("render template: %w", err)
+	}
+	return connect.NewResponse(&paprikav1.RenderResponse{Manifests: manifests}), nil
 }
 
 // ListReleases returns a list of releases.
@@ -380,4 +460,27 @@ func safeInt32(v int) int32 {
 		return math.MinInt32
 	}
 	return int32(v)
+}
+
+func decodeTemplate(sourceType string, data []byte) (*pipelinesv1alpha1.Template, error) {
+	if len(data) == 0 {
+		return nil, errors.New("empty spec json")
+	}
+	var spec pipelinesv1alpha1.TemplateSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return nil, fmt.Errorf("unmarshal spec: %w", err)
+	}
+	spec.Type = sourceType
+	return &pipelinesv1alpha1.Template{Spec: spec}, nil
+}
+
+func decodeValues(data []byte) (map[string]string, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var values map[string]string
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("unmarshal values: %w", err)
+	}
+	return values, nil
 }

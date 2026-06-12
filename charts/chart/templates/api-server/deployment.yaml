@@ -79,13 +79,16 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.apiServer.extraVolumeMounts | nindent 10 }}
-        {{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
+        {{- if or .Values.redis.enabled (and .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
         env:
+        {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- if and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
         - name: PAPRIKA_AUTH_RBAC_RULES
           valueFrom:
             configMapKeyRef:
               name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
               key: rbac.json
+        {{- end }}
         {{- end }}
       securityContext:
         {{- if .Values.apiServer.podSecurityContext }}
