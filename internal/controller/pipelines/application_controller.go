@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
@@ -603,32 +605,14 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
-	if app.Spec.Source.Type != paprikav1.SourceTypeGit && app.Spec.Source.Type != paprikav1.SourceTypeS3 {
-		return false, nil
-	}
-
-	renderer := r.TemplateRenderer
-	if renderer == nil {
-		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
-	}
-
-	templateName := app.Name + "-template"
-	var tmpl paprikav1.Template
-	if err := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); err != nil {
-		return false, fmt.Errorf("failed to get template for source check: %w", err)
-	}
-
-	result, err := renderer.ResolveSource(ctx, &tmpl)
+	newHash, newRevision, err := r.resolveSourceHash(ctx, app)
 	if err != nil {
-		return false, fmt.Errorf("resolve source: %w", err)
+		return false, err
 	}
 
-	if result == nil {
+	if newHash == "" && newRevision == "" {
 		return false, nil
 	}
-
-	newHash := result.Hash
-	newRevision := result.Revision
 
 	oldHash := app.Status.SourceHash
 
@@ -643,6 +627,34 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 
 	return oldHash != newHash, nil
+}
+
+func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
+	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 {
+		renderer := r.TemplateRenderer
+		if renderer == nil {
+			renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+		}
+
+		templateName := app.Name + "-template"
+		var tmpl paprikav1.Template
+		if getErr := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
+			return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
+		}
+
+		result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
+		if resolveErr != nil {
+			return "", "", fmt.Errorf("resolve source: %w", resolveErr)
+		}
+
+		if result != nil {
+			return result.Hash, result.Revision, nil
+		}
+	}
+
+	// For helm/local sources, compute a stable hash from the chart config.
+	h := sha256.Sum256([]byte(app.Spec.Source.Chart.Path + app.Spec.Source.Chart.Repo + app.Spec.Source.Chart.Name))
+	return hex.EncodeToString(h[:]), "", nil
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
