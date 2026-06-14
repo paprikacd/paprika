@@ -123,6 +123,10 @@ build-ui: ## Build the Next.js UI and copy static assets into the Go embed direc
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-cli
+build-cli: fmt vet ## Build the paprika CLI binary.
+	go build -o bin/paprika ./cmd/paprika/...
+
 .PHONY: build-with-ui
 build-with-ui: build-ui build ## Build UI then build manager with embedded static assets.
 
