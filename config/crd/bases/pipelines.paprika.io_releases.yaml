@@ -234,6 +234,10 @@ spec:
                 type: array
               renderedManifestSnapshot:
                 type: string
+              rolledBackTo:
+                description: RolledBackTo records the release name that a rolled-back
+                  release re-applied.
+                type: string
             type: object
         required:
         - metadata

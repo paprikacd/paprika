@@ -31,7 +31,10 @@ import (
 	"github.com/benebsworth/paprika/metrics"
 )
 
-const defaultRequeue = 5 * time.Second
+const (
+	defaultRequeue    = 5 * time.Second
+	maxReleaseHistory = 10
+)
 
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
@@ -166,6 +169,10 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status after evaluation")
+	}
+
+	if pruneErr := r.pruneReleaseHistory(ctx, app); pruneErr != nil {
+		log.Error(pruneErr, "Failed to prune release history")
 	}
 
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
@@ -862,6 +869,63 @@ func (r *ApplicationReconciler) checkGates(ctx context.Context, app *paprikav1.A
 	}
 
 	return false, ""
+}
+
+func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *paprikav1.Application) error {
+	log := log.FromContext(ctx)
+
+	var list paprikav1.ReleaseList
+	if err := r.List(ctx, &list,
+		client.InNamespace(app.Namespace),
+		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
+	); err != nil {
+		return fmt.Errorf("list releases for pruning: %w", err)
+	}
+
+	if len(list.Items) <= maxReleaseHistory {
+		return nil
+	}
+
+	activeRelease := app.Status.ReleaseRef
+	var superseded []paprikav1.Release
+	for i := range list.Items {
+		rel := &list.Items[i]
+		if rel.Name == activeRelease {
+			continue
+		}
+		if rel.Status.Phase == paprikav1.ReleaseSuperseded {
+			superseded = append(superseded, *rel)
+		}
+	}
+
+	sortReleasesByTimestamp(superseded)
+	toDelete := len(list.Items) - maxReleaseHistory
+	if toDelete > len(superseded) {
+		toDelete = len(superseded)
+	}
+
+	for i := 0; i < toDelete; i++ {
+		rel := &superseded[i]
+		if rel.Name == activeRelease {
+			continue
+		}
+		if err := r.Delete(ctx, rel); client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Failed to prune old release", "release", rel.Name)
+			continue
+		}
+		log.Info("Pruned old superseded release", "release", rel.Name)
+	}
+	return nil
+}
+
+func sortReleasesByTimestamp(releases []paprikav1.Release) {
+	for i := range releases {
+		for j := i + 1; j < len(releases); j++ {
+			if releases[j].CreationTimestamp.Before(&releases[i].CreationTimestamp) {
+				releases[i], releases[j] = releases[j], releases[i]
+			}
+		}
+	}
 }
 
 func (r *ApplicationReconciler) getTargetStage(app *paprikav1.Application) string {

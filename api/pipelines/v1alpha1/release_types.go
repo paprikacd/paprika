@@ -87,6 +87,9 @@ type ReleaseStatus struct {
 	// PolicyResults records the outcome of policy evaluation for this release.
 	// +optional
 	PolicyResults []ReleasePolicyResult `json:"policyResults,omitempty"`
+	// RolledBackTo records the release name that a rolled-back release re-applied.
+	// +optional
+	RolledBackTo string `json:"rolledBackTo,omitempty"`
 	// Current canary traffic weight (0-100)
 	CanaryWeight int `json:"canaryWeight,omitempty"`
 	// Index into the canary steps array

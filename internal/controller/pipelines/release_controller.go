@@ -776,49 +776,142 @@ func (r *ReleaseReconciler) verify(ctx context.Context, release *paprikav1.Relea
 func (r *ReleaseReconciler) rollback(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
 
-	if release.Status.RenderedManifestSnapshot == "" {
-		log.Info("No manifest snapshot available for rollback", "release", release.Name)
-		release.Status.Phase = paprikav1.ReleaseRolledBack
-		release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
-			Type:               "RolledBack",
-			Status:             metav1.ConditionTrue,
-			LastTransitionTime: metav1.Now(),
-			Reason:             "NoSnapshot",
-			Message:            "No manifest snapshot available for rollback",
-		})
-		if len(release.Status.PromotionHistory) > 0 {
-			release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "RolledBack"
-		}
-		if err := r.patchReleaseStatus(ctx, release); err != nil {
-			return fmt.Errorf("updating release status for rollback: %w", err)
-		}
-		return nil
+	appName := release.Labels[engine.ApplicationNameLabelKey]
+	if appName == "" {
+		return errors.New("release missing app.paprika.io/name label")
+	}
+
+	prevRelease, err := r.findRollbackTarget(ctx, release, appName)
+	if err != nil {
+		return err
+	}
+	if prevRelease == nil {
+		log.Info("No previous release available for rollback", "release", release.Name)
+		return r.markRolledBack(ctx, release, "", "No previous release with a manifest snapshot")
+	}
+
+	snapshotName := r.releaseSnapshotName(prevRelease)
+	if snapshotName == "" {
+		return r.markRolledBack(ctx, release, "", "Previous release has no manifest snapshot")
 	}
 
 	var cm corev1.ConfigMap
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      release.Status.RenderedManifestSnapshot,
+	if getErr := r.Get(ctx, types.NamespacedName{
+		Name:      snapshotName,
 		Namespace: release.Namespace,
-	}, &cm); err != nil {
-		return fmt.Errorf("failed to fetch manifest snapshot %q: %w", release.Status.RenderedManifestSnapshot, err)
+	}, &cm); getErr != nil {
+		return fmt.Errorf("fetch rollback manifest snapshot %q: %w", snapshotName, getErr)
+	}
+	manifests := []byte(cm.Data["manifests.yaml"])
+	log.Info("Rolling back to previous release snapshot", "release", release.Name, "previous", prevRelease.Name, "snapshot", snapshotName, "bytes", len(manifests))
+
+	stage, err := r.fetchStage(ctx, release)
+	if err != nil {
+		return fmt.Errorf("fetch stage for rollback: %w", err)
+	}
+	if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
+		return fmt.Errorf("apply rollback manifests: %w", err)
 	}
 
-	log.Info("Rolling back to manifest snapshot", "snapshot", cm.Name, "bytes", len(cm.Data["manifests.yaml"]))
+	if err := r.markRolledBack(ctx, release, prevRelease.Name, "Rolled back to previous release"); err != nil {
+		return err
+	}
 
+	if err := r.patchApplicationReleaseRef(ctx, release, prevRelease.Name); err != nil {
+		return fmt.Errorf("patch application releaseRef after rollback: %w", err)
+	}
+
+	return nil
+}
+
+func (r *ReleaseReconciler) releaseSnapshotName(release *paprikav1.Release) string {
+	if release.Status.RenderedManifestSnapshot != "" {
+		return release.Status.RenderedManifestSnapshot
+	}
+	if release.Spec.ManifestSource != nil {
+		return release.Spec.ManifestSource.ConfigMapRef
+	}
+	return ""
+}
+
+func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *paprikav1.Release, appName string) (*paprikav1.Release, error) {
+	var list paprikav1.ReleaseList
+	if err := r.List(ctx, &list,
+		client.InNamespace(release.Namespace),
+		client.MatchingLabels{engine.ApplicationNameLabelKey: appName},
+	); err != nil {
+		return nil, fmt.Errorf("list releases for rollback: %w", err)
+	}
+
+	var candidates []*paprikav1.Release
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.Name == release.Name {
+			continue
+		}
+		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
+			continue
+		}
+		if r.releaseSnapshotName(other) == "" {
+			continue
+		}
+		candidates = append(candidates, other)
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// Prefer the newest Complete release, otherwise the newest non-failed/non-superseded release.
+	sortReleasesByCreation(candidates)
+	for _, c := range candidates {
+		if c.Status.Phase == paprikav1.ReleaseComplete {
+			return c, nil
+		}
+	}
+	return candidates[0], nil
+}
+
+func sortReleasesByCreation(releases []*paprikav1.Release) {
+	for i := range releases {
+		for j := i + 1; j < len(releases); j++ {
+			if releases[j].CreationTimestamp.After(releases[i].CreationTimestamp.Time) {
+				releases[i], releases[j] = releases[j], releases[i]
+			}
+		}
+	}
+}
+
+func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprikav1.Release, rolledBackTo, message string) error {
 	release.Status.Phase = paprikav1.ReleaseRolledBack
+	release.Status.RolledBackTo = rolledBackTo
 	release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
 		Type:               "RolledBack",
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "VerificationFailed",
-		Message:            "Rolled back due to verification failure",
+		Reason:             "Rollback",
+		Message:            message,
 	})
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "RolledBack"
 	}
-
 	if err := r.patchReleaseStatus(ctx, release); err != nil {
-		return fmt.Errorf("updating release status after rollback: %w", err)
+		return fmt.Errorf("update rolled-back status: %w", err)
+	}
+	return nil
+}
+
+func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, release *paprikav1.Release, releaseRef string) error {
+	var app paprikav1.Application
+	appName := release.Labels[engine.ApplicationNameLabelKey]
+	if appName == "" {
+		return errors.New("release missing app.paprika.io/name label")
+	}
+	if err := r.Get(ctx, types.NamespacedName{Name: appName, Namespace: release.Namespace}, &app); err != nil {
+		return fmt.Errorf("get application for rollback patch: %w", err)
+	}
+	app.Status.ReleaseRef = releaseRef
+	if err := r.Status().Update(ctx, &app); err != nil {
+		return fmt.Errorf("update application releaseRef: %w", err)
 	}
 	return nil
 }
