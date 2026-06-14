@@ -1669,6 +1669,84 @@ subjects:
 			Expect(resp.StatusCode).To(BeNumerically(">=", 200), "SyncApplication should accept requests")
 		})
 	})
+
+	Context("PaprikaApply", func() {
+		const applyTestNamespace = "e2e-apply-test"
+		var manifestDir string
+
+		BeforeEach(func() {
+			By("building the paprika CLI")
+			cmd := exec.Command("make", "build-cli")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to build paprika CLI")
+
+			By("creating the apply test namespace")
+			cmd = exec.Command("kubectl", "create", "ns", applyTestNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create apply test namespace")
+
+			By("creating a temporary directory for apply manifests")
+			manifestDir, err = os.MkdirTemp("", "paprika-apply-e2e-")
+			Expect(err).NotTo(HaveOccurred(), "Failed to create manifest temp dir")
+		})
+
+		AfterEach(func() {
+			if manifestDir != "" {
+				_ = os.RemoveAll(manifestDir)
+			}
+			By("cleaning up the apply test namespace")
+			cmd := exec.Command("kubectl", "delete", "ns", applyTestNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should apply a raw manifest bundle and reach a healthy terminal phase", func() {
+			manifest := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: e2e-inline-configmap
+  namespace: %s
+data:
+  greeting: hello-from-paprika-apply
+`, applyTestNamespace)
+			manifestPath := filepath.Join(manifestDir, "configmap.yaml")
+			Expect(os.WriteFile(manifestPath, []byte(manifest), 0o600)).To(Succeed())
+
+			By("running paprika apply against the operator API")
+			cmd := exec.Command("bin/paprika", "apply", "-f", manifestPath,
+				"--name", "e2e-inline-apply",
+				"--namespace", applyTestNamespace,
+				"--server", "http://localhost:4000",
+				"--timeout", "2m",
+			)
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "paprika apply failed: %s", out)
+			Expect(out).To(ContainSubstring("e2e-inline-apply"))
+
+			By("waiting for the Application to report a terminal phase")
+			verifyAppPhase := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-inline-apply",
+					"-n", applyTestNamespace, "-o", "jsonpath={.status.phase}")
+				phase, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(phase).To(Or(Equal("Healthy"), Equal("Degraded"), Equal("Failed")))
+			}
+			Eventually(verifyAppPhase, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("checking that the Application reached Healthy")
+			cmd = exec.Command("kubectl", "get", "application", "e2e-inline-apply",
+				"-n", applyTestNamespace, "-o", "jsonpath={.status.phase}")
+			phase, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phase).To(Equal("Healthy"), "Application should be Healthy")
+
+			By("checking that the ConfigMap was applied")
+			cmd = exec.Command("kubectl", "get", "configmap", "e2e-inline-configmap",
+				"-n", applyTestNamespace, "-o", "jsonpath={.data.greeting}")
+			value, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(value)).To(Equal("hello-from-paprika-apply"))
+		})
+	})
 })
 
 func serviceAccountToken() (string, error) {

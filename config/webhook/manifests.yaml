@@ -130,26 +130,6 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-rollouts-paprika-io-v1alpha1-rollout
-  failurePolicy: Fail
-  name: mrollout.kb.io
-  rules:
-  - apiGroups:
-    - rollouts.paprika.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - rollouts
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: webhook-service
-      namespace: system
       path: /mutate-pipelines-paprika-io-v1alpha1-stage
   failurePolicy: Fail
   name: mstage-v1alpha1.kb.io
@@ -309,26 +289,6 @@ webhooks:
     - UPDATE
     resources:
     - repositories
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: webhook-service
-      namespace: system
-      path: /validate-rollouts-paprika-io-v1alpha1-rollout
-  failurePolicy: Fail
-  name: vrollout.kb.io
-  rules:
-  - apiGroups:
-    - rollouts.paprika.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - rollouts
   sideEffects: None
 - admissionReviewVersions:
   - v1

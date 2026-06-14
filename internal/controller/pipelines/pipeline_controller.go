@@ -8,7 +8,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -82,9 +84,22 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *PipelineReconciler) patchPipelineStatus(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) error {
-	patch := client.MergeFromWithOptions(pipeline.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	pipeline.Status.ObservedGeneration = pipeline.Generation
-	return r.Status().Patch(ctx, pipeline, patch) //nolint:wrapcheck // wrapped by callers
+	desiredStatus := pipeline.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh pipelinesv1alpha1.Pipeline
+		if err := r.Get(ctx, types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching pipeline for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating pipeline status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("patching pipeline status: %w", err)
+	}
+	return nil
 }
 
 func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepStatuses []pipelinesv1alpha1.StepStatus, start time.Time, result *string) (ctrl.Result, error) {

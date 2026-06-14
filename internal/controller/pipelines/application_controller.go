@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -199,9 +200,22 @@ func (r *ApplicationReconciler) handleResync(ctx context.Context, app *paprikav1
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
-	patch := client.MergeFromWithOptions(app.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	app.Status.ObservedGeneration = app.Generation
-	return r.Status().Patch(ctx, app, patch) //nolint:wrapcheck // wrapped by callers
+	desiredStatus := app.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching application for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating application status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("patching application status: %w", err)
+	}
+	return nil
 }
 
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
@@ -463,6 +477,7 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 	return nil
 }
 
+//nolint:cyclop // stage/release branching is inherent to the reconcile flow.
 func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	if len(app.Spec.Stages) == 0 {
 		return ctrl.Result{}, nil
@@ -470,6 +485,9 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 
 	if r.isInlineSource(app) && app.Status.ReleaseRef == "" {
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for ApplyBundle to create release")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
+		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
@@ -478,6 +496,14 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 
 	if currentReleasePhase != "" {
 		return r.handleActiveRelease(ctx, app, targetStage, currentReleasePhase)
+	}
+
+	if r.isInlineSource(app) && app.Status.ReleaseRef != "" {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for referenced inline release to start")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
 	if app.Spec.SyncPolicy == paprikav1.SyncManual {

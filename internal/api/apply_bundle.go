@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8syaml "sigs.k8s.io/yaml"
 
@@ -229,6 +230,7 @@ func toPolicyActions(in map[string]string) map[string]policy.Action {
 	return out
 }
 
+//nolint:cyclop // inline apply orchestration is inherently sequential.
 func (s *PaprikaServer) applyInline(
 	ctx context.Context,
 	appName, namespace string,
@@ -265,14 +267,32 @@ func (s *PaprikaServer) applyInline(
 		return nil, nil, err
 	}
 
-	release.Status.PolicyResults = toReleasePolicyResults(policyResults)
-	if err := s.Status().Update(ctx, release); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var freshRelease pipelinesv1alpha1.Release
+		if err := s.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &freshRelease); err != nil {
+			return fmt.Errorf("fetching release for policy results: %w", err)
+		}
+		freshRelease.Status.PolicyResults = toReleasePolicyResults(policyResults)
+		if err := s.Status().Update(ctx, &freshRelease); err != nil {
+			return fmt.Errorf("updating release policy results: %w", err)
+		}
+		return nil
+	}); err != nil {
 		_ = s.Delete(ctx, release)
 		return nil, nil, fmt.Errorf("update release policy results: %w", err)
 	}
 
-	app.Status.ReleaseRef = release.Name
-	if err := s.Status().Update(ctx, app); err != nil {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var freshApp pipelinesv1alpha1.Application
+		if err := s.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &freshApp); err != nil {
+			return fmt.Errorf("fetching application for releaseRef: %w", err)
+		}
+		freshApp.Status.ReleaseRef = release.Name
+		if err := s.Status().Update(ctx, &freshApp); err != nil {
+			return fmt.Errorf("updating application releaseRef: %w", err)
+		}
+		return nil
+	}); err != nil {
 		_ = s.Delete(ctx, release)
 		return nil, nil, fmt.Errorf("update application releaseRef: %w", err)
 	}

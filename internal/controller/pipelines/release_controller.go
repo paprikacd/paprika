@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -102,6 +103,8 @@ type ReleaseReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
 
 // Reconcile handles Release reconciliation.
+//
+//nolint:cyclop // release lifecycle branches are intentional.
 func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx, span := observability.StartSpan(ctx, "ReleaseReconcile",
 		attribute.String("namespace", req.Namespace),
@@ -137,6 +140,9 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if getErr != nil {
 		result = resultError
 		return ctrl.Result{}, getErr
+	}
+	if release.Name == "" {
+		return ctrl.Result{}, nil
 	}
 
 	if !release.DeletionTimestamp.IsZero() {
@@ -193,10 +199,7 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 func (r *ReleaseReconciler) getRelease(ctx context.Context, req ctrl.Request) (paprikav1.Release, error) {
 	var release paprikav1.Release
 	if err := r.Get(ctx, req.NamespacedName, &release); err != nil {
-		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
-			return release, fmt.Errorf("getting release: %w", k8sErr)
-		}
-		return release, nil
+		return release, fmt.Errorf("getting release: %w", client.IgnoreNotFound(err))
 	}
 	return release, nil
 }
@@ -372,9 +375,22 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 }
 
 func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release) error {
-	patch := client.MergeFromWithOptions(release.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	release.Status.ObservedGeneration = release.Generation
-	return r.Status().Patch(ctx, release, patch) //nolint:wrapcheck // wrapped by callers
+	desiredStatus := release.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Release
+		if err := r.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching release for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating release status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("patching release status: %w", err)
+	}
+	return nil
 }
 
 func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, release *paprikav1.Release) (bool, error) {

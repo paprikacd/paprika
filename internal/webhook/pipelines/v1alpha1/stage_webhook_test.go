@@ -63,19 +63,19 @@ var _ = Describe("Stage Webhook", func() {
 				Expect(err.Error()).To(ContainSubstring("Stage name is required"))
 			})
 
-			It("Should reject creation with no templates", func() {
+			It("Should admit creation with no templates for inline sources", func() {
 				obj.Spec.Name = testStageName
 				obj.Spec.Templates = []string{}
-				_, err := validator.ValidateCreate(ctx, obj)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Must have at least one template"))
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
 			})
 
-			It("Should reject creation with nil templates", func() {
+			It("Should admit creation with nil templates for inline sources", func() {
 				obj.Spec.Name = testStageName
-				_, err := validator.ValidateCreate(ctx, obj)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Must have at least one template"))
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
 			})
 
 			It("Should reject creation with empty template name", func() {
