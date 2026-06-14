@@ -70,6 +70,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-policy-paprika-io-v1alpha1-policy
+  failurePolicy: Fail
+  name: mpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - policy.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-pipelines-paprika-io-v1alpha1-release
   failurePolicy: Fail
   name: mrelease-v1alpha1.kb.io
@@ -103,6 +123,26 @@ webhooks:
     - UPDATE
     resources:
     - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-rollouts-paprika-io-v1alpha1-rollout
+  failurePolicy: Fail
+  name: mrollout.kb.io
+  rules:
+  - apiGroups:
+    - rollouts.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - rollouts
   sideEffects: None
 - admissionReviewVersions:
   - v1
@@ -216,6 +256,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-policy-paprika-io-v1alpha1-policy
+  failurePolicy: Fail
+  name: vpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - policy.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-pipelines-paprika-io-v1alpha1-release
   failurePolicy: Fail
   name: vrelease-v1alpha1.kb.io
@@ -249,6 +309,26 @@ webhooks:
     - UPDATE
     resources:
     - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-rollouts-paprika-io-v1alpha1-rollout
+  failurePolicy: Fail
+  name: vrollout.kb.io
+  rules:
+  - apiGroups:
+    - rollouts.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - rollouts
   sideEffects: None
 - admissionReviewVersions:
   - v1

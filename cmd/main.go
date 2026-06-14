@@ -67,6 +67,7 @@ import (
 	"github.com/benebsworth/paprika/internal/sharding"
 	webhookcorev1alpha1 "github.com/benebsworth/paprika/internal/webhook/core/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
+	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
 	"github.com/benebsworth/paprika/traffic"
 	// +kubebuilder:scaffold:imports
@@ -445,11 +446,44 @@ func setupWebhooks(mgr ctrl.Manager) error {
 		{"Application", webhookpipelinesv1alpha1.SetupApplicationWebhookWithManager},
 		{"AppProject", webhookcorev1alpha1.SetupAppProjectWebhookWithManager},
 		{"Repository", webhookcorev1alpha1.SetupRepositoryWebhookWithManager},
+		{"Policy", webhookpolicyv1alpha1.SetupPolicyWebhookWithManager},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
 			return fmt.Errorf("failed to create webhook %s: %w", w.name, err)
 		}
+	}
+	return nil
+}
+
+func setupCoreControllers(mgr ctrl.Manager) error {
+	if err := (&clusterscontroller.ClusterReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "clusters-cluster")
+		os.Exit(1)
+	}
+	if err := (&corecontroller.AppProjectReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "core-appproject")
+		os.Exit(1)
+	}
+	if err := (&corecontroller.RepositoryReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "core-repository")
+		os.Exit(1)
+	}
+	if err := (&policycontroller.PolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "policy-policy")
+		os.Exit(1)
 	}
 	return nil
 }
@@ -479,33 +513,8 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 	if err := setupWebhooks(mgr); err != nil {
 		return err
 	}
-	if err := (&clusterscontroller.ClusterReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "clusters-cluster")
-		os.Exit(1)
-	}
-	if err := (&corecontroller.AppProjectReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "core-appproject")
-		os.Exit(1)
-	}
-	if err := (&corecontroller.RepositoryReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "core-repository")
-		os.Exit(1)
-	}
-	if err := (&policycontroller.PolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "policy-policy")
-		os.Exit(1)
+	if err := setupCoreControllers(mgr); err != nil {
+		return err
 	}
 	// +kubebuilder:scaffold:builder
 
