@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
@@ -187,6 +188,28 @@ func (s *PaprikaServer) ListApplications(
 		applications = append(applications, convertApplication(&list.Items[i]))
 	}
 	return connect.NewResponse(&paprikav1.ListApplicationsResponse{Applications: applications}), nil
+}
+
+// ListPolicies returns a list of cluster-scoped policies.
+func (s *PaprikaServer) ListPolicies(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListPoliciesRequest],
+) (*connect.Response[paprikav1.ListPoliciesResponse], error) {
+	var list policyv1alpha1.PolicyList
+	if err := s.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("listing policies: %w", err)
+	}
+	policies := make([]*paprikav1.Policy, 0, len(list.Items))
+	for i := range list.Items {
+		p := &list.Items[i]
+		policies = append(policies, &paprikav1.Policy{
+			Name:          p.Name,
+			Severity:      string(p.Spec.Severity),
+			DefaultAction: string(p.Spec.DefaultAction),
+			Description:   p.Spec.Description,
+		})
+	}
+	return connect.NewResponse(&paprikav1.ListPoliciesResponse{Policies: policies}), nil
 }
 
 // GetApplication returns a single application by name and namespace.

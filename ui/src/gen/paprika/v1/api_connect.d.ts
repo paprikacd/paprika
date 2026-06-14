@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -49,6 +49,15 @@ export declare const PaprikaService: {
       readonly kind: MethodKind.Unary,
     },
     /**
+     * @generated from rpc paprika.v1.PaprikaService.ListPolicies
+     */
+    readonly listPolicies: {
+      readonly name: "ListPolicies",
+      readonly I: typeof ListPoliciesRequest,
+      readonly O: typeof ListPoliciesResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
      * @generated from rpc paprika.v1.PaprikaService.GetApplication
      */
     readonly getApplication: {
@@ -91,6 +100,15 @@ export declare const PaprikaService: {
       readonly name: "Render",
       readonly I: typeof RenderRequest,
       readonly O: typeof RenderResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ApplyBundle
+     */
+    readonly applyBundle: {
+      readonly name: "ApplyBundle",
+      readonly I: typeof ApplyBundleRequest,
+      readonly O: typeof ApplyBundleResponse,
       readonly kind: MethodKind.Unary,
     },
   }

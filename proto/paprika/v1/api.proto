@@ -246,6 +246,21 @@ message ListApplicationsResponse {
   repeated Application applications = 1;
 }
 
+message ListPoliciesRequest {
+  optional string namespace = 1;
+}
+
+message ListPoliciesResponse {
+  repeated Policy policies = 1;
+}
+
+message Policy {
+  string name = 1;
+  string severity = 2;
+  string default_action = 3;
+  string description = 4;
+}
+
 message GetApplicationRequest {
   string name = 1;
   string namespace = 2;
@@ -321,6 +336,7 @@ service PaprikaService {
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
   rpc ListStages(ListStagesRequest) returns (ListStagesResponse);
   rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
+  rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);

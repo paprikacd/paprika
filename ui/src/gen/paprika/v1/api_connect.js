@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -49,6 +49,15 @@ export const PaprikaService = {
       kind: MethodKind.Unary,
     },
     /**
+     * @generated from rpc paprika.v1.PaprikaService.ListPolicies
+     */
+    listPolicies: {
+      name: "ListPolicies",
+      I: ListPoliciesRequest,
+      O: ListPoliciesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
      * @generated from rpc paprika.v1.PaprikaService.GetApplication
      */
     getApplication: {
@@ -91,6 +100,15 @@ export const PaprikaService = {
       name: "Render",
       I: RenderRequest,
       O: RenderResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ApplyBundle
+     */
+    applyBundle: {
+      name: "ApplyBundle",
+      I: ApplyBundleRequest,
+      O: ApplyBundleResponse,
       kind: MethodKind.Unary,
     },
   }

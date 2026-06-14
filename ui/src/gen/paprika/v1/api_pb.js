@@ -56,6 +56,16 @@ export const ChartRef = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.InlineSource
+ */
+export const InlineSource = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.InlineSource",
+  () => [
+    { no: 1, name: "config_map_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.ApplicationSource
  */
 export const ApplicationSource = /*@__PURE__*/ proto3.makeMessageType(
@@ -72,6 +82,7 @@ export const ApplicationSource = /*@__PURE__*/ proto3.makeMessageType(
     { no: 9, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 10, name: "secret_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 11, name: "poll_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 12, name: "inline", kind: "message", T: InlineSource },
   ],
 );
 
@@ -222,6 +233,30 @@ export const Pipeline = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ManifestSource
+ */
+export const ManifestSource = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ManifestSource",
+  () => [
+    { no: 1, name: "config_map_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PolicyResult
+ */
+export const PolicyResult = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PolicyResult",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "severity", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "action", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "passed", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Release
  */
 export const Release = /*@__PURE__*/ proto3.makeMessageType(
@@ -235,6 +270,8 @@ export const Release = /*@__PURE__*/ proto3.makeMessageType(
     { no: 6, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 7, name: "current_stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 8, name: "promotion_history", kind: "message", T: Promotion, repeated: true },
+    { no: 9, name: "manifest_source", kind: "message", T: ManifestSource },
+    { no: 10, name: "policy_results", kind: "message", T: PolicyResult, repeated: true },
   ],
 );
 
@@ -384,6 +421,39 @@ export const ListApplicationsResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ListPoliciesRequest
+ */
+export const ListPoliciesRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListPoliciesRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListPoliciesResponse
+ */
+export const ListPoliciesResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListPoliciesResponse",
+  () => [
+    { no: 1, name: "policies", kind: "message", T: Policy, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.Policy
+ */
+export const Policy = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Policy",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "severity", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "default_action", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.GetApplicationRequest
  */
 export const GetApplicationRequest = /*@__PURE__*/ proto3.makeMessageType(
@@ -493,6 +563,35 @@ export const RenderResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.RenderResponse",
   () => [
     { no: 1, name: "manifests", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplyBundleRequest
+ */
+export const ApplyBundleRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplyBundleRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "manifests", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 4, name: "skip_policies", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 5, name: "policy_overrides", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+    { no: 6, name: "dry_run", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplyBundleResponse
+ */
+export const ApplyBundleResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplyBundleResponse",
+  () => [
+    { no: 1, name: "application", kind: "message", T: Application },
+    { no: 2, name: "release", kind: "message", T: Release },
+    { no: 3, name: "policy_results", kind: "message", T: PolicyResult, repeated: true },
+    { no: 4, name: "blocked", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "block_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

@@ -61,6 +61,8 @@ function SourceIcon({ type }: { type: string }) {
       return <Database className="size-3.5 text-blue-500" />
     case "helm":
       return <Package className="size-3.5 text-violet-500" />
+    case "inline":
+      return <Package className="size-3.5 text-amber-500" />
     default:
       return <Package className="size-3.5 text-muted-foreground" />
   }
@@ -90,6 +92,11 @@ function SourceInfo({ source }: { source?: Application["source"] }) {
       } else if (source.chart?.name) {
         lines.push(`${source.chart.repo || "?"}/${source.chart.name}`)
         if (source.chart.version) lines.push(`v${source.chart.version}`)
+      }
+      break
+    case "inline":
+      if (source.inline?.configMapRef) {
+        lines.push(`snapshot: ${source.inline.configMapRef}`)
       }
       break
   }

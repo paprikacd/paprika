@@ -8,6 +8,7 @@ import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
 import type { Stage } from "@/gen/paprika/v1/api_pb"
 import type { Application } from "@/gen/paprika/v1/api_pb"
+import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
 import { ReleaseGrid } from "@/components/dashboard/release-table"
 import { ApplicationCard } from "@/components/dashboard/application-card"
@@ -20,6 +21,7 @@ import {
   Activity,
   Rocket,
   AlertTriangle,
+  Shield,
 } from "lucide-react"
 
 const transport = createConnectTransport({ baseUrl: "" })
@@ -125,6 +127,7 @@ export default function DashboardPage() {
   const [releases, setReleases] = useState<Release[]>([])
   const [stages, setStages] = useState<Stage[]>([])
   const [applications, setApplications] = useState<Application[]>([])
+  const [policies, setPolicies] = useState<Policy[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const { setConnected } = useConnection()
@@ -137,8 +140,9 @@ export default function DashboardPage() {
       client.listReleases({}),
       client.listStages({}).then(r => r),
       client.listApplications({}),
+      client.listPolicies({}),
     ])
-      .then(([pr, rr, sr, ar]) => {
+      .then(([pr, rr, sr, ar, por]) => {
         let anySuccess = false
         const next: Record<string, string> = {}
 
@@ -168,6 +172,13 @@ export default function DashboardPage() {
           anySuccess = true
         } else {
           next.applications = ar.reason?.message ?? "Failed to load applications"
+        }
+
+        if (por.status === "fulfilled") {
+          setPolicies(por.value.policies)
+          anySuccess = true
+        } else {
+          next.policies = por.reason?.message ?? "Failed to load policies"
         }
 
         setErrors(next)
@@ -317,6 +328,48 @@ export default function DashboardPage() {
         ) : (
           <ReleaseGrid releases={releases} />
         )}
+      </section>
+
+      <section id="policies">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Policies</h2>
+            <p className="text-xs text-muted-foreground">
+              {policies.length} policy{policies.length !== 1 ? "ies" : "y"} configured
+            </p>
+          </div>
+        </div>
+        {errors.policies && <SectionError message={errors.policies} onRetry={fetchData} />}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading
+            ? [1, 2].map((i) => <SkeletonCard key={i} />)
+            : policies.map((p) => (
+                <Card key={p.name}>
+                  <CardContent className="space-y-2 pt-4">
+                    <div className="flex items-center gap-2">
+                      <Shield className="size-4 text-primary" aria-hidden="true" />
+                      <span className="font-mono text-sm font-medium">{p.name}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{p.description || "No description"}</p>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{p.severity}</span>
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{p.defaultAction || "enforce"}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+          {!loading && policies.length === 0 && !errors.policies && (
+            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <Shield className="size-5 text-muted-foreground" aria-hidden="true" />
+              </div>
+              <p className="text-sm font-medium text-foreground">No policies yet</p>
+              <p className="text-xs text-muted-foreground">
+                Create a Policy resource to guard applies with CEL rules
+              </p>
+            </div>
+          )}
+        </div>
       </section>
     </div>
     </ErrorBoundary>

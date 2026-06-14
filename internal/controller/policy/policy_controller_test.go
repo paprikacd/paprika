@@ -51,7 +51,10 @@ var _ = Describe("Policy Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: policyv1alpha1.PolicySpec{
+						Severity:   policyv1alpha1.PolicySeverityWarning,
+						Expression: "true",
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

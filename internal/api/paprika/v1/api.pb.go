@@ -2238,6 +2238,162 @@ func (x *ListApplicationsResponse) GetApplications() []*Application {
 	return nil
 }
 
+type ListPoliciesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesRequest) Reset() {
+	*x = ListPoliciesRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesRequest) ProtoMessage() {}
+
+func (x *ListPoliciesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesRequest.ProtoReflect.Descriptor instead.
+func (*ListPoliciesRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListPoliciesRequest) GetNamespace() string {
+	if x != nil && x.Namespace != nil {
+		return *x.Namespace
+	}
+	return ""
+}
+
+type ListPoliciesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Policies      []*Policy              `protobuf:"bytes,1,rep,name=policies,proto3" json:"policies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPoliciesResponse) Reset() {
+	*x = ListPoliciesResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPoliciesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPoliciesResponse) ProtoMessage() {}
+
+func (x *ListPoliciesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPoliciesResponse.ProtoReflect.Descriptor instead.
+func (*ListPoliciesResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ListPoliciesResponse) GetPolicies() []*Policy {
+	if x != nil {
+		return x.Policies
+	}
+	return nil
+}
+
+type Policy struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Severity      string                 `protobuf:"bytes,2,opt,name=severity,proto3" json:"severity,omitempty"`
+	DefaultAction string                 `protobuf:"bytes,3,opt,name=default_action,json=defaultAction,proto3" json:"default_action,omitempty"`
+	Description   string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Policy) Reset() {
+	*x = Policy{}
+	mi := &file_paprika_v1_api_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Policy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Policy) ProtoMessage() {}
+
+func (x *Policy) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Policy.ProtoReflect.Descriptor instead.
+func (*Policy) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *Policy) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Policy) GetSeverity() string {
+	if x != nil {
+		return x.Severity
+	}
+	return ""
+}
+
+func (x *Policy) GetDefaultAction() string {
+	if x != nil {
+		return x.DefaultAction
+	}
+	return ""
+}
+
+func (x *Policy) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 type GetApplicationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -2248,7 +2404,7 @@ type GetApplicationRequest struct {
 
 func (x *GetApplicationRequest) Reset() {
 	*x = GetApplicationRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[31]
+	mi := &file_paprika_v1_api_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2260,7 +2416,7 @@ func (x *GetApplicationRequest) String() string {
 func (*GetApplicationRequest) ProtoMessage() {}
 
 func (x *GetApplicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[31]
+	mi := &file_paprika_v1_api_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2273,7 +2429,7 @@ func (x *GetApplicationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApplicationRequest.ProtoReflect.Descriptor instead.
 func (*GetApplicationRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{31}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetApplicationRequest) GetName() string {
@@ -2299,7 +2455,7 @@ type GetApplicationResponse struct {
 
 func (x *GetApplicationResponse) Reset() {
 	*x = GetApplicationResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[32]
+	mi := &file_paprika_v1_api_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2311,7 +2467,7 @@ func (x *GetApplicationResponse) String() string {
 func (*GetApplicationResponse) ProtoMessage() {}
 
 func (x *GetApplicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[32]
+	mi := &file_paprika_v1_api_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2324,7 +2480,7 @@ func (x *GetApplicationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetApplicationResponse.ProtoReflect.Descriptor instead.
 func (*GetApplicationResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{32}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetApplicationResponse) GetApplication() *Application {
@@ -2344,7 +2500,7 @@ type SyncApplicationRequest struct {
 
 func (x *SyncApplicationRequest) Reset() {
 	*x = SyncApplicationRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[33]
+	mi := &file_paprika_v1_api_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2356,7 +2512,7 @@ func (x *SyncApplicationRequest) String() string {
 func (*SyncApplicationRequest) ProtoMessage() {}
 
 func (x *SyncApplicationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[33]
+	mi := &file_paprika_v1_api_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2369,7 +2525,7 @@ func (x *SyncApplicationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncApplicationRequest.ProtoReflect.Descriptor instead.
 func (*SyncApplicationRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{33}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SyncApplicationRequest) GetName() string {
@@ -2395,7 +2551,7 @@ type SyncApplicationResponse struct {
 
 func (x *SyncApplicationResponse) Reset() {
 	*x = SyncApplicationResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[34]
+	mi := &file_paprika_v1_api_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2407,7 +2563,7 @@ func (x *SyncApplicationResponse) String() string {
 func (*SyncApplicationResponse) ProtoMessage() {}
 
 func (x *SyncApplicationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[34]
+	mi := &file_paprika_v1_api_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2420,7 +2576,7 @@ func (x *SyncApplicationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncApplicationResponse.ProtoReflect.Descriptor instead.
 func (*SyncApplicationResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{34}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SyncApplicationResponse) GetApplication() *Application {
@@ -2441,7 +2597,7 @@ type ApproveGateRequest struct {
 
 func (x *ApproveGateRequest) Reset() {
 	*x = ApproveGateRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[35]
+	mi := &file_paprika_v1_api_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2453,7 +2609,7 @@ func (x *ApproveGateRequest) String() string {
 func (*ApproveGateRequest) ProtoMessage() {}
 
 func (x *ApproveGateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[35]
+	mi := &file_paprika_v1_api_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2466,7 +2622,7 @@ func (x *ApproveGateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveGateRequest.ProtoReflect.Descriptor instead.
 func (*ApproveGateRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{35}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ApproveGateRequest) GetName() string {
@@ -2499,7 +2655,7 @@ type ApproveGateResponse struct {
 
 func (x *ApproveGateResponse) Reset() {
 	*x = ApproveGateResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[36]
+	mi := &file_paprika_v1_api_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2511,7 +2667,7 @@ func (x *ApproveGateResponse) String() string {
 func (*ApproveGateResponse) ProtoMessage() {}
 
 func (x *ApproveGateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[36]
+	mi := &file_paprika_v1_api_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2524,7 +2680,7 @@ func (x *ApproveGateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApproveGateResponse.ProtoReflect.Descriptor instead.
 func (*ApproveGateResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{36}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ApproveGateResponse) GetApplication() *Application {
@@ -2546,7 +2702,7 @@ type ResolveSourceRequest struct {
 
 func (x *ResolveSourceRequest) Reset() {
 	*x = ResolveSourceRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[37]
+	mi := &file_paprika_v1_api_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2558,7 +2714,7 @@ func (x *ResolveSourceRequest) String() string {
 func (*ResolveSourceRequest) ProtoMessage() {}
 
 func (x *ResolveSourceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[37]
+	mi := &file_paprika_v1_api_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2571,7 +2727,7 @@ func (x *ResolveSourceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveSourceRequest.ProtoReflect.Descriptor instead.
 func (*ResolveSourceRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{37}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ResolveSourceRequest) GetNamespace() string {
@@ -2613,7 +2769,7 @@ type ResolveSourceResponse struct {
 
 func (x *ResolveSourceResponse) Reset() {
 	*x = ResolveSourceResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[38]
+	mi := &file_paprika_v1_api_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2625,7 +2781,7 @@ func (x *ResolveSourceResponse) String() string {
 func (*ResolveSourceResponse) ProtoMessage() {}
 
 func (x *ResolveSourceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[38]
+	mi := &file_paprika_v1_api_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2638,7 +2794,7 @@ func (x *ResolveSourceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveSourceResponse.ProtoReflect.Descriptor instead.
 func (*ResolveSourceResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{38}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ResolveSourceResponse) GetLocalPath() string {
@@ -2675,7 +2831,7 @@ type RenderRequest struct {
 
 func (x *RenderRequest) Reset() {
 	*x = RenderRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[39]
+	mi := &file_paprika_v1_api_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2687,7 +2843,7 @@ func (x *RenderRequest) String() string {
 func (*RenderRequest) ProtoMessage() {}
 
 func (x *RenderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[39]
+	mi := &file_paprika_v1_api_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2700,7 +2856,7 @@ func (x *RenderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderRequest.ProtoReflect.Descriptor instead.
 func (*RenderRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{39}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *RenderRequest) GetNamespace() string {
@@ -2747,7 +2903,7 @@ type RenderResponse struct {
 
 func (x *RenderResponse) Reset() {
 	*x = RenderResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[40]
+	mi := &file_paprika_v1_api_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2759,7 +2915,7 @@ func (x *RenderResponse) String() string {
 func (*RenderResponse) ProtoMessage() {}
 
 func (x *RenderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[40]
+	mi := &file_paprika_v1_api_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2772,7 +2928,7 @@ func (x *RenderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenderResponse.ProtoReflect.Descriptor instead.
 func (*RenderResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{40}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *RenderResponse) GetManifests() []byte {
@@ -2796,7 +2952,7 @@ type ApplyBundleRequest struct {
 
 func (x *ApplyBundleRequest) Reset() {
 	*x = ApplyBundleRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[41]
+	mi := &file_paprika_v1_api_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2808,7 +2964,7 @@ func (x *ApplyBundleRequest) String() string {
 func (*ApplyBundleRequest) ProtoMessage() {}
 
 func (x *ApplyBundleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[41]
+	mi := &file_paprika_v1_api_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2821,7 +2977,7 @@ func (x *ApplyBundleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyBundleRequest.ProtoReflect.Descriptor instead.
 func (*ApplyBundleRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{41}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ApplyBundleRequest) GetNamespace() string {
@@ -2879,7 +3035,7 @@ type ApplyBundleResponse struct {
 
 func (x *ApplyBundleResponse) Reset() {
 	*x = ApplyBundleResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[42]
+	mi := &file_paprika_v1_api_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2891,7 +3047,7 @@ func (x *ApplyBundleResponse) String() string {
 func (*ApplyBundleResponse) ProtoMessage() {}
 
 func (x *ApplyBundleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[42]
+	mi := &file_paprika_v1_api_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2904,7 +3060,7 @@ func (x *ApplyBundleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyBundleResponse.ProtoReflect.Descriptor instead.
 func (*ApplyBundleResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{42}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ApplyBundleResponse) GetApplication() *Application {
@@ -3154,7 +3310,18 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\n" +
 	"_namespace\"W\n" +
 	"\x18ListApplicationsResponse\x12;\n" +
-	"\fapplications\x18\x01 \x03(\v2\x17.paprika.v1.ApplicationR\fapplications\"I\n" +
+	"\fapplications\x18\x01 \x03(\v2\x17.paprika.v1.ApplicationR\fapplications\"F\n" +
+	"\x13ListPoliciesRequest\x12!\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01B\f\n" +
+	"\n" +
+	"_namespace\"F\n" +
+	"\x14ListPoliciesResponse\x12.\n" +
+	"\bpolicies\x18\x01 \x03(\v2\x12.paprika.v1.PolicyR\bpolicies\"\x81\x01\n" +
+	"\x06Policy\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\bseverity\x18\x02 \x01(\tR\bseverity\x12%\n" +
+	"\x0edefault_action\x18\x03 \x01(\tR\rdefaultAction\x12 \n" +
+	"\vdescription\x18\x04 \x01(\tR\vdescription\"I\n" +
 	"\x15GetApplicationRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"S\n" +
@@ -3205,13 +3372,14 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\arelease\x18\x02 \x01(\v2\x13.paprika.v1.ReleaseR\arelease\x12?\n" +
 	"\x0epolicy_results\x18\x03 \x03(\v2\x18.paprika.v1.PolicyResultR\rpolicyResults\x12\x18\n" +
 	"\ablocked\x18\x04 \x01(\bR\ablocked\x12!\n" +
-	"\fblock_reason\x18\x05 \x01(\tR\vblockReason2\xd1\x06\n" +
+	"\fblock_reason\x18\x05 \x01(\tR\vblockReason2\xa4\a\n" +
 	"\x0ePaprikaService\x12T\n" +
 	"\rListPipelines\x12 .paprika.v1.ListPipelinesRequest\x1a!.paprika.v1.ListPipelinesResponse\x12Q\n" +
 	"\fListReleases\x12\x1f.paprika.v1.ListReleasesRequest\x1a .paprika.v1.ListReleasesResponse\x12K\n" +
 	"\n" +
 	"ListStages\x12\x1d.paprika.v1.ListStagesRequest\x1a\x1e.paprika.v1.ListStagesResponse\x12]\n" +
-	"\x10ListApplications\x12#.paprika.v1.ListApplicationsRequest\x1a$.paprika.v1.ListApplicationsResponse\x12W\n" +
+	"\x10ListApplications\x12#.paprika.v1.ListApplicationsRequest\x1a$.paprika.v1.ListApplicationsResponse\x12Q\n" +
+	"\fListPolicies\x12\x1f.paprika.v1.ListPoliciesRequest\x1a .paprika.v1.ListPoliciesResponse\x12W\n" +
 	"\x0eGetApplication\x12!.paprika.v1.GetApplicationRequest\x1a\".paprika.v1.GetApplicationResponse\x12Z\n" +
 	"\x0fSyncApplication\x12\".paprika.v1.SyncApplicationRequest\x1a#.paprika.v1.SyncApplicationResponse\x12N\n" +
 	"\vApproveGate\x12\x1e.paprika.v1.ApproveGateRequest\x1a\x1f.paprika.v1.ApproveGateResponse\x12T\n" +
@@ -3231,7 +3399,7 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 	return file_paprika_v1_api_proto_rawDescData
 }
 
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(*Step)(nil),                     // 0: paprika.v1.Step
 	(*StepStatus)(nil),               // 1: paprika.v1.StepStatus
@@ -3264,30 +3432,33 @@ var file_paprika_v1_api_proto_goTypes = []any{
 	(*ListStagesResponse)(nil),       // 28: paprika.v1.ListStagesResponse
 	(*ListApplicationsRequest)(nil),  // 29: paprika.v1.ListApplicationsRequest
 	(*ListApplicationsResponse)(nil), // 30: paprika.v1.ListApplicationsResponse
-	(*GetApplicationRequest)(nil),    // 31: paprika.v1.GetApplicationRequest
-	(*GetApplicationResponse)(nil),   // 32: paprika.v1.GetApplicationResponse
-	(*SyncApplicationRequest)(nil),   // 33: paprika.v1.SyncApplicationRequest
-	(*SyncApplicationResponse)(nil),  // 34: paprika.v1.SyncApplicationResponse
-	(*ApproveGateRequest)(nil),       // 35: paprika.v1.ApproveGateRequest
-	(*ApproveGateResponse)(nil),      // 36: paprika.v1.ApproveGateResponse
-	(*ResolveSourceRequest)(nil),     // 37: paprika.v1.ResolveSourceRequest
-	(*ResolveSourceResponse)(nil),    // 38: paprika.v1.ResolveSourceResponse
-	(*RenderRequest)(nil),            // 39: paprika.v1.RenderRequest
-	(*RenderResponse)(nil),           // 40: paprika.v1.RenderResponse
-	(*ApplyBundleRequest)(nil),       // 41: paprika.v1.ApplyBundleRequest
-	(*ApplyBundleResponse)(nil),      // 42: paprika.v1.ApplyBundleResponse
-	nil,                              // 43: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                              // 44: paprika.v1.Application.ParametersEntry
-	nil,                              // 45: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	(*ListPoliciesRequest)(nil),      // 31: paprika.v1.ListPoliciesRequest
+	(*ListPoliciesResponse)(nil),     // 32: paprika.v1.ListPoliciesResponse
+	(*Policy)(nil),                   // 33: paprika.v1.Policy
+	(*GetApplicationRequest)(nil),    // 34: paprika.v1.GetApplicationRequest
+	(*GetApplicationResponse)(nil),   // 35: paprika.v1.GetApplicationResponse
+	(*SyncApplicationRequest)(nil),   // 36: paprika.v1.SyncApplicationRequest
+	(*SyncApplicationResponse)(nil),  // 37: paprika.v1.SyncApplicationResponse
+	(*ApproveGateRequest)(nil),       // 38: paprika.v1.ApproveGateRequest
+	(*ApproveGateResponse)(nil),      // 39: paprika.v1.ApproveGateResponse
+	(*ResolveSourceRequest)(nil),     // 40: paprika.v1.ResolveSourceRequest
+	(*ResolveSourceResponse)(nil),    // 41: paprika.v1.ResolveSourceResponse
+	(*RenderRequest)(nil),            // 42: paprika.v1.RenderRequest
+	(*RenderResponse)(nil),           // 43: paprika.v1.RenderResponse
+	(*ApplyBundleRequest)(nil),       // 44: paprika.v1.ApplyBundleRequest
+	(*ApplyBundleResponse)(nil),      // 45: paprika.v1.ApplyBundleResponse
+	nil,                              // 46: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                              // 47: paprika.v1.Application.ParametersEntry
+	nil,                              // 48: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
 	3,  // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
 	4,  // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
-	43, // 2: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	46, // 2: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
 	7,  // 3: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
 	6,  // 4: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
 	5,  // 5: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	44, // 6: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	47, // 6: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
 	9,  // 7: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
 	10, // 8: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
 	11, // 9: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
@@ -3304,38 +3475,41 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	17, // 20: paprika.v1.ListReleasesResponse.releases:type_name -> paprika.v1.Release
 	19, // 21: paprika.v1.ListStagesResponse.stages:type_name -> paprika.v1.Stage
 	13, // 22: paprika.v1.ListApplicationsResponse.applications:type_name -> paprika.v1.Application
-	13, // 23: paprika.v1.GetApplicationResponse.application:type_name -> paprika.v1.Application
-	13, // 24: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	13, // 25: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
-	45, // 26: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
-	13, // 27: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
-	17, // 28: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
-	16, // 29: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
-	23, // 30: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	25, // 31: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	27, // 32: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	29, // 33: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	31, // 34: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	33, // 35: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	35, // 36: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	37, // 37: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	39, // 38: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	41, // 39: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	24, // 40: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	26, // 41: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	28, // 42: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	30, // 43: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	32, // 44: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	34, // 45: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	36, // 46: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	38, // 47: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	40, // 48: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	42, // 49: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	40, // [40:50] is the sub-list for method output_type
-	30, // [30:40] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	33, // 23: paprika.v1.ListPoliciesResponse.policies:type_name -> paprika.v1.Policy
+	13, // 24: paprika.v1.GetApplicationResponse.application:type_name -> paprika.v1.Application
+	13, // 25: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
+	13, // 26: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
+	48, // 27: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	13, // 28: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
+	17, // 29: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
+	16, // 30: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
+	23, // 31: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	25, // 32: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	27, // 33: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	29, // 34: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	31, // 35: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	34, // 36: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	36, // 37: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	38, // 38: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	40, // 39: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	42, // 40: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	44, // 41: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	24, // 42: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	26, // 43: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	28, // 44: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	30, // 45: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	32, // 46: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	35, // 47: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	37, // 48: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	39, // 49: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	41, // 50: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	43, // 51: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	45, // 52: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	42, // [42:53] is the sub-list for method output_type
+	31, // [31:42] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }
@@ -3349,13 +3523,14 @@ func file_paprika_v1_api_proto_init() {
 	file_paprika_v1_api_proto_msgTypes[25].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[27].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[29].OneofWrappers = []any{}
+	file_paprika_v1_api_proto_msgTypes[31].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   46,
+			NumMessages:   49,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

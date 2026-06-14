@@ -162,6 +162,11 @@ func (s *Server) ListApplications(ctx context.Context, req *connect.Request[papr
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListApplications"))
 }
 
+// ListPolicies is not implemented by the repo server.
+func (s *Server) ListPolicies(ctx context.Context, req *connect.Request[paprikav1.ListPoliciesRequest]) (*connect.Response[paprikav1.ListPoliciesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListPolicies"))
+}
+
 func (s *Server) GetApplication(ctx context.Context, req *connect.Request[paprikav1.GetApplicationRequest]) (*connect.Response[paprikav1.GetApplicationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetApplication"))
 }
