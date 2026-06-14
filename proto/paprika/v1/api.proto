@@ -32,6 +32,10 @@ message ChartRef {
   string path = 4;
 }
 
+message InlineSource {
+  string config_map_ref = 1;
+}
+
 message ApplicationSource {
   string type = 1;
   string repo_url = 2;
@@ -46,6 +50,7 @@ message ApplicationSource {
   // Shared fields
   string secret_ref = 10;
   string poll_interval = 11;
+  InlineSource inline = 12;
 }
 
 message ApplicationStage {
@@ -146,6 +151,18 @@ message Pipeline {
   repeated ArtifactRef artifacts = 8;
 }
 
+message ManifestSource {
+  string config_map_ref = 1;
+}
+
+message PolicyResult {
+  string name = 1;
+  string severity = 2;
+  string action = 3;
+  bool passed = 4;
+  string message = 5;
+}
+
 message Release {
   string name = 1;
   string namespace = 2;
@@ -156,6 +173,8 @@ message Release {
   string phase = 6;
   string current_stage = 7;
   repeated Promotion promotion_history = 8;
+  ManifestSource manifest_source = 9;
+  repeated PolicyResult policy_results = 10;
 }
 
 message Promotion {
@@ -280,6 +299,23 @@ message RenderResponse {
   bytes manifests = 1;
 }
 
+message ApplyBundleRequest {
+  string namespace = 1;
+  string name = 2;
+  bytes manifests = 3;
+  repeated string skip_policies = 4;
+  map<string, string> policy_overrides = 5;
+  bool dry_run = 6;
+}
+
+message ApplyBundleResponse {
+  Application application = 1;
+  Release release = 2;
+  repeated PolicyResult policy_results = 3;
+  bool blocked = 4;
+  string block_reason = 5;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -290,4 +326,5 @@ service PaprikaService {
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);
   rpc ResolveSource(ResolveSourceRequest) returns (ResolveSourceResponse);
   rpc Render(RenderRequest) returns (RenderResponse);
+  rpc ApplyBundle(ApplyBundleRequest) returns (ApplyBundleResponse);
 }

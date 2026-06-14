@@ -18,13 +18,15 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/policy"
 )
 
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
 	client.Client
-	broker   *events.Broker
-	renderer engine.TemplateRenderer
+	broker    *events.Broker
+	renderer  engine.TemplateRenderer
+	evaluator policy.Evaluator
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
@@ -318,7 +320,7 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 			Timestamp: ph.Timestamp.Unix(),
 		})
 	}
-	return &paprikav1.Release{
+	rel := &paprikav1.Release{
 		Name:             r.Name,
 		Namespace:        r.Namespace,
 		CreatedAt:        r.CreationTimestamp.Unix(),
@@ -328,6 +330,22 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 		CurrentStage:     r.Status.CurrentStage,
 		PromotionHistory: promos,
 	}
+	if r.Spec.ManifestSource != nil {
+		rel.ManifestSource = &paprikav1.ManifestSource{
+			ConfigMapRef: r.Spec.ManifestSource.ConfigMapRef,
+		}
+	}
+	rel.PolicyResults = make([]*paprikav1.PolicyResult, 0, len(r.Status.PolicyResults))
+	for _, pr := range r.Status.PolicyResults {
+		rel.PolicyResults = append(rel.PolicyResults, &paprikav1.PolicyResult{
+			Name:     pr.Name,
+			Severity: pr.Severity,
+			Action:   pr.Action,
+			Passed:   pr.Passed,
+			Message:  pr.Message,
+		})
+	}
+	return rel
 }
 
 func convertStage(st *pipelinesv1alpha1.Stage) *paprikav1.Stage {
@@ -375,6 +393,11 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 				Version: a.Spec.Source.Chart.Version,
 				Path:    a.Spec.Source.Chart.Path,
 			},
+		}
+		if a.Spec.Source.Inline != nil {
+			source.Inline = &paprikav1.InlineSource{
+				ConfigMapRef: a.Spec.Source.Inline.ConfigMapRef,
+			}
 		}
 	}
 	return &paprikav1.Application{
