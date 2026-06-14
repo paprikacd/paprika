@@ -284,4 +284,9 @@ func (s *Server) Render(ctx context.Context, req *connect.Request[paprikav1.Rend
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement Render"))
 }
 
+// ApplyBundle is not implemented by the agent.
+func (s *Server) ApplyBundle(ctx context.Context, req *connect.Request[paprikav1.ApplyBundleRequest]) (*connect.Response[paprikav1.ApplyBundleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ApplyBundle"))
+}
+
 var _ v1connect.PaprikaServiceHandler = (*Server)(nil)

@@ -411,27 +411,22 @@ func (r *ReleaseReconciler) checkConcurrentRelease(ctx context.Context, release 
 	return nil
 }
 
+func (r *ReleaseReconciler) hasInlineManifests(release *paprikav1.Release) bool {
+	return release.Spec.ManifestSource != nil && release.Spec.ManifestSource.ConfigMapRef != ""
+}
+
 func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
 
-	stage, templates, err := r.fetchStageAndTemplates(ctx, release)
+	stage, err := r.fetchStage(ctx, release)
 	if err != nil {
 		return err
 	}
 
-	params := r.buildPromoteParams(release)
-
-	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
+	manifests, err := r.resolveManifests(ctx, release, stage)
 	if err != nil {
-		return fmt.Errorf("template rendering failed: %w", err)
+		return err
 	}
-
-	snapshotName := stage.Name + "-manifest-snapshot"
-	if err = r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
-		return fmt.Errorf("failed to store manifest snapshot: %w", err)
-	}
-
-	release.Status.RenderedManifestSnapshot = snapshotName
 
 	if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
 		return err
@@ -440,6 +435,33 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 
 	log.Info("Promotion rendered manifests", "stage", stage.Name, "bytes", len(manifests))
 	return nil
+}
+
+func (r *ReleaseReconciler) resolveManifests(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage) ([]byte, error) {
+	if r.hasInlineManifests(release) {
+		manifests, err := r.loadManifestsFromConfigMap(ctx, release)
+		if err != nil {
+			return nil, fmt.Errorf("load inline manifests: %w", err)
+		}
+		release.Status.RenderedManifestSnapshot = release.Spec.ManifestSource.ConfigMapRef
+		return manifests, nil
+	}
+
+	templates, err := r.fetchStageTemplates(ctx, release, stage)
+	if err != nil {
+		return nil, err
+	}
+	params := r.buildPromoteParams(release)
+	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
+	if err != nil {
+		return nil, fmt.Errorf("template rendering failed: %w", err)
+	}
+	snapshotName := stage.Name + "-manifest-snapshot"
+	if err := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
+		return nil, fmt.Errorf("failed to store manifest snapshot: %w", err)
+	}
+	release.Status.RenderedManifestSnapshot = snapshotName
+	return manifests, nil
 }
 
 func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string) error {
@@ -456,22 +478,27 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	return nil
 }
 
-func (r *ReleaseReconciler) fetchStageAndTemplates(ctx context.Context, release *paprikav1.Release) (*paprikav1.Stage, []paprikav1.Template, error) {
+func (r *ReleaseReconciler) fetchStage(ctx context.Context, release *paprikav1.Release) (*paprikav1.Stage, error) {
 	var stage paprikav1.Stage
 	if err := r.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage); err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch stage %q: %w", release.Spec.Target, err)
+		return nil, fmt.Errorf("failed to fetch stage %q: %w", release.Spec.Target, err)
 	}
+	return &stage, nil
+}
 
-	var templates []paprikav1.Template
-	for _, tmplName := range stage.Spec.Templates {
-		var tmpl paprikav1.Template
-		if err := r.Get(ctx, types.NamespacedName{Name: tmplName, Namespace: release.Namespace}, &tmpl); err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch template %q: %w", tmplName, err)
-		}
-		templates = append(templates, tmpl)
+func (r *ReleaseReconciler) loadManifestsFromConfigMap(ctx context.Context, release *paprikav1.Release) ([]byte, error) {
+	var cm corev1.ConfigMap
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      release.Spec.ManifestSource.ConfigMapRef,
+		Namespace: release.Namespace,
+	}, &cm); err != nil {
+		return nil, fmt.Errorf("fetch manifest snapshot %q: %w", release.Spec.ManifestSource.ConfigMapRef, err)
 	}
-
-	return &stage, templates, nil
+	data, ok := cm.Data["manifests.yaml"]
+	if !ok {
+		return nil, fmt.Errorf("manifest snapshot %q missing manifests.yaml key", cm.Name)
+	}
+	return []byte(data), nil
 }
 
 func (r *ReleaseReconciler) buildPromoteParams(release *paprikav1.Release) map[string]string {
@@ -696,7 +723,7 @@ func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: r.Namespace,
+			Namespace: release.Namespace,
 			Labels: map[string]string{
 				"paprika.io/stage":   stage.Name,
 				"paprika.io/release": release.Name,
@@ -706,7 +733,7 @@ func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *
 	}
 
 	existing := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: r.Namespace}, existing); err == nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: release.Namespace}, existing); err == nil {
 		existing.Data = cm.Data
 		existing.Labels = cm.Labels
 		if err := r.Update(ctx, existing); err != nil {
@@ -771,7 +798,7 @@ func (r *ReleaseReconciler) rollback(ctx context.Context, release *paprikav1.Rel
 	var cm corev1.ConfigMap
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      release.Status.RenderedManifestSnapshot,
-		Namespace: r.Namespace,
+		Namespace: release.Namespace,
 	}, &cm); err != nil {
 		return fmt.Errorf("failed to fetch manifest snapshot %q: %w", release.Status.RenderedManifestSnapshot, err)
 	}
@@ -805,7 +832,7 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      cmName,
-				Namespace: r.Namespace,
+				Namespace: release.Namespace,
 			},
 		}
 		if err := r.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
@@ -814,8 +841,23 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 		log.Info("Deleted manifest snapshot ConfigMap", "configmap", cmName)
 	}
 
+	if r.DynamicClient == nil {
+		return nil
+	}
+
+	return r.cleanupManagedResources(ctx, release)
+}
+
+func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release *paprikav1.Release) error {
+	log := logf.FromContext(ctx)
 	labelSelector := labels.Set{"paprika.io/release": release.Name}.String()
-	for _, gvr := range managedGVRs {
+
+	gvrs := r.gvrsFromSnapshot(ctx, release)
+	if len(gvrs) == 0 {
+		gvrs = append(gvrs, managedGVRs...)
+	}
+
+	for _, gvr := range gvrs {
 		items, err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: labelSelector,
 		})
@@ -829,8 +871,44 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 			log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
 		}
 	}
-
 	return nil
+}
+
+func (r *ReleaseReconciler) gvrsFromSnapshot(ctx context.Context, release *paprikav1.Release) []schema.GroupVersionResource {
+	cmName := release.Status.RenderedManifestSnapshot
+	if cmName == "" {
+		return nil
+	}
+	var cm corev1.ConfigMap
+	if err := r.Get(ctx, types.NamespacedName{Name: cmName, Namespace: release.Namespace}, &cm); err != nil {
+		return nil
+	}
+	manifests, ok := cm.Data["manifests.yaml"]
+	if !ok {
+		return nil
+	}
+
+	seen := map[schema.GroupVersionResource]struct{}{}
+	for _, doc := range engine.SplitYAMLDocuments([]byte(manifests)) {
+		obj, ok := r.parseManifest(doc)
+		if !ok {
+			continue
+		}
+		kind, _ := obj["kind"].(string)
+		apiVersion, _ := obj["apiVersion"].(string)
+		group, version := parseAPIVersion(apiVersion)
+		gvr, err := r.gvrFromKind(kind, group, version)
+		if err != nil {
+			continue
+		}
+		seen[gvr] = struct{}{}
+	}
+
+	out := make([]schema.GroupVersionResource, 0, len(seen))
+	for gvr := range seen {
+		out = append(out, gvr)
+	}
+	return out
 }
 
 func (r *ReleaseReconciler) applyTrafficWeight(ctx context.Context, stage *paprikav1.Stage, release *paprikav1.Release, weight int, log logr.Logger, result *string) error {
