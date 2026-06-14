@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -55,6 +57,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
 // Reconcile handles Application reconciliation.
@@ -99,6 +102,10 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.reconcileApp(ctx, &app)
 }
 
+func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool {
+	return app.Spec.Source.Type == paprikav1.SourceTypeInline
+}
+
 func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -110,10 +117,12 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		return r.handleHealthyPhase(ctx, app)
 	}
 
-	if err := r.reconcileTemplate(ctx, app); err != nil {
-		log.Error(err, "Failed to reconcile Template")
-		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
-		return ctrl.Result{}, err
+	if !r.isInlineSource(app) {
+		if err := r.reconcileTemplate(ctx, app); err != nil {
+			log.Error(err, "Failed to reconcile Template")
+			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
+			return ctrl.Result{}, err
+		}
 	}
 
 	if ctrlResult, err := r.reconcileAppPipeline(ctx, app); ctrlResult != nil || err != nil {
@@ -402,6 +411,10 @@ func (r *ApplicationReconciler) resolveStageCanary(promotionStage *paprikav1.App
 }
 
 func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promotionStage *paprikav1.ApplicationPromotionStage, templateName, stageName string, stageCanary *paprikav1.CanaryConfig) *paprikav1.Stage {
+	templates := []string{templateName}
+	if r.isInlineSource(app) {
+		templates = []string{}
+	}
 	return &paprikav1.Stage{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      stageName,
@@ -415,7 +428,7 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 			Name:      promotionStage.Name,
 			Ring:      promotionStage.Ring,
 			Cluster:   promotionStage.Cluster,
-			Templates: []string{templateName},
+			Templates: templates,
 			Gates:     promotionStage.Gates,
 			Canary:    stageCanary,
 		},
@@ -446,6 +459,11 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	if len(app.Spec.Stages) == 0 {
 		return ctrl.Result{}, nil
+	}
+
+	if r.isInlineSource(app) && app.Status.ReleaseRef == "" {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for ApplyBundle to create release")
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
 	targetStage := &app.Spec.Stages[0]
@@ -640,6 +658,10 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 }
 
 func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
+	if r.isInlineSource(app) {
+		return "", "", nil
+	}
+
 	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 {
 		renderer := r.TemplateRenderer
 		if renderer == nil {
@@ -706,21 +728,9 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		return
 	}
 
-	// Get the rendered manifest from the template
-	templateName := app.Name + "-template"
-	var tmpl paprikav1.Template
-	if err := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); err != nil {
-		log.Error(err, "Failed to get template for diff")
-		return
-	}
-
-	renderer := r.TemplateRenderer
-	if renderer == nil {
-		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
-	}
-	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
+	manifests, err := r.desiredManifests(ctx, app)
 	if err != nil {
-		log.Error(err, "Failed to render template for diff")
+		log.Error(err, "Failed to get desired manifests for diff")
 		return
 	}
 
@@ -752,6 +762,54 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
 	app.Status.OutOfSync = result.OutOfSyncCount()
 	app.Status.PrunedResources = len(result.Deleted)
+}
+
+func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *paprikav1.Application) ([]byte, error) {
+	if r.isInlineSource(app) {
+		return r.loadInlineManifests(ctx, app)
+	}
+
+	templateName := app.Name + "-template"
+	var tmpl paprikav1.Template
+	if err := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); err != nil {
+		return nil, fmt.Errorf("get template for diff: %w", err)
+	}
+
+	renderer := r.TemplateRenderer
+	if renderer == nil {
+		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+	}
+	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("render template for diff: %w", err)
+	}
+	return manifests, nil
+}
+
+func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *paprikav1.Application) ([]byte, error) {
+	if app.Status.ReleaseRef == "" {
+		return nil, errors.New("no active release for inline source")
+	}
+	var release paprikav1.Release
+	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+		return nil, fmt.Errorf("get release for inline manifests: %w", err)
+	}
+	snapshotName := release.Status.RenderedManifestSnapshot
+	if snapshotName == "" && release.Spec.ManifestSource != nil {
+		snapshotName = release.Spec.ManifestSource.ConfigMapRef
+	}
+	if snapshotName == "" {
+		return nil, errors.New("release has no manifest snapshot")
+	}
+	var cm corev1.ConfigMap
+	if err := r.Get(ctx, types.NamespacedName{Name: snapshotName, Namespace: app.Namespace}, &cm); err != nil {
+		return nil, fmt.Errorf("get manifest snapshot: %w", err)
+	}
+	data, ok := cm.Data["manifests.yaml"]
+	if !ok {
+		return nil, fmt.Errorf("snapshot %q missing manifests.yaml", snapshotName)
+	}
+	return []byte(data), nil
 }
 
 func convertDiffToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.ResourceSync {
