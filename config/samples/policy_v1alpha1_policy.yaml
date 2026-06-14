@@ -1,0 +1,9 @@
+apiVersion: policy.paprika.io/v1alpha1
+kind: Policy
+metadata:
+  labels:
+    app.kubernetes.io/name: paprika
+    app.kubernetes.io/managed-by: kustomize
+  name: policy-sample
+spec:
+  # TODO(user): Add fields here

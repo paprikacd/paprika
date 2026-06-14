@@ -46,13 +46,13 @@ type PolicyMatch struct {
 
 // PolicySpec defines the desired state of Policy
 type PolicySpec struct {
-	Description   string         `json:"description,omitempty"`
+	Description string `json:"description,omitempty"`
 	// +kubebuilder:validation:Enum=critical;warning
-	Severity      PolicySeverity `json:"severity"`
+	Severity PolicySeverity `json:"severity"`
 	// +kubebuilder:validation:Enum=enforce;warn
-	DefaultAction PolicyAction   `json:"defaultAction,omitempty"`
-	Match         PolicyMatch    `json:"match"`
-	Expression    string         `json:"expression"`
+	DefaultAction PolicyAction `json:"defaultAction,omitempty"`
+	Match         PolicyMatch  `json:"match"`
+	Expression    string       `json:"expression"`
 }
 
 // PolicyStatus defines the observed state of Policy.

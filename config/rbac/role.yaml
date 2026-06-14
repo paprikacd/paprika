@@ -184,3 +184,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
+  verbs:
+  - get
+  - patch
+  - update
