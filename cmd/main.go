@@ -46,6 +46,7 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/health"
@@ -58,6 +59,7 @@ import (
 	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
+	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/reposerver"
@@ -81,6 +83,7 @@ func init() {
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -497,6 +500,13 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		setupLog.Error(err, "Failed to create controller", "controller", "core-repository")
 		os.Exit(1)
 	}
+	if err := (&policycontroller.PolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "policy-policy")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -668,6 +678,7 @@ func createAPIClient(config *rest.Config) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 	apiClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)

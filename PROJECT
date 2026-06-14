@@ -102,4 +102,12 @@ resources:
   kind: AppProject
   path: github.com/benebsworth/paprika/api/core/v1alpha1
   version: v1alpha1
+- api:
+    crdVersion: v1
+  controller: true
+  domain: paprika.io
+  group: policy
+  kind: Policy
+  path: github.com/benebsworth/paprika/api/policy/v1alpha1
+  version: v1alpha1
 version: "3"
