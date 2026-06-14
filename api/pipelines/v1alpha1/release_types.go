@@ -33,6 +33,22 @@ type FailureAction struct {
 	Notify []string `json:"notify,omitempty"`
 }
 
+// ManifestSource references a manifest snapshot ConfigMap owned by a Release.
+type ManifestSource struct {
+	// ConfigMapRef is the name of the snapshot ConfigMap.
+	// +optional
+	ConfigMapRef string `json:"configMapRef,omitempty"`
+}
+
+// ReleasePolicyResult records the outcome of a single policy evaluation for a release.
+type ReleasePolicyResult struct {
+	Name     string `json:"name"`
+	Severity string `json:"severity"`
+	Action   string `json:"action"`
+	Passed   bool   `json:"passed"`
+	Message  string `json:"message,omitempty"`
+}
+
 // PromotionEntry represents an entry in the promotion history.
 type PromotionEntry struct {
 	Stage            string      `json:"stage"`
@@ -50,6 +66,10 @@ type ReleaseSpec struct {
 	OnFailure *FailureAction `json:"onFailure,omitempty"`
 	// Feature flag overrides passed as Helm --set values
 	Parameters map[string]string `json:"parameters,omitempty"`
+	// ManifestSource references a pre-rendered inline manifest snapshot ConfigMap.
+	// When set, the controller skips template rendering and applies manifests from the ConfigMap.
+	// +optional
+	ManifestSource *ManifestSource `json:"manifestSource,omitempty"`
 }
 
 // ReleaseStatus represents the status of a release.
@@ -64,6 +84,9 @@ type ReleaseStatus struct {
 	PromotionHistory         []PromotionEntry   `json:"promotionHistory,omitempty"`
 	Conditions               []metav1.Condition `json:"conditions,omitempty"`
 	RenderedManifestSnapshot string             `json:"renderedManifestSnapshot,omitempty"`
+	// PolicyResults records the outcome of policy evaluation for this release.
+	// +optional
+	PolicyResults []ReleasePolicyResult `json:"policyResults,omitempty"`
 	// Current canary traffic weight (0-100)
 	CanaryWeight int `json:"canaryWeight,omitempty"`
 	// Index into the canary steps array

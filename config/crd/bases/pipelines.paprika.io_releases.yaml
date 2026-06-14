@@ -41,6 +41,15 @@ spec:
             properties:
               from:
                 type: string
+              manifestSource:
+                description: |-
+                  ManifestSource references a pre-rendered inline manifest snapshot ConfigMap.
+                  When set, the controller skips template rendering and applies manifests from the ConfigMap.
+                properties:
+                  configMapRef:
+                    description: ConfigMapRef is the name of the snapshot ConfigMap.
+                    type: string
+                type: object
               onFailure:
                 description: FailureAction defines the action to take on failure.
                 properties:
@@ -179,6 +188,30 @@ spec:
                 - RolledBack
                 - Superseded
                 type: string
+              policyResults:
+                description: PolicyResults records the outcome of policy evaluation
+                  for this release.
+                items:
+                  description: ReleasePolicyResult records the outcome of a single
+                    policy evaluation for a release.
+                  properties:
+                    action:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    passed:
+                      type: boolean
+                    severity:
+                      type: string
+                  required:
+                  - action
+                  - name
+                  - passed
+                  - severity
+                  type: object
+                type: array
               promotionHistory:
                 items:
                   description: PromotionEntry represents an entry in the promotion

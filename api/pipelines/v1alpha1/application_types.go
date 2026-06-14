@@ -55,16 +55,24 @@ const (
 
 // Source type constants.
 const (
-	SourceTypeGit  = "git"
-	SourceTypeHelm = "helm"
-	SourceTypeS3   = "s3"
-	SourceTypeOCI  = "oci"
+	SourceTypeGit    = "git"
+	SourceTypeHelm   = "helm"
+	SourceTypeS3     = "s3"
+	SourceTypeOCI    = "oci"
+	SourceTypeInline = "inline"
 )
+
+// InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
+type InlineSourceSpec struct {
+	// ConfigMapRef is the name of the ConfigMap containing the rendered manifest bundle.
+	// +optional
+	ConfigMapRef string `json:"configMapRef,omitempty"`
+}
 
 // ApplicationSource defines the source of an application.
 // ApplicationSource defines the source of an application.
 type ApplicationSource struct {
-	// +kubebuilder:validation:Enum=git;helm;s3;oci
+	// +kubebuilder:validation:Enum=git;helm;s3;oci;inline
 	Type string `json:"type"`
 	// RepoRef references a core.paprika.io Repository by name. When set, takes
 	// precedence over inline URL/credentials fields.
@@ -96,6 +104,9 @@ type ApplicationSource struct {
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
 	PollInterval string `json:"pollInterval,omitempty"`
+	// Inline references a manifest snapshot ConfigMap (for type=inline).
+	// +optional
+	Inline *InlineSourceSpec `json:"inline,omitempty"`
 }
 
 // ApplicationBuildStep defines a step in the build pipeline.

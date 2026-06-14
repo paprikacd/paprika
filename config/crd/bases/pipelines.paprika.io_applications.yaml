@@ -334,6 +334,15 @@ spec:
                   image:
                     description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
                     type: string
+                  inline:
+                    description: Inline references a manifest snapshot ConfigMap (for
+                      type=inline).
+                    properties:
+                      configMapRef:
+                        description: ConfigMapRef is the name of the ConfigMap containing
+                          the rendered manifest bundle.
+                        type: string
+                    type: object
                   insecure:
                     description: Insecure allows plain HTTP for OCI registries (type=oci)
                     type: boolean
@@ -371,6 +380,7 @@ spec:
                     - helm
                     - s3
                     - oci
+                    - inline
                     type: string
                 required:
                 - type
