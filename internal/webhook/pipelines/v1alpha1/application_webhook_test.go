@@ -111,3 +111,10 @@ func TestApplicationCustomDefaulter_Default(t *testing.T) {
 	app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: "app"}}
 	require.NoError(t, d.Default(context.Background(), app))
 }
+
+func TestApplicationCustomDefaulter_DefaultsProject(t *testing.T) {
+	d := &ApplicationCustomDefaulter{}
+	app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: "app"}}
+	require.NoError(t, d.Default(context.Background(), app))
+	assert.Equal(t, "default", app.Spec.Project)
+}

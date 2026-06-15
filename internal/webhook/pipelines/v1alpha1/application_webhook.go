@@ -51,6 +51,9 @@ type ApplicationCustomDefaulter struct{}
 
 func (d *ApplicationCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Application) error {
 	applicationlog.Info("Defaulting for Application", "name", obj.GetName())
+	if obj.Spec.Project == "" {
+		obj.Spec.Project = "default"
+	}
 	return nil
 }
 
