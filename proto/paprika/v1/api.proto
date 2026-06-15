@@ -216,6 +216,7 @@ message GatewayAPIRouterConfig {
 
 message ListPipelinesRequest {
   optional string namespace = 1;
+  string project = 2;
 }
 
 message ListPipelinesResponse {
@@ -224,6 +225,7 @@ message ListPipelinesResponse {
 
 message ListReleasesRequest {
   optional string namespace = 1;
+  string project = 2;
 }
 
 message ListReleasesResponse {
@@ -232,6 +234,7 @@ message ListReleasesResponse {
 
 message ListStagesRequest {
   optional string namespace = 1;
+  string project = 2;
 }
 
 message ListStagesResponse {
@@ -240,6 +243,7 @@ message ListStagesResponse {
 
 message ListApplicationsRequest {
   optional string namespace = 1;
+  string project = 2;
 }
 
 message ListApplicationsResponse {
@@ -321,6 +325,7 @@ message ApplyBundleRequest {
   repeated string skip_policies = 4;
   map<string, string> policy_overrides = 5;
   bool dry_run = 6;
+  string project = 7;
 }
 
 message ApplyBundleResponse {

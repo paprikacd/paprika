@@ -1889,6 +1889,7 @@ func (x *GatewayAPIRouterConfig) GetCanaryService() string {
 type ListPipelinesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1926,6 +1927,13 @@ func (*ListPipelinesRequest) Descriptor() ([]byte, []int) {
 func (x *ListPipelinesRequest) GetNamespace() string {
 	if x != nil && x.Namespace != nil {
 		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *ListPipelinesRequest) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -1977,6 +1985,7 @@ func (x *ListPipelinesResponse) GetPipelines() []*Pipeline {
 type ListReleasesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2014,6 +2023,13 @@ func (*ListReleasesRequest) Descriptor() ([]byte, []int) {
 func (x *ListReleasesRequest) GetNamespace() string {
 	if x != nil && x.Namespace != nil {
 		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *ListReleasesRequest) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -2065,6 +2081,7 @@ func (x *ListReleasesResponse) GetReleases() []*Release {
 type ListStagesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2102,6 +2119,13 @@ func (*ListStagesRequest) Descriptor() ([]byte, []int) {
 func (x *ListStagesRequest) GetNamespace() string {
 	if x != nil && x.Namespace != nil {
 		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *ListStagesRequest) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -2153,6 +2177,7 @@ func (x *ListStagesResponse) GetStages() []*Stage {
 type ListApplicationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2190,6 +2215,13 @@ func (*ListApplicationsRequest) Descriptor() ([]byte, []int) {
 func (x *ListApplicationsRequest) GetNamespace() string {
 	if x != nil && x.Namespace != nil {
 		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *ListApplicationsRequest) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -2946,6 +2978,7 @@ type ApplyBundleRequest struct {
 	SkipPolicies    []string               `protobuf:"bytes,4,rep,name=skip_policies,json=skipPolicies,proto3" json:"skip_policies,omitempty"`
 	PolicyOverrides map[string]string      `protobuf:"bytes,5,rep,name=policy_overrides,json=policyOverrides,proto3" json:"policy_overrides,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	DryRun          bool                   `protobuf:"varint,6,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	Project         string                 `protobuf:"bytes,7,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -3020,6 +3053,13 @@ func (x *ApplyBundleRequest) GetDryRun() bool {
 		return x.DryRun
 	}
 	return false
+}
+
+func (x *ApplyBundleRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type ApplyBundleResponse struct {
@@ -3286,27 +3326,31 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\n" +
 	"http_route\x18\x01 \x01(\tR\thttpRoute\x12%\n" +
 	"\x0estable_service\x18\x02 \x01(\tR\rstableService\x12%\n" +
-	"\x0ecanary_service\x18\x03 \x01(\tR\rcanaryService\"G\n" +
+	"\x0ecanary_service\x18\x03 \x01(\tR\rcanaryService\"a\n" +
 	"\x14ListPipelinesRequest\x12!\n" +
-	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01B\f\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
 	"\n" +
 	"_namespace\"K\n" +
 	"\x15ListPipelinesResponse\x122\n" +
-	"\tpipelines\x18\x01 \x03(\v2\x14.paprika.v1.PipelineR\tpipelines\"F\n" +
+	"\tpipelines\x18\x01 \x03(\v2\x14.paprika.v1.PipelineR\tpipelines\"`\n" +
 	"\x13ListReleasesRequest\x12!\n" +
-	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01B\f\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
 	"\n" +
 	"_namespace\"G\n" +
 	"\x14ListReleasesResponse\x12/\n" +
-	"\breleases\x18\x01 \x03(\v2\x13.paprika.v1.ReleaseR\breleases\"D\n" +
+	"\breleases\x18\x01 \x03(\v2\x13.paprika.v1.ReleaseR\breleases\"^\n" +
 	"\x11ListStagesRequest\x12!\n" +
-	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01B\f\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
 	"\n" +
 	"_namespace\"?\n" +
 	"\x12ListStagesResponse\x12)\n" +
-	"\x06stages\x18\x01 \x03(\v2\x11.paprika.v1.StageR\x06stages\"J\n" +
+	"\x06stages\x18\x01 \x03(\v2\x11.paprika.v1.StageR\x06stages\"d\n" +
 	"\x17ListApplicationsRequest\x12!\n" +
-	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01B\f\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
 	"\n" +
 	"_namespace\"W\n" +
 	"\x18ListApplicationsResponse\x12;\n" +
@@ -3356,14 +3400,15 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\vvalues_json\x18\x05 \x01(\fR\n" +
 	"valuesJson\".\n" +
 	"\x0eRenderResponse\x12\x1c\n" +
-	"\tmanifests\x18\x01 \x01(\fR\tmanifests\"\xc6\x02\n" +
+	"\tmanifests\x18\x01 \x01(\fR\tmanifests\"\xe0\x02\n" +
 	"\x12ApplyBundleRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
 	"\tmanifests\x18\x03 \x01(\fR\tmanifests\x12#\n" +
 	"\rskip_policies\x18\x04 \x03(\tR\fskipPolicies\x12^\n" +
 	"\x10policy_overrides\x18\x05 \x03(\v23.paprika.v1.ApplyBundleRequest.PolicyOverridesEntryR\x0fpolicyOverrides\x12\x17\n" +
-	"\adry_run\x18\x06 \x01(\bR\x06dryRun\x1aB\n" +
+	"\adry_run\x18\x06 \x01(\bR\x06dryRun\x12\x18\n" +
+	"\aproject\x18\a \x01(\tR\aproject\x1aB\n" +
 	"\x14PolicyOverridesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfd\x01\n" +

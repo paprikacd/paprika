@@ -347,6 +347,7 @@ export const ListPipelinesRequest = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ListPipelinesRequest",
   () => [
     { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -367,6 +368,7 @@ export const ListReleasesRequest = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ListReleasesRequest",
   () => [
     { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -387,6 +389,7 @@ export const ListStagesRequest = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ListStagesRequest",
   () => [
     { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -407,6 +410,7 @@ export const ListApplicationsRequest = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ListApplicationsRequest",
   () => [
     { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -578,6 +582,7 @@ export const ApplyBundleRequest = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "skip_policies", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
     { no: 5, name: "policy_overrides", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
     { no: 6, name: "dry_run", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 7, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
