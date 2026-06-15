@@ -36,9 +36,8 @@ import (
 )
 
 const (
-	defaultRequeue     = 5 * time.Second
-	maxReleaseHistory  = 10
-	defaultProjectName = "default"
+	defaultRequeue    = 5 * time.Second
+	maxReleaseHistory = 10
 )
 
 // ApplicationReconciler reconciles Application resources.
@@ -162,7 +161,38 @@ func (r *ApplicationReconciler) reconcileAppAfterStages(ctx context.Context, app
 	if err != nil || blocked {
 		return ctrl.Result{}, err
 	}
-	return r.reconcileReleaseFlow(ctx, app)
+	result, err := r.reconcileReleaseFlow(ctx, app)
+	if err != nil {
+		r.mirrorReleaseGovernanceFailure(ctx, app)
+		return ctrl.Result{}, err
+	}
+	return result, nil
+}
+
+func (r *ApplicationReconciler) mirrorReleaseGovernanceFailure(ctx context.Context, app *paprikav1.Application) {
+	log := log.FromContext(ctx)
+	if app.Status.ReleaseRef == "" {
+		return
+	}
+	var release paprikav1.Release
+	if err := r.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}, &release); err != nil {
+		log.Error(err, "Failed to fetch Release for governance failure mirror", "app", app.Name, "release", app.Status.ReleaseRef)
+		return
+	}
+	cond := meta.FindStatusCondition(release.Status.Conditions, governanceCheckedCondition)
+	if cond == nil || cond.Status != metav1.ConditionFalse {
+		return
+	}
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:               governanceCheckedCondition,
+		Status:             metav1.ConditionFalse,
+		Reason:             governanceViolationReason,
+		Message:            cond.Message,
+		LastTransitionTime: metav1.Now(),
+	})
+	if err := r.Status().Update(ctx, app); err != nil {
+		log.Error(err, "Failed to mirror governance failure to Application", "app", app.Name, "release", release.Name)
+	}
 }
 
 func (r *ApplicationReconciler) reconcileGovernance(ctx context.Context, app *paprikav1.Application, projectName string) (bool, error) {
@@ -206,10 +236,10 @@ func (r *ApplicationReconciler) failGovernance(ctx context.Context, app *paprika
 }
 
 func (r *ApplicationReconciler) blockGovernance(ctx context.Context, app *paprikav1.Application, msg string) (bool, error) {
-	setGovernanceCondition(app, metav1.ConditionFalse, "ProjectViolation", msg)
-	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "GovernanceViolation", msg)
+	setApplicationGovernanceCondition(app, metav1.ConditionFalse, projectViolationReason, msg)
+	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, governanceViolationReason, msg)
 	if r.EventRecorder != nil {
-		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, "ProjectViolation", "%s", msg)
+		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, projectViolationReason, "%s", msg)
 	}
 	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
 		return false, fmt.Errorf("patch application status after governance violation: %w", patchErr)
@@ -218,7 +248,7 @@ func (r *ApplicationReconciler) blockGovernance(ctx context.Context, app *paprik
 }
 
 func (r *ApplicationReconciler) warnGovernance(_ context.Context, app *paprikav1.Application, msg string) (bool, error) {
-	setGovernanceCondition(app, metav1.ConditionTrue, "PassedWithWarnings", "Governance checks passed with warnings: "+msg)
+	setApplicationGovernanceCondition(app, metav1.ConditionTrue, passedWithWarningsReason, "Governance checks passed with warnings: "+msg)
 	if r.EventRecorder != nil {
 		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, "GovernanceWarning", "%s", msg)
 	}
@@ -227,14 +257,14 @@ func (r *ApplicationReconciler) warnGovernance(_ context.Context, app *paprikav1
 }
 
 func (r *ApplicationReconciler) passGovernance(_ context.Context, app *paprikav1.Application) (bool, error) {
-	setGovernanceCondition(app, metav1.ConditionTrue, "Passed", "Governance checks passed")
+	setApplicationGovernanceCondition(app, metav1.ConditionTrue, passedReason, "Governance checks passed")
 	// Status is persisted by reconcileReleaseFlow.
 	return false, nil
 }
 
-func setGovernanceCondition(app *paprikav1.Application, status metav1.ConditionStatus, reason, message string) {
+func setApplicationGovernanceCondition(app *paprikav1.Application, status metav1.ConditionStatus, reason, message string) {
 	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-		Type:               "GovernanceChecked",
+		Type:               governanceCheckedCondition,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
