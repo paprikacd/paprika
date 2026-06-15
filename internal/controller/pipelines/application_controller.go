@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,6 +28,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/health"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -33,8 +36,9 @@ import (
 )
 
 const (
-	defaultRequeue    = 5 * time.Second
-	maxReleaseHistory = 10
+	defaultRequeue     = 5 * time.Second
+	maxReleaseHistory  = 10
+	defaultProjectName = "default"
 )
 
 // ApplicationReconciler reconciles Application resources.
@@ -52,6 +56,8 @@ type ApplicationReconciler struct {
 	TemplateRenderer engine.TemplateRenderer
 	ShardFilter      *sharding.Filter
 	RateLimiter      *ratelimit.ControllerRateLimit
+	EventRecorder    record.EventRecorder
+	ProjectValidator *governance.ProjectValidator
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -62,6 +68,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
 // Reconcile handles Application reconciliation.
@@ -113,6 +120,11 @@ func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool 
 func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
+	projectName := app.Spec.Project
+	if projectName == "" {
+		projectName = defaultProjectName
+	}
+
 	if _, ok := app.Annotations["paprika.io/resync"]; ok {
 		return r.handleResync(ctx, app)
 	}
@@ -142,7 +154,92 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		return ctrl.Result{}, err
 	}
 
+	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+func (r *ApplicationReconciler) reconcileAppAfterStages(ctx context.Context, app *paprikav1.Application, projectName string) (ctrl.Result, error) {
+	blocked, err := r.reconcileGovernance(ctx, app, projectName)
+	if err != nil || blocked {
+		return ctrl.Result{}, err
+	}
 	return r.reconcileReleaseFlow(ctx, app)
+}
+
+func (r *ApplicationReconciler) reconcileGovernance(ctx context.Context, app *paprikav1.Application, projectName string) (bool, error) {
+	log := log.FromContext(ctx)
+
+	if r.ProjectValidator == nil {
+		return false, nil
+	}
+
+	project, err := r.ProjectValidator.ResolveProject(ctx, app.Namespace, projectName)
+	if err != nil {
+		log.Error(err, "Failed to resolve AppProject", "app", app.Name, "namespace", app.Namespace, "project", projectName)
+		return r.failGovernance(ctx, app, "ProjectResolutionFailed", err)
+	}
+
+	violations, err := r.ProjectValidator.Validate(ctx, app, nil, project)
+	if err != nil {
+		log.Error(err, "Failed to validate project boundaries", "app", app.Name, "namespace", app.Namespace, "project", projectName)
+		return r.failGovernance(ctx, app, "ProjectValidationError", err)
+	}
+
+	if blocking := violations.Blocking(); len(blocking) > 0 {
+		return r.blockGovernance(ctx, app, blocking[0].Message)
+	}
+	if warnings := violations.Warnings(); len(warnings) > 0 {
+		return r.warnGovernance(ctx, app, warnings[0].Message)
+	}
+	return r.passGovernance(ctx, app)
+}
+
+func (r *ApplicationReconciler) failGovernance(ctx context.Context, app *paprikav1.Application, reason string, err error) (bool, error) {
+	if err == nil {
+		return false, nil
+	}
+	// updatePhase mutates app.Status in memory; patchAppStatus persists it.
+	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, reason, err.Error())
+	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+		return false, fmt.Errorf("patch application status after governance failure %s: %w", reason, patchErr)
+	}
+	return false, err
+}
+
+func (r *ApplicationReconciler) blockGovernance(ctx context.Context, app *paprikav1.Application, msg string) (bool, error) {
+	setGovernanceCondition(app, metav1.ConditionFalse, "ProjectViolation", msg)
+	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "GovernanceViolation", msg)
+	if r.EventRecorder != nil {
+		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, "ProjectViolation", "%s", msg)
+	}
+	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+		return false, fmt.Errorf("patch application status after governance violation: %w", patchErr)
+	}
+	return true, nil
+}
+
+func (r *ApplicationReconciler) warnGovernance(_ context.Context, app *paprikav1.Application, msg string) (bool, error) {
+	setGovernanceCondition(app, metav1.ConditionTrue, "PassedWithWarnings", "Governance checks passed with warnings: "+msg)
+	if r.EventRecorder != nil {
+		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, "GovernanceWarning", "%s", msg)
+	}
+	// Status is persisted by reconcileReleaseFlow.
+	return false, nil
+}
+
+func (r *ApplicationReconciler) passGovernance(_ context.Context, app *paprikav1.Application) (bool, error) {
+	setGovernanceCondition(app, metav1.ConditionTrue, "Passed", "Governance checks passed")
+	// Status is persisted by reconcileReleaseFlow.
+	return false, nil
+}
+
+func setGovernanceCondition(app *paprikav1.Application, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:               "GovernanceChecked",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	})
 }
 
 func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
