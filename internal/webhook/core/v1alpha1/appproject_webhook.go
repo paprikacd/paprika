@@ -82,26 +82,10 @@ func (v *AppProjectCustomValidator) validateAppProject(project *corev1alpha1.App
 		allErrs = append(allErrs, err)
 	}
 
-	for i, d := range project.Spec.Destinations {
-		if d.Server == "" && d.Namespace == "" && d.Name == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("destinations").Index(i), "at least one of server, namespace, or name is required"))
-		}
-	}
-	for i, k := range project.Spec.Kinds {
-		if k == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("kinds").Index(i), "kind must not be empty"))
-		}
-	}
-	for i, k := range project.Spec.ClusterResourceWhitelist {
-		if k == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("clusterResourceWhitelist").Index(i), "kind must not be empty"))
-		}
-	}
-	for i, k := range project.Spec.ClusterResourceBlacklist {
-		if k == "" {
-			allErrs = append(allErrs, field.Required(specPath.Child("clusterResourceBlacklist").Index(i), "kind must not be empty"))
-		}
-	}
+	allErrs = append(allErrs, validateDestinations(project.Spec.Destinations, specPath.Child("destinations"))...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.Kinds, specPath.Child("kinds"), "kind")...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.ClusterResourceWhitelist, specPath.Child("clusterResourceWhitelist"), "kind")...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.ClusterResourceBlacklist, specPath.Child("clusterResourceBlacklist"), "kind")...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -111,6 +95,26 @@ func (v *AppProjectCustomValidator) validateAppProject(project *corev1alpha1.App
 		project.Name,
 		allErrs,
 	)
+}
+
+func validateDestinations(destinations []corev1alpha1.AppProjectDestination, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	for i, d := range destinations {
+		if d.Server == "" && d.Namespace == "" && d.Name == "" {
+			errs = append(errs, field.Required(path.Index(i), "at least one of server, namespace, or name is required"))
+		}
+	}
+	return errs
+}
+
+func validateNoEmptyItems(items []string, path *field.Path, itemName string) field.ErrorList {
+	var errs field.ErrorList
+	for i, item := range items {
+		if item == "" {
+			errs = append(errs, field.Required(path.Index(i), itemName+" must not be empty"))
+		}
+	}
+	return errs
 }
 
 func validateNoOverlap(allowed, denied []string, allowedPath, deniedPath *field.Path) *field.Error {

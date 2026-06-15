@@ -97,46 +97,76 @@ func (v *PolicyCustomValidator) ValidateDelete(_ context.Context, p *policyv1alp
 }
 
 func validatePolicy(p *policyv1alpha1.Policy) error {
-	allErrs := field.ErrorList{}
+	allErrs := make(field.ErrorList, 0, 4)
 	path := field.NewPath("spec")
-	if p.Spec.Severity == "" {
-		allErrs = append(allErrs, field.Required(path.Child("severity"), ""))
-	} else if p.Spec.Severity != policyv1alpha1.PolicySeverityCritical && p.Spec.Severity != policyv1alpha1.PolicySeverityWarning {
-		allErrs = append(allErrs, field.NotSupported(path.Child("severity"), p.Spec.Severity, []string{
-			string(policyv1alpha1.PolicySeverityCritical),
-			string(policyv1alpha1.PolicySeverityWarning),
-		}))
-	}
-	if p.Spec.Expression == "" {
-		allErrs = append(allErrs, field.Required(path.Child("expression"), ""))
-	} else if err := validateCELExpression(p.Spec.Expression); err != nil {
-		allErrs = append(allErrs, field.Invalid(path.Child("expression"), p.Spec.Expression, err.Error()))
-	}
-	if p.Spec.DefaultAction != "" &&
-		p.Spec.DefaultAction != policyv1alpha1.PolicyActionEnforce &&
-		p.Spec.DefaultAction != policyv1alpha1.PolicyActionWarn {
-		allErrs = append(allErrs, field.NotSupported(path.Child("defaultAction"), p.Spec.DefaultAction, []string{
-			string(policyv1alpha1.PolicyActionEnforce),
-			string(policyv1alpha1.PolicyActionWarn),
-		}))
-	}
-	seen := map[string]bool{}
-	for i, pr := range p.Spec.Projects {
-		if pr == "" {
-			allErrs = append(allErrs, field.Required(path.Child("projects").Index(i), "project must not be empty"))
-			continue
-		}
-		// "*" is accepted per the design spec and matches all projects.
-		if seen[pr] {
-			allErrs = append(allErrs, field.Duplicate(path.Child("projects").Index(i), pr))
-			continue
-		}
-		seen[pr] = true
-	}
+
+	allErrs = append(allErrs, validatePolicySeverity(p, path)...)
+	allErrs = append(allErrs, validatePolicyExpression(p, path)...)
+	allErrs = append(allErrs, validatePolicyDefaultAction(p, path)...)
+	allErrs = append(allErrs, validatePolicyProjects(p, path)...)
+
 	if len(allErrs) == 0 {
 		return nil
 	}
 	return allErrs.ToAggregate()
+}
+
+func validatePolicySeverity(p *policyv1alpha1.Policy, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if p.Spec.Severity == "" {
+		errs = append(errs, field.Required(path.Child("severity"), ""))
+		return errs
+	}
+	if p.Spec.Severity != policyv1alpha1.PolicySeverityCritical && p.Spec.Severity != policyv1alpha1.PolicySeverityWarning {
+		errs = append(errs, field.NotSupported(path.Child("severity"), p.Spec.Severity, []string{
+			string(policyv1alpha1.PolicySeverityCritical),
+			string(policyv1alpha1.PolicySeverityWarning),
+		}))
+	}
+	return errs
+}
+
+func validatePolicyExpression(p *policyv1alpha1.Policy, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if p.Spec.Expression == "" {
+		errs = append(errs, field.Required(path.Child("expression"), ""))
+		return errs
+	}
+	if err := validateCELExpression(p.Spec.Expression); err != nil {
+		errs = append(errs, field.Invalid(path.Child("expression"), p.Spec.Expression, err.Error()))
+	}
+	return errs
+}
+
+func validatePolicyDefaultAction(p *policyv1alpha1.Policy, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	if p.Spec.DefaultAction != "" &&
+		p.Spec.DefaultAction != policyv1alpha1.PolicyActionEnforce &&
+		p.Spec.DefaultAction != policyv1alpha1.PolicyActionWarn {
+		errs = append(errs, field.NotSupported(path.Child("defaultAction"), p.Spec.DefaultAction, []string{
+			string(policyv1alpha1.PolicyActionEnforce),
+			string(policyv1alpha1.PolicyActionWarn),
+		}))
+	}
+	return errs
+}
+
+func validatePolicyProjects(p *policyv1alpha1.Policy, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	seen := map[string]bool{}
+	for i, pr := range p.Spec.Projects {
+		if pr == "" {
+			errs = append(errs, field.Required(path.Child("projects").Index(i), "project must not be empty"))
+			continue
+		}
+		// "*" is accepted per the design spec and matches all projects.
+		if seen[pr] {
+			errs = append(errs, field.Duplicate(path.Child("projects").Index(i), pr))
+			continue
+		}
+		seen[pr] = true
+	}
+	return errs
 }
 
 func validateCELExpression(expr string) error {

@@ -4,6 +4,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +32,7 @@ func EnsureDefaultAppProject(ctx context.Context, c client.Client, namespace str
 		},
 	}
 	if err := c.Create(ctx, project); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
+		return fmt.Errorf("create default AppProject: %w", err)
 	}
 	return nil
 }

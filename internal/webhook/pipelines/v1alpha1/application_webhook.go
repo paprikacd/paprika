@@ -92,18 +92,7 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("stages"), "At least one stage is required"))
 	}
 
-	if app.Spec.Project == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("project"), "project is required"))
-	} else if v.validator != nil {
-		project, err := v.validator.ResolveProject(ctx, app.Namespace, app.Spec.Project)
-		if err != nil {
-			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("project"), err.Error()))
-		} else if violations, err := v.validator.Validate(ctx, app, nil, project); err != nil {
-			allErrs = append(allErrs, field.InternalError(field.NewPath("spec").Child("project"), err))
-		} else if blocking := violations.Blocking(); len(blocking) > 0 {
-			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("project"), blocking[0].Message))
-		}
-	}
+	allErrs = append(allErrs, v.validateProject(ctx, app)...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -113,4 +102,30 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 		app.Name,
 		allErrs,
 	)
+}
+
+func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *pipelinesv1alpha1.Application) field.ErrorList {
+	var errs field.ErrorList
+	if app.Spec.Project == "" {
+		errs = append(errs, field.Required(field.NewPath("spec").Child("project"), "project is required"))
+		return errs
+	}
+	if v.validator == nil {
+		return errs
+	}
+
+	project, err := v.validator.ResolveProject(ctx, app.Namespace, app.Spec.Project)
+	if err != nil {
+		errs = append(errs, field.Forbidden(field.NewPath("spec").Child("project"), err.Error()))
+		return errs
+	}
+	violations, err := v.validator.Validate(ctx, app, nil, project)
+	if err != nil {
+		errs = append(errs, field.InternalError(field.NewPath("spec").Child("project"), err))
+		return errs
+	}
+	if blocking := violations.Blocking(); len(blocking) > 0 {
+		errs = append(errs, field.Forbidden(field.NewPath("spec").Child("project"), blocking[0].Message))
+	}
+	return errs
 }
