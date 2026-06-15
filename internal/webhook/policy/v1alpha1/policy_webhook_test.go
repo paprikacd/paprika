@@ -20,6 +20,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 )
 
@@ -129,6 +133,22 @@ func TestValidateUpdate(t *testing.T) {
 	if _, err := validator.ValidateUpdate(ctx, policy, policy); err != nil {
 		t.Fatalf("expected valid update: %v", err)
 	}
+}
+
+func TestPolicyValidator_RejectsDuplicateProjects(t *testing.T) {
+	v := &PolicyCustomValidator{}
+	p := &policyv1alpha1.Policy{
+		ObjectMeta: metav1.ObjectMeta{Name: "bad"},
+		Spec: policyv1alpha1.PolicySpec{
+			Severity:      policyv1alpha1.PolicySeverityCritical,
+			DefaultAction: policyv1alpha1.PolicyActionEnforce,
+			Expression:    "true",
+			Projects:      []string{"payments", "payments"},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Duplicate")
 }
 
 func TestValidateDelete(t *testing.T) {

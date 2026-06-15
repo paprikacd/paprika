@@ -120,6 +120,19 @@ func validatePolicy(p *policyv1alpha1.Policy) error {
 			string(policyv1alpha1.PolicyActionWarn),
 		}))
 	}
+	seen := map[string]bool{}
+	for i, pr := range p.Spec.Projects {
+		if pr == "" {
+			allErrs = append(allErrs, field.Required(path.Child("projects").Index(i), "project must not be empty"))
+			continue
+		}
+		// "*" is accepted per the design spec and matches all projects.
+		if seen[pr] {
+			allErrs = append(allErrs, field.Duplicate(path.Child("projects").Index(i), pr))
+			continue
+		}
+		seen[pr] = true
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}
