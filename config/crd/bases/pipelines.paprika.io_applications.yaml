@@ -305,6 +305,7 @@ spec:
                 description: Parameters are Helm value overrides passed to all releases.
                 type: object
               project:
+                default: default
                 description: Project references the AppProject that governs this application.
                 type: string
               source:

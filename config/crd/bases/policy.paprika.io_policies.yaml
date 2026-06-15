@@ -119,6 +119,10 @@ spec:
                       type: string
                     type: array
                 type: object
+              projects:
+                items:
+                  type: string
+                type: array
               severity:
                 enum:
                 - critical
