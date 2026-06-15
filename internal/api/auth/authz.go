@@ -29,7 +29,7 @@ const (
 
 // Authorizer decides if a principal can perform an action on a resource.
 type Authorizer interface {
-	Authorize(ctx context.Context, p *Principal, action Action, resource Resource, namespace string) error
+	Authorize(ctx context.Context, p *Principal, action Action, resource Resource, namespace, project string) error
 }
 
 // RBACRule defines a single RBAC permission.
@@ -42,6 +42,8 @@ type RBACRule struct {
 	Resources []string
 	// Namespaces allowed. Use * for all.
 	Namespaces []string
+	// Projects allowed. Use * for all. Empty means apply regardless of project.
+	Projects []string `json:"projects,omitempty"`
 }
 
 // RBACAuthorizer implements a simple RBAC authorizer.
@@ -61,12 +63,12 @@ func NewRBACAuthorizer(rules []RBACRule) *RBACAuthorizer {
 type AllowAllAuthorizer struct{}
 
 // Authorize always returns nil.
-func (a *AllowAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action, _ Resource, _ string) error {
+func (a *AllowAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action, _ Resource, _, _ string) error {
 	return nil
 }
 
 // Authorize checks if the principal can perform the action.
-func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Action, resource Resource, namespace string) error {
+func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Action, resource Resource, namespace, project string) error {
 	for i := range r.rules {
 		rule := &r.rules[i]
 		if !r.matchesSubjects(rule, p) {
@@ -81,9 +83,12 @@ func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Actio
 		if !r.matchesNamespaces(rule, namespace) {
 			continue
 		}
+		if !r.matchesProjects(rule, project) {
+			continue
+		}
 		return nil
 	}
-	return fmt.Errorf("%w: %s cannot %s %s/%s", ErrUnauthorized, p.Subject, action, resource, namespace)
+	return fmt.Errorf("%w: %s cannot %s %s/%s (project=%s)", ErrUnauthorized, p.Subject, action, resource, namespace, project)
 }
 
 func (r *RBACAuthorizer) matchesSubjects(rule *RBACRule, p *Principal) bool {
@@ -131,6 +136,18 @@ func (r *RBACAuthorizer) matchesResources(rule *RBACRule, resource Resource) boo
 func (r *RBACAuthorizer) matchesNamespaces(rule *RBACRule, namespace string) bool {
 	for _, ns := range rule.Namespaces {
 		if ns == "*" || ns == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *RBACAuthorizer) matchesProjects(rule *RBACRule, project string) bool {
+	if len(rule.Projects) == 0 || project == "" {
+		return true
+	}
+	for _, p := range rule.Projects {
+		if p == "*" || p == project {
 			return true
 		}
 	}

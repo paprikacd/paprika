@@ -114,20 +114,32 @@ func TestRBACAuthorizer(t *testing.T) {
 	authz := NewRBACAuthorizer(rules)
 
 	admin := &Principal{Subject: "admin"}
-	require.NoError(t, authz.Authorize(context.Background(), admin, ActionWrite, ResourceApplications, "prod"))
+	require.NoError(t, authz.Authorize(context.Background(), admin, ActionWrite, ResourceApplications, "prod", ""))
 
 	reader := &Principal{Subject: "bob", Groups: []string{"readers"}}
-	require.NoError(t, authz.Authorize(context.Background(), reader, ActionRead, ResourceApplications, testNS))
-	assert.Error(t, authz.Authorize(context.Background(), reader, ActionWrite, ResourceApplications, testNS))
-	assert.Error(t, authz.Authorize(context.Background(), reader, ActionRead, ResourceApplications, "prod"))
+	require.NoError(t, authz.Authorize(context.Background(), reader, ActionRead, ResourceApplications, testNS, ""))
+	assert.Error(t, authz.Authorize(context.Background(), reader, ActionWrite, ResourceApplications, testNS, ""))
+	assert.Error(t, authz.Authorize(context.Background(), reader, ActionRead, ResourceApplications, "prod", ""))
 
 	unknown := &Principal{Subject: "eve"}
-	assert.Error(t, authz.Authorize(context.Background(), unknown, ActionRead, ResourceApplications, testNS))
+	assert.Error(t, authz.Authorize(context.Background(), unknown, ActionRead, ResourceApplications, testNS, ""))
+}
+
+func TestRBACAuthorizer_Projects(t *testing.T) {
+	authz := NewRBACAuthorizer([]RBACRule{{
+		Subjects:   []string{"alice"},
+		Actions:    []string{"read"},
+		Resources:  []string{"applications"},
+		Namespaces: []string{"*"},
+		Projects:   []string{"payments"},
+	}})
+	require.NoError(t, authz.Authorize(context.Background(), &Principal{Subject: "alice"}, ActionRead, ResourceApplications, "", "payments"))
+	assert.Error(t, authz.Authorize(context.Background(), &Principal{Subject: "alice"}, ActionRead, ResourceApplications, "", "other"))
 }
 
 func TestAllowAllAuthorizer(t *testing.T) {
 	authz := &AllowAllAuthorizer{}
-	assert.NoError(t, authz.Authorize(context.Background(), &Principal{}, ActionAdmin, ResourceApplications, "*"))
+	assert.NoError(t, authz.Authorize(context.Background(), &Principal{}, ActionAdmin, ResourceApplications, "*", ""))
 }
 
 func TestClassify(t *testing.T) {

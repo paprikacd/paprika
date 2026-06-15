@@ -52,7 +52,7 @@ func Interceptor(cfg Config) (connect.UnaryInterceptorFunc, error) {
 			action, resource := classify(req.Spec().Procedure)
 			namespace := namespaceFromRequest(req)
 
-			if err := authz.Authorize(ctx, principal, action, resource, namespace); err != nil {
+			if err := authz.Authorize(ctx, principal, action, resource, namespace, ""); err != nil {
 				return nil, connect.NewError(connect.CodePermissionDenied, err)
 			}
 
