@@ -7,6 +7,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 // ProjectEnforcer validates resource operations against AppProject constraints.
@@ -31,64 +32,22 @@ func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace
 		return fmt.Errorf("get appproject %s/%s: %w", appNamespace, appProject, err)
 	}
 
-	if err := checkList(project.Spec.SourceRepos, sourceRepo, globMatch, "source repo %q not allowed by project %s", sourceRepo, appProject); err != nil {
+	if err := governance.CheckList(project.Spec.SourceRepos, sourceRepo, governance.GlobMatch, "source repo %q not allowed by project %s", sourceRepo, appProject); err != nil {
 		return err
 	}
-	if err := checkDenyList(project.Spec.SourceReposDeny, sourceRepo, globMatch, "source repo %q denied by project %s", sourceRepo, appProject); err != nil {
+	if err := governance.CheckDenyList(project.Spec.SourceReposDeny, sourceRepo, governance.GlobMatch, "source repo %q denied by project %s", sourceRepo, appProject); err != nil {
 		return err
 	}
 	if repoRef != "" {
-		if err := checkList(project.Spec.Repositories, repoRef, stringEqual, "repository %q not allowed by project %s", repoRef, appProject); err != nil {
+		if err := governance.CheckList(project.Spec.Repositories, repoRef, governance.StringEqual, "repository %q not allowed by project %s", repoRef, appProject); err != nil {
 			return err
 		}
 	}
 	if kind == "" {
 		return nil
 	}
-	if err := checkList(project.Spec.Kinds, kind, kindMatch, "kind %q not allowed by project %s", kind, appProject); err != nil {
+	if err := governance.CheckList(project.Spec.Kinds, kind, governance.GlobMatch, "kind %q not allowed by project %s", kind, appProject); err != nil {
 		return err
 	}
-	return checkDenyList(project.Spec.KindsDeny, kind, kindMatch, "kind %q denied by project %s", kind, appProject)
-}
-
-func kindMatch(a, b string) bool {
-	return a == b || a == "*"
-}
-
-func stringEqual(a, b string) bool {
-	return a == b
-}
-
-func checkList(items []string, value string, match func(string, string) bool, format string, args ...any) error {
-	if len(items) == 0 {
-		return nil
-	}
-	for _, item := range items {
-		if match(item, value) {
-			return nil
-		}
-	}
-	return fmt.Errorf(format, args...)
-}
-
-func checkDenyList(items []string, value string, match func(string, string) bool, format string, args ...any) error {
-	for _, item := range items {
-		if match(item, value) {
-			return fmt.Errorf(format, args...)
-		}
-	}
-	return nil
-}
-
-func globMatch(pattern, s string) bool {
-	if pattern == "" {
-		return s == ""
-	}
-	if pattern == "*" {
-		return true
-	}
-	if pattern != "" && pattern[len(pattern)-1] == '*' {
-		return len(s) >= len(pattern)-1 && s[:len(pattern)-1] == pattern[:len(pattern)-1]
-	}
-	return pattern == s
+	return governance.CheckDenyList(project.Spec.KindsDeny, kind, governance.GlobMatch, "kind %q denied by project %s", kind, appProject)
 }
