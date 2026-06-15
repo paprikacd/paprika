@@ -82,6 +82,27 @@ func (v *AppProjectCustomValidator) validateAppProject(project *corev1alpha1.App
 		allErrs = append(allErrs, err)
 	}
 
+	for i, d := range project.Spec.Destinations {
+		if d.Server == "" && d.Namespace == "" && d.Name == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("destinations").Index(i), "at least one of server, namespace, or name is required"))
+		}
+	}
+	for i, k := range project.Spec.Kinds {
+		if k == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("kinds").Index(i), "kind must not be empty"))
+		}
+	}
+	for i, k := range project.Spec.ClusterResourceWhitelist {
+		if k == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("clusterResourceWhitelist").Index(i), "kind must not be empty"))
+		}
+	}
+	for i, k := range project.Spec.ClusterResourceBlacklist {
+		if k == "" {
+			allErrs = append(allErrs, field.Required(specPath.Child("clusterResourceBlacklist").Index(i), "kind must not be empty"))
+		}
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}
