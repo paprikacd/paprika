@@ -1,18 +1,19 @@
 package governance
 
+// +kubebuilder:rbac:groups=policy.paprika.io,resources=policies,verbs=get;list;watch
+
 import (
 	"context"
 	"fmt"
 
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/policy"
 )
 
-// PolicyEvaluator evaluates Policy CEL rules against manifests for a given project.
 type PolicyEvaluator struct {
 	client client.Reader
 }
