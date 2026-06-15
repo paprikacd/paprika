@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -56,6 +57,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/controller/bootstrap"
 	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
@@ -200,6 +202,7 @@ func registerFlags() cliConfig {
 	return cfg
 }
 
+//nolint:cyclop // operator setup wiring
 func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCertName, webhookCertKey,
 	metricsCertPath, metricsCertName, metricsCertKey, operatorNamespace string,
 	enableLeaderElection, secureMetrics, enableHTTP2 bool,
@@ -222,6 +225,10 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	})
 	if err != nil {
 		return fmt.Errorf("failed to start manager: %w", err)
+	}
+
+	if bootstrapErr := registerDefaultProjectBootstrap(mgr, operatorNamespace); bootstrapErr != nil {
+		return bootstrapErr
 	}
 
 	k8sClient, err := kubernetes.NewForConfig(mgr.GetConfig())
@@ -267,6 +274,34 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	setupLog.Info("Starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		return fmt.Errorf("failed to run manager: %w", err)
+	}
+	return nil
+}
+
+func registerDefaultProjectBootstrap(mgr ctrl.Manager, operatorNamespace string) error {
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), operatorNamespace); createErr != nil {
+			return fmt.Errorf("ensure operator namespace default appproject: %w", createErr)
+		}
+		var apps pipelinesv1alpha1.ApplicationList
+		if listErr := mgr.GetClient().List(ctx, &apps); listErr != nil {
+			return fmt.Errorf("list applications: %w", listErr)
+		}
+		seen := map[string]bool{operatorNamespace: true}
+		for i := range apps.Items {
+			ns := apps.Items[i].Namespace
+			if seen[ns] {
+				continue
+			}
+			seen[ns] = true
+			if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), ns); createErr != nil {
+				return fmt.Errorf("ensure default appproject in %s: %w", ns, createErr)
+			}
+		}
+		<-ctx.Done()
+		return nil
+	})); err != nil {
+		return fmt.Errorf("register default appproject bootstrap: %w", err)
 	}
 	return nil
 }
