@@ -35,6 +35,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
 	"github.com/benebsworth/paprika/internal/webhook/receiver"
@@ -110,6 +111,12 @@ func run() error {
 
 	paprikaServer := api.NewPaprikaServer(k8sClient, nil)
 	paprikaServer.SetRenderer(renderer)
+
+	resolver := governance.NewProjectResolver(k8sClient)
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(k8sClient), nil)
+	policyEvaluator := governance.NewPolicyEvaluator(k8sClient)
+	paprikaServer.SetGovernanceValidator(projectValidator)
+	paprikaServer.SetGovernancePolicyEvaluator(policyEvaluator)
 
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)

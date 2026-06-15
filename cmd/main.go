@@ -62,6 +62,7 @@ import (
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/reposerver"
@@ -231,6 +232,22 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 		return bootstrapErr
 	}
 
+	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
+		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
+
+	resolver := governance.NewProjectResolver(mgr.GetClient())
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
+	policyEvaluator := governance.NewPolicyEvaluator(mgr.GetClient())
+
+	var authz auth.Authorizer
+	if authCfg.Enabled {
+		var authzErr error
+		authz, authzErr = auth.BuildAuthorizer(authCfg, mgr.GetClient())
+		if authzErr != nil {
+			return fmt.Errorf("build authorizer: %w", authzErr)
+		}
+	}
+
 	k8sClient, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create kubernetes clientset: %w", err)
@@ -261,11 +278,10 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	rateLimiter := ratelimit.NewControllerRateLimit()
 	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
 
-	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter); err != nil {
+	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator); err != nil {
 		return err
 	}
-	if err := startOperatorUI(mgr, uiAddr, authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
-		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth); err != nil {
+	if err := startOperatorUI(mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz); err != nil {
 		return err
 	}
 
@@ -387,7 +403,7 @@ func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error 
 	return nil
 }
 
-func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
+func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
 	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
@@ -407,6 +423,9 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		TrafficRouterFactory: traffic.NewRouter,
 		ShardFilter:          shardFilter,
 		RateLimiter:          rateLimiter,
+		EventRecorder:        mgr.GetEventRecorderFor("release-controller"),
+		ProjectValidator:     projectValidator,
+		PolicyEvaluator:      policyEvaluator,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -433,7 +452,7 @@ func setupArtifactController(mgr ctrl.Manager, shardFilter *sharding.Filter) err
 	return nil
 }
 
-func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
+func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("creating dynamic client: %w", err)
@@ -459,6 +478,8 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		TemplateRenderer: renderer,
 		ShardFilter:      shardFilter,
 		RateLimiter:      rateLimiter,
+		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
+		ProjectValidator: projectValidator,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}
@@ -523,7 +544,29 @@ func setupCoreControllers(mgr ctrl.Manager) error {
 	return nil
 }
 
-func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit) error {
+func registerProjectLabelIndexers(mgr ctrl.Manager) error {
+	indexer := mgr.GetFieldIndexer()
+	types := []client.Object{
+		&pipelinesv1alpha1.Release{},
+		&pipelinesv1alpha1.Stage{},
+		&pipelinesv1alpha1.Pipeline{},
+		&pipelinesv1alpha1.Template{},
+	}
+	for _, t := range types {
+		if err := indexer.IndexField(context.Background(), t, "projectLabel", func(obj client.Object) []string {
+			return []string{obj.GetLabels()["app.paprika.io/project"]}
+		}); err != nil {
+			return fmt.Errorf("index project label for %T: %w", t, err)
+		}
+	}
+	return nil
+}
+
+func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
+	if err := registerProjectLabelIndexers(mgr); err != nil {
+		return err
+	}
+
 	controllers := []struct {
 		name  string
 		setup func() error
@@ -531,12 +574,12 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, shardFilter) }},
 		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
 		{"release", func() error {
-			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter)
+			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, shardFilter) }},
 		{"application", func() error {
-			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter)
+			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator)
 		}},
 	}
 
@@ -562,11 +605,7 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 	return nil
 }
 
-func startOperatorUI(mgr ctrl.Manager, uiAddr string,
-	authEnabled bool, authBasicUsername, authBasicPassword, authBasicPasswordHash string,
-	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret string, authAllowUnauth bool) error {
-	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
-		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
+func startOperatorUI(mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer) error {
 	authInterceptor, err := auth.Interceptor(authCfg, mgr.GetClient())
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -579,11 +618,9 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string,
 	defer broker.Close()
 
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), broker)
-	if authCfg.Enabled {
-		authz, err := auth.BuildAuthorizer(authCfg, mgr.GetClient())
-		if err != nil {
-			return fmt.Errorf("build authorizer: %w", err)
-		}
+	paprikaServer.SetGovernanceValidator(projectValidator)
+	paprikaServer.SetGovernancePolicyEvaluator(policyEvaluator)
+	if authz != nil {
 		paprikaServer.SetAuthorizer(authz)
 	}
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
@@ -642,6 +679,13 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
 		}
 		paprikaServer.SetAuthorizer(authz)
 	}
+
+	resolver := governance.NewProjectResolver(apiClient)
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
+	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
+	paprikaServer.SetGovernanceValidator(projectValidator)
+	paprikaServer.SetGovernancePolicyEvaluator(policyEvaluator)
+
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	mux := buildAPIMux(connectHandler, paprikaServer.Broker())
