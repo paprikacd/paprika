@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Config combines authentication and authorization configuration.
@@ -20,14 +21,14 @@ type Config struct {
 }
 
 // Interceptor creates a connect.UnaryInterceptorFunc from auth config.
-func Interceptor(cfg Config) (connect.UnaryInterceptorFunc, error) {
+func Interceptor(cfg Config, reader client.Reader) (connect.UnaryInterceptorFunc, error) {
 	if !cfg.Enabled {
 		return func(next connect.UnaryFunc) connect.UnaryFunc {
 			return next
 		}, nil
 	}
 
-	authn, authz, err := buildAuthnAuthz(cfg)
+	authn, authz, err := buildAuthnAuthz(cfg, reader)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +52,9 @@ func Interceptor(cfg Config) (connect.UnaryInterceptorFunc, error) {
 
 			action, resource := classify(req.Spec().Procedure)
 			namespace := namespaceFromRequest(req)
+			project := projectFromRequest(req)
 
-			if err := authz.Authorize(ctx, principal, action, resource, namespace, ""); err != nil {
+			if err := authz.Authorize(ctx, principal, action, resource, namespace, project); err != nil {
 				return nil, connect.NewError(connect.CodePermissionDenied, err)
 			}
 
@@ -61,7 +63,7 @@ func Interceptor(cfg Config) (connect.UnaryInterceptorFunc, error) {
 	}, nil
 }
 
-func buildAuthnAuthz(cfg Config) (Authenticator, Authorizer, error) {
+func buildAuthnAuthz(cfg Config, reader client.Reader) (Authenticator, Authorizer, error) {
 	authenticators := []Authenticator{}
 
 	if cfg.BasicAuth != nil {
@@ -84,14 +86,51 @@ func buildAuthnAuthz(cfg Config) (Authenticator, Authorizer, error) {
 		return nil, nil, errors.New("auth enabled but no authenticators configured")
 	}
 
-	var authz Authorizer
-	if len(cfg.RBACRules) > 0 {
-		authz = NewRBACAuthorizer(cfg.RBACRules)
-	} else {
-		authz = &AllowAllAuthorizer{}
+	authz, err := BuildAuthorizer(cfg, reader)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return NewMultiAuthenticator(authenticators...), authz, nil
+}
+
+// BuildAuthorizer creates the composed authorizer from config and a Kubernetes reader.
+func BuildAuthorizer(cfg Config, reader client.Reader) (Authorizer, error) {
+	var authorizers []Authorizer
+	if len(cfg.RBACRules) > 0 {
+		authorizers = append(authorizers, NewRBACAuthorizer(cfg.RBACRules))
+	}
+	if reader != nil {
+		authorizers = append(authorizers, NewProjectAuthorizer(reader))
+	}
+	if len(authorizers) == 0 {
+		return &AllowAllAuthorizer{}, nil
+	}
+	return &multiAuthorizer{authorizers: authorizers}, nil
+}
+
+type multiAuthorizer struct {
+	authorizers []Authorizer
+}
+
+func (m *multiAuthorizer) Authorize(ctx context.Context, p *Principal, action Action, resource Resource, namespace, project string) error {
+	for _, a := range m.authorizers {
+		if err := a.Authorize(ctx, p, action, resource, namespace, project); err != nil {
+			return fmt.Errorf("authorizer denied: %w", err)
+		}
+	}
+	return nil
+}
+
+func projectFromRequest(req connect.AnyRequest) string {
+	type projectGetter interface {
+		GetProject() string
+	}
+	msg := req.Any()
+	if g, ok := msg.(projectGetter); ok {
+		return g.GetProject()
+	}
+	return ""
 }
 
 func requestFromSpec(req connect.AnyRequest) *httpRequest {

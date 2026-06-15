@@ -160,7 +160,7 @@ func TestNamespaceFromRequest(t *testing.T) {
 }
 
 func TestInterceptor_Disabled(t *testing.T) {
-	interceptor, err := Interceptor(Config{Enabled: false})
+	interceptor, err := Interceptor(Config{Enabled: false}, nil)
 	require.NoError(t, err)
 
 	next := func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -182,7 +182,7 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 			Username:     testUsername,
 			PasswordHash: hex.EncodeToString(h[:]),
 		},
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	next := func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -208,7 +208,7 @@ func TestInterceptor_Unauthenticated(t *testing.T) {
 			Username: testUsername,
 			Password: testPassword,
 		},
-	})
+	}, nil)
 	require.NoError(t, err)
 
 	next := func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {

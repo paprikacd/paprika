@@ -532,7 +532,7 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string,
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret string, authAllowUnauth bool) error {
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
-	authInterceptor, err := auth.Interceptor(authCfg)
+	authInterceptor, err := auth.Interceptor(authCfg, mgr.GetClient())
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
@@ -544,6 +544,13 @@ func startOperatorUI(mgr ctrl.Manager, uiAddr string,
 	defer broker.Close()
 
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), broker)
+	if authCfg.Enabled {
+		authz, err := auth.BuildAuthorizer(authCfg, mgr.GetClient())
+		if err != nil {
+			return fmt.Errorf("build authorizer: %w", err)
+		}
+		paprikaServer.SetAuthorizer(authz)
+	}
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	uiMux := http.NewServeMux()
@@ -581,7 +588,7 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
 
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
-	authInterceptor, err := auth.Interceptor(authCfg)
+	authInterceptor, err := auth.Interceptor(authCfg, apiClient)
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
@@ -593,6 +600,13 @@ func runAPIMode(k8sAPIServer, k8sTokenFile, uiAddr, probeAddr string,
 	defer broker.Close()
 
 	paprikaServer := api.NewPaprikaServer(apiClient, broker)
+	if authCfg.Enabled {
+		authz, err := auth.BuildAuthorizer(authCfg, apiClient)
+		if err != nil {
+			return fmt.Errorf("build authorizer: %w", err)
+		}
+		paprikaServer.SetAuthorizer(authz)
+	}
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	mux := buildAPIMux(connectHandler, paprikaServer.Broker())
@@ -688,6 +702,8 @@ func createAPIClient(config *rest.Config) (client.Client, error) {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	apiClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
