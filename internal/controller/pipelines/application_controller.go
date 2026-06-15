@@ -38,7 +38,20 @@ import (
 const (
 	defaultRequeue    = 5 * time.Second
 	maxReleaseHistory = 10
+	releaseLabelKey   = "app.paprika.io/release"
 )
+
+func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+	labels["app.paprika.io/project"] = project
+	return labels
+}
 
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
@@ -404,9 +417,9 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      templateName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ApplicationNameLabelKey: app.Name,
+			}),
 		},
 		Spec: spec,
 	}
@@ -463,9 +476,9 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pipelineName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ApplicationNameLabelKey: app.Name,
+			}),
 		},
 		Spec: paprikav1.PipelineSpec{
 			Sources:     build.Sources,
@@ -567,10 +580,11 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      stageName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-				"app.paprika.io/ring": strconv.Itoa(int(promotionStage.Ring)),
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: app.Name,
+				"app.paprika.io/ring":          strconv.Itoa(int(promotionStage.Ring)),
+			}),
 		},
 		Spec: paprikav1.StageSpec{
 			Name:      promotionStage.Name,
@@ -701,9 +715,11 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: app.Name,
+				releaseLabelKey:                releaseName,
+			}),
 		},
 		Spec: paprikav1.ReleaseSpec{
 			Pipeline:   pipelineName,

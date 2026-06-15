@@ -890,10 +890,18 @@ func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *
 			Name:      name,
 			Namespace: release.Namespace,
 			Labels: map[string]string{
-				"paprika.io/stage":   stage.Name,
-				"paprika.io/release": release.Name,
-				"paprika.io/project": project,
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: release.Labels[engine.ApplicationNameLabelKey],
+				releaseLabelKey:                release.Name,
+				"app.paprika.io/project":       project,
 			},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: paprikav1.GroupVersion.String(),
+				Kind:       "Release",
+				Name:       release.Name,
+				UID:        release.UID,
+				Controller: ptr(true),
+			}},
 		},
 		Data: map[string]string{"manifests.yaml": string(manifests)},
 	}
@@ -913,6 +921,8 @@ func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *
 	}
 	return nil
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func (r *ReleaseReconciler) verify(ctx context.Context, release *paprikav1.Release) bool {
 	log := logf.FromContext(ctx)
