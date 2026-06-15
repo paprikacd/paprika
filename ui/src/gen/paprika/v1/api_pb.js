@@ -212,6 +212,7 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 21, name: "out_of_sync", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 22, name: "pruned_resources", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 23, name: "gates", kind: "message", T: GateStatus, repeated: true },
+    { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

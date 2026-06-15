@@ -1011,6 +1011,7 @@ type Application struct {
 	PrunedResources int32             `protobuf:"varint,22,opt,name=pruned_resources,json=prunedResources,proto3" json:"pruned_resources,omitempty"`
 	// Approval gates
 	Gates         []*GateStatus `protobuf:"bytes,23,rep,name=gates,proto3" json:"gates,omitempty"`
+	Project       string        `protobuf:"bytes,24,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1204,6 +1205,13 @@ func (x *Application) GetGates() []*GateStatus {
 		return x.Gates
 	}
 	return nil
+}
+
+func (x *Application) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type Pipeline struct {
@@ -3233,7 +3241,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x16\n" +
 	"\x06status\x18\x03 \x01(\tR\x06status\x12\x1f\n" +
 	"\vapproved_by\x18\x04 \x01(\tR\n" +
-	"approvedBy\"\xe3\a\n" +
+	"approvedBy\"\xfd\a\n" +
 	"\vApplication\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x14\n" +
@@ -3263,7 +3271,8 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x0fresource_health\x18\x14 \x03(\v2\x1a.paprika.v1.ResourceHealthR\x0eresourceHealth\x12\x1e\n" +
 	"\vout_of_sync\x18\x15 \x01(\x05R\toutOfSync\x12)\n" +
 	"\x10pruned_resources\x18\x16 \x01(\x05R\x0fprunedResources\x12,\n" +
-	"\x05gates\x18\x17 \x03(\v2\x16.paprika.v1.GateStatusR\x05gates\x1a=\n" +
+	"\x05gates\x18\x17 \x03(\v2\x16.paprika.v1.GateStatusR\x05gates\x12\x18\n" +
+	"\aproject\x18\x18 \x01(\tR\aproject\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x02\n" +

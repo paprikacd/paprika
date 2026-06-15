@@ -1,3 +1,4 @@
+//nolint:dupl // repetitive list filtering patterns
 package api
 
 import (
@@ -16,6 +17,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -31,6 +33,7 @@ type PaprikaServer struct {
 	evaluator                 policy.Evaluator
 	governanceValidator       *governance.ProjectValidator
 	governancePolicyEvaluator *governance.PolicyEvaluator
+	authorizer                auth.Authorizer
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
@@ -57,6 +60,44 @@ func (s *PaprikaServer) SetRenderer(r engine.TemplateRenderer) {
 	s.renderer = r
 }
 
+// SetAuthorizer sets the project/RBAC authorizer for server-side access checks.
+func (s *PaprikaServer) SetAuthorizer(a auth.Authorizer) {
+	s.authorizer = a
+}
+
+func (s *PaprikaServer) authorizeApplication(ctx context.Context, action auth.Action, app *pipelinesv1alpha1.Application) error {
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+	return s.authorizeProject(ctx, action, auth.ResourceApplications, app.Namespace, project)
+}
+
+func (s *PaprikaServer) authorizeProjectFromLabels(ctx context.Context, obj client.Object, resource auth.Resource) bool {
+	project := obj.GetLabels()[projectLabelKey]
+	if project == "" {
+		project = defaultProjectName
+	}
+	if err := s.authorizeProject(ctx, auth.ActionRead, resource, obj.GetNamespace(), project); err != nil {
+		return false
+	}
+	return true
+}
+
+func (s *PaprikaServer) authorizeProject(ctx context.Context, action auth.Action, resource auth.Resource, namespace, project string) error {
+	if s.authorizer == nil {
+		return nil
+	}
+	p := auth.PrincipalFromContext(ctx)
+	if p == nil {
+		return fmt.Errorf("%w: no principal in context", auth.ErrUnauthorized)
+	}
+	if err := s.authorizer.Authorize(ctx, p, action, resource, namespace, project); err != nil {
+		return fmt.Errorf("authorize %s %s in project %q: %w", action, resource, project, err)
+	}
+	return nil
+}
+
 var _ v1connect.PaprikaServiceHandler = (*PaprikaServer)(nil)
 
 // Broker returns the event broker used by the API server.
@@ -79,7 +120,11 @@ func (s *PaprikaServer) ListPipelines(
 	}
 	pipelines := make([]*paprikav1.Pipeline, 0, len(list.Items))
 	for i := range list.Items {
-		pipelines = append(pipelines, convertPipeline(&list.Items[i]))
+		p := &list.Items[i]
+		if !s.authorizeProjectFromLabels(ctx, p, auth.ResourcePipelines) {
+			continue
+		}
+		pipelines = append(pipelines, convertPipeline(p))
 	}
 	return connect.NewResponse(&paprikav1.ListPipelinesResponse{Pipelines: pipelines}), nil
 }
@@ -148,7 +193,11 @@ func (s *PaprikaServer) ListReleases(
 	}
 	releases := make([]*paprikav1.Release, 0, len(list.Items))
 	for i := range list.Items {
-		releases = append(releases, convertRelease(&list.Items[i]))
+		rel := &list.Items[i]
+		if !s.authorizeProjectFromLabels(ctx, rel, auth.ResourceReleases) {
+			continue
+		}
+		releases = append(releases, convertRelease(rel))
 	}
 	return connect.NewResponse(&paprikav1.ListReleasesResponse{Releases: releases}), nil
 }
@@ -168,7 +217,11 @@ func (s *PaprikaServer) ListStages(
 	}
 	stages := make([]*paprikav1.Stage, 0, len(list.Items))
 	for i := range list.Items {
-		stages = append(stages, convertStage(&list.Items[i]))
+		st := &list.Items[i]
+		if !s.authorizeProjectFromLabels(ctx, st, auth.ResourceStages) {
+			continue
+		}
+		stages = append(stages, convertStage(st))
 	}
 	return connect.NewResponse(&paprikav1.ListStagesResponse{Stages: stages}), nil
 }
@@ -188,7 +241,15 @@ func (s *PaprikaServer) ListApplications(
 	}
 	applications := make([]*paprikav1.Application, 0, len(list.Items))
 	for i := range list.Items {
-		applications = append(applications, convertApplication(&list.Items[i]))
+		app := &list.Items[i]
+		project := app.Spec.Project
+		if project == "" {
+			project = defaultProjectName
+		}
+		if err := s.authorizeProject(ctx, auth.ActionRead, auth.ResourceApplications, app.Namespace, project); err != nil {
+			continue
+		}
+		applications = append(applications, convertApplication(app))
 	}
 	return connect.NewResponse(&paprikav1.ListApplicationsResponse{Applications: applications}), nil
 }
@@ -224,6 +285,9 @@ func (s *PaprikaServer) GetApplication(
 	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
 	}
+	if err := s.authorizeApplication(ctx, auth.ActionRead, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
 	return connect.NewResponse(&paprikav1.GetApplicationResponse{
 		Application: convertApplication(&app),
 	}), nil
@@ -237,6 +301,9 @@ func (s *PaprikaServer) SyncApplication(
 	var app pipelinesv1alpha1.Application
 	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
 	}
 
 	if app.Annotations == nil {
@@ -265,6 +332,9 @@ func (s *PaprikaServer) ApproveGate(
 	var app pipelinesv1alpha1.Application
 	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
 	}
 
 	found := false
@@ -429,6 +499,7 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 	return &paprikav1.Application{
 		Name:            a.Name,
 		Namespace:       a.Namespace,
+		Project:         a.Spec.Project,
 		Phase:           string(a.Status.Phase),
 		CurrentStage:    a.Status.CurrentStage,
 		Revision:        a.Status.Revision,

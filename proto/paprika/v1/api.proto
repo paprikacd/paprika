@@ -137,6 +137,7 @@ message Application {
   int32 pruned_resources = 22;
   // Approval gates
   repeated GateStatus gates = 23;
+  string project = 24;
 }
 
 message Pipeline {

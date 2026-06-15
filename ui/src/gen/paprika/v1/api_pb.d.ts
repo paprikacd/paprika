@@ -695,6 +695,11 @@ export declare class Application extends Message<Application> {
    */
   gates: GateStatus[];
 
+  /**
+   * @generated from field: string project = 24;
+   */
+  project: string;
+
   constructor(data?: PartialMessage<Application>);
 
   static readonly runtime: typeof proto3;
