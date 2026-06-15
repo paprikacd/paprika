@@ -33,21 +33,24 @@ func (e *ProjectEnforcer) AuthorizeApplication(ctx context.Context, appNamespace
 	}
 
 	if err := governance.CheckList(project.Spec.SourceRepos, sourceRepo, governance.GlobMatch, "source repo %q not allowed by project %s", sourceRepo, appProject); err != nil {
-		return err
+		return fmt.Errorf("source repo check: %w", err)
 	}
 	if err := governance.CheckDenyList(project.Spec.SourceReposDeny, sourceRepo, governance.GlobMatch, "source repo %q denied by project %s", sourceRepo, appProject); err != nil {
-		return err
+		return fmt.Errorf("source repo deny check: %w", err)
 	}
 	if repoRef != "" {
 		if err := governance.CheckList(project.Spec.Repositories, repoRef, governance.StringEqual, "repository %q not allowed by project %s", repoRef, appProject); err != nil {
-			return err
+			return fmt.Errorf("repository check: %w", err)
 		}
 	}
 	if kind == "" {
 		return nil
 	}
 	if err := governance.CheckList(project.Spec.Kinds, kind, governance.GlobMatch, "kind %q not allowed by project %s", kind, appProject); err != nil {
-		return err
+		return fmt.Errorf("kind check: %w", err)
 	}
-	return governance.CheckDenyList(project.Spec.KindsDeny, kind, governance.GlobMatch, "kind %q denied by project %s", kind, appProject)
+	if err := governance.CheckDenyList(project.Spec.KindsDeny, kind, governance.GlobMatch, "kind %q denied by project %s", kind, appProject); err != nil {
+		return fmt.Errorf("kind deny check: %w", err)
+	}
+	return nil
 }
