@@ -24,6 +24,7 @@ type applyOptions struct {
 	files           []string
 	namespace       string
 	name            string
+	project         string
 	skipPolicies    []string
 	policyOverrides []string
 	dryRun          bool
@@ -45,6 +46,7 @@ func newApplyCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&opts.files, "file", "f", nil, "File, directory, or archive to apply (repeatable)")
 	cmd.Flags().StringVarP(&opts.namespace, "namespace", "n", "", "Target namespace (defaults to current kubeconfig context)")
 	cmd.Flags().StringVar(&opts.name, "name", "", "Application name (defaults to first resource or path name)")
+	cmd.Flags().StringVar(&opts.project, "project", "", "AppProject that governs this application (defaults to default)")
 	cmd.Flags().StringArrayVar(&opts.skipPolicies, "skip-policy", nil, "Skip a named Policy for this apply")
 	cmd.Flags().StringArrayVar(&opts.policyOverrides, "policy-override", nil, "Override a policy action (name=enforce|warn)")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render and evaluate policies without mutating the cluster")
@@ -92,6 +94,7 @@ func runApply(ctx context.Context, opts *applyOptions) error {
 	resp, err := client.ApplyBundle(ctx, connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace:       namespace,
 		Name:            appName,
+		Project:         opts.project,
 		Manifests:       bundle,
 		SkipPolicies:    opts.skipPolicies,
 		PolicyOverrides: overrides,
