@@ -19,15 +19,18 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/policy"
 )
 
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
 	client.Client
-	broker    *events.Broker
-	renderer  engine.TemplateRenderer
-	evaluator policy.Evaluator
+	broker                    *events.Broker
+	renderer                  engine.TemplateRenderer
+	evaluator                 policy.Evaluator
+	governanceValidator       *governance.ProjectValidator
+	governancePolicyEvaluator *governance.PolicyEvaluator
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
