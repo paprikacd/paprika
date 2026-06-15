@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const defaultInClusterServer = "https://kubernetes.default.svc"
 
 type ClusterResolver interface {
 	ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error)
@@ -21,12 +24,13 @@ type clusterResolver struct {
 	client client.Reader
 }
 
+//nolint:gocritic // heavy ClusterRef passed by value per API
 func (r *clusterResolver) ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error) {
 	if ref.Server != "" {
 		return ref.Server, nil
 	}
 	if ref.Name == "" {
-		return "https://kubernetes.default.svc", nil
+		return defaultInClusterServer, nil
 	}
 	ns := ref.Namespace
 	if ns == "" {
@@ -39,5 +43,5 @@ func (r *clusterResolver) ResolveServer(ctx context.Context, defaultNs string, r
 	if cluster.Spec.Server != "" {
 		return cluster.Spec.Server, nil
 	}
-	return "https://kubernetes.default.svc", nil
+	return defaultInClusterServer, nil
 }
