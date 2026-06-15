@@ -1,3 +1,5 @@
+// +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch;create;update
+
 package auth
 
 import (
