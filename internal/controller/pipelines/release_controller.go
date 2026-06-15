@@ -573,7 +573,16 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 
 	app, err := r.resolveOwningApplication(ctx, release)
 	if err != nil {
-		return nil, fmt.Errorf("resolve owning application: %w", err)
+		log.Info("Release has no Application owner reference; using default project for governance",
+			"release", release.Name, "namespace", release.Namespace, "error", err)
+		projectName := release.Labels["app.paprika.io/project"]
+		if projectName == "" {
+			projectName = defaultProjectName
+		}
+		app = &paprikav1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: release.Name, Namespace: release.Namespace},
+			Spec:       paprikav1.ApplicationSpec{Project: projectName},
+		}
 	}
 	if r.ProjectValidator == nil || r.PolicyEvaluator == nil {
 		return app, nil

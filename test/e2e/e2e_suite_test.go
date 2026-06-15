@@ -86,9 +86,11 @@ var _ = BeforeSuite(func() {
 
 	configureKubectlKubeRC()
 	setupCertManager()
+	deployManager()
 })
 
 var _ = AfterSuite(func() {
+	teardownManager()
 	teardownCertManager()
 
 	if shouldCleanupKindCluster {

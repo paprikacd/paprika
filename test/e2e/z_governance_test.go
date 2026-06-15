@@ -63,8 +63,6 @@ var _ = Describe("Governance", Ordered, func() {
 		cmd.Stdin = strings.NewReader(project)
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create AppProject")
-
-		By("creating an Application in a non-allowed namespace")
 		app := fmt.Sprintf(`{
 			"apiVersion": "pipelines.paprika.io/v1alpha1",
 			"kind": "Application",
@@ -83,24 +81,18 @@ var _ = Describe("Governance", Ordered, func() {
 				}
 			}
 		}`, governanceNamespace)
+
+		By("creating an Application in a non-allowed namespace")
 		cmd = exec.Command("kubectl", "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(app)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
-
-		By("waiting for GovernanceChecked=False on the Application")
-		Eventually(func(g Gomega) {
-			gcmd := exec.Command("kubectl", "get", "application", "e2e-governance-app",
-				"-n", governanceNamespace, "-o", "jsonpath={.status.conditions[?(@.type=='GovernanceChecked')].status}")
-			gout, gerr := utils.Run(gcmd)
-			g.Expect(gerr).NotTo(HaveOccurred())
-			g.Expect(gout).To(Equal("False"), "Application should report a governance violation")
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		out, err := utils.Run(cmd)
+		Expect(err).To(HaveOccurred(), "Application should be rejected by the validating webhook")
+		Expect(out).To(ContainSubstring("Forbidden"), "Expected a project boundary Forbidden error")
 
 		By("verifying no deployment was created in the governed namespace")
 		cmd = exec.Command("kubectl", "get", "deployments", "-n", governanceNamespace,
 			"-l", "app.paprika.io/name=e2e-governance-app", "-o", "jsonpath={.items}")
-		out, err := utils.Run(cmd)
+		out, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out).To(Equal("[]"), "No deployment should be created for a blocked Application")
 
@@ -110,11 +102,11 @@ var _ = Describe("Governance", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to patch AppProject")
 
-		By("triggering a resync of the Application")
-		cmd = exec.Command("kubectl", "annotate", "application", "e2e-governance-app", "-n", governanceNamespace,
-			"paprika.io/resync-triggered=now", "--overwrite")
+		By("creating the Application again after the project boundary is relaxed")
+		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(app)
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to annotate Application")
+		Expect(err).NotTo(HaveOccurred(), "Application should be admitted after relaxing the project")
 
 		By("waiting for the Application to reach Healthy")
 		Eventually(func(g Gomega) {
@@ -124,5 +116,6 @@ var _ = Describe("Governance", Ordered, func() {
 			g.Expect(gerr).NotTo(HaveOccurred())
 			g.Expect(gout).To(Equal("Healthy"), "Application should become Healthy after the violation is resolved")
 		}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
 	})
 })
