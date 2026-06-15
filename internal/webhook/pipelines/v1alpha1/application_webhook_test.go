@@ -12,7 +12,7 @@ import (
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 func TestApplicationCustomValidator_validateApplication(t *testing.T) {
@@ -27,15 +27,28 @@ func TestApplicationCustomValidator_validateApplication(t *testing.T) {
 			Kinds:       []string{"Deployment"},
 		},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project).Build()
-	v := &ApplicationCustomValidator{enforcer: auth.NewProjectEnforcer(c)}
+	defaultProject := &corev1alpha1.AppProject{
+		ObjectMeta: metav1.ObjectMeta{Name: "default", Namespace: "default"},
+		Spec: corev1alpha1.AppProjectSpec{
+			SourceRepos: []string{"*"},
+			Destinations: []corev1alpha1.AppProjectDestination{
+				{Server: "*", Namespace: "*"},
+			},
+			Kinds: []string{"*"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, defaultProject).Build()
+	resolver := governance.NewProjectResolver(c)
+	validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(c), nil)
+	v := &ApplicationCustomValidator{validator: validator}
 
-	t.Run("valid application without project", func(t *testing.T) {
+	t.Run("valid application with default project", func(t *testing.T) {
 		app := &pipelinesv1alpha1.Application{
 			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
 			Spec: pipelinesv1alpha1.ApplicationSpec{
-				Source: pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: "https://github.com/org/any"},
-				Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+				Project: "default",
+				Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: "https://github.com/org/any"},
+				Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
 			},
 		}
 		require.NoError(t, v.validateApplication(context.Background(), app))
@@ -117,4 +130,37 @@ func TestApplicationCustomDefaulter_DefaultsProject(t *testing.T) {
 	app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: "app"}}
 	require.NoError(t, d.Default(context.Background(), app))
 	assert.Equal(t, "default", app.Spec.Project)
+}
+
+func TestApplicationCustomValidator_GovernanceValidator(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	project := &corev1alpha1.AppProject{
+		ObjectMeta: metav1.ObjectMeta{Name: "restricted", Namespace: "default"},
+		Spec: corev1alpha1.AppProjectSpec{
+			SourceRepos: []string{"https://github.com/org/allowed*"},
+			Destinations: []corev1alpha1.AppProjectDestination{
+				{Server: "https://kubernetes.default.svc", Namespace: "allowed-ns"},
+			},
+			Kinds: []string{"Deployment"},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project).Build()
+	resolver := governance.NewProjectResolver(c)
+	validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(c), nil)
+	v := &ApplicationCustomValidator{validator: validator}
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Project: "restricted",
+			Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: "https://github.com/org/allowed-repo"},
+			Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1, Cluster: pipelinesv1alpha1.ClusterRef{Server: "https://other.server"}}},
+		},
+	}
+	err := v.validateApplication(context.Background(), app)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowed")
 }

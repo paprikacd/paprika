@@ -112,6 +112,9 @@ var _ = BeforeSuite(func() {
 	err = SetupPipelineWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
+	err = SetupApplicationWebhookWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+
 	err = SetupStageWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
