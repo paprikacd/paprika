@@ -65,7 +65,7 @@ spec:
       <p>The Istio router patches <code>VirtualService</code> <code>spec.http[].route[].destination.weight</code> fields. It identifies the correct route by matching the destination host or route name. The <code>servicePrefix</code> helper strips <code>-stable</code>/<code>-canary</code> suffixes to match the base service name.</p>
 
       <h3>Gateway API</h3>
-      <p>The Gateway API router patches <code>HTTPRoute</code> <code>spec.rules[].backendRefs[].weight</code> fields. It assumes exactly two backends (stable + canary) and preserves other backends' original weights.</p>
+      <p>The Gateway API router patches <code>HTTPRoute</code> <code>spec.rules[].backendRefs[].weight</code> fields. It assumes exactly two backends (stable + canary) and preserves other backends&apos; original weights.</p>
 
       <h2>Canary Step Throttling</h2>
       <p>

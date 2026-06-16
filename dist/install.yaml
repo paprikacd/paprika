@@ -313,6 +313,7 @@ spec:
                 description: Parameters are Helm value overrides passed to all releases.
                 type: object
               project:
+                default: default
                 description: Project references the AppProject that governs this application.
                 type: string
               source:
@@ -342,6 +343,15 @@ spec:
                   image:
                     description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
                     type: string
+                  inline:
+                    description: Inline references a manifest snapshot ConfigMap (for
+                      type=inline).
+                    properties:
+                      configMapRef:
+                        description: ConfigMapRef is the name of the ConfigMap containing
+                          the rendered manifest bundle.
+                        type: string
+                    type: object
                   insecure:
                     description: Insecure allows plain HTTP for OCI registries (type=oci)
                     type: boolean
@@ -379,6 +389,7 @@ spec:
                     - helm
                     - s3
                     - oci
+                    - inline
                     type: string
                 required:
                 - type
@@ -1447,6 +1458,151 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
+  name: policies.policy.paprika.io
+spec:
+  group: policy.paprika.io
+  names:
+    kind: Policy
+    listKind: PolicyList
+    plural: policies
+    singular: policy
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.severity
+      name: Severity
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Policy is the Schema for the policies API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Policy
+            properties:
+              defaultAction:
+                enum:
+                - enforce
+                - warn
+                type: string
+              description:
+                type: string
+              expression:
+                type: string
+              match:
+                properties:
+                  apiGroups:
+                    items:
+                      type: string
+                    type: array
+                  kinds:
+                    items:
+                      type: string
+                    type: array
+                  labelSelector:
+                    description: |-
+                      A label selector is a label query over a set of resources. The result of matchLabels and
+                      matchExpressions are ANDed. An empty label selector matches all objects. A null
+                      label selector matches no objects.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  namespaces:
+                    items:
+                      type: string
+                    type: array
+                type: object
+              projects:
+                items:
+                  type: string
+                type: array
+              severity:
+                enum:
+                - critical
+                - warning
+                type: string
+            required:
+            - expression
+            - match
+            - severity
+            type: object
+          status:
+            description: status defines the observed state of Policy
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: releases.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
@@ -1484,6 +1640,15 @@ spec:
             properties:
               from:
                 type: string
+              manifestSource:
+                description: |-
+                  ManifestSource references a pre-rendered inline manifest snapshot ConfigMap.
+                  When set, the controller skips template rendering and applies manifests from the ConfigMap.
+                properties:
+                  configMapRef:
+                    description: ConfigMapRef is the name of the snapshot ConfigMap.
+                    type: string
+                type: object
               onFailure:
                 description: FailureAction defines the action to take on failure.
                 properties:
@@ -1622,6 +1787,30 @@ spec:
                 - RolledBack
                 - Superseded
                 type: string
+              policyResults:
+                description: PolicyResults records the outcome of policy evaluation
+                  for this release.
+                items:
+                  description: ReleasePolicyResult records the outcome of a single
+                    policy evaluation for a release.
+                  properties:
+                    action:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    passed:
+                      type: boolean
+                    severity:
+                      type: string
+                  required:
+                  - action
+                  - name
+                  - passed
+                  - severity
+                  type: object
+                type: array
               promotionHistory:
                 items:
                   description: PromotionEntry represents an entry in the promotion
@@ -1644,10 +1833,216 @@ spec:
                 type: array
               renderedManifestSnapshot:
                 type: string
+              rolledBackTo:
+                description: RolledBackTo records the release name that a rolled-back
+                  release re-applied.
+                type: string
             type: object
         required:
         - metadata
         - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: repositories.core.paprika.io
+spec:
+  group: core.paprika.io
+  names:
+    kind: Repository
+    listKind: RepositoryList
+    plural: repositories
+    singular: repository
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .status.connectionState.status
+      name: Status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Repository is a named, reusable configuration for an external source (git, helm, or OCI).
+          Applications and Templates can reference a Repository by name instead of inlining URLs
+          and credentials, and AppProjects can constrain which Repositories are allowed.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RepositorySpec defines the specification for a Repository.
+            properties:
+              enableLfs:
+                description: EnableLFS enables Git Large File Storage fetch (git type).
+                type: boolean
+              forceHttpBasicAuth:
+                description: ForceHTTPBasicAuth forces HTTP basic auth even if credentials
+                  look like a token.
+                type: boolean
+              githubApp:
+                description: GitHubApp credentials (git type only).
+                properties:
+                  appId:
+                    description: AppID is the GitHub App ID.
+                    type: string
+                  enterpriseUrl:
+                    description: EnterpriseURL is the base URL for GitHub Enterprise
+                      (e.g. https://github.example.com).
+                    type: string
+                  installationId:
+                    description: InstallationID is the GitHub App installation ID.
+                    type: string
+                type: object
+              insecure:
+                description: Insecure allows plain HTTP/registry (no TLS) for oci
+                  and helm types.
+                type: boolean
+              noProxy:
+                description: NoProxy disables proxy usage for this repository.
+                type: boolean
+              secretRef:
+                description: SecretRef references credentials for the repository.
+                properties:
+                  name:
+                    description: Name of the Secret in the same namespace.
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: 'Type of repository: git, helm, or oci.'
+                enum:
+                - git
+                - helm
+                - oci
+                type: string
+              url:
+                description: |-
+                  URL of the repository. Examples:
+                    git:  https://github.com/org/repo, git@github.com:org/repo.git
+                    helm: https://charts.example.com
+                    oci:  oci://registry.example.com/charts
+                type: string
+            required:
+            - type
+            - url
+            type: object
+          status:
+            description: RepositoryStatus defines the observed state of Repository.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              connectionState:
+                description: ConnectionState describes the result of the most recent
+                  connection attempt.
+                properties:
+                  attemptedAt:
+                    format: date-time
+                    type: string
+                  message:
+                    type: string
+                  responseTime:
+                    type: string
+                  revision:
+                    type: string
+                  status:
+                    description: ConnectionStatus represents the health of a Repository's
+                      last connection attempt.
+                    type: string
+                type: object
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        required:
+        - metadata
+        - spec
+        - status
         type: object
     served: true
     storage: true
@@ -2408,6 +2803,22 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   - secrets
   verbs:
@@ -2572,6 +2983,32 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
+  verbs:
+  - get
+  - patch
+  - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2669,6 +3106,77 @@ rules:
   - pipelines.paprika.io
   resources:
   - pipelines/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-policy-policy-admin-role
+rules:
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - '*'
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-policy-policy-editor-role
+rules:
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: paprika
+  name: paprika-policy-policy-viewer-role
+rules:
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
   verbs:
   - get
 ---
@@ -2932,6 +3440,19 @@ subjects:
   namespace: paprika-system
 ---
 apiVersion: v1
+data:
+  redis.conf: |
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+    save ""
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/part-of: paprika
+  name: paprika-redis-config
+  namespace: paprika-system
+---
+apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -2949,6 +3470,24 @@ spec:
   selector:
     app.kubernetes.io/name: paprika
     control-plane: controller-manager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: paprika
+  name: paprika-redis
+  namespace: paprika-system
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: paprika
 ---
 apiVersion: v1
 kind: Service
@@ -3010,7 +3549,7 @@ spec:
               key: secret
               name: paprika-webhook-secret
               optional: true
-        image: ghcr.io/benebsworth/paprika:v0.0.1
+        image: ghcr.io/benebsworth/paprika:latest
         livenessProbe:
           httpGet:
             path: /healthz
@@ -3068,6 +3607,85 @@ spec:
       - name: webhook-certs
         secret:
           secretName: webhook-server-cert
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: paprika
+  name: paprika-redis
+  namespace: paprika-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: paprika
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: paprika
+    spec:
+      containers:
+      - args:
+        - /usr/local/etc/redis/redis.conf
+        image: redis:7-alpine
+        livenessProbe:
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          tcpSocket:
+            port: redis
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          tcpSocket:
+            port: redis
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 999
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /usr/local/etc/redis
+          name: config
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /data
+          name: data
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - configMap:
+          name: paprika-redis-config
+        name: config
+      - emptyDir: {}
+        name: tmp
+      - emptyDir: {}
+        name: data
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -3229,6 +3847,26 @@ webhooks:
     service:
       name: paprika-webhook-service
       namespace: paprika-system
+      path: /mutate-policy-paprika-io-v1alpha1-policy
+  failurePolicy: Fail
+  name: mpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - policy.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
       path: /mutate-pipelines-paprika-io-v1alpha1-release
   failurePolicy: Fail
   name: mrelease-v1alpha1.kb.io
@@ -3370,6 +4008,26 @@ webhooks:
     - UPDATE
     resources:
     - pipelines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-policy-paprika-io-v1alpha1-policy
+  failurePolicy: Fail
+  name: vpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - policy.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
   sideEffects: None
 - admissionReviewVersions:
   - v1

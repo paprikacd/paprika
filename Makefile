@@ -48,8 +48,13 @@ help: ## Display this help.
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+.PHONY: generate-proto
+generate-proto: ## Generate protobuf Go and TypeScript clients from proto definitions.
+	@echo "Generating protobuf clients..."
+	buf generate
+
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen generate-proto ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, plus protobuf clients.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="./..."
 
 .PHONY: fmt

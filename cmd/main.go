@@ -28,8 +28,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -296,28 +298,59 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 
 func registerDefaultProjectBootstrap(mgr ctrl.Manager, operatorNamespace string) error {
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-		if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), operatorNamespace); createErr != nil {
-			return fmt.Errorf("ensure operator namespace default appproject: %w", createErr)
-		}
-		var apps pipelinesv1alpha1.ApplicationList
-		if listErr := mgr.GetClient().List(ctx, &apps); listErr != nil {
-			return fmt.Errorf("list applications: %w", listErr)
-		}
-		seen := map[string]bool{operatorNamespace: true}
-		for i := range apps.Items {
-			ns := apps.Items[i].Namespace
-			if seen[ns] {
-				continue
-			}
-			seen[ns] = true
-			if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), ns); createErr != nil {
-				return fmt.Errorf("ensure default appproject in %s: %w", ns, createErr)
-			}
-		}
+		// Run bootstrapping in a goroutine so that manager startup is not blocked
+		// while waiting for the local webhook endpoints to become reachable.
+		go bootstrapDefaultProjects(ctx, mgr.GetClient(), operatorNamespace)
 		<-ctx.Done()
 		return nil
 	})); err != nil {
 		return fmt.Errorf("register default appproject bootstrap: %w", err)
+	}
+	return nil
+}
+
+func bootstrapDefaultProjects(ctx context.Context, c client.Client, operatorNamespace string) {
+	log := ctrl.Log.WithName("bootstrap")
+
+	if err := ensureProjectWithRetry(ctx, c, operatorNamespace, log); err != nil {
+		log.Error(err, "Failed to ensure operator namespace default AppProject")
+		return
+	}
+
+	var apps pipelinesv1alpha1.ApplicationList
+	if err := c.List(ctx, &apps); err != nil {
+		log.Error(err, "Failed to list applications during bootstrap")
+		return
+	}
+
+	seen := map[string]bool{operatorNamespace: true}
+	for i := range apps.Items {
+		ns := apps.Items[i].Namespace
+		if seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		if err := ensureProjectWithRetry(ctx, c, ns, log); err != nil {
+			log.Error(err, "Failed to ensure default AppProject", "namespace", ns)
+		}
+	}
+}
+
+func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log logr.Logger) error {
+	if err := wait.ExponentialBackoffWithContext(ctx, wait.Backoff{
+		Duration: 1 * time.Second,
+		Factor:   2,
+		Cap:      30 * time.Second,
+		Steps:    20,
+	}, func(ctx context.Context) (bool, error) {
+		if err := bootstrap.EnsureDefaultAppProject(ctx, c, ns); err != nil {
+			log.Error(err, "Failed to ensure default AppProject, will retry", "namespace", ns)
+			return false, nil
+		}
+		log.Info("Ensured default AppProject", "namespace", ns)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("ensure default AppProject in %q: %w", ns, err)
 	}
 	return nil
 }

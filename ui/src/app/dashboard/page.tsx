@@ -6,7 +6,6 @@ import { createConnectTransport } from "@connectrpc/connect-web"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
-import type { Stage } from "@/gen/paprika/v1/api_pb"
 import type { Application } from "@/gen/paprika/v1/api_pb"
 import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
@@ -125,7 +124,6 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 export default function DashboardPage() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [releases, setReleases] = useState<Release[]>([])
-  const [stages, setStages] = useState<Stage[]>([])
   const [applications, setApplications] = useState<Application[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
   const [loading, setLoading] = useState(true)
@@ -138,11 +136,10 @@ export default function DashboardPage() {
     Promise.allSettled([
       client.listPipelines({}),
       client.listReleases({}),
-      client.listStages({}).then(r => r),
       client.listApplications({}),
       client.listPolicies({}),
     ])
-      .then(([pr, rr, sr, ar, por]) => {
+      .then(([pr, rr, ar, por]) => {
         let anySuccess = false
         const next: Record<string, string> = {}
 
@@ -158,13 +155,6 @@ export default function DashboardPage() {
           anySuccess = true
         } else {
           next.releases = rr.reason?.message ?? "Failed to load releases"
-        }
-
-        if (sr.status === "fulfilled") {
-          setStages(sr.value.stages)
-          anySuccess = true
-        } else {
-          next.stages = sr.reason?.message ?? "Failed to load stages"
         }
 
         if (ar.status === "fulfilled") {
@@ -201,6 +191,7 @@ export default function DashboardPage() {
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
   const failedCount = pipelines.filter((p) => p.phase === "Failed").length
   const appCount = applications.length
+  const releaseByName = new Map(releases.map((r) => [r.name, r]))
 
   return (
     <ErrorBoundary>
@@ -286,7 +277,10 @@ export default function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {loading
             ? [1, 2].map((i) => <SkeletonCard key={i} />)
-            : applications.map((a) => <ApplicationCard key={a.name} application={a} onSynced={fetchData} />)}
+            : applications.map((a) => {
+                const release = a.releaseRef ? releaseByName.get(a.releaseRef) : undefined
+                return <ApplicationCard key={a.name} application={a} release={release} onSynced={fetchData} />
+              })}
           {!loading && applications.length === 0 && !errors.applications && (
             <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-muted">

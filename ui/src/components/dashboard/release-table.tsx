@@ -1,7 +1,38 @@
-import type { Release } from "@/gen/paprika/v1/api_pb"
+import type { PolicyResult, Release } from "@/gen/paprika/v1/api_pb"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
-import { GitBranch, Target, Layers, ArrowRight } from "lucide-react"
+import { GitBranch, Target, Layers, ArrowRight, CheckCircle2, XCircle, AlertTriangle, RotateCcw } from "lucide-react"
+
+function PolicySummary({ results }: { results?: PolicyResult[] }) {
+  if (!results || results.length === 0) return null
+
+  const pass = results.filter((r) => r.passed).length
+  const warning = results.filter((r) => !r.passed && r.severity.toLowerCase() === "warning").length
+  const fail = results.filter((r) => !r.passed && r.severity.toLowerCase() !== "warning").length
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-muted-foreground">Policies</span>
+      <Badge className="gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+        <CheckCircle2 className="size-3" />
+        {pass}
+      </Badge>
+      {warning > 0 && (
+        <Badge className="gap-1 bg-amber-500/10 text-amber-500 border-amber-500/20">
+          <AlertTriangle className="size-3" />
+          {warning}
+        </Badge>
+      )}
+      {fail > 0 && (
+        <Badge className="gap-1 bg-destructive/10 text-destructive border-destructive/20">
+          <XCircle className="size-3" />
+          {fail}
+        </Badge>
+      )}
+    </div>
+  )
+}
 
 function ReleaseCard({ release }: { release: Release }) {
   return (
@@ -32,7 +63,7 @@ function ReleaseCard({ release }: { release: Release }) {
           <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
             <Target className="size-3.5 text-muted-foreground" />
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] text-muted-foreground">Target</p>
+              <p className="text-[11px] text-muted-foreground">Target stage</p>
               <p className="truncate font-mono text-xs font-medium">
                 {release.target}
               </p>
@@ -45,6 +76,19 @@ function ReleaseCard({ release }: { release: Release }) {
             <Layers className="size-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Current stage:</span>
             <span className="font-mono text-xs font-medium">{release.currentStage}</span>
+          </div>
+        )}
+
+        {release.policyResults.length > 0 && (
+          <PolicySummary results={release.policyResults} />
+        )}
+
+        {release.rolledBackTo && (
+          <div className="flex items-center gap-1.5 rounded-lg border border-orange-500/20 bg-orange-500/10 px-3 py-2">
+            <RotateCcw className="size-3.5 text-orange-400" />
+            <span className="text-xs text-orange-400">
+              Rolled back to <span className="font-mono font-medium">{release.rolledBackTo}</span>
+            </span>
           </div>
         )}
       </CardContent>

@@ -364,6 +364,56 @@ func (s *PaprikaServer) ApproveGate(
 	}), nil
 }
 
+// PaprikaServer RBAC for RollbackRelease.
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;update;patch
+
+// RollbackRelease requests the release controller to roll a release back to the
+// previous viable snapshot. It works for both failed and healthy releases by
+// setting a rollback annotation and ensuring the release's OnFailure action is
+// configured to rollback.
+func (s *PaprikaServer) RollbackRelease(
+	ctx context.Context,
+	req *connect.Request[paprikav1.RollbackReleaseRequest],
+) (*connect.Response[paprikav1.RollbackReleaseResponse], error) {
+	var release pipelinesv1alpha1.Release
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &release); err != nil {
+		return nil, fmt.Errorf("getting release: %w", err)
+	}
+
+	// Authorize via the owning Application when possible.
+	appName := release.Labels[engine.ApplicationNameLabelKey]
+	if appName != "" {
+		var app pipelinesv1alpha1.Application
+		if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: appName}, &app); err == nil {
+			if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+				return nil, connect.NewError(connect.CodePermissionDenied, err)
+			}
+		}
+	}
+
+	if release.Annotations == nil {
+		release.Annotations = make(map[string]string)
+	}
+	release.Annotations[rollbackAnnotation] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	if release.Spec.OnFailure == nil {
+		release.Spec.OnFailure = &pipelinesv1alpha1.FailureAction{}
+	}
+	release.Spec.OnFailure.Action = "rollback"
+
+	if err := s.Update(ctx, &release); err != nil {
+		return nil, fmt.Errorf("requesting rollback: %w", err)
+	}
+
+	var refreshed pipelinesv1alpha1.Release
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+		return nil, fmt.Errorf("getting refreshed release: %w", err)
+	}
+
+	return connect.NewResponse(&paprikav1.RollbackReleaseResponse{
+		Release: convertRelease(&refreshed),
+	}), nil
+}
+
 func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 	steps := make([]*paprikav1.Step, 0, len(p.Spec.Steps))
 	for _, s := range p.Spec.Steps {
@@ -425,6 +475,8 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 		Phase:            string(r.Status.Phase),
 		CurrentStage:     r.Status.CurrentStage,
 		PromotionHistory: promos,
+		Application:      r.Labels[engine.ApplicationNameLabelKey],
+		RolledBackTo:     r.Status.RolledBackTo,
 	}
 	if r.Spec.ManifestSource != nil {
 		rel.ManifestSource = &paprikav1.ManifestSource{

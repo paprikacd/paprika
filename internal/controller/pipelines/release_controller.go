@@ -47,7 +47,10 @@ import (
 	"github.com/benebsworth/paprika/traffic"
 )
 
-const releaseFinalizer = "paprika.io/release-cleanup"
+const (
+	releaseFinalizer   = "paprika.io/release-cleanup"
+	rollbackAnnotation = "paprika.io/rollback-requested"
+)
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
@@ -167,6 +170,13 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.Request, release *paprikav1.Release, start time.Time, result *string) (ctrl.Result, error) {
+	// Handle rollback requests before checking for terminal phases so that a
+	// failed release with OnFailure=rollback, or any release annotated with
+	// paprika.io/rollback-requested, can be rolled back.
+	if r.shouldRollback(release) {
+		return r.handleFailedRollback(ctx, release, result)
+	}
+
 	if r.isReleaseTerminal(release) {
 		return ctrl.Result{}, nil
 	}
@@ -194,10 +204,6 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 
 	if release.Status.Phase == paprikav1.ReleaseVerifying {
 		return r.handleVerifyingPhase(ctx, release, result)
-	}
-
-	if r.shouldRollback(release) {
-		return r.handleFailedRollback(ctx, release, result)
 	}
 
 	return ctrl.Result{}, nil
@@ -265,6 +271,16 @@ func (r *ReleaseReconciler) getCanaryInterval(canaryCfg *paprikav1.CanaryConfig)
 }
 
 func (r *ReleaseReconciler) shouldRollback(release *paprikav1.Release) bool {
+	// Already rolled-back or superseded releases should not be re-processed.
+	if release.Status.Phase == paprikav1.ReleaseRolledBack ||
+		release.Status.Phase == paprikav1.ReleaseSuperseded {
+		return false
+	}
+	if release.Spec.OnFailure != nil && release.Spec.OnFailure.Action == "rollback" {
+		if _, ok := release.Annotations[rollbackAnnotation]; ok {
+			return true
+		}
+	}
 	return release.Status.Phase == paprikav1.ReleaseFailed &&
 		release.Spec.OnFailure != nil &&
 		release.Spec.OnFailure.Action == "rollback"
@@ -1028,20 +1044,7 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 		return nil, fmt.Errorf("list releases for rollback: %w", err)
 	}
 
-	var candidates []*paprikav1.Release
-	for i := range list.Items {
-		other := &list.Items[i]
-		if other.Name == release.Name {
-			continue
-		}
-		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
-			continue
-		}
-		if r.releaseSnapshotName(other) == "" {
-			continue
-		}
-		candidates = append(candidates, other)
-	}
+	candidates := r.collectRollbackCandidates(release, &list)
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -1054,6 +1057,27 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 		}
 	}
 	return candidates[0], nil
+}
+
+func (r *ReleaseReconciler) collectRollbackCandidates(release *paprikav1.Release, list *paprikav1.ReleaseList) []*paprikav1.Release {
+	var candidates []*paprikav1.Release
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.Name == release.Name {
+			continue
+		}
+		if other.Spec.Target != release.Spec.Target {
+			continue
+		}
+		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
+			continue
+		}
+		if r.releaseSnapshotName(other) == "" {
+			continue
+		}
+		candidates = append(candidates, other)
+	}
+	return candidates
 }
 
 func sortReleasesByCreation(releases []*paprikav1.Release) {

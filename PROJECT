@@ -82,7 +82,7 @@ resources:
   domain: paprika.io
   group: pipelines
   kind: Application
-  path: github.com/benebsworth/paprika/api/v1alpha1
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
 - api:
     crdVersion: v1

@@ -22,8 +22,8 @@ spec:
   target: my-app-production         # Target stage
   pipeline: my-app-pipeline         # Optional pipeline reference
   parameters:                       # Per-release parameter overrides
-    replicaCount: "5"
-    image.tag: "v2.0.0"</code></pre>
+    replicaCount: &quot;5&quot;
+    image.tag: &quot;v2.0.0&quot;</code></pre>
 
       <h2>Status</h2>
       <table>

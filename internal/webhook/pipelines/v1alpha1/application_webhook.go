@@ -80,14 +80,8 @@ func (v *ApplicationCustomValidator) ValidateDelete(_ context.Context, obj *pipe
 }
 
 func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, app *pipelinesv1alpha1.Application) error {
-	var allErrs field.ErrorList
+	allErrs := v.validateSource(app)
 
-	if app.Spec.Source.Type == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("source").Child("type"), "Source type is required"))
-	}
-	if app.Spec.Source.Type == pipelinesv1alpha1.SourceTypeGit && app.Spec.Source.RepoURL == "" {
-		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("source").Child("repoUrl"), "Repo URL is required for git sources"))
-	}
 	if len(app.Spec.Stages) == 0 {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("stages"), "At least one stage is required"))
 	}
@@ -102,6 +96,32 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 		app.Name,
 		allErrs,
 	)
+}
+
+func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Application) field.ErrorList {
+	var allErrs field.ErrorList
+	sourcePath := field.NewPath("spec").Child("source")
+
+	if app.Spec.Source.Type == "" {
+		allErrs = append(allErrs, field.Required(sourcePath.Child("type"), "Source type is required"))
+		return allErrs
+	}
+
+	switch app.Spec.Source.Type {
+	case pipelinesv1alpha1.SourceTypeInline:
+		if app.Spec.Source.Inline == nil || app.Spec.Source.Inline.ConfigMapRef == "" {
+			allErrs = append(allErrs, field.Required(sourcePath.Child("inline").Child("configMapRef"), "configMapRef is required for inline source"))
+		}
+	case pipelinesv1alpha1.SourceTypeGit:
+		if app.Spec.Source.RepoURL == "" {
+			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "Repo URL is required for git sources"))
+		}
+	case pipelinesv1alpha1.SourceTypeOCI:
+		if app.Spec.Source.Image == "" {
+			allErrs = append(allErrs, field.Required(sourcePath.Child("image"), "Image is required for oci sources"))
+		}
+	}
+	return allErrs
 }
 
 func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *pipelinesv1alpha1.Application) field.ErrorList {

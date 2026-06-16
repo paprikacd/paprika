@@ -900,6 +900,16 @@ export declare class Release extends Message<Release> {
    */
   policyResults: PolicyResult[];
 
+  /**
+   * @generated from field: string application = 11;
+   */
+  application: string;
+
+  /**
+   * @generated from field: string rolled_back_to = 12;
+   */
+  rolledBackTo: string;
+
   constructor(data?: PartialMessage<Release>);
 
   static readonly runtime: typeof proto3;
@@ -1814,5 +1824,58 @@ export declare class ApplyBundleResponse extends Message<ApplyBundleResponse> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplyBundleResponse;
 
   static equals(a: ApplyBundleResponse | PlainMessage<ApplyBundleResponse> | undefined, b: ApplyBundleResponse | PlainMessage<ApplyBundleResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseRequest
+ */
+export declare class RollbackReleaseRequest extends Message<RollbackReleaseRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<RollbackReleaseRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RollbackReleaseRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RollbackReleaseRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RollbackReleaseRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RollbackReleaseRequest;
+
+  static equals(a: RollbackReleaseRequest | PlainMessage<RollbackReleaseRequest> | undefined, b: RollbackReleaseRequest | PlainMessage<RollbackReleaseRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseResponse
+ */
+export declare class RollbackReleaseResponse extends Message<RollbackReleaseResponse> {
+  /**
+   * @generated from field: paprika.v1.Release release = 1;
+   */
+  release?: Release;
+
+  constructor(data?: PartialMessage<RollbackReleaseResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RollbackReleaseResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RollbackReleaseResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RollbackReleaseResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RollbackReleaseResponse;
+
+  static equals(a: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined, b: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined): boolean;
 }
 

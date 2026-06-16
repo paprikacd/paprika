@@ -5,7 +5,18 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
+
+func cleanUIPath(p string) string {
+	p = strings.TrimPrefix(p, "/")
+	if p == "" {
+		p = "."
+	}
+	return p
+}
 
 //go:embed all:uistatic
 var uiFiles embed.FS
@@ -32,7 +43,14 @@ func UIHandler() http.Handler {
 			return
 		}
 
-		f, err := sub.Open(r.URL.Path)
+		if r.URL.Path == "/metrics" {
+			promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{
+				ErrorHandling: promhttp.HTTPErrorOnError,
+			}).ServeHTTP(w, r)
+			return
+		}
+
+		f, err := sub.Open(cleanUIPath(r.URL.Path))
 		if err != nil {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
