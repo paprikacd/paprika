@@ -403,9 +403,7 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	return nil, nil
 }
 
-func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *paprikav1.Application) error {
-	templateName := app.Name + "-template"
-
+func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 	spec := paprikav1.TemplateSpec{
 		Type:      string(app.Spec.Source.Type),
 		Chart:     app.Spec.Source.Chart,
@@ -429,7 +427,17 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 			Path:      app.Spec.Source.Path,
 			SecretRef: app.Spec.Source.SecretRef,
 		}
+	case paprikav1.SourceTypeKustomize:
+		spec.Kustomize = &paprikav1.KustomizeSourceSpec{
+			Path: app.Spec.Source.Path,
+		}
 	}
+
+	return spec
+}
+
+func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *paprikav1.Application) error {
+	templateName := app.Name + "-template"
 
 	expected := &paprikav1.Template{
 		ObjectMeta: metav1.ObjectMeta{
@@ -439,7 +447,7 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 				engine.ApplicationNameLabelKey: app.Name,
 			}),
 		},
-		Spec: spec,
+		Spec: buildTemplateSpec(app),
 	}
 
 	if err := ctrl.SetControllerReference(app, expected, r.Scheme); err != nil {
@@ -856,7 +864,7 @@ func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *papr
 		return "", "", nil
 	}
 
-	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 {
+	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize {
 		renderer := r.TemplateRenderer
 		if renderer == nil {
 			renderer = engine.NewHelmSDKRenderer(r.WorkDir)

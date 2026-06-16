@@ -52,8 +52,13 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	if tmpl.Spec.Type != "helm" {
-		log.Info("Unsupported template type (Phase 1: helm only)", "type", tmpl.Spec.Type, "template", req.Name)
+	// Template rendering is performed on-demand by Application/Release controllers;
+	// this controller currently only validates that the type is known.
+	switch tmpl.Spec.Type {
+	case "helm", "kustomize", "git", "s3", "oci":
+		// supported
+	default:
+		log.Info("Unsupported template type", "type", tmpl.Spec.Type, "template", req.Name)
 		return ctrl.Result{}, nil
 	}
 

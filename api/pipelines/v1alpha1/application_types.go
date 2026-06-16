@@ -55,11 +55,12 @@ const (
 
 // Source type constants.
 const (
-	SourceTypeGit    = "git"
-	SourceTypeHelm   = "helm"
-	SourceTypeS3     = "s3"
-	SourceTypeOCI    = "oci"
-	SourceTypeInline = "inline"
+	SourceTypeGit       = "git"
+	SourceTypeHelm      = "helm"
+	SourceTypeKustomize = "kustomize"
+	SourceTypeS3        = "s3"
+	SourceTypeOCI       = "oci"
+	SourceTypeInline    = "inline"
 )
 
 // InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
@@ -72,7 +73,7 @@ type InlineSourceSpec struct {
 // ApplicationSource defines the source of an application.
 // ApplicationSource defines the source of an application.
 type ApplicationSource struct {
-	// +kubebuilder:validation:Enum=git;helm;s3;oci;inline
+	// +kubebuilder:validation:Enum=git;helm;kustomize;s3;oci;inline
 	Type string `json:"type"`
 	// RepoRef references a core.paprika.io Repository by name. When set, takes
 	// precedence over inline URL/credentials fields.
