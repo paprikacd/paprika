@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -55,6 +55,24 @@ export declare const PaprikaService: {
       readonly name: "ListPolicies",
       readonly I: typeof ListPoliciesRequest,
       readonly O: typeof ListPoliciesResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListApplicationSets
+     */
+    readonly listApplicationSets: {
+      readonly name: "ListApplicationSets",
+      readonly I: typeof ListApplicationSetsRequest,
+      readonly O: typeof ListApplicationSetsResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetApplicationSet
+     */
+    readonly getApplicationSet: {
+      readonly name: "GetApplicationSet",
+      readonly I: typeof GetApplicationSetRequest,
+      readonly O: typeof GetApplicationSetResponse,
       readonly kind: MethodKind.Unary,
     },
     /**

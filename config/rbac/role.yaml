@@ -163,6 +163,7 @@ rules:
   - pipelines.paprika.io
   resources:
   - applications
+  - applicationsets
   - artifacts
   - pipelines
   - releases
@@ -180,6 +181,7 @@ rules:
   - pipelines.paprika.io
   resources:
   - applications/finalizers
+  - applicationsets/finalizers
   - artifacts/finalizers
   - notificationconfigs/finalizers
   - pipelines/finalizers
@@ -192,6 +194,7 @@ rules:
   - pipelines.paprika.io
   resources:
   - applications/status
+  - applicationsets/status
   - artifacts/status
   - notificationconfigs/status
   - pipelines/status

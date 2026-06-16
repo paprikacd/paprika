@@ -299,4 +299,14 @@ func (s *Server) RollbackRelease(ctx context.Context, req *connect.Request[papri
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement RollbackRelease"))
 }
 
+// ListApplicationSets is not implemented by the agent.
+func (s *Server) ListApplicationSets(ctx context.Context, req *connect.Request[paprikav1.ListApplicationSetsRequest]) (*connect.Response[paprikav1.ListApplicationSetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ListApplicationSets"))
+}
+
+// GetApplicationSet is not implemented by the agent.
+func (s *Server) GetApplicationSet(ctx context.Context, req *connect.Request[paprikav1.GetApplicationSetRequest]) (*connect.Response[paprikav1.GetApplicationSetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement GetApplicationSet"))
+}
+
 var _ v1connect.PaprikaServiceHandler = (*Server)(nil)

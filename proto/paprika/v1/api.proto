@@ -277,6 +277,30 @@ message GetApplicationResponse {
   Application application = 1;
 }
 
+message ApplicationSet {
+  string name = 1;
+  string namespace = 2;
+  int32 applications = 3;
+  string phase = 4;
+}
+
+message ListApplicationSetsRequest {
+  optional string namespace = 1;
+}
+
+message ListApplicationSetsResponse {
+  repeated ApplicationSet applicationsets = 1;
+}
+
+message GetApplicationSetRequest {
+  string name = 1;
+  string namespace = 2;
+}
+
+message GetApplicationSetResponse {
+  ApplicationSet applicationset = 1;
+}
+
 message SyncApplicationRequest {
   string name = 1;
   string namespace = 2;
@@ -354,6 +378,8 @@ service PaprikaService {
   rpc ListStages(ListStagesRequest) returns (ListStagesResponse);
   rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
   rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc ListApplicationSets(ListApplicationSetsRequest) returns (ListApplicationSetsResponse);
+  rpc GetApplicationSet(GetApplicationSetRequest) returns (GetApplicationSetResponse);
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);

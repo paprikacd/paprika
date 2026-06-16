@@ -482,6 +482,60 @@ export const GetApplicationResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ApplicationSet
+ */
+export const ApplicationSet = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationSet",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "applications", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 4, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsRequest
+ */
+export const ListApplicationSetsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListApplicationSetsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsResponse
+ */
+export const ListApplicationSetsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListApplicationSetsResponse",
+  () => [
+    { no: 1, name: "applicationsets", kind: "message", T: ApplicationSet, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetRequest
+ */
+export const GetApplicationSetRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationSetRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetResponse
+ */
+export const GetApplicationSetResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationSetResponse",
+  () => [
+    { no: 1, name: "applicationset", kind: "message", T: ApplicationSet },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.SyncApplicationRequest
  */
 export const SyncApplicationRequest = /*@__PURE__*/ proto3.makeMessageType(

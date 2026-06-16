@@ -492,6 +492,17 @@ func setupArtifactController(mgr ctrl.Manager, shardFilter *sharding.Filter) err
 	return nil
 }
 
+func setupApplicationSetController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
+	if err := (&controller.ApplicationSetReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		ShardFilter: shardFilter,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up applicationset controller: %w", err)
+	}
+	return nil
+}
+
 func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -618,6 +629,7 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
+		{"applicationset", func() error { return setupApplicationSetController(mgr, shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, shardFilter) }},
 		{"application", func() error {
 			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, broker)
