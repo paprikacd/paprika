@@ -407,7 +407,7 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 		AgentAddress: "http://agent.example:8083",
 	}
 
-	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n")); err != nil {
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n"), nil); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }

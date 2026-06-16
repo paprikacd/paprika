@@ -31,6 +31,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/health"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -73,6 +74,7 @@ type ApplicationReconciler struct {
 	RateLimiter      *ratelimit.ControllerRateLimit
 	EventRecorder    record.EventRecorder
 	ProjectValidator *governance.ProjectValidator
+	EventBroker      *events.Broker
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -748,11 +750,12 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 			}),
 		},
 		Spec: paprikav1.ReleaseSpec{
-			Pipeline:   pipelineName,
-			Target:     stageName,
-			Verify:     targetStage.Gates,
-			OnFailure:  app.Spec.OnFailure,
-			Parameters: params,
+			Pipeline:    pipelineName,
+			Target:      stageName,
+			Verify:      targetStage.Gates,
+			OnFailure:   app.Spec.OnFailure,
+			Parameters:  params,
+			SyncOptions: app.Spec.SyncOptions,
 		},
 	}
 }
@@ -829,9 +832,28 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 		}
 	}
 
+	r.publishApplicationEvent(ctx, app, reason)
+
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status", "phase", phase)
 	}
+}
+
+func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string) {
+	if r.EventBroker == nil {
+		return
+	}
+	evt, err := events.NewEvent(events.TypeApplication, map[string]string{
+		"name":      app.Name,
+		"namespace": app.Namespace,
+		"phase":     string(app.Status.Phase),
+		"reason":    reason,
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to create application event", "app", app.Name)
+		return
+	}
+	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {

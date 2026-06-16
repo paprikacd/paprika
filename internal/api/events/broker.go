@@ -180,6 +180,15 @@ func (b *Broker) Topics() []string {
 	return topics
 }
 
+const (
+	// TopicDashboard is the default SSE topic for UI dashboard updates.
+	TopicDashboard = "dashboard"
+	// TypeApplication identifies events for Application resources.
+	TypeApplication = "application"
+	// TypeRelease identifies events for Release resources.
+	TypeRelease = "release"
+)
+
 // NewEvent creates an event with the given type and payload.
 func NewEvent(eventType string, payload any) (*Event, error) {
 	data, err := json.Marshal(payload)

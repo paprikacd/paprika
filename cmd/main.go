@@ -280,10 +280,16 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	rateLimiter := ratelimit.NewControllerRateLimit()
 	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
 
-	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator); err != nil {
+	broker, err := events.NewBrokerFromEnv()
+	if err != nil {
+		return fmt.Errorf("create event broker: %w", err)
+	}
+	defer broker.Close()
+
+	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker); err != nil {
 		return err
 	}
-	if err := startOperatorUI(mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz); err != nil {
+	if err := startOperatorUI(mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker); err != nil {
 		return err
 	}
 
@@ -436,7 +442,7 @@ func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error 
 	return nil
 }
 
-func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
+func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker) error {
 	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
@@ -459,6 +465,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		EventRecorder:        mgr.GetEventRecorderFor("release-controller"),
 		ProjectValidator:     projectValidator,
 		PolicyEvaluator:      policyEvaluator,
+		EventBroker:          broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -485,7 +492,7 @@ func setupArtifactController(mgr ctrl.Manager, shardFilter *sharding.Filter) err
 	return nil
 }
 
-func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator) error {
+func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("creating dynamic client: %w", err)
@@ -513,6 +520,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		RateLimiter:      rateLimiter,
 		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
 		ProjectValidator: projectValidator,
+		EventBroker:      broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}
@@ -595,7 +603,7 @@ func registerProjectLabelIndexers(mgr ctrl.Manager) error {
 	return nil
 }
 
-func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
+func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker) error {
 	if err := registerProjectLabelIndexers(mgr); err != nil {
 		return err
 	}
@@ -607,12 +615,19 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, shardFilter) }},
 		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
 		{"release", func() error {
-			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator)
+			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, shardFilter) }},
 		{"application", func() error {
-			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator)
+			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, broker)
+		}},
+		{"notification", func() error {
+			return (&controller.NotificationConfigReconciler{
+				Client:      mgr.GetClient(),
+				EventBroker: broker,
+				Sender:      controller.NewNotificationSender(),
+			}).SetupWithManager(mgr)
 		}},
 	}
 
@@ -638,17 +653,11 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 	return nil
 }
 
-func startOperatorUI(mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer) error {
+func startOperatorUI(mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker) error {
 	authInterceptor, err := auth.Interceptor(authCfg, mgr.GetClient())
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
-
-	broker, err := events.NewBrokerFromEnv()
-	if err != nil {
-		return fmt.Errorf("create event broker: %w", err)
-	}
-	defer broker.Close()
 
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), broker)
 	paprikaServer.SetGovernanceValidator(projectValidator)

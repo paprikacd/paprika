@@ -70,6 +70,9 @@ type ReleaseSpec struct {
 	// When set, the controller skips template rendering and applies manifests from the ConfigMap.
 	// +optional
 	ManifestSource *ManifestSource `json:"manifestSource,omitempty"`
+	// SyncOptions fine-tunes how manifests are applied and pruned for this release.
+	// +optional
+	SyncOptions *SyncOptions `json:"syncOptions,omitempty"`
 }
 
 // ReleaseStatus represents the status of a release.

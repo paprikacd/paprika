@@ -387,6 +387,7 @@ spec:
                     enum:
                     - git
                     - helm
+                    - kustomize
                     - s3
                     - oci
                     - inline
@@ -552,6 +553,31 @@ spec:
                 - Canary
                 - BlueGreen
                 type: string
+              syncOptions:
+                description: SyncOptions fine-tunes how manifests are applied and
+                  pruned.
+                properties:
+                  applyOutOfSyncOnly:
+                    description: |-
+                      ApplyOutOfSyncOnly skips applying resources whose live state already
+                      matches the desired manifest.
+                    type: boolean
+                  force:
+                    description: Force enables force-conflicts for server-side apply.
+                    type: boolean
+                  prunePropagationPolicy:
+                    description: |-
+                      PrunePropagationPolicy selects the deletion propagation policy used when
+                      pruning managed resources.
+                    enum:
+                    - Foreground
+                    - Background
+                    - Orphan
+                    type: string
+                  replace:
+                    description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                type: object
               syncPolicy:
                 default: Auto
                 description: SyncPolicy controls whether changes are applied automatically.
@@ -1672,6 +1698,31 @@ spec:
                 type: object
               pipeline:
                 type: string
+              syncOptions:
+                description: SyncOptions fine-tunes how manifests are applied and
+                  pruned for this release.
+                properties:
+                  applyOutOfSyncOnly:
+                    description: |-
+                      ApplyOutOfSyncOnly skips applying resources whose live state already
+                      matches the desired manifest.
+                    type: boolean
+                  force:
+                    description: Force enables force-conflicts for server-side apply.
+                    type: boolean
+                  prunePropagationPolicy:
+                    description: |-
+                      PrunePropagationPolicy selects the deletion propagation policy used when
+                      pruning managed resources.
+                    enum:
+                    - Foreground
+                    - Background
+                    - Orphan
+                    type: string
+                  replace:
+                    description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                type: object
               target:
                 type: string
               verify:
@@ -2363,6 +2414,61 @@ spec:
                 required:
                 - repoUrl
                 type: object
+              kustomize:
+                description: KustomizeSourceSpec defines a Kustomize source specification.
+                properties:
+                  commonAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: CommonAnnotations adds annotations to all resources
+                    type: object
+                  commonLabels:
+                    additionalProperties:
+                      type: string
+                    description: CommonLabels adds labels to all resources
+                    type: object
+                  images:
+                    description: Images sets image transformations
+                    items:
+                      description: KustomizeImage defines an image transformation
+                        for Kustomize.
+                      properties:
+                        digest:
+                          description: Digest is the replacement digest (mutually
+                            exclusive with NewTag)
+                          type: string
+                        name:
+                          description: Name of the existing image to replace
+                          type: string
+                        newName:
+                          description: NewName is the replacement image name
+                          type: string
+                        newTag:
+                          description: NewTag is the replacement tag
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  inputFromPrevious:
+                    description: |-
+                      InputFromPrevious uses the output of the previous rendering step as the Kustomize base.
+                      When true, a temporary kustomization directory is created that includes the previous output.
+                    type: boolean
+                  namePrefix:
+                    description: NamePrefix sets the resources name prefix
+                    type: string
+                  nameSuffix:
+                    description: NameSuffix sets the resources name suffix
+                    type: string
+                  namespace:
+                    description: Namespace sets the resources namespace
+                    type: string
+                  path:
+                    description: Path to a directory containing a kustomization.yaml.
+                      Ignored when InputFromPrevious is true.
+                    type: string
+                type: object
               namespace:
                 description: Namespace to pass to helm --namespace
                 type: string
@@ -2413,7 +2519,6 @@ spec:
               type:
                 enum:
                 - helm
-                - kubernetes
                 - kustomize
                 - git
                 - s3
@@ -2964,6 +3069,7 @@ rules:
   resources:
   - applications/finalizers
   - artifacts/finalizers
+  - notificationconfigs/finalizers
   - pipelines/finalizers
   - releases/finalizers
   - stages/finalizers
@@ -2975,6 +3081,7 @@ rules:
   resources:
   - applications/status
   - artifacts/status
+  - notificationconfigs/status
   - pipelines/status
   - releases/status
   - stages/status
@@ -2983,6 +3090,14 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - notificationconfigs
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - policy.paprika.io
   resources:
@@ -3549,7 +3664,7 @@ spec:
               key: secret
               name: paprika-webhook-secret
               optional: true
-        image: ghcr.io/benebsworth/paprika:latest
+        image: ghcr.io/benebsworth/paprika:v0.0.1
         livenessProbe:
           httpGet:
             path: /healthz

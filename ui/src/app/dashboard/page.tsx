@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, memo, Component, type ReactNode, useCallback } from "react"
+import { useState, useEffect, memo, Component, type ReactNode, useCallback, useRef } from "react"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createConnectTransport } from "@connectrpc/connect-web"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
@@ -178,12 +178,32 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [setConnected])
 
+  const debounceRef = useRef<number | null>(null)
+
   useEffect(() => {
     const timeout = setTimeout(() => fetchData(), 0)
-    const interval = setInterval(fetchData, 10000)
+    const fallback = setInterval(fetchData, 60000)
+
+    const eventSource = new EventSource("/events?topic=dashboard")
+    eventSource.onmessage = () => {
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current)
+      }
+      debounceRef.current = window.setTimeout(() => {
+        fetchData()
+      }, 300)
+    }
+    eventSource.onerror = () => {
+      // Connection errors are handled by the browser reconnect and the fallback poll.
+    }
+
     return () => {
       clearTimeout(timeout)
-      clearInterval(interval)
+      clearInterval(fallback)
+      eventSource.close()
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current)
+      }
     }
   }, [fetchData])
 

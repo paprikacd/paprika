@@ -53,6 +53,25 @@ const (
 	StrategyBlueGreen DeliveryStrategy = "BlueGreen"
 )
 
+// SyncOptions controls how manifests are applied and pruned.
+type SyncOptions struct {
+	// PrunePropagationPolicy selects the deletion propagation policy used when
+	// pruning managed resources.
+	// +kubebuilder:validation:Enum=Foreground;Background;Orphan
+	// +optional
+	PrunePropagationPolicy string `json:"prunePropagationPolicy,omitempty"`
+	// Replace uses Update instead of server-side apply.
+	// +optional
+	Replace bool `json:"replace,omitempty"`
+	// Force enables force-conflicts for server-side apply.
+	// +optional
+	Force bool `json:"force,omitempty"`
+	// ApplyOutOfSyncOnly skips applying resources whose live state already
+	// matches the desired manifest.
+	// +optional
+	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
+}
+
 // Source type constants.
 const (
 	SourceTypeGit       = "git"
@@ -278,6 +297,10 @@ type ApplicationSpec struct {
 	// +kubebuilder:validation:Enum=Auto;Manual
 	// +kubebuilder:default=Auto
 	SyncPolicy SyncPolicy `json:"syncPolicy,omitempty"`
+
+	// SyncOptions fine-tunes how manifests are applied and pruned.
+	// +optional
+	SyncOptions *SyncOptions `json:"syncOptions,omitempty"`
 
 	// Parameters are Helm value overrides passed to all releases.
 	// +optional

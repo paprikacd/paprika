@@ -53,7 +53,9 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications
   - artifacts
+  - notificationconfigs
   - pipelines
   - releases
   - stages
@@ -69,7 +71,9 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/finalizers
   - artifacts/finalizers
+  - notificationconfigs/finalizers
   - pipelines/finalizers
   - releases/finalizers
   - stages/finalizers
@@ -79,7 +83,9 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - applications/status
   - artifacts/status
+  - notificationconfigs/status
   - pipelines/status
   - releases/status
   - stages/status

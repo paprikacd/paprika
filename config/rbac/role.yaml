@@ -181,6 +181,7 @@ rules:
   resources:
   - applications/finalizers
   - artifacts/finalizers
+  - notificationconfigs/finalizers
   - pipelines/finalizers
   - releases/finalizers
   - stages/finalizers
@@ -192,6 +193,7 @@ rules:
   resources:
   - applications/status
   - artifacts/status
+  - notificationconfigs/status
   - pipelines/status
   - releases/status
   - stages/status
@@ -200,6 +202,14 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - notificationconfigs
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - policy.paprika.io
   resources:
