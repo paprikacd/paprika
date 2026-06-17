@@ -308,6 +308,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -701,6 +718,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.

@@ -72,6 +72,22 @@ type SyncOptions struct {
 	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
 }
 
+// SelfHealConfig controls automatic remediation behavior.
+type SelfHealConfig struct {
+	// AutoSyncOnDrift triggers a re-sync when managed resources are out of sync.
+	// +optional
+	AutoSyncOnDrift bool `json:"autoSyncOnDrift,omitempty"`
+
+	// AutoRevertOnHealthFailure rolls back the current release when the application becomes Degraded.
+	// +optional
+	AutoRevertOnHealthFailure bool `json:"autoRevertOnHealthFailure,omitempty"`
+
+	// Cooldown between self-heal actions. Defaults to 5m.
+	// +kubebuilder:default="5m"
+	// +optional
+	Cooldown string `json:"cooldown,omitempty"`
+}
+
 // Source type constants.
 const (
 	SourceTypeGit       = "git"
@@ -317,6 +333,10 @@ type ApplicationSpec struct {
 	// ApprovalGates define manual approval gates for stage transitions.
 	// +optional
 	ApprovalGates []ApprovalGate `json:"approvalGates,omitempty"`
+
+	// SelfHeal controls automatic remediation when drift or health failures are detected.
+	// +optional
+	SelfHeal *SelfHealConfig `json:"selfHeal,omitempty"`
 }
 
 // ResourceSync tracks the sync status of a managed Kubernetes resource.
@@ -409,6 +429,10 @@ type ApplicationStatus struct {
 	// Approval gate status
 	// +optional
 	Gates []GateStatus `json:"gates,omitempty"`
+
+	// LastSelfHealTime records the last time a self-heal action was taken.
+	// +optional
+	LastSelfHealTime *metav1.Time `json:"lastSelfHealTime,omitempty"`
 }
 
 // +kubebuilder:object:root=true
