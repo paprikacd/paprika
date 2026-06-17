@@ -504,6 +504,19 @@ func setupApplicationSetController(mgr ctrl.Manager, shardFilter *sharding.Filte
 	return nil
 }
 
+func setupAnalysisRunController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, broker *events.Broker) error {
+	if err := (&controller.AnalysisRunReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Analyzer: analysis.NewAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig()),
+		//nolint:staticcheck,nolintlint // reconcilers use the legacy record.EventRecorder API
+		EventRecorder: mgr.GetEventRecorderFor("analysisrun-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up analysisrun controller: %w", err)
+	}
+	return nil
+}
+
 func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
@@ -625,6 +638,7 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		name  string
 		setup func() error
 	}{
+		{"analysisrun", func() error { return setupAnalysisRunController(mgr, k8sClient, operatorNamespace, broker) }},
 		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, shardFilter) }},
 		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
 		{"release", func() error {

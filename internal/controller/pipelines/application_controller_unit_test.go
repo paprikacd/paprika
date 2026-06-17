@@ -285,3 +285,167 @@ func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
 		})
 	}
 }
+
+func TestApplicationReconciler_reconcileAnalysisRuns_createsRunAndAggregates(t *testing.T) {
+	ctx := context.Background()
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			AnalysisTemplates: []pipelinesv1alpha1.AnalysisTemplateRef{
+				{Name: "tpl", IntervalSeconds: 30},
+			},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+
+	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
+		t.Fatalf("reconcileAnalysisRuns failed: %v", err)
+	}
+
+	var run pipelinesv1alpha1.AnalysisRun
+	if err := c.Get(ctx, client.ObjectKey{Name: "app-tpl-analysis", Namespace: "default"}, &run); err != nil {
+		t.Fatalf("expected analysis run to be created: %v", err)
+	}
+	if run.Spec.TemplateRef != "tpl" {
+		t.Errorf("templateRef: got %q, want %q", run.Spec.TemplateRef, "tpl")
+	}
+	if run.Spec.IntervalSeconds != 30 {
+		t.Errorf("intervalSeconds: got %d, want 30", run.Spec.IntervalSeconds)
+	}
+}
+
+func TestApplicationReconciler_reconcileAnalysisRuns_deletesStaleRun(t *testing.T) {
+	ctx := context.Background()
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			AnalysisTemplates: []pipelinesv1alpha1.AnalysisTemplateRef{
+				{Name: "tpl", IntervalSeconds: 30},
+			},
+		},
+	}
+
+	staleRun := &pipelinesv1alpha1.AnalysisRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app-old-analysis",
+			Namespace: "default",
+			Labels: map[string]string{
+				engine.ApplicationNameLabelKey: "app",
+			},
+		},
+		Spec: pipelinesv1alpha1.AnalysisRunSpec{
+			TemplateRef:    "old",
+			ApplicationRef: "app",
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, staleRun).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+
+	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
+		t.Fatalf("reconcileAnalysisRuns failed: %v", err)
+	}
+
+	var list pipelinesv1alpha1.AnalysisRunList
+	if err := c.List(ctx, &list, client.InNamespace("default")); err != nil {
+		t.Fatalf("list analysis runs: %v", err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("expected 1 analysis run, got %d", len(list.Items))
+	}
+	if list.Items[0].Name != "app-tpl-analysis" {
+		t.Errorf("unexpected run name: %s", list.Items[0].Name)
+	}
+}
+
+func TestApplicationReconciler_handleAnalysisFailure_rollback(t *testing.T) {
+	ctx := context.Background()
+
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app-release",
+			Namespace: "default",
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			Phase: pipelinesv1alpha1.ReleaseComplete,
+		},
+	}
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app",
+			Namespace: "default",
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			AnalysisTemplates: []pipelinesv1alpha1.AnalysisTemplateRef{
+				{
+					Name: "tpl",
+					OnFailure: &pipelinesv1alpha1.FailureAction{
+						Action: "rollback",
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationHealthy,
+			ReleaseRef: release.Name,
+		},
+	}
+
+	failedRun := &pipelinesv1alpha1.AnalysisRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "app-tpl-analysis",
+			Namespace: "default",
+		},
+		Spec: pipelinesv1alpha1.AnalysisRunSpec{
+			TemplateRef:    "tpl",
+			ApplicationRef: "app",
+		},
+		Status: pipelinesv1alpha1.AnalysisRunStatus{
+			Phase: pipelinesv1alpha1.AnalysisRunFailed,
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release, failedRun).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+
+	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	if err := r.handleAnalysisFailure(ctx, app); err != nil {
+		t.Fatalf("handleAnalysisFailure failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: release.Name, Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if _, ok := updated.Annotations[rollbackAnnotation]; !ok {
+		t.Errorf("expected release to have rollback annotation")
+	}
+}
