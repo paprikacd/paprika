@@ -1,13 +1,12 @@
 {{- if .Values.crd.enable }}
----
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.1
     {{- if .Values.crd.keep }}
     "helm.sh/resource-policy": keep
     {{- end }}
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: applications.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
@@ -354,7 +353,8 @@ spec:
                       for testing)
                     type: string
                   image:
-                    description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                    description: 'Deprecated: Image is the legacy OCI URL field. Use
+                      oci.url instead.'
                     type: string
                   inline:
                     description: Inline references a manifest snapshot ConfigMap (for
@@ -371,6 +371,27 @@ spec:
                   key:
                     description: S3 object key (for type=s3)
                     type: string
+                  oci:
+                    description: OCI registry reference (for type=oci)
+                    properties:
+                      insecure:
+                        description: Insecure allows plain HTTP for the OCI registry
+                        type: boolean
+                      secretRef:
+                        description: SecretRef references a Secret with dockerconfigjson
+                          or .dockerconfigjson
+                        type: string
+                      tag:
+                        description: Tag or digest of the artifact (e.g. "1.2.3",
+                          "@sha256:...")
+                        type: string
+                      url:
+                        description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                        pattern: ^oci://
+                        type: string
+                    required:
+                    - url
+                    type: object
                   path:
                     description: Path within the repo to the chart/source (for type=git
                       or type=s3)
@@ -394,7 +415,9 @@ spec:
                     description: Git branch, tag, or commit (for type=git)
                     type: string
                   secretRef:
-                    description: Secret reference for private repos or S3 credentials
+                    description: |-
+                      Secret reference for private repos, S3, or OCI credentials.
+                      For OCI this should contain dockerconfigjson or username/password.
                     type: string
                   type:
                     enum:

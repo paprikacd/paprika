@@ -361,6 +361,11 @@ func (in *ApplicationSetStatus) DeepCopy() *ApplicationSetStatus {
 func (in *ApplicationSource) DeepCopyInto(out *ApplicationSource) {
 	*out = *in
 	out.Chart = in.Chart
+	if in.OCI != nil {
+		in, out := &in.OCI, &out.OCI
+		*out = new(OCISourceSpec)
+		**out = **in
+	}
 	if in.Inline != nil {
 		in, out := &in.Inline, &out.Inline
 		*out = new(InlineSourceSpec)

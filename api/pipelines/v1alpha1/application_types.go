@@ -122,8 +122,9 @@ type ApplicationSource struct {
 	Path string `json:"path,omitempty"`
 	// Helm chart reference (for type=helm)
 	Chart ChartRef `json:"chart,omitempty"`
-	// OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
-	Image string `json:"image,omitempty"`
+	// OCI registry reference (for type=oci)
+	// +optional
+	OCI *OCISourceSpec `json:"oci,omitempty"`
 	// S3 bucket (for type=s3)
 	Bucket string `json:"bucket,omitempty"`
 	// S3 object key (for type=s3)
@@ -132,7 +133,8 @@ type ApplicationSource struct {
 	Region string `json:"region,omitempty"`
 	// S3 endpoint URL (for type=s3, use LocalStack endpoint for testing)
 	Endpoint string `json:"endpoint,omitempty"`
-	// Secret reference for private repos or S3 credentials
+	// Secret reference for private repos, S3, or OCI credentials.
+	// For OCI this should contain dockerconfigjson or username/password.
 	SecretRef string `json:"secretRef,omitempty"`
 	// Insecure allows plain HTTP for OCI registries (type=oci)
 	// +optional
@@ -143,6 +145,9 @@ type ApplicationSource struct {
 	// Inline references a manifest snapshot ConfigMap (for type=inline).
 	// +optional
 	Inline *InlineSourceSpec `json:"inline,omitempty"`
+	// Deprecated: Image is the legacy OCI URL field. Use oci.url instead.
+	// +optional
+	Image string `json:"image,omitempty"`
 }
 
 // ApplicationBuildStep defines a step in the build pipeline.

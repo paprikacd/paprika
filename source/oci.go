@@ -9,16 +9,60 @@ import (
 	"path/filepath"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/registry"
 )
 
 // OCISource represents an OCI registry source (Helm chart or artifact).
 type OCISource struct {
-	URL      string
-	Tag      string
-	Insecure bool
-	WorkDir  string
+	URL       string
+	Tag       string
+	Insecure  bool
+	WorkDir   string
+	SecretRef string
+	Namespace string
+	Client    client.Client
+}
+
+// clientOptions returns registry client options including authentication.
+func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption, error) {
+	opts := []registry.ClientOption{registry.ClientOptEnableCache(true)}
+	if o.Insecure {
+		opts = append(opts, registry.ClientOptPlainHTTP())
+	}
+	if o.SecretRef == "" || o.Client == nil {
+		return opts, nil
+	}
+
+	var secret corev1.Secret
+	if err := o.Client.Get(ctx, client.ObjectKey{Name: o.SecretRef, Namespace: o.Namespace}, &secret); err != nil {
+		return nil, fmt.Errorf("get OCI secret %s/%s: %w", o.Namespace, o.SecretRef, err)
+	}
+
+	if dockerCfg := secret.Data[".dockerconfigjson"]; len(dockerCfg) > 0 {
+		cfgDir := filepath.Join(o.WorkDir, "oci-docker-config", SanitizeName(o.URL))
+		if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+			return nil, fmt.Errorf("create docker config dir: %w", err)
+		}
+		cfgPath := filepath.Join(cfgDir, "config.json")
+		if err := os.WriteFile(cfgPath, dockerCfg, 0o600); err != nil {
+			return nil, fmt.Errorf("write docker config: %w", err)
+		}
+		opts = append(opts, registry.ClientOptCredentialsFile(cfgPath))
+		return opts, nil
+	}
+
+	username := string(secret.Data["username"])
+	password := string(secret.Data["password"])
+	if username != "" || password != "" {
+		opts = append(opts, registry.ClientOptBasicAuth(username, password))
+		return opts, nil
+	}
+
+	return opts, nil
 }
 
 // IsOCIURL reports whether the given URL is an OCI registry reference.
@@ -32,9 +76,9 @@ func (o *OCISource) Resolve(ctx context.Context) (*ResolveResult, error) {
 		return nil, fmt.Errorf("not an OCI URL: %s", o.URL)
 	}
 
-	clientOpts := []registry.ClientOption{registry.ClientOptEnableCache(true)}
-	if o.Insecure {
-		clientOpts = append(clientOpts, registry.ClientOptPlainHTTP())
+	clientOpts, err := o.clientOptions(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	ref := buildOCIRef(o.URL, o.Tag)
