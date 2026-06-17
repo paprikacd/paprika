@@ -6,4 +6,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: ghcr.io/benebsworth/paprika
-  newTag: v0.0.1
+  newTag: latest

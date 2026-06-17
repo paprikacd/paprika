@@ -20,6 +20,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Stage represents a deployment stage.
         properties:
           apiVersion:
             description: |-
@@ -39,16 +40,111 @@ spec:
           metadata:
             type: object
           spec:
+            description: StageSpec defines the specification for a stage.
             properties:
-              cluster:
+              canary:
+                description: |-
+                  CanaryConfig defines the configuration for canary deployments.
+                  CanaryConfig defines the configuration for canary deployments.
                 properties:
+                  analysis:
+                    description: PDV analysis configuration
+                    properties:
+                      checks:
+                        items:
+                          description: |-
+                            AnalysisCheck defines a check for canary analysis.
+                            AnalysisCheck defines a check for canary analysis.
+                          properties:
+                            httpHeaders:
+                              additionalProperties:
+                                type: string
+                              description: HTTP headers to send with the request
+                              type: object
+                            metric:
+                              description: 'Pod metric to check (for type=podMetrics):
+                                errorRate, latencyP99, restartRate'
+                              enum:
+                              - errorRate
+                              - latencyP99
+                              - restartRate
+                              type: string
+                            requestCount:
+                              description: Number of requests to make per analysis
+                                cycle
+                              type: integer
+                            successThreshold:
+                              description: Fraction of requests that must succeed
+                                as a percentage string (e.g. "99" = 99%)
+                              type: string
+                            threshold:
+                              description: 'Threshold as a string (errorRate: "0.01"
+                                = 1%, latencyP99: "500" = 500ms, restartRate: "3"
+                                = count)'
+                              type: string
+                            timeoutSeconds:
+                              description: Timeout per request in seconds
+                              type: integer
+                            type:
+                              enum:
+                              - http
+                              - podMetrics
+                              type: string
+                            url:
+                              description: URL to probe (for type=http)
+                              type: string
+                            windowSeconds:
+                              description: Time window in seconds to evaluate the
+                                metric
+                              type: integer
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      intervalSeconds:
+                        type: integer
+                      rollbackOnFail:
+                        type: boolean
+                    type: object
+                  intervalSeconds:
+                    description: Seconds to wait between canary weight steps
+                    type: integer
+                  steps:
+                    description: Traffic weight percentages at each canary step, e.g.
+                      [10, 30, 60, 100]
+                    items:
+                      type: integer
+                    type: array
+                required:
+                - steps
+                type: object
+              cluster:
+                description: ClusterRef references a Kubernetes cluster.
+                properties:
+                  agentAddress:
+                    type: string
+                  kubeconfigSecret:
+                    type: string
+                  mode:
+                    description: ClusterMode defines how the controller connects to
+                      a cluster.
+                    type: string
                   name:
+                    type: string
+                  namespace:
+                    type: string
+                  server:
+                    type: string
+                  serviceAccount:
                     type: string
                 required:
                 - name
                 type: object
               gates:
                 items:
+                  description: |-
+                    GateConfig defines a gate for stage promotion.
+                    GateConfig defines a gate for stage promotion.
                   properties:
                     endpoint:
                       type: string
@@ -71,12 +167,73 @@ spec:
                 items:
                   type: string
                 type: array
+              trafficRouter:
+                description: TrafficRouter defines the traffic router configuration
+                  for canary rollouts.
+                properties:
+                  gatewayApi:
+                    description: GatewayAPIRouterConfig defines the Gateway API HTTPRoute
+                      configuration for traffic routing.
+                    properties:
+                      canaryService:
+                        description: Explicit canary service name. If empty, derived
+                          from release name.
+                        type: string
+                      httpRoute:
+                        description: Name of the existing HTTPRoute to manage. If
+                          empty, derived from release name.
+                        type: string
+                      stableService:
+                        description: Explicit stable service name. If empty, derived
+                          from release name.
+                        type: string
+                    type: object
+                  istio:
+                    description: IstioRouterConfig defines the Istio VirtualService
+                      configuration for traffic routing.
+                    properties:
+                      canaryService:
+                        description: Explicit canary service name. If empty, derived
+                          from release name.
+                        type: string
+                      hosts:
+                        description: Hosts to match in spec.hosts. If empty, patches
+                          all HTTP routes on the VirtualService.
+                        items:
+                          type: string
+                        type: array
+                      routes:
+                        description: Route names within the VirtualService to patch.
+                          If empty, patches the first unnamed route.
+                        items:
+                          type: string
+                        type: array
+                      stableService:
+                        description: Explicit stable service name. If empty, derived
+                          from release name.
+                        type: string
+                      virtualService:
+                        description: Name of the existing VirtualService to manage.
+                          If empty, derived from release name.
+                        type: string
+                    type: object
+                  provider:
+                    description: Provider specifies the traffic router provider ("istio"
+                      or "gateway-api").
+                    enum:
+                    - istio
+                    - gateway-api
+                    type: string
+                required:
+                - provider
+                type: object
             required:
             - name
             - ring
             - templates
             type: object
           status:
+            description: StageStatus represents the status of a stage.
             properties:
               lastPromotion:
                 format: date-time

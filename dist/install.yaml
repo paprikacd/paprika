@@ -316,6 +316,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -585,6 +602,46 @@ spec:
                 - Auto
                 - Manual
                 type: string
+              syncWindows:
+                description: SyncWindows restrict when automatic sync may run.
+                items:
+                  description: SyncWindow defines a cron-based time window that controls
+                    automatic sync.
+                  properties:
+                    duration:
+                      description: |-
+                        Duration is how long the window stays active after each scheduled start.
+                        Parsed with time.ParseDuration, e.g. "8h".
+                      type: string
+                    kind:
+                      description: Kind is whether this window allows or blocks sync.
+                      enum:
+                      - Allow
+                      - Block
+                      type: string
+                    schedule:
+                      description: |-
+                        Schedule is a standard 5-field cron expression:
+                          MIN HOUR DOM MONTH DOW
+                        Example: "0 9 * * MON-FRI" for 09:00 on weekdays.
+                      type: string
+                    stages:
+                      description: Stages limits the window to the named stages. Empty
+                        means all stages.
+                      items:
+                        type: string
+                      type: array
+                    timezone:
+                      description: |-
+                        Timezone is an IANA timezone name (e.g. "America/New_York"). Defaults to
+                        UTC when empty.
+                      type: string
+                  required:
+                  - duration
+                  - kind
+                  - schedule
+                  type: object
+                type: array
             required:
             - source
             - stages
@@ -709,6 +766,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.
@@ -3667,7 +3729,7 @@ spec:
               key: secret
               name: paprika-webhook-secret
               optional: true
-        image: ghcr.io/benebsworth/paprika:v0.0.1
+        image: ghcr.io/benebsworth/paprika:latest
         livenessProbe:
           httpGet:
             path: /healthz

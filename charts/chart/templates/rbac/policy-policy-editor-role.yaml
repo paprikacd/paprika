@@ -14,18 +14,24 @@ metadata:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-  name: {{ include "paprika.resourceName" (dict "suffix" "release-admin-role" "context" $) }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "policy-policy-editor-role" "context" $) }}
 rules:
 - apiGroups:
-  - pipelines.paprika.io
+  - policy.paprika.io
   resources:
-  - releases
+  - policies
   verbs:
-  - '*'
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
-  - pipelines.paprika.io
+  - policy.paprika.io
   resources:
-  - releases/status
+  - policies/status
   verbs:
   - get
 {{- end }}
