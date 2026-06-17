@@ -67,7 +67,7 @@ spec:
         intervalSeconds: 60
       approvalGates:
         - name: qa-approval
-          description: "QA sign-off required"
+          description: &quot;QA sign-off required&quot;
     - name: production
       ring: 3
       strategy: Canary
@@ -82,8 +82,8 @@ spec:
   strategy: Rolling                # default strategy per-stage
   syncPolicy: Auto                 # Auto or Manual
   parameters:                      # Helm values
-    replicaCount: "3"
-    image.tag: "latest"</code></pre>
+    replicaCount: &quot;3&quot;
+    image.tag: &quot;latest&quot;</code></pre>
 
       <h2>Status</h2>
       <table>

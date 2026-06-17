@@ -10,7 +10,7 @@ export default function PipelinePage() {
 
       <h2>Overview</h2>
       <p>
-        Pipelines model the build portion of CI/CD. Each step runs as a Kubernetes Job in the operator's namespace. Steps can depend on previous steps, creating a DAG execution graph. Pipelines are created automatically by the Application controller when <code>spec.build</code> is defined.
+        Pipelines model the build portion of CI/CD. Each step runs as a Kubernetes Job in the operator&apos;s namespace. Steps can depend on previous steps, creating a DAG execution graph. Pipelines are created automatically by the Application controller when <code>spec.build</code> is defined.
       </p>
 
       <h2>Spec</h2>

@@ -1,30 +1,20 @@
 import { useState } from "react"
-import type { Application } from "@/gen/paprika/v1/api_pb"
+import Link from "next/link"
+import type { Application, PolicyResult, Release } from "@/gen/paprika/v1/api_pb"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createConnectTransport } from "@connectrpc/connect-web"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import {
   GitBranch, Database, Package, ExternalLink, RefreshCw,
   CheckCircle2, AlertCircle, Loader2, Heart, XCircle,
-  Clock, Activity,
+  Clock, Activity, ArrowRight, Target, AlertTriangle,
 } from "lucide-react"
 
 const transport = createConnectTransport({ baseUrl: "" })
 const client = createPromiseClient(PaprikaService, transport)
-
-const phaseIcons: Record<string, typeof Activity> = {
-  Pending: Clock,
-  Building: Activity,
-  Promoting: Activity,
-  Canarying: Activity,
-  Verifying: Activity,
-  Healthy: CheckCircle2,
-  Degraded: AlertCircle,
-  Failed: XCircle,
-  RolledBack: AlertCircle,
-}
 
 function PhaseTimeline({ phase }: { phase: string }) {
   const phases = ["Pending", "Building", "Promoting", "Canarying", "Verifying", "Healthy"]
@@ -403,24 +393,62 @@ function ApprovalGateButton({ application, onApproved }: { application: Applicat
   )
 }
 
-export function ApplicationCard({ application, onSynced }: { application: Application; onSynced?: () => void }) {
+function PolicySummary({ results }: { results?: PolicyResult[] }) {
+  if (!results || results.length === 0) return null
+
+  const pass = results.filter((r) => r.passed).length
+  const warning = results.filter((r) => !r.passed && r.severity.toLowerCase() === "warning").length
+  const fail = results.filter((r) => !r.passed && r.severity.toLowerCase() !== "warning").length
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-muted-foreground">Policies</span>
+      <Badge className="gap-1 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+        <CheckCircle2 className="size-3" />
+        {pass}
+      </Badge>
+      {warning > 0 && (
+        <Badge className="gap-1 bg-amber-500/10 text-amber-500 border-amber-500/20">
+          <AlertTriangle className="size-3" />
+          {warning}
+        </Badge>
+      )}
+      {fail > 0 && (
+        <Badge className="gap-1 bg-destructive/10 text-destructive border-destructive/20">
+          <XCircle className="size-3" />
+          {fail}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+export function ApplicationCard({ application, release, onSynced }: { application: Application; release?: Release; onSynced?: () => void }) {
   const hasHealthChecks = application.healthChecks && application.healthChecks.length > 0
+  const detailHref = `/dashboard/application?namespace=${encodeURIComponent(application.namespace)}&name=${encodeURIComponent(application.name)}`
 
   return (
     <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate font-mono text-sm font-medium">
+          <Link href={detailHref} className="min-w-0 flex-1">
+            <h3 className="truncate font-mono text-sm font-medium group-hover:text-primary">
               {application.name}
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
               ns/{application.namespace}
             </p>
-          </div>
+          </Link>
           <div className="flex shrink-0 items-center gap-2">
             <StatusBadge status={application.phase} />
             {onSynced && <SyncButton application={application} onSynced={onSynced} />}
+            <Link
+              href={detailHref}
+              className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-background px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              View
+              <ArrowRight className="size-3" />
+            </Link>
           </div>
         </div>
 
@@ -451,6 +479,19 @@ export function ApplicationCard({ application, onSynced }: { application: Applic
             </div>
           </div>
         </div>
+
+        {application.releaseRef && (
+          <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-2.5 py-2">
+            <Target className="size-3.5 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] text-muted-foreground">Release</p>
+              <p className="truncate font-mono text-xs font-medium">{application.releaseRef}</p>
+            </div>
+          </div>
+        )}
+        {release && release.policyResults.length > 0 && (
+          <PolicySummary results={release.policyResults} />
+        )}
 
         {application.revision && (
           <div className="flex items-center gap-1.5">

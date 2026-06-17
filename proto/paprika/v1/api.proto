@@ -176,6 +176,8 @@ message Release {
   repeated Promotion promotion_history = 8;
   ManifestSource manifest_source = 9;
   repeated PolicyResult policy_results = 10;
+  string application = 11;
+  string rolled_back_to = 12;
 }
 
 message Promotion {
@@ -275,6 +277,30 @@ message GetApplicationResponse {
   Application application = 1;
 }
 
+message ApplicationSet {
+  string name = 1;
+  string namespace = 2;
+  int32 applications = 3;
+  string phase = 4;
+}
+
+message ListApplicationSetsRequest {
+  optional string namespace = 1;
+}
+
+message ListApplicationSetsResponse {
+  repeated ApplicationSet applicationsets = 1;
+}
+
+message GetApplicationSetRequest {
+  string name = 1;
+  string namespace = 2;
+}
+
+message GetApplicationSetResponse {
+  ApplicationSet applicationset = 1;
+}
+
 message SyncApplicationRequest {
   string name = 1;
   string namespace = 2;
@@ -337,16 +363,28 @@ message ApplyBundleResponse {
   string block_reason = 5;
 }
 
+message RollbackReleaseRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message RollbackReleaseResponse {
+  Release release = 1;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
   rpc ListStages(ListStagesRequest) returns (ListStagesResponse);
   rpc ListApplications(ListApplicationsRequest) returns (ListApplicationsResponse);
   rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
+  rpc ListApplicationSets(ListApplicationSetsRequest) returns (ListApplicationSetsResponse);
+  rpc GetApplicationSet(GetApplicationSetRequest) returns (GetApplicationSetResponse);
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);
   rpc ResolveSource(ResolveSourceRequest) returns (ResolveSourceResponse);
   rpc Render(RenderRequest) returns (RenderResponse);
   rpc ApplyBundle(ApplyBundleRequest) returns (ApplyBundleResponse);
+  rpc RollbackRelease(RollbackReleaseRequest) returns (RollbackReleaseResponse);
 }

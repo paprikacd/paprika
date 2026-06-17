@@ -1134,7 +1134,7 @@ Add the following markers at the top of `internal/api/apply_bundle.go`:
 
 > **Note:** Add required imports (`ctrl "sigs.k8s.io/controller-runtime"`, `yaml "sigs.k8s.io/yaml"`) and ensure it compiles. Remove the `k8s.io/apimachinery/pkg/util/yaml` import if it conflicts.
 
-- [ ] **Step 5: Add integration tests for `ApplyBundle` handler**
+- [x] **Step 5: Add integration tests for `ApplyBundle` handler**
 
 Create `internal/api/apply_bundle_test.go`:
 
@@ -1690,7 +1690,11 @@ if app.Spec.Source.Type == paprikav1.SourceTypeInline && app.Status.ReleaseRef =
 }
 ```
 
-- [ ] **Step 6: Add snapshot janitor**
+> **Race safety:** `ApplyBundle` writes `Application.status.releaseRef` after creating the Release, which races with the Application controller's status updates. Ensure `patchAppStatus` preserves an existing `releaseRef` from the live object when the in-memory status does not set it, otherwise the controller can overwrite the field and stay stuck in `AwaitingInlineRelease`.
+
+- [x] **Step 5: Guard `reconcileRelease` for inline**
+
+- [x] **Step 6: Add snapshot janitor**
 
 In `reconcileApp`, after handling inline source, add:
 
@@ -1795,7 +1799,7 @@ func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventTyp
 
 Add `EventRecorder record.EventRecorder` to the `ApplicationReconciler` struct and initialize it in `SetupWithManager` via `mgr.GetEventRecorderFor("application-controller")`.
 
-- [ ] **Step 7: Add imports**
+- [x] **Step 7: Add imports**
 
 Ensure `application_controller.go` imports:
 
@@ -1810,7 +1814,7 @@ import (
 )
 ```
 
-- [ ] **Step 8: Add RBAC markers**
+- [x] **Step 8: Add RBAC markers**
 
 Add to the RBAC markers in `application_controller.go`:
 
@@ -1819,7 +1823,7 @@ Add to the RBAC markers in `application_controller.go`:
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 ```
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add internal/controller/pipelines/application_controller.go
@@ -1835,7 +1839,7 @@ This chunk implements rollback to a previous Release's snapshot and snapshot cle
 **Files:**
 - Modify: `internal/controller/pipelines/release_controller.go`
 
-- [ ] **Step 1: Find previous Complete Release for same Application**
+- [x] **Step 1: Find previous Complete Release for same Application**
 
 ```go
 func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *paprikav1.Release) (*paprikav1.Release, error) {
@@ -1874,7 +1878,7 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 }
 ```
 
-- [ ] **Step 2: Implement rollback execution**
+- [x] **Step 2: Implement rollback execution**
 
 Replace `handleFailedRollback()`:
 
@@ -1964,7 +1968,7 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 }
 ```
 
-- [ ] **Step 3: Ensure rollback is reachable**
+- [x] **Step 3: Ensure rollback is reachable**
 
 Modify `reconcileReleasePhase` in `internal/controller/pipelines/release_controller.go` so that rollback is attempted before the terminal-phase short-circuit:
 
@@ -1984,7 +1988,7 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 
 This ensures a `Failed` Release with `OnFailure: rollback` is rolled back instead of short-circuited.
 
-- [ ] **Step 4: Add unit tests**
+- [x] **Step 4: Add unit tests**
 
 Create `internal/controller/pipelines/release_controller_inline_test.go`:
 
@@ -2557,9 +2561,9 @@ Modify `ui/src/components/dashboard/application-card.tsx` to display:
 - Number of policy warnings
 - Rollout phase
 
-- [ ] **Step 2: Add Application detail page**
+- [x] **Step 2: Add Application detail page**
 
-Create `ui/src/app/dashboard/applications/[name]/page.tsx` showing:
+Created `ui/src/app/dashboard/application/page.tsx` (query-param route for static export) showing:
 - Release history list
 - Managed resources table
 - Policy results
@@ -2600,7 +2604,7 @@ git commit -m "feat(ui): show apply policy results and release history"
 - Create: `test/e2e/apply_test.go`
 - Modify: `internal/api/server_test.go` if exists
 
-- [ ] **Step 1: Add E2E test**
+- [x] **Step 1: Add E2E test**
 
 Create `test/e2e/apply_test.go`:
 
@@ -2638,7 +2642,7 @@ git commit -m "test(e2e): add apply -f end-to-end test"
 
 ### Task 6.4: Final integration check
 
-- [ ] **Step 1: Run full test suite**
+- [x] **Step 1: Run full test suite**
 
 ```bash
 make test
@@ -2648,13 +2652,13 @@ make build-cli
 
 Expected: all pass.
 
-- [ ] **Step 2: Update CLI documentation**
+- [x] **Step 2: Update CLI documentation**
 
 Update `docs/cli.md` with `paprika apply` reference:
 - Usage examples for raw YAML, directories, dry-run, and policy overrides.
 - Explanation of `--wait`, `--timeout`, and TUI behavior.
 
-- [ ] **Step 3: Update API documentation**
+- [x] **Step 3: Update API documentation**
 
 Update `docs/api.md` with the new `ApplyBundle` RPC:
 - Request/response message reference.
@@ -2730,7 +2734,7 @@ git commit -m "build(make): add generate-proto target"
 **Files:**
 - Modify: `PROJECT`
 
-- [ ] **Step 1: Correct Application path**
+- [x] **Step 1: Correct Application path**
 
 Open `PROJECT` and ensure the `Application` resource entry uses:
 
@@ -2753,7 +2757,7 @@ git commit -m "chore(project): fix Application API path"
 - Modify: `config/crd/kustomization.yaml`
 - Modify: `charts/chart/templates/` if generated CRDs are packaged there
 
-- [ ] **Step 1: Add Policy CRD to kustomization**
+- [x] **Step 1: Add Policy CRD to kustomization**
 
 After `make manifests`, add `policy.paprika.io_policies.yaml` to `config/crd/kustomization.yaml` under `resources:`.
 
@@ -2778,7 +2782,7 @@ git commit -m "chore(manifests): package Policy CRD with kustomize and helm"
 - Modify: `internal/webhook/pipelines/v1alpha1/application_webhook.go`
 - Modify: `internal/api/server.go` if necessary
 
-- [ ] **Step 1: Validate inline source consistency**
+- [x] **Step 1: Validate inline source consistency**
 
 Modify `validateSource` in `internal/webhook/pipelines/v1alpha1/application_webhook.go`:
 
@@ -2810,7 +2814,7 @@ func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Appli
 }
 ```
 
-- [ ] **Step 2: Skip repo authorization for inline sources**
+- [x] **Step 2: Skip repo authorization for inline sources**
 
 Update `validateApplication`:
 
@@ -2841,7 +2845,7 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 }
 ```
 
-- [ ] **Step 3: Add webhook tests**
+- [x] **Step 3: Add webhook tests**
 
 Add table-driven tests in `internal/webhook/pipelines/v1alpha1/application_webhook_test.go`:
 - Inline source without `configMapRef` is rejected.

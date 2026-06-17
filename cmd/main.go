@@ -28,8 +28,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -278,10 +280,16 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 	rateLimiter := ratelimit.NewControllerRateLimit()
 	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
 
-	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator); err != nil {
+	broker, err := events.NewBrokerFromEnv()
+	if err != nil {
+		return fmt.Errorf("create event broker: %w", err)
+	}
+	defer broker.Close()
+
+	if err := setupOperatorControllers(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker); err != nil {
 		return err
 	}
-	if err := startOperatorUI(mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz); err != nil {
+	if err := startOperatorUI(mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker); err != nil {
 		return err
 	}
 
@@ -296,28 +304,59 @@ func runOperatorMode(uiAddr, metricsAddr, probeAddr, webhookCertPath, webhookCer
 
 func registerDefaultProjectBootstrap(mgr ctrl.Manager, operatorNamespace string) error {
 	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-		if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), operatorNamespace); createErr != nil {
-			return fmt.Errorf("ensure operator namespace default appproject: %w", createErr)
-		}
-		var apps pipelinesv1alpha1.ApplicationList
-		if listErr := mgr.GetClient().List(ctx, &apps); listErr != nil {
-			return fmt.Errorf("list applications: %w", listErr)
-		}
-		seen := map[string]bool{operatorNamespace: true}
-		for i := range apps.Items {
-			ns := apps.Items[i].Namespace
-			if seen[ns] {
-				continue
-			}
-			seen[ns] = true
-			if createErr := bootstrap.EnsureDefaultAppProject(ctx, mgr.GetClient(), ns); createErr != nil {
-				return fmt.Errorf("ensure default appproject in %s: %w", ns, createErr)
-			}
-		}
+		// Run bootstrapping in a goroutine so that manager startup is not blocked
+		// while waiting for the local webhook endpoints to become reachable.
+		go bootstrapDefaultProjects(ctx, mgr.GetClient(), operatorNamespace)
 		<-ctx.Done()
 		return nil
 	})); err != nil {
 		return fmt.Errorf("register default appproject bootstrap: %w", err)
+	}
+	return nil
+}
+
+func bootstrapDefaultProjects(ctx context.Context, c client.Client, operatorNamespace string) {
+	log := ctrl.Log.WithName("bootstrap")
+
+	if err := ensureProjectWithRetry(ctx, c, operatorNamespace, log); err != nil {
+		log.Error(err, "Failed to ensure operator namespace default AppProject")
+		return
+	}
+
+	var apps pipelinesv1alpha1.ApplicationList
+	if err := c.List(ctx, &apps); err != nil {
+		log.Error(err, "Failed to list applications during bootstrap")
+		return
+	}
+
+	seen := map[string]bool{operatorNamespace: true}
+	for i := range apps.Items {
+		ns := apps.Items[i].Namespace
+		if seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		if err := ensureProjectWithRetry(ctx, c, ns, log); err != nil {
+			log.Error(err, "Failed to ensure default AppProject", "namespace", ns)
+		}
+	}
+}
+
+func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log logr.Logger) error {
+	if err := wait.ExponentialBackoffWithContext(ctx, wait.Backoff{
+		Duration: 1 * time.Second,
+		Factor:   2,
+		Cap:      30 * time.Second,
+		Steps:    20,
+	}, func(ctx context.Context) (bool, error) {
+		if err := bootstrap.EnsureDefaultAppProject(ctx, c, ns); err != nil {
+			log.Error(err, "Failed to ensure default AppProject, will retry", "namespace", ns)
+			return false, nil
+		}
+		log.Info("Ensured default AppProject", "namespace", ns)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("ensure default AppProject in %q: %w", ns, err)
 	}
 	return nil
 }
@@ -403,7 +442,7 @@ func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error 
 	return nil
 }
 
-func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
+func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker) error {
 	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
@@ -426,6 +465,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		EventRecorder:        mgr.GetEventRecorderFor("release-controller"),
 		ProjectValidator:     projectValidator,
 		PolicyEvaluator:      policyEvaluator,
+		EventBroker:          broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -452,7 +492,18 @@ func setupArtifactController(mgr ctrl.Manager, shardFilter *sharding.Filter) err
 	return nil
 }
 
-func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator) error {
+func setupApplicationSetController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
+	if err := (&controller.ApplicationSetReconciler{
+		Client:      mgr.GetClient(),
+		Scheme:      mgr.GetScheme(),
+		ShardFilter: shardFilter,
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up applicationset controller: %w", err)
+	}
+	return nil
+}
+
+func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker) error {
 	dynClient, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("creating dynamic client: %w", err)
@@ -480,6 +531,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		RateLimiter:      rateLimiter,
 		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
 		ProjectValidator: projectValidator,
+		EventBroker:      broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}
@@ -562,7 +614,7 @@ func registerProjectLabelIndexers(mgr ctrl.Manager) error {
 	return nil
 }
 
-func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator) error {
+func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, c cache.Cache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker) error {
 	if err := registerProjectLabelIndexers(mgr); err != nil {
 		return err
 	}
@@ -574,12 +626,20 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, shardFilter) }},
 		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
 		{"release", func() error {
-			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator)
+			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
+		{"applicationset", func() error { return setupApplicationSetController(mgr, shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, shardFilter) }},
 		{"application", func() error {
-			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator)
+			return setupApplicationController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, broker)
+		}},
+		{"notification", func() error {
+			return (&controller.NotificationConfigReconciler{
+				Client:      mgr.GetClient(),
+				EventBroker: broker,
+				Sender:      controller.NewNotificationSender(),
+			}).SetupWithManager(mgr)
 		}},
 	}
 
@@ -605,17 +665,11 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 	return nil
 }
 
-func startOperatorUI(mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer) error {
+func startOperatorUI(mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker) error {
 	authInterceptor, err := auth.Interceptor(authCfg, mgr.GetClient())
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
-
-	broker, err := events.NewBrokerFromEnv()
-	if err != nil {
-		return fmt.Errorf("create event broker: %w", err)
-	}
-	defer broker.Close()
 
 	paprikaServer := api.NewPaprikaServer(mgr.GetClient(), broker)
 	paprikaServer.SetGovernanceValidator(projectValidator)

@@ -53,13 +53,33 @@ const (
 	StrategyBlueGreen DeliveryStrategy = "BlueGreen"
 )
 
+// SyncOptions controls how manifests are applied and pruned.
+type SyncOptions struct {
+	// PrunePropagationPolicy selects the deletion propagation policy used when
+	// pruning managed resources.
+	// +kubebuilder:validation:Enum=Foreground;Background;Orphan
+	// +optional
+	PrunePropagationPolicy string `json:"prunePropagationPolicy,omitempty"`
+	// Replace uses Update instead of server-side apply.
+	// +optional
+	Replace bool `json:"replace,omitempty"`
+	// Force enables force-conflicts for server-side apply.
+	// +optional
+	Force bool `json:"force,omitempty"`
+	// ApplyOutOfSyncOnly skips applying resources whose live state already
+	// matches the desired manifest.
+	// +optional
+	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
+}
+
 // Source type constants.
 const (
-	SourceTypeGit    = "git"
-	SourceTypeHelm   = "helm"
-	SourceTypeS3     = "s3"
-	SourceTypeOCI    = "oci"
-	SourceTypeInline = "inline"
+	SourceTypeGit       = "git"
+	SourceTypeHelm      = "helm"
+	SourceTypeKustomize = "kustomize"
+	SourceTypeS3        = "s3"
+	SourceTypeOCI       = "oci"
+	SourceTypeInline    = "inline"
 )
 
 // InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
@@ -72,7 +92,7 @@ type InlineSourceSpec struct {
 // ApplicationSource defines the source of an application.
 // ApplicationSource defines the source of an application.
 type ApplicationSource struct {
-	// +kubebuilder:validation:Enum=git;helm;s3;oci;inline
+	// +kubebuilder:validation:Enum=git;helm;kustomize;s3;oci;inline
 	Type string `json:"type"`
 	// RepoRef references a core.paprika.io Repository by name. When set, takes
 	// precedence over inline URL/credentials fields.
@@ -277,6 +297,10 @@ type ApplicationSpec struct {
 	// +kubebuilder:validation:Enum=Auto;Manual
 	// +kubebuilder:default=Auto
 	SyncPolicy SyncPolicy `json:"syncPolicy,omitempty"`
+
+	// SyncOptions fine-tunes how manifests are applied and pruned.
+	// +optional
+	SyncOptions *SyncOptions `json:"syncOptions,omitempty"`
 
 	// Parameters are Helm value overrides passed to all releases.
 	// +optional

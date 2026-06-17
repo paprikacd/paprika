@@ -66,7 +66,7 @@ spec:
 EOF</code></pre>
 
       <h3>What Happens</h3>
-      <p>When you create the Application, Paprika's controllers automatically:</p>
+      <p>When you create the Application, Paprika&apos;s controllers automatically:</p>
       <ol>
         <li><strong>Template Created</strong> — A <code>Template</code> resource is created from the <code>source</code> field</li>
         <li><strong>Stage Created</strong> — A <code>Stage</code> resource is created for each stage entry</li>

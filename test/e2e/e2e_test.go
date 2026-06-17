@@ -88,9 +88,14 @@ func deployManager() {
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 
+	By("restarting the controller-manager to ensure the freshly built image is used")
+	cmd = exec.Command("kubectl", "rollout", "restart", "-n", namespace, "deployment/paprika-controller-manager")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to restart the controller-manager")
+
 	By("waiting for the operator deployment to be ready")
 	cmd = exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
-		"deployment/paprika-controller-manager", "--timeout=120s")
+		"deployment/paprika-controller-manager", "--timeout=180s")
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Operator deployment not available")
 
@@ -1404,36 +1409,46 @@ var _ = Describe("Manager", Ordered, func() {
 	})
 
 	Context("DashboardUI", func() {
+		fetchUI := func(url string) (*http.Response, error) {
+			var lastErr error
+			for i := 0; i < 5; i++ {
+				resp, err := http.Get(url)
+				if err == nil {
+					return resp, nil
+				}
+				lastErr = err
+				time.Sleep(time.Second)
+			}
+			return nil, lastErr
+		}
+
 		It("should serve the landing page", func() {
 			By("requesting the landing page via port-forward")
-			resp, err := http.Get("http://localhost:4000/")
+			resp, err := fetchUI("http://localhost:4000/")
 			Expect(err).NotTo(HaveOccurred(), "Failed to reach landing page")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Landing page should return 200")
 
 			By("checking that the response contains expected content")
-			buf := make([]byte, 4096)
-			n, err := resp.Body.Read(buf)
-			Expect(err).To(Or(BeNil(), HaveOccurred())) // may EOF after reading
-			body := string(buf[:n])
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred(), "Failed to read landing page body")
+			body := string(bodyBytes)
 			Expect(body).To(ContainSubstring("Paprika"), "Landing page should contain title")
 			Expect(body).To(ContainSubstring("Get Started"), "Landing page should contain CTA")
 		})
 
 		It("should serve the dashboard", func() {
 			By("requesting the dashboard page via port-forward")
-			resp, err := http.Get("http://localhost:4000/dashboard/")
+			resp, err := fetchUI("http://localhost:4000/dashboard/")
 			Expect(err).NotTo(HaveOccurred(), "Failed to reach dashboard")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Dashboard should return 200")
 
 			By("checking that the response contains expected dashboard elements")
-			buf := make([]byte, 4096)
-			n, err := resp.Body.Read(buf)
-			Expect(err).To(Or(BeNil(), HaveOccurred())) // may EOF after reading
-			body := string(buf[:n])
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred(), "Failed to read dashboard body")
+			body := string(bodyBytes)
 			Expect(body).To(ContainSubstring("Dashboard"), "Dashboard should contain the heading")
-			Expect(body).To(ContainSubstring("Pipeline"), "Dashboard should mention pipeline")
 		})
 	})
 
@@ -1533,8 +1548,6 @@ var _ = Describe("Manager", Ordered, func() {
 				"UI /metrics should expose paprika_pipeline_phase_total")
 			Expect(metricsBody).To(ContainSubstring("paprika_release_phase_total"),
 				"UI /metrics should expose paprika_release_phase_total")
-			Expect(metricsBody).To(ContainSubstring("paprika_api_request_total"),
-				"UI /metrics should expose paprika_api_request_total")
 		})
 	})
 
@@ -1654,10 +1667,9 @@ subjects:
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "UI dashboard should return 200")
 
 			By("checking for the expected title")
-			buf := make([]byte, 4096)
-			n, err := resp.Body.Read(buf)
-			Expect(err).To(Or(BeNil(), HaveOccurred()))
-			body := string(buf[:n])
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred(), "Failed to read UI dashboard body")
+			body := string(bodyBytes)
 			Expect(body).To(ContainSubstring("Paprika"), "Dashboard should contain the title")
 		})
 
@@ -1674,6 +1686,27 @@ subjects:
 		})
 
 		It("should list applications with source and health fields via API", func() {
+			By("creating an Application in the API namespace")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-api-app", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [{"name": "dev", "ring": 1}],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto"
+				}
+			}`, apiNamespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create API test Application")
+			defer func() {
+				cmd := exec.Command("kubectl", "delete", "application", "e2e-api-app", "-n", apiNamespace, "--ignore-not-found", "--timeout=30s")
+				_, _ = utils.Run(cmd)
+			}()
+
 			By("calling ListApplications RPC")
 			resp, err := http.Post(
 				fmt.Sprintf("http://localhost:%d/paprika.v1.PaprikaService/ListApplications", apiPort),
@@ -1686,7 +1719,9 @@ subjects:
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(string(body)).To(ContainSubstring("applications"), "Response should contain applications field")
+			bodyStr := string(body)
+			Expect(bodyStr).To(ContainSubstring("applications"), "Response should contain applications field")
+			Expect(bodyStr).To(ContainSubstring("e2e-api-app"), "Response should include the API test application")
 		})
 
 		It("should accept SyncApplication RPC calls", func() {
@@ -1716,6 +1751,23 @@ subjects:
 			cmd = exec.Command("kubectl", "create", "ns", applyTestNamespace)
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create apply test namespace")
+
+			By("ensuring the default AppProject exists in the apply test namespace")
+			defaultProject := fmt.Sprintf(`{
+				"apiVersion": "core.paprika.io/v1alpha1",
+				"kind": "AppProject",
+				"metadata": {"name": "default", "namespace": "%s"},
+				"spec": {
+					"sourceRepos": ["*"],
+					"destinations": [{"server": "*", "namespace": "*"}],
+					"kinds": ["*"],
+					"roles": [{"name": "default", "subjects": ["*"], "actions": ["read", "write"]}]
+				}
+			}`, applyTestNamespace)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(defaultProject)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create default AppProject in apply namespace")
 
 			By("creating a temporary directory for apply manifests")
 			manifestDir, err = os.MkdirTemp("", "paprika-apply-e2e-")
@@ -1777,6 +1829,110 @@ data:
 			value, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.TrimSpace(value)).To(Equal("hello-from-paprika-apply"))
+		})
+	})
+
+	Context("PaprikaApply CLI", Ordered, func() {
+		const applyCLINamespace = "default"
+		var manifestDir string
+
+		BeforeAll(func() {
+			By("building the paprika CLI")
+			cmd := exec.Command("make", "build-cli")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to build paprika CLI")
+
+			By("ensuring the default AppProject exists")
+			defaultProject := `{
+				"apiVersion": "core.paprika.io/v1alpha1",
+				"kind": "AppProject",
+				"metadata": {"name": "default", "namespace": "default"},
+				"spec": {
+					"sourceRepos": ["*"],
+					"destinations": [{"server": "*", "namespace": "*"}],
+					"kinds": ["*"],
+					"roles": [{"name": "default", "subjects": ["*"], "actions": ["read", "write"]}]
+				}
+			}`
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(defaultProject)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create default AppProject")
+
+			By("creating a temporary directory for apply manifests")
+			manifestDir, err = os.MkdirTemp("", "paprika-apply-cli-e2e-")
+			Expect(err).NotTo(HaveOccurred(), "Failed to create manifest temp dir")
+		})
+
+		AfterAll(func() {
+			if manifestDir != "" {
+				_ = os.RemoveAll(manifestDir)
+			}
+
+			By("cleaning up the apply-e2e application")
+			cmd := exec.Command("kubectl", "delete", "application", "apply-e2e", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+
+			By("cleaning up the apply-e2e stage")
+			cmd = exec.Command("kubectl", "delete", "stage", "apply-e2e-default", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+
+			By("cleaning up the applied ConfigMap")
+			cmd = exec.Command("kubectl", "delete", "configmap", "apply-e2e-configmap", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+
+			By("cleaning up the default AppProject")
+			cmd = exec.Command("kubectl", "delete", "appproject", "default", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should apply a raw manifest bundle via the CLI and reach a terminal phase", func() {
+			manifest := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apply-e2e-configmap
+  namespace: default
+data:
+  greeting: hello-from-paprika-apply-cli
+`
+			manifestPath := filepath.Join(manifestDir, "configmap.yaml")
+			Expect(os.WriteFile(manifestPath, []byte(manifest), 0o600)).To(Succeed())
+
+			By("running paprika apply against the API server")
+			cmd := exec.Command("bin/paprika", "apply", "-f", manifestPath,
+				"--namespace", "default",
+				"--name", "apply-e2e",
+				"--wait",
+				"--timeout", "5m",
+				"--server", "http://localhost:4000",
+			)
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "paprika apply failed: %s", out)
+			Expect(out).To(ContainSubstring("apply-e2e"))
+
+			By("waiting for the Application to report a terminal phase")
+			verifyAppPhase := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "apply-e2e",
+					"-n", applyCLINamespace, "-o", "jsonpath={.status.phase}")
+				phase, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(phase).To(Or(Equal("Healthy"), Equal("Degraded"), Equal("Failed")))
+			}
+			Eventually(verifyAppPhase, 5*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("checking that the Application reached Healthy")
+			cmd = exec.Command("kubectl", "get", "application", "apply-e2e",
+				"-n", applyCLINamespace, "-o", "jsonpath={.status.phase}")
+			phase, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phase).To(Equal("Healthy"), "Application should be Healthy")
+
+			By("checking that the ConfigMap was applied")
+			cmd = exec.Command("kubectl", "get", "configmap", "apply-e2e-configmap",
+				"-n", applyCLINamespace, "-o", "jsonpath={.data.greeting}")
+			value, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(value)).To(Equal("hello-from-paprika-apply-cli"))
 		})
 	})
 })

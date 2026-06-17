@@ -1,0 +1,968 @@
+{{- if .Values.crd.enable }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  name: applicationsets.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: ApplicationSet
+    listKind: ApplicationSetList
+    plural: applicationsets
+    singular: applicationset
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.applications
+      name: Applications
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ApplicationSet represents a templated set of Paprika Applications.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ApplicationSetSpec defines the desired state of an ApplicationSet.
+            properties:
+              generators:
+                description: Generators produce the parameter maps used to render
+                  Applications.
+                items:
+                  description: |-
+                    ApplicationSetGenerator is a union of supported generator types.
+                    Only one field should be set at a time.
+                  properties:
+                    clusters:
+                      description: Clusters generates parameters from registered clusters.
+                      properties:
+                        names:
+                          description: Names is a static list of cluster names.
+                          items:
+                            type: string
+                          type: array
+                        selector:
+                          description: Selector filters Cluster resources by labels.
+                          properties:
+                            matchExpressions:
+                              description: matchExpressions is a list of label selector
+                                requirements. The requirements are ANDed.
+                              items:
+                                description: |-
+                                  A label selector requirement is a selector that contains values, a key, and an operator that
+                                  relates the key and values.
+                                properties:
+                                  key:
+                                    description: key is the label key that the selector
+                                      applies to.
+                                    type: string
+                                  operator:
+                                    description: |-
+                                      operator represents a key's relationship to a set of values.
+                                      Valid operators are In, NotIn, Exists and DoesNotExist.
+                                    type: string
+                                  values:
+                                    description: |-
+                                      values is an array of string values. If the operator is In or NotIn,
+                                      the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                      the values array must be empty. This array is replaced during a strategic
+                                      merge patch.
+                                    items:
+                                      type: string
+                                    type: array
+                                    x-kubernetes-list-type: atomic
+                                required:
+                                - key
+                                - operator
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                operator is "In", and the values array contains only "value". The requirements are ANDed.
+                              type: object
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                    gitDirectories:
+                      description: GitDirectories discovers directories in a Git repository.
+                      properties:
+                        path:
+                          description: Path is the subdirectory within the repository
+                            to scan.
+                          type: string
+                        repoUrl:
+                          description: RepoURL is the Git repository URL or local
+                            path.
+                          type: string
+                        revision:
+                          description: Revision is the branch, tag, or commit to checkout.
+                          type: string
+                      required:
+                      - repoUrl
+                      type: object
+                    list:
+                      description: List generates parameters from a static list of
+                        maps.
+                      properties:
+                        items:
+                          description: Items is the list of parameter maps.
+                          items:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          type: array
+                      required:
+                      - items
+                      type: object
+                    matrix:
+                      description: Matrix combines two generators using a Cartesian
+                        product.
+                      properties:
+                        first:
+                          description: First is the first generator to combine.
+                          properties:
+                            clusters:
+                              description: Clusters generates parameters from registered
+                                clusters.
+                              properties:
+                                names:
+                                  description: Names is a static list of cluster names.
+                                  items:
+                                    type: string
+                                  type: array
+                                selector:
+                                  description: Selector filters Cluster resources
+                                    by labels.
+                                  properties:
+                                    matchExpressions:
+                                      description: matchExpressions is a list of label
+                                        selector requirements. The requirements are
+                                        ANDed.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              type: object
+                            gitDirectories:
+                              description: GitDirectories discovers directories in
+                                a Git repository.
+                              properties:
+                                path:
+                                  description: Path is the subdirectory within the
+                                    repository to scan.
+                                  type: string
+                                repoUrl:
+                                  description: RepoURL is the Git repository URL or
+                                    local path.
+                                  type: string
+                                revision:
+                                  description: Revision is the branch, tag, or commit
+                                    to checkout.
+                                  type: string
+                              required:
+                              - repoUrl
+                              type: object
+                            list:
+                              description: List generates parameters from a static
+                                list.
+                              properties:
+                                items:
+                                  description: Items is the list of parameter maps.
+                                  items:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  type: array
+                              required:
+                              - items
+                              type: object
+                          type: object
+                        second:
+                          description: Second is the second generator to combine.
+                          properties:
+                            clusters:
+                              description: Clusters generates parameters from registered
+                                clusters.
+                              properties:
+                                names:
+                                  description: Names is a static list of cluster names.
+                                  items:
+                                    type: string
+                                  type: array
+                                selector:
+                                  description: Selector filters Cluster resources
+                                    by labels.
+                                  properties:
+                                    matchExpressions:
+                                      description: matchExpressions is a list of label
+                                        selector requirements. The requirements are
+                                        ANDed.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    matchLabels:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                      type: object
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              type: object
+                            gitDirectories:
+                              description: GitDirectories discovers directories in
+                                a Git repository.
+                              properties:
+                                path:
+                                  description: Path is the subdirectory within the
+                                    repository to scan.
+                                  type: string
+                                repoUrl:
+                                  description: RepoURL is the Git repository URL or
+                                    local path.
+                                  type: string
+                                revision:
+                                  description: Revision is the branch, tag, or commit
+                                    to checkout.
+                                  type: string
+                              required:
+                              - repoUrl
+                              type: object
+                            list:
+                              description: List generates parameters from a static
+                                list.
+                              properties:
+                                items:
+                                  description: Items is the list of parameter maps.
+                                  items:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  type: array
+                              required:
+                              - items
+                              type: object
+                          type: object
+                      required:
+                      - first
+                      - second
+                      type: object
+                  type: object
+                type: array
+              template:
+                description: Template is the Application template to render for each
+                  parameter set.
+                properties:
+                  approvalGates:
+                    description: ApprovalGates define manual approval gates for stage
+                      transitions.
+                    items:
+                      description: ApprovalGate defines a manual or automated approval
+                        gate for stage transitions.
+                      properties:
+                        name:
+                          description: Name of the gate
+                          type: string
+                        required:
+                          default: true
+                          description: Whether the gate is required (default true)
+                          type: boolean
+                        stage:
+                          description: Stage at which this gate applies (e.g., "prod")
+                          type: string
+                        type:
+                          description: 'Type of gate: manual, webhook, slack'
+                          enum:
+                          - manual
+                          - webhook
+                          - slack
+                          type: string
+                      required:
+                      - name
+                      - stage
+                      - type
+                      type: object
+                    type: array
+                  build:
+                    description: Build defines the CI pipeline steps (optional — skip
+                      if no build needed).
+                    properties:
+                      artifacts:
+                        items:
+                          description: PipelineOutput defines an output artifact of
+                            a pipeline.
+                          properties:
+                            name:
+                              type: string
+                            path:
+                              type: string
+                          required:
+                          - name
+                          - path
+                          type: object
+                        type: array
+                      maxParallel:
+                        type: integer
+                      sources:
+                        items:
+                          description: Source defines a source for the pipeline.
+                          properties:
+                            secretRef:
+                              type: string
+                            type:
+                              enum:
+                              - git
+                              type: string
+                            url:
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      steps:
+                        items:
+                          description: |-
+                            ApplicationBuildStep defines a step in the build pipeline.
+                            ApplicationBuildStep defines a step in the build pipeline.
+                          properties:
+                            depends:
+                              items:
+                                type: string
+                              type: array
+                            image:
+                              type: string
+                            name:
+                              type: string
+                            retry:
+                              type: integer
+                            script:
+                              type: string
+                            timeout:
+                              type: integer
+                          required:
+                          - image
+                          - name
+                          - script
+                          type: object
+                        type: array
+                    required:
+                    - steps
+                    type: object
+                  canary:
+                    description: |-
+                      Canary defines the default canary configuration.
+                      Overridden by per-stage canary config.
+                    properties:
+                      analysis:
+                        description: PDV analysis configuration
+                        properties:
+                          checks:
+                            items:
+                              description: |-
+                                AnalysisCheck defines a check for canary analysis.
+                                AnalysisCheck defines a check for canary analysis.
+                              properties:
+                                httpHeaders:
+                                  additionalProperties:
+                                    type: string
+                                  description: HTTP headers to send with the request
+                                  type: object
+                                metric:
+                                  description: 'Pod metric to check (for type=podMetrics):
+                                    errorRate, latencyP99, restartRate'
+                                  enum:
+                                  - errorRate
+                                  - latencyP99
+                                  - restartRate
+                                  type: string
+                                requestCount:
+                                  description: Number of requests to make per analysis
+                                    cycle
+                                  type: integer
+                                successThreshold:
+                                  description: Fraction of requests that must succeed
+                                    as a percentage string (e.g. "99" = 99%)
+                                  type: string
+                                threshold:
+                                  description: 'Threshold as a string (errorRate:
+                                    "0.01" = 1%, latencyP99: "500" = 500ms, restartRate:
+                                    "3" = count)'
+                                  type: string
+                                timeoutSeconds:
+                                  description: Timeout per request in seconds
+                                  type: integer
+                                type:
+                                  enum:
+                                  - http
+                                  - podMetrics
+                                  type: string
+                                url:
+                                  description: URL to probe (for type=http)
+                                  type: string
+                                windowSeconds:
+                                  description: Time window in seconds to evaluate
+                                    the metric
+                                  type: integer
+                              required:
+                              - type
+                              type: object
+                            type: array
+                          intervalSeconds:
+                            type: integer
+                          rollbackOnFail:
+                            type: boolean
+                        type: object
+                      intervalSeconds:
+                        description: Seconds to wait between canary weight steps
+                        type: integer
+                      steps:
+                        description: Traffic weight percentages at each canary step,
+                          e.g. [10, 30, 60, 100]
+                        items:
+                          type: integer
+                        type: array
+                    required:
+                    - steps
+                    type: object
+                  healthChecks:
+                    description: HealthChecks define custom CEL-based health checks
+                      for the application.
+                    items:
+                      description: |-
+                        HealthCheck defines a health check.
+                        HealthCheck defines a health check.
+                      properties:
+                        expression:
+                          description: |-
+                            CEL expression to evaluate. Available variables:
+                              app (Application spec), status (Application status), http (HTTP probe results).
+                            Expression must return a boolean or a string matching HealthStatus.
+                          type: string
+                        httpProbe:
+                          description: |-
+                            Optional HTTP probe to run before evaluating the expression.
+                            Results available in CEL as http.status, http.body, http.headers.
+                          properties:
+                            body:
+                              description: Request body (for POST/PUT)
+                              type: string
+                            expectedStatus:
+                              description: Expected HTTP status code (default 200)
+                              type: integer
+                            headers:
+                              additionalProperties:
+                                type: string
+                              description: Request headers
+                              type: object
+                            method:
+                              default: GET
+                              description: HTTP method (GET, POST, PUT, DELETE, HEAD)
+                              type: string
+                            timeout:
+                              default: 5
+                              description: Timeout in seconds (default 5)
+                              type: integer
+                            url:
+                              description: URL to probe
+                              type: string
+                          required:
+                          - url
+                          type: object
+                        interval:
+                          default: 30s
+                          description: How often to run this check (default 30s)
+                          type: string
+                        name:
+                          description: Name of the health check
+                          type: string
+                      required:
+                      - expression
+                      - name
+                      type: object
+                    type: array
+                  onFailure:
+                    description: OnFailure defines the action when a promotion fails.
+                    properties:
+                      action:
+                        enum:
+                        - rollback
+                        - halt
+                        - ignore
+                        type: string
+                      notify:
+                        items:
+                          type: string
+                        type: array
+                    required:
+                    - action
+                    type: object
+                  parameters:
+                    additionalProperties:
+                      type: string
+                    description: Parameters are Helm value overrides passed to all
+                      releases.
+                    type: object
+                  project:
+                    default: default
+                    description: Project references the AppProject that governs this
+                      application.
+                    type: string
+                  source:
+                    description: Source defines where the application code/chart lives.
+                    properties:
+                      bucket:
+                        description: S3 bucket (for type=s3)
+                        type: string
+                      chart:
+                        description: Helm chart reference (for type=helm)
+                        properties:
+                          name:
+                            type: string
+                          path:
+                            description: Path to a local Helm chart directory (alternative
+                              to Repo+Name)
+                            type: string
+                          repo:
+                            type: string
+                          version:
+                            type: string
+                        type: object
+                      endpoint:
+                        description: S3 endpoint URL (for type=s3, use LocalStack
+                          endpoint for testing)
+                        type: string
+                      image:
+                        description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                        type: string
+                      inline:
+                        description: Inline references a manifest snapshot ConfigMap
+                          (for type=inline).
+                        properties:
+                          configMapRef:
+                            description: ConfigMapRef is the name of the ConfigMap
+                              containing the rendered manifest bundle.
+                            type: string
+                        type: object
+                      insecure:
+                        description: Insecure allows plain HTTP for OCI registries
+                          (type=oci)
+                        type: boolean
+                      key:
+                        description: S3 object key (for type=s3)
+                        type: string
+                      path:
+                        description: Path within the repo to the chart/source (for
+                          type=git or type=s3)
+                        type: string
+                      pollInterval:
+                        default: 30s
+                        description: Poll interval for change detection (default 30s)
+                        type: string
+                      region:
+                        description: S3 region (for type=s3)
+                        type: string
+                      repoRef:
+                        description: |-
+                          RepoRef references a core.paprika.io Repository by name. When set, takes
+                          precedence over inline URL/credentials fields.
+                        type: string
+                      repoUrl:
+                        description: Git repository URL (for type=git)
+                        type: string
+                      revision:
+                        description: Git branch, tag, or commit (for type=git)
+                        type: string
+                      secretRef:
+                        description: Secret reference for private repos or S3 credentials
+                        type: string
+                      type:
+                        enum:
+                        - git
+                        - helm
+                        - kustomize
+                        - s3
+                        - oci
+                        - inline
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  stages:
+                    description: Stages defines the promotion environments (dev, staging,
+                      prod, etc.).
+                    items:
+                      description: |-
+                        ApplicationPromotionStage defines a promotion stage.
+                        ApplicationPromotionStage defines a promotion stage.
+                      properties:
+                        autoPromote:
+                          description: Auto-promote to the next ring after this stage
+                            is healthy
+                          type: boolean
+                        canary:
+                          description: Canary config for this stage (overrides spec.canary
+                            if set)
+                          properties:
+                            analysis:
+                              description: PDV analysis configuration
+                              properties:
+                                checks:
+                                  items:
+                                    description: |-
+                                      AnalysisCheck defines a check for canary analysis.
+                                      AnalysisCheck defines a check for canary analysis.
+                                    properties:
+                                      httpHeaders:
+                                        additionalProperties:
+                                          type: string
+                                        description: HTTP headers to send with the
+                                          request
+                                        type: object
+                                      metric:
+                                        description: 'Pod metric to check (for type=podMetrics):
+                                          errorRate, latencyP99, restartRate'
+                                        enum:
+                                        - errorRate
+                                        - latencyP99
+                                        - restartRate
+                                        type: string
+                                      requestCount:
+                                        description: Number of requests to make per
+                                          analysis cycle
+                                        type: integer
+                                      successThreshold:
+                                        description: Fraction of requests that must
+                                          succeed as a percentage string (e.g. "99"
+                                          = 99%)
+                                        type: string
+                                      threshold:
+                                        description: 'Threshold as a string (errorRate:
+                                          "0.01" = 1%, latencyP99: "500" = 500ms,
+                                          restartRate: "3" = count)'
+                                        type: string
+                                      timeoutSeconds:
+                                        description: Timeout per request in seconds
+                                        type: integer
+                                      type:
+                                        enum:
+                                        - http
+                                        - podMetrics
+                                        type: string
+                                      url:
+                                        description: URL to probe (for type=http)
+                                        type: string
+                                      windowSeconds:
+                                        description: Time window in seconds to evaluate
+                                          the metric
+                                        type: integer
+                                    required:
+                                    - type
+                                    type: object
+                                  type: array
+                                intervalSeconds:
+                                  type: integer
+                                rollbackOnFail:
+                                  type: boolean
+                              type: object
+                            intervalSeconds:
+                              description: Seconds to wait between canary weight steps
+                              type: integer
+                            steps:
+                              description: Traffic weight percentages at each canary
+                                step, e.g. [10, 30, 60, 100]
+                              items:
+                                type: integer
+                              type: array
+                          required:
+                          - steps
+                          type: object
+                        cluster:
+                          description: Cluster to deploy to (defaults to same cluster)
+                          properties:
+                            agentAddress:
+                              type: string
+                            kubeconfigSecret:
+                              type: string
+                            mode:
+                              description: ClusterMode defines how the controller
+                                connects to a cluster.
+                              type: string
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                            server:
+                              type: string
+                            serviceAccount:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        gates:
+                          description: Verification gates to run after promotion
+                          items:
+                            description: |-
+                              GateConfig defines a gate for stage promotion.
+                              GateConfig defines a gate for stage promotion.
+                            properties:
+                              endpoint:
+                                type: string
+                              timeout:
+                                type: integer
+                              type:
+                                enum:
+                                - smoke-test
+                                - duration
+                                type: string
+                            required:
+                            - type
+                            type: object
+                          type: array
+                        name:
+                          type: string
+                        parameters:
+                          additionalProperties:
+                            type: string
+                          description: Feature flag / parameter overrides for this
+                            stage
+                          type: object
+                        ring:
+                          description: Ring number (lower = earlier environment)
+                          type: integer
+                        strategy:
+                          description: Delivery strategy for this stage (overrides
+                            spec.strategy if set)
+                          type: string
+                      required:
+                      - name
+                      - ring
+                      type: object
+                    type: array
+                  strategy:
+                    default: Rolling
+                    description: |-
+                      Strategy is the default delivery strategy for all stages.
+                      Can be overridden per-stage.
+                    enum:
+                    - Rolling
+                    - Canary
+                    - BlueGreen
+                    type: string
+                  syncOptions:
+                    description: SyncOptions fine-tunes how manifests are applied
+                      and pruned.
+                    properties:
+                      applyOutOfSyncOnly:
+                        description: |-
+                          ApplyOutOfSyncOnly skips applying resources whose live state already
+                          matches the desired manifest.
+                        type: boolean
+                      force:
+                        description: Force enables force-conflicts for server-side
+                          apply.
+                        type: boolean
+                      prunePropagationPolicy:
+                        description: |-
+                          PrunePropagationPolicy selects the deletion propagation policy used when
+                          pruning managed resources.
+                        enum:
+                        - Foreground
+                        - Background
+                        - Orphan
+                        type: string
+                      replace:
+                        description: Replace uses Update instead of server-side apply.
+                        type: boolean
+                    type: object
+                  syncPolicy:
+                    default: Auto
+                    description: SyncPolicy controls whether changes are applied automatically.
+                    enum:
+                    - Auto
+                    - Manual
+                    type: string
+                required:
+                - source
+                - stages
+                type: object
+            required:
+            - generators
+            - template
+            type: object
+          status:
+            description: ApplicationSetStatus defines the observed state of an ApplicationSet.
+            properties:
+              applications:
+                description: Applications is the number of Applications currently
+                  owned by this set.
+                type: integer
+              conditions:
+                description: Conditions represent the current state of the ApplicationSet.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

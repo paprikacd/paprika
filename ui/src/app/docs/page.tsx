@@ -28,10 +28,12 @@ export default function DocsPage() {
         <li><Link href="/docs/concepts/release">Release</Link> — Promotion lifecycle through stages with verification</li>
       </ul>
 
-      <h2>API Reference</h2>
+      <h2>Reference</h2>
       <ul>
+        <li><Link href="/docs/cli">CLI</Link> — <code>paprika apply</code> and command reference</li>
         <li><Link href="/docs/api/types">CRD Types</Link> — Complete reference for all Custom Resource types</li>
         <li><Link href="/docs/api/rpc">RPC Methods</Link> — Connect-RPC API methods for the dashboard and programmatic access</li>
+        <li><Link href="/docs/api/apply">Apply &amp; Rollback RPC</Link> — <code>ApplyBundle</code> and <code>RollbackRelease</code> reference</li>
       </ul>
 
       <h2>Architecture Overview</h2>

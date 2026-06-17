@@ -1,12 +1,13 @@
 {{- if .Values.crd.enable }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
     {{- if .Values.crd.keep }}
     "helm.sh/resource-policy": keep
     {{- end }}
-    controller-gen.kubebuilder.io/version: v0.20.1
   name: templates.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
@@ -20,6 +21,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Template represents a renderable template.
         properties:
           apiVersion:
             description: |-
@@ -39,33 +41,164 @@ spec:
           metadata:
             type: object
           spec:
+            description: TemplateSpec defines the specification for a template.
             properties:
               chart:
+                description: ChartRef references a Helm chart.
                 properties:
                   name:
+                    type: string
+                  path:
+                    description: Path to a local Helm chart directory (alternative
+                      to Repo+Name)
                     type: string
                   repo:
                     type: string
                   version:
                     type: string
+                type: object
+              git:
+                description: GitSourceSpec defines a git source specification.
+                properties:
+                  path:
+                    type: string
+                  repoUrl:
+                    type: string
+                  revision:
+                    type: string
+                  secretRef:
+                    type: string
                 required:
-                - name
-                - repo
-                - version
+                - repoUrl
+                type: object
+              kustomize:
+                description: KustomizeSourceSpec defines a Kustomize source specification.
+                properties:
+                  commonAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: CommonAnnotations adds annotations to all resources
+                    type: object
+                  commonLabels:
+                    additionalProperties:
+                      type: string
+                    description: CommonLabels adds labels to all resources
+                    type: object
+                  images:
+                    description: Images sets image transformations
+                    items:
+                      description: KustomizeImage defines an image transformation
+                        for Kustomize.
+                      properties:
+                        digest:
+                          description: Digest is the replacement digest (mutually
+                            exclusive with NewTag)
+                          type: string
+                        name:
+                          description: Name of the existing image to replace
+                          type: string
+                        newName:
+                          description: NewName is the replacement image name
+                          type: string
+                        newTag:
+                          description: NewTag is the replacement tag
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  inputFromPrevious:
+                    description: |-
+                      InputFromPrevious uses the output of the previous rendering step as the Kustomize base.
+                      When true, a temporary kustomization directory is created that includes the previous output.
+                    type: boolean
+                  namePrefix:
+                    description: NamePrefix sets the resources name prefix
+                    type: string
+                  nameSuffix:
+                    description: NameSuffix sets the resources name suffix
+                    type: string
+                  namespace:
+                    description: Namespace sets the resources namespace
+                    type: string
+                  path:
+                    description: Path to a directory containing a kustomization.yaml.
+                      Ignored when InputFromPrevious is true.
+                    type: string
+                type: object
+              namespace:
+                description: Namespace to pass to helm --namespace
+                type: string
+              oci:
+                description: OCISourceSpec defines an OCI registry source (for Helm
+                  charts or artifacts).
+                properties:
+                  insecure:
+                    description: Insecure allows plain HTTP for the OCI registry
+                    type: boolean
+                  secretRef:
+                    description: SecretRef references a Secret with dockerconfigjson
+                      or .dockerconfigjson
+                    type: string
+                  tag:
+                    description: Tag or digest of the artifact (e.g. "1.2.3", "@sha256:...")
+                    type: string
+                  url:
+                    description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                    type: string
+                required:
+                - url
+                type: object
+              repoRef:
+                description: |-
+                  RepoRef references a core.paprika.io Repository by name. When set, takes
+                  precedence over the inline source spec fields.
+                type: string
+              s3:
+                description: S3SourceSpec defines an S3 source specification.
+                properties:
+                  bucket:
+                    type: string
+                  endpoint:
+                    type: string
+                  key:
+                    type: string
+                  path:
+                    type: string
+                  region:
+                    type: string
+                  secretRef:
+                    type: string
+                required:
+                - bucket
+                - key
                 type: object
               type:
                 enum:
                 - helm
+                - kustomize
+                - git
+                - s3
+                - oci
+                type: string
+              valuesFile:
+                description: Inline YAML values file content (merged with Release
+                  parameters)
                 type: string
             required:
             - type
             type: object
           status:
+            description: TemplateStatus represents the status of a template.
             properties:
               lastRenderHash:
                 type: string
               lastRendered:
                 format: date-time
+                type: string
+              sourceHash:
+                type: string
+              sourceRevision:
                 type: string
             type: object
         required:

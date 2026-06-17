@@ -44,6 +44,7 @@ const (
 	historyLabel       = "app.paprika.io/history"
 	projectLabelKey    = "app.paprika.io/project"
 	defaultProjectName = "default"
+	rollbackAnnotation = "paprika.io/rollback-requested"
 )
 
 // SetPolicyEvaluator sets the policy evaluator used by ApplyBundle.

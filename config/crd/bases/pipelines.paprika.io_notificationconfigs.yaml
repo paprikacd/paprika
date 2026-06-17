@@ -1,0 +1,98 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: notificationconfigs.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: NotificationConfig
+    listKind: NotificationConfigList
+    plural: notificationconfigs
+    singular: notificationconfig
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NotificationConfig configures event-driven notifications for
+          Paprika resources.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NotificationConfigSpec defines the desired state of NotificationConfig.
+            properties:
+              destinations:
+                description: Destinations receive notifications for matched events.
+                items:
+                  description: NotificationDestination describes where to deliver
+                    matched notifications.
+                  properties:
+                    email:
+                      description: Email is a recipient email address (optional, for
+                        future senders).
+                      type: string
+                    name:
+                      description: Name is a human-readable identifier for this destination.
+                      type: string
+                    slackWebhookUrl:
+                      description: SlackWebhookURL is a Slack incoming webhook URL.
+                      type: string
+                    webhookUrl:
+                      description: WebhookURL is a generic HTTP endpoint that receives
+                        a JSON payload.
+                      type: string
+                  type: object
+                type: array
+              template:
+                description: |-
+                  Template is an optional Go template string used to format notification
+                  messages. The data map contains name, namespace, phase and reason.
+                type: string
+              triggers:
+                description: Triggers select events that should produce notifications.
+                items:
+                  description: NotificationTrigger selects events that should trigger
+                    a notification.
+                  properties:
+                    phase:
+                      description: Phase filters by the resource phase reported in
+                        the event.
+                      type: string
+                    reason:
+                      description: Reason filters by a reason included in the event
+                        payload.
+                      type: string
+                    resourceType:
+                      description: ResourceType filters by event type, e.g. "application"
+                        or "release".
+                      type: string
+                  type: object
+                type: array
+            type: object
+          status:
+            description: NotificationConfigStatus defines the observed state of NotificationConfig.
+            type: object
+        required:
+        - metadata
+        type: object
+    served: true
+    storage: true

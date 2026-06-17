@@ -78,6 +78,22 @@ var _ = Describe("Release Webhook", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Target stage is required"))
 			})
+
+			It("Should reject creation with inline manifest source missing configMapRef", func() {
+				obj.Spec.Target = testTargetStage
+				obj.Spec.ManifestSource = &pipelinesv1alpha1.ManifestSource{ConfigMapRef: ""}
+				_, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("configMapRef is required for inline manifest source"))
+			})
+
+			It("Should admit creation with valid inline manifest source", func() {
+				obj.Spec.Target = testTargetStage
+				obj.Spec.ManifestSource = &pipelinesv1alpha1.ManifestSource{ConfigMapRef: "snapshot-cm"}
+				warnings, err := validator.ValidateCreate(ctx, obj)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(warnings).To(BeNil())
+			})
 		})
 
 		Describe("ValidateUpdate", func() {

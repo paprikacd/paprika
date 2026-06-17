@@ -45,6 +45,28 @@ func TestProjectValidator_Validate_AllowsCompliant(t *testing.T) {
 	assert.Empty(t, violations)
 }
 
+func TestProjectValidator_Validate_SkipsRepoAuthForInlineSource(t *testing.T) {
+	v := NewProjectValidator(nil, &clusterResolver{}, nil)
+	app := &pipelinesv1alpha1.Application{
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Project: "payments",
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:   pipelinesv1alpha1.SourceTypeInline,
+				Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: "snapshot"},
+			},
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+				{Name: "prod", Ring: 1, Cluster: pipelinesv1alpha1.ClusterRef{Server: "https://kubernetes.default.svc"}},
+			},
+		},
+	}
+	project := makeAppProject()
+	// Restrict the project so that a git source would be denied.
+	project.Spec.SourceRepos = []string{"https://github.com/other/*"}
+	violations, err := v.Validate(context.Background(), app, nil, project)
+	require.NoError(t, err)
+	assert.Empty(t, violations)
+}
+
 func TestProjectValidator_Validate_RejectsBadKind(t *testing.T) {
 	v := NewProjectValidator(nil, &clusterResolver{}, nil)
 	app := &pipelinesv1alpha1.Application{
