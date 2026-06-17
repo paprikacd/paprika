@@ -107,7 +107,7 @@ func run() error {
 		return fmt.Errorf("create K8s client: %w", err)
 	}
 
-	renderer := buildRenderer(*workDir)
+	renderer := buildRenderer(*workDir, k8sClient)
 
 	paprikaServer := api.NewPaprikaServer(k8sClient, nil)
 	paprikaServer.SetRenderer(renderer)
@@ -196,13 +196,13 @@ func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {
 	return k8sConfig, nil
 }
 
-func buildRenderer(workDir string) engine.TemplateRenderer {
+func buildRenderer(workDir string, k8sClient client.Client) engine.TemplateRenderer {
 	// When PAPRIKA_REPO_SERVER_ADDR is set, delegate render/resolve to a remote repo server.
-	if client := repoclient.NewFromEnv(); client != nil {
+	if repoClient := repoclient.NewFromEnv(); repoClient != nil {
 		setupLog.Info("Using remote repo server", "addr", os.Getenv("PAPRIKA_REPO_SERVER_ADDR"))
-		base := engine.NewHelmSDKRenderer(workDir)
+		base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 		cached := engine.NewCachedTemplateRenderer(base, cache.NewMemoryCache(), workDir, 0)
-		return engine.NewRepoServerRenderer(client, cached)
+		return engine.NewRepoServerRenderer(repoClient, cached)
 	}
 
 	// Embedded renderer with Redis or in-memory cache.
@@ -211,7 +211,7 @@ func buildRenderer(workDir string) engine.TemplateRenderer {
 		setupLog.Info("No external cache found, using in-memory cache")
 		c = cache.NewMemoryCache()
 	}
-	base := engine.NewHelmSDKRenderer(workDir)
+	base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 	return engine.NewCachedTemplateRenderer(base, c, workDir, 0)
 }
 

@@ -16,6 +16,7 @@ type ChartRef struct {
 // OCISourceSpec defines an OCI registry source (for Helm charts or artifacts).
 type OCISourceSpec struct {
 	// URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+	// +kubebuilder:validation:Pattern="^oci://"
 	URL string `json:"url"`
 	// Tag or digest of the artifact (e.g. "1.2.3", "@sha256:...")
 	Tag string `json:"tag,omitempty"`

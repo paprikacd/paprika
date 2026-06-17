@@ -604,6 +604,14 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 				ConfigMapRef: a.Spec.Source.Inline.ConfigMapRef,
 			}
 		}
+		if a.Spec.Source.OCI != nil {
+			source.Oci = &paprikav1.OCISource{
+				Url:       a.Spec.Source.OCI.URL,
+				Tag:       a.Spec.Source.OCI.Tag,
+				Insecure:  a.Spec.Source.OCI.Insecure,
+				SecretRef: a.Spec.Source.OCI.SecretRef,
+			}
+		}
 	}
 	return &paprikav1.Application{
 		Name:            a.Name,

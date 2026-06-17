@@ -66,6 +66,19 @@ export const InlineSource = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.OCISource
+ */
+export const OCISource = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.OCISource",
+  () => [
+    { no: 1, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "tag", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "insecure", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 4, name: "secret_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.ApplicationSource
  */
 export const ApplicationSource = /*@__PURE__*/ proto3.makeMessageType(
@@ -83,6 +96,7 @@ export const ApplicationSource = /*@__PURE__*/ proto3.makeMessageType(
     { no: 10, name: "secret_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 11, name: "poll_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 12, name: "inline", kind: "message", T: InlineSource },
+    { no: 13, name: "oci", kind: "message", T: OCISource },
   ],
 );
 

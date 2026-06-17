@@ -141,6 +141,7 @@ spec:
                     type: string
                   url:
                     description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                    pattern: ^oci://
                     type: string
                 required:
                 - url

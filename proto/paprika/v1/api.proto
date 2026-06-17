@@ -36,6 +36,13 @@ message InlineSource {
   string config_map_ref = 1;
 }
 
+message OCISource {
+  string url = 1;
+  string tag = 2;
+  bool insecure = 3;
+  string secret_ref = 4;
+}
+
 message ApplicationSource {
   string type = 1;
   string repo_url = 2;
@@ -51,6 +58,8 @@ message ApplicationSource {
   string secret_ref = 10;
   string poll_interval = 11;
   InlineSource inline = 12;
+  // OCI registry source
+  OCISource oci = 13;
 }
 
 message ApplicationStage {

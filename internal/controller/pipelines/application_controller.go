@@ -35,6 +35,7 @@ import (
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/repository"
 	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/internal/syncwindow"
 	"github.com/benebsworth/paprika/metrics"
@@ -446,6 +447,7 @@ func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 		Type:      string(app.Spec.Source.Type),
 		Chart:     app.Spec.Source.Chart,
 		Namespace: app.Namespace,
+		RepoRef:   app.Spec.Source.RepoRef,
 	}
 
 	switch app.Spec.Source.Type {
@@ -469,8 +471,44 @@ func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 		spec.Kustomize = &paprikav1.KustomizeSourceSpec{
 			Path: app.Spec.Source.Path,
 		}
+	case paprikav1.SourceTypeOCI:
+		oci := app.Spec.Source.OCI
+		//nolint:staticcheck // backward compatibility for deprecated Image field
+		legacyImage := app.Spec.Source.Image
+		if oci == nil && legacyImage != "" {
+			oci = &paprikav1.OCISourceSpec{URL: legacyImage}
+		}
+		if oci != nil {
+			secretRef := oci.SecretRef
+			if secretRef == "" {
+				secretRef = app.Spec.Source.SecretRef
+			}
+			spec.OCI = &paprikav1.OCISourceSpec{
+				URL:       oci.URL,
+				Tag:       oci.Tag,
+				Insecure:  oci.Insecure || app.Spec.Source.Insecure,
+				SecretRef: secretRef,
+			}
+		}
 	}
 
+	return spec
+}
+
+func (r *ApplicationReconciler) buildTemplateSpec(ctx context.Context, app *paprikav1.Application) paprikav1.TemplateSpec {
+	spec := buildTemplateSpec(app)
+	if app.Spec.Source.RepoRef == "" {
+		return spec
+	}
+	resolver := repository.NewResolver(r.Client)
+	resolved, err := resolver.ResolveTemplate(ctx, app.Namespace, &spec)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to resolve repository", "repoRef", app.Spec.Source.RepoRef)
+		return spec
+	}
+	if resolved != nil {
+		return resolved.Spec
+	}
 	return spec
 }
 
@@ -485,7 +523,7 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 				engine.ApplicationNameLabelKey: app.Name,
 			}),
 		},
-		Spec: buildTemplateSpec(app),
+		Spec: r.buildTemplateSpec(ctx, app),
 	}
 
 	if err := ctrl.SetControllerReference(app, expected, r.Scheme); err != nil {
@@ -939,10 +977,10 @@ func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *papr
 		return "", "", nil
 	}
 
-	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize {
+	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize || app.Spec.Source.Type == paprikav1.SourceTypeOCI {
 		renderer := r.TemplateRenderer
 		if renderer == nil {
-			renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+			renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.Client)
 		}
 
 		templateName := app.Name + "-template"
@@ -1054,7 +1092,7 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 
 	renderer := r.TemplateRenderer
 	if renderer == nil {
-		renderer = engine.NewHelmSDKRenderer(r.WorkDir)
+		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.Client)
 	}
 	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
 	if err != nil {
