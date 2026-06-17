@@ -462,7 +462,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		TrafficRouterFactory: traffic.NewRouter,
 		ShardFilter:          shardFilter,
 		RateLimiter:          rateLimiter,
-		//lint:ignore SA1019 reconcilers use the legacy record.EventRecorder API
+		//nolint:staticcheck,nolintlint // reconcilers use the legacy record.EventRecorder API
 		EventRecorder:    mgr.GetEventRecorderFor("release-controller"),
 		ProjectValidator: projectValidator,
 		PolicyEvaluator:  policyEvaluator,
@@ -530,7 +530,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		TemplateRenderer: renderer,
 		ShardFilter:      shardFilter,
 		RateLimiter:      rateLimiter,
-		//lint:ignore SA1019 reconcilers use the legacy record.EventRecorder API
+		//nolint:staticcheck,nolintlint // reconcilers use the legacy record.EventRecorder API
 		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
 		ProjectValidator: projectValidator,
 		EventBroker:      broker,
