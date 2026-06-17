@@ -21,6 +21,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -192,6 +193,11 @@ func (in *ApplicationPromotionStage) DeepCopyInto(out *ApplicationPromotionStage
 	if in.Canary != nil {
 		in, out := &in.Canary, &out.Canary
 		*out = new(CanaryConfig)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.RolloutStrategy != nil {
+		in, out := &in.RolloutStrategy, &out.RolloutStrategy
+		*out = new(rolloutsv1alpha1.RolloutStrategy)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.Gates != nil {
@@ -1692,6 +1698,11 @@ func (in *StageSpec) DeepCopyInto(out *StageSpec) {
 	if in.Canary != nil {
 		in, out := &in.Canary, &out.Canary
 		*out = new(CanaryConfig)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.RolloutStrategy != nil {
+		in, out := &in.RolloutStrategy, &out.RolloutStrategy
+		*out = new(rolloutsv1alpha1.RolloutStrategy)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.TrafficRouter != nil {

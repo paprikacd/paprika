@@ -6,6 +6,7 @@ import { useConnection } from "@/lib/connection-context"
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Rollouts", href: "/dashboard/rollouts" },
   { label: "Docs", href: "/docs" },
   { label: "Blog", href: "/blog" },
   { label: "API", href: "/docs/api" },

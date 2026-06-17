@@ -310,3 +310,23 @@ func (s *Server) GetApplicationSet(ctx context.Context, req *connect.Request[pap
 }
 
 var _ v1connect.PaprikaServiceHandler = (*Server)(nil)
+
+func (s *Server) ListRollouts(ctx context.Context, _ *connect.Request[paprikav1.ListRolloutsRequest]) (*connect.Response[paprikav1.ListRolloutsResponse], error) {
+	log.FromContext(ctx).Info("ListRollouts not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListRollouts is not implemented on the agent"))
+}
+
+func (s *Server) GetRollout(ctx context.Context, _ *connect.Request[paprikav1.GetRolloutRequest]) (*connect.Response[paprikav1.GetRolloutResponse], error) {
+	log.FromContext(ctx).Info("GetRollout not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("GetRollout is not implemented on the agent"))
+}
+
+func (s *Server) PromoteRollout(ctx context.Context, _ *connect.Request[paprikav1.PromoteRolloutRequest]) (*connect.Response[paprikav1.PromoteRolloutResponse], error) {
+	log.FromContext(ctx).Info("PromoteRollout not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("PromoteRollout is not implemented on the agent"))
+}
+
+func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.AbortRolloutRequest]) (*connect.Response[paprikav1.AbortRolloutResponse], error) {
+	log.FromContext(ctx).Info("AbortRollout not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("AbortRollout is not implemented on the agent"))
+}

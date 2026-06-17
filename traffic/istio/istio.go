@@ -39,6 +39,136 @@ func NewRouter(cfg *paprikav1.IstioRouterConfig, client dynamic.Interface, stabl
 
 func (r *Router) Type() string { return "istio" }
 
+func (r *Router) SetHeaderRoute(ctx context.Context, header, value, service string) error {
+	vsName, vs, httpRoutes, err := r.getVSWithRoutes(ctx, "set-header-route")
+	if err != nil {
+		return err
+	}
+	if httpRoutes == nil {
+		return fmt.Errorf("VirtualService %s has no HTTP routes", vsName)
+	}
+
+	routesToPatch := r.selectRoutes(httpRoutes)
+	if len(routesToPatch) == 0 {
+		return fmt.Errorf("no matching HTTP routes found in VirtualService %s", vsName)
+	}
+
+	for _, routeIdx := range routesToPatch {
+		headerRoute := map[string]any{
+			"match": []any{
+				map[string]any{
+					"headers": map[string]any{
+						header: map[string]any{"exact": value},
+					},
+				},
+			},
+			"route": []any{
+				map[string]any{
+					"destination": map[string]any{"host": service},
+					"weight":      float64(100),
+				},
+			},
+		}
+		httpRoutes = append(httpRoutes[:routeIdx], append([]any{headerRoute}, httpRoutes[routeIdx:]...)...)
+		for i := range routesToPatch {
+			if routesToPatch[i] > routeIdx {
+				routesToPatch[i]++
+			}
+		}
+	}
+
+	return r.updateVirtualService(ctx, vs, httpRoutes, "set-header-route")
+}
+
+func (r *Router) RemoveHeaderRoute(ctx context.Context, header string) error {
+	_, vs, httpRoutes, err := r.getVSWithRoutes(ctx, "remove-header-route")
+	if err != nil {
+		return err
+	}
+	if httpRoutes == nil {
+		return nil
+	}
+
+	var keep []any
+	for _, route := range httpRoutes {
+		routeMap, ok := route.(map[string]any)
+		if !ok {
+			keep = append(keep, route)
+			continue
+		}
+		matches, found, _ := unstructured.NestedSlice(routeMap, "match")
+		if !found {
+			keep = append(keep, route)
+			continue
+		}
+		hasHeader := false
+		for _, m := range matches {
+			matchMap, ok := m.(map[string]any)
+			if !ok {
+				continue
+			}
+			if _, found, _ := unstructured.NestedMap(matchMap, "headers", header); found {
+				hasHeader = true
+				break
+			}
+		}
+		if !hasHeader {
+			keep = append(keep, route)
+		}
+	}
+
+	return r.updateVirtualService(ctx, vs, keep, "remove-header-route")
+}
+
+func (r *Router) SetMirror(ctx context.Context, percent int32) error {
+	_, vs, httpRoutes, err := r.getVSWithRoutes(ctx, "set-mirror")
+	if err != nil {
+		return err
+	}
+	if httpRoutes == nil {
+		return fmt.Errorf("VirtualService has no HTTP routes")
+	}
+
+	routesToPatch := r.selectRoutes(httpRoutes)
+	for _, routeIdx := range routesToPatch {
+		route, ok := httpRoutes[routeIdx].(map[string]any)
+		if !ok {
+			continue
+		}
+		route["mirror"] = map[string]any{
+			"host": r.canarySvc,
+			"port": map[string]any{"number": float64(80)},
+		}
+		route["mirrorPercentage"] = map[string]any{"value": float64(percent)}
+		httpRoutes[routeIdx] = route
+	}
+
+	return r.updateVirtualService(ctx, vs, httpRoutes, "set-mirror")
+}
+
+func (r *Router) RemoveMirror(ctx context.Context) error {
+	_, vs, httpRoutes, err := r.getVSWithRoutes(ctx, "remove-mirror")
+	if err != nil {
+		return err
+	}
+	if httpRoutes == nil {
+		return nil
+	}
+
+	routesToPatch := r.selectRoutes(httpRoutes)
+	for _, routeIdx := range routesToPatch {
+		route, ok := httpRoutes[routeIdx].(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(route, "mirror")
+		delete(route, "mirrorPercentage")
+		httpRoutes[routeIdx] = route
+	}
+
+	return r.updateVirtualService(ctx, vs, httpRoutes, "remove-mirror")
+}
+
 func (r *Router) SetWeight(ctx context.Context, weight int32) error {
 	vsName, vs, httpRoutes, err := r.getVSWithRoutes(ctx, "set-weight")
 	if err != nil {

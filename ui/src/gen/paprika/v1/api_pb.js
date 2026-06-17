@@ -694,3 +694,111 @@ export const RollbackReleaseResponse = /*@__PURE__*/ proto3.makeMessageType(
   ],
 );
 
+/**
+ * @generated from message paprika.v1.Rollout
+ */
+export const Rollout = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Rollout",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "strategy_type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "current_step", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 6, name: "current_weight", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 7, name: "stable_rs", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "canary_rs", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "active_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "preview_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 11, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 12, name: "conditions", kind: "message", T: Condition, repeated: true },
+    { no: 13, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 14, name: "target_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 15, name: "target_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListRolloutsRequest
+ */
+export const ListRolloutsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListRolloutsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListRolloutsResponse
+ */
+export const ListRolloutsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListRolloutsResponse",
+  () => [
+    { no: 1, name: "rollouts", kind: "message", T: Rollout, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRolloutRequest
+ */
+export const GetRolloutRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRolloutRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRolloutResponse
+ */
+export const GetRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRolloutResponse",
+  () => [
+    { no: 1, name: "rollout", kind: "message", T: Rollout },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PromoteRolloutRequest
+ */
+export const PromoteRolloutRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PromoteRolloutRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PromoteRolloutResponse
+ */
+export const PromoteRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PromoteRolloutResponse",
+  () => [
+    { no: 1, name: "rollout", kind: "message", T: Rollout },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.AbortRolloutRequest
+ */
+export const AbortRolloutRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AbortRolloutRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.AbortRolloutResponse
+ */
+export const AbortRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AbortRolloutResponse",
+  () => [
+    { no: 1, name: "rollout", kind: "message", T: Rollout },
+  ],
+);
+

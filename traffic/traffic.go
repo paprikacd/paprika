@@ -12,6 +12,9 @@ import (
 	"github.com/benebsworth/paprika/traffic/istio"
 )
 
+// ErrNotSupported indicates the traffic provider does not support an operation.
+var ErrNotSupported = errors.New("traffic provider does not support this operation")
+
 // Router manages traffic splitting between stable and canary backends.
 //
 //go:generate mockgen -destination=mocks/mock_traffic.go -package=mocks . Router
@@ -20,6 +23,14 @@ type Router interface {
 	SetWeight(ctx context.Context, weight int32) error
 	// RemoveCanary reverts to 100% stable and cleans up canary routing rules.
 	RemoveCanary(ctx context.Context) error
+	// SetHeaderRoute routes requests matching a header (or cookie) to a service.
+	SetHeaderRoute(ctx context.Context, header, value, service string) error
+	// RemoveHeaderRoute removes a previously configured header route.
+	RemoveHeaderRoute(ctx context.Context, header string) error
+	// SetMirror mirrors percent of traffic to the canary backend.
+	SetMirror(ctx context.Context, percent int32) error
+	// RemoveMirror removes traffic mirroring.
+	RemoveMirror(ctx context.Context) error
 	// Type returns the provider name ("istio" or "gateway-api").
 	Type() string
 }

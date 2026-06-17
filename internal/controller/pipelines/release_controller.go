@@ -35,6 +35,7 @@ import (
 	"github.com/benebsworth/paprika/analysis"
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	agentclient "github.com/benebsworth/paprika/internal/agent/client"
@@ -372,6 +373,8 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	if err := r.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: release.Namespace}, &stage); err != nil {
 		release.Status.Phase = paprikav1.ReleaseVerifying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
+	} else if stage.Spec.RolloutStrategy != nil {
+		return r.reconcileRolloutManagedRelease(ctx, release, &stage, result)
 	} else if stage.Spec.Canary != nil && len(stage.Spec.Canary.Steps) > 0 {
 		release.Status.Phase = paprikav1.ReleaseCanarying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Canarying").Inc()
@@ -388,6 +391,116 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		return ctrl.Result{}, fmt.Errorf("failed to update release phase: %w", err)
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+func (r *ReleaseReconciler) reconcileRolloutManagedRelease(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, result *string) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	rolloutName := release.Name + "-rollout"
+
+	var ro rolloutsv1alpha1.Rollout
+	err := r.Get(ctx, types.NamespacedName{Name: rolloutName, Namespace: release.Namespace}, &ro)
+	if err != nil && !apierrors.IsNotFound(err) {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("getting rollout %s: %w", rolloutName, err)
+	}
+
+	expected := r.buildRollout(release, stage, rolloutName)
+	if apierrors.IsNotFound(err) {
+		if err := r.Create(ctx, expected); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("creating rollout %s: %w", rolloutName, err)
+		}
+		release.Status.RolloutRef = rolloutName
+		release.Status.Phase = paprikav1.ReleaseCanarying
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Canarying").Inc()
+		if err := r.patchReleaseStatus(ctx, release, release.Status.Phase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("updating release status: %w", err)
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	ro.Spec = expected.Spec
+	ro.Labels = expected.Labels
+	if err := r.Update(ctx, &ro); err != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("updating rollout %s: %w", rolloutName, err)
+	}
+
+	release.Status.RolloutRef = rolloutName
+	oldPhase := release.Status.Phase
+	switch ro.Status.Phase {
+	case rolloutsv1alpha1.RolloutPhaseHealthy:
+		release.Status.Phase = paprikav1.ReleaseVerifying
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
+	case rolloutsv1alpha1.RolloutPhaseFailed, rolloutsv1alpha1.RolloutPhaseDegraded:
+		release.Status.Phase = paprikav1.ReleaseFailed
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
+	case rolloutsv1alpha1.RolloutPhaseRolledBack:
+		release.Status.Phase = paprikav1.ReleaseRolledBack
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "RolledBack").Inc()
+	default:
+		release.Status.Phase = paprikav1.ReleaseCanarying
+	}
+
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("patching release status: %w", err)
+	}
+	log.Info("Rollout-managed release reconciled", "rollout", rolloutName, "phase", release.Status.Phase)
+	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+}
+
+func (r *ReleaseReconciler) buildRollout(release *paprikav1.Release, stage *paprikav1.Stage, name string) *rolloutsv1alpha1.Rollout {
+	ro := &rolloutsv1alpha1.Rollout{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: release.Namespace,
+			Labels:    release.Labels,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: paprikav1.GroupVersion.String(),
+				Kind:       "Release",
+				Name:       release.Name,
+				UID:        release.UID,
+				Controller: ptr(true),
+			}},
+		},
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Target: rolloutsv1alpha1.RolloutTarget{
+				Kind: "Deployment",
+				Name: release.Name + "-deployment",
+			},
+			Strategy:      *stage.Spec.RolloutStrategy,
+			TrafficRouter: convertRolloutTrafficRouter(stage.Spec.TrafficRouter),
+		},
+	}
+	return ro
+}
+
+func convertRolloutTrafficRouter(tr *paprikav1.TrafficRouter) *rolloutsv1alpha1.TrafficRouter {
+	if tr == nil {
+		return nil
+	}
+	out := &rolloutsv1alpha1.TrafficRouter{
+		Provider: tr.Provider,
+	}
+	if tr.Istio != nil {
+		out.Istio = &rolloutsv1alpha1.IstioRouterConfig{
+			VirtualService: tr.Istio.VirtualService,
+			Routes:         tr.Istio.Routes,
+			Hosts:          tr.Istio.Hosts,
+			StableService:  tr.Istio.StableService,
+			CanaryService:  tr.Istio.CanaryService,
+		}
+	}
+	if tr.GatewayAPI != nil {
+		out.GatewayAPI = &rolloutsv1alpha1.GatewayAPIRouterConfig{
+			HTTPRoute:     tr.GatewayAPI.HTTPRoute,
+			StableService: tr.GatewayAPI.StableService,
+			CanaryService: tr.GatewayAPI.CanaryService,
+		}
+	}
+	return out
 }
 
 func (r *ReleaseReconciler) handleVerifyingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
@@ -1310,6 +1423,19 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 			return fmt.Errorf("deleting manifest snapshot ConfigMap: %w", err)
 		}
 		log.Info("Deleted manifest snapshot ConfigMap", "configmap", cmName)
+	}
+
+	if release.Status.RolloutRef != "" {
+		ro := &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      release.Status.RolloutRef,
+				Namespace: release.Namespace,
+			},
+		}
+		if err := r.Delete(ctx, ro); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting rollout child: %w", err)
+		}
+		log.Info("Deleted Rollout child", "rollout", release.Status.RolloutRef)
 	}
 
 	if r.DynamicClient == nil {

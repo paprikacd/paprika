@@ -382,6 +382,60 @@ message RollbackReleaseResponse {
   Release release = 1;
 }
 
+message Rollout {
+  string name = 1;
+  string namespace = 2;
+  string strategy_type = 3;
+  string phase = 4;
+  int32 current_step = 5;
+  int32 current_weight = 6;
+  string stable_rs = 7;
+  string canary_rs = 8;
+  string active_service = 9;
+  string preview_service = 10;
+  int64 observed_generation = 11;
+  repeated Condition conditions = 12;
+  string message = 13;
+  string target_kind = 14;
+  string target_name = 15;
+}
+
+message ListRolloutsRequest {
+  optional string namespace = 1;
+  string project = 2;
+}
+
+message ListRolloutsResponse {
+  repeated Rollout rollouts = 1;
+}
+
+message GetRolloutRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message GetRolloutResponse {
+  Rollout rollout = 1;
+}
+
+message PromoteRolloutRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message PromoteRolloutResponse {
+  Rollout rollout = 1;
+}
+
+message AbortRolloutRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message AbortRolloutResponse {
+  Rollout rollout = 1;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -397,4 +451,8 @@ service PaprikaService {
   rpc Render(RenderRequest) returns (RenderResponse);
   rpc ApplyBundle(ApplyBundleRequest) returns (ApplyBundleResponse);
   rpc RollbackRelease(RollbackReleaseRequest) returns (RollbackReleaseResponse);
+  rpc ListRollouts(ListRolloutsRequest) returns (ListRolloutsResponse);
+  rpc GetRollout(GetRolloutRequest) returns (GetRolloutResponse);
+  rpc PromoteRollout(PromoteRolloutRequest) returns (PromoteRolloutResponse);
+  rpc AbortRollout(AbortRolloutRequest) returns (AbortRolloutResponse);
 }

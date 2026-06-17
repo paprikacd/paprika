@@ -100,6 +100,9 @@ type ReleaseStatus struct {
 	// When the current canary step started (used to throttle step advancement
 	// to the configured intervalSeconds, preventing watch-event-driven fast-forward).
 	CanaryStepStartedAt *metav1.Time `json:"canaryStepStartedAt,omitempty"`
+	// RolloutRef references the Rollout child when the stage uses an advanced strategy.
+	// +optional
+	RolloutRef string `json:"rolloutRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -50,6 +50,7 @@ import (
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	"github.com/benebsworth/paprika/health"
@@ -64,6 +65,7 @@ import (
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
+	rolloutscontroller "github.com/benebsworth/paprika/internal/controller/rollouts"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -74,6 +76,7 @@ import (
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
+	webhookrollouts "github.com/benebsworth/paprika/internal/webhook/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/traffic"
 	// +kubebuilder:scaffold:imports
 )
@@ -90,6 +93,7 @@ func init() {
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -473,6 +477,27 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 	return nil
 }
 
+func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ string, shardFilter *sharding.Filter, _ *ratelimit.ControllerRateLimit, _ *governance.ProjectValidator, _ *governance.PolicyEvaluator, _ *events.Broker) error {
+	if shardFilter != nil && shardFilter.Enabled() {
+		// Rollouts inherit the namespace of their parent Release; sharding is applied there.
+	}
+	dynamicClient, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return fmt.Errorf("failed to create dynamic client: %w", err)
+	}
+	if err := (&rolloutscontroller.RolloutReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		DynamicClient: dynamicClient,
+		Analyzer:      analysis.NewAnalyzer(k8sClient, "paprika-system", mgr.GetConfig()),
+		//nolint:staticcheck,nolintlint // reconcilers use the legacy record.EventRecorder API
+		EventRecorder: mgr.GetEventRecorderFor("rollout-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up rollout controller: %w", err)
+	}
+	return nil
+}
+
 func setupTemplateController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
 	if err := (&controller.TemplateReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
@@ -557,6 +582,7 @@ func setupWebhooks(mgr ctrl.Manager) error {
 		{"AppProject", webhookcorev1alpha1.SetupAppProjectWebhookWithManager},
 		{"Repository", webhookcorev1alpha1.SetupRepositoryWebhookWithManager},
 		{"Policy", webhookpolicyv1alpha1.SetupPolicyWebhookWithManager},
+		{"Rollout", webhookrollouts.SetupRolloutWebhookWithManager},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
@@ -629,6 +655,9 @@ func setupOperatorControllers(mgr ctrl.Manager, k8sClient kubernetes.Interface, 
 		{"stage", func() error { return setupStageController(mgr, shardFilter) }},
 		{"release", func() error {
 			return setupReleaseController(mgr, k8sClient, operatorNamespace, c, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker)
+		}},
+		{"rollout", func() error {
+			return setupRolloutController(mgr, k8sClient, operatorNamespace, shardFilter, rateLimiter, projectValidator, policyEvaluator, broker)
 		}},
 		{"template", func() error { return setupTemplateController(mgr, shardFilter) }},
 		{"applicationset", func() error { return setupApplicationSetController(mgr, shardFilter) }},
@@ -839,6 +868,7 @@ func createAPIClient(config *rest.Config) (client.Client, error) {
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
 	apiClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
