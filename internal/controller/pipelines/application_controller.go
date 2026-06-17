@@ -826,6 +826,8 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 		return
 	}
 
+	previousPhase := app.Status.Phase
+
 	app.Status.Phase = phase
 	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
 	app.Status.Conditions = append(app.Status.Conditions, metav1.Condition{
@@ -865,22 +867,26 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 		}
 	}
 
-	r.publishApplicationEvent(ctx, app, reason)
+	r.publishApplicationEvent(ctx, app, reason, previousPhase, message)
 
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status", "phase", phase)
 	}
 }
 
-func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string) {
+func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string, previousPhase paprikav1.ApplicationPhase, message string) {
 	if r.EventBroker == nil {
 		return
 	}
-	evt, err := events.NewEvent(events.TypeApplication, map[string]string{
-		"name":      app.Name,
-		"namespace": app.Namespace,
-		"phase":     string(app.Status.Phase),
-		"reason":    reason,
+	evt, err := events.NewEvent(events.TypeApplication, eventPayload{
+		ResourceType:  events.TypeApplication,
+		Name:          app.Name,
+		Namespace:     app.Namespace,
+		Phase:         string(app.Status.Phase),
+		PreviousPhase: string(previousPhase),
+		Reason:        reason,
+		Message:       message,
+		Timestamp:     metav1.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to create application event", "app", app.Name)

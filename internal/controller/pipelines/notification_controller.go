@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/smtp"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -30,17 +36,27 @@ func NewNotificationSender() *NotificationSender {
 	}
 }
 
+type rateLimitKey struct {
+	configName string
+	resource   string
+	phase      string
+}
+
 // NotificationConfigReconciler watches NotificationConfig resources and forwards
 // matching broker events to configured destinations.
 type NotificationConfigReconciler struct {
 	client.Client
 	EventBroker *events.Broker
 	Sender      *NotificationSender
+	Emailer     *EmailSender
+	rateLimits  map[rateLimitKey]time.Time
+	rateMu      sync.Mutex
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 
 // Reconcile is intentionally a no-op; the controller does its work in Start.
 func (r *NotificationConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -52,6 +68,9 @@ func (r *NotificationConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 // Start subscribes to the event broker and dispatches notifications until the
 // manager context is cancelled.
 func (r *NotificationConfigReconciler) Start(ctx context.Context) error {
+	if r.rateLimits == nil {
+		r.rateLimits = make(map[rateLimitKey]time.Time)
+	}
 	if r.EventBroker == nil {
 		log.FromContext(ctx).Info("No event broker configured, notification controller disabled")
 		return nil
@@ -92,44 +111,151 @@ func (r *NotificationConfigReconciler) handleEvent(ctx context.Context, evt *eve
 
 	for i := range configs.Items {
 		cfg := &configs.Items[i]
+		if !r.rateLimitAllowed(cfg, payload) {
+			continue
+		}
 		if !matchesTrigger(evt, payload, cfg.Spec.Triggers) {
 			continue
 		}
-		for _, dest := range cfg.Spec.Destinations {
-			message := renderMessage(cfg.Spec.Template, payload)
-			if dest.WebhookURL != "" {
-				if sendErr := r.Sender.sendWebhook(ctx, dest.WebhookURL, payload); sendErr != nil {
-					log.FromContext(ctx).Error(sendErr, "Failed to send webhook notification",
-						"config", cfg.Name, "destination", dest.Name)
-				}
-			}
-			if dest.SlackWebhookURL != "" {
-				if sendErr := r.Sender.sendSlack(ctx, dest.SlackWebhookURL, message); sendErr != nil {
-					log.FromContext(ctx).Error(sendErr, "Failed to send slack notification",
-						"config", cfg.Name, "destination", dest.Name)
-				}
-			}
+
+		emailer := r.buildEmailer(ctx, cfg)
+		r.dispatchConfig(ctx, cfg, payload, emailer)
+
+		if err := r.Status().Update(ctx, cfg); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to update NotificationConfig status", "config", cfg.Name)
 		}
+	}
+}
+
+func (r *NotificationConfigReconciler) buildEmailer(ctx context.Context, cfg *paprikav1.NotificationConfig) *EmailSender {
+	if cfg.Spec.SMTP == nil {
+		return nil
+	}
+	var auth smtp.Auth
+	if cfg.Spec.SMTP.AuthSecretRef != "" {
+		secrets, err := r.resolveSecret(ctx, cfg.Namespace, cfg.Spec.SMTP.AuthSecretRef)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "Failed to resolve SMTP secret", "config", cfg.Name)
+		} else {
+			auth = smtp.PlainAuth("", secrets["username"], secrets["password"], cfg.Spec.SMTP.Host)
+		}
+	}
+	return NewEmailSender(*cfg.Spec.SMTP, auth)
+}
+
+func (r *NotificationConfigReconciler) dispatchConfig(ctx context.Context, cfg *paprikav1.NotificationConfig, payload *eventPayload, emailer *EmailSender) {
+	for i := range cfg.Spec.Destinations {
+		dest := &cfg.Spec.Destinations[i]
+		message := renderMessage(cfg.Spec.Template, payload)
+		secret, _ := r.resolveSecret(ctx, cfg.Namespace, dest.SecretRef)
+
+		record := paprikav1.NotificationDelivery{
+			DestinationName: dest.Name,
+			Phase:           payload.Phase,
+			SentAt:          ptr(metav1.Now()),
+		}
+
+		deliveryErr := r.dispatchDestination(ctx, payload, emailer, dest, message, secret)
+		if deliveryErr != nil {
+			record.Success = false
+			record.Error = deliveryErr.Error()
+			log.FromContext(ctx).Error(deliveryErr, "Failed to send notification",
+				"config", cfg.Name, "destination", dest.Name)
+		} else {
+			record.Success = true
+		}
+		r.appendDelivery(cfg, record)
+	}
+}
+
+func (r *NotificationConfigReconciler) dispatchDestination(
+	ctx context.Context,
+	payload *eventPayload,
+	emailer *EmailSender,
+	dest *paprikav1.NotificationDestination,
+	message string,
+	secret map[string]string,
+) error {
+	switch {
+	case dest.WebhookURL != "":
+		return r.Sender.sendWebhook(ctx, dest.WebhookURL, payload, dest.Headers, secret)
+	case dest.SlackWebhookURL != "":
+		return r.Sender.sendSlack(ctx, dest.SlackWebhookURL, message, secret)
+	case dest.Email != "" && emailer != nil:
+		subject := fmt.Sprintf("Paprika: %s/%s %s", payload.Namespace, payload.Name, payload.Phase)
+		return emailer.Send(ctx, dest.Email, subject, message)
+	case dest.Email != "" && emailer == nil:
+		return errors.New("email destination configured but SMTP is not set")
+	default:
+		return nil
+	}
+}
+
+func (r *NotificationConfigReconciler) resolveSecret(ctx context.Context, ns, name string) (map[string]string, error) {
+	if name == "" {
+		return nil, nil
+	}
+	var sec corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sec); err != nil {
+		return nil, fmt.Errorf("getting secret %s/%s: %w", ns, name, err)
+	}
+	out := make(map[string]string, len(sec.Data))
+	for k, v := range sec.Data {
+		out[k] = string(v)
+	}
+	return out, nil
+}
+
+func (r *NotificationConfigReconciler) rateLimitAllowed(cfg *paprikav1.NotificationConfig, payload *eventPayload) bool {
+	if cfg.Spec.RateLimit == nil || cfg.Spec.RateLimit.MinInterval == "" {
+		return true
+	}
+	d, err := time.ParseDuration(cfg.Spec.RateLimit.MinInterval)
+	if err != nil {
+		return true
+	}
+	key := rateLimitKey{
+		configName: cfg.Name,
+		resource:   payload.ResourceType + "/" + payload.Namespace + "/" + payload.Name,
+		phase:      payload.Phase,
+	}
+	r.rateMu.Lock()
+	defer r.rateMu.Unlock()
+	if last, ok := r.rateLimits[key]; ok && time.Since(last) < d {
+		return false
+	}
+	r.rateLimits[key] = time.Now()
+	return true
+}
+
+func (r *NotificationConfigReconciler) appendDelivery(cfg *paprikav1.NotificationConfig, d paprikav1.NotificationDelivery) {
+	cfg.Status.Deliveries = append(cfg.Status.Deliveries, d)
+	if len(cfg.Status.Deliveries) > 20 {
+		cfg.Status.Deliveries = cfg.Status.Deliveries[len(cfg.Status.Deliveries)-20:]
 	}
 }
 
 // eventPayload is the shape of data published by application/release controllers.
 type eventPayload struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
-	Phase     string `json:"phase"`
-	Reason    string `json:"reason"`
+	ResourceType  string `json:"resourceType"`
+	Name          string `json:"name"`
+	Namespace     string `json:"namespace"`
+	Phase         string `json:"phase"`
+	PreviousPhase string `json:"previousPhase,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	Message       string `json:"message,omitempty"`
+	Timestamp     string `json:"timestamp"`
 }
 
-func decodeEventPayload(evt *events.Event) (eventPayload, error) {
+func decodeEventPayload(evt *events.Event) (*eventPayload, error) {
 	var payload eventPayload
 	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
-		return payload, fmt.Errorf("unmarshal event payload: %w", err)
+		return nil, fmt.Errorf("unmarshal event payload: %w", err)
 	}
-	return payload, nil
+	return &payload, nil
 }
 
-func matchesTrigger(evt *events.Event, payload eventPayload, triggers []paprikav1.NotificationTrigger) bool {
+func matchesTrigger(evt *events.Event, payload *eventPayload, triggers []paprikav1.NotificationTrigger) bool {
 	if len(triggers) == 0 {
 		return true
 	}
@@ -148,28 +274,45 @@ func matchesTrigger(evt *events.Event, payload eventPayload, triggers []paprikav
 	return false
 }
 
-func renderMessage(tmpl string, payload eventPayload) string {
+func renderMessage(tmpl string, payload *eventPayload) string {
 	if tmpl == "" {
-		return fmt.Sprintf("%s/%s is now %s", payload.Namespace, payload.Name, payload.Phase)
+		return fmt.Sprintf("%s/%s is now %s%s",
+			payload.Namespace, payload.Name, payload.Phase,
+			reasonSuffix(payload.Reason))
 	}
 	t, err := template.New("notification").Parse(tmpl)
 	if err != nil {
-		return fmt.Sprintf("%s/%s is now %s", payload.Namespace, payload.Name, payload.Phase)
+		return fmt.Sprintf("%s/%s is now %s%s",
+			payload.Namespace, payload.Name, payload.Phase,
+			reasonSuffix(payload.Reason))
 	}
 	var buf bytes.Buffer
 	data := map[string]string{
-		"name":      payload.Name,
-		"namespace": payload.Namespace,
-		"phase":     payload.Phase,
-		"reason":    payload.Reason,
+		"resourceType":  payload.ResourceType,
+		"name":          payload.Name,
+		"namespace":     payload.Namespace,
+		"phase":         payload.Phase,
+		"previousPhase": payload.PreviousPhase,
+		"reason":        payload.Reason,
+		"message":       payload.Message,
+		"timestamp":     payload.Timestamp,
 	}
 	if execErr := t.Execute(&buf, data); execErr != nil {
-		return fmt.Sprintf("%s/%s is now %s", payload.Namespace, payload.Name, payload.Phase)
+		return fmt.Sprintf("%s/%s is now %s%s",
+			payload.Namespace, payload.Name, payload.Phase,
+			reasonSuffix(payload.Reason))
 	}
 	return buf.String()
 }
 
-func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payload eventPayload) error {
+func reasonSuffix(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (" + reason + ")"
+}
+
+func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payload *eventPayload, headers, secret map[string]string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal webhook payload: %w", err)
@@ -179,6 +322,14 @@ func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payloa
 		return fmt.Errorf("create webhook request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	if t := secret["token"]; t != "" {
+		req.Header.Set("Authorization", "Bearer "+t)
+	} else if u, p := secret["username"], secret["password"]; u != "" && p != "" {
+		req.SetBasicAuth(u, p)
+	}
 	resp, err := s.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("post webhook: %w", err)
@@ -190,7 +341,7 @@ func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payloa
 	return nil
 }
 
-func (s *NotificationSender) sendSlack(ctx context.Context, url, message string) error {
+func (s *NotificationSender) sendSlack(ctx context.Context, url, message string, secret map[string]string) error {
 	body, err := json.Marshal(map[string]string{"text": message})
 	if err != nil {
 		return fmt.Errorf("marshal slack payload: %w", err)
@@ -200,6 +351,9 @@ func (s *NotificationSender) sendSlack(ctx context.Context, url, message string)
 		return fmt.Errorf("create slack request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if t := secret["token"]; t != "" {
+		req.Header.Set("Authorization", "Bearer "+t)
+	}
 	resp, err := s.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("post slack: %w", err)

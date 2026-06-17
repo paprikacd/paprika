@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
@@ -15,7 +18,7 @@ import (
 func TestMatchesTrigger(t *testing.T) {
 	t.Parallel()
 
-	payload := eventPayload{Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 	evt := &events.Event{Type: events.TypeApplication}
 
 	tests := []struct {
@@ -67,11 +70,11 @@ func TestMatchesTrigger(t *testing.T) {
 func TestRenderMessage(t *testing.T) {
 	t.Parallel()
 
-	payload := eventPayload{Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 
 	t.Run("default message", func(t *testing.T) {
 		got := renderMessage("", payload)
-		want := "default/app is now Failed"
+		want := "default/app is now Failed (ValidationFailed)"
 		if got != want {
 			t.Errorf("renderMessage() = %q, want %q", got, want)
 		}
@@ -88,7 +91,7 @@ func TestRenderMessage(t *testing.T) {
 
 	t.Run("invalid template falls back", func(t *testing.T) {
 		got := renderMessage("{{ .bad", payload)
-		want := "default/app is now Failed"
+		want := "default/app is now Failed (ValidationFailed)"
 		if got != want {
 			t.Errorf("renderMessage() = %q, want %q", got, want)
 		}
@@ -98,25 +101,53 @@ func TestRenderMessage(t *testing.T) {
 func TestNotificationSender_sendWebhook(t *testing.T) {
 	t.Parallel()
 
-	payload := eventPayload{Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("expected application/json content type, got %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("X-Custom") != "value" {
+			t.Errorf("expected custom header, got %s", r.Header.Get("X-Custom"))
+		}
+		if r.Header.Get("Authorization") != "Bearer token123" {
+			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
 		}
 		body, _ := io.ReadAll(r.Body)
 		var received eventPayload
 		if err := json.Unmarshal(body, &received); err != nil {
 			t.Errorf("failed to decode webhook payload: %v", err)
 		}
-		if received != payload {
-			t.Errorf("webhook payload mismatch: got %+v, want %+v", received, payload)
+		if received != *payload {
+			t.Errorf("webhook payload mismatch: got %+v, want %+v", received, *payload)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
 	sender := NewNotificationSender()
-	if err := sender.sendWebhook(context.Background(), server.URL, payload); err != nil {
+	secret := map[string]string{"token": "token123"}
+	headers := map[string]string{"X-Custom": "value"}
+	if err := sender.sendWebhook(context.Background(), server.URL, payload, headers, secret); err != nil {
+		t.Errorf("sendWebhook() error = %v", err)
+	}
+}
+
+func TestNotificationSender_sendWebhook_basicAuth(t *testing.T) {
+	t.Parallel()
+
+	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u, p, ok := r.BasicAuth()
+		if !ok || u != "user" || p != "pass" {
+			t.Errorf("expected basic auth user/pass, got %q/%q", u, p)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	sender := NewNotificationSender()
+	secret := map[string]string{"username": "user", "password": "pass"}
+	if err := sender.sendWebhook(context.Background(), server.URL, payload, nil, secret); err != nil {
 		t.Errorf("sendWebhook() error = %v", err)
 	}
 }
@@ -125,6 +156,9 @@ func TestNotificationSender_sendSlack(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer slack-token" {
+			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
+		}
 		body, _ := io.ReadAll(r.Body)
 		var msg map[string]string
 		if err := json.Unmarshal(body, &msg); err != nil {
@@ -138,7 +172,8 @@ func TestNotificationSender_sendSlack(t *testing.T) {
 	defer server.Close()
 
 	sender := NewNotificationSender()
-	if err := sender.sendSlack(context.Background(), server.URL, "test message"); err != nil {
+	secret := map[string]string{"token": "slack-token"}
+	if err := sender.sendSlack(context.Background(), server.URL, "test message", secret); err != nil {
 		t.Errorf("sendSlack() error = %v", err)
 	}
 }
@@ -152,7 +187,27 @@ func TestNotificationSender_non2xxReturnsError(t *testing.T) {
 	defer server.Close()
 
 	sender := NewNotificationSender()
-	if err := sender.sendWebhook(context.Background(), server.URL, eventPayload{}); err == nil {
+	if err := sender.sendWebhook(context.Background(), server.URL, &eventPayload{}, nil, nil); err == nil {
 		t.Error("expected error for non-2xx response")
+	}
+}
+
+func TestRateLimitAllowed(t *testing.T) {
+	t.Parallel()
+
+	r := &NotificationConfigReconciler{rateLimits: make(map[rateLimitKey]time.Time)}
+	cfg := &paprikav1.NotificationConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "cfg"},
+		Spec: paprikav1.NotificationConfigSpec{
+			RateLimit: &paprikav1.NotificationRateLimit{MinInterval: "1h"},
+		},
+	}
+	payload := &eventPayload{ResourceType: "application", Namespace: "default", Name: "app", Phase: "Failed"}
+
+	if !r.rateLimitAllowed(cfg, payload) {
+		t.Error("first event should be allowed")
+	}
+	if r.rateLimitAllowed(cfg, payload) {
+		t.Error("second event should be rate limited")
 	}
 }

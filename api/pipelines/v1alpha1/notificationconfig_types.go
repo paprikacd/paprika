@@ -31,6 +31,43 @@ type NotificationDestination struct {
 	// Email is a recipient email address (optional, for future senders).
 	// +optional
 	Email string `json:"email,omitempty"`
+
+	// SecretRef names a Secret in the same namespace that holds credentials.
+	// Keys depend on the destination type:
+	//   - webhook/slack: "token" (bearer token) or "username"/"password".
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+
+	// Headers are extra HTTP headers sent to webhookURL.
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// SMTPConfig configures an email relay for this NotificationConfig.
+type SMTPConfig struct {
+	Host string `json:"host"`
+
+	// +kubebuilder:default=587
+	// +optional
+	Port int `json:"port,omitempty"`
+
+	From string `json:"from"`
+
+	// +optional
+	TLSEnabled bool `json:"tlsEnabled,omitempty"`
+
+	// AuthSecretRef names a Secret in the same namespace with keys:
+	//   - username
+	//   - password
+	// +optional
+	AuthSecretRef string `json:"authSecretRef,omitempty"`
+}
+
+// NotificationRateLimit controls how often a matched trigger may fire.
+type NotificationRateLimit struct {
+	// +kubebuilder:default="5m"
+	// +optional
+	MinInterval string `json:"minInterval,omitempty"`
 }
 
 // NotificationConfigSpec defines the desired state of NotificationConfig.
@@ -45,14 +82,35 @@ type NotificationConfigSpec struct {
 	// messages. The data map contains name, namespace, phase and reason.
 	// +optional
 	Template string `json:"template,omitempty"`
+
+	// SMTP relay used for email destinations.
+	// +optional
+	SMTP *SMTPConfig `json:"smtp,omitempty"`
+
+	// RateLimit reduces noise from flapping resources.
+	// +optional
+	RateLimit *NotificationRateLimit `json:"rateLimit,omitempty"`
+}
+
+// NotificationDelivery records the outcome of one dispatch attempt.
+type NotificationDelivery struct {
+	DestinationName string       `json:"destinationName"`
+	Phase           string       `json:"phase,omitempty"`
+	SentAt          *metav1.Time `json:"sentAt,omitempty"`
+	Success         bool         `json:"success"`
+	Error           string       `json:"error,omitempty"`
 }
 
 // NotificationConfigStatus defines the observed state of NotificationConfig.
 type NotificationConfigStatus struct {
+	// Deliveries keeps the last N delivery attempts.
+	// +optional
+	Deliveries []NotificationDelivery `json:"deliveries,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:subresource:status
 
 // NotificationConfig configures event-driven notifications for Paprika resources.
 type NotificationConfig struct {
