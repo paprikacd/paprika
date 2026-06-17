@@ -27,6 +27,7 @@ func (r *ApplicationReconciler) currentTime() time.Time {
 	return time.Now()
 }
 
+//nolint:cyclop // self-heal branching is inherent to the flow.
 func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *paprikav1.Application) error {
 	if app.Spec.SelfHeal == nil {
 		return nil
@@ -40,6 +41,16 @@ func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *papr
 
 	if r.selfHealOnCooldown(app) {
 		return nil
+	}
+
+	if r.SyncWindowEvaluator != nil {
+		res := r.SyncWindowEvaluator.IsSyncAllowed(
+			app.Spec.SyncWindows, r.getTargetStage(app), r.currentTime(), false)
+		if !res.Allowed {
+			r.setSelfHealCondition(app, metav1.ConditionFalse, "SyncWindowBlocked", res.Reason)
+			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), res.Reason)
+			return nil
+		}
 	}
 
 	if app.Spec.SelfHeal.AutoSyncOnDrift && app.Spec.SyncPolicy == paprikav1.SyncAuto && app.Status.OutOfSync > 0 {

@@ -246,8 +246,11 @@ func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
 			if err := c.Get(ctx, client.ObjectKey{Name: "sync-app", Namespace: "default"}, &updated); err != nil {
 				t.Fatalf("get application: %v", err)
 			}
-			if len(updated.Annotations) > 0 {
-				t.Fatalf("expected trigger annotations to be removed, got %v", updated.Annotations)
+			if _, ok := updated.Annotations[manualSyncAnnotation]; !ok {
+				t.Fatalf("expected manual-sync annotation to be set, got %v", updated.Annotations)
+			}
+			if len(updated.Annotations) != 1 {
+				t.Fatalf("expected only manual-sync annotation, got %v", updated.Annotations)
 			}
 			if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
 				t.Fatalf("expected phase Pending, got %s", updated.Status.Phase)
@@ -267,6 +270,7 @@ func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
 		{"legacy webhook trigger annotation", map[string]string{"paprika.io/webhook-trigger": "1"}, true},
 		{"no annotations", nil, false},
 		{"unrelated annotation", map[string]string{"other": "1"}, false},
+		{"manual sync annotation", map[string]string{manualSyncAnnotation: "1"}, false},
 	}
 
 	r := &ApplicationReconciler{}

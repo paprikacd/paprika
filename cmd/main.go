@@ -70,6 +70,7 @@ import (
 	"github.com/benebsworth/paprika/internal/reposerver"
 	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
 	"github.com/benebsworth/paprika/internal/sharding"
+	"github.com/benebsworth/paprika/internal/syncwindow"
 	webhookcorev1alpha1 "github.com/benebsworth/paprika/internal/webhook/core/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
@@ -531,9 +532,10 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		ShardFilter:      shardFilter,
 		RateLimiter:      rateLimiter,
 		//nolint:staticcheck,nolintlint // reconcilers use the legacy record.EventRecorder API
-		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
-		ProjectValidator: projectValidator,
-		EventBroker:      broker,
+		EventRecorder:       mgr.GetEventRecorderFor("application-controller"),
+		ProjectValidator:    projectValidator,
+		EventBroker:         broker,
+		SyncWindowEvaluator: syncwindow.NewEvaluator(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}

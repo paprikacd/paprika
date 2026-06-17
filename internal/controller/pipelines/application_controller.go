@@ -36,6 +36,7 @@ import (
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
+	"github.com/benebsworth/paprika/internal/syncwindow"
 	"github.com/benebsworth/paprika/metrics"
 )
 
@@ -69,21 +70,22 @@ func withProjectLabels(app *paprikav1.Application, labels map[string]string) map
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	K8sClient        *kubernetes.Clientset
-	Namespace        string
-	RestConfig       *rest.Config
-	WorkDir          string
-	HealthEval       health.HealthEvaluator
-	DiffEngine       engine.DiffEngine
-	ResHealth        health.ResourceHealthChecker
-	ClusterMgr       ClusterClientManager
-	TemplateRenderer engine.TemplateRenderer
-	ShardFilter      *sharding.Filter
-	RateLimiter      *ratelimit.ControllerRateLimit
-	EventRecorder    record.EventRecorder
-	ProjectValidator *governance.ProjectValidator
-	EventBroker      *events.Broker
+	Scheme              *runtime.Scheme
+	K8sClient           *kubernetes.Clientset
+	Namespace           string
+	RestConfig          *rest.Config
+	WorkDir             string
+	HealthEval          health.HealthEvaluator
+	DiffEngine          engine.DiffEngine
+	ResHealth           health.ResourceHealthChecker
+	ClusterMgr          ClusterClientManager
+	TemplateRenderer    engine.TemplateRenderer
+	ShardFilter         *sharding.Filter
+	RateLimiter         *ratelimit.ControllerRateLimit
+	EventRecorder       record.EventRecorder
+	ProjectValidator    *governance.ProjectValidator
+	EventBroker         *events.Broker
+	SyncWindowEvaluator syncwindow.Evaluator
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
 }
@@ -370,12 +372,13 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
 		delete(app.Annotations, key)
 	}
-	if len(app.Annotations) == 0 {
-		app.Annotations = nil
+	if app.Annotations == nil {
+		app.Annotations = map[string]string{}
 	}
+	app.Annotations[manualSyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
 	if err := r.Patch(ctx, app, patch); err != nil {
-		log.Error(err, "Failed to remove sync trigger annotation")
-		return ctrl.Result{}, fmt.Errorf("removing sync trigger annotation: %w", err)
+		log.Error(err, "Failed to set manual sync annotation")
+		return ctrl.Result{}, fmt.Errorf("setting manual sync annotation: %w", err)
 	}
 	app.Status.Phase = paprikav1.ApplicationPending
 	if err := r.patchAppStatus(ctx, app); err != nil {
@@ -681,6 +684,15 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 
 //nolint:cyclop // stage/release branching is inherent to the reconcile flow.
 func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+	manualOverride := app.Annotations[manualSyncAnnotation] != ""
+	defer func() {
+		if manualOverride {
+			if perr := r.clearManualSyncAnnotation(ctx, app); perr != nil {
+				log.FromContext(ctx).Error(perr, "Failed to clear manual sync annotation", "app", app.Name)
+			}
+		}
+	}()
+
 	if len(app.Spec.Stages) == 0 {
 		return ctrl.Result{}, nil
 	}
@@ -706,6 +718,14 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
 		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+
+	if !manualOverride && app.Spec.SyncPolicy == paprikav1.SyncAuto && len(app.Spec.SyncWindows) > 0 {
+		if allowed, res := r.syncWindowAllows(ctx, app, targetStage.Name, false); !allowed {
+			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), res.Reason)
+			r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SyncWindowBlocked", res.Reason)
+			return ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}, nil
+		}
 	}
 
 	if app.Spec.SyncPolicy == paprikav1.SyncManual {
@@ -1246,6 +1266,18 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		return ctrl.Result{RequeueAfter: pollInterval}, nil
 	}
 	if sourceChanged {
+		targetStage := r.getTargetStage(app)
+		if allowed, res := r.syncWindowAllows(ctx, app, targetStage, false); !allowed {
+			msg := "Source change detected but " + res.Reason
+			log.Info(msg, "app", app.Name)
+			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), msg)
+			if err := r.patchAppStatus(ctx, app); err != nil {
+				log.Error(err, "Failed to patch sync-window status")
+			}
+			return ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}, nil
+		}
+
+		r.setSyncWindowCondition(app, metav1.ConditionTrue, "Allowed", "Source change within sync window")
 		log.Info("Source change detected, triggering re-sync", "app", app.Name)
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SourceChanged", "source hash changed, re-syncing")
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
@@ -1384,6 +1416,9 @@ func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventTyp
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.now == nil {
 		r.now = time.Now
+	}
+	if r.SyncWindowEvaluator == nil {
+		r.SyncWindowEvaluator = syncwindow.NewEvaluator()
 	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
