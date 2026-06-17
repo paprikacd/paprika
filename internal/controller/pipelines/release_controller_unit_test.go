@@ -650,3 +650,59 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		}
 	})
 }
+
+func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	tests := []struct {
+		name        string
+		phase       pipelinesv1alpha1.ReleasePhase
+		wantPhase   pipelinesv1alpha1.ReleasePhase
+		wantRequeue bool
+	}{
+		{"complete", pipelinesv1alpha1.ReleaseComplete, pipelinesv1alpha1.ReleasePending, true},
+		{"failed", pipelinesv1alpha1.ReleaseFailed, pipelinesv1alpha1.ReleasePending, true},
+		{"rolledback", pipelinesv1alpha1.ReleaseRolledBack, pipelinesv1alpha1.ReleasePending, true},
+		{"superseded", pipelinesv1alpha1.ReleaseSuperseded, pipelinesv1alpha1.ReleasePending, true},
+		{"promoting", pipelinesv1alpha1.ReleasePromoting, pipelinesv1alpha1.ReleasePromoting, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "app-release",
+					Namespace:   "default",
+					Annotations: map[string]string{"paprika.io/resync": "12345"},
+				},
+				Status: pipelinesv1alpha1.ReleaseStatus{Phase: tc.phase},
+			}
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release).WithStatusSubresource(release).Build()
+			r := &ReleaseReconciler{Client: client, Scheme: scheme}
+			var result string
+			res, handled, err := r.handleResyncAnnotation(ctx, release, &result)
+			if err != nil {
+				t.Fatalf("handleResyncAnnotation failed: %v", err)
+			}
+			if !handled {
+				t.Fatalf("expected resync to be handled")
+			}
+			if tc.wantRequeue && res.RequeueAfter == 0 {
+				t.Fatalf("expected requeue")
+			}
+
+			var updated pipelinesv1alpha1.Release
+			if err := client.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &updated); err != nil {
+				t.Fatalf("get release: %v", err)
+			}
+			if updated.Status.Phase != tc.wantPhase {
+				t.Fatalf("phase: got %s, want %s", updated.Status.Phase, tc.wantPhase)
+			}
+			if _, ok := updated.Annotations["paprika.io/resync"]; ok {
+				t.Fatalf("expected resync annotation to be removed")
+			}
+		})
+	}
+}

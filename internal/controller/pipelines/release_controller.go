@@ -52,6 +52,7 @@ import (
 const (
 	releaseFinalizer   = "paprika.io/release-cleanup"
 	rollbackAnnotation = "paprika.io/rollback-requested"
+	resyncAnnotation   = "paprika.io/resync"
 )
 
 var managedGVRs = []schema.GroupVersionResource{
@@ -173,6 +174,10 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.Request, release *paprikav1.Release, start time.Time, result *string) (ctrl.Result, error) {
+	if res, handled, err := r.handleResyncAnnotation(ctx, release, result); handled {
+		return res, err
+	}
+
 	// Handle rollback requests before checking for terminal phases so that a
 	// failed release with OnFailure=rollback, or any release annotated with
 	// paprika.io/rollback-requested, can be rolled back.
@@ -250,6 +255,29 @@ func (r *ReleaseReconciler) isReleaseTerminal(release *paprikav1.Release) bool {
 		release.Status.Phase == paprikav1.ReleaseFailed ||
 		release.Status.Phase == paprikav1.ReleaseRolledBack ||
 		release.Status.Phase == paprikav1.ReleaseSuperseded
+}
+
+func (r *ReleaseReconciler) handleResyncAnnotation(ctx context.Context, release *paprikav1.Release, result *string) (res ctrl.Result, handled bool, err error) {
+	if _, ok := release.Annotations[resyncAnnotation]; !ok {
+		return ctrl.Result{}, false, nil
+	}
+
+	if r.isReleaseTerminal(release) {
+		oldPhase := release.Status.Phase
+		release.Status.Phase = paprikav1.ReleasePending
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, true, fmt.Errorf("resetting release phase to pending: %w", err)
+		}
+	}
+
+	patch := client.MergeFrom(release.DeepCopy())
+	delete(release.Annotations, resyncAnnotation)
+	if err := r.Patch(ctx, release, patch); err != nil {
+		*result = resultError
+		return ctrl.Result{}, true, fmt.Errorf("clearing resync annotation: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: 1 * time.Second}, true, nil
 }
 
 func (r *ReleaseReconciler) hasCanarySteps(stage *paprikav1.Stage) bool {
