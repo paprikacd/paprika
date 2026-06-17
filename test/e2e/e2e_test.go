@@ -61,7 +61,17 @@ func waitForWebhookCA() {
 		out, err = utils.Run(cmd)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(out).NotTo(BeEmpty(), "validating webhook CA bundle not injected")
+
+		cmd = exec.Command("kubectl", "get", "secret", "webhook-server-cert", "-n", namespace)
+		_, err = utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred(), "webhook-server-cert secret not found")
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+	By("waiting for the controller-manager to be ready after webhook cert is available")
+	cmd := exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
+		"deployment/paprika-controller-manager", "--timeout=180s")
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Operator deployment not available after webhook cert ready")
 }
 
 func deployManager() {
@@ -1405,6 +1415,101 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "Resource health should be populated")
 			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+		})
+	})
+
+	Context("ApplicationSelfHeal", Ordered, func() {
+		AfterAll(func() {
+			By("cleaning up self-heal Application resources")
+			cmd := exec.Command("kubectl", "delete", "application", "e2e-self-heal", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+			_, _ = utils.Run(cmd)
+			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-self-heal", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-self-heal", "--ignore-not-found", "--timeout=10s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should auto-sync when managed resources drift and selfHeal is enabled", func() {
+			By("creating an Application with self-heal enabled")
+			app := fmt.Sprintf(`{
+				"apiVersion": "pipelines.paprika.io/v1alpha1",
+				"kind": "Application",
+				"metadata": {"name": "e2e-self-heal", "namespace": "%s"},
+				"spec": {
+					"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+					"stages": [
+						{"name": "dev", "ring": 1}
+					],
+					"strategy": "Rolling",
+					"syncPolicy": "Auto",
+					"selfHeal": {
+						"autoSyncOnDrift": true,
+						"cooldown": "10s"
+					},
+					"parameters": {
+						"replicaCount": "1",
+						"features.canary.enabled": "false",
+						"features.monitoring.enabled": "false",
+						"features.ingress.enabled": "false"
+					}
+				}
+			}`, namespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(app)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create self-heal Application")
+
+			By("waiting for the Application to reach Healthy phase")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("finding the deployed Deployment name")
+			var deploymentName string
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "-n", namespace, "-l", "app.paprika.io/name=e2e-self-heal", "-o", "jsonpath={.items[0].metadata.name}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "A deployment should exist")
+				deploymentName = out
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
+
+			By("introducing drift by adding an extra label to the Deployment")
+			cmd = exec.Command("kubectl", "label", "deployment", deploymentName, "-n", namespace, "e2e-self-heal-drift=true", "--overwrite")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to label deployment for drift")
+
+			By("waiting for the Application to report out-of-sync resources")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.outOfSync}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "outOfSync should be populated")
+				g.Expect(out).NotTo(Equal("0"), "Application should report drift")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("waiting for the current Release to be annotated for resync")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-self-heal-release", "-n", namespace, "-o", "jsonpath={.metadata.annotations.paprika\\.io/resync}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Release should be annotated for resync")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("waiting for the SelfHealed condition to report DriftDetected")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='SelfHealed')].reason}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("DriftDetected"), "SelfHealed condition should report DriftDetected")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 	})
 
