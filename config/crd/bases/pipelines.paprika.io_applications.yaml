@@ -308,6 +308,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -379,6 +396,7 @@ spec:
                     enum:
                     - git
                     - helm
+                    - kustomize
                     - s3
                     - oci
                     - inline
@@ -544,6 +562,31 @@ spec:
                 - Canary
                 - BlueGreen
                 type: string
+              syncOptions:
+                description: SyncOptions fine-tunes how manifests are applied and
+                  pruned.
+                properties:
+                  applyOutOfSyncOnly:
+                    description: |-
+                      ApplyOutOfSyncOnly skips applying resources whose live state already
+                      matches the desired manifest.
+                    type: boolean
+                  force:
+                    description: Force enables force-conflicts for server-side apply.
+                    type: boolean
+                  prunePropagationPolicy:
+                    description: |-
+                      PrunePropagationPolicy selects the deletion propagation policy used when
+                      pruning managed resources.
+                    enum:
+                    - Foreground
+                    - Background
+                    - Orphan
+                    type: string
+                  replace:
+                    description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                type: object
               syncPolicy:
                 default: Auto
                 description: SyncPolicy controls whether changes are applied automatically.
@@ -675,6 +718,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.

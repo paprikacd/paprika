@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -23,6 +24,7 @@ import (
 	analysismocks "github.com/benebsworth/paprika/analysis/mocks"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/gates"
 	gatesmocks "github.com/benebsworth/paprika/gates/mocks"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
@@ -405,7 +407,7 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 		AgentAddress: "http://agent.example:8083",
 	}
 
-	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n")); err != nil {
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n"), nil); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }
@@ -533,5 +535,174 @@ func TestReleaseReconciler_promote_blocksGovernanceViolation(t *testing.T) {
 	}
 	if cond.Reason != "ProjectViolation" {
 		t.Errorf("expected reason ProjectViolation, got %s", cond.Reason)
+	}
+}
+
+func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
+	t.Parallel()
+
+	appName := "rollback-app"
+	target := "dev"
+
+	newRelease := func(name string, ts time.Time, phase pipelinesv1alpha1.ReleasePhase, snapshot string) *pipelinesv1alpha1.Release {
+		return &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "default",
+				CreationTimestamp: metav1.Time{Time: ts},
+				Labels: map[string]string{
+					engine.ApplicationNameLabelKey: appName,
+				},
+			},
+			Spec: pipelinesv1alpha1.ReleaseSpec{
+				Target: target,
+			},
+			Status: pipelinesv1alpha1.ReleaseStatus{
+				Phase:                    phase,
+				RenderedManifestSnapshot: snapshot,
+			},
+		}
+	}
+
+	base := time.Now().UTC().Truncate(time.Second)
+
+	buildClient := func(objs ...client.Object) client.Client {
+		scheme := runtime.NewScheme()
+		_ = pipelinesv1alpha1.AddToScheme(scheme)
+		return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	}
+
+	t.Run("no previous releases returns nil", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base, pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		r := &ReleaseReconciler{Client: buildClient(current)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target != nil {
+			t.Fatalf("expected nil target, got %s", target.Name)
+		}
+	})
+
+	t.Run("selects newest complete release", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base.Add(3*time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		oldComplete := newRelease("old-complete", base, pipelinesv1alpha1.ReleaseComplete, "snap-old")
+		newComplete := newRelease("new-complete", base.Add(2*time.Hour), pipelinesv1alpha1.ReleaseComplete, "snap-new")
+		r := &ReleaseReconciler{Client: buildClient(current, oldComplete, newComplete)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target == nil || target.Name != "new-complete" {
+			t.Fatalf("expected new-complete, got %v", target)
+		}
+	})
+
+	t.Run("falls back to newest non-failed non-superseded with snapshot", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base.Add(2*time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		failed := newRelease("failed", base, pipelinesv1alpha1.ReleaseFailed, "snap-failed")
+		superseded := newRelease("superseded", base.Add(time.Hour), pipelinesv1alpha1.ReleaseSuperseded, "snap-super")
+		viable := newRelease("viable", base.Add(30*time.Minute), pipelinesv1alpha1.ReleasePromoting, "snap-viable")
+		r := &ReleaseReconciler{Client: buildClient(current, failed, superseded, viable)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target == nil || target.Name != "viable" {
+			t.Fatalf("expected viable, got %v", target)
+		}
+	})
+
+	t.Run("skips releases without snapshot", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base.Add(time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		noSnapshot := newRelease("no-snapshot", base, pipelinesv1alpha1.ReleaseComplete, "")
+		r := &ReleaseReconciler{Client: buildClient(current, noSnapshot)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target != nil {
+			t.Fatalf("expected nil target, got %s", target.Name)
+		}
+	})
+
+	t.Run("skips releases with different target", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base.Add(time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		otherTarget := newRelease("other-target", base, pipelinesv1alpha1.ReleaseComplete, "snap-other")
+		otherTarget.Spec.Target = "prod"
+		r := &ReleaseReconciler{Client: buildClient(current, otherTarget)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target != nil {
+			t.Fatalf("expected nil target, got %s", target.Name)
+		}
+	})
+}
+
+func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	tests := []struct {
+		name        string
+		phase       pipelinesv1alpha1.ReleasePhase
+		wantPhase   pipelinesv1alpha1.ReleasePhase
+		wantRequeue bool
+	}{
+		{"complete", pipelinesv1alpha1.ReleaseComplete, pipelinesv1alpha1.ReleasePending, true},
+		{"failed", pipelinesv1alpha1.ReleaseFailed, pipelinesv1alpha1.ReleasePending, true},
+		{"rolledback", pipelinesv1alpha1.ReleaseRolledBack, pipelinesv1alpha1.ReleasePending, true},
+		{"superseded", pipelinesv1alpha1.ReleaseSuperseded, pipelinesv1alpha1.ReleasePending, true},
+		{"promoting", pipelinesv1alpha1.ReleasePromoting, pipelinesv1alpha1.ReleasePromoting, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "app-release",
+					Namespace:   "default",
+					Annotations: map[string]string{"paprika.io/resync": "12345"},
+				},
+				Status: pipelinesv1alpha1.ReleaseStatus{Phase: tc.phase},
+			}
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release).WithStatusSubresource(release).Build()
+			r := &ReleaseReconciler{Client: client, Scheme: scheme}
+			var result string
+			res, handled, err := r.handleResyncAnnotation(ctx, release, &result)
+			if err != nil {
+				t.Fatalf("handleResyncAnnotation failed: %v", err)
+			}
+			if !handled {
+				t.Fatalf("expected resync to be handled")
+			}
+			if tc.wantRequeue && res.RequeueAfter == 0 {
+				t.Fatalf("expected requeue")
+			}
+
+			var updated pipelinesv1alpha1.Release
+			if err := client.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &updated); err != nil {
+				t.Fatalf("get release: %v", err)
+			}
+			if updated.Status.Phase != tc.wantPhase {
+				t.Fatalf("phase: got %s, want %s", updated.Status.Phase, tc.wantPhase)
+			}
+			if _, ok := updated.Annotations["paprika.io/resync"]; ok {
+				t.Fatalf("expected resync annotation to be removed")
+			}
+		})
 	}
 }

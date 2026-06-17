@@ -184,6 +184,21 @@ export const GateStatus = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.Condition
+ */
+export const Condition = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Condition",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "last_transition_time", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Application
  */
 export const Application = /*@__PURE__*/ proto3.makeMessageType(
@@ -213,6 +228,7 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 22, name: "pruned_resources", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 23, name: "gates", kind: "message", T: GateStatus, repeated: true },
     { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 25, name: "conditions", kind: "message", T: Condition, repeated: true },
   ],
 );
 
@@ -273,6 +289,8 @@ export const Release = /*@__PURE__*/ proto3.makeMessageType(
     { no: 8, name: "promotion_history", kind: "message", T: Promotion, repeated: true },
     { no: 9, name: "manifest_source", kind: "message", T: ManifestSource },
     { no: 10, name: "policy_results", kind: "message", T: PolicyResult, repeated: true },
+    { no: 11, name: "application", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 12, name: "rolled_back_to", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -480,6 +498,60 @@ export const GetApplicationResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ApplicationSet
+ */
+export const ApplicationSet = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationSet",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "applications", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 4, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsRequest
+ */
+export const ListApplicationSetsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListApplicationSetsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsResponse
+ */
+export const ListApplicationSetsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListApplicationSetsResponse",
+  () => [
+    { no: 1, name: "applicationsets", kind: "message", T: ApplicationSet, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetRequest
+ */
+export const GetApplicationSetRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationSetRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetResponse
+ */
+export const GetApplicationSetResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationSetResponse",
+  () => [
+    { no: 1, name: "applicationset", kind: "message", T: ApplicationSet },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.SyncApplicationRequest
  */
 export const SyncApplicationRequest = /*@__PURE__*/ proto3.makeMessageType(
@@ -598,6 +670,27 @@ export const ApplyBundleResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 3, name: "policy_results", kind: "message", T: PolicyResult, repeated: true },
     { no: 4, name: "blocked", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
     { no: 5, name: "block_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseRequest
+ */
+export const RollbackReleaseRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RollbackReleaseRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseResponse
+ */
+export const RollbackReleaseResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RollbackReleaseResponse",
+  () => [
+    { no: 1, name: "release", kind: "message", T: Release },
   ],
 );
 

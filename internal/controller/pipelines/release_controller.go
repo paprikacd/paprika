@@ -11,6 +11,7 @@ import (
 	logr "github.com/go-logr/logr"
 	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,6 +39,7 @@ import (
 	"github.com/benebsworth/paprika/gates"
 	agentclient "github.com/benebsworth/paprika/internal/agent/client"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -47,7 +49,11 @@ import (
 	"github.com/benebsworth/paprika/traffic"
 )
 
-const releaseFinalizer = "paprika.io/release-cleanup"
+const (
+	releaseFinalizer   = "paprika.io/release-cleanup"
+	rollbackAnnotation = "paprika.io/rollback-requested"
+	resyncAnnotation   = "paprika.io/resync"
+)
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
@@ -94,6 +100,7 @@ type ReleaseReconciler struct {
 	EventRecorder        record.EventRecorder
 	ProjectValidator     *governance.ProjectValidator
 	PolicyEvaluator      *governance.PolicyEvaluator
+	EventBroker          *events.Broker
 }
 
 // +kubebuilder:rbac:groups=clusters.paprika.io,resources=clusters,verbs=get;list;watch
@@ -167,6 +174,17 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.Request, release *paprikav1.Release, start time.Time, result *string) (ctrl.Result, error) {
+	if res, handled, err := r.handleResyncAnnotation(ctx, release, result); handled {
+		return res, err
+	}
+
+	// Handle rollback requests before checking for terminal phases so that a
+	// failed release with OnFailure=rollback, or any release annotated with
+	// paprika.io/rollback-requested, can be rolled back.
+	if r.shouldRollback(release) {
+		return r.handleFailedRollback(ctx, release, result)
+	}
+
 	if r.isReleaseTerminal(release) {
 		return ctrl.Result{}, nil
 	}
@@ -194,10 +212,6 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 
 	if release.Status.Phase == paprikav1.ReleaseVerifying {
 		return r.handleVerifyingPhase(ctx, release, result)
-	}
-
-	if r.shouldRollback(release) {
-		return r.handleFailedRollback(ctx, release, result)
 	}
 
 	return ctrl.Result{}, nil
@@ -243,14 +257,38 @@ func (r *ReleaseReconciler) isReleaseTerminal(release *paprikav1.Release) bool {
 		release.Status.Phase == paprikav1.ReleaseSuperseded
 }
 
+func (r *ReleaseReconciler) handleResyncAnnotation(ctx context.Context, release *paprikav1.Release, result *string) (res ctrl.Result, handled bool, err error) {
+	if _, ok := release.Annotations[resyncAnnotation]; !ok {
+		return ctrl.Result{}, false, nil
+	}
+
+	if r.isReleaseTerminal(release) {
+		oldPhase := release.Status.Phase
+		release.Status.Phase = paprikav1.ReleasePending
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, true, fmt.Errorf("resetting release phase to pending: %w", err)
+		}
+	}
+
+	patch := client.MergeFrom(release.DeepCopy())
+	delete(release.Annotations, resyncAnnotation)
+	if err := r.Patch(ctx, release, patch); err != nil {
+		*result = resultError
+		return ctrl.Result{}, true, fmt.Errorf("clearing resync annotation: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: 1 * time.Second}, true, nil
+}
+
 func (r *ReleaseReconciler) hasCanarySteps(stage *paprikav1.Stage) bool {
 	return stage.Spec.Canary != nil && len(stage.Spec.Canary.Steps) > 0
 }
 
 func (r *ReleaseReconciler) transitionToVerifying(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleaseVerifying
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
@@ -265,6 +303,16 @@ func (r *ReleaseReconciler) getCanaryInterval(canaryCfg *paprikav1.CanaryConfig)
 }
 
 func (r *ReleaseReconciler) shouldRollback(release *paprikav1.Release) bool {
+	// Already rolled-back or superseded releases should not be re-processed.
+	if release.Status.Phase == paprikav1.ReleaseRolledBack ||
+		release.Status.Phase == paprikav1.ReleaseSuperseded {
+		return false
+	}
+	if release.Spec.OnFailure != nil && release.Spec.OnFailure.Action == "rollback" {
+		if _, ok := release.Annotations[rollbackAnnotation]; ok {
+			return true
+		}
+	}
 	return release.Status.Phase == paprikav1.ReleaseFailed &&
 		release.Spec.OnFailure != nil &&
 		release.Spec.OnFailure.Action == "rollback"
@@ -274,9 +322,10 @@ func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *pap
 	if hasActiveConcurrent, _ := r.hasActiveConcurrentRelease(ctx, release); hasActiveConcurrent {
 		return ctrl.Result{}, nil
 	}
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleasePromoting
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Promoting").Inc()
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to transition from pending to promoting: %w", err)
 	}
 	return ctrl.Result{Requeue: true}, nil
@@ -289,6 +338,7 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 		return ctrl.Result{}, fmt.Errorf("target stage %q not found: %w", release.Spec.Target, err)
 	}
 
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleasePromoting
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Promoting").Inc()
 	release.Status.CurrentStage = release.Spec.Target
@@ -297,7 +347,7 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 		Result:    "Pending",
 		Timestamp: metav1.Now(),
 	})
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release promoting: %w", err)
 	}
@@ -306,11 +356,12 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 
 func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	oldPhase := release.Status.Phase
 	if err := r.promote(ctx, release); err != nil {
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
-		if updateErr := r.patchReleaseStatus(ctx, release); updateErr != nil {
+		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
 		}
@@ -332,7 +383,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		release.Status.Phase = paprikav1.ReleaseVerifying
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
 	}
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update release phase: %w", err)
 	}
@@ -347,12 +398,13 @@ func (r *ReleaseReconciler) handleVerifyingPhase(ctx context.Context, release *p
 }
 
 func (r *ReleaseReconciler) completeRelease(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleaseComplete
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Complete").Inc()
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "Passed"
 	}
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release complete: %w", err)
 	}
@@ -360,12 +412,13 @@ func (r *ReleaseReconciler) completeRelease(ctx context.Context, release *paprik
 }
 
 func (r *ReleaseReconciler) failRelease(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleaseFailed
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "Failed"
 	}
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", err)
 	}
@@ -381,7 +434,7 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 	return ctrl.Result{}, nil
 }
 
-func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release) error {
+func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release, oldPhase paprikav1.ReleasePhase) error {
 	desiredStatus := release.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh paprikav1.Release
@@ -397,7 +450,36 @@ func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *pap
 	}); err != nil {
 		return fmt.Errorf("patching release status: %w", err)
 	}
+	r.publishReleaseEvent(ctx, release, oldPhase)
 	return nil
+}
+
+func (r *ReleaseReconciler) publishReleaseEvent(ctx context.Context, release *paprikav1.Release, oldPhase paprikav1.ReleasePhase) {
+	if r.EventBroker == nil {
+		return
+	}
+	if release.Status.Phase == oldPhase {
+		return
+	}
+	phase := release.Status.Phase
+	if phase != paprikav1.ReleaseComplete && phase != paprikav1.ReleaseFailed && phase != paprikav1.ReleaseRolledBack {
+		return
+	}
+	reason := ""
+	if len(release.Status.Conditions) > 0 {
+		reason = release.Status.Conditions[len(release.Status.Conditions)-1].Reason
+	}
+	evt, err := events.NewEvent(events.TypeRelease, map[string]string{
+		"name":      release.Name,
+		"namespace": release.Namespace,
+		"phase":     string(release.Status.Phase),
+		"reason":    reason,
+	})
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to create release event", "release", release.Name)
+		return
+	}
+	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
 func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, release *paprikav1.Release) (bool, error) {
@@ -426,8 +508,9 @@ func (r *ReleaseReconciler) checkConcurrentRelease(ctx context.Context, release 
 		return err
 	}
 	if hasActive && release.Status.Phase == "" {
+		oldPhase := release.Status.Phase
 		release.Status.Phase = paprikav1.ReleasePending
-		if err := r.patchReleaseStatus(ctx, release); err != nil {
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 			return fmt.Errorf("failed to set release pending: %w", err)
 		}
 	}
@@ -610,7 +693,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 		if r.EventRecorder != nil {
 			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, projectViolationReason, "%s", blocking[0].Message)
 		}
-		if patchErr := r.patchReleaseStatus(ctx, release); patchErr != nil {
+		if patchErr := r.patchReleaseStatus(ctx, release, release.Status.Phase); patchErr != nil {
 			log.Error(patchErr, "Failed to patch release status after project violation", "release", release.Name, "namespace", release.Namespace)
 		}
 		return nil, fmt.Errorf("project boundary violation: %s", blocking[0].Message)
@@ -623,7 +706,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 		if r.EventRecorder != nil {
 			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, policyViolationReason, "%s", blocking[0].Message)
 		}
-		if patchErr := r.patchReleaseStatus(ctx, release); patchErr != nil {
+		if patchErr := r.patchReleaseStatus(ctx, release, release.Status.Phase); patchErr != nil {
 			log.Error(patchErr, "Failed to patch release status after policy violation", "release", release.Name, "namespace", release.Namespace)
 		}
 		return nil, fmt.Errorf("policy violation: %s", blocking[0].Message)
@@ -638,7 +721,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 	return app, nil
 }
 
-func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string) error {
+func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string, opts *paprikav1.SyncOptions) error {
 	log := logf.FromContext(ctx)
 
 	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, namespace)
@@ -647,7 +730,7 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	}
 
 	docs := engine.SplitYAMLDocuments(manifests)
-	applied := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName)
+	applied := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName, opts)
 	log.Info("Successfully applied manifests", "count", applied)
 	return nil
 }
@@ -694,10 +777,10 @@ func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release 
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests)
+	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions)
 }
 
-func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName string, manifests []byte) error {
+func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName string, manifests []byte, opts *paprikav1.SyncOptions) error {
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
 		return r.applyViaAgent(ctx, cluster, namespace, appName, manifests)
 	}
@@ -705,7 +788,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 	if cluster.KubeconfigSecret != "" {
 		kubeconfigSecret = cluster.KubeconfigSecret
 	}
-	if err := r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName); err != nil {
+	if err := r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, opts); err != nil {
 		return fmt.Errorf("failed to apply manifests: %w", err)
 	}
 	return nil
@@ -785,14 +868,14 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	return out, nil
 }
 
-func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string) int {
+func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) int {
 	applied := 0
 	for _, doc := range docs {
 		obj, ok := r.parseManifest(doc)
 		if !ok {
 			continue
 		}
-		if r.applyDocument(ctx, log, dynClient, obj, namespace, appName) {
+		if r.applyDocument(ctx, log, dynClient, obj, namespace, appName, opts) {
 			applied++
 		}
 	}
@@ -813,7 +896,8 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 	return obj, true
 }
 
-func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName string) bool {
+//nolint:cyclop // apply path branches on sync options.
+func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName string, opts *paprikav1.SyncOptions) bool {
 	kind, ok := obj["kind"].(string)
 	if !ok || kind == "" {
 		return false
@@ -840,12 +924,112 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 	}
 
 	unstructuredObj := &unstructured.Unstructured{Object: obj}
-	_, err = dynClient.Resource(gvr).Namespace(targetNamespace).Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: true})
+	ri := dynClient.Resource(gvr).Namespace(targetNamespace)
+
+	if opts != nil && opts.ApplyOutOfSyncOnly {
+		live, getErr := ri.Get(ctx, name, metav1.GetOptions{})
+		if getErr == nil && resourceInSync(unstructuredObj, live) {
+			log.Info("Skipping in-sync resource", "kind", kind, "name", name, "namespace", targetNamespace)
+			return true
+		}
+	}
+
+	if opts != nil && opts.Replace {
+		return r.replaceDocument(ctx, log, ri, unstructuredObj, kind, name)
+	}
+
+	force := opts != nil && opts.Force
+	_, err = ri.Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: force})
 	if err != nil {
 		log.Error(err, "Failed to apply resource", "kind", kind, "name", name)
 		return false
 	}
 	return true
+}
+
+func (r *ReleaseReconciler) replaceDocument(ctx context.Context, log logr.Logger, ri dynamic.ResourceInterface, obj *unstructured.Unstructured, kind, name string) bool {
+	live, err := ri.Get(ctx, name, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Failed to get resource for replace", "kind", kind, "name", name)
+		return false
+	}
+
+	if live != nil {
+		obj.SetResourceVersion(live.GetResourceVersion())
+		_, err = ri.Update(ctx, obj, metav1.UpdateOptions{})
+	} else {
+		_, err = ri.Create(ctx, obj, metav1.CreateOptions{})
+	}
+	if err != nil {
+		log.Error(err, "Failed to replace resource", "kind", kind, "name", name)
+		return false
+	}
+	return true
+}
+
+func resourceInSync(desired, live *unstructured.Unstructured) bool {
+	for key, desiredVal := range desired.Object {
+		if key == "apiVersion" || key == "kind" {
+			continue
+		}
+		if key == "metadata" {
+			desiredMeta, _ := desiredVal.(map[string]interface{})
+			liveMeta, _ := live.Object["metadata"].(map[string]interface{})
+			if !metadataInSync(desiredMeta, liveMeta) {
+				return false
+			}
+			continue
+		}
+		liveVal, ok := live.Object[key]
+		if !ok {
+			if isEmptyValue(desiredVal) {
+				continue
+			}
+			return false
+		}
+		if !equality.Semantic.DeepEqual(desiredVal, liveVal) {
+			return false
+		}
+	}
+	return true
+}
+
+func metadataInSync(desiredMeta, liveMeta map[string]interface{}) bool {
+	ignored := map[string]bool{
+		"name": true, "namespace": true, "resourceVersion": true, "uid": true,
+		"creationTimestamp": true, "generation": true, "managedFields": true,
+	}
+	for key, desiredVal := range desiredMeta {
+		if ignored[key] {
+			continue
+		}
+		liveVal, ok := liveMeta[key]
+		if !ok {
+			if isEmptyValue(desiredVal) {
+				continue
+			}
+			return false
+		}
+		if !equality.Semantic.DeepEqual(desiredVal, liveVal) {
+			return false
+		}
+	}
+	return true
+}
+
+func isEmptyValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case map[string]interface{}:
+		return len(val) == 0
+	case []interface{}:
+		return len(val) == 0
+	}
+	return false
 }
 
 func setPaprikaLabels(metadata map[string]interface{}, appName string) {
@@ -1028,20 +1212,7 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 		return nil, fmt.Errorf("list releases for rollback: %w", err)
 	}
 
-	var candidates []*paprikav1.Release
-	for i := range list.Items {
-		other := &list.Items[i]
-		if other.Name == release.Name {
-			continue
-		}
-		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
-			continue
-		}
-		if r.releaseSnapshotName(other) == "" {
-			continue
-		}
-		candidates = append(candidates, other)
-	}
+	candidates := r.collectRollbackCandidates(release, &list)
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -1056,6 +1227,27 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 	return candidates[0], nil
 }
 
+func (r *ReleaseReconciler) collectRollbackCandidates(release *paprikav1.Release, list *paprikav1.ReleaseList) []*paprikav1.Release {
+	var candidates []*paprikav1.Release
+	for i := range list.Items {
+		other := &list.Items[i]
+		if other.Name == release.Name {
+			continue
+		}
+		if other.Spec.Target != release.Spec.Target {
+			continue
+		}
+		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
+			continue
+		}
+		if r.releaseSnapshotName(other) == "" {
+			continue
+		}
+		candidates = append(candidates, other)
+	}
+	return candidates
+}
+
 func sortReleasesByCreation(releases []*paprikav1.Release) {
 	for i := range releases {
 		for j := i + 1; j < len(releases); j++ {
@@ -1067,6 +1259,7 @@ func sortReleasesByCreation(releases []*paprikav1.Release) {
 }
 
 func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprikav1.Release, rolledBackTo, message string) error {
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleaseRolledBack
 	release.Status.RolledBackTo = rolledBackTo
 	release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
@@ -1079,7 +1272,7 @@ func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprika
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "RolledBack"
 	}
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		return fmt.Errorf("update rolled-back status: %w", err)
 	}
 	return nil
@@ -1135,6 +1328,7 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 		gvrs = append(gvrs, managedGVRs...)
 	}
 
+	deleteOpts := metav1.DeleteOptions{PropagationPolicy: propagationPolicy(release.Spec.SyncOptions)}
 	for _, gvr := range gvrs {
 		items, err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: labelSelector,
@@ -1143,11 +1337,29 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 			return fmt.Errorf("listing %s: %w", gvr.Resource, err)
 		}
 		for _, item := range items.Items {
-			if err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			if err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil && !apierrors.IsNotFound(err) {
 				return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
 			}
 			log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
 		}
+	}
+	return nil
+}
+
+func propagationPolicy(opts *paprikav1.SyncOptions) *metav1.DeletionPropagation {
+	if opts == nil || opts.PrunePropagationPolicy == "" {
+		return nil
+	}
+	switch opts.PrunePropagationPolicy {
+	case "Foreground":
+		prop := metav1.DeletePropagationForeground
+		return &prop
+	case "Background":
+		prop := metav1.DeletePropagationBackground
+		return &prop
+	case "Orphan":
+		prop := metav1.DeletePropagationOrphan
+		return &prop
 	}
 	return nil
 }
@@ -1267,7 +1479,7 @@ func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *papr
 		return r.handleCanaryPromotion(ctx, release, stage, result)
 	}
 
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, release.Status.Phase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update canary status: %w", err)
 	}
@@ -1350,6 +1562,7 @@ func (r *ReleaseReconciler) runCanaryAnalysis(ctx context.Context, release *papr
 func (r *ReleaseReconciler) handleAnalysisRollback(ctx context.Context, release *paprikav1.Release, result *string, chkResult analysis.Result) error {
 	log := logf.FromContext(ctx)
 	log.Info("Rolling back canary due to analysis failure")
+	oldPhase := release.Status.Phase
 	release.Status.Phase = paprikav1.ReleaseFailed
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
 	release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
@@ -1362,7 +1575,7 @@ func (r *ReleaseReconciler) handleAnalysisRollback(ctx context.Context, release 
 	if len(release.Status.PromotionHistory) > 0 {
 		release.Status.PromotionHistory[len(release.Status.PromotionHistory)-1].Result = "CanaryFailed"
 	}
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return fmt.Errorf("failed to set release failed: %w", err)
 	}
@@ -1371,6 +1584,7 @@ func (r *ReleaseReconciler) handleAnalysisRollback(ctx context.Context, release 
 
 func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+	oldPhase := release.Status.Phase
 	if err := r.promoteCanary(ctx, release, stage); err != nil {
 		log.Error(err, "Failed to promote canary to stable")
 		release.Status.Phase = paprikav1.ReleaseFailed
@@ -1382,7 +1596,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 			Reason:             "PromotionFailed",
 			Message:            fmt.Sprintf("Canary promotion failed: %v", err),
 		})
-		if updateErr := r.patchReleaseStatus(ctx, release); updateErr != nil {
+		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
 		}
@@ -1392,7 +1606,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 	metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Verifying").Inc()
 	release.Status.CanaryWeight = 100
 	metrics.CanaryWeightGauge.WithLabelValues(release.Name, release.Namespace, stage.Name).Set(100)
-	if err := r.patchReleaseStatus(ctx, release); err != nil {
+	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
@@ -1453,7 +1667,7 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -1499,7 +1713,7 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 

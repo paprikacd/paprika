@@ -2,6 +2,7 @@ import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react"
+import { useEffect, useState } from "react"
 
 function StepIcon({ phase }: { phase?: string }) {
   switch (phase) {
@@ -17,8 +18,18 @@ function StepIcon({ phase }: { phase?: string }) {
 }
 
 function TimeAgo({ time }: { time?: bigint }) {
-  if (!time) return null
-  const elapsed = Date.now() - Number(time) * 1_000
+  const [now, setNow] = useState(0)
+  useEffect(() => {
+    const tick = () => setNow(Date.now())
+    const raf = requestAnimationFrame(tick)
+    const interval = setInterval(tick, 1000)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearInterval(interval)
+    }
+  }, [])
+  if (!time || now === 0) return null
+  const elapsed = now - Number(time) * 1_000
   const mins = Math.floor(elapsed / 60000)
   const secs = Math.floor((elapsed % 60000) / 1000)
   return (

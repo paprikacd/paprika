@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -58,6 +58,24 @@ export declare const PaprikaService: {
       readonly kind: MethodKind.Unary,
     },
     /**
+     * @generated from rpc paprika.v1.PaprikaService.ListApplicationSets
+     */
+    readonly listApplicationSets: {
+      readonly name: "ListApplicationSets",
+      readonly I: typeof ListApplicationSetsRequest,
+      readonly O: typeof ListApplicationSetsResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetApplicationSet
+     */
+    readonly getApplicationSet: {
+      readonly name: "GetApplicationSet",
+      readonly I: typeof GetApplicationSetRequest,
+      readonly O: typeof GetApplicationSetResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
      * @generated from rpc paprika.v1.PaprikaService.GetApplication
      */
     readonly getApplication: {
@@ -109,6 +127,15 @@ export declare const PaprikaService: {
       readonly name: "ApplyBundle",
       readonly I: typeof ApplyBundleRequest,
       readonly O: typeof ApplyBundleResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.RollbackRelease
+     */
+    readonly rollbackRelease: {
+      readonly name: "RollbackRelease",
+      readonly I: typeof RollbackReleaseRequest,
+      readonly O: typeof RollbackReleaseResponse,
       readonly kind: MethodKind.Unary,
     },
   }

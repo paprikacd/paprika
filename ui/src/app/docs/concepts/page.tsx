@@ -20,7 +20,7 @@ export default function ConceptsPage() {
       <p>
         The <Link href="/docs/concepts/application">Application</Link> resource is the primary user-facing primitive.
         It references a source, defines stages (environments), and optionally includes a build pipeline.
-        Paprika's controllers automatically create and manage the subordinate resources.
+        Paprika&apos;s controllers automatically create and manage the subordinate resources.
       </p>
 
       <h2>Lifecycle</h2>

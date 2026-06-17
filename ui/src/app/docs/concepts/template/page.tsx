@@ -3,14 +3,14 @@ export default function TemplatePage() {
     <div>
       <h1>Template CRD</h1>
       <p className="lead">
-        The <code>Template</code> resource defines where Kubernetes manifests come from. It supports three source types: Helm charts, Git repositories, and S3 buckets.
+        The <code>Template</code> resource defines where Kubernetes manifests come from. It supports Helm charts, Kustomize directories, Git repositories, S3 buckets, OCI artifacts, and inline snapshots.
       </p>
 
       <hr />
 
       <h2>Overview</h2>
       <p>
-        Templates are created automatically by the Application controller based on the <code>spec.source</code> field. They reference a source location and configuration for rendering manifests. Behind the scenes, Paprika uses the Helm SDK to render charts in-process (no subprocess spawning).
+        Templates are created automatically by the Application controller based on the <code>spec.source</code> field. They reference a source location and configuration for rendering manifests. Paprika renders Helm charts with the Helm v3 SDK and Kustomize directories with the Kustomize API, both in-process.
       </p>
 
       <h2>Spec</h2>
@@ -19,7 +19,7 @@ kind: Template
 metadata:
   name: my-app-template
 spec:
-  # Source type: helm, git, s3, kubernetes, kustomize
+  # Source type: helm, kustomize, git, s3, oci
   type: helm
 
   # Helm chart configuration
@@ -29,6 +29,14 @@ spec:
     repo: https://charts.bitnami.com/bitnami
     name: nginx
     version: 18.2.2
+
+  # Kustomize source (when type=kustomize)
+  kustomize:
+    path: ./overlays/production   # Directory containing kustomization.yaml
+    namePrefix: prod-             # Optional transformations
+    namespace: production
+    commonLabels:
+      env: production
 
   # Git source (when type=git)
   git:
@@ -46,7 +54,7 @@ spec:
   # Optional namespace override
   namespace: my-namespace
 
-  # Optional base values file content
+  # Optional base values file content (Helm only)
   valuesFile: |
     global:
       environment: production</code></pre>
@@ -71,6 +79,7 @@ spec:
       <ul>
         <li><strong>Cached rendering</strong> — Rendered output is cached keyed by source revision + params hash to avoid redundant work</li>
         <li><strong>Multi-source aggregation</strong> — A Stage can reference multiple Templates; their outputs are joined with <code>---</code> separators</li>
+        <li><strong>Layered rendering</strong> — A Kustomize template with <code>inputFromPrevious: true</code> consumes the previous template&apos;s output, enabling pipelines such as Helm chart → Kustomize overlay → apply</li>
         <li><strong>Git/S3 source resolution</strong> — Sources are cloned/downloaded to a working directory before rendering</li>
       </ul>
     </div>

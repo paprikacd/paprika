@@ -103,6 +103,13 @@ func manifestSourceURL(spec *paprika.TemplateSpec) string {
 		if spec.S3 != nil {
 			return "s3://" + spec.S3.Bucket + "/" + spec.S3.Key
 		}
+	case "kustomize":
+		if spec.Kustomize != nil {
+			if spec.Kustomize.InputFromPrevious {
+				return "kustomize:input-from-previous"
+			}
+			return spec.Kustomize.Path
+		}
 	}
 	return ""
 }

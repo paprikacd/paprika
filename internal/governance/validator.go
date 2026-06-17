@@ -70,6 +70,11 @@ func (v *ProjectValidator) validate(ctx context.Context, project *corev1alpha1.A
 //nolint:gocritic // heavy CRD struct passed by value per API
 func validateSource(project *corev1alpha1.AppProject, source pipelinesv1alpha1.ApplicationSource) Violations {
 	var violations Violations
+	// Inline sources reference a local ConfigMap snapshot and do not require
+	// repository credentials or project repo authorization.
+	if source.Type == pipelinesv1alpha1.SourceTypeInline {
+		return violations
+	}
 	if source.RepoURL != "" {
 		if err := CheckDenyList(project.Spec.SourceReposDeny, source.RepoURL, GlobMatch, "source repo %q denied by project %s", source.RepoURL, project.Name); err != nil {
 			violations = append(violations, Violation{Rule: "project", Message: err.Error(), Action: PolicyActionEnforce})

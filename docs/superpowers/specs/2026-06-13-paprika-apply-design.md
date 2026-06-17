@@ -616,6 +616,14 @@ Changes to `application_controller.go`:
    ```
    This prevents the controller from auto-creating a Release with no `manifestSource`.
 
+5. **Race safety in `patchAppStatus`:** `ApplyBundle` writes `Application.status.releaseRef` after it creates the Release, which races with the Application controller's own status updates. The status patch must preserve a `releaseRef` that already exists on the live object but is absent from the in-memory status. Without this, the controller can overwrite the field and remain stuck in `AwaitingInlineRelease` indefinitely:
+   ```go
+   if desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
+       desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
+       app.Status.ReleaseRef = fresh.Status.ReleaseRef
+   }
+   ```
+
 ### 7.4 Diff & health
 
 For inline sources, `evaluateDiff` loads the current Release’s manifest ConfigMap and uses it as desired state. Resource health already works via the existing `evaluateResourceHealth` path.

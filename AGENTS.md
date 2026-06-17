@@ -60,8 +60,9 @@ Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluste
 
 **After editing `*_types.go` or markers:**
 ```
-make manifests  # Regenerate CRDs/RBAC from markers
-make generate   # Regenerate DeepCopy methods
+make manifests      # Regenerate CRDs/RBAC from markers
+make generate-proto # Regenerate protobuf Go and TypeScript clients
+make generate       # Regenerate DeepCopy methods (also runs generate-proto)
 ```
 
 **After editing `*.go` files:**

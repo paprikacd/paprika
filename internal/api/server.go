@@ -14,6 +14,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
@@ -276,6 +278,40 @@ func (s *PaprikaServer) ListPolicies(
 	return connect.NewResponse(&paprikav1.ListPoliciesResponse{Policies: policies}), nil
 }
 
+// ListApplicationSets returns a list of ApplicationSets.
+func (s *PaprikaServer) ListApplicationSets(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListApplicationSetsRequest],
+) (*connect.Response[paprikav1.ListApplicationSetsResponse], error) {
+	var list pipelinesv1alpha1.ApplicationSetList
+	opts := []client.ListOption{}
+	if req.Msg.Namespace != nil {
+		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
+	}
+	if err := s.List(ctx, &list, opts...); err != nil {
+		return nil, fmt.Errorf("listing applicationsets: %w", err)
+	}
+	sets := make([]*paprikav1.ApplicationSet, 0, len(list.Items))
+	for i := range list.Items {
+		sets = append(sets, convertApplicationSet(&list.Items[i]))
+	}
+	return connect.NewResponse(&paprikav1.ListApplicationSetsResponse{Applicationsets: sets}), nil
+}
+
+// GetApplicationSet returns a single ApplicationSet by name and namespace.
+func (s *PaprikaServer) GetApplicationSet(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetApplicationSetRequest],
+) (*connect.Response[paprikav1.GetApplicationSetResponse], error) {
+	var set pipelinesv1alpha1.ApplicationSet
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &set); err != nil {
+		return nil, fmt.Errorf("getting applicationset: %w", err)
+	}
+	return connect.NewResponse(&paprikav1.GetApplicationSetResponse{
+		Applicationset: convertApplicationSet(&set),
+	}), nil
+}
+
 // GetApplication returns a single application by name and namespace.
 func (s *PaprikaServer) GetApplication(
 	ctx context.Context,
@@ -364,6 +400,56 @@ func (s *PaprikaServer) ApproveGate(
 	}), nil
 }
 
+// PaprikaServer RBAC for RollbackRelease.
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;update;patch
+
+// RollbackRelease requests the release controller to roll a release back to the
+// previous viable snapshot. It works for both failed and healthy releases by
+// setting a rollback annotation and ensuring the release's OnFailure action is
+// configured to rollback.
+func (s *PaprikaServer) RollbackRelease(
+	ctx context.Context,
+	req *connect.Request[paprikav1.RollbackReleaseRequest],
+) (*connect.Response[paprikav1.RollbackReleaseResponse], error) {
+	var release pipelinesv1alpha1.Release
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &release); err != nil {
+		return nil, fmt.Errorf("getting release: %w", err)
+	}
+
+	// Authorize via the owning Application when possible.
+	appName := release.Labels[engine.ApplicationNameLabelKey]
+	if appName != "" {
+		var app pipelinesv1alpha1.Application
+		if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: appName}, &app); err == nil {
+			if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+				return nil, connect.NewError(connect.CodePermissionDenied, err)
+			}
+		}
+	}
+
+	if release.Annotations == nil {
+		release.Annotations = make(map[string]string)
+	}
+	release.Annotations[rollbackAnnotation] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	if release.Spec.OnFailure == nil {
+		release.Spec.OnFailure = &pipelinesv1alpha1.FailureAction{}
+	}
+	release.Spec.OnFailure.Action = "rollback"
+
+	if err := s.Update(ctx, &release); err != nil {
+		return nil, fmt.Errorf("requesting rollback: %w", err)
+	}
+
+	var refreshed pipelinesv1alpha1.Release
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+		return nil, fmt.Errorf("getting refreshed release: %w", err)
+	}
+
+	return connect.NewResponse(&paprikav1.RollbackReleaseResponse{
+		Release: convertRelease(&refreshed),
+	}), nil
+}
+
 func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 	steps := make([]*paprikav1.Step, 0, len(p.Spec.Steps))
 	for _, s := range p.Spec.Steps {
@@ -425,6 +511,8 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 		Phase:            string(r.Status.Phase),
 		CurrentStage:     r.Status.CurrentStage,
 		PromotionHistory: promos,
+		Application:      r.Labels[engine.ApplicationNameLabelKey],
+		RolledBackTo:     r.Status.RolledBackTo,
 	}
 	if r.Spec.ManifestSource != nil {
 		rel.ManifestSource = &paprikav1.ManifestSource{
@@ -444,10 +532,15 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 	return rel
 }
 
+const (
+	phaseReady         = "Ready"
+	conditionTypeReady = "Ready"
+)
+
 func convertStage(st *pipelinesv1alpha1.Stage) *paprikav1.Stage {
 	phase := "Pending"
 	if st.Status.LastPromotion != nil {
-		phase = "Ready"
+		phase = phaseReady
 	}
 	return &paprikav1.Stage{
 		Name:      st.Name,
@@ -457,6 +550,21 @@ func convertStage(st *pipelinesv1alpha1.Stage) *paprikav1.Stage {
 		StageName: st.Spec.Name,
 		Phase:     phase,
 	}
+}
+
+func convertConditions(conds []metav1.Condition) []*paprikav1.Condition {
+	out := make([]*paprikav1.Condition, 0, len(conds))
+	for _, c := range conds {
+		out = append(out, &paprikav1.Condition{
+			Type:               c.Type,
+			Status:             string(c.Status),
+			ObservedGeneration: c.ObservedGeneration,
+			LastTransitionTime: c.LastTransitionTime.Format(time.RFC3339),
+			Reason:             c.Reason,
+			Message:            c.Message,
+		})
+	}
+	return out
 }
 
 func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application {
@@ -520,6 +628,25 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		ResourceHealth:  convertResourceHealth(a.Status.ResourceHealth),
 		OutOfSync:       safeInt32(a.Status.OutOfSync),
 		PrunedResources: safeInt32(a.Status.PrunedResources),
+		Conditions:      convertConditions(a.Status.Conditions),
+	}
+}
+
+func convertApplicationSet(set *pipelinesv1alpha1.ApplicationSet) *paprikav1.ApplicationSet {
+	phase := "NotReady"
+	for _, c := range set.Status.Conditions {
+		if c.Type == conditionTypeReady {
+			if c.Status == "True" {
+				phase = phaseReady
+			}
+			break
+		}
+	}
+	return &paprikav1.ApplicationSet{
+		Name:         set.Name,
+		Namespace:    set.Namespace,
+		Applications: safeInt32(int(set.Status.Applications)),
+		Phase:        phase,
 	}
 }
 

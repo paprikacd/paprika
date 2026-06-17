@@ -19,11 +19,12 @@ const sidebarSections = [
     ],
   },
   {
-    title: "API Reference",
+    title: "Reference",
     items: [
-      { label: "Overview", href: "/docs/api" },
+      { label: "CLI", href: "/docs/cli" },
       { label: "CRD Types", href: "/docs/api/types" },
       { label: "RPC Methods", href: "/docs/api/rpc" },
+      { label: "Apply & Rollback RPC", href: "/docs/api/apply" },
     ],
   },
 ]

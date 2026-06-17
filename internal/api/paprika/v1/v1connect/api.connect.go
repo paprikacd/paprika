@@ -48,6 +48,12 @@ const (
 	// PaprikaServiceListPoliciesProcedure is the fully-qualified name of the PaprikaService's
 	// ListPolicies RPC.
 	PaprikaServiceListPoliciesProcedure = "/paprika.v1.PaprikaService/ListPolicies"
+	// PaprikaServiceListApplicationSetsProcedure is the fully-qualified name of the PaprikaService's
+	// ListApplicationSets RPC.
+	PaprikaServiceListApplicationSetsProcedure = "/paprika.v1.PaprikaService/ListApplicationSets"
+	// PaprikaServiceGetApplicationSetProcedure is the fully-qualified name of the PaprikaService's
+	// GetApplicationSet RPC.
+	PaprikaServiceGetApplicationSetProcedure = "/paprika.v1.PaprikaService/GetApplicationSet"
 	// PaprikaServiceGetApplicationProcedure is the fully-qualified name of the PaprikaService's
 	// GetApplication RPC.
 	PaprikaServiceGetApplicationProcedure = "/paprika.v1.PaprikaService/GetApplication"
@@ -65,6 +71,9 @@ const (
 	// PaprikaServiceApplyBundleProcedure is the fully-qualified name of the PaprikaService's
 	// ApplyBundle RPC.
 	PaprikaServiceApplyBundleProcedure = "/paprika.v1.PaprikaService/ApplyBundle"
+	// PaprikaServiceRollbackReleaseProcedure is the fully-qualified name of the PaprikaService's
+	// RollbackRelease RPC.
+	PaprikaServiceRollbackReleaseProcedure = "/paprika.v1.PaprikaService/RollbackRelease"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -74,12 +83,15 @@ type PaprikaServiceClient interface {
 	ListStages(context.Context, *connect.Request[v1.ListStagesRequest]) (*connect.Response[v1.ListStagesResponse], error)
 	ListApplications(context.Context, *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error)
 	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
+	ListApplicationSets(context.Context, *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error)
+	GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error)
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
 	ResolveSource(context.Context, *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error)
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
+	RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -123,6 +135,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("ListPolicies")),
 			connect.WithClientOptions(opts...),
 		),
+		listApplicationSets: connect.NewClient[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListApplicationSetsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListApplicationSets")),
+			connect.WithClientOptions(opts...),
+		),
+		getApplicationSet: connect.NewClient[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetApplicationSetProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationSet")),
+			connect.WithClientOptions(opts...),
+		),
 		getApplication: connect.NewClient[v1.GetApplicationRequest, v1.GetApplicationResponse](
 			httpClient,
 			baseURL+PaprikaServiceGetApplicationProcedure,
@@ -159,22 +183,31 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("ApplyBundle")),
 			connect.WithClientOptions(opts...),
 		),
+		rollbackRelease: connect.NewClient[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse](
+			httpClient,
+			baseURL+PaprikaServiceRollbackReleaseProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("RollbackRelease")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // paprikaServiceClient implements PaprikaServiceClient.
 type paprikaServiceClient struct {
-	listPipelines    *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
-	listReleases     *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
-	listStages       *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
-	listApplications *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
-	listPolicies     *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
-	getApplication   *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
-	syncApplication  *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
-	approveGate      *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
-	resolveSource    *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
-	render           *connect.Client[v1.RenderRequest, v1.RenderResponse]
-	applyBundle      *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
+	listPipelines       *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
+	listReleases        *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
+	listStages          *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
+	listApplications    *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
+	listPolicies        *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
+	listApplicationSets *connect.Client[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse]
+	getApplicationSet   *connect.Client[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse]
+	getApplication      *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
+	syncApplication     *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
+	approveGate         *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
+	resolveSource       *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
+	render              *connect.Client[v1.RenderRequest, v1.RenderResponse]
+	applyBundle         *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
+	rollbackRelease     *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -200,6 +233,16 @@ func (c *paprikaServiceClient) ListApplications(ctx context.Context, req *connec
 // ListPolicies calls paprika.v1.PaprikaService.ListPolicies.
 func (c *paprikaServiceClient) ListPolicies(ctx context.Context, req *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error) {
 	return c.listPolicies.CallUnary(ctx, req)
+}
+
+// ListApplicationSets calls paprika.v1.PaprikaService.ListApplicationSets.
+func (c *paprikaServiceClient) ListApplicationSets(ctx context.Context, req *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error) {
+	return c.listApplicationSets.CallUnary(ctx, req)
+}
+
+// GetApplicationSet calls paprika.v1.PaprikaService.GetApplicationSet.
+func (c *paprikaServiceClient) GetApplicationSet(ctx context.Context, req *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error) {
+	return c.getApplicationSet.CallUnary(ctx, req)
 }
 
 // GetApplication calls paprika.v1.PaprikaService.GetApplication.
@@ -232,6 +275,11 @@ func (c *paprikaServiceClient) ApplyBundle(ctx context.Context, req *connect.Req
 	return c.applyBundle.CallUnary(ctx, req)
 }
 
+// RollbackRelease calls paprika.v1.PaprikaService.RollbackRelease.
+func (c *paprikaServiceClient) RollbackRelease(ctx context.Context, req *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error) {
+	return c.rollbackRelease.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -239,12 +287,15 @@ type PaprikaServiceHandler interface {
 	ListStages(context.Context, *connect.Request[v1.ListStagesRequest]) (*connect.Response[v1.ListStagesResponse], error)
 	ListApplications(context.Context, *connect.Request[v1.ListApplicationsRequest]) (*connect.Response[v1.ListApplicationsResponse], error)
 	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
+	ListApplicationSets(context.Context, *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error)
+	GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error)
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
 	ResolveSource(context.Context, *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error)
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
+	RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -284,6 +335,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("ListPolicies")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListApplicationSetsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListApplicationSetsProcedure,
+		svc.ListApplicationSets,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListApplicationSets")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetApplicationSetHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetApplicationSetProcedure,
+		svc.GetApplicationSet,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationSet")),
+		connect.WithHandlerOptions(opts...),
+	)
 	paprikaServiceGetApplicationHandler := connect.NewUnaryHandler(
 		PaprikaServiceGetApplicationProcedure,
 		svc.GetApplication,
@@ -320,6 +383,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("ApplyBundle")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceRollbackReleaseHandler := connect.NewUnaryHandler(
+		PaprikaServiceRollbackReleaseProcedure,
+		svc.RollbackRelease,
+		connect.WithSchema(paprikaServiceMethods.ByName("RollbackRelease")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -332,6 +401,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceListApplicationsHandler.ServeHTTP(w, r)
 		case PaprikaServiceListPoliciesProcedure:
 			paprikaServiceListPoliciesHandler.ServeHTTP(w, r)
+		case PaprikaServiceListApplicationSetsProcedure:
+			paprikaServiceListApplicationSetsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetApplicationSetProcedure:
+			paprikaServiceGetApplicationSetHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetApplicationProcedure:
 			paprikaServiceGetApplicationHandler.ServeHTTP(w, r)
 		case PaprikaServiceSyncApplicationProcedure:
@@ -344,6 +417,8 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceRenderHandler.ServeHTTP(w, r)
 		case PaprikaServiceApplyBundleProcedure:
 			paprikaServiceApplyBundleHandler.ServeHTTP(w, r)
+		case PaprikaServiceRollbackReleaseProcedure:
+			paprikaServiceRollbackReleaseHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -373,6 +448,14 @@ func (UnimplementedPaprikaServiceHandler) ListPolicies(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListPolicies is not implemented"))
 }
 
+func (UnimplementedPaprikaServiceHandler) ListApplicationSets(context.Context, *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListApplicationSets is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplicationSet is not implemented"))
+}
+
 func (UnimplementedPaprikaServiceHandler) GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplication is not implemented"))
 }
@@ -395,4 +478,8 @@ func (UnimplementedPaprikaServiceHandler) Render(context.Context, *connect.Reque
 
 func (UnimplementedPaprikaServiceHandler) ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ApplyBundle is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.RollbackRelease is not implemented"))
 }

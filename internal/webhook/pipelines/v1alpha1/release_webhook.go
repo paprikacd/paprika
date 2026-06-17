@@ -112,5 +112,9 @@ func (v *ReleaseCustomValidator) validateReleaseCreate(r *pipelinesv1alpha1.Rele
 		allErrs = append(allErrs, field.Required(specPath.Child("target"), "Target stage is required"))
 	}
 
+	if r.Spec.ManifestSource != nil && r.Spec.ManifestSource.ConfigMapRef == "" {
+		allErrs = append(allErrs, field.Required(specPath.Child("manifestSource").Child("configMapRef"), "configMapRef is required for inline manifest source"))
+	}
+
 	return allErrs
 }

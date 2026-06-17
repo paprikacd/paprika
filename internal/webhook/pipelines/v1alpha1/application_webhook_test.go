@@ -117,6 +117,44 @@ func TestApplicationCustomValidator_validateApplication(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "At least one stage is required")
 	})
+
+	t.Run("inline source without configMapRef is rejected", func(t *testing.T) {
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Project: "default",
+				Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline, Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: ""}},
+				Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+			},
+		}
+		err := v.validateApplication(context.Background(), app)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "configMapRef is required for inline source")
+	})
+
+	t.Run("inline source with configMapRef is accepted", func(t *testing.T) {
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Project: "default",
+				Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline, Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: "snapshot"}},
+				Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+			},
+		}
+		require.NoError(t, v.validateApplication(context.Background(), app))
+	})
+
+	t.Run("inline source with a project does not require repo authorization", func(t *testing.T) {
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Project: "allowed-project",
+				Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline, Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: "snapshot"}},
+				Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+			},
+		}
+		require.NoError(t, v.validateApplication(context.Background(), app))
+	})
 }
 
 func TestApplicationCustomDefaulter_Default(t *testing.T) {

@@ -44,14 +44,48 @@ type S3SourceSpec struct {
 	SecretRef string `json:"secretRef,omitempty"`
 }
 
+// KustomizeImage defines an image transformation for Kustomize.
+type KustomizeImage struct {
+	// Name of the existing image to replace
+	Name string `json:"name"`
+	// NewName is the replacement image name
+	NewName string `json:"newName,omitempty"`
+	// NewTag is the replacement tag
+	NewTag string `json:"newTag,omitempty"`
+	// Digest is the replacement digest (mutually exclusive with NewTag)
+	Digest string `json:"digest,omitempty"`
+}
+
+// KustomizeSourceSpec defines a Kustomize source specification.
+type KustomizeSourceSpec struct {
+	// Path to a directory containing a kustomization.yaml. Ignored when InputFromPrevious is true.
+	Path string `json:"path,omitempty"`
+	// NamePrefix sets the resources name prefix
+	NamePrefix string `json:"namePrefix,omitempty"`
+	// NameSuffix sets the resources name suffix
+	NameSuffix string `json:"nameSuffix,omitempty"`
+	// Namespace sets the resources namespace
+	Namespace string `json:"namespace,omitempty"`
+	// Images sets image transformations
+	Images []KustomizeImage `json:"images,omitempty"`
+	// CommonLabels adds labels to all resources
+	CommonLabels map[string]string `json:"commonLabels,omitempty"`
+	// CommonAnnotations adds annotations to all resources
+	CommonAnnotations map[string]string `json:"commonAnnotations,omitempty"`
+	// InputFromPrevious uses the output of the previous rendering step as the Kustomize base.
+	// When true, a temporary kustomization directory is created that includes the previous output.
+	InputFromPrevious bool `json:"inputFromPrevious,omitempty"`
+}
+
 // TemplateSpec defines the specification for a template.
 type TemplateSpec struct {
-	// +kubebuilder:validation:Enum=helm;kubernetes;kustomize;git;s3;oci
-	Type  string         `json:"type"`
-	Chart ChartRef       `json:"chart,omitempty"`
-	Git   *GitSourceSpec `json:"git,omitempty"`
-	S3    *S3SourceSpec  `json:"s3,omitempty"`
-	OCI   *OCISourceSpec `json:"oci,omitempty"`
+	// +kubebuilder:validation:Enum=helm;kustomize;git;s3;oci
+	Type      string               `json:"type"`
+	Chart     ChartRef             `json:"chart,omitempty"`
+	Git       *GitSourceSpec       `json:"git,omitempty"`
+	S3        *S3SourceSpec        `json:"s3,omitempty"`
+	OCI       *OCISourceSpec       `json:"oci,omitempty"`
+	Kustomize *KustomizeSourceSpec `json:"kustomize,omitempty"`
 	// RepoRef references a core.paprika.io Repository by name. When set, takes
 	// precedence over the inline source spec fields.
 	// +optional

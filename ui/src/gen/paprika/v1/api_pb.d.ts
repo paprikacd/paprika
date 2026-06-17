@@ -569,6 +569,59 @@ export declare class GateStatus extends Message<GateStatus> {
 }
 
 /**
+ * @generated from message paprika.v1.Condition
+ */
+export declare class Condition extends Message<Condition> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * "True", "False", "Unknown"
+   *
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * @generated from field: int64 observed_generation = 3;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * RFC3339
+   *
+   * @generated from field: string last_transition_time = 4;
+   */
+  lastTransitionTime: string;
+
+  /**
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 6;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<Condition>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.Condition";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Condition;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Condition;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Condition;
+
+  static equals(a: Condition | PlainMessage<Condition> | undefined, b: Condition | PlainMessage<Condition> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.Application
  */
 export declare class Application extends Message<Application> {
@@ -699,6 +752,11 @@ export declare class Application extends Message<Application> {
    * @generated from field: string project = 24;
    */
   project: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 25;
+   */
+  conditions: Condition[];
 
   constructor(data?: PartialMessage<Application>);
 
@@ -899,6 +957,16 @@ export declare class Release extends Message<Release> {
    * @generated from field: repeated paprika.v1.PolicyResult policy_results = 10;
    */
   policyResults: PolicyResult[];
+
+  /**
+   * @generated from field: string application = 11;
+   */
+  application: string;
+
+  /**
+   * @generated from field: string rolled_back_to = 12;
+   */
+  rolledBackTo: string;
 
   constructor(data?: PartialMessage<Release>);
 
@@ -1467,6 +1535,146 @@ export declare class GetApplicationResponse extends Message<GetApplicationRespon
 }
 
 /**
+ * @generated from message paprika.v1.ApplicationSet
+ */
+export declare class ApplicationSet extends Message<ApplicationSet> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: int32 applications = 3;
+   */
+  applications: number;
+
+  /**
+   * @generated from field: string phase = 4;
+   */
+  phase: string;
+
+  constructor(data?: PartialMessage<ApplicationSet>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplicationSet";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplicationSet;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplicationSet;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationSet;
+
+  static equals(a: ApplicationSet | PlainMessage<ApplicationSet> | undefined, b: ApplicationSet | PlainMessage<ApplicationSet> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsRequest
+ */
+export declare class ListApplicationSetsRequest extends Message<ListApplicationSetsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  constructor(data?: PartialMessage<ListApplicationSetsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListApplicationSetsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListApplicationSetsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListApplicationSetsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListApplicationSetsRequest;
+
+  static equals(a: ListApplicationSetsRequest | PlainMessage<ListApplicationSetsRequest> | undefined, b: ListApplicationSetsRequest | PlainMessage<ListApplicationSetsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListApplicationSetsResponse
+ */
+export declare class ListApplicationSetsResponse extends Message<ListApplicationSetsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.ApplicationSet applicationsets = 1;
+   */
+  applicationsets: ApplicationSet[];
+
+  constructor(data?: PartialMessage<ListApplicationSetsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListApplicationSetsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListApplicationSetsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListApplicationSetsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListApplicationSetsResponse;
+
+  static equals(a: ListApplicationSetsResponse | PlainMessage<ListApplicationSetsResponse> | undefined, b: ListApplicationSetsResponse | PlainMessage<ListApplicationSetsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetRequest
+ */
+export declare class GetApplicationSetRequest extends Message<GetApplicationSetRequest> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  constructor(data?: PartialMessage<GetApplicationSetRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationSetRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationSetRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationSetRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationSetRequest;
+
+  static equals(a: GetApplicationSetRequest | PlainMessage<GetApplicationSetRequest> | undefined, b: GetApplicationSetRequest | PlainMessage<GetApplicationSetRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationSetResponse
+ */
+export declare class GetApplicationSetResponse extends Message<GetApplicationSetResponse> {
+  /**
+   * @generated from field: paprika.v1.ApplicationSet applicationset = 1;
+   */
+  applicationset?: ApplicationSet;
+
+  constructor(data?: PartialMessage<GetApplicationSetResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationSetResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationSetResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationSetResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationSetResponse;
+
+  static equals(a: GetApplicationSetResponse | PlainMessage<GetApplicationSetResponse> | undefined, b: GetApplicationSetResponse | PlainMessage<GetApplicationSetResponse> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.SyncApplicationRequest
  */
 export declare class SyncApplicationRequest extends Message<SyncApplicationRequest> {
@@ -1814,5 +2022,58 @@ export declare class ApplyBundleResponse extends Message<ApplyBundleResponse> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplyBundleResponse;
 
   static equals(a: ApplyBundleResponse | PlainMessage<ApplyBundleResponse> | undefined, b: ApplyBundleResponse | PlainMessage<ApplyBundleResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseRequest
+ */
+export declare class RollbackReleaseRequest extends Message<RollbackReleaseRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<RollbackReleaseRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RollbackReleaseRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RollbackReleaseRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RollbackReleaseRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RollbackReleaseRequest;
+
+  static equals(a: RollbackReleaseRequest | PlainMessage<RollbackReleaseRequest> | undefined, b: RollbackReleaseRequest | PlainMessage<RollbackReleaseRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RollbackReleaseResponse
+ */
+export declare class RollbackReleaseResponse extends Message<RollbackReleaseResponse> {
+  /**
+   * @generated from field: paprika.v1.Release release = 1;
+   */
+  release?: Release;
+
+  constructor(data?: PartialMessage<RollbackReleaseResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RollbackReleaseResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RollbackReleaseResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RollbackReleaseResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RollbackReleaseResponse;
+
+  static equals(a: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined, b: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined): boolean;
 }
 

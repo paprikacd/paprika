@@ -1,18 +1,20 @@
 "use client"
 
-import { useState, useEffect, memo, Component, type ReactNode, useCallback } from "react"
+import { useState, useEffect, memo, Component, type ReactNode, useCallback, useRef } from "react"
+import Link from "next/link"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createConnectTransport } from "@connectrpc/connect-web"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
-import type { Stage } from "@/gen/paprika/v1/api_pb"
 import type { Application } from "@/gen/paprika/v1/api_pb"
+import type { ApplicationSet } from "@/gen/paprika/v1/api_pb"
 import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
 import { ReleaseGrid } from "@/components/dashboard/release-table"
 import { ApplicationCard } from "@/components/dashboard/application-card"
 import { Card, CardContent } from "@/components/ui/card"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
 import {
   GitBranch,
@@ -22,6 +24,7 @@ import {
   Rocket,
   AlertTriangle,
   Shield,
+  FolderTree,
 } from "lucide-react"
 
 const transport = createConnectTransport({ baseUrl: "" })
@@ -125,8 +128,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 export default function DashboardPage() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [releases, setReleases] = useState<Release[]>([])
-  const [stages, setStages] = useState<Stage[]>([])
   const [applications, setApplications] = useState<Application[]>([])
+  const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -138,11 +141,11 @@ export default function DashboardPage() {
     Promise.allSettled([
       client.listPipelines({}),
       client.listReleases({}),
-      client.listStages({}).then(r => r),
       client.listApplications({}),
+      client.listApplicationSets({}),
       client.listPolicies({}),
     ])
-      .then(([pr, rr, sr, ar, por]) => {
+      .then(([pr, rr, ar, asr, por]) => {
         let anySuccess = false
         const next: Record<string, string> = {}
 
@@ -160,18 +163,18 @@ export default function DashboardPage() {
           next.releases = rr.reason?.message ?? "Failed to load releases"
         }
 
-        if (sr.status === "fulfilled") {
-          setStages(sr.value.stages)
-          anySuccess = true
-        } else {
-          next.stages = sr.reason?.message ?? "Failed to load stages"
-        }
-
         if (ar.status === "fulfilled") {
           setApplications(ar.value.applications)
           anySuccess = true
         } else {
           next.applications = ar.reason?.message ?? "Failed to load applications"
+        }
+
+        if (asr.status === "fulfilled") {
+          setApplicationSets(asr.value.applicationsets)
+          anySuccess = true
+        } else {
+          next.applicationSets = asr.reason?.message ?? "Failed to load application sets"
         }
 
         if (por.status === "fulfilled") {
@@ -188,12 +191,32 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [setConnected])
 
+  const debounceRef = useRef<number | null>(null)
+
   useEffect(() => {
     const timeout = setTimeout(() => fetchData(), 0)
-    const interval = setInterval(fetchData, 10000)
+    const fallback = setInterval(fetchData, 60000)
+
+    const eventSource = new EventSource("/events?topic=dashboard")
+    eventSource.onmessage = () => {
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current)
+      }
+      debounceRef.current = window.setTimeout(() => {
+        fetchData()
+      }, 300)
+    }
+    eventSource.onerror = () => {
+      // Connection errors are handled by the browser reconnect and the fallback poll.
+    }
+
     return () => {
       clearTimeout(timeout)
-      clearInterval(interval)
+      clearInterval(fallback)
+      eventSource.close()
+      if (debounceRef.current) {
+        window.clearTimeout(debounceRef.current)
+      }
     }
   }, [fetchData])
 
@@ -201,6 +224,7 @@ export default function DashboardPage() {
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
   const failedCount = pipelines.filter((p) => p.phase === "Failed").length
   const appCount = applications.length
+  const releaseByName = new Map(releases.map((r) => [r.name, r]))
 
   return (
     <ErrorBoundary>
@@ -212,7 +236,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard
           icon={GitBranch}
           label="Total Pipelines"
@@ -241,6 +265,12 @@ export default function DashboardPage() {
           icon={Rocket}
           label="Applications"
           value={appCount}
+          loading={loading}
+        />
+        <StatCard
+          icon={FolderTree}
+          label="Application Sets"
+          value={applicationSets.length}
           loading={loading}
         />
       </div>
@@ -286,7 +316,10 @@ export default function DashboardPage() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {loading
             ? [1, 2].map((i) => <SkeletonCard key={i} />)
-            : applications.map((a) => <ApplicationCard key={a.name} application={a} onSynced={fetchData} />)}
+            : applications.map((a) => {
+                const release = a.releaseRef ? releaseByName.get(a.releaseRef) : undefined
+                return <ApplicationCard key={a.name} application={a} release={release} onSynced={fetchData} />
+              })}
           {!loading && applications.length === 0 && !errors.applications && (
             <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
               <div className="flex size-12 items-center justify-center rounded-full bg-muted">
@@ -295,6 +328,61 @@ export default function DashboardPage() {
               <p className="text-sm font-medium text-foreground">No applications yet</p>
               <p className="text-xs text-muted-foreground">
                 Create an Application resource to deploy workloads across stages
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section id="application-sets">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Application Sets</h2>
+            <p className="text-xs text-muted-foreground">
+              {applicationSets.length} application set{applicationSets.length !== 1 ? "s" : ""} configured
+            </p>
+          </div>
+          <Link
+            href="/dashboard/applicationsets"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            View all
+          </Link>
+        </div>
+        {errors.applicationSets && <SectionError message={errors.applicationSets} onRetry={fetchData} />}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading
+            ? [1, 2].map((i) => <SkeletonCard key={i} />)
+            : applicationSets.map((set) => {
+                const detailHref = `/dashboard/applicationsets/detail?namespace=${encodeURIComponent(set.namespace)}&name=${encodeURIComponent(set.name)}`
+                return (
+                  <Card key={`${set.namespace}/${set.name}`}>
+                    <CardContent className="space-y-3 pt-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Link href={detailHref} className="font-mono text-sm font-medium hover:text-primary">
+                            {set.name}
+                          </Link>
+                          <p className="text-xs text-muted-foreground">ns/{set.namespace}</p>
+                        </div>
+                        <StatusBadge status={set.phase} />
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Rocket className="size-3.5" />
+                        {set.applications} application{set.applications === 1 ? "" : "s"}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+          {!loading && applicationSets.length === 0 && !errors.applicationSets && (
+            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
+              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+                <FolderTree className="size-5 text-muted-foreground" aria-hidden="true" />
+              </div>
+              <p className="text-sm font-medium text-foreground">No application sets yet</p>
+              <p className="text-xs text-muted-foreground">
+                Create an ApplicationSet resource to generate Applications from templates
               </p>
             </div>
           )}

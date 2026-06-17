@@ -9,30 +9,36 @@ export function DocTOC() {
   >([])
 
   useEffect(() => {
-    const els = Array.from(document.querySelectorAll("h2, h3")).map((el) => ({
-      id: el.id || el.textContent?.toLowerCase().replace(/\s+/g, "-") || "",
-      text: el.textContent || "",
-      level: el.tagName === "H2" ? 2 : 3,
-    }))
-    setHeadings(els)
+    let observer: IntersectionObserver | null = null
+    const raf = requestAnimationFrame(() => {
+      const els = Array.from(document.querySelectorAll("h2, h3")).map((el) => ({
+        id: el.id || el.textContent?.toLowerCase().replace(/\s+/g, "-") || "",
+        text: el.textContent || "",
+        level: el.tagName === "H2" ? 2 : 3,
+      }))
+      setHeadings(els)
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveId(entry.target.id)
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              setActiveId(entry.target.id)
+            }
           }
-        }
-      },
-      { rootMargin: "-80px 0px -60% 0px" },
-    )
+        },
+        { rootMargin: "-80px 0px -60% 0px" },
+      )
 
-    for (const h of els) {
-      const el = document.getElementById(h.id)
-      if (el) observer.observe(el)
+      for (const h of els) {
+        const el = document.getElementById(h.id)
+        if (el) observer.observe(el)
+      }
+    })
+
+    return () => {
+      cancelAnimationFrame(raf)
+      observer?.disconnect()
     }
-
-    return () => observer.disconnect()
   }, [])
 
   if (headings.length < 2) return null

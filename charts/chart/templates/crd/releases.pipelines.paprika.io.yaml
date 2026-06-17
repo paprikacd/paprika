@@ -1,12 +1,13 @@
 {{- if .Values.crd.enable }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
     {{- if .Values.crd.keep }}
     "helm.sh/resource-policy": keep
     {{- end }}
-    controller-gen.kubebuilder.io/version: v0.20.1
   name: releases.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
@@ -20,6 +21,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
+        description: Release represents a deployment release.
         properties:
           apiVersion:
             description: |-
@@ -39,10 +41,21 @@ spec:
           metadata:
             type: object
           spec:
+            description: ReleaseSpec defines the specification for a release.
             properties:
               from:
                 type: string
-              on_failure:
+              manifestSource:
+                description: |-
+                  ManifestSource references a pre-rendered inline manifest snapshot ConfigMap.
+                  When set, the controller skips template rendering and applies manifests from the ConfigMap.
+                properties:
+                  configMapRef:
+                    description: ConfigMapRef is the name of the snapshot ConfigMap.
+                    type: string
+                type: object
+              onFailure:
+                description: FailureAction defines the action to take on failure.
                 properties:
                   action:
                     enum:
@@ -57,12 +70,45 @@ spec:
                 required:
                 - action
                 type: object
+              parameters:
+                additionalProperties:
+                  type: string
+                description: Feature flag overrides passed as Helm --set values
+                type: object
               pipeline:
                 type: string
+              syncOptions:
+                description: SyncOptions fine-tunes how manifests are applied and
+                  pruned for this release.
+                properties:
+                  applyOutOfSyncOnly:
+                    description: |-
+                      ApplyOutOfSyncOnly skips applying resources whose live state already
+                      matches the desired manifest.
+                    type: boolean
+                  force:
+                    description: Force enables force-conflicts for server-side apply.
+                    type: boolean
+                  prunePropagationPolicy:
+                    description: |-
+                      PrunePropagationPolicy selects the deletion propagation policy used when
+                      pruning managed resources.
+                    enum:
+                    - Foreground
+                    - Background
+                    - Orphan
+                    type: string
+                  replace:
+                    description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                type: object
               target:
                 type: string
               verify:
                 items:
+                  description: |-
+                    GateConfig defines a gate for stage promotion.
+                    GateConfig defines a gate for stage promotion.
                   properties:
                     endpoint:
                       type: string
@@ -82,7 +128,20 @@ spec:
             - target
             type: object
           status:
+            description: ReleaseStatus represents the status of a release.
             properties:
+              canaryStepIndex:
+                description: Index into the canary steps array
+                type: integer
+              canaryStepStartedAt:
+                description: |-
+                  When the current canary step started (used to throttle step advancement
+                  to the configured intervalSeconds, preventing watch-event-driven fast-forward).
+                format: date-time
+                type: string
+              canaryWeight:
+                description: Current canary traffic weight (0-100)
+                type: integer
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current
@@ -141,18 +200,51 @@ spec:
                 type: array
               currentStage:
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation of
+                  the spec.
+                format: int64
+                type: integer
               phase:
+                description: ReleasePhase represents the phase of a release.
                 enum:
                 - Pending
                 - Promoting
+                - Canarying
                 - Verifying
                 - Complete
                 - Failed
                 - RolledBack
                 - Superseded
                 type: string
+              policyResults:
+                description: PolicyResults records the outcome of policy evaluation
+                  for this release.
+                items:
+                  description: ReleasePolicyResult records the outcome of a single
+                    policy evaluation for a release.
+                  properties:
+                    action:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    passed:
+                      type: boolean
+                    severity:
+                      type: string
+                  required:
+                  - action
+                  - name
+                  - passed
+                  - severity
+                  type: object
+                type: array
               promotionHistory:
                 items:
+                  description: PromotionEntry represents an entry in the promotion
+                    history.
                   properties:
                     manifestSnapshot:
                       type: string
@@ -170,6 +262,10 @@ spec:
                   type: object
                 type: array
               renderedManifestSnapshot:
+                type: string
+              rolledBackTo:
+                description: RolledBackTo records the release name that a rolled-back
+                  release re-applied.
                 type: string
             type: object
         required:

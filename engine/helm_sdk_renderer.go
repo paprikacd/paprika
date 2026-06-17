@@ -24,12 +24,13 @@ import (
 )
 
 const (
-	cacheDirPerm   = 0o750
-	filePerm       = 0o640
-	sourceTypeGit  = "git"
-	sourceTypeS3   = "s3"
-	sourceTypeHelm = "helm"
-	sourceTypeOCI  = "oci"
+	cacheDirPerm        = 0o750
+	filePerm            = 0o640
+	sourceTypeGit       = "git"
+	sourceTypeS3        = "s3"
+	sourceTypeHelm      = "helm"
+	sourceTypeKustomize = "kustomize"
+	sourceTypeOCI       = "oci"
 )
 
 var (
@@ -57,7 +58,7 @@ func NewHelmSDKRenderer(workDir string) *HelmSDKRenderer {
 	return &HelmSDKRenderer{WorkDir: workDir}
 }
 
-// ResolveSource resolves a template source (git, S3, etc.) and returns the local path.
+// ResolveSource resolves a template source (git, S3, kustomize, etc.) and returns the local path.
 func (r *HelmSDKRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {
 	switch tmpl.Spec.Type {
 	case sourceTypeGit:
@@ -66,6 +67,12 @@ func (r *HelmSDKRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Templ
 		return r.resolveS3Source(ctx, tmpl)
 	case sourceTypeOCI:
 		return r.resolveOCISource(ctx, tmpl)
+	case sourceTypeKustomize:
+		path, err := r.resolveKustomizePath(ctx, tmpl)
+		if err != nil {
+			return nil, err
+		}
+		return &source.ResolveResult{LocalPath: path}, nil
 	default:
 		return nil, nil
 	}
@@ -125,8 +132,19 @@ func (r *HelmSDKRenderer) resolveS3Source(ctx context.Context, tmpl *paprika.Tem
 	return result, nil
 }
 
-// Render renders a single Helm template and returns the resulting YAML manifests.
+// Render renders a single template and returns the resulting YAML manifests.
 func (r *HelmSDKRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
+	switch tmpl.Spec.Type {
+	case sourceTypeHelm:
+		return r.renderHelm(ctx, tmpl, params)
+	case sourceTypeKustomize:
+		return r.renderKustomize(ctx, tmpl, nil)
+	default:
+		return nil, fmt.Errorf("unsupported template type: %s", tmpl.Spec.Type)
+	}
+}
+
+func (r *HelmSDKRenderer) renderHelm(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
 	chartPath, err := r.resolveChartPath(ctx, tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chart path: %w", err)
@@ -339,19 +357,35 @@ func (r *HelmSDKRenderer) buildValues(params map[string]string, baseContent stri
 	return merged, nil
 }
 
-// RenderAll renders all templates and joins the resulting manifests.
+// RenderAll renders a sequence of templates. When a Kustomize template requests
+// InputFromPrevious, the output of the immediately preceding step is used as the
+// Kustomize base, enabling layered rendering such as Helm -> Kustomize -> apply.
 func (r *HelmSDKRenderer) RenderAll(ctx context.Context, templates []paprika.Template, params map[string]string) ([]byte, error) {
-	var allManifests [][]byte
-
-	for i := range templates {
-		rendered, err := r.Render(ctx, &templates[i], params)
-		if err != nil {
-			return nil, fmt.Errorf("template %d (%s) render failed: %w", i, templates[i].Name, err)
-		}
-		allManifests = append(allManifests, rendered)
+	if len(templates) == 0 {
+		return nil, nil
 	}
 
-	return bytes.Join(allManifests, []byte("\n---\n")), nil
+	var previous []byte
+	for i := range templates {
+		tmpl := &templates[i]
+		var rendered []byte
+		var err error
+
+		switch tmpl.Spec.Type {
+		case sourceTypeHelm:
+			rendered, err = r.renderHelm(ctx, tmpl, params)
+		case sourceTypeKustomize:
+			rendered, err = r.renderKustomize(ctx, tmpl, previous)
+		default:
+			err = fmt.Errorf("unsupported template type: %s", tmpl.Spec.Type)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("template %d (%s) render failed: %w", i, tmpl.Name, err)
+		}
+		previous = rendered
+	}
+
+	return previous, nil
 }
 
 // RenderHelmChart renders a Helm chart from a repository and returns the resulting YAML.

@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -23,11 +25,13 @@ import (
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/health"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -70,6 +74,9 @@ type ApplicationReconciler struct {
 	RateLimiter      *ratelimit.ControllerRateLimit
 	EventRecorder    record.EventRecorder
 	ProjectValidator *governance.ProjectValidator
+	EventBroker      *events.Broker
+	// now returns the current time. Overridden in tests.
+	now func() time.Time
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -80,6 +87,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
@@ -92,15 +100,20 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	defer span.End()
 
 	var app paprikav1.Application
+	result := resultSuccess
 	start := metrics.Timer()
 	defer func() {
+		metrics.ReconcileTotal.WithLabelValues("application", result).Inc()
+		metrics.ReconcileDuration.WithLabelValues("application").Observe(metrics.Since(start))
 		metrics.ApplicationReconcileDuration.WithLabelValues(app.Name, app.Namespace).Observe(metrics.Since(start))
 	}()
 
 	log := log.FromContext(ctx)
+	log.Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
 
 	if err := r.Get(ctx, req.NamespacedName, &app); err != nil {
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
+			result = resultError
 			return ctrl.Result{}, fmt.Errorf("getting application: %w", k8sErr)
 		}
 		return ctrl.Result{}, nil
@@ -152,6 +165,8 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 			return ctrl.Result{}, err
 		}
 	}
+
+	r.pruneReleasesIfInline(ctx, app)
 
 	if ctrlResult, err := r.reconcileAppPipeline(ctx, app); ctrlResult != nil || err != nil {
 		if err != nil {
@@ -308,6 +323,10 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
 
+	if err := r.reconcileSelfHeal(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile self-heal")
+	}
+
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status after evaluation")
 	}
@@ -345,6 +364,13 @@ func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprika
 		var fresh paprikav1.Application
 		if err := r.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching application for status update: %w", err)
+		}
+		// Preserve fields that may be set concurrently by other actors (e.g.
+		// ApplyBundle setting ReleaseRef) when the current reconcile did not
+		// populate them.
+		if desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
+			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
+			app.Status.ReleaseRef = fresh.Status.ReleaseRef
 		}
 		fresh.Status = *desiredStatus
 		fresh.Status.ObservedGeneration = fresh.Generation
@@ -385,9 +411,7 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	return nil, nil
 }
 
-func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *paprikav1.Application) error {
-	templateName := app.Name + "-template"
-
+func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 	spec := paprikav1.TemplateSpec{
 		Type:      string(app.Spec.Source.Type),
 		Chart:     app.Spec.Source.Chart,
@@ -411,7 +435,17 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 			Path:      app.Spec.Source.Path,
 			SecretRef: app.Spec.Source.SecretRef,
 		}
+	case paprikav1.SourceTypeKustomize:
+		spec.Kustomize = &paprikav1.KustomizeSourceSpec{
+			Path: app.Spec.Source.Path,
+		}
 	}
+
+	return spec
+}
+
+func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *paprikav1.Application) error {
+	templateName := app.Name + "-template"
 
 	expected := &paprikav1.Template{
 		ObjectMeta: metav1.ObjectMeta{
@@ -421,7 +455,7 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 				engine.ApplicationNameLabelKey: app.Name,
 			}),
 		},
-		Spec: spec,
+		Spec: buildTemplateSpec(app),
 	}
 
 	if err := ctrl.SetControllerReference(app, expected, r.Scheme); err != nil {
@@ -722,11 +756,12 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 			}),
 		},
 		Spec: paprikav1.ReleaseSpec{
-			Pipeline:   pipelineName,
-			Target:     stageName,
-			Verify:     targetStage.Gates,
-			OnFailure:  app.Spec.OnFailure,
-			Parameters: params,
+			Pipeline:    pipelineName,
+			Target:      stageName,
+			Verify:      targetStage.Gates,
+			OnFailure:   app.Spec.OnFailure,
+			Parameters:  params,
+			SyncOptions: app.Spec.SyncOptions,
 		},
 	}
 }
@@ -803,9 +838,28 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 		}
 	}
 
+	r.publishApplicationEvent(ctx, app, reason)
+
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status", "phase", phase)
 	}
+}
+
+func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string) {
+	if r.EventBroker == nil {
+		return
+	}
+	evt, err := events.NewEvent(events.TypeApplication, map[string]string{
+		"name":      app.Name,
+		"namespace": app.Namespace,
+		"phase":     string(app.Status.Phase),
+		"reason":    reason,
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to create application event", "app", app.Name)
+		return
+	}
+	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
@@ -838,7 +892,7 @@ func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *papr
 		return "", "", nil
 	}
 
-	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 {
+	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize {
 		renderer := r.TemplateRenderer
 		if renderer == nil {
 			renderer = engine.NewHelmSDKRenderer(r.WorkDir)
@@ -1008,10 +1062,13 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 
 	var healthResults []paprikav1.ResourceHealth
 	for _, rs := range app.Status.Resources {
-		if rs.Status == "Synced" {
-			h := r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
-			healthResults = append(healthResults, h)
+		// Skip resources that are no longer desired; health is only meaningful for
+		// managed resources regardless of whether they are currently in sync.
+		if rs.Status == "Pruned" {
+			continue
 		}
+		h := r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
+		healthResults = append(healthResults, h)
 	}
 
 	app.Status.ResourceHealth = healthResults
@@ -1147,6 +1204,9 @@ func (r *ApplicationReconciler) gateStatusExists(app *paprikav1.Application, gat
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+
+	r.pruneReleasesIfInline(ctx, app)
+
 	pollInterval := defaultRequeue
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
@@ -1163,16 +1223,152 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SourceChanged", "source hash changed, re-syncing")
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
+
+	r.evaluateHealth(ctx, app)
+	r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app)
+	if err := r.reconcileSelfHeal(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile self-heal")
+	}
+	if err := r.patchAppStatus(ctx, app); err != nil {
+		log.Error(err, "Failed to update application status in Healthy phase")
+	}
+
 	return ctrl.Result{RequeueAfter: pollInterval}, nil
 }
 
+func (r *ApplicationReconciler) pruneReleasesIfInline(ctx context.Context, app *paprikav1.Application) {
+	if !r.isInlineSource(app) {
+		return
+	}
+	if err := r.pruneOldReleases(ctx, app); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to prune old releases")
+	}
+}
+
+func (r *ApplicationReconciler) pruneOldReleases(ctx context.Context, app *paprikav1.Application) error {
+	all, err := r.listReleasesSorted(ctx, app)
+	if err != nil {
+		return err
+	}
+	if len(all) <= maxReleaseHistory {
+		return nil
+	}
+
+	keep := r.selectReleasesToKeep(all, app.Status.ReleaseRef)
+	deleted, err := r.deleteReleases(ctx, all, keep, app)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		r.recordEvent(app, corev1.EventTypeNormal, "PrunedReleases", fmt.Sprintf("Pruned %d old releases", deleted))
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) listReleasesSorted(ctx context.Context, app *paprikav1.Application) ([]*paprikav1.Release, error) {
+	var list paprikav1.ReleaseList
+	if err := r.List(ctx, &list,
+		client.InNamespace(app.Namespace),
+		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
+	); err != nil {
+		return nil, fmt.Errorf("listing releases for pruning: %w", err)
+	}
+
+	all := make([]*paprikav1.Release, 0, len(list.Items))
+	for i := range list.Items {
+		all = append(all, &list.Items[i])
+	}
+
+	// Sort newest first.
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].CreationTimestamp.After(all[j].CreationTimestamp.Time)
+	})
+	return all, nil
+}
+
+func (r *ApplicationReconciler) selectReleasesToKeep(all []*paprikav1.Release, activeRef string) map[string]struct{} {
+	keep := map[string]struct{}{}
+	r.protectActiveRelease(all, activeRef, keep)
+	r.protectLatestNonSuperseded(all, keep)
+	r.fillHistoryLimit(all, keep)
+	return keep
+}
+
+func (r *ApplicationReconciler) protectActiveRelease(all []*paprikav1.Release, activeRef string, keep map[string]struct{}) {
+	for _, rel := range all {
+		if rel.Name == activeRef {
+			keep[rel.Name] = struct{}{}
+			return
+		}
+	}
+}
+
+func (r *ApplicationReconciler) protectLatestNonSuperseded(all []*paprikav1.Release, keep map[string]struct{}) {
+	for _, rel := range all {
+		if _, ok := keep[rel.Name]; ok {
+			continue
+		}
+		if rel.Status.Phase != paprikav1.ReleaseSuperseded {
+			keep[rel.Name] = struct{}{}
+			return
+		}
+	}
+}
+
+func (r *ApplicationReconciler) fillHistoryLimit(all []*paprikav1.Release, keep map[string]struct{}) {
+	kept := 0
+	for _, rel := range all {
+		if _, ok := keep[rel.Name]; ok {
+			kept++
+			continue
+		}
+		if kept < maxReleaseHistory {
+			keep[rel.Name] = struct{}{}
+			kept++
+		}
+	}
+}
+
+func (r *ApplicationReconciler) deleteReleases(ctx context.Context, all []*paprikav1.Release, keep map[string]struct{}, app *paprikav1.Application) (int, error) {
+	deleted := 0
+	for _, rel := range all {
+		if _, ok := keep[rel.Name]; ok {
+			continue
+		}
+		if err := r.Delete(ctx, rel); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			r.recordEvent(app, corev1.EventTypeWarning, "PruneReleaseFailed", fmt.Sprintf("Failed to prune release %s: %v", rel.Name, err))
+			return deleted, fmt.Errorf("deleting release %s: %w", rel.Name, err)
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
+func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventType, reason, message string) {
+	if r.EventRecorder != nil {
+		r.EventRecorder.Event(app, eventType, reason, message)
+	}
+}
+
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.now == nil {
+		r.now = time.Now
+	}
+
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Application{}).
 		Owns(&paprikav1.Template{}).
 		Owns(&paprikav1.Pipeline{}).
 		Owns(&paprikav1.Stage{}).
 		Owns(&paprikav1.Release{}).
+		WithOptions(controller.Options{
+			MaxConcurrentReconciles: 3,
+			RecoverPanic:            ptr(true),
+		}).
 		Named("application").
 		Complete(r); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
