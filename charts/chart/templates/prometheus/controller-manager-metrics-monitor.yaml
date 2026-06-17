@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "operator" }}
 {{- if .Values.prometheus.enable }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -42,5 +41,4 @@ spec:
     matchLabels:
       app.kubernetes.io/name: {{ include "paprika.name" . }}
       control-plane: controller-manager
-{{- end }}
 {{- end }}

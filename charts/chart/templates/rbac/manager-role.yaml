@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "operator" }}
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if .Values.rbac.namespaced }}
 kind: Role
@@ -15,6 +14,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - services
   verbs:
   - create
   - delete
@@ -26,7 +26,24 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
+  - secrets
   verbs:
   - get
   - list
@@ -38,6 +55,18 @@ rules:
   verbs:
   - get
   - list
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - batch
   resources:
@@ -51,12 +80,98 @@ rules:
   - update
   - watch
 - apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - clusters.paprika.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects
+  - repositories
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - core.paprika.io
+  resources:
+  - appprojects/status
+  - repositories/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - virtualservices
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns
   - applications
   - applicationsets
   - artifacts
-  - notificationconfigs
   - pipelines
   - releases
   - stages
@@ -72,6 +187,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/finalizers
   - applications/finalizers
   - applicationsets/finalizers
   - artifacts/finalizers
@@ -85,6 +201,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/status
   - applications/status
   - applicationsets/status
   - artifacts/status
@@ -97,4 +214,38 @@ rules:
   - get
   - patch
   - update
-{{- end }}
+- apiGroups:
+  - pipelines.paprika.io
+  resources:
+  - analysistemplates
+  - notificationconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - policy.paprika.io
+  resources:
+  - policies/status
+  verbs:
+  - get
+  - patch
+  - update

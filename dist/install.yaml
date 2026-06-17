@@ -64,6 +64,47 @@ spec:
               ApplicationSpec defines the specification for an application.
               ApplicationSpec defines the specification for an application.
             properties:
+              analysisTemplates:
+                description: |-
+                  AnalysisTemplates references reusable analysis templates that run continuously
+                  in the background after the application is healthy.
+                items:
+                  description: AnalysisTemplateRef references an AnalysisTemplate
+                    and supplies arguments.
+                  properties:
+                    args:
+                      additionalProperties:
+                        type: string
+                      description: Args override template arguments.
+                      type: object
+                    intervalSeconds:
+                      description: IntervalSeconds overrides the default analysis
+                        interval.
+                      type: integer
+                    name:
+                      description: Name of the AnalysisTemplate to use.
+                      type: string
+                    onFailure:
+                      description: OnFailure defines the action to take when the analysis
+                        fails.
+                      properties:
+                        action:
+                          enum:
+                          - rollback
+                          - halt
+                          - ignore
+                          type: string
+                        notify:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - action
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
               approvalGates:
                 description: ApprovalGates define manual approval gates for stage
                   transitions.
@@ -185,6 +226,9 @@ spec:
                               - errorRate
                               - latencyP99
                               - restartRate
+                              type: string
+                            name:
+                              description: Name of the check.
                               type: string
                             requestCount:
                               description: Number of requests to make per analysis
@@ -316,6 +360,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -432,6 +493,9 @@ spec:
                                     - errorRate
                                     - latencyP99
                                     - restartRate
+                                    type: string
+                                  name:
+                                    description: Name of the check.
                                     type: string
                                   requestCount:
                                     description: Number of requests to make per analysis
@@ -594,6 +658,32 @@ spec:
               ApplicationStatus represents the status of an application.
               ApplicationStatus represents the status of an application.
             properties:
+              analysisResults:
+                description: AnalysisResults aggregate the latest background analysis
+                  state.
+                items:
+                  description: AnalysisResult aggregates the latest state of a single
+                    AnalysisRun for the UI/API.
+                  properties:
+                    checkedAt:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    passed:
+                      type: boolean
+                    phase:
+                      description: AnalysisRunPhase represents the phase of an analysis
+                        run.
+                      type: string
+                  required:
+                  - name
+                  - passed
+                  - phase
+                  type: object
+                type: array
               canaryStepIndex:
                 description: Index into the canary steps array
                 type: integer
@@ -709,6 +799,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.
@@ -2167,6 +2262,9 @@ spec:
                               - latencyP99
                               - restartRate
                               type: string
+                            name:
+                              description: Name of the check.
+                              type: string
                             requestCount:
                               description: Number of requests to make per analysis
                                 cycle
@@ -3050,6 +3148,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns
   - applications
   - applicationsets
   - artifacts
@@ -3068,6 +3167,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/finalizers
   - applications/finalizers
   - applicationsets/finalizers
   - artifacts/finalizers
@@ -3081,6 +3181,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/status
   - applications/status
   - applicationsets/status
   - artifacts/status
@@ -3096,6 +3197,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysistemplates
   - notificationconfigs
   verbs:
   - get
@@ -3667,7 +3769,7 @@ spec:
               key: secret
               name: paprika-webhook-secret
               optional: true
-        image: ghcr.io/benebsworth/paprika:v0.0.1
+        image: ghcr.io/benebsworth/paprika:latest
         livenessProbe:
           httpGet:
             path: /healthz
