@@ -75,6 +75,8 @@ type ApplicationReconciler struct {
 	EventRecorder    record.EventRecorder
 	ProjectValidator *governance.ProjectValidator
 	EventBroker      *events.Broker
+	// now returns the current time. Overridden in tests.
+	now func() time.Time
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -320,6 +322,10 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	r.evaluateHealth(ctx, app)
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
+
+	if err := r.reconcileSelfHeal(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile self-heal")
+	}
 
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status after evaluation")
@@ -1221,6 +1227,9 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	r.evaluateHealth(ctx, app)
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
+	if err := r.reconcileSelfHeal(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile self-heal")
+	}
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		log.Error(err, "Failed to update application status in Healthy phase")
 	}
@@ -1346,6 +1355,10 @@ func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventTyp
 }
 
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.now == nil {
+		r.now = time.Now
+	}
+
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Application{}).
 		Owns(&paprikav1.Template{}).
