@@ -88,6 +88,44 @@ type SelfHealConfig struct {
 	Cooldown string `json:"cooldown,omitempty"`
 }
 
+// SyncWindowKind selects whether a window permits or denies sync.
+// +kubebuilder:validation:Enum=Allow;Block
+type SyncWindowKind string
+
+const (
+	// SyncWindowAllow permits automatic sync during the window.
+	SyncWindowAllow SyncWindowKind = "Allow"
+	// SyncWindowBlock denies automatic sync during the window.
+	SyncWindowBlock SyncWindowKind = "Block"
+)
+
+// SyncWindow defines a cron-based time window that controls automatic sync.
+type SyncWindow struct {
+	// Kind is whether this window allows or blocks sync.
+	// +kubebuilder:validation:Required
+	Kind SyncWindowKind `json:"kind"`
+
+	// Schedule is a standard 5-field cron expression:
+	//   MIN HOUR DOM MONTH DOW
+	// Example: "0 9 * * MON-FRI" for 09:00 on weekdays.
+	// +kubebuilder:validation:Required
+	Schedule string `json:"schedule"`
+
+	// Duration is how long the window stays active after each scheduled start.
+	// Parsed with time.ParseDuration, e.g. "8h".
+	// +kubebuilder:validation:Required
+	Duration string `json:"duration"`
+
+	// Timezone is an IANA timezone name (e.g. "America/New_York"). Defaults to
+	// UTC when empty.
+	// +optional
+	Timezone string `json:"timezone,omitempty"`
+
+	// Stages limits the window to the named stages. Empty means all stages.
+	// +optional
+	Stages []string `json:"stages,omitempty"`
+}
+
 // Source type constants.
 const (
 	SourceTypeGit       = "git"
@@ -337,6 +375,10 @@ type ApplicationSpec struct {
 	// SelfHeal controls automatic remediation when drift or health failures are detected.
 	// +optional
 	SelfHeal *SelfHealConfig `json:"selfHeal,omitempty"`
+
+	// SyncWindows restrict when automatic sync may run.
+	// +optional
+	SyncWindows []SyncWindow `json:"syncWindows,omitempty"`
 }
 
 // ResourceSync tracks the sync status of a managed Kubernetes resource.

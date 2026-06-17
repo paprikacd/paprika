@@ -594,6 +594,46 @@ spec:
                 - Auto
                 - Manual
                 type: string
+              syncWindows:
+                description: SyncWindows restrict when automatic sync may run.
+                items:
+                  description: SyncWindow defines a cron-based time window that controls
+                    automatic sync.
+                  properties:
+                    duration:
+                      description: |-
+                        Duration is how long the window stays active after each scheduled start.
+                        Parsed with time.ParseDuration, e.g. "8h".
+                      type: string
+                    kind:
+                      description: Kind is whether this window allows or blocks sync.
+                      enum:
+                      - Allow
+                      - Block
+                      type: string
+                    schedule:
+                      description: |-
+                        Schedule is a standard 5-field cron expression:
+                          MIN HOUR DOM MONTH DOW
+                        Example: "0 9 * * MON-FRI" for 09:00 on weekdays.
+                      type: string
+                    stages:
+                      description: Stages limits the window to the named stages. Empty
+                        means all stages.
+                      items:
+                        type: string
+                      type: array
+                    timezone:
+                      description: |-
+                        Timezone is an IANA timezone name (e.g. "America/New_York"). Defaults to
+                        UTC when empty.
+                      type: string
+                  required:
+                  - duration
+                  - kind
+                  - schedule
+                  type: object
+                type: array
             required:
             - source
             - stages
