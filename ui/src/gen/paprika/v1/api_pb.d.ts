@@ -695,6 +695,11 @@ export declare class Application extends Message<Application> {
    */
   gates: GateStatus[];
 
+  /**
+   * @generated from field: string project = 24;
+   */
+  project: string;
+
   constructor(data?: PartialMessage<Application>);
 
   static readonly runtime: typeof proto3;
@@ -1118,6 +1123,11 @@ export declare class ListPipelinesRequest extends Message<ListPipelinesRequest> 
    */
   namespace?: string;
 
+  /**
+   * @generated from field: string project = 2;
+   */
+  project: string;
+
   constructor(data?: PartialMessage<ListPipelinesRequest>);
 
   static readonly runtime: typeof proto3;
@@ -1165,6 +1175,11 @@ export declare class ListReleasesRequest extends Message<ListReleasesRequest> {
    * @generated from field: optional string namespace = 1;
    */
   namespace?: string;
+
+  /**
+   * @generated from field: string project = 2;
+   */
+  project: string;
 
   constructor(data?: PartialMessage<ListReleasesRequest>);
 
@@ -1214,6 +1229,11 @@ export declare class ListStagesRequest extends Message<ListStagesRequest> {
    */
   namespace?: string;
 
+  /**
+   * @generated from field: string project = 2;
+   */
+  project: string;
+
   constructor(data?: PartialMessage<ListStagesRequest>);
 
   static readonly runtime: typeof proto3;
@@ -1261,6 +1281,11 @@ export declare class ListApplicationsRequest extends Message<ListApplicationsReq
    * @generated from field: optional string namespace = 1;
    */
   namespace?: string;
+
+  /**
+   * @generated from field: string project = 2;
+   */
+  project: string;
 
   constructor(data?: PartialMessage<ListApplicationsRequest>);
 
@@ -1726,6 +1751,11 @@ export declare class ApplyBundleRequest extends Message<ApplyBundleRequest> {
    * @generated from field: bool dry_run = 6;
    */
   dryRun: boolean;
+
+  /**
+   * @generated from field: string project = 7;
+   */
+  project: string;
 
   constructor(data?: PartialMessage<ApplyBundleRequest>);
 

@@ -9,16 +9,25 @@ import (
 
 	"github.com/go-logr/logr"
 	"go.uber.org/mock/gomock"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/benebsworth/paprika/analysis"
 	analysismocks "github.com/benebsworth/paprika/analysis/mocks"
+	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/gates"
 	gatesmocks "github.com/benebsworth/paprika/gates/mocks"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	"github.com/benebsworth/paprika/internal/controller/pipelines/mocks"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/traffic"
 	trafficmocks "github.com/benebsworth/paprika/traffic/mocks"
 )
@@ -398,5 +407,131 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 
 	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n")); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
+	}
+}
+
+func TestReleaseReconciler_promote_blocksGovernanceViolation(t *testing.T) {
+	ctx := context.Background()
+	const ns = "default"
+	const projectName = "restricted-release-project"
+
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1 to scheme: %v", err)
+	}
+	if err := corev1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add corev1alpha1 to scheme: %v", err)
+	}
+	if err := pipelinesv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add pipelinesv1alpha1 to scheme: %v", err)
+	}
+
+	const appName = "release-governance-app"
+	const stageName = "release-governance-stage"
+	const snapshotName = "release-governance-snapshot"
+	const releaseName = "release-governance-release"
+
+	project := &corev1alpha1.AppProject{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      projectName,
+			Namespace: ns,
+		},
+		Spec: corev1alpha1.AppProjectSpec{
+			Description: "Only ConfigMaps allowed",
+			Kinds:       []string{"ConfigMap"},
+		},
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      appName,
+			Namespace: ns,
+			UID:       types.UID("app-uid"),
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Project: projectName,
+		},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      stageName,
+			Namespace: ns,
+		},
+		Spec: pipelinesv1alpha1.StageSpec{
+			Name:      stageName,
+			Ring:      1,
+			Templates: []string{},
+		},
+	}
+	snapshot := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapshotName,
+			Namespace: ns,
+		},
+		Data: map[string]string{
+			"manifests.yaml": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: blocked-deployment\nspec:\n  replicas: 1\n",
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       releaseName,
+			Namespace:  ns,
+			Finalizers: []string{releaseFinalizer},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+					Kind:       "Application",
+					Name:       appName,
+					UID:        app.UID,
+				},
+			},
+		},
+		Spec: pipelinesv1alpha1.ReleaseSpec{
+			Target: stageName,
+			ManifestSource: &pipelinesv1alpha1.ManifestSource{
+				ConfigMapRef: snapshotName,
+			},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			Phase: pipelinesv1alpha1.ReleasePromoting,
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, app, stage, snapshot, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}).Build()
+
+	r := &ReleaseReconciler{
+		Client:        c,
+		Scheme:        scheme,
+		EventRecorder: record.NewFakeRecorder(10),
+		ProjectValidator: governance.NewProjectValidator(
+			governance.NewProjectResolver(c),
+			governance.NewClusterResolver(c),
+			nil,
+		),
+		PolicyEvaluator: governance.NewPolicyEvaluator(c),
+	}
+
+	_, err := r.Reconcile(ctx, reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: releaseName, Namespace: ns},
+	})
+	if err != nil {
+		t.Fatalf("reconcile returned error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Release
+	if err := c.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: ns}, &updated); err != nil {
+		t.Fatalf("get updated release: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ReleaseFailed {
+		t.Errorf("expected phase %s, got %s", pipelinesv1alpha1.ReleaseFailed, updated.Status.Phase)
+	}
+	cond := meta.FindStatusCondition(updated.Status.Conditions, "GovernanceChecked")
+	if cond == nil {
+		t.Fatalf("expected GovernanceChecked condition")
+	}
+	if cond.Status != metav1.ConditionFalse {
+		t.Errorf("expected GovernanceChecked=False, got %s", cond.Status)
+	}
+	if cond.Reason != "ProjectViolation" {
+		t.Errorf("expected reason ProjectViolation, got %s", cond.Reason)
 	}
 }

@@ -12,16 +12,19 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/yaml"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -35,10 +38,12 @@ import (
 	"github.com/benebsworth/paprika/gates"
 	agentclient "github.com/benebsworth/paprika/internal/agent/client"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/metrics"
+	"github.com/benebsworth/paprika/policy"
 	"github.com/benebsworth/paprika/traffic"
 )
 
@@ -86,6 +91,9 @@ type ReleaseReconciler struct {
 	ShardFilter          *sharding.Filter
 	RateLimiter          *ratelimit.ControllerRateLimit
 	AgentClientBuilder   func(baseURL string) AgentClient
+	EventRecorder        record.EventRecorder
+	ProjectValidator     *governance.ProjectValidator
+	PolicyEvaluator      *governance.PolicyEvaluator
 }
 
 // +kubebuilder:rbac:groups=clusters.paprika.io,resources=clusters,verbs=get;list;watch
@@ -102,6 +110,8 @@ type ReleaseReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
 
 // Reconcile handles Release reconciliation.
+//
+//nolint:cyclop // release lifecycle branches are intentional.
 func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ctx, span := observability.StartSpan(ctx, "ReleaseReconcile",
 		attribute.String("namespace", req.Namespace),
@@ -137,6 +147,9 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if getErr != nil {
 		result = resultError
 		return ctrl.Result{}, getErr
+	}
+	if release.Name == "" {
+		return ctrl.Result{}, nil
 	}
 
 	if !release.DeletionTimestamp.IsZero() {
@@ -193,10 +206,7 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 func (r *ReleaseReconciler) getRelease(ctx context.Context, req ctrl.Request) (paprikav1.Release, error) {
 	var release paprikav1.Release
 	if err := r.Get(ctx, req.NamespacedName, &release); err != nil {
-		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
-			return release, fmt.Errorf("getting release: %w", k8sErr)
-		}
-		return release, nil
+		return release, fmt.Errorf("getting release: %w", client.IgnoreNotFound(err))
 	}
 	return release, nil
 }
@@ -372,9 +382,22 @@ func (r *ReleaseReconciler) handleFailedRollback(ctx context.Context, release *p
 }
 
 func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *paprikav1.Release) error {
-	patch := client.MergeFromWithOptions(release.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	release.Status.ObservedGeneration = release.Generation
-	return r.Status().Patch(ctx, release, patch) //nolint:wrapcheck // wrapped by callers
+	desiredStatus := release.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Release
+		if err := r.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching release for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating release status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("patching release status: %w", err)
+	}
+	return nil
 }
 
 func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, release *paprikav1.Release) (bool, error) {
@@ -423,10 +446,31 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 		return err
 	}
 
-	manifests, err := r.resolveManifests(ctx, release, stage)
+	manifests, snapshotName, err := r.renderManifests(ctx, release, stage)
 	if err != nil {
 		return err
 	}
+
+	// Governance gate: parse, normalize, validate, evaluate policies.
+	manifestObjects, err := parseManifests(manifests)
+	if err != nil {
+		return fmt.Errorf("parse manifests: %w", err)
+	}
+	normalizeManifestNamespaces(manifestObjects, release.Namespace)
+	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
+	if err != nil {
+		return err
+	}
+
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+
+	if err := r.storeManifestSnapshot(ctx, release, stage, snapshotName, project, manifests); err != nil {
+		return fmt.Errorf("store manifest snapshot: %w", err)
+	}
+	release.Status.RenderedManifestSnapshot = snapshotName
 
 	if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
 		return err
@@ -437,31 +481,161 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	return nil
 }
 
-func (r *ReleaseReconciler) resolveManifests(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage) ([]byte, error) {
+func (r *ReleaseReconciler) renderManifests(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage) (manifests []byte, snapshotName string, err error) {
 	if r.hasInlineManifests(release) {
-		manifests, err := r.loadManifestsFromConfigMap(ctx, release)
+		manifests, err = r.loadManifestsFromConfigMap(ctx, release)
 		if err != nil {
-			return nil, fmt.Errorf("load inline manifests: %w", err)
+			return nil, "", fmt.Errorf("load inline manifests: %w", err)
 		}
-		release.Status.RenderedManifestSnapshot = release.Spec.ManifestSource.ConfigMapRef
-		return manifests, nil
+		return manifests, release.Spec.ManifestSource.ConfigMapRef, nil
 	}
 
 	templates, err := r.fetchStageTemplates(ctx, release, stage)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	params := r.buildPromoteParams(release)
-	manifests, err := r.TemplateRenderer.RenderAll(ctx, templates, params)
+	manifests, err = r.TemplateRenderer.RenderAll(ctx, templates, params)
 	if err != nil {
-		return nil, fmt.Errorf("template rendering failed: %w", err)
+		return nil, "", fmt.Errorf("template rendering failed: %w", err)
 	}
-	snapshotName := stage.Name + "-manifest-snapshot"
-	if err := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); err != nil {
-		return nil, fmt.Errorf("failed to store manifest snapshot: %w", err)
+	return manifests, stage.Name + "-manifest-snapshot", nil
+}
+
+func parseManifests(bundle []byte) ([]*unstructured.Unstructured, error) {
+	docs := engine.SplitYAMLDocuments(bundle)
+	var out []*unstructured.Unstructured
+	for _, doc := range docs {
+		obj := &unstructured.Unstructured{}
+		if err := k8syaml.Unmarshal(doc, &obj.Object); err != nil {
+			return nil, fmt.Errorf("unmarshal manifest: %w", err)
+		}
+		if obj.Object != nil {
+			out = append(out, obj)
+		}
 	}
-	release.Status.RenderedManifestSnapshot = snapshotName
-	return manifests, nil
+	return out, nil
+}
+
+func normalizeManifestNamespaces(objects []*unstructured.Unstructured, ns string) {
+	for _, obj := range objects {
+		if obj.GetNamespace() == "" {
+			obj.SetNamespace(ns)
+		}
+	}
+}
+
+func (r *ReleaseReconciler) resolveOwningApplication(ctx context.Context, release *paprikav1.Release) (*paprikav1.Application, error) {
+	for _, ref := range release.OwnerReferences {
+		if ref.APIVersion == paprikav1.GroupVersion.String() && ref.Kind == "Application" {
+			var app paprikav1.Application
+			if err := r.Get(ctx, types.NamespacedName{Namespace: release.Namespace, Name: ref.Name}, &app); err != nil {
+				return nil, fmt.Errorf("get application %s/%s: %w", release.Namespace, ref.Name, err)
+			}
+			return &app, nil
+		}
+	}
+	return nil, fmt.Errorf("release %s/%s has no Application owner reference", release.Namespace, release.Name)
+}
+
+func (r *ReleaseReconciler) resolveStageServer(ctx context.Context, release *paprikav1.Release) (string, error) {
+	var stage paprikav1.Stage
+	if err := r.Get(ctx, types.NamespacedName{Namespace: release.Namespace, Name: release.Spec.Target}, &stage); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get stage %s/%s: %w", release.Namespace, release.Spec.Target, err)
+	}
+	resolved, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
+	if err != nil {
+		return "", fmt.Errorf("resolve cluster ref: %w", err)
+	}
+	return resolved.Server, nil
+}
+
+func (r *ReleaseReconciler) setReleaseGovernanceCondition(release *paprikav1.Release, status bool, reason, message string) {
+	conditionStatus := metav1.ConditionTrue
+	if !status {
+		conditionStatus = metav1.ConditionFalse
+	}
+	meta.SetStatusCondition(&release.Status.Conditions, metav1.Condition{
+		Type:               governanceCheckedCondition,
+		Status:             conditionStatus,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+//nolint:cyclop,nestif // governance gate has sequential validation branches.
+func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *paprikav1.Release, manifestObjects []*unstructured.Unstructured) (*paprikav1.Application, error) {
+	log := logf.FromContext(ctx)
+
+	app, err := r.resolveOwningApplication(ctx, release)
+	if err != nil {
+		log.Info("Release has no Application owner reference; using default project for governance",
+			"release", release.Name, "namespace", release.Namespace, "error", err)
+		projectName := release.Labels["app.paprika.io/project"]
+		if projectName == "" {
+			projectName = defaultProjectName
+		}
+		app = &paprikav1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: release.Name, Namespace: release.Namespace},
+			Spec:       paprikav1.ApplicationSpec{Project: projectName},
+		}
+	}
+	if r.ProjectValidator == nil || r.PolicyEvaluator == nil {
+		return app, nil
+	}
+
+	projectName := app.Spec.Project
+	if projectName == "" {
+		projectName = defaultProjectName
+	}
+
+	project, err := r.ProjectValidator.ResolveProject(ctx, app.Namespace, projectName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve appproject: %w", err)
+	}
+
+	stageServer, err := r.resolveStageServer(ctx, release)
+	if err != nil {
+		return nil, fmt.Errorf("resolve stage server: %w", err)
+	}
+
+	if violations, err := r.ProjectValidator.ValidateBundle(ctx, project, app.Spec.Source, app.Spec.Stages, app.Namespace, stageServer, manifestObjects); err != nil {
+		return nil, fmt.Errorf("validate bundle: %w", err)
+	} else if blocking := violations.Blocking(); len(blocking) > 0 {
+		r.setReleaseGovernanceCondition(release, false, projectViolationReason, blocking[0].Message)
+		if r.EventRecorder != nil {
+			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, projectViolationReason, "%s", blocking[0].Message)
+		}
+		if patchErr := r.patchReleaseStatus(ctx, release); patchErr != nil {
+			log.Error(patchErr, "Failed to patch release status after project violation", "release", release.Name, "namespace", release.Namespace)
+		}
+		return nil, fmt.Errorf("project boundary violation: %s", blocking[0].Message)
+	}
+
+	if violations, err := r.PolicyEvaluator.Evaluate(ctx, projectName, manifestObjects, policy.EvaluateOptions{Namespace: release.Namespace, ApplicationName: app.Name}); err != nil {
+		return nil, fmt.Errorf("evaluate policies: %w", err)
+	} else if blocking := violations.Blocking(); len(blocking) > 0 {
+		r.setReleaseGovernanceCondition(release, false, policyViolationReason, blocking[0].Message)
+		if r.EventRecorder != nil {
+			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, policyViolationReason, "%s", blocking[0].Message)
+		}
+		if patchErr := r.patchReleaseStatus(ctx, release); patchErr != nil {
+			log.Error(patchErr, "Failed to patch release status after policy violation", "release", release.Name, "namespace", release.Namespace)
+		}
+		return nil, fmt.Errorf("policy violation: %s", blocking[0].Message)
+	} else if warnings := violations.Warnings(); len(warnings) > 0 {
+		r.setReleaseGovernanceCondition(release, true, passedReason, "Governance checks passed with warnings: "+warnings[0].Message)
+		if r.EventRecorder != nil {
+			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, "PolicyWarning", "%s", warnings[0].Message)
+		}
+	} else {
+		r.setReleaseGovernanceCondition(release, true, passedReason, "Governance checks passed")
+	}
+	return app, nil
 }
 
 func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string) error {
@@ -627,7 +801,7 @@ func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logg
 
 func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, bool) {
 	var obj map[string]interface{}
-	if err := yaml.Unmarshal(doc, &obj); err != nil {
+	if err := k8syaml.Unmarshal(doc, &obj); err != nil {
 		return nil, false
 	}
 	if obj == nil {
@@ -719,15 +893,24 @@ func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.Gro
 	return schema.GroupVersionResource{Group: group, Version: version, Resource: resourceName}, nil
 }
 
-func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, name string, manifests []byte) error {
+func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, name, project string, manifests []byte) error {
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: release.Namespace,
 			Labels: map[string]string{
-				"paprika.io/stage":   stage.Name,
-				"paprika.io/release": release.Name,
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: release.Labels[engine.ApplicationNameLabelKey],
+				releaseLabelKey:                release.Name,
+				"app.paprika.io/project":       project,
 			},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: paprikav1.GroupVersion.String(),
+				Kind:       "Release",
+				Name:       release.Name,
+				UID:        release.UID,
+				Controller: ptr(true),
+			}},
 		},
 		Data: map[string]string{"manifests.yaml": string(manifests)},
 	}
@@ -747,6 +930,8 @@ func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *
 	}
 	return nil
 }
+
+func ptr[T any](v T) *T { return &v }
 
 func (r *ReleaseReconciler) verify(ctx context.Context, release *paprikav1.Release) bool {
 	log := logf.FromContext(ctx)
@@ -1214,6 +1399,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 	return ctrl.Result{Requeue: true}, nil
 }
 
+//nolint:cyclop // canary weight rendering + governance + apply.
 func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, weight int) error {
 	log := logf.FromContext(ctx)
 
@@ -1243,8 +1429,22 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		return fmt.Errorf("canary template rendering failed: %w", err)
 	}
 
+	manifestObjects, err := parseManifests(manifests)
+	if err != nil {
+		return fmt.Errorf("parse manifests: %w", err)
+	}
+	normalizeManifestNamespaces(manifestObjects, release.Namespace)
+	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
+	if err != nil {
+		return err
+	}
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+
 	snapshotName := fmt.Sprintf("%s-canary-%d", stage.Name, weight)
-	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); storeErr != nil {
+	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, project, manifests); storeErr != nil {
 		return fmt.Errorf("failed to store canary manifest snapshot: %w", storeErr)
 	}
 
@@ -1261,6 +1461,7 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	return nil
 }
 
+//nolint:cyclop // canary promotion rendering + governance + apply + cleanup.
 func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage) error {
 	log := logf.FromContext(ctx)
 
@@ -1274,8 +1475,22 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return fmt.Errorf("canary promotion template rendering failed: %w", err)
 	}
 
+	manifestObjects, err := parseManifests(manifests)
+	if err != nil {
+		return fmt.Errorf("parse manifests: %w", err)
+	}
+	normalizeManifestNamespaces(manifestObjects, release.Namespace)
+	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
+	if err != nil {
+		return err
+	}
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+
 	snapshotName := stage.Name + "-manifest-snapshot"
-	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, manifests); storeErr != nil {
+	if storeErr := r.storeManifestSnapshot(ctx, release, stage, snapshotName, project, manifests); storeErr != nil {
 		return fmt.Errorf("failed to store promoted manifest snapshot: %w", storeErr)
 	}
 

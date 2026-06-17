@@ -32,6 +32,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
       - name: redis
         image: redis:7-alpine
@@ -47,9 +49,23 @@ spec:
           limits:
             cpu: 500m
             memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - "ALL"
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 999
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
         - name: config
           mountPath: /usr/local/etc/redis
+        - name: tmp
+          mountPath: /tmp
+        - name: data
+          mountPath: /data
         livenessProbe:
           tcpSocket:
             port: redis
@@ -64,6 +80,10 @@ spec:
       - name: config
         configMap:
           name: redis-config
+      - name: tmp
+        emptyDir: {}
+      - name: data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

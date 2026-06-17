@@ -249,6 +249,7 @@ type HealthCheckResult struct {
 type ApplicationSpec struct {
 	// Project references the AppProject that governs this application.
 	// +optional
+	// +kubebuilder:default:=default
 	Project string `json:"project,omitempty"`
 
 	// Source defines where the application code/chart lives.

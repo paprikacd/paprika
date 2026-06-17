@@ -26,12 +26,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
 	"github.com/benebsworth/paprika/internal/webhook/receiver"
@@ -45,6 +49,9 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
@@ -54,6 +61,7 @@ func main() {
 	}
 }
 
+//nolint:cyclop,funlen // CLI setup and wiring.
 func run() error {
 	var (
 		port                                                        = os.Getenv("PORT")
@@ -104,11 +112,24 @@ func run() error {
 	paprikaServer := api.NewPaprikaServer(k8sClient, nil)
 	paprikaServer.SetRenderer(renderer)
 
+	resolver := governance.NewProjectResolver(k8sClient)
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(k8sClient), nil)
+	policyEvaluator := governance.NewPolicyEvaluator(k8sClient)
+	paprikaServer.SetGovernanceValidator(projectValidator)
+	paprikaServer.SetGovernancePolicyEvaluator(policyEvaluator)
+
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
-	authInterceptor, err := auth.Interceptor(authCfg)
+	authInterceptor, err := auth.Interceptor(authCfg, k8sClient)
 	if err != nil {
 		return fmt.Errorf("build auth interceptor: %w", err)
+	}
+	if authCfg.Enabled {
+		authz, err := auth.BuildAuthorizer(authCfg, k8sClient)
+		if err != nil {
+			return fmt.Errorf("build authorizer: %w", err)
+		}
+		paprikaServer.SetAuthorizer(authz)
 	}
 
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))

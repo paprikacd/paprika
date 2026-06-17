@@ -111,9 +111,6 @@ func (v *StageCustomValidator) validateStageCreate(s *pipelinesv1alpha1.Stage) f
 	}
 
 	templatesPath := specPath.Child("templates")
-	if len(s.Spec.Templates) == 0 {
-		allErrs = append(allErrs, field.Invalid(templatesPath, s.Spec.Templates, "Must have at least one template"))
-	}
 	for i, tmpl := range s.Spec.Templates {
 		if tmpl == "" {
 			allErrs = append(allErrs, field.Required(templatesPath.Index(i), "Template name must not be empty"))

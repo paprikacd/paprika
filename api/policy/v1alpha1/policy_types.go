@@ -53,6 +53,7 @@ type PolicySpec struct {
 	DefaultAction PolicyAction `json:"defaultAction,omitempty"`
 	Match         PolicyMatch  `json:"match"`
 	Expression    string       `json:"expression"`
+	Projects      []string     `json:"projects,omitempty"`
 }
 
 // PolicyStatus defines the observed state of Policy.

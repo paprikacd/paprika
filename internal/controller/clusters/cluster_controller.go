@@ -26,9 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -180,9 +182,20 @@ func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1
 		Message:            message,
 	})
 
-	patch := client.MergeFromWithOptions(cluster.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	if err := r.Status().Patch(ctx, cluster, patch); err != nil {
-		log.Error(err, "Failed to patch cluster status", "cluster", cluster.Name)
+	desiredStatus := cluster.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh clustersv1alpha1.Cluster
+		if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching cluster for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating cluster status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		log.Error(err, "Failed to update cluster status", "cluster", cluster.Name)
 		return ctrl.Result{}, fmt.Errorf("patching cluster status: %w", err)
 	}
 

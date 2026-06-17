@@ -48,31 +48,94 @@ const metricsRoleBindingName = "paprika-metrics-binding"
 
 var portForwardCmd *exec.Cmd
 
+func waitForWebhookCA() {
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "mutatingwebhookconfiguration", "paprika-mutating-webhook-configuration",
+			"-o", "jsonpath={.webhooks[0].clientConfig.caBundle}")
+		out, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(out).NotTo(BeEmpty(), "mutating webhook CA bundle not injected")
+
+		cmd = exec.Command("kubectl", "get", "validatingwebhookconfiguration", "paprika-validating-webhook-configuration",
+			"-o", "jsonpath={.webhooks[0].clientConfig.caBundle}")
+		out, err = utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(out).NotTo(BeEmpty(), "validating webhook CA bundle not injected")
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+}
+
+func deployManager() {
+	By("creating manager namespace")
+	nsManifest := fmt.Sprintf(`{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"%s"}}`, namespace)
+	cmd := exec.Command("kubectl", "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(nsManifest)
+	_, err := utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
+
+	By("labeling the namespace to enforce the restricted security policy")
+	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		"pod-security.kubernetes.io/enforce=restricted")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to label namespace")
+
+	By("installing CRDs")
+	cmd = exec.Command("make", "install")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
+
+	By("deploying the controller-manager")
+	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+
+	By("waiting for the operator deployment to be ready")
+	cmd = exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
+		"deployment/paprika-controller-manager", "--timeout=120s")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Operator deployment not available")
+
+	By("waiting for webhook CA bundles to be injected")
+	waitForWebhookCA()
+}
+
+func teardownManager() {
+	By("stopping port-forward for the UI dashboard")
+	if portForwardCmd != nil && portForwardCmd.Process != nil {
+		_ = portForwardCmd.Process.Signal(syscall.SIGTERM)
+		_, _ = portForwardCmd.Process.Wait()
+	}
+
+	By("deleting the demo app")
+	cmd := exec.Command("kubectl", "delete", "deployment", "paprika-demo", "-n", namespace, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+	cmd = exec.Command("kubectl", "delete", "service", "paprika-demo", "-n", namespace, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+
+	By("cleaning up the curl pod for metrics")
+	cmd = exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+
+	By("deleting the metrics ClusterRoleBinding")
+	cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+
+	By("undeploying the controller-manager")
+	cmd = exec.Command("make", "undeploy")
+	_, _ = utils.Run(cmd)
+
+	By("uninstalling CRDs")
+	cmd = exec.Command("make", "uninstall", "ignore-not-found=true")
+	_, _ = utils.Run(cmd)
+
+	By("removing manager namespace")
+	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+}
+
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
 
 	BeforeAll(func() {
-		By("creating manager namespace")
-		cmd := exec.Command("kubectl", "create", "ns", namespace)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
-
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
-
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager (with embedded UI on :3000)")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
-
 		By("deploying the demo app")
 		demoApp := fmt.Sprintf(`{
 			"apiVersion": "apps/v1",
@@ -103,9 +166,9 @@ var _ = Describe("Manager", Ordered, func() {
 				}
 			}
 		}`, namespace, serviceAccountName, demoImage)
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd := exec.Command("kubectl", "apply", "-f", "-")
 		cmd.Stdin = strings.NewReader(demoApp)
-		_, err = utils.Run(cmd)
+		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the demo app")
 
 		demoSvc := fmt.Sprintf(`{
@@ -144,40 +207,9 @@ var _ = Describe("Manager", Ordered, func() {
 			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		}
 		Eventually(verifyPortForward, 30*time.Second, time.Second).Should(Succeed())
-	})
 
-	AfterAll(func() {
-		By("stopping port-forward for the UI dashboard")
-		if portForwardCmd != nil && portForwardCmd.Process != nil {
-			_ = portForwardCmd.Process.Signal(syscall.SIGTERM)
-			_, _ = portForwardCmd.Process.Wait()
-		}
-
-		By("deleting the demo app")
-		cmd := exec.Command("kubectl", "delete", "deployment", "paprika-demo", "-n", namespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "service", "paprika-demo", "-n", namespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-
-		By("cleaning up the curl pod for metrics")
-		cmd = exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-
-		By("deleting the metrics ClusterRoleBinding")
-		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
-
-		By("uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
-
-		By("removing manager namespace")
-		cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		By("waiting for webhook CA bundles to be injected")
+		waitForWebhookCA()
 	})
 
 	AfterEach(func() {
@@ -1667,6 +1699,84 @@ subjects:
 			Expect(err).NotTo(HaveOccurred(), "Failed to call SyncApplication RPC")
 			defer resp.Body.Close()
 			Expect(resp.StatusCode).To(BeNumerically(">=", 200), "SyncApplication should accept requests")
+		})
+	})
+
+	Context("PaprikaApply", func() {
+		const applyTestNamespace = "e2e-apply-test"
+		var manifestDir string
+
+		BeforeEach(func() {
+			By("building the paprika CLI")
+			cmd := exec.Command("make", "build-cli")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to build paprika CLI")
+
+			By("creating the apply test namespace")
+			cmd = exec.Command("kubectl", "create", "ns", applyTestNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create apply test namespace")
+
+			By("creating a temporary directory for apply manifests")
+			manifestDir, err = os.MkdirTemp("", "paprika-apply-e2e-")
+			Expect(err).NotTo(HaveOccurred(), "Failed to create manifest temp dir")
+		})
+
+		AfterEach(func() {
+			if manifestDir != "" {
+				_ = os.RemoveAll(manifestDir)
+			}
+			By("cleaning up the apply test namespace")
+			cmd := exec.Command("kubectl", "delete", "ns", applyTestNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should apply a raw manifest bundle and reach a healthy terminal phase", func() {
+			manifest := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: e2e-inline-configmap
+  namespace: %s
+data:
+  greeting: hello-from-paprika-apply
+`, applyTestNamespace)
+			manifestPath := filepath.Join(manifestDir, "configmap.yaml")
+			Expect(os.WriteFile(manifestPath, []byte(manifest), 0o600)).To(Succeed())
+
+			By("running paprika apply against the operator API")
+			cmd := exec.Command("bin/paprika", "apply", "-f", manifestPath,
+				"--name", "e2e-inline-apply",
+				"--namespace", applyTestNamespace,
+				"--server", "http://localhost:4000",
+				"--timeout", "2m",
+			)
+			out, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "paprika apply failed: %s", out)
+			Expect(out).To(ContainSubstring("e2e-inline-apply"))
+
+			By("waiting for the Application to report a terminal phase")
+			verifyAppPhase := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-inline-apply",
+					"-n", applyTestNamespace, "-o", "jsonpath={.status.phase}")
+				phase, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(phase).To(Or(Equal("Healthy"), Equal("Degraded"), Equal("Failed")))
+			}
+			Eventually(verifyAppPhase, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("checking that the Application reached Healthy")
+			cmd = exec.Command("kubectl", "get", "application", "e2e-inline-apply",
+				"-n", applyTestNamespace, "-o", "jsonpath={.status.phase}")
+			phase, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(phase).To(Equal("Healthy"), "Application should be Healthy")
+
+			By("checking that the ConfigMap was applied")
+			cmd = exec.Command("kubectl", "get", "configmap", "e2e-inline-configmap",
+				"-n", applyTestNamespace, "-o", "jsonpath={.data.greeting}")
+			value, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(value)).To(Equal("hello-from-paprika-apply"))
 		})
 	})
 })

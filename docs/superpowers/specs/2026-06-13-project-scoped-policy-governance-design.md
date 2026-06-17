@@ -51,7 +51,7 @@ apiVersion: core.paprika.io/v1alpha1
 kind: AppProject
 metadata:
   name: payments
-  namespace: paprika-system
+  namespace: default
 spec:
   sourceRepos:
     - https://github.com/acme/payments.git
@@ -72,7 +72,7 @@ spec:
   roles:
     - name: admin
       subjects:
-        - serviceaccount:paprika-system:payments-cd
+        - serviceaccount:default:payments-cd
       actions:
         - write
         - read
@@ -159,7 +159,7 @@ type ProjectResolver struct {
 func (r *ProjectResolver) Resolve(ctx context.Context, obj client.Object) (*corev1alpha1.AppProject, error)
 ```
 
-- For `Application`: read `spec.project` from the operator namespace.
+- For `Application`: read `spec.project` from the **Application's namespace**. AppProjects are namespace-scoped and live alongside the Applications they govern (matching the existing `ProjectEnforcer` behavior).
 - For `Template`/`Stage` inside a controller: resolve via the owner `Application`.
 - Returns an error if the referenced project does not exist.
 
@@ -172,7 +172,8 @@ type ProjectValidator struct {
     restMapper     meta.RESTMapper
 }
 
-func (v *ProjectValidator) Validate(ctx context.Context, app *pipelinesv1alpha1.Application, manifests []unstructured.Unstructured) ([]Violation, error)
+func (v *ProjectValidator) ResolveProject(ctx context.Context, namespace, name string) (*corev1alpha1.AppProject, error)
+func (v *ProjectValidator) Validate(ctx context.Context, app *pipelinesv1alpha1.Application, manifests []*unstructured.Unstructured, project *corev1alpha1.AppProject) (Violations, error)
 ```
 
 Validates:
@@ -180,8 +181,8 @@ Validates:
 - `sourceRepos` / `sourceReposDeny`: the application source URL.
 - `repositories`: the optional `Repository` name referenced by `spec.source.repoRef`.
 - `destinations`: target cluster/server and namespace for every stage and every manifest namespace. Stage `ClusterRef` names are resolved to server URLs by `ClusterResolver`; if a destination specifies `name`, the cluster name is compared directly.
-- `kinds` / `kindsDeny`: kinds used in rendered manifests.
-- `clusterResourceWhitelist` / `clusterResourceBlacklist`: cluster-scoped resources in the bundle. Scope is determined by `restMapper.RESTMapping`; if the mapper cannot decide, a manifest with an empty namespace is treated as cluster-scoped.
+- `kinds` / `kindsDeny`: kinds used in rendered manifests (skipped when no manifests are provided).
+- `clusterResourceWhitelist` / `clusterResourceBlacklist`: cluster-scoped resources in the bundle (skipped when no manifests are provided). Scope is determined by `restMapper.RESTMapping`; if the mapper cannot decide, a manifest with an empty namespace is treated as cluster-scoped.
 
 Matching semantics:
 
@@ -194,14 +195,16 @@ All callers normalize an empty project to `default` before invoking `ProjectVali
 For the `ApplyBundle` path, where an `Application` CR does not yet exist, `ProjectValidator` also exposes:
 
 ```go
-func (v *ProjectValidator) ValidateBundle(ctx context.Context, project string, source pipelinesv1alpha1.ApplicationSource, stages []pipelinesv1alpha1.ApplicationPromotionStage, manifests []unstructured.Unstructured) ([]Violation, error)
+func (v *ProjectValidator) ValidateBundle(ctx context.Context, project *corev1alpha1.AppProject, source pipelinesv1alpha1.ApplicationSource, stages []pipelinesv1alpha1.ApplicationPromotionStage, defaultNs, server string, manifests []*unstructured.Unstructured) (Violations, error)
 ```
+
+For the `ApplyBundle` path, callers pass a synthetic `ApplicationSource{Type: SourceTypeInline, Inline: &InlineSourceSpec{}}` because the manifests are already materialized. This skips repository-level source constraints while still allowing `allowed_sources` type checks and namespace/cluster boundary rules to run.
 
 #### `ClusterResolver`
 
 ```go
 type ClusterResolver interface {
-    ResolveServer(ctx context.Context, ref pipelinesv1alpha1.ClusterRef) (string, error)
+    ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error)
 }
 ```
 
@@ -232,16 +235,17 @@ type Violation struct {
     Severity string
     Message  string
     Action   PolicyAction // enforce or warn
-    Blocking bool
 }
+
+func (v Violation) Blocking() bool { return v.Action == PolicyActionEnforce }
 ```
 
 ### 5.2 CRD changes
 
 - `Policy` CRD: add optional `spec.projects []string` field. An empty list means the policy applies to all projects; `["*"]` is also accepted and means the same. The string `*` is reserved and may not be used as an actual project name.
-- `Application` CRD: keep `spec.project` optional but add `+kubebuilder:default:=default`. The defaulting webhook sets empty values to `default`, the validating webhook rejects any empty value that slips through, and the controller treats pre-webhook Applications with an empty project as `default`.
+- `Application` CRD: keep `spec.project` optional but add `+kubebuilder:default="default"`. The defaulting webhook sets empty values to `default`, the validating webhook rejects any empty value that slips through, and the controller treats pre-webhook Applications with an empty project as `default`.
 - `ApplyBundleRequest` (proto): add optional `project` field. The CLI defaults it to `default` unless overridden.
-- Request protos with project field: `ApplyBundleRequest.project`, `ListApplicationsRequest.project`, `ListReleasesRequest.project`, `ListStagesRequest.project`, `ListPipelinesRequest.project`, `ListTemplatesRequest.project`. For single-resource get/update/delete requests without a project field (`GetApplication`, `GetRelease`, etc.), the server fetches the target resource and reads the owning `Application.spec.project` for authorization.
+- Request protos with project field: `ApplyBundleRequest.project`, `ListApplicationsRequest.project`, `ListReleasesRequest.project`, `ListStagesRequest.project`, `ListPipelinesRequest.project`. There is no `ListTemplates` RPC in the current proto; add the field if that RPC is introduced later. For single-resource get/update/delete requests without a project field (`GetApplication`, `GetRelease`, etc.), the server fetches the target resource and reads the owning `Application.spec.project` for authorization.
 
 ### 5.3 Webhook changes
 
@@ -256,23 +260,23 @@ The operator startup helper (not the webhook) creates the permissive `default` `
 ### 5.4 Controller changes
 
 - `Application` controller:
-  - If `spec.project` is empty, treat it as `default` (covers Applications created before the defaulting webhook existed).
-  - After rendering manifests, call `ProjectValidator` and `PolicyEvaluator`.
-  - On blocking violation: set `GovernanceChecked=False` with reason `ProjectViolation` or `PolicyViolation`, set `Phase=Failed` with reason `GovernanceViolation`, emit Event, and stop before `reconcileReleaseFlow`.
-  - On warnings only: emit Events, set `GovernanceChecked=True` with a warning message, and continue.
+  - If `spec.project` is empty, treat it as `default`.
+  - After source/stages are reconciled, call `ProjectValidator.Validate` with **no manifests** to check structural project boundaries (source repos, repositories, destinations). This is a lightweight gate that does not require rendering.
+  - On blocking structural violation: set `GovernanceChecked=False` with reason `ProjectViolation`, set `Phase=Failed` with reason `GovernanceViolation`, emit Event, and stop before `reconcileReleaseFlow`.
 - `Release` controller:
-  - Before applying manifests, read the rendered manifest snapshot from the `Release.spec.manifestSource` ConfigMap.
-  - Resolve the owning `Application`, call `ProjectValidator.ValidateBundle` with the application's project/source/stages and the snapshot manifests, and call `PolicyEvaluator.Evaluate` with the same project and manifests.
-  - Block apply on enforce violations and record result in `Release` status.
+  - After rendering manifests (or loading the inline snapshot) and before applying, resolve the owning `Application`.
+  - Call `ProjectValidator.ValidateBundle` with the application's project/source/stages and the rendered manifests, and call `PolicyEvaluator.Evaluate` with the same project and manifests.
+  - Block apply on enforce violations and record `GovernanceChecked` in `Release` status.
 
 ### 5.5 API authorization
 
 - Extend the existing `internal/api/auth` `RBACRule` with an optional `Projects []string` field. This is used for coarse-grained API access control (e.g., a CI robot may only access the `payments` project). A rule with no projects applies globally.
-- Add a `ProjectAuthorizer` that holds a `client.Reader` and checks whether the principal matches a subject in `AppProject.spec.roles` for the requested project and action. `AppProjectRole.Subjects` are treated as opaque strings; the API server compares them to `Principal.Subject` or group memberships. A subject value of `*` matches any principal.
+- Add a `ProjectAuthorizer` that holds a `client.Reader` and checks whether the principal matches a subject in `AppProject.spec.roles` for the requested project and action. `AppProjectRole.Subjects` are treated as opaque strings; the API server compares them to `Principal.Subject` or group memberships. A subject value of `*` matches any principal. The authorizer reads `AppProject` from the same namespace as the target resource.
 - Action vocabulary is the same as the existing `internal/api/auth` actions: `read` maps to `get`/`list` RPCs, `write` maps to `create`/`update`/`delete`, and `admin` allows everything.
 - The `Principal` type is the existing `internal/api/auth.Principal` populated by the configured authenticators (BasicAuth, OIDC, etc.).
 - The `auth.Interceptor` constructor/factory is updated to accept the API server's `client.Reader` so it can build the `ProjectAuthorizer` and return a `connect.UnaryInterceptorFunc`. The interceptor still extracts action/resource/namespace, and now also extracts `project` from request messages where the field exists (`ApplyBundleRequest.project`, list request `project`, etc.). For single-resource get/update/delete requests without a project field, the server fetches the target resource and reads the owning `Application.spec.project` before authorizing. `ApplyBundle` has no target resource, so it is authorized solely via its explicit `project` field.
 - Authorization runs both `RBACAuthorizer` and `ProjectAuthorizer`; both must allow the request.
+- `PaprikaServer` accepts an `auth.Authorizer` so it can perform server-side project checks for list filtering and for RPCs without a project field.
 - For `list` operations, the API handler fetches all items and filters the response to projects the principal is authorized to read. `Application` objects are filtered by `spec.project`. Child resources (`Release`, `Stage`, `Pipeline`, `Template`) are created with an `app.paprika.io/project` label by their parent controllers; the API server registers a field indexer on that label so filtering does not require owner-reference lookups.
 
 ### 5.6 Conditions and Events
@@ -297,12 +301,11 @@ The operator startup helper (not the webhook) creates the permissive `default` `
 2. Defaulting webhook sets `spec.project` to `default` if empty.
 3. Startup helper has already ensured the permissive `default` `AppProject` exists.
 4. Validating webhook resolves `AppProject/payments` and validates boundaries; rejects if invalid.
-5. Controller reconciles and renders manifests.
-6. Controller fetches all policies matching the project.
-7. `PolicyEvaluator` runs each CEL expression against every rendered manifest.
-8. If blocking violations exist, set `GovernanceChecked=False`, set `Phase=Failed`, emit Event, and stop sync.
-9. If only warnings, emit Events, continue sync, and set `GovernanceChecked=True`.
-10. `paprika apply` sends `ApplyBundleRequest.project`; the API server normalizes empty values to `default`, uses the project for boundary validation and policy evaluation, and stores it on the inline-created `Application.spec.project` so subsequent controller reconciles use the same project.
+5. Application controller validates structural project boundaries (source/repos/destinations) and continues to create Template/Release resources.
+6. Release controller renders manifests (or loads inline snapshot) and runs full project-boundary + policy evaluation.
+7. If blocking violations exist, the Release controller records `GovernanceChecked=False` and stops before applying. The Application controller reflects the failure in its own status.
+8. If only warnings, the Release controller records `GovernanceChecked=True` and continues applying.
+9. `paprika apply` sends `ApplyBundleRequest.project`; the API server normalizes empty values to `default`, uses the project for boundary validation and policy evaluation, and stores it on the inline-created `Application.spec.project` so subsequent controller reconciles use the same project.
 
 ## 7. Error Handling
 
@@ -346,7 +349,7 @@ The operator startup helper (not the webhook) creates the permissive `default` `
 ## 9. Migration & Compatibility
 
 - Existing `Application` resources without `spec.project` receive `default` via the defaulting webhook.
-- On startup the operator ensures a `default` `AppProject` exists in the operator namespace with permissive defaults (allow all sources, destinations, kinds) and a catch-all role (`subjects: ["*"], actions: ["read","write"]`) so existing users are not locked out. Administrators can later restrict this role. The startup helper uses idempotent create-or-update semantics (create if missing, otherwise leave unchanged) so multiple operator replicas do not race.
+- On startup the operator ensures a `default` `AppProject` exists in **each namespace that already contains Applications** (and in the operator namespace for new Applications created there) with permissive defaults and a catch-all role (`subjects: ["*"], actions: ["read","write"]`) so existing users are not locked out. For simplicity, the bootstrap creates the project in the operator namespace; Applications in other namespaces must reference an AppProject in their own namespace, and the bootstrap can be extended to create per-namespace default projects later.
 - Existing `Policy` resources continue to apply globally because `spec.projects` is empty by default.
 - CRD changes: add `spec.projects` to `Policy`; regenerate manifests (`make manifests generate`).
 - Proto changes: add `project` to `ApplyBundleRequest`; regenerate Go/TypeScript stubs.

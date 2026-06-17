@@ -46,6 +46,18 @@ func TestAppProjectCustomValidator_validateAppProject(t *testing.T) {
 	})
 }
 
+func TestAppProjectValidator_RejectsEmptyDestination(t *testing.T) {
+	v := &AppProjectCustomValidator{}
+	project := &corev1alpha1.AppProject{
+		ObjectMeta: metav1.ObjectMeta{Name: "bad"},
+		Spec: corev1alpha1.AppProjectSpec{
+			Destinations: []corev1alpha1.AppProjectDestination{{}},
+		},
+	}
+	_, err := v.ValidateCreate(context.Background(), project)
+	require.Error(t, err)
+}
+
 func TestAppProjectCustomDefaulter_Default(t *testing.T) {
 	d := &AppProjectCustomDefaulter{}
 	p := &corev1alpha1.AppProject{ObjectMeta: metav1.ObjectMeta{Name: "p"}}

@@ -82,6 +82,11 @@ func (v *AppProjectCustomValidator) validateAppProject(project *corev1alpha1.App
 		allErrs = append(allErrs, err)
 	}
 
+	allErrs = append(allErrs, validateDestinations(project.Spec.Destinations, specPath.Child("destinations"))...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.Kinds, specPath.Child("kinds"), "kind")...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.ClusterResourceWhitelist, specPath.Child("clusterResourceWhitelist"), "kind")...)
+	allErrs = append(allErrs, validateNoEmptyItems(project.Spec.ClusterResourceBlacklist, specPath.Child("clusterResourceBlacklist"), "kind")...)
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -90,6 +95,26 @@ func (v *AppProjectCustomValidator) validateAppProject(project *corev1alpha1.App
 		project.Name,
 		allErrs,
 	)
+}
+
+func validateDestinations(destinations []corev1alpha1.AppProjectDestination, path *field.Path) field.ErrorList {
+	var errs field.ErrorList
+	for i, d := range destinations {
+		if d.Server == "" && d.Namespace == "" && d.Name == "" {
+			errs = append(errs, field.Required(path.Index(i), "at least one of server, namespace, or name is required"))
+		}
+	}
+	return errs
+}
+
+func validateNoEmptyItems(items []string, path *field.Path, itemName string) field.ErrorList {
+	var errs field.ErrorList
+	for i, item := range items {
+		if item == "" {
+			errs = append(errs, field.Required(path.Index(i), itemName+" must not be empty"))
+		}
+	}
+	return errs
 }
 
 func validateNoOverlap(allowed, denied []string, allowedPath, deniedPath *field.Path) *field.Error {

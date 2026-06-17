@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -25,6 +28,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/health"
+	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -34,7 +38,20 @@ import (
 const (
 	defaultRequeue    = 5 * time.Second
 	maxReleaseHistory = 10
+	releaseLabelKey   = "app.paprika.io/release"
 )
+
+func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	project := app.Spec.Project
+	if project == "" {
+		project = defaultProjectName
+	}
+	labels["app.paprika.io/project"] = project
+	return labels
+}
 
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
@@ -51,6 +68,8 @@ type ApplicationReconciler struct {
 	TemplateRenderer engine.TemplateRenderer
 	ShardFilter      *sharding.Filter
 	RateLimiter      *ratelimit.ControllerRateLimit
+	EventRecorder    record.EventRecorder
+	ProjectValidator *governance.ProjectValidator
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +80,7 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
 // Reconcile handles Application reconciliation.
@@ -112,6 +132,11 @@ func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool 
 func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
+	projectName := app.Spec.Project
+	if projectName == "" {
+		projectName = defaultProjectName
+	}
+
 	if _, ok := app.Annotations["paprika.io/resync"]; ok {
 		return r.handleResync(ctx, app)
 	}
@@ -141,7 +166,123 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		return ctrl.Result{}, err
 	}
 
-	return r.reconcileReleaseFlow(ctx, app)
+	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+func (r *ApplicationReconciler) reconcileAppAfterStages(ctx context.Context, app *paprikav1.Application, projectName string) (ctrl.Result, error) {
+	blocked, err := r.reconcileGovernance(ctx, app, projectName)
+	if err != nil || blocked {
+		return ctrl.Result{}, err
+	}
+	result, err := r.reconcileReleaseFlow(ctx, app)
+	if err != nil {
+		r.mirrorReleaseGovernanceFailure(ctx, app)
+		return ctrl.Result{}, err
+	}
+	return result, nil
+}
+
+func (r *ApplicationReconciler) mirrorReleaseGovernanceFailure(ctx context.Context, app *paprikav1.Application) {
+	log := log.FromContext(ctx)
+	if app.Status.ReleaseRef == "" {
+		return
+	}
+	var release paprikav1.Release
+	if err := r.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}, &release); err != nil {
+		log.Error(err, "Failed to fetch Release for governance failure mirror", "app", app.Name, "release", app.Status.ReleaseRef)
+		return
+	}
+	cond := meta.FindStatusCondition(release.Status.Conditions, governanceCheckedCondition)
+	if cond == nil || cond.Status != metav1.ConditionFalse {
+		return
+	}
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:               governanceCheckedCondition,
+		Status:             metav1.ConditionFalse,
+		Reason:             governanceViolationReason,
+		Message:            cond.Message,
+		LastTransitionTime: metav1.Now(),
+	})
+	if err := r.Status().Update(ctx, app); err != nil {
+		log.Error(err, "Failed to mirror governance failure to Application", "app", app.Name, "release", release.Name)
+	}
+}
+
+func (r *ApplicationReconciler) reconcileGovernance(ctx context.Context, app *paprikav1.Application, projectName string) (bool, error) {
+	log := log.FromContext(ctx)
+
+	if r.ProjectValidator == nil {
+		return false, nil
+	}
+
+	project, err := r.ProjectValidator.ResolveProject(ctx, app.Namespace, projectName)
+	if err != nil {
+		log.Error(err, "Failed to resolve AppProject", "app", app.Name, "namespace", app.Namespace, "project", projectName)
+		return r.failGovernance(ctx, app, "ProjectResolutionFailed", err)
+	}
+
+	violations, err := r.ProjectValidator.Validate(ctx, app, nil, project)
+	if err != nil {
+		log.Error(err, "Failed to validate project boundaries", "app", app.Name, "namespace", app.Namespace, "project", projectName)
+		return r.failGovernance(ctx, app, "ProjectValidationError", err)
+	}
+
+	if blocking := violations.Blocking(); len(blocking) > 0 {
+		return r.blockGovernance(ctx, app, blocking[0].Message)
+	}
+	if warnings := violations.Warnings(); len(warnings) > 0 {
+		return r.warnGovernance(ctx, app, warnings[0].Message)
+	}
+	return r.passGovernance(ctx, app)
+}
+
+func (r *ApplicationReconciler) failGovernance(ctx context.Context, app *paprikav1.Application, reason string, err error) (bool, error) {
+	if err == nil {
+		return false, nil
+	}
+	// updatePhase mutates app.Status in memory; patchAppStatus persists it.
+	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, reason, err.Error())
+	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+		return false, fmt.Errorf("patch application status after governance failure %s: %w", reason, patchErr)
+	}
+	return false, err
+}
+
+func (r *ApplicationReconciler) blockGovernance(ctx context.Context, app *paprikav1.Application, msg string) (bool, error) {
+	setApplicationGovernanceCondition(app, metav1.ConditionFalse, projectViolationReason, msg)
+	r.updatePhase(ctx, app, paprikav1.ApplicationFailed, governanceViolationReason, msg)
+	if r.EventRecorder != nil {
+		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, projectViolationReason, "%s", msg)
+	}
+	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+		return false, fmt.Errorf("patch application status after governance violation: %w", patchErr)
+	}
+	return true, nil
+}
+
+func (r *ApplicationReconciler) warnGovernance(_ context.Context, app *paprikav1.Application, msg string) (bool, error) {
+	setApplicationGovernanceCondition(app, metav1.ConditionTrue, passedWithWarningsReason, "Governance checks passed with warnings: "+msg)
+	if r.EventRecorder != nil {
+		r.EventRecorder.Eventf(app, corev1.EventTypeWarning, "GovernanceWarning", "%s", msg)
+	}
+	// Status is persisted by reconcileReleaseFlow.
+	return false, nil
+}
+
+func (r *ApplicationReconciler) passGovernance(_ context.Context, app *paprikav1.Application) (bool, error) {
+	setApplicationGovernanceCondition(app, metav1.ConditionTrue, passedReason, "Governance checks passed")
+	// Status is persisted by reconcileReleaseFlow.
+	return false, nil
+}
+
+func setApplicationGovernanceCondition(app *paprikav1.Application, status metav1.ConditionStatus, reason, message string) {
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:               governanceCheckedCondition,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	})
 }
 
 func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
@@ -199,9 +340,22 @@ func (r *ApplicationReconciler) handleResync(ctx context.Context, app *paprikav1
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
-	patch := client.MergeFromWithOptions(app.DeepCopy(), client.MergeFromWithOptimisticLock{})
-	app.Status.ObservedGeneration = app.Generation
-	return r.Status().Patch(ctx, app, patch) //nolint:wrapcheck // wrapped by callers
+	desiredStatus := app.Status.DeepCopy()
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetching application for status update: %w", err)
+		}
+		fresh.Status = *desiredStatus
+		fresh.Status.ObservedGeneration = fresh.Generation
+		if err := r.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("updating application status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("patching application status: %w", err)
+	}
+	return nil
 }
 
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
@@ -263,9 +417,9 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      templateName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ApplicationNameLabelKey: app.Name,
+			}),
 		},
 		Spec: spec,
 	}
@@ -322,9 +476,9 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pipelineName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ApplicationNameLabelKey: app.Name,
+			}),
 		},
 		Spec: paprikav1.PipelineSpec{
 			Sources:     build.Sources,
@@ -426,10 +580,11 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      stageName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-				"app.paprika.io/ring": strconv.Itoa(int(promotionStage.Ring)),
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: app.Name,
+				"app.paprika.io/ring":          strconv.Itoa(int(promotionStage.Ring)),
+			}),
 		},
 		Spec: paprikav1.StageSpec{
 			Name:      promotionStage.Name,
@@ -463,6 +618,7 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 	return nil
 }
 
+//nolint:cyclop // stage/release branching is inherent to the reconcile flow.
 func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	if len(app.Spec.Stages) == 0 {
 		return ctrl.Result{}, nil
@@ -470,6 +626,9 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 
 	if r.isInlineSource(app) && app.Status.ReleaseRef == "" {
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for ApplyBundle to create release")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
+		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
@@ -478,6 +637,14 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 
 	if currentReleasePhase != "" {
 		return r.handleActiveRelease(ctx, app, targetStage, currentReleasePhase)
+	}
+
+	if r.isInlineSource(app) && app.Status.ReleaseRef != "" {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for referenced inline release to start")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
 	if app.Spec.SyncPolicy == paprikav1.SyncManual {
@@ -548,9 +715,11 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,
 			Namespace: app.Namespace,
-			Labels: map[string]string{
-				"app.paprika.io/name": app.Name,
-			},
+			Labels: withProjectLabels(app, map[string]string{
+				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+				engine.ApplicationNameLabelKey: app.Name,
+				releaseLabelKey:                releaseName,
+			}),
 		},
 		Spec: paprikav1.ReleaseSpec{
 			Pipeline:   pipelineName,

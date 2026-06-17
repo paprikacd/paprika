@@ -28,16 +28,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 var applicationlog = logf.Log.WithName("application-resource")
 
 // SetupApplicationWebhookWithManager registers the Application webhooks.
 func SetupApplicationWebhookWithManager(mgr ctrl.Manager) error {
-	enforcer := auth.NewProjectEnforcer(mgr.GetClient())
+	resolver := governance.NewProjectResolver(mgr.GetClient())
+	validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
 	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Application{}).
-		WithValidator(&ApplicationCustomValidator{enforcer: enforcer}).
+		WithValidator(&ApplicationCustomValidator{validator: validator}).
 		WithDefaulter(&ApplicationCustomDefaulter{}).
 		Complete(); err != nil {
 		return fmt.Errorf("setting up application webhook: %w", err)
@@ -51,13 +52,16 @@ type ApplicationCustomDefaulter struct{}
 
 func (d *ApplicationCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alpha1.Application) error {
 	applicationlog.Info("Defaulting for Application", "name", obj.GetName())
+	if obj.Spec.Project == "" {
+		obj.Spec.Project = "default"
+	}
 	return nil
 }
 
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-application,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=applications,verbs=create;update,versions=v1alpha1,name=vapplication-v1alpha1.kb.io,admissionReviewVersions=v1
 
 type ApplicationCustomValidator struct {
-	enforcer *auth.ProjectEnforcer
+	validator *governance.ProjectValidator
 }
 
 func (v *ApplicationCustomValidator) ValidateCreate(ctx context.Context, obj *pipelinesv1alpha1.Application) (admission.Warnings, error) {
@@ -88,11 +92,7 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 		allErrs = append(allErrs, field.Required(field.NewPath("spec").Child("stages"), "At least one stage is required"))
 	}
 
-	if app.Spec.Project != "" && v.enforcer != nil {
-		if err := v.enforcer.AuthorizeApplication(ctx, app.Namespace, app.Spec.Project, app.Spec.Source.RepoURL, app.Spec.Source.RepoRef, ""); err != nil {
-			allErrs = append(allErrs, field.Forbidden(field.NewPath("spec").Child("project"), err.Error()))
-		}
-	}
+	allErrs = append(allErrs, v.validateProject(ctx, app)...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -102,4 +102,30 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 		app.Name,
 		allErrs,
 	)
+}
+
+func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *pipelinesv1alpha1.Application) field.ErrorList {
+	var errs field.ErrorList
+	if app.Spec.Project == "" {
+		errs = append(errs, field.Required(field.NewPath("spec").Child("project"), "project is required"))
+		return errs
+	}
+	if v.validator == nil {
+		return errs
+	}
+
+	project, err := v.validator.ResolveProject(ctx, app.Namespace, app.Spec.Project)
+	if err != nil {
+		errs = append(errs, field.Forbidden(field.NewPath("spec").Child("project"), err.Error()))
+		return errs
+	}
+	violations, err := v.validator.Validate(ctx, app, nil, project)
+	if err != nil {
+		errs = append(errs, field.InternalError(field.NewPath("spec").Child("project"), err))
+		return errs
+	}
+	if blocking := violations.Blocking(); len(blocking) > 0 {
+		errs = append(errs, field.Forbidden(field.NewPath("spec").Child("project"), blocking[0].Message))
+	}
+	return errs
 }
