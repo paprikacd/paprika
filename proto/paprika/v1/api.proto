@@ -320,6 +320,51 @@ message SyncApplicationResponse {
   Application application = 1;
 }
 
+message NotificationTrigger {
+  string resource_type = 1;
+  string phase = 2;
+  string reason = 3;
+}
+
+message NotificationDestination {
+  string name = 1;
+  string webhook_url = 2;
+  string slack_webhook_url = 3;
+  string email = 4;
+  string secret_ref = 5;
+  map<string, string> headers = 6;
+}
+
+message SMTPConfig {
+  string host = 1;
+  int32 port = 2;
+  string from = 3;
+  bool tls_enabled = 4;
+  string auth_secret_ref = 5;
+}
+
+message NotificationRateLimit {
+  string min_interval = 1;
+}
+
+message NotificationConfig {
+  string name = 1;
+  string namespace = 2;
+  repeated NotificationTrigger triggers = 3;
+  repeated NotificationDestination destinations = 4;
+  string template = 5;
+  SMTPConfig smtp = 6;
+  NotificationRateLimit rate_limit = 7;
+}
+
+message ListNotificationConfigsRequest {
+  optional string namespace = 1;
+}
+
+message ListNotificationConfigsResponse {
+  repeated NotificationConfig notification_configs = 1;
+}
+
 message ApproveGateRequest {
   string name = 1;
   string namespace = 2;
@@ -390,6 +435,7 @@ service PaprikaService {
   rpc ListPolicies(ListPoliciesRequest) returns (ListPoliciesResponse);
   rpc ListApplicationSets(ListApplicationSetsRequest) returns (ListApplicationSetsResponse);
   rpc GetApplicationSet(GetApplicationSetRequest) returns (GetApplicationSetResponse);
+  rpc ListNotificationConfigs(ListNotificationConfigsRequest) returns (ListNotificationConfigsResponse);
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);

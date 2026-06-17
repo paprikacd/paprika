@@ -54,6 +54,9 @@ const (
 	// PaprikaServiceGetApplicationSetProcedure is the fully-qualified name of the PaprikaService's
 	// GetApplicationSet RPC.
 	PaprikaServiceGetApplicationSetProcedure = "/paprika.v1.PaprikaService/GetApplicationSet"
+	// PaprikaServiceListNotificationConfigsProcedure is the fully-qualified name of the
+	// PaprikaService's ListNotificationConfigs RPC.
+	PaprikaServiceListNotificationConfigsProcedure = "/paprika.v1.PaprikaService/ListNotificationConfigs"
 	// PaprikaServiceGetApplicationProcedure is the fully-qualified name of the PaprikaService's
 	// GetApplication RPC.
 	PaprikaServiceGetApplicationProcedure = "/paprika.v1.PaprikaService/GetApplication"
@@ -85,6 +88,7 @@ type PaprikaServiceClient interface {
 	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
 	ListApplicationSets(context.Context, *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error)
 	GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error)
+	ListNotificationConfigs(context.Context, *connect.Request[v1.ListNotificationConfigsRequest]) (*connect.Response[v1.ListNotificationConfigsResponse], error)
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
@@ -147,6 +151,12 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationSet")),
 			connect.WithClientOptions(opts...),
 		),
+		listNotificationConfigs: connect.NewClient[v1.ListNotificationConfigsRequest, v1.ListNotificationConfigsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListNotificationConfigsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListNotificationConfigs")),
+			connect.WithClientOptions(opts...),
+		),
 		getApplication: connect.NewClient[v1.GetApplicationRequest, v1.GetApplicationResponse](
 			httpClient,
 			baseURL+PaprikaServiceGetApplicationProcedure,
@@ -194,20 +204,21 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 
 // paprikaServiceClient implements PaprikaServiceClient.
 type paprikaServiceClient struct {
-	listPipelines       *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
-	listReleases        *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
-	listStages          *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
-	listApplications    *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
-	listPolicies        *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
-	listApplicationSets *connect.Client[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse]
-	getApplicationSet   *connect.Client[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse]
-	getApplication      *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
-	syncApplication     *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
-	approveGate         *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
-	resolveSource       *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
-	render              *connect.Client[v1.RenderRequest, v1.RenderResponse]
-	applyBundle         *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
-	rollbackRelease     *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
+	listPipelines           *connect.Client[v1.ListPipelinesRequest, v1.ListPipelinesResponse]
+	listReleases            *connect.Client[v1.ListReleasesRequest, v1.ListReleasesResponse]
+	listStages              *connect.Client[v1.ListStagesRequest, v1.ListStagesResponse]
+	listApplications        *connect.Client[v1.ListApplicationsRequest, v1.ListApplicationsResponse]
+	listPolicies            *connect.Client[v1.ListPoliciesRequest, v1.ListPoliciesResponse]
+	listApplicationSets     *connect.Client[v1.ListApplicationSetsRequest, v1.ListApplicationSetsResponse]
+	getApplicationSet       *connect.Client[v1.GetApplicationSetRequest, v1.GetApplicationSetResponse]
+	listNotificationConfigs *connect.Client[v1.ListNotificationConfigsRequest, v1.ListNotificationConfigsResponse]
+	getApplication          *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
+	syncApplication         *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
+	approveGate             *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
+	resolveSource           *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
+	render                  *connect.Client[v1.RenderRequest, v1.RenderResponse]
+	applyBundle             *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
+	rollbackRelease         *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -243,6 +254,11 @@ func (c *paprikaServiceClient) ListApplicationSets(ctx context.Context, req *con
 // GetApplicationSet calls paprika.v1.PaprikaService.GetApplicationSet.
 func (c *paprikaServiceClient) GetApplicationSet(ctx context.Context, req *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error) {
 	return c.getApplicationSet.CallUnary(ctx, req)
+}
+
+// ListNotificationConfigs calls paprika.v1.PaprikaService.ListNotificationConfigs.
+func (c *paprikaServiceClient) ListNotificationConfigs(ctx context.Context, req *connect.Request[v1.ListNotificationConfigsRequest]) (*connect.Response[v1.ListNotificationConfigsResponse], error) {
+	return c.listNotificationConfigs.CallUnary(ctx, req)
 }
 
 // GetApplication calls paprika.v1.PaprikaService.GetApplication.
@@ -289,6 +305,7 @@ type PaprikaServiceHandler interface {
 	ListPolicies(context.Context, *connect.Request[v1.ListPoliciesRequest]) (*connect.Response[v1.ListPoliciesResponse], error)
 	ListApplicationSets(context.Context, *connect.Request[v1.ListApplicationSetsRequest]) (*connect.Response[v1.ListApplicationSetsResponse], error)
 	GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error)
+	ListNotificationConfigs(context.Context, *connect.Request[v1.ListNotificationConfigsRequest]) (*connect.Response[v1.ListNotificationConfigsResponse], error)
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
@@ -345,6 +362,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		PaprikaServiceGetApplicationSetProcedure,
 		svc.GetApplicationSet,
 		connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationSet")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListNotificationConfigsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListNotificationConfigsProcedure,
+		svc.ListNotificationConfigs,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListNotificationConfigs")),
 		connect.WithHandlerOptions(opts...),
 	)
 	paprikaServiceGetApplicationHandler := connect.NewUnaryHandler(
@@ -405,6 +428,8 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceListApplicationSetsHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetApplicationSetProcedure:
 			paprikaServiceGetApplicationSetHandler.ServeHTTP(w, r)
+		case PaprikaServiceListNotificationConfigsProcedure:
+			paprikaServiceListNotificationConfigsHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetApplicationProcedure:
 			paprikaServiceGetApplicationHandler.ServeHTTP(w, r)
 		case PaprikaServiceSyncApplicationProcedure:
@@ -454,6 +479,10 @@ func (UnimplementedPaprikaServiceHandler) ListApplicationSets(context.Context, *
 
 func (UnimplementedPaprikaServiceHandler) GetApplicationSet(context.Context, *connect.Request[v1.GetApplicationSetRequest]) (*connect.Response[v1.GetApplicationSetResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplicationSet is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListNotificationConfigs(context.Context, *connect.Request[v1.ListNotificationConfigsRequest]) (*connect.Response[v1.ListNotificationConfigsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListNotificationConfigs is not implemented"))
 }
 
 func (UnimplementedPaprikaServiceHandler) GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error) {

@@ -573,6 +573,93 @@ export const SyncApplicationResponse = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.NotificationTrigger
+ */
+export const NotificationTrigger = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.NotificationTrigger",
+  () => [
+    { no: 1, name: "resource_type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.NotificationDestination
+ */
+export const NotificationDestination = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.NotificationDestination",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "webhook_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "slack_webhook_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "email", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "secret_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "headers", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SMTPConfig
+ */
+export const SMTPConfig = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SMTPConfig",
+  () => [
+    { no: 1, name: "host", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "port", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 3, name: "from", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "tls_enabled", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "auth_secret_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.NotificationRateLimit
+ */
+export const NotificationRateLimit = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.NotificationRateLimit",
+  () => [
+    { no: 1, name: "min_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.NotificationConfig
+ */
+export const NotificationConfig = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.NotificationConfig",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "triggers", kind: "message", T: NotificationTrigger, repeated: true },
+    { no: 4, name: "destinations", kind: "message", T: NotificationDestination, repeated: true },
+    { no: 5, name: "template", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "smtp", kind: "message", T: SMTPConfig },
+    { no: 7, name: "rate_limit", kind: "message", T: NotificationRateLimit },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListNotificationConfigsRequest
+ */
+export const ListNotificationConfigsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListNotificationConfigsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListNotificationConfigsResponse
+ */
+export const ListNotificationConfigsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListNotificationConfigsResponse",
+  () => [
+    { no: 1, name: "notification_configs", kind: "message", T: NotificationConfig, repeated: true },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.ApproveGateRequest
  */
 export const ApproveGateRequest = /*@__PURE__*/ proto3.makeMessageType(

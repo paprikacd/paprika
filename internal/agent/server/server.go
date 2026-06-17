@@ -309,4 +309,9 @@ func (s *Server) GetApplicationSet(ctx context.Context, req *connect.Request[pap
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement GetApplicationSet"))
 }
 
+// ListNotificationConfigs is not implemented by the agent.
+func (s *Server) ListNotificationConfigs(ctx context.Context, req *connect.Request[paprikav1.ListNotificationConfigsRequest]) (*connect.Response[paprikav1.ListNotificationConfigsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ListNotificationConfigs"))
+}
+
 var _ v1connect.PaprikaServiceHandler = (*Server)(nil)
