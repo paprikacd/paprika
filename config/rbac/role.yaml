@@ -162,6 +162,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns
   - applications
   - applicationsets
   - artifacts
@@ -180,6 +181,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/finalizers
   - applications/finalizers
   - applicationsets/finalizers
   - artifacts/finalizers
@@ -193,6 +195,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysisruns/status
   - applications/status
   - applicationsets/status
   - artifacts/status
@@ -208,6 +211,7 @@ rules:
 - apiGroups:
   - pipelines.paprika.io
   resources:
+  - analysistemplates
   - notificationconfigs
   verbs:
   - get
