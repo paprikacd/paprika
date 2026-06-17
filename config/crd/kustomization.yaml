@@ -8,6 +8,7 @@ resources:
 - bases/pipelines.paprika.io_templates.yaml
 - bases/pipelines.paprika.io_artifacts.yaml
 - bases/pipelines.paprika.io_applications.yaml
+- bases/pipelines.paprika.io_notificationconfigs.yaml
 - bases/clusters.paprika.io_clusters.yaml
 - bases/core.paprika.io_appprojects.yaml
 - bases/core.paprika.io_repositories.yaml

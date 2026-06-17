@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "operator" }}
 apiVersion: rbac.authorization.k8s.io/v1
 {{- if .Values.rbac.namespaced }}
 kind: RoleBinding
@@ -27,4 +26,3 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "paprika.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
-{{- end }}

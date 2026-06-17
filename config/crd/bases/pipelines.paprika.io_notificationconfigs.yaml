@@ -50,8 +50,19 @@ spec:
                       description: Email is a recipient email address (optional, for
                         future senders).
                       type: string
+                    headers:
+                      additionalProperties:
+                        type: string
+                      description: Headers are extra HTTP headers sent to webhookURL.
+                      type: object
                     name:
                       description: Name is a human-readable identifier for this destination.
+                      type: string
+                    secretRef:
+                      description: |-
+                        SecretRef names a Secret in the same namespace that holds credentials.
+                        Keys depend on the destination type:
+                          - webhook/slack: "token" (bearer token) or "username"/"password".
                       type: string
                     slackWebhookUrl:
                       description: SlackWebhookURL is a Slack incoming webhook URL.
@@ -62,6 +73,35 @@ spec:
                       type: string
                   type: object
                 type: array
+              rateLimit:
+                description: RateLimit reduces noise from flapping resources.
+                properties:
+                  minInterval:
+                    default: 5m
+                    type: string
+                type: object
+              smtp:
+                description: SMTP relay used for email destinations.
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef names a Secret in the same namespace with keys:
+                        - username
+                        - password
+                    type: string
+                  from:
+                    type: string
+                  host:
+                    type: string
+                  port:
+                    default: 587
+                    type: integer
+                  tlsEnabled:
+                    type: boolean
+                required:
+                - from
+                - host
+                type: object
               template:
                 description: |-
                   Template is an optional Go template string used to format notification
@@ -90,9 +130,34 @@ spec:
             type: object
           status:
             description: NotificationConfigStatus defines the observed state of NotificationConfig.
+            properties:
+              deliveries:
+                description: Deliveries keeps the last N delivery attempts.
+                items:
+                  description: NotificationDelivery records the outcome of one dispatch
+                    attempt.
+                  properties:
+                    destinationName:
+                      type: string
+                    error:
+                      type: string
+                    phase:
+                      type: string
+                    sentAt:
+                      format: date-time
+                      type: string
+                    success:
+                      type: boolean
+                  required:
+                  - destinationName
+                  - success
+                  type: object
+                type: array
             type: object
         required:
         - metadata
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

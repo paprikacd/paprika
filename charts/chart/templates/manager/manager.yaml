@@ -1,178 +1,84 @@
-{{- if and (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) (not .Values.manager.sharding.enabled) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/component: cache
+    app.kubernetes.io/name: redis
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-    control-plane: controller-manager
-    {{- with .Values.manager.labels }}
-    {{- with omit . "app.kubernetes.io/managed-by" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "control-plane" }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-    {{- end }}
-  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: paprika
+  name: {{ include "paprika.resourceName" (dict "suffix" "redis" "context" $) }}
   namespace: {{ .Release.Namespace }}
-  {{- if .Values.manager.annotations }}
-  annotations:
-    {{- toYaml .Values.manager.annotations | nindent 4 }}
-  {{- end }}
 spec:
-  {{- with .Values.manager.strategy }}
-  strategy: {{ toYaml . | nindent 6 }}
-  {{- end }}
-  replicas: {{ .Values.manager.replicas }}
+  replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "paprika.name" . }}
-      control-plane: controller-manager
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/part-of: paprika
   template:
     metadata:
-      annotations:
-        kubectl.kubernetes.io/default-container: manager
-        {{- with .Values.manager.pod }}
-        {{- with .annotations }}
-        {{- with omit . "kubectl.kubernetes.io/default-container" }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- end }}
-        {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "paprika.name" . }}
+        app.kubernetes.io/component: cache
+        app.kubernetes.io/name: redis
         helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
-        control-plane: controller-manager
-        {{- with .Values.manager.pod }}
-        {{- with .labels }}
-        {{- with omit . "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "app.kubernetes.io/managed-by" "control-plane" }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- end }}
-        {{- end }}
+        app.kubernetes.io/part-of: paprika
     spec:
-      {{- with .Values.manager.topologySpreadConstraints }}
-      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
-      {{- end }}
-      {{- with .Values.manager.priorityClassName }}
-      priorityClassName: {{ . | quote }}
-      {{- end }}
-      {{- with .Values.manager.tolerations }}
-      tolerations: {{ toYaml . | nindent 10 }}
-      {{- end }}
-      {{- with .Values.manager.affinity }}
-      affinity: {{ toYaml . | nindent 10 }}
-      {{- end }}
-      {{- with .Values.manager.nodeSelector }}
-      nodeSelector: {{ toYaml . | nindent 10 }}
-      {{- end }}
-      {{- with .Values.manager.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       containers:
       - args:
-        {{- if .Values.metrics.enable }}
-        - --metrics-bind-address=:{{ .Values.metrics.port }}
-        {{- if not .Values.metrics.secure }}
-        - --metrics-secure=false
-        {{- end }}
-        {{- else }}
-        # Bind to :0 to disable the controller-runtime managed metrics server
-        - --metrics-bind-address=0
-        {{- end }}
-        - --leader-elect
-        - --health-probe-bind-address=:8081
-        {{- if eq .Values.deploymentMode "split" }}
-        - --mode=operator
-        {{- else }}
-        - --mode={{ .Values.mode }}
-        {{- end }}
-        {{- if and (eq .Values.mode "api") (ne .Values.remoteCluster.apiServer "") }}
-        - --k8s-api-server={{ .Values.remoteCluster.apiServer }}
-        {{- end }}
-        {{- if and (eq .Values.mode "api") (ne .Values.remoteCluster.tokenFile "") }}
-        - --k8s-token-file={{ .Values.remoteCluster.tokenFile }}
-        {{- end }}
-        {{- if eq .Values.deploymentMode "monolith" }}
-        {{- include "paprika.authArgs" . | nindent 8 }}
-        {{- end }}
-        {{- range .Values.manager.args }}
-        - {{ . }}
-        {{- end }}
-        command:
-        - /manager
-        image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
-        {{- with .Values.manager.image.pullPolicy }}
-        imagePullPolicy: {{ . }}
-        {{- end }}
+        - /usr/local/etc/redis/redis.conf
+        image: redis:7-alpine
         livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
-        name: manager
-        ports:
-        - containerPort: 8081
-          name: health
-          protocol: TCP
-        {{- if eq .Values.deploymentMode "monolith" }}
-        - containerPort: 3000
-          name: ui
-          protocol: TCP
-        - containerPort: 8080
-          name: webhook
-          protocol: TCP
-        {{- end }}
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8081
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 10
+          tcpSocket:
+            port: redis
+        name: redis
+        ports:
+        - containerPort: 6379
+          name: redis
+        readinessProbe:
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          tcpSocket:
+            port: redis
         resources:
-          {{- if .Values.manager.resources }}
-          {{- toYaml .Values.manager.resources | nindent 10 }}
-          {{- else }}
-          {}
-          {{- end }}
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
         securityContext:
-          {{- if .Values.manager.securityContext }}
-          {{- toYaml .Values.manager.securityContext | nindent 10 }}
-          {{- else }}
-          {}
-          {{- end }}
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 999
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
-          {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-        {{- $hasEnv := or .Values.repoServer.enabled .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
-        {{- if $hasEnv }}
-        env:
-        {{- include "paprika.cacheEnv" . | nindent 8 }}
-        {{- if .Values.repoServer.enabled }}
-        - name: PAPRIKA_REPO_SERVER_ADDR
-          value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
-        {{- end }}
-        {{- if and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
-        - name: PAPRIKA_AUTH_RBAC_RULES
-          valueFrom:
-            configMapKeyRef:
-              name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
-              key: rbac.json
-        {{- end }}
-        {{- end }}
+        - mountPath: /usr/local/etc/redis
+          name: config
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /data
+          name: data
       securityContext:
-        {{- if .Values.manager.podSecurityContext }}
-        {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
-        {{- else }}
-        {}
-        {{- end }}
-      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
-      {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
-      terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
-      {{- end }}
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
-        {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
-{{- end }}
+      - configMap:
+          name: {{ include "paprika.resourceName" (dict "suffix" "redis-config" "context" $) }}
+        name: config
+      - emptyDir: {}
+        name: tmp
+      - emptyDir: {}
+        name: data

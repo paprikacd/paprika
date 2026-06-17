@@ -316,6 +316,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -709,6 +726,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.
@@ -1315,6 +1337,169 @@ spec:
         required:
         - metadata
         - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: notificationconfigs.pipelines.paprika.io
+spec:
+  group: pipelines.paprika.io
+  names:
+    kind: NotificationConfig
+    listKind: NotificationConfigList
+    plural: notificationconfigs
+    singular: notificationconfig
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NotificationConfig configures event-driven notifications for
+          Paprika resources.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NotificationConfigSpec defines the desired state of NotificationConfig.
+            properties:
+              destinations:
+                description: Destinations receive notifications for matched events.
+                items:
+                  description: NotificationDestination describes where to deliver
+                    matched notifications.
+                  properties:
+                    email:
+                      description: Email is a recipient email address (optional, for
+                        future senders).
+                      type: string
+                    headers:
+                      additionalProperties:
+                        type: string
+                      description: Headers are extra HTTP headers sent to webhookURL.
+                      type: object
+                    name:
+                      description: Name is a human-readable identifier for this destination.
+                      type: string
+                    secretRef:
+                      description: |-
+                        SecretRef names a Secret in the same namespace that holds credentials.
+                        Keys depend on the destination type:
+                          - webhook/slack: "token" (bearer token) or "username"/"password".
+                      type: string
+                    slackWebhookUrl:
+                      description: SlackWebhookURL is a Slack incoming webhook URL.
+                      type: string
+                    webhookUrl:
+                      description: WebhookURL is a generic HTTP endpoint that receives
+                        a JSON payload.
+                      type: string
+                  type: object
+                type: array
+              rateLimit:
+                description: RateLimit reduces noise from flapping resources.
+                properties:
+                  minInterval:
+                    default: 5m
+                    type: string
+                type: object
+              smtp:
+                description: SMTP relay used for email destinations.
+                properties:
+                  authSecretRef:
+                    description: |-
+                      AuthSecretRef names a Secret in the same namespace with keys:
+                        - username
+                        - password
+                    type: string
+                  from:
+                    type: string
+                  host:
+                    type: string
+                  port:
+                    default: 587
+                    type: integer
+                  tlsEnabled:
+                    type: boolean
+                required:
+                - from
+                - host
+                type: object
+              template:
+                description: |-
+                  Template is an optional Go template string used to format notification
+                  messages. The data map contains name, namespace, phase and reason.
+                type: string
+              triggers:
+                description: Triggers select events that should produce notifications.
+                items:
+                  description: NotificationTrigger selects events that should trigger
+                    a notification.
+                  properties:
+                    phase:
+                      description: Phase filters by the resource phase reported in
+                        the event.
+                      type: string
+                    reason:
+                      description: Reason filters by a reason included in the event
+                        payload.
+                      type: string
+                    resourceType:
+                      description: ResourceType filters by event type, e.g. "application"
+                        or "release".
+                      type: string
+                  type: object
+                type: array
+            type: object
+          status:
+            description: NotificationConfigStatus defines the observed state of NotificationConfig.
+            properties:
+              deliveries:
+                description: Deliveries keeps the last N delivery attempts.
+                items:
+                  description: NotificationDelivery records the outcome of one dispatch
+                    attempt.
+                  properties:
+                    destinationName:
+                      type: string
+                    error:
+                      type: string
+                    phase:
+                      type: string
+                    sentAt:
+                      format: date-time
+                      type: string
+                    success:
+                      type: boolean
+                  required:
+                  - destinationName
+                  - success
+                  type: object
+                type: array
+            type: object
+        required:
+        - metadata
         type: object
     served: true
     storage: true

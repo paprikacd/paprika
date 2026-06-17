@@ -1,0 +1,44 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  labels:
+    app.kubernetes.io/component: controller-manager
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  behavior:
+    scaleDown:
+      policies:
+      - periodSeconds: 60
+        type: Percent
+        value: 50
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      policies:
+      - periodSeconds: 30
+        type: Percent
+        value: 100
+      stabilizationWindowSeconds: 60
+  maxReplicas: 3
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 70
+        type: Utilization
+    type: Resource
+  - resource:
+      name: memory
+      target:
+        averageUtilization: 80
+        type: Utilization
+    type: Resource
+  minReplicas: 1
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}

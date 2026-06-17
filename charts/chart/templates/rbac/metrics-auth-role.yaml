@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "operator" }}
 {{- if and .Values.metrics.enable .Values.metrics.secure }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -17,5 +16,4 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
-{{- end }}
 {{- end }}

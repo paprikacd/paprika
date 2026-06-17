@@ -1,0 +1,171 @@
+{{- if .Values.webhook.enable }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    {{- if .Values.certManager.enable }}
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "paprika.resourceName" (dict "suffix" "serving-cert" "context" $) }}
+    {{- end }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "mutating-webhook-configuration" "context" $) }}
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-pipelines-paprika-io-v1alpha1-application
+  failurePolicy: Fail
+  name: mapplication-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applications
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-core-paprika-io-v1alpha1-appproject
+  failurePolicy: Fail
+  name: mappproject-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - appprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-pipelines-paprika-io-v1alpha1-pipeline
+  failurePolicy: Fail
+  name: mpipeline-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pipelines
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-policy-paprika-io-v1alpha1-policy
+  failurePolicy: Fail
+  name: mpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - policy.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-pipelines-paprika-io-v1alpha1-release
+  failurePolicy: Fail
+  name: mrelease-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - releases
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-core-paprika-io-v1alpha1-repository
+  failurePolicy: Fail
+  name: mrepository-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - core.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-pipelines-paprika-io-v1alpha1-stage
+  failurePolicy: Fail
+  name: mstage-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - stages
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-pipelines-paprika-io-v1alpha1-template
+  failurePolicy: Fail
+  name: mtemplate-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - templates
+  sideEffects: None
+{{- end }}
