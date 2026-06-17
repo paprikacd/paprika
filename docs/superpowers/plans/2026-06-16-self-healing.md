@@ -351,16 +351,16 @@ func (r *ApplicationReconciler) selfHealHealthRevert(ctx context.Context, app *p
     if app.Status.ReleaseRef == "" {
         return nil
     }
-    if app.Spec.OnFailure == nil || app.Spec.OnFailure.Action != "rollback" {
-        return nil
-    }
 
     var release pipelinesv1alpha1.Release
     if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
         return fmt.Errorf("fetching release for health revert: %w", client.IgnoreNotFound(err))
     }
 
-    if release.Status.Phase == pipelinesv1alpha1.ReleaseRolledBack || release.Status.Phase == pipelinesv1alpha1.ReleaseFailed {
+    if release.Status.Phase != pipelinesv1alpha1.ReleaseComplete {
+        return nil
+    }
+    if release.Spec.OnFailure == nil || release.Spec.OnFailure.Action != "rollback" {
         return nil
     }
     if _, ok := release.Annotations[rollbackAnnotation]; ok {
