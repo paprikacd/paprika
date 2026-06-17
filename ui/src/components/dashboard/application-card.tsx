@@ -43,6 +43,18 @@ function PhaseTimeline({ phase }: { phase: string }) {
   )
 }
 
+function SyncWindowBadge({ conditions }: { conditions?: Application["conditions"] }) {
+  if (!conditions) return null
+  const cond = conditions.find((c) => c.type === "SyncWindow")
+  if (!cond || cond.status !== "False") return null
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-500 border border-amber-500/20">
+      <Clock className="size-3" />
+      Window blocked
+    </span>
+  )
+}
+
 function SourceIcon({ type }: { type: string }) {
   switch (type) {
     case "git":
@@ -441,6 +453,7 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
           </Link>
           <div className="flex shrink-0 items-center gap-2">
             <StatusBadge status={application.phase} />
+            <SyncWindowBadge conditions={application.conditions} />
             {onSynced && <SyncButton application={application} onSynced={onSynced} />}
             <Link
               href={detailHref}

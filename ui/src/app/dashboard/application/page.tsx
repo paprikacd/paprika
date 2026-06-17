@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import {
+  Activity,
   ArrowLeft,
   ChevronRight,
   History,
@@ -426,6 +427,39 @@ function ApplicationDetail() {
               <DetailRow label="Strategy">{application.strategy || "—"}</DetailRow>
             </CardContent>
           </Card>
+
+          {application.conditions && application.conditions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Conditions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {application.conditions.map((cond, idx) => (
+                  <div key={cond.type}>
+                    {idx > 0 && <Separator />}
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm text-muted-foreground">{cond.type}</span>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={cond.status === "True" ? "default" : "destructive"}
+                          className="text-xs"
+                        >
+                          {cond.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">{cond.reason}</span>
+                      </div>
+                    </div>
+                    {cond.message && (
+                      <p className="pb-2 text-xs text-muted-foreground">{cond.message}</p>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>
