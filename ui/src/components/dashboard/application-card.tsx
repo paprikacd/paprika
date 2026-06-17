@@ -412,6 +412,20 @@ function ApprovalGateButton({ application, onApproved }: { application: Applicat
   )
 }
 
+function AnalysisSummary({ results }: { results?: Application["analysisResults"] }) {
+  if (!results || results.length === 0) return null
+  const failed = results.filter((r) => !r.passed).length
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-muted-foreground">Analysis</span>
+      <Badge className={`gap-1 ${failed > 0 ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"}`}>
+        {failed > 0 ? <XCircle className="size-3" /> : <CheckCircle2 className="size-3" />}
+        {results.length - failed}/{results.length}
+      </Badge>
+    </div>
+  )
+}
+
 function PolicySummary({ results }: { results?: PolicyResult[] }) {
   if (!results || results.length === 0) return null
 
@@ -511,6 +525,10 @@ export function ApplicationCard({ application, release, onSynced }: { applicatio
         )}
         {release && release.policyResults.length > 0 && (
           <PolicySummary results={release.policyResults} />
+        )}
+
+        {application.analysisResults && application.analysisResults.length > 0 && (
+          <AnalysisSummary results={application.analysisResults} />
         )}
 
         {application.revision && (

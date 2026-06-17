@@ -94,6 +94,8 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/finalizers,verbs=update
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=analysistemplates,verbs=get;list;watch
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=analysisruns,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
@@ -334,6 +336,10 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	r.evaluateHealth(ctx, app)
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
+
+	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile analysis runs")
+	}
 
 	if err := r.reconcileSelfHeal(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile self-heal")
@@ -1330,6 +1336,9 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	r.evaluateHealth(ctx, app)
 	r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app)
+	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
+		log.Error(err, "Failed to reconcile analysis runs")
+	}
 	if err := r.reconcileSelfHeal(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile self-heal")
 	}
@@ -1471,6 +1480,7 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&paprikav1.Pipeline{}).
 		Owns(&paprikav1.Stage{}).
 		Owns(&paprikav1.Release{}).
+		Owns(&paprikav1.AnalysisRun{}).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 3,
 			RecoverPanic:            ptr(true),

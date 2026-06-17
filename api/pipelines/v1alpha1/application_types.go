@@ -72,6 +72,30 @@ type SyncOptions struct {
 	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
 }
 
+// AnalysisTemplateRef references an AnalysisTemplate and supplies arguments.
+type AnalysisTemplateRef struct {
+	// Name of the AnalysisTemplate to use.
+	Name string `json:"name"`
+	// Args override template arguments.
+	// +optional
+	Args map[string]string `json:"args,omitempty"`
+	// IntervalSeconds overrides the default analysis interval.
+	// +optional
+	IntervalSeconds int `json:"intervalSeconds,omitempty"`
+	// OnFailure defines the action to take when the analysis fails.
+	// +optional
+	OnFailure *FailureAction `json:"onFailure,omitempty"`
+}
+
+// AnalysisResult aggregates the latest state of a single AnalysisRun for the UI/API.
+type AnalysisResult struct {
+	Name      string           `json:"name"`
+	Phase     AnalysisRunPhase `json:"phase"`
+	Passed    bool             `json:"passed"`
+	Message   string           `json:"message,omitempty"`
+	CheckedAt *metav1.Time     `json:"checkedAt,omitempty"`
+}
+
 // SelfHealConfig controls automatic remediation behavior.
 type SelfHealConfig struct {
 	// AutoSyncOnDrift triggers a re-sync when managed resources are out of sync.
@@ -384,6 +408,11 @@ type ApplicationSpec struct {
 	// SyncWindows restrict when automatic sync may run.
 	// +optional
 	SyncWindows []SyncWindow `json:"syncWindows,omitempty"`
+
+	// AnalysisTemplates references reusable analysis templates that run continuously
+	// in the background after the application is healthy.
+	// +optional
+	AnalysisTemplates []AnalysisTemplateRef `json:"analysisTemplates,omitempty"`
 }
 
 // ResourceSync tracks the sync status of a managed Kubernetes resource.
@@ -480,6 +509,10 @@ type ApplicationStatus struct {
 	// LastSelfHealTime records the last time a self-heal action was taken.
 	// +optional
 	LastSelfHealTime *metav1.Time `json:"lastSelfHealTime,omitempty"`
+
+	// AnalysisResults aggregate the latest background analysis state.
+	// +optional
+	AnalysisResults []AnalysisResult `json:"analysisResults,omitempty"`
 }
 
 // +kubebuilder:object:root=true

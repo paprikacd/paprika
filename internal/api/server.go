@@ -702,6 +702,7 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		OutOfSync:       safeInt32(a.Status.OutOfSync),
 		PrunedResources: safeInt32(a.Status.PrunedResources),
 		Conditions:      convertConditions(a.Status.Conditions),
+		AnalysisResults: convertAnalysisResults(a.Status.AnalysisResults),
 	}
 }
 
@@ -745,6 +746,24 @@ func convertResourceHealth(healths []pipelinesv1alpha1.ResourceHealth) []*paprik
 			Namespace: h.Namespace,
 			Health:    h.Health,
 			Message:   h.Message,
+		})
+	}
+	return out
+}
+
+func convertAnalysisResults(results []pipelinesv1alpha1.AnalysisResult) []*paprikav1.AnalysisResult {
+	out := make([]*paprikav1.AnalysisResult, 0, len(results))
+	for _, r := range results {
+		checkedAt := ""
+		if r.CheckedAt != nil {
+			checkedAt = r.CheckedAt.Format(time.RFC3339)
+		}
+		out = append(out, &paprikav1.AnalysisResult{
+			Name:      r.Name,
+			Phase:     string(r.Phase),
+			Passed:    r.Passed,
+			Message:   r.Message,
+			CheckedAt: checkedAt,
 		})
 	}
 	return out

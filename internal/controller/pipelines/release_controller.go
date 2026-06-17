@@ -308,7 +308,7 @@ func (r *ReleaseReconciler) shouldRollback(release *paprikav1.Release) bool {
 		release.Status.Phase == paprikav1.ReleaseSuperseded {
 		return false
 	}
-	if release.Spec.OnFailure != nil && release.Spec.OnFailure.Action == "rollback" {
+	if release.Spec.OnFailure != nil && release.Spec.OnFailure.Action == rollbackAction {
 		if _, ok := release.Annotations[rollbackAnnotation]; ok {
 			return true
 		}

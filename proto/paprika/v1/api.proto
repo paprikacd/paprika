@@ -127,6 +127,14 @@ message Condition {
   string message = 6;
 }
 
+message AnalysisResult {
+  string name = 1;
+  string phase = 2;
+  bool passed = 3;
+  string message = 4;
+  string checked_at = 5; // RFC3339
+}
+
 message Application {
   string name = 1;
   string namespace = 2;
@@ -157,6 +165,7 @@ message Application {
   repeated GateStatus gates = 23;
   string project = 24;
   repeated Condition conditions = 25;
+  repeated AnalysisResult analysis_results = 26;
 }
 
 message Pipeline {

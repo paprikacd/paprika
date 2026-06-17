@@ -1,0 +1,27 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+  namespace: paprika-system
+spec:
+  source:
+    type: helm
+    chart:
+      repo: https://charts.example.com
+      name: my-app
+      version: 1.2.3
+  strategy: Rolling
+  syncPolicy: Auto
+  analysisTemplates:
+    - name: http-success-rate
+      args:
+        endpoint: http://my-app-prod/health
+        threshold: "99"
+      intervalSeconds: 60
+      onFailure:
+        action: rollback
+  stages:
+    - name: dev
+      ring: 1
+    - name: prod
+      ring: 2

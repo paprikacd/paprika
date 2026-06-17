@@ -36,6 +36,9 @@ type GateConfig struct {
 // AnalysisCheck defines a check for canary analysis.
 // AnalysisCheck defines a check for canary analysis.
 type AnalysisCheck struct {
+	// Name of the check.
+	// +optional
+	Name string `json:"name,omitempty"`
 	// +kubebuilder:validation:Enum=http;podMetrics
 	Type string `json:"type"`
 	// URL to probe (for type=http)

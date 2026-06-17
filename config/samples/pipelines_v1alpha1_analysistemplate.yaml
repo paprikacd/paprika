@@ -1,0 +1,17 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: http-success-rate
+  namespace: paprika-system
+spec:
+  args:
+    - name: endpoint
+      default: http://my-app/health
+    - name: threshold
+      default: "95"
+  checks:
+    - type: http
+      url: "{{ .args.endpoint }}"
+      successThreshold: "{{ .args.threshold }}"
+      timeoutSeconds: 5
+      requestCount: 10

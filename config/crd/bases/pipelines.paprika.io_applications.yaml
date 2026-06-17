@@ -56,6 +56,47 @@ spec:
               ApplicationSpec defines the specification for an application.
               ApplicationSpec defines the specification for an application.
             properties:
+              analysisTemplates:
+                description: |-
+                  AnalysisTemplates references reusable analysis templates that run continuously
+                  in the background after the application is healthy.
+                items:
+                  description: AnalysisTemplateRef references an AnalysisTemplate
+                    and supplies arguments.
+                  properties:
+                    args:
+                      additionalProperties:
+                        type: string
+                      description: Args override template arguments.
+                      type: object
+                    intervalSeconds:
+                      description: IntervalSeconds overrides the default analysis
+                        interval.
+                      type: integer
+                    name:
+                      description: Name of the AnalysisTemplate to use.
+                      type: string
+                    onFailure:
+                      description: OnFailure defines the action to take when the analysis
+                        fails.
+                      properties:
+                        action:
+                          enum:
+                          - rollback
+                          - halt
+                          - ignore
+                          type: string
+                        notify:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - action
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
               approvalGates:
                 description: ApprovalGates define manual approval gates for stage
                   transitions.
@@ -177,6 +218,9 @@ spec:
                               - errorRate
                               - latencyP99
                               - restartRate
+                              type: string
+                            name:
+                              description: Name of the check.
                               type: string
                             requestCount:
                               description: Number of requests to make per analysis
@@ -466,6 +510,9 @@ spec:
                                     - latencyP99
                                     - restartRate
                                     type: string
+                                  name:
+                                    description: Name of the check.
+                                    type: string
                                   requestCount:
                                     description: Number of requests to make per analysis
                                       cycle
@@ -667,6 +714,32 @@ spec:
               ApplicationStatus represents the status of an application.
               ApplicationStatus represents the status of an application.
             properties:
+              analysisResults:
+                description: AnalysisResults aggregate the latest background analysis
+                  state.
+                items:
+                  description: AnalysisResult aggregates the latest state of a single
+                    AnalysisRun for the UI/API.
+                  properties:
+                    checkedAt:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    passed:
+                      type: boolean
+                    phase:
+                      description: AnalysisRunPhase represents the phase of an analysis
+                        run.
+                      type: string
+                  required:
+                  - name
+                  - passed
+                  - phase
+                  type: object
+                type: array
               canaryStepIndex:
                 description: Index into the canary steps array
                 type: integer

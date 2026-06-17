@@ -8,6 +8,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import {
   Activity,
   ArrowLeft,
+  CheckCircle2,
   ChevronRight,
   History,
   LayoutGrid,
@@ -15,6 +16,7 @@ import {
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
+  XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -460,10 +462,51 @@ function ApplicationDetail() {
               </CardContent>
             </Card>
           )}
+
+          <AnalysisResultsCard results={application.analysisResults} />
         </>
       )}
     </div>
   );
+}
+
+function AnalysisResultsCard({ results }: { results?: Application["analysisResults"] }) {
+  if (!results || results.length === 0) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Activity className="h-5 w-5" />
+          Analysis Results
+        </CardTitle>
+        <CardDescription>Continuous analysis checks for this application.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Template</TableHead>
+              <TableHead>Phase</TableHead>
+              <TableHead>Passed</TableHead>
+              <TableHead>Message</TableHead>
+              <TableHead>Checked</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {results.map((result, idx) => (
+              <TableRow key={idx}>
+                <TableCell className="font-medium">{result.name}</TableCell>
+                <TableCell><StatusBadge status={result.phase} /></TableCell>
+                <TableCell>{result.passed ? <CheckCircle2 className="size-4 text-emerald-500" /> : <XCircle className="size-4 text-destructive" />}</TableCell>
+                <TableCell className="text-muted-foreground">{result.message || "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{result.checkedAt || "—"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function ApplicationDetailPage() {
