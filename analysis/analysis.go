@@ -19,6 +19,7 @@ import (
 
 // Result holds the outcome of a single analysis check.
 type Result struct {
+	Name    string
 	Passed  bool
 	Message string
 	Detail  string
@@ -54,23 +55,24 @@ func (a *AnalyzerImpl) RunChecks(ctx context.Context, checks []pipelinesv1alpha1
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	for _, check := range checks {
+	for i := range checks {
 		wg.Add(1)
-		go func(c pipelinesv1alpha1.AnalysisCheck) {
+		go func(c *pipelinesv1alpha1.AnalysisCheck) {
 			defer wg.Done()
 			var r Result
 			switch c.Type {
 			case "http":
-				r = a.runHTTPCheck(ctx, &c)
+				r = a.runHTTPCheck(ctx, c)
 			case "podMetrics":
-				r = a.runPodMetricsCheck(ctx, &c)
+				r = a.runPodMetricsCheck(ctx, c)
 			default:
 				r = Result{Passed: false, Message: "unknown check type: " + c.Type}
 			}
+			r.Name = c.Name
 			mu.Lock()
 			results = append(results, r)
 			mu.Unlock()
-		}(check)
+		}(&checks[i])
 	}
 	wg.Wait()
 	return results
