@@ -184,6 +184,21 @@ export const GateStatus = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.Condition
+ */
+export const Condition = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Condition",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "last_transition_time", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Application
  */
 export const Application = /*@__PURE__*/ proto3.makeMessageType(
@@ -213,6 +228,7 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 22, name: "pruned_resources", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 23, name: "gates", kind: "message", T: GateStatus, repeated: true },
     { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 25, name: "conditions", kind: "message", T: Condition, repeated: true },
   ],
 );
 

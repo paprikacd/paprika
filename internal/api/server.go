@@ -14,6 +14,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
@@ -550,6 +552,21 @@ func convertStage(st *pipelinesv1alpha1.Stage) *paprikav1.Stage {
 	}
 }
 
+func convertConditions(conds []metav1.Condition) []*paprikav1.Condition {
+	out := make([]*paprikav1.Condition, 0, len(conds))
+	for _, c := range conds {
+		out = append(out, &paprikav1.Condition{
+			Type:               c.Type,
+			Status:             string(c.Status),
+			ObservedGeneration: c.ObservedGeneration,
+			LastTransitionTime: c.LastTransitionTime.Format(time.RFC3339),
+			Reason:             c.Reason,
+			Message:            c.Message,
+		})
+	}
+	return out
+}
+
 func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application {
 	stages := make([]*paprikav1.ApplicationStage, 0, len(a.Status.Stages))
 	for _, s := range a.Status.Stages {
@@ -611,6 +628,7 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		ResourceHealth:  convertResourceHealth(a.Status.ResourceHealth),
 		OutOfSync:       safeInt32(a.Status.OutOfSync),
 		PrunedResources: safeInt32(a.Status.PrunedResources),
+		Conditions:      convertConditions(a.Status.Conditions),
 	}
 }
 

@@ -109,6 +109,15 @@ message GateStatus {
   string approved_by = 4;
 }
 
+message Condition {
+  string type = 1;
+  string status = 2;     // "True", "False", "Unknown"
+  int64 observed_generation = 3;
+  string last_transition_time = 4; // RFC3339
+  string reason = 5;
+  string message = 6;
+}
+
 message Application {
   string name = 1;
   string namespace = 2;
@@ -138,6 +147,7 @@ message Application {
   // Approval gates
   repeated GateStatus gates = 23;
   string project = 24;
+  repeated Condition conditions = 25;
 }
 
 message Pipeline {

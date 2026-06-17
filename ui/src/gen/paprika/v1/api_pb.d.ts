@@ -569,6 +569,59 @@ export declare class GateStatus extends Message<GateStatus> {
 }
 
 /**
+ * @generated from message paprika.v1.Condition
+ */
+export declare class Condition extends Message<Condition> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * "True", "False", "Unknown"
+   *
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * @generated from field: int64 observed_generation = 3;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * RFC3339
+   *
+   * @generated from field: string last_transition_time = 4;
+   */
+  lastTransitionTime: string;
+
+  /**
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 6;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<Condition>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.Condition";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Condition;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Condition;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Condition;
+
+  static equals(a: Condition | PlainMessage<Condition> | undefined, b: Condition | PlainMessage<Condition> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.Application
  */
 export declare class Application extends Message<Application> {
@@ -699,6 +752,11 @@ export declare class Application extends Message<Application> {
    * @generated from field: string project = 24;
    */
   project: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 25;
+   */
+  conditions: Condition[];
 
   constructor(data?: PartialMessage<Application>);
 
