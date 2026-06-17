@@ -316,6 +316,23 @@ spec:
                 default: default
                 description: Project references the AppProject that governs this application.
                 type: string
+              selfHeal:
+                description: SelfHeal controls automatic remediation when drift or
+                  health failures are detected.
+                properties:
+                  autoRevertOnHealthFailure:
+                    description: AutoRevertOnHealthFailure rolls back the current
+                      release when the application becomes Degraded.
+                    type: boolean
+                  autoSyncOnDrift:
+                    description: AutoSyncOnDrift triggers a re-sync when managed resources
+                      are out of sync.
+                    type: boolean
+                  cooldown:
+                    default: 5m
+                    description: Cooldown between self-heal actions. Defaults to 5m.
+                    type: string
+                type: object
               source:
                 description: Source defines where the application code/chart lives.
                 properties:
@@ -341,7 +358,8 @@ spec:
                       for testing)
                     type: string
                   image:
-                    description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                    description: 'Deprecated: Image is the legacy OCI URL field. Use
+                      oci.url instead.'
                     type: string
                   inline:
                     description: Inline references a manifest snapshot ConfigMap (for
@@ -358,6 +376,27 @@ spec:
                   key:
                     description: S3 object key (for type=s3)
                     type: string
+                  oci:
+                    description: OCI registry reference (for type=oci)
+                    properties:
+                      insecure:
+                        description: Insecure allows plain HTTP for the OCI registry
+                        type: boolean
+                      secretRef:
+                        description: SecretRef references a Secret with dockerconfigjson
+                          or .dockerconfigjson
+                        type: string
+                      tag:
+                        description: Tag or digest of the artifact (e.g. "1.2.3",
+                          "@sha256:...")
+                        type: string
+                      url:
+                        description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                        pattern: ^oci://
+                        type: string
+                    required:
+                    - url
+                    type: object
                   path:
                     description: Path within the repo to the chart/source (for type=git
                       or type=s3)
@@ -381,7 +420,9 @@ spec:
                     description: Git branch, tag, or commit (for type=git)
                     type: string
                   secretRef:
-                    description: Secret reference for private repos or S3 credentials
+                    description: |-
+                      Secret reference for private repos, S3, or OCI credentials.
+                      For OCI this should contain dockerconfigjson or username/password.
                     type: string
                   type:
                     enum:
@@ -709,6 +750,11 @@ spec:
                   - status
                   type: object
                 type: array
+              lastSelfHealTime:
+                description: LastSelfHealTime records the last time a self-heal action
+                  was taken.
+                format: date-time
+                type: string
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.
@@ -2488,6 +2534,7 @@ spec:
                     type: string
                   url:
                     description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                    pattern: ^oci://
                     type: string
                 required:
                 - url
@@ -2941,6 +2988,7 @@ rules:
   - apps
   resources:
   - deployments
+  - replicasets
   verbs:
   - create
   - delete
@@ -3123,6 +3171,32 @@ rules:
   - policy.paprika.io
   resources:
   - policies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts/status
   verbs:
   - get
   - patch
@@ -3667,7 +3741,7 @@ spec:
               key: secret
               name: paprika-webhook-secret
               optional: true
-        image: ghcr.io/benebsworth/paprika:v0.0.1
+        image: ghcr.io/benebsworth/paprika:latest
         livenessProbe:
           httpGet:
             path: /healthz
@@ -4025,6 +4099,26 @@ webhooks:
     service:
       name: paprika-webhook-service
       namespace: paprika-system
+      path: /mutate-rollouts-paprika-io-v1alpha1-rollout
+  failurePolicy: Fail
+  name: mrollout.kb.io
+  rules:
+  - apiGroups:
+    - rollouts.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - rollouts
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
       path: /mutate-pipelines-paprika-io-v1alpha1-stage
   failurePolicy: Fail
   name: mstage-v1alpha1.kb.io
@@ -4186,6 +4280,26 @@ webhooks:
     - UPDATE
     resources:
     - repositories
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: paprika-webhook-service
+      namespace: paprika-system
+      path: /validate-rollouts-paprika-io-v1alpha1-rollout
+  failurePolicy: Fail
+  name: vrollout.kb.io
+  rules:
+  - apiGroups:
+    - rollouts.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - rollouts
   sideEffects: None
 - admissionReviewVersions:
   - v1

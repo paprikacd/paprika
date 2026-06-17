@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import {
   GitBranch, Database, Package, ExternalLink, RefreshCw,
   CheckCircle2, AlertCircle, Loader2, Heart, XCircle,
-  Clock, Activity, ArrowRight, Target, AlertTriangle,
+  Clock, Activity, ArrowRight, Target, AlertTriangle, Container,
 } from "lucide-react"
 
 const transport = createConnectTransport({ baseUrl: "" })
@@ -53,6 +53,8 @@ function SourceIcon({ type }: { type: string }) {
       return <Package className="size-3.5 text-violet-500" />
     case "inline":
       return <Package className="size-3.5 text-amber-500" />
+    case "oci":
+      return <Container className="size-3.5 text-sky-500" />
     default:
       return <Package className="size-3.5 text-muted-foreground" />
   }
@@ -88,6 +90,11 @@ function SourceInfo({ source }: { source?: Application["source"] }) {
       if (source.inline?.configMapRef) {
         lines.push(`snapshot: ${source.inline.configMapRef}`)
       }
+      break
+    case "oci":
+      if (source.oci?.url) lines.push(source.oci.url)
+      if (source.oci?.tag) lines.push(`tag: ${source.oci.tag}`)
+      if (source.oci?.insecure) lines.push("insecure: true")
       break
   }
 

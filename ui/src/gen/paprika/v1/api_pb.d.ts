@@ -181,6 +181,45 @@ export declare class InlineSource extends Message<InlineSource> {
 }
 
 /**
+ * @generated from message paprika.v1.OCISource
+ */
+export declare class OCISource extends Message<OCISource> {
+  /**
+   * @generated from field: string url = 1;
+   */
+  url: string;
+
+  /**
+   * @generated from field: string tag = 2;
+   */
+  tag: string;
+
+  /**
+   * @generated from field: bool insecure = 3;
+   */
+  insecure: boolean;
+
+  /**
+   * @generated from field: string secret_ref = 4;
+   */
+  secretRef: string;
+
+  constructor(data?: PartialMessage<OCISource>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.OCISource";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): OCISource;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): OCISource;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): OCISource;
+
+  static equals(a: OCISource | PlainMessage<OCISource> | undefined, b: OCISource | PlainMessage<OCISource> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.ApplicationSource
  */
 export declare class ApplicationSource extends Message<ApplicationSource> {
@@ -247,6 +286,13 @@ export declare class ApplicationSource extends Message<ApplicationSource> {
    * @generated from field: paprika.v1.InlineSource inline = 12;
    */
   inline?: InlineSource;
+
+  /**
+   * OCI registry source
+   *
+   * @generated from field: paprika.v1.OCISource oci = 13;
+   */
+  oci?: OCISource;
 
   constructor(data?: PartialMessage<ApplicationSource>);
 
