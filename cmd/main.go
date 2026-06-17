@@ -462,10 +462,11 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 		TrafficRouterFactory: traffic.NewRouter,
 		ShardFilter:          shardFilter,
 		RateLimiter:          rateLimiter,
-		EventRecorder:        mgr.GetEventRecorderFor("release-controller"),
-		ProjectValidator:     projectValidator,
-		PolicyEvaluator:      policyEvaluator,
-		EventBroker:          broker,
+		//lint:ignore SA1019 reconcilers use the legacy record.EventRecorder API
+		EventRecorder:    mgr.GetEventRecorderFor("release-controller"),
+		ProjectValidator: projectValidator,
+		PolicyEvaluator:  policyEvaluator,
+		EventBroker:      broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -529,6 +530,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 		TemplateRenderer: renderer,
 		ShardFilter:      shardFilter,
 		RateLimiter:      rateLimiter,
+		//lint:ignore SA1019 reconcilers use the legacy record.EventRecorder API
 		EventRecorder:    mgr.GetEventRecorderFor("application-controller"),
 		ProjectValidator: projectValidator,
 		EventBroker:      broker,
