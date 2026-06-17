@@ -114,4 +114,30 @@ resources:
     defaulting: true
     validation: true
     webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: featureflags
+  kind: FeatureFlag
+  path: github.com/benebsworth/paprika/api/featureflags/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: featureflags
+  kind: FeatureFlagBinding
+  path: github.com/benebsworth/paprika/api/featureflags/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 version: "3"

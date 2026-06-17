@@ -145,6 +145,11 @@ linters:
           - cyclop
           - gocritic
           - gocyclo
+      - path: internal/featureflag/.*
+        regex: true
+        linters:
+          - gocritic
+          - nolintlint
       - path: internal/rollout/canary/canary.go
         linters:
           - gosec
