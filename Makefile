@@ -10,6 +10,11 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+# Go package directories used by controller-gen. Excludes ui/ node_modules and
+# git worktrees under .worktrees/ so incomplete feature branches do not break
+# generation on master.
+CONTROLLER_GEN_PATHS ?= $(shell go list -f '{{.Dir}}' ./... | grep -v '/ui/' | tr '\n' ';')
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -46,7 +51,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate-proto
 generate-proto: ## Generate protobuf Go and TypeScript clients from proto definitions.
@@ -55,7 +60,7 @@ generate-proto: ## Generate protobuf Go and TypeScript clients from proto defini
 
 .PHONY: generate
 generate: controller-gen generate-proto ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, plus protobuf clients.
-	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="./..."
+	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="$(CONTROLLER_GEN_PATHS)"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

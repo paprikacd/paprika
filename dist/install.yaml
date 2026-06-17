@@ -3028,7 +3028,6 @@ rules:
   - apps
   resources:
   - deployments
-  - replicasets
   verbs:
   - create
   - delete
@@ -3211,32 +3210,6 @@ rules:
   - policy.paprika.io
   resources:
   - policies/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - rollouts.paprika.io
-  resources:
-  - rollouts
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - rollouts.paprika.io
-  resources:
-  - rollouts/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - rollouts.paprika.io
-  resources:
-  - rollouts/status
   verbs:
   - get
   - patch
@@ -4139,26 +4112,6 @@ webhooks:
     service:
       name: paprika-webhook-service
       namespace: paprika-system
-      path: /mutate-rollouts-paprika-io-v1alpha1-rollout
-  failurePolicy: Fail
-  name: mrollout.kb.io
-  rules:
-  - apiGroups:
-    - rollouts.paprika.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - rollouts
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: paprika-webhook-service
-      namespace: paprika-system
       path: /mutate-pipelines-paprika-io-v1alpha1-stage
   failurePolicy: Fail
   name: mstage-v1alpha1.kb.io
@@ -4320,26 +4273,6 @@ webhooks:
     - UPDATE
     resources:
     - repositories
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: paprika-webhook-service
-      namespace: paprika-system
-      path: /validate-rollouts-paprika-io-v1alpha1-rollout
-  failurePolicy: Fail
-  name: vrollout.kb.io
-  rules:
-  - apiGroups:
-    - rollouts.paprika.io
-    apiVersions:
-    - v1alpha1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - rollouts
   sideEffects: None
 - admissionReviewVersions:
   - v1
