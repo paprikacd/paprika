@@ -4207,6 +4207,546 @@ func (x *RollbackReleaseResponse) GetRelease() *Release {
 	return nil
 }
 
+type Rollout struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Name               string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace          string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	StrategyType       string                 `protobuf:"bytes,3,opt,name=strategy_type,json=strategyType,proto3" json:"strategy_type,omitempty"`
+	Phase              string                 `protobuf:"bytes,4,opt,name=phase,proto3" json:"phase,omitempty"`
+	CurrentStep        int32                  `protobuf:"varint,5,opt,name=current_step,json=currentStep,proto3" json:"current_step,omitempty"`
+	CurrentWeight      int32                  `protobuf:"varint,6,opt,name=current_weight,json=currentWeight,proto3" json:"current_weight,omitempty"`
+	StableRs           string                 `protobuf:"bytes,7,opt,name=stable_rs,json=stableRs,proto3" json:"stable_rs,omitempty"`
+	CanaryRs           string                 `protobuf:"bytes,8,opt,name=canary_rs,json=canaryRs,proto3" json:"canary_rs,omitempty"`
+	ActiveService      string                 `protobuf:"bytes,9,opt,name=active_service,json=activeService,proto3" json:"active_service,omitempty"`
+	PreviewService     string                 `protobuf:"bytes,10,opt,name=preview_service,json=previewService,proto3" json:"preview_service,omitempty"`
+	ObservedGeneration int64                  `protobuf:"varint,11,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
+	Conditions         []*Condition           `protobuf:"bytes,12,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	Message            string                 `protobuf:"bytes,13,opt,name=message,proto3" json:"message,omitempty"`
+	TargetKind         string                 `protobuf:"bytes,14,opt,name=target_kind,json=targetKind,proto3" json:"target_kind,omitempty"`
+	TargetName         string                 `protobuf:"bytes,15,opt,name=target_name,json=targetName,proto3" json:"target_name,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *Rollout) Reset() {
+	*x = Rollout{}
+	mi := &file_paprika_v1_api_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Rollout) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Rollout) ProtoMessage() {}
+
+func (x *Rollout) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Rollout.ProtoReflect.Descriptor instead.
+func (*Rollout) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *Rollout) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Rollout) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *Rollout) GetStrategyType() string {
+	if x != nil {
+		return x.StrategyType
+	}
+	return ""
+}
+
+func (x *Rollout) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *Rollout) GetCurrentStep() int32 {
+	if x != nil {
+		return x.CurrentStep
+	}
+	return 0
+}
+
+func (x *Rollout) GetCurrentWeight() int32 {
+	if x != nil {
+		return x.CurrentWeight
+	}
+	return 0
+}
+
+func (x *Rollout) GetStableRs() string {
+	if x != nil {
+		return x.StableRs
+	}
+	return ""
+}
+
+func (x *Rollout) GetCanaryRs() string {
+	if x != nil {
+		return x.CanaryRs
+	}
+	return ""
+}
+
+func (x *Rollout) GetActiveService() string {
+	if x != nil {
+		return x.ActiveService
+	}
+	return ""
+}
+
+func (x *Rollout) GetPreviewService() string {
+	if x != nil {
+		return x.PreviewService
+	}
+	return ""
+}
+
+func (x *Rollout) GetObservedGeneration() int64 {
+	if x != nil {
+		return x.ObservedGeneration
+	}
+	return 0
+}
+
+func (x *Rollout) GetConditions() []*Condition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+func (x *Rollout) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *Rollout) GetTargetKind() string {
+	if x != nil {
+		return x.TargetKind
+	}
+	return ""
+}
+
+func (x *Rollout) GetTargetName() string {
+	if x != nil {
+		return x.TargetName
+	}
+	return ""
+}
+
+type ListRolloutsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRolloutsRequest) Reset() {
+	*x = ListRolloutsRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRolloutsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRolloutsRequest) ProtoMessage() {}
+
+func (x *ListRolloutsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRolloutsRequest.ProtoReflect.Descriptor instead.
+func (*ListRolloutsRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ListRolloutsRequest) GetNamespace() string {
+	if x != nil && x.Namespace != nil {
+		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *ListRolloutsRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+type ListRolloutsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rollouts      []*Rollout             `protobuf:"bytes,1,rep,name=rollouts,proto3" json:"rollouts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRolloutsResponse) Reset() {
+	*x = ListRolloutsResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRolloutsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRolloutsResponse) ProtoMessage() {}
+
+func (x *ListRolloutsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRolloutsResponse.ProtoReflect.Descriptor instead.
+func (*ListRolloutsResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ListRolloutsResponse) GetRollouts() []*Rollout {
+	if x != nil {
+		return x.Rollouts
+	}
+	return nil
+}
+
+type GetRolloutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRolloutRequest) Reset() {
+	*x = GetRolloutRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRolloutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRolloutRequest) ProtoMessage() {}
+
+func (x *GetRolloutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRolloutRequest.ProtoReflect.Descriptor instead.
+func (*GetRolloutRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *GetRolloutRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *GetRolloutRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type GetRolloutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rollout       *Rollout               `protobuf:"bytes,1,opt,name=rollout,proto3" json:"rollout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRolloutResponse) Reset() {
+	*x = GetRolloutResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRolloutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRolloutResponse) ProtoMessage() {}
+
+func (x *GetRolloutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRolloutResponse.ProtoReflect.Descriptor instead.
+func (*GetRolloutResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *GetRolloutResponse) GetRollout() *Rollout {
+	if x != nil {
+		return x.Rollout
+	}
+	return nil
+}
+
+type PromoteRolloutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromoteRolloutRequest) Reset() {
+	*x = PromoteRolloutRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromoteRolloutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromoteRolloutRequest) ProtoMessage() {}
+
+func (x *PromoteRolloutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromoteRolloutRequest.ProtoReflect.Descriptor instead.
+func (*PromoteRolloutRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *PromoteRolloutRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *PromoteRolloutRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type PromoteRolloutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rollout       *Rollout               `protobuf:"bytes,1,opt,name=rollout,proto3" json:"rollout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PromoteRolloutResponse) Reset() {
+	*x = PromoteRolloutResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PromoteRolloutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PromoteRolloutResponse) ProtoMessage() {}
+
+func (x *PromoteRolloutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PromoteRolloutResponse.ProtoReflect.Descriptor instead.
+func (*PromoteRolloutResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *PromoteRolloutResponse) GetRollout() *Rollout {
+	if x != nil {
+		return x.Rollout
+	}
+	return nil
+}
+
+type AbortRolloutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AbortRolloutRequest) Reset() {
+	*x = AbortRolloutRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AbortRolloutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AbortRolloutRequest) ProtoMessage() {}
+
+func (x *AbortRolloutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AbortRolloutRequest.ProtoReflect.Descriptor instead.
+func (*AbortRolloutRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *AbortRolloutRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *AbortRolloutRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type AbortRolloutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rollout       *Rollout               `protobuf:"bytes,1,opt,name=rollout,proto3" json:"rollout,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AbortRolloutResponse) Reset() {
+	*x = AbortRolloutResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AbortRolloutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AbortRolloutResponse) ProtoMessage() {}
+
+func (x *AbortRolloutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AbortRolloutResponse.ProtoReflect.Descriptor instead.
+func (*AbortRolloutResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *AbortRolloutResponse) GetRollout() *Rollout {
+	if x != nil {
+		return x.Rollout
+	}
+	return nil
+}
+
 var File_paprika_v1_api_proto protoreflect.FileDescriptor
 
 const file_paprika_v1_api_proto_rawDesc = "" +
@@ -4576,8 +5116,50 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"H\n" +
 	"\x17RollbackReleaseResponse\x12-\n" +
-	"\arelease\x18\x01 \x01(\v2\x13.paprika.v1.ReleaseR\arelease2\xbe\n" +
+	"\arelease\x18\x01 \x01(\v2\x13.paprika.v1.ReleaseR\arelease\"\x8e\x04\n" +
+	"\aRollout\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12#\n" +
+	"\rstrategy_type\x18\x03 \x01(\tR\fstrategyType\x12\x14\n" +
+	"\x05phase\x18\x04 \x01(\tR\x05phase\x12!\n" +
+	"\fcurrent_step\x18\x05 \x01(\x05R\vcurrentStep\x12%\n" +
+	"\x0ecurrent_weight\x18\x06 \x01(\x05R\rcurrentWeight\x12\x1b\n" +
+	"\tstable_rs\x18\a \x01(\tR\bstableRs\x12\x1b\n" +
+	"\tcanary_rs\x18\b \x01(\tR\bcanaryRs\x12%\n" +
+	"\x0eactive_service\x18\t \x01(\tR\ractiveService\x12'\n" +
+	"\x0fpreview_service\x18\n" +
+	" \x01(\tR\x0epreviewService\x12/\n" +
+	"\x13observed_generation\x18\v \x01(\x03R\x12observedGeneration\x125\n" +
 	"\n" +
+	"conditions\x18\f \x03(\v2\x15.paprika.v1.ConditionR\n" +
+	"conditions\x12\x18\n" +
+	"\amessage\x18\r \x01(\tR\amessage\x12\x1f\n" +
+	"\vtarget_kind\x18\x0e \x01(\tR\n" +
+	"targetKind\x12\x1f\n" +
+	"\vtarget_name\x18\x0f \x01(\tR\n" +
+	"targetName\"`\n" +
+	"\x13ListRolloutsRequest\x12!\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
+	"\n" +
+	"_namespace\"G\n" +
+	"\x14ListRolloutsResponse\x12/\n" +
+	"\brollouts\x18\x01 \x03(\v2\x13.paprika.v1.RolloutR\brollouts\"E\n" +
+	"\x11GetRolloutRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
+	"\x12GetRolloutResponse\x12-\n" +
+	"\arollout\x18\x01 \x01(\v2\x13.paprika.v1.RolloutR\arollout\"I\n" +
+	"\x15PromoteRolloutRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"G\n" +
+	"\x16PromoteRolloutResponse\x12-\n" +
+	"\arollout\x18\x01 \x01(\v2\x13.paprika.v1.RolloutR\arollout\"G\n" +
+	"\x13AbortRolloutRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"E\n" +
+	"\x14AbortRolloutResponse\x12-\n" +
+	"\arollout\x18\x01 \x01(\v2\x13.paprika.v1.RolloutR\arollout2\x8a\r\n" +
 	"\x0ePaprikaService\x12T\n" +
 	"\rListPipelines\x12 .paprika.v1.ListPipelinesRequest\x1a!.paprika.v1.ListPipelinesResponse\x12Q\n" +
 	"\fListReleases\x12\x1f.paprika.v1.ListReleasesRequest\x1a .paprika.v1.ListReleasesResponse\x12K\n" +
@@ -4594,7 +5176,12 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\rResolveSource\x12 .paprika.v1.ResolveSourceRequest\x1a!.paprika.v1.ResolveSourceResponse\x12?\n" +
 	"\x06Render\x12\x19.paprika.v1.RenderRequest\x1a\x1a.paprika.v1.RenderResponse\x12N\n" +
 	"\vApplyBundle\x12\x1e.paprika.v1.ApplyBundleRequest\x1a\x1f.paprika.v1.ApplyBundleResponse\x12Z\n" +
-	"\x0fRollbackRelease\x12\".paprika.v1.RollbackReleaseRequest\x1a#.paprika.v1.RollbackReleaseResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
+	"\x0fRollbackRelease\x12\".paprika.v1.RollbackReleaseRequest\x1a#.paprika.v1.RollbackReleaseResponse\x12Q\n" +
+	"\fListRollouts\x12\x1f.paprika.v1.ListRolloutsRequest\x1a .paprika.v1.ListRolloutsResponse\x12K\n" +
+	"\n" +
+	"GetRollout\x12\x1d.paprika.v1.GetRolloutRequest\x1a\x1e.paprika.v1.GetRolloutResponse\x12W\n" +
+	"\x0ePromoteRollout\x12!.paprika.v1.PromoteRolloutRequest\x1a\".paprika.v1.PromoteRolloutResponse\x12Q\n" +
+	"\fAbortRollout\x12\x1f.paprika.v1.AbortRolloutRequest\x1a .paprika.v1.AbortRolloutResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
 
 var (
 	file_paprika_v1_api_proto_rawDescOnce sync.Once
@@ -4608,7 +5195,7 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 	return file_paprika_v1_api_proto_rawDescData
 }
 
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(*Step)(nil),                            // 0: paprika.v1.Step
 	(*StepStatus)(nil),                      // 1: paprika.v1.StepStatus
@@ -4673,20 +5260,29 @@ var file_paprika_v1_api_proto_goTypes = []any{
 	(*ApplyBundleResponse)(nil),             // 60: paprika.v1.ApplyBundleResponse
 	(*RollbackReleaseRequest)(nil),          // 61: paprika.v1.RollbackReleaseRequest
 	(*RollbackReleaseResponse)(nil),         // 62: paprika.v1.RollbackReleaseResponse
-	nil,                                     // 63: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                                     // 64: paprika.v1.Application.ParametersEntry
-	nil,                                     // 65: paprika.v1.NotificationDestination.HeadersEntry
-	nil,                                     // 66: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	(*Rollout)(nil),                         // 63: paprika.v1.Rollout
+	(*ListRolloutsRequest)(nil),             // 64: paprika.v1.ListRolloutsRequest
+	(*ListRolloutsResponse)(nil),            // 65: paprika.v1.ListRolloutsResponse
+	(*GetRolloutRequest)(nil),               // 66: paprika.v1.GetRolloutRequest
+	(*GetRolloutResponse)(nil),              // 67: paprika.v1.GetRolloutResponse
+	(*PromoteRolloutRequest)(nil),           // 68: paprika.v1.PromoteRolloutRequest
+	(*PromoteRolloutResponse)(nil),          // 69: paprika.v1.PromoteRolloutResponse
+	(*AbortRolloutRequest)(nil),             // 70: paprika.v1.AbortRolloutRequest
+	(*AbortRolloutResponse)(nil),            // 71: paprika.v1.AbortRolloutResponse
+	nil,                                     // 72: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                                     // 73: paprika.v1.Application.ParametersEntry
+	nil,                                     // 74: paprika.v1.NotificationDestination.HeadersEntry
+	nil,                                     // 75: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
 	3,  // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
 	4,  // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
 	5,  // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
-	63, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	72, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
 	8,  // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
 	7,  // 5: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
 	6,  // 6: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	64, // 7: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	73, // 7: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
 	10, // 8: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
 	11, // 9: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
 	12, // 10: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
@@ -4710,53 +5306,66 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	39, // 28: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
 	39, // 29: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
 	16, // 30: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	65, // 31: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
+	74, // 31: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
 	46, // 32: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
 	47, // 33: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
 	48, // 34: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
 	49, // 35: paprika.v1.NotificationConfig.rate_limit:type_name -> paprika.v1.NotificationRateLimit
 	50, // 36: paprika.v1.ListNotificationConfigsResponse.notification_configs:type_name -> paprika.v1.NotificationConfig
 	16, // 37: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
-	66, // 38: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	75, // 38: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 	16, // 39: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
 	20, // 40: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
 	19, // 41: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
 	20, // 42: paprika.v1.RollbackReleaseResponse.release:type_name -> paprika.v1.Release
-	26, // 43: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	28, // 44: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	30, // 45: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	32, // 46: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	34, // 47: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
-	40, // 48: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
-	42, // 49: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
-	51, // 50: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
-	37, // 51: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	44, // 52: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	53, // 53: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	55, // 54: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	57, // 55: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	59, // 56: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	61, // 57: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
-	27, // 58: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	29, // 59: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	31, // 60: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	33, // 61: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	35, // 62: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	41, // 63: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	43, // 64: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	52, // 65: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	38, // 66: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	45, // 67: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	54, // 68: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	56, // 69: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	58, // 70: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	60, // 71: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	62, // 72: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	58, // [58:73] is the sub-list for method output_type
-	43, // [43:58] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	14, // 43: paprika.v1.Rollout.conditions:type_name -> paprika.v1.Condition
+	63, // 44: paprika.v1.ListRolloutsResponse.rollouts:type_name -> paprika.v1.Rollout
+	63, // 45: paprika.v1.GetRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	63, // 46: paprika.v1.PromoteRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	63, // 47: paprika.v1.AbortRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	26, // 48: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	28, // 49: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	30, // 50: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	32, // 51: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	34, // 52: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	40, // 53: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
+	42, // 54: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
+	51, // 55: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
+	37, // 56: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	44, // 57: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	53, // 58: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	55, // 59: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	57, // 60: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	59, // 61: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	61, // 62: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
+	64, // 63: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
+	66, // 64: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
+	68, // 65: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
+	70, // 66: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
+	27, // 67: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	29, // 68: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	31, // 69: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	33, // 70: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	35, // 71: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	41, // 72: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	43, // 73: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	52, // 74: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	38, // 75: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	45, // 76: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	54, // 77: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	56, // 78: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	58, // 79: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	60, // 80: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	62, // 81: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	65, // 82: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	67, // 83: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	69, // 84: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	71, // 85: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	67, // [67:86] is the sub-list for method output_type
+	48, // [48:67] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }
@@ -4773,13 +5382,14 @@ func file_paprika_v1_api_proto_init() {
 	file_paprika_v1_api_proto_msgTypes[34].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[40].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[51].OneofWrappers = []any{}
+	file_paprika_v1_api_proto_msgTypes[64].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   67,
+			NumMessages:   76,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

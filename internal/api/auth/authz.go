@@ -25,6 +25,7 @@ const (
 	ResourceStages       Resource = "stages"
 	ResourceTemplates    Resource = "templates"
 	ResourceArtifacts    Resource = "artifacts"
+	ResourceRollouts     Resource = "rollouts"
 )
 
 // Authorizer decides if a principal can perform an action on a resource.

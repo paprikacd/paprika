@@ -1,0 +1,21 @@
+project_id       = "shorted-dev-aba5688f"
+gke_project_id   = "shorted-dev-aba5688f"
+environment      = "dev"
+region           = "australia-southeast1"
+gke_region       = "australia-southeast1"
+gke_cluster_name = "paprika-dev"
+service_name     = "paprika-cloud-run"
+image            = "australia-southeast1-docker.pkg.dev/shorted-dev-aba5688f/paprika/cloud-run:latest"
+
+vpc_network_name     = "paprika-vpc"
+vpc_connector_subnet = "10.0.10.0/28"
+
+crd_cluster_role_name = "paprika-crd-admin"
+kubernetes_namespace  = "paprika-system"
+
+min_instances = 1
+max_instances = 5
+cpu           = "1"
+memory        = "512Mi"
+
+enable_secret_manager_kubeconfig = true

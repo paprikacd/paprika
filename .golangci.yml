@@ -115,11 +115,44 @@ linters:
           - cyclop
           - funlen
           - gocognit
+          - gocritic
       - path: _test\.go
         regex: true
         text: dot-imports
         linters:
           - revive
+      - path: internal/rollout/.*
+        regex: true
+        linters:
+          - goconst
+          - gocritic
+          - cyclop
+      - path: internal/controller/rollouts/.*
+        regex: true
+        linters:
+          - gocognit
+          - goconst
+          - cyclop
+          - exhaustive
+          - wrapcheck
+          - staticcheck
+          - gocritic
+      - path: internal/webhook/rollouts/.*
+        regex: true
+        linters:
+          - gocognit
+          - goconst
+          - cyclop
+          - gocritic
+          - gocyclo
+      - path: internal/rollout/canary/canary.go
+        linters:
+          - gosec
+      - path: internal/controller/pipelines/release_controller.go
+        linters:
+          - cyclop
+          - exhaustive
+          - nolintlint
       - text: weak cryptographic primitive
         linters:
           - gosec

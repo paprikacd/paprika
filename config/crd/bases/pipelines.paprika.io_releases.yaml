@@ -263,6 +263,10 @@ spec:
                 description: RolledBackTo records the release name that a rolled-back
                   release re-applied.
                 type: string
+              rolloutRef:
+                description: RolloutRef references the Rollout child when the stage
+                  uses an advanced strategy.
+                type: string
             type: object
         required:
         - metadata

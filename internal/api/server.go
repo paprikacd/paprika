@@ -18,6 +18,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
@@ -468,6 +469,10 @@ func (s *PaprikaServer) ApproveGate(
 // PaprikaServer RBAC for RollbackRelease.
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;update;patch
 
+// PaprikaServer RBAC for Rollout RPCs.
+// +kubebuilder:rbac:groups=rollouts.paprika.io,resources=rollouts,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=rollouts.paprika.io,resources=rollouts/status,verbs=get;update;patch
+
 // RollbackRelease requests the release controller to roll a release back to the
 // previous viable snapshot. It works for both failed and healthy releases by
 // setting a rollback annotation and ensuring the release's OnFailure action is
@@ -513,6 +518,131 @@ func (s *PaprikaServer) RollbackRelease(
 	return connect.NewResponse(&paprikav1.RollbackReleaseResponse{
 		Release: convertRelease(&refreshed),
 	}), nil
+}
+
+// ListRollouts returns a list of rollouts.
+func (s *PaprikaServer) ListRollouts(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListRolloutsRequest],
+) (*connect.Response[paprikav1.ListRolloutsResponse], error) {
+	var list rolloutsv1alpha1.RolloutList
+	opts := []client.ListOption{}
+	if req.Msg.Namespace != nil {
+		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
+	}
+	if err := s.List(ctx, &list, opts...); err != nil {
+		return nil, fmt.Errorf("listing rollouts: %w", err)
+	}
+	rollouts := make([]*paprikav1.Rollout, 0, len(list.Items))
+	for i := range list.Items {
+		ro := &list.Items[i]
+		if !s.authorizeProjectFromLabels(ctx, ro, auth.ResourceRollouts) {
+			continue
+		}
+		rollouts = append(rollouts, convertRollout(ro))
+	}
+	return connect.NewResponse(&paprikav1.ListRolloutsResponse{Rollouts: rollouts}), nil
+}
+
+// GetRollout returns a single rollout by name and namespace.
+func (s *PaprikaServer) GetRollout(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetRolloutRequest],
+) (*connect.Response[paprikav1.GetRolloutResponse], error) {
+	var ro rolloutsv1alpha1.Rollout
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+		return nil, fmt.Errorf("getting rollout: %w", err)
+	}
+	if !s.authorizeProjectFromLabels(ctx, &ro, auth.ResourceRollouts) {
+		return nil, connect.NewError(connect.CodePermissionDenied, auth.ErrUnauthorized)
+	}
+	return connect.NewResponse(&paprikav1.GetRolloutResponse{Rollout: convertRollout(&ro)}), nil
+}
+
+// PromoteRollout advances the rollout to the next step or final promotion.
+func (s *PaprikaServer) PromoteRollout(
+	ctx context.Context,
+	req *connect.Request[paprikav1.PromoteRolloutRequest],
+) (*connect.Response[paprikav1.PromoteRolloutResponse], error) {
+	var ro rolloutsv1alpha1.Rollout
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+		return nil, fmt.Errorf("getting rollout: %w", err)
+	}
+	if err := s.authorizeRolloutWrite(ctx, &ro); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	if ro.Annotations == nil {
+		ro.Annotations = make(map[string]string)
+	}
+	ro.Annotations["paprika.io/promote"] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	if err := s.Update(ctx, &ro); err != nil {
+		return nil, fmt.Errorf("promoting rollout: %w", err)
+	}
+	var refreshed rolloutsv1alpha1.Rollout
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+		return nil, fmt.Errorf("getting refreshed rollout: %w", err)
+	}
+	return connect.NewResponse(&paprikav1.PromoteRolloutResponse{Rollout: convertRollout(&refreshed)}), nil
+}
+
+// AbortRollout cancels an in-progress rollout.
+func (s *PaprikaServer) AbortRollout(
+	ctx context.Context,
+	req *connect.Request[paprikav1.AbortRolloutRequest],
+) (*connect.Response[paprikav1.AbortRolloutResponse], error) {
+	var ro rolloutsv1alpha1.Rollout
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+		return nil, fmt.Errorf("getting rollout: %w", err)
+	}
+	if err := s.authorizeRolloutWrite(ctx, &ro); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	if ro.Annotations == nil {
+		ro.Annotations = make(map[string]string)
+	}
+	ro.Annotations["paprika.io/abort"] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	if err := s.Update(ctx, &ro); err != nil {
+		return nil, fmt.Errorf("aborting rollout: %w", err)
+	}
+	var refreshed rolloutsv1alpha1.Rollout
+	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+		return nil, fmt.Errorf("getting refreshed rollout: %w", err)
+	}
+	return connect.NewResponse(&paprikav1.AbortRolloutResponse{Rollout: convertRollout(&refreshed)}), nil
+}
+
+func (s *PaprikaServer) authorizeRolloutWrite(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	appName := ro.Labels[engine.ApplicationNameLabelKey]
+	if appName != "" {
+		var app pipelinesv1alpha1.Application
+		if err := s.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: appName}, &app); err == nil {
+			return s.authorizeApplication(ctx, auth.ActionWrite, &app)
+		}
+	}
+	if !s.authorizeProjectFromLabels(ctx, ro, auth.ResourceRollouts) {
+		return auth.ErrUnauthorized
+	}
+	return nil
+}
+
+func convertRollout(r *rolloutsv1alpha1.Rollout) *paprikav1.Rollout {
+	return &paprikav1.Rollout{
+		Name:               r.Name,
+		Namespace:          r.Namespace,
+		StrategyType:       r.Spec.Strategy.Type,
+		Phase:              string(r.Status.Phase),
+		CurrentStep:        r.Status.CurrentStepIndex,
+		CurrentWeight:      r.Status.CurrentStepWeight,
+		StableRs:           r.Status.StableRS,
+		CanaryRs:           r.Status.CanaryRS,
+		ActiveService:      r.Status.ActiveService,
+		PreviewService:     r.Status.PreviewService,
+		ObservedGeneration: r.Status.ObservedGeneration,
+		Conditions:         convertConditions(r.Status.Conditions),
+		Message:            r.Status.Message,
+		TargetKind:         r.Spec.Target.Kind,
+		TargetName:         r.Spec.Target.Name,
+	}
 }
 
 func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {

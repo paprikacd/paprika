@@ -614,6 +614,436 @@ spec:
                     ring:
                       description: Ring number (lower = earlier environment)
                       type: integer
+                    rolloutStrategy:
+                      description: |-
+                        RolloutStrategy is an advanced deployment strategy for this stage.
+                        Mutually exclusive with Canary.
+                      properties:
+                        abTest:
+                          description: ABTestStrategy routes traffic to stable or
+                            canary based on headers or cookies.
+                          properties:
+                            analysis:
+                              description: RolloutAnalysis defines analysis checks
+                                for a Rollout.
+                              properties:
+                                checks:
+                                  items:
+                                    description: AnalysisCheck defines a single analysis
+                                      check.
+                                    properties:
+                                      httpHeaders:
+                                        additionalProperties:
+                                          type: string
+                                        description: HTTP headers to send with the
+                                          request
+                                        type: object
+                                      metric:
+                                        description: Pod metric to check (for type=podMetrics)
+                                        enum:
+                                        - errorRate
+                                        - latencyP99
+                                        - restartRate
+                                        type: string
+                                      requestCount:
+                                        description: Number of requests to make per
+                                          analysis cycle
+                                        type: integer
+                                      successThreshold:
+                                        description: Fraction of requests that must
+                                          succeed as a percentage string
+                                        type: string
+                                      threshold:
+                                        description: Threshold as a string
+                                        type: string
+                                      timeoutSeconds:
+                                        description: Timeout per request in seconds
+                                        type: integer
+                                      type:
+                                        enum:
+                                        - http
+                                        - podMetrics
+                                        type: string
+                                      url:
+                                        description: URL to probe (for type=http)
+                                        type: string
+                                      windowSeconds:
+                                        description: Time window in seconds to evaluate
+                                          the metric
+                                        type: integer
+                                    required:
+                                    - type
+                                    type: object
+                                  type: array
+                                failedThreshold:
+                                  format: int32
+                                  type: integer
+                                interval:
+                                  type: string
+                                successThreshold:
+                                  format: int32
+                                  type: integer
+                              type: object
+                            canaryService:
+                              type: string
+                            routes:
+                              items:
+                                description: ABTestRoute matches a header or cookie
+                                  and routes to a service.
+                                properties:
+                                  name:
+                                    type: string
+                                  service:
+                                    type: string
+                                  type:
+                                    type: string
+                                  value:
+                                    type: string
+                                required:
+                                - name
+                                - service
+                                - type
+                                - value
+                                type: object
+                              type: array
+                            stableService:
+                              type: string
+                          required:
+                          - routes
+                          type: object
+                        blueGreen:
+                          description: BlueGreenStrategy runs the new version behind
+                            a preview service, then cuts over.
+                          properties:
+                            activeService:
+                              type: string
+                            analysis:
+                              description: RolloutAnalysis defines analysis checks
+                                for a Rollout.
+                              properties:
+                                checks:
+                                  items:
+                                    description: AnalysisCheck defines a single analysis
+                                      check.
+                                    properties:
+                                      httpHeaders:
+                                        additionalProperties:
+                                          type: string
+                                        description: HTTP headers to send with the
+                                          request
+                                        type: object
+                                      metric:
+                                        description: Pod metric to check (for type=podMetrics)
+                                        enum:
+                                        - errorRate
+                                        - latencyP99
+                                        - restartRate
+                                        type: string
+                                      requestCount:
+                                        description: Number of requests to make per
+                                          analysis cycle
+                                        type: integer
+                                      successThreshold:
+                                        description: Fraction of requests that must
+                                          succeed as a percentage string
+                                        type: string
+                                      threshold:
+                                        description: Threshold as a string
+                                        type: string
+                                      timeoutSeconds:
+                                        description: Timeout per request in seconds
+                                        type: integer
+                                      type:
+                                        enum:
+                                        - http
+                                        - podMetrics
+                                        type: string
+                                      url:
+                                        description: URL to probe (for type=http)
+                                        type: string
+                                      windowSeconds:
+                                        description: Time window in seconds to evaluate
+                                          the metric
+                                        type: integer
+                                    required:
+                                    - type
+                                    type: object
+                                  type: array
+                                failedThreshold:
+                                  format: int32
+                                  type: integer
+                                interval:
+                                  type: string
+                                successThreshold:
+                                  format: int32
+                                  type: integer
+                              type: object
+                            autoPromotionSeconds:
+                              format: int32
+                              type: integer
+                            previewReplicaCount:
+                              format: int32
+                              type: integer
+                            previewService:
+                              type: string
+                            scaleDownDelaySeconds:
+                              format: int32
+                              type: integer
+                          required:
+                          - activeService
+                          type: object
+                        canary:
+                          description: CanaryStrategy progressively shifts traffic
+                            to the canary version.
+                          properties:
+                            analysis:
+                              description: RolloutAnalysis defines analysis checks
+                                for a Rollout.
+                              properties:
+                                checks:
+                                  items:
+                                    description: AnalysisCheck defines a single analysis
+                                      check.
+                                    properties:
+                                      httpHeaders:
+                                        additionalProperties:
+                                          type: string
+                                        description: HTTP headers to send with the
+                                          request
+                                        type: object
+                                      metric:
+                                        description: Pod metric to check (for type=podMetrics)
+                                        enum:
+                                        - errorRate
+                                        - latencyP99
+                                        - restartRate
+                                        type: string
+                                      requestCount:
+                                        description: Number of requests to make per
+                                          analysis cycle
+                                        type: integer
+                                      successThreshold:
+                                        description: Fraction of requests that must
+                                          succeed as a percentage string
+                                        type: string
+                                      threshold:
+                                        description: Threshold as a string
+                                        type: string
+                                      timeoutSeconds:
+                                        description: Timeout per request in seconds
+                                        type: integer
+                                      type:
+                                        enum:
+                                        - http
+                                        - podMetrics
+                                        type: string
+                                      url:
+                                        description: URL to probe (for type=http)
+                                        type: string
+                                      windowSeconds:
+                                        description: Time window in seconds to evaluate
+                                          the metric
+                                        type: integer
+                                    required:
+                                    - type
+                                    type: object
+                                  type: array
+                                failedThreshold:
+                                  format: int32
+                                  type: integer
+                                interval:
+                                  type: string
+                                successThreshold:
+                                  format: int32
+                                  type: integer
+                              type: object
+                            canaryService:
+                              type: string
+                            stableService:
+                              type: string
+                            steps:
+                              items:
+                                description: CanaryStep defines a single step in a
+                                  canary rollout.
+                                properties:
+                                  analysis:
+                                    description: RolloutAnalysis defines analysis
+                                      checks for a Rollout.
+                                    properties:
+                                      checks:
+                                        items:
+                                          description: AnalysisCheck defines a single
+                                            analysis check.
+                                          properties:
+                                            httpHeaders:
+                                              additionalProperties:
+                                                type: string
+                                              description: HTTP headers to send with
+                                                the request
+                                              type: object
+                                            metric:
+                                              description: Pod metric to check (for
+                                                type=podMetrics)
+                                              enum:
+                                              - errorRate
+                                              - latencyP99
+                                              - restartRate
+                                              type: string
+                                            requestCount:
+                                              description: Number of requests to make
+                                                per analysis cycle
+                                              type: integer
+                                            successThreshold:
+                                              description: Fraction of requests that
+                                                must succeed as a percentage string
+                                              type: string
+                                            threshold:
+                                              description: Threshold as a string
+                                              type: string
+                                            timeoutSeconds:
+                                              description: Timeout per request in
+                                                seconds
+                                              type: integer
+                                            type:
+                                              enum:
+                                              - http
+                                              - podMetrics
+                                              type: string
+                                            url:
+                                              description: URL to probe (for type=http)
+                                              type: string
+                                            windowSeconds:
+                                              description: Time window in seconds
+                                                to evaluate the metric
+                                              type: integer
+                                          required:
+                                          - type
+                                          type: object
+                                        type: array
+                                      failedThreshold:
+                                        format: int32
+                                        type: integer
+                                      interval:
+                                        type: string
+                                      successThreshold:
+                                        format: int32
+                                        type: integer
+                                    type: object
+                                  duration:
+                                    type: string
+                                  setWeight:
+                                    format: int32
+                                    type: integer
+                                required:
+                                - setWeight
+                                type: object
+                              type: array
+                          required:
+                          - steps
+                          type: object
+                        mirror:
+                          description: MirrorStrategy mirrors a percentage of traffic
+                            to canary.
+                          properties:
+                            analysis:
+                              description: RolloutAnalysis defines analysis checks
+                                for a Rollout.
+                              properties:
+                                checks:
+                                  items:
+                                    description: AnalysisCheck defines a single analysis
+                                      check.
+                                    properties:
+                                      httpHeaders:
+                                        additionalProperties:
+                                          type: string
+                                        description: HTTP headers to send with the
+                                          request
+                                        type: object
+                                      metric:
+                                        description: Pod metric to check (for type=podMetrics)
+                                        enum:
+                                        - errorRate
+                                        - latencyP99
+                                        - restartRate
+                                        type: string
+                                      requestCount:
+                                        description: Number of requests to make per
+                                          analysis cycle
+                                        type: integer
+                                      successThreshold:
+                                        description: Fraction of requests that must
+                                          succeed as a percentage string
+                                        type: string
+                                      threshold:
+                                        description: Threshold as a string
+                                        type: string
+                                      timeoutSeconds:
+                                        description: Timeout per request in seconds
+                                        type: integer
+                                      type:
+                                        enum:
+                                        - http
+                                        - podMetrics
+                                        type: string
+                                      url:
+                                        description: URL to probe (for type=http)
+                                        type: string
+                                      windowSeconds:
+                                        description: Time window in seconds to evaluate
+                                          the metric
+                                        type: integer
+                                    required:
+                                    - type
+                                    type: object
+                                  type: array
+                                failedThreshold:
+                                  format: int32
+                                  type: integer
+                                interval:
+                                  type: string
+                                successThreshold:
+                                  format: int32
+                                  type: integer
+                              type: object
+                            canaryService:
+                              type: string
+                            duration:
+                              type: string
+                            mirrorPercent:
+                              format: int32
+                              type: integer
+                            stableService:
+                              type: string
+                          required:
+                          - mirrorPercent
+                          type: object
+                        rolling:
+                          description: RollingStrategy performs a standard rolling
+                            update.
+                          properties:
+                            maxSurge:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              x-kubernetes-int-or-string: true
+                            maxUnavailable:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              x-kubernetes-int-or-string: true
+                          type: object
+                        type:
+                          enum:
+                          - Rolling
+                          - Canary
+                          - BlueGreen
+                          - ABTest
+                          - Mirror
+                          type: string
+                      required:
+                      - type
+                      type: object
                     strategy:
                       description: Delivery strategy for this stage (overrides spec.strategy
                         if set)

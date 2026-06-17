@@ -166,6 +166,7 @@ var resourceKeywords = map[string]Resource{
 	"stage":       ResourceStages,
 	"template":    ResourceTemplates,
 	"artifact":    ResourceArtifacts,
+	"rollout":     ResourceRollouts,
 }
 
 func classify(procedure string) (Action, Resource) {

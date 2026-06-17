@@ -230,3 +230,71 @@ func runtimeScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	return runtime.NewScheme()
 }
+
+func TestIstioRouterSetHeaderRoute(t *testing.T) {
+	vs := newFakeVS("test-vs", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), vs)
+	router := istio.NewRouter(&paprikav1.IstioRouterConfig{VirtualService: "test-vs"}, client, "stable", "canary", "default")
+
+	err := router.SetHeaderRoute(context.Background(), "X-Canary", "true", "canary")
+	require.NoError(t, err)
+
+	updated, err := client.Resource(vsGVR).Namespace("default").Get(context.Background(), "test-vs", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	routes, _, _ := unstructured.NestedSlice(updated.Object, "spec", "http")
+	require.Len(t, routes, 2)
+}
+
+func TestIstioRouterRemoveHeaderRoute(t *testing.T) {
+	vs := newFakeVS("test-vs", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), vs)
+	router := istio.NewRouter(&paprikav1.IstioRouterConfig{VirtualService: "test-vs"}, client, "stable", "canary", "default")
+
+	require.NoError(t, router.SetHeaderRoute(context.Background(), "X-Canary", "true", "canary"))
+	require.NoError(t, router.RemoveHeaderRoute(context.Background(), "X-Canary"))
+
+	updated, err := client.Resource(vsGVR).Namespace("default").Get(context.Background(), "test-vs", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	routes, _, _ := unstructured.NestedSlice(updated.Object, "spec", "http")
+	require.Len(t, routes, 1)
+}
+
+func TestIstioRouterSetMirror(t *testing.T) {
+	vs := newFakeVS("test-vs", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), vs)
+	router := istio.NewRouter(&paprikav1.IstioRouterConfig{VirtualService: "test-vs"}, client, "stable", "canary", "default")
+
+	err := router.SetMirror(context.Background(), 50)
+	require.NoError(t, err)
+
+	updated, err := client.Resource(vsGVR).Namespace("default").Get(context.Background(), "test-vs", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	routes, _, _ := unstructured.NestedSlice(updated.Object, "spec", "http")
+	route, ok := routes[0].(map[string]any)
+	require.True(t, ok)
+	mirror, ok := route["mirror"].(map[string]any)
+	require.True(t, ok)
+	host, _, _ := unstructured.NestedString(mirror, "host")
+	assert.Equal(t, "canary", host)
+}
+
+func TestIstioRouterRemoveMirror(t *testing.T) {
+	vs := newFakeVS("test-vs", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), vs)
+	router := istio.NewRouter(&paprikav1.IstioRouterConfig{VirtualService: "test-vs"}, client, "stable", "canary", "default")
+
+	require.NoError(t, router.SetMirror(context.Background(), 50))
+	require.NoError(t, router.RemoveMirror(context.Background()))
+
+	updated, err := client.Resource(vsGVR).Namespace("default").Get(context.Background(), "test-vs", metav1.GetOptions{})
+	require.NoError(t, err)
+
+	routes, _, _ := unstructured.NestedSlice(updated.Object, "spec", "http")
+	route, ok := routes[0].(map[string]any)
+	require.True(t, ok)
+	_, hasMirror := route["mirror"]
+	assert.False(t, hasMirror)
+}

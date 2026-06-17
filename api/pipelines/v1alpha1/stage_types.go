@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 )
 
 // ClusterMode defines how the controller connects to a cluster.
@@ -131,6 +133,10 @@ type StageSpec struct {
 	Gates     []GateConfig `json:"gates,omitempty"`
 	// +optional
 	Canary *CanaryConfig `json:"canary,omitempty"`
+	// RolloutStrategy is an advanced deployment strategy managed by the Rollout controller.
+	// Mutually exclusive with Canary.
+	// +optional
+	RolloutStrategy *rolloutsv1alpha1.RolloutStrategy `json:"rolloutStrategy,omitempty"`
 	// +optional
 	TrafficRouter *TrafficRouter `json:"trafficRouter,omitempty"`
 }

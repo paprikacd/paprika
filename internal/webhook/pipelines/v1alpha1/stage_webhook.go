@@ -110,6 +110,10 @@ func (v *StageCustomValidator) validateStageCreate(s *pipelinesv1alpha1.Stage) f
 		allErrs = append(allErrs, field.Required(specPath.Child("name"), "Stage name is required"))
 	}
 
+	if s.Spec.Canary != nil && s.Spec.RolloutStrategy != nil {
+		allErrs = append(allErrs, field.Forbidden(specPath, "Canary and RolloutStrategy are mutually exclusive"))
+	}
+
 	templatesPath := specPath.Child("templates")
 	for i, tmpl := range s.Spec.Templates {
 		if tmpl == "" {

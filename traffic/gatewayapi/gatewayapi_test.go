@@ -155,3 +155,23 @@ func runtimeScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	return runtime.NewScheme()
 }
+
+func TestGatewayAPIRouterHeaderRouteNotSupported(t *testing.T) {
+	hr := newFakeHTTPRoute("test-route", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), hr)
+	router := gatewayapi.NewRouter(&paprikav1.GatewayAPIRouterConfig{HTTPRoute: "test-route"}, client, "stable", "canary", "default")
+
+	err := router.SetHeaderRoute(context.Background(), "X-Canary", "true", "canary")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not support")
+}
+
+func TestGatewayAPIRouterMirrorNotSupported(t *testing.T) {
+	hr := newFakeHTTPRoute("test-route", "default", "stable", "canary", 100, 0)
+	client := fake.NewSimpleDynamicClient(runtimeScheme(t), hr)
+	router := gatewayapi.NewRouter(&paprikav1.GatewayAPIRouterConfig{HTTPRoute: "test-route"}, client, "stable", "canary", "default")
+
+	err := router.SetMirror(context.Background(), 50)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "does not support")
+}

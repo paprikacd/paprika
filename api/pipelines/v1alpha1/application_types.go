@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 )
 
 // ApplicationPhase represents the phase of an application.
@@ -252,6 +254,10 @@ type ApplicationPromotionStage struct {
 	// Canary config for this stage (overrides spec.canary if set)
 	// +optional
 	Canary *CanaryConfig `json:"canary,omitempty"`
+	// RolloutStrategy is an advanced deployment strategy for this stage.
+	// Mutually exclusive with Canary.
+	// +optional
+	RolloutStrategy *rolloutsv1alpha1.RolloutStrategy `json:"rolloutStrategy,omitempty"`
 	// Verification gates to run after promotion
 	// +optional
 	Gates []GateConfig `json:"gates,omitempty"`

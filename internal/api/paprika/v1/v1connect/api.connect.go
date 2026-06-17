@@ -77,6 +77,18 @@ const (
 	// PaprikaServiceRollbackReleaseProcedure is the fully-qualified name of the PaprikaService's
 	// RollbackRelease RPC.
 	PaprikaServiceRollbackReleaseProcedure = "/paprika.v1.PaprikaService/RollbackRelease"
+	// PaprikaServiceListRolloutsProcedure is the fully-qualified name of the PaprikaService's
+	// ListRollouts RPC.
+	PaprikaServiceListRolloutsProcedure = "/paprika.v1.PaprikaService/ListRollouts"
+	// PaprikaServiceGetRolloutProcedure is the fully-qualified name of the PaprikaService's GetRollout
+	// RPC.
+	PaprikaServiceGetRolloutProcedure = "/paprika.v1.PaprikaService/GetRollout"
+	// PaprikaServicePromoteRolloutProcedure is the fully-qualified name of the PaprikaService's
+	// PromoteRollout RPC.
+	PaprikaServicePromoteRolloutProcedure = "/paprika.v1.PaprikaService/PromoteRollout"
+	// PaprikaServiceAbortRolloutProcedure is the fully-qualified name of the PaprikaService's
+	// AbortRollout RPC.
+	PaprikaServiceAbortRolloutProcedure = "/paprika.v1.PaprikaService/AbortRollout"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -96,6 +108,10 @@ type PaprikaServiceClient interface {
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
 	RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error)
+	ListRollouts(context.Context, *connect.Request[v1.ListRolloutsRequest]) (*connect.Response[v1.ListRolloutsResponse], error)
+	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
+	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
+	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -199,6 +215,30 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("RollbackRelease")),
 			connect.WithClientOptions(opts...),
 		),
+		listRollouts: connect.NewClient[v1.ListRolloutsRequest, v1.ListRolloutsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListRolloutsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListRollouts")),
+			connect.WithClientOptions(opts...),
+		),
+		getRollout: connect.NewClient[v1.GetRolloutRequest, v1.GetRolloutResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetRolloutProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetRollout")),
+			connect.WithClientOptions(opts...),
+		),
+		promoteRollout: connect.NewClient[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse](
+			httpClient,
+			baseURL+PaprikaServicePromoteRolloutProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("PromoteRollout")),
+			connect.WithClientOptions(opts...),
+		),
+		abortRollout: connect.NewClient[v1.AbortRolloutRequest, v1.AbortRolloutResponse](
+			httpClient,
+			baseURL+PaprikaServiceAbortRolloutProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -219,6 +259,10 @@ type paprikaServiceClient struct {
 	render                  *connect.Client[v1.RenderRequest, v1.RenderResponse]
 	applyBundle             *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
 	rollbackRelease         *connect.Client[v1.RollbackReleaseRequest, v1.RollbackReleaseResponse]
+	listRollouts            *connect.Client[v1.ListRolloutsRequest, v1.ListRolloutsResponse]
+	getRollout              *connect.Client[v1.GetRolloutRequest, v1.GetRolloutResponse]
+	promoteRollout          *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
+	abortRollout            *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -296,6 +340,26 @@ func (c *paprikaServiceClient) RollbackRelease(ctx context.Context, req *connect
 	return c.rollbackRelease.CallUnary(ctx, req)
 }
 
+// ListRollouts calls paprika.v1.PaprikaService.ListRollouts.
+func (c *paprikaServiceClient) ListRollouts(ctx context.Context, req *connect.Request[v1.ListRolloutsRequest]) (*connect.Response[v1.ListRolloutsResponse], error) {
+	return c.listRollouts.CallUnary(ctx, req)
+}
+
+// GetRollout calls paprika.v1.PaprikaService.GetRollout.
+func (c *paprikaServiceClient) GetRollout(ctx context.Context, req *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error) {
+	return c.getRollout.CallUnary(ctx, req)
+}
+
+// PromoteRollout calls paprika.v1.PaprikaService.PromoteRollout.
+func (c *paprikaServiceClient) PromoteRollout(ctx context.Context, req *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error) {
+	return c.promoteRollout.CallUnary(ctx, req)
+}
+
+// AbortRollout calls paprika.v1.PaprikaService.AbortRollout.
+func (c *paprikaServiceClient) AbortRollout(ctx context.Context, req *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error) {
+	return c.abortRollout.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -313,6 +377,10 @@ type PaprikaServiceHandler interface {
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
 	RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error)
+	ListRollouts(context.Context, *connect.Request[v1.ListRolloutsRequest]) (*connect.Response[v1.ListRolloutsResponse], error)
+	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
+	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
+	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -412,6 +480,30 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("RollbackRelease")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListRolloutsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListRolloutsProcedure,
+		svc.ListRollouts,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListRollouts")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetRolloutHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetRolloutProcedure,
+		svc.GetRollout,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetRollout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServicePromoteRolloutHandler := connect.NewUnaryHandler(
+		PaprikaServicePromoteRolloutProcedure,
+		svc.PromoteRollout,
+		connect.WithSchema(paprikaServiceMethods.ByName("PromoteRollout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceAbortRolloutHandler := connect.NewUnaryHandler(
+		PaprikaServiceAbortRolloutProcedure,
+		svc.AbortRollout,
+		connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -444,6 +536,14 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceApplyBundleHandler.ServeHTTP(w, r)
 		case PaprikaServiceRollbackReleaseProcedure:
 			paprikaServiceRollbackReleaseHandler.ServeHTTP(w, r)
+		case PaprikaServiceListRolloutsProcedure:
+			paprikaServiceListRolloutsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetRolloutProcedure:
+			paprikaServiceGetRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServicePromoteRolloutProcedure:
+			paprikaServicePromoteRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServiceAbortRolloutProcedure:
+			paprikaServiceAbortRolloutHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -511,4 +611,20 @@ func (UnimplementedPaprikaServiceHandler) ApplyBundle(context.Context, *connect.
 
 func (UnimplementedPaprikaServiceHandler) RollbackRelease(context.Context, *connect.Request[v1.RollbackReleaseRequest]) (*connect.Response[v1.RollbackReleaseResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.RollbackRelease is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListRollouts(context.Context, *connect.Request[v1.ListRolloutsRequest]) (*connect.Response[v1.ListRolloutsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListRollouts is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.PromoteRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.AbortRollout is not implemented"))
 }

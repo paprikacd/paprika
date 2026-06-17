@@ -53,6 +53,7 @@ rules:
   - apps
   resources:
   - deployments
+  - replicasets
   verbs:
   - create
   - delete
@@ -239,6 +240,32 @@ rules:
   - policy.paprika.io
   resources:
   - policies/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - rollouts.paprika.io
+  resources:
+  - rollouts/status
   verbs:
   - get
   - patch

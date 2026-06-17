@@ -2427,3 +2427,309 @@ export declare class RollbackReleaseResponse extends Message<RollbackReleaseResp
   static equals(a: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined, b: RollbackReleaseResponse | PlainMessage<RollbackReleaseResponse> | undefined): boolean;
 }
 
+/**
+ * @generated from message paprika.v1.Rollout
+ */
+export declare class Rollout extends Message<Rollout> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string strategy_type = 3;
+   */
+  strategyType: string;
+
+  /**
+   * @generated from field: string phase = 4;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: int32 current_step = 5;
+   */
+  currentStep: number;
+
+  /**
+   * @generated from field: int32 current_weight = 6;
+   */
+  currentWeight: number;
+
+  /**
+   * @generated from field: string stable_rs = 7;
+   */
+  stableRs: string;
+
+  /**
+   * @generated from field: string canary_rs = 8;
+   */
+  canaryRs: string;
+
+  /**
+   * @generated from field: string active_service = 9;
+   */
+  activeService: string;
+
+  /**
+   * @generated from field: string preview_service = 10;
+   */
+  previewService: string;
+
+  /**
+   * @generated from field: int64 observed_generation = 11;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 12;
+   */
+  conditions: Condition[];
+
+  /**
+   * @generated from field: string message = 13;
+   */
+  message: string;
+
+  /**
+   * @generated from field: string target_kind = 14;
+   */
+  targetKind: string;
+
+  /**
+   * @generated from field: string target_name = 15;
+   */
+  targetName: string;
+
+  constructor(data?: PartialMessage<Rollout>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.Rollout";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Rollout;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Rollout;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Rollout;
+
+  static equals(a: Rollout | PlainMessage<Rollout> | undefined, b: Rollout | PlainMessage<Rollout> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListRolloutsRequest
+ */
+export declare class ListRolloutsRequest extends Message<ListRolloutsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: string project = 2;
+   */
+  project: string;
+
+  constructor(data?: PartialMessage<ListRolloutsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListRolloutsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRolloutsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRolloutsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRolloutsRequest;
+
+  static equals(a: ListRolloutsRequest | PlainMessage<ListRolloutsRequest> | undefined, b: ListRolloutsRequest | PlainMessage<ListRolloutsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListRolloutsResponse
+ */
+export declare class ListRolloutsResponse extends Message<ListRolloutsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.Rollout rollouts = 1;
+   */
+  rollouts: Rollout[];
+
+  constructor(data?: PartialMessage<ListRolloutsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListRolloutsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRolloutsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRolloutsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRolloutsResponse;
+
+  static equals(a: ListRolloutsResponse | PlainMessage<ListRolloutsResponse> | undefined, b: ListRolloutsResponse | PlainMessage<ListRolloutsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRolloutRequest
+ */
+export declare class GetRolloutRequest extends Message<GetRolloutRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetRolloutRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRolloutRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRolloutRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRolloutRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRolloutRequest;
+
+  static equals(a: GetRolloutRequest | PlainMessage<GetRolloutRequest> | undefined, b: GetRolloutRequest | PlainMessage<GetRolloutRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRolloutResponse
+ */
+export declare class GetRolloutResponse extends Message<GetRolloutResponse> {
+  /**
+   * @generated from field: paprika.v1.Rollout rollout = 1;
+   */
+  rollout?: Rollout;
+
+  constructor(data?: PartialMessage<GetRolloutResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRolloutResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRolloutResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRolloutResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRolloutResponse;
+
+  static equals(a: GetRolloutResponse | PlainMessage<GetRolloutResponse> | undefined, b: GetRolloutResponse | PlainMessage<GetRolloutResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PromoteRolloutRequest
+ */
+export declare class PromoteRolloutRequest extends Message<PromoteRolloutRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<PromoteRolloutRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PromoteRolloutRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PromoteRolloutRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PromoteRolloutRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PromoteRolloutRequest;
+
+  static equals(a: PromoteRolloutRequest | PlainMessage<PromoteRolloutRequest> | undefined, b: PromoteRolloutRequest | PlainMessage<PromoteRolloutRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PromoteRolloutResponse
+ */
+export declare class PromoteRolloutResponse extends Message<PromoteRolloutResponse> {
+  /**
+   * @generated from field: paprika.v1.Rollout rollout = 1;
+   */
+  rollout?: Rollout;
+
+  constructor(data?: PartialMessage<PromoteRolloutResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PromoteRolloutResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PromoteRolloutResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PromoteRolloutResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PromoteRolloutResponse;
+
+  static equals(a: PromoteRolloutResponse | PlainMessage<PromoteRolloutResponse> | undefined, b: PromoteRolloutResponse | PlainMessage<PromoteRolloutResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.AbortRolloutRequest
+ */
+export declare class AbortRolloutRequest extends Message<AbortRolloutRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<AbortRolloutRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AbortRolloutRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AbortRolloutRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AbortRolloutRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AbortRolloutRequest;
+
+  static equals(a: AbortRolloutRequest | PlainMessage<AbortRolloutRequest> | undefined, b: AbortRolloutRequest | PlainMessage<AbortRolloutRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.AbortRolloutResponse
+ */
+export declare class AbortRolloutResponse extends Message<AbortRolloutResponse> {
+  /**
+   * @generated from field: paprika.v1.Rollout rollout = 1;
+   */
+  rollout?: Rollout;
+
+  constructor(data?: PartialMessage<AbortRolloutResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AbortRolloutResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AbortRolloutResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AbortRolloutResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AbortRolloutResponse;
+
+  static equals(a: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined, b: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined): boolean;
+}
+

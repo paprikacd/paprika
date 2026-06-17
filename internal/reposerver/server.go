@@ -234,3 +234,27 @@ func decodeValues(data []byte) (map[string]string, error) {
 }
 
 var _ v1connect.PaprikaServiceHandler = (*Server)(nil)
+
+// ListRollouts is not implemented by the repo server.
+func (s *Server) ListRollouts(ctx context.Context, _ *connect.Request[paprikav1.ListRolloutsRequest]) (*connect.Response[paprikav1.ListRolloutsResponse], error) {
+	log.FromContext(ctx).Info("ListRollouts not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListRollouts"))
+}
+
+// GetRollout is not implemented by the repo server.
+func (s *Server) GetRollout(ctx context.Context, _ *connect.Request[paprikav1.GetRolloutRequest]) (*connect.Response[paprikav1.GetRolloutResponse], error) {
+	log.FromContext(ctx).Info("GetRollout not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetRollout"))
+}
+
+// PromoteRollout is not implemented by the repo server.
+func (s *Server) PromoteRollout(ctx context.Context, _ *connect.Request[paprikav1.PromoteRolloutRequest]) (*connect.Response[paprikav1.PromoteRolloutResponse], error) {
+	log.FromContext(ctx).Info("PromoteRollout not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement PromoteRollout"))
+}
+
+// AbortRollout is not implemented by the repo server.
+func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.AbortRolloutRequest]) (*connect.Response[paprikav1.AbortRolloutResponse], error) {
+	log.FromContext(ctx).Info("AbortRollout not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement AbortRollout"))
+}

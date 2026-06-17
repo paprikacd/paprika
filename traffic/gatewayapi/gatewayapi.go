@@ -2,6 +2,7 @@ package gatewayapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,9 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
+
+// errNotSupported indicates the provider does not support header or mirror operations.
+var errNotSupported = errors.New("traffic provider does not support this operation")
 
 var httpRouteGVR = schema.GroupVersionResource{
 	Group:    "gateway.networking.k8s.io",
@@ -36,6 +40,22 @@ func NewRouter(cfg *paprikav1.GatewayAPIRouterConfig, client dynamic.Interface, 
 }
 
 func (r *Router) Type() string { return "gateway-api" }
+
+func (r *Router) SetHeaderRoute(ctx context.Context, header, value, service string) error {
+	return fmt.Errorf("gateway-api header routing: %w", errNotSupported)
+}
+
+func (r *Router) RemoveHeaderRoute(ctx context.Context, header string) error {
+	return fmt.Errorf("gateway-api header routing: %w", errNotSupported)
+}
+
+func (r *Router) SetMirror(ctx context.Context, percent int32) error {
+	return fmt.Errorf("gateway-api traffic mirroring: %w", errNotSupported)
+}
+
+func (r *Router) RemoveMirror(ctx context.Context) error {
+	return fmt.Errorf("gateway-api traffic mirroring: %w", errNotSupported)
+}
 
 func (r *Router) SetWeight(ctx context.Context, weight int32) error {
 	routeName, hr, rules, err := r.getHTTPRouteWithRules(ctx)

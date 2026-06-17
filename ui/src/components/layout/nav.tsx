@@ -7,6 +7,7 @@ import { NotificationCenter } from "@/components/notifications/notification-cent
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Rollouts", href: "/dashboard/rollouts" },
   { label: "Docs", href: "/docs" },
   { label: "Blog", href: "/blog" },
   { label: "API", href: "/docs/api" },

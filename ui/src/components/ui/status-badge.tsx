@@ -8,6 +8,10 @@ import {
   ShieldCheck,
   CheckCheck,
   RotateCcw,
+  PauseCircle,
+  HeartPulse,
+  AlertOctagon,
+  Activity,
 } from "lucide-react"
 
 const statusConfig: Record<string, { icon: typeof Loader2; className: string }> = {
@@ -41,6 +45,22 @@ const statusConfig: Record<string, { icon: typeof Loader2; className: string }> 
   },
   RolledBack: {
     icon: RotateCcw,
+    className: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  },
+  Progressing: {
+    icon: Activity,
+    className: "bg-primary/10 text-primary border-primary/20 [&_svg]:animate-pulse",
+  },
+  Paused: {
+    icon: PauseCircle,
+    className: "bg-warning/10 text-warning border-warning/20",
+  },
+  Healthy: {
+    icon: HeartPulse,
+    className: "bg-success/10 text-success border-success/20",
+  },
+  Degraded: {
+    icon: AlertOctagon,
     className: "bg-orange-500/10 text-orange-400 border-orange-500/20",
   },
 }
