@@ -17,6 +17,7 @@ import (
 	helmg "helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -50,12 +51,20 @@ func initHelmSettings() {
 // This replaces the legacy TemplateRendererImpl which shelled out to the helm binary.
 type HelmSDKRenderer struct {
 	WorkDir string
+	Client  client.Client
 }
 
 // NewHelmSDKRenderer creates a new HelmSDKRenderer with the given working directory.
 func NewHelmSDKRenderer(workDir string) *HelmSDKRenderer {
 	initHelmSettings()
 	return &HelmSDKRenderer{WorkDir: workDir}
+}
+
+// NewHelmSDKRendererWithClient creates a new HelmSDKRenderer with the given working directory and Kubernetes client.
+func NewHelmSDKRendererWithClient(workDir string, c client.Client) *HelmSDKRenderer {
+	r := NewHelmSDKRenderer(workDir)
+	r.Client = c
+	return r
 }
 
 // ResolveSource resolves a template source (git, S3, kustomize, etc.) and returns the local path.
@@ -84,10 +93,13 @@ func (r *HelmSDKRenderer) resolveOCISource(ctx context.Context, tmpl *paprika.Te
 		return nil, errors.New("oci source spec is required for type=oci")
 	}
 	result, err := (&source.OCISource{
-		URL:      ociSrc.URL,
-		Tag:      ociSrc.Tag,
-		Insecure: ociSrc.Insecure,
-		WorkDir:  r.WorkDir,
+		URL:       ociSrc.URL,
+		Tag:       ociSrc.Tag,
+		Insecure:  ociSrc.Insecure,
+		WorkDir:   r.WorkDir,
+		SecretRef: ociSrc.SecretRef,
+		Namespace: tmpl.Namespace,
+		Client:    r.Client,
 	}).Resolve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve oci source: %w", err)

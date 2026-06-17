@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -29,7 +30,12 @@ type Server struct {
 
 // NewServer creates a repo server with the given working directory and cache.
 func NewServer(workDir string, c cache.Cache) *Server {
-	base := engine.NewHelmSDKRenderer(workDir)
+	return NewServerWithClient(workDir, c, nil)
+}
+
+// NewServerWithClient creates a repo server with the given working directory, cache, and Kubernetes client.
+func NewServerWithClient(workDir string, c cache.Cache, k8sClient client.Client) *Server {
+	base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 	s := &Server{
 		renderer: engine.NewCachedTemplateRenderer(base, c, workDir, 0),
 		workDir:  workDir,

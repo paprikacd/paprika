@@ -447,7 +447,7 @@ func setupReleaseController(mgr ctrl.Manager, k8sClient kubernetes.Interface, op
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
-	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-helm")
+	baseRenderer := engine.NewHelmSDKRendererWithClient("/tmp/paprika-helm", mgr.GetClient())
 	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-helm", 0)
 	renderer := engine.NewRepoServerRenderer(repoclient.NewFromEnv(), cachedRenderer)
 	if err := (&controller.ReleaseReconciler{
@@ -513,7 +513,7 @@ func setupApplicationController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 	if !ok {
 		return fmt.Errorf("expected *kubernetes.Clientset, got %T", k8sClient)
 	}
-	baseRenderer := engine.NewHelmSDKRenderer("/tmp/paprika-sources")
+	baseRenderer := engine.NewHelmSDKRendererWithClient("/tmp/paprika-sources", mgr.GetClient())
 	cachedRenderer := engine.NewCachedTemplateRenderer(baseRenderer, cacheClient, "/tmp/paprika-sources", 0)
 	renderer := engine.NewRepoServerRenderer(repoclient.NewFromEnv(), cachedRenderer)
 	if err := (&controller.ApplicationReconciler{
@@ -833,13 +833,13 @@ func readBearerToken(k8sTokenFile string) (string, error) {
 }
 
 func createAPIClient(config *rest.Config) (client.Client, error) {
-	scheme := runtime.NewScheme()
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
-	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
-	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
-	apiClient, err := client.New(config, client.Options{Scheme: scheme})
+	apiScheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(apiScheme))
+	utilruntime.Must(pipelinesv1alpha1.AddToScheme(apiScheme))
+	utilruntime.Must(policyv1alpha1.AddToScheme(apiScheme))
+	utilruntime.Must(corev1alpha1.AddToScheme(apiScheme))
+	utilruntime.Must(clustersv1alpha1.AddToScheme(apiScheme))
+	apiClient, err := client.New(config, client.Options{Scheme: apiScheme})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
 	}
@@ -907,7 +907,16 @@ func runRepoServerMode(addr, probeAddr string) error {
 	}
 	defer func() { _ = c.Close() }()
 
-	srv := reposerver.NewServer(workDir, c)
+	cfg, err := ctrl.GetConfig()
+	if err != nil {
+		return fmt.Errorf("get k8s config: %w", err)
+	}
+	k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("create k8s client: %w", err)
+	}
+
+	srv := reposerver.NewServerWithClient(workDir, c, k8sClient)
 
 	healthMux := buildHealthMux()
 	startHealthProbeServer(healthMux, probeAddr)
