@@ -346,6 +346,7 @@ func (s *PaprikaServer) SyncApplication(
 		app.Annotations = make(map[string]string)
 	}
 	app.Annotations["paprika.io/sync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	app.Annotations["paprika.io/manual-sync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
 	if err := s.Update(ctx, &app); err != nil {
 		return nil, fmt.Errorf("triggering sync: %w", err)
 	}
