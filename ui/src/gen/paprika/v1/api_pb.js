@@ -199,6 +199,20 @@ export const Condition = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.AnalysisResult
+ */
+export const AnalysisResult = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AnalysisResult",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "passed", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 4, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "checked_at", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Application
  */
 export const Application = /*@__PURE__*/ proto3.makeMessageType(
@@ -229,6 +243,7 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 23, name: "gates", kind: "message", T: GateStatus, repeated: true },
     { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 25, name: "conditions", kind: "message", T: Condition, repeated: true },
+    { no: 26, name: "analysis_results", kind: "message", T: AnalysisResult, repeated: true },
   ],
 );
 

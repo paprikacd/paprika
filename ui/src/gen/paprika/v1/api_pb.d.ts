@@ -622,6 +622,52 @@ export declare class Condition extends Message<Condition> {
 }
 
 /**
+ * @generated from message paprika.v1.AnalysisResult
+ */
+export declare class AnalysisResult extends Message<AnalysisResult> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string phase = 2;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: bool passed = 3;
+   */
+  passed: boolean;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+
+  /**
+   * RFC3339
+   *
+   * @generated from field: string checked_at = 5;
+   */
+  checkedAt: string;
+
+  constructor(data?: PartialMessage<AnalysisResult>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AnalysisResult";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AnalysisResult;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AnalysisResult;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AnalysisResult;
+
+  static equals(a: AnalysisResult | PlainMessage<AnalysisResult> | undefined, b: AnalysisResult | PlainMessage<AnalysisResult> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.Application
  */
 export declare class Application extends Message<Application> {
@@ -757,6 +803,11 @@ export declare class Application extends Message<Application> {
    * @generated from field: repeated paprika.v1.Condition conditions = 25;
    */
   conditions: Condition[];
+
+  /**
+   * @generated from field: repeated paprika.v1.AnalysisResult analysis_results = 26;
+   */
+  analysisResults: AnalysisResult[];
 
   constructor(data?: PartialMessage<Application>);
 
