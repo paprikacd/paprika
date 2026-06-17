@@ -1774,6 +1774,259 @@ export declare class SyncApplicationResponse extends Message<SyncApplicationResp
 }
 
 /**
+ * @generated from message paprika.v1.NotificationTrigger
+ */
+export declare class NotificationTrigger extends Message<NotificationTrigger> {
+  /**
+   * @generated from field: string resource_type = 1;
+   */
+  resourceType: string;
+
+  /**
+   * @generated from field: string phase = 2;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  constructor(data?: PartialMessage<NotificationTrigger>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.NotificationTrigger";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NotificationTrigger;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): NotificationTrigger;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): NotificationTrigger;
+
+  static equals(a: NotificationTrigger | PlainMessage<NotificationTrigger> | undefined, b: NotificationTrigger | PlainMessage<NotificationTrigger> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.NotificationDestination
+ */
+export declare class NotificationDestination extends Message<NotificationDestination> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string webhook_url = 2;
+   */
+  webhookUrl: string;
+
+  /**
+   * @generated from field: string slack_webhook_url = 3;
+   */
+  slackWebhookUrl: string;
+
+  /**
+   * @generated from field: string email = 4;
+   */
+  email: string;
+
+  /**
+   * @generated from field: string secret_ref = 5;
+   */
+  secretRef: string;
+
+  /**
+   * @generated from field: map<string, string> headers = 6;
+   */
+  headers: { [key: string]: string };
+
+  constructor(data?: PartialMessage<NotificationDestination>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.NotificationDestination";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NotificationDestination;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): NotificationDestination;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): NotificationDestination;
+
+  static equals(a: NotificationDestination | PlainMessage<NotificationDestination> | undefined, b: NotificationDestination | PlainMessage<NotificationDestination> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SMTPConfig
+ */
+export declare class SMTPConfig extends Message<SMTPConfig> {
+  /**
+   * @generated from field: string host = 1;
+   */
+  host: string;
+
+  /**
+   * @generated from field: int32 port = 2;
+   */
+  port: number;
+
+  /**
+   * @generated from field: string from = 3;
+   */
+  from: string;
+
+  /**
+   * @generated from field: bool tls_enabled = 4;
+   */
+  tlsEnabled: boolean;
+
+  /**
+   * @generated from field: string auth_secret_ref = 5;
+   */
+  authSecretRef: string;
+
+  constructor(data?: PartialMessage<SMTPConfig>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SMTPConfig";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SMTPConfig;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SMTPConfig;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SMTPConfig;
+
+  static equals(a: SMTPConfig | PlainMessage<SMTPConfig> | undefined, b: SMTPConfig | PlainMessage<SMTPConfig> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.NotificationRateLimit
+ */
+export declare class NotificationRateLimit extends Message<NotificationRateLimit> {
+  /**
+   * @generated from field: string min_interval = 1;
+   */
+  minInterval: string;
+
+  constructor(data?: PartialMessage<NotificationRateLimit>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.NotificationRateLimit";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NotificationRateLimit;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): NotificationRateLimit;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): NotificationRateLimit;
+
+  static equals(a: NotificationRateLimit | PlainMessage<NotificationRateLimit> | undefined, b: NotificationRateLimit | PlainMessage<NotificationRateLimit> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.NotificationConfig
+ */
+export declare class NotificationConfig extends Message<NotificationConfig> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.NotificationTrigger triggers = 3;
+   */
+  triggers: NotificationTrigger[];
+
+  /**
+   * @generated from field: repeated paprika.v1.NotificationDestination destinations = 4;
+   */
+  destinations: NotificationDestination[];
+
+  /**
+   * @generated from field: string template = 5;
+   */
+  template: string;
+
+  /**
+   * @generated from field: paprika.v1.SMTPConfig smtp = 6;
+   */
+  smtp?: SMTPConfig;
+
+  /**
+   * @generated from field: paprika.v1.NotificationRateLimit rate_limit = 7;
+   */
+  rateLimit?: NotificationRateLimit;
+
+  constructor(data?: PartialMessage<NotificationConfig>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.NotificationConfig";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): NotificationConfig;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): NotificationConfig;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): NotificationConfig;
+
+  static equals(a: NotificationConfig | PlainMessage<NotificationConfig> | undefined, b: NotificationConfig | PlainMessage<NotificationConfig> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListNotificationConfigsRequest
+ */
+export declare class ListNotificationConfigsRequest extends Message<ListNotificationConfigsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  constructor(data?: PartialMessage<ListNotificationConfigsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListNotificationConfigsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListNotificationConfigsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListNotificationConfigsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListNotificationConfigsRequest;
+
+  static equals(a: ListNotificationConfigsRequest | PlainMessage<ListNotificationConfigsRequest> | undefined, b: ListNotificationConfigsRequest | PlainMessage<ListNotificationConfigsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListNotificationConfigsResponse
+ */
+export declare class ListNotificationConfigsResponse extends Message<ListNotificationConfigsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.NotificationConfig notification_configs = 1;
+   */
+  notificationConfigs: NotificationConfig[];
+
+  constructor(data?: PartialMessage<ListNotificationConfigsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListNotificationConfigsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListNotificationConfigsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListNotificationConfigsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListNotificationConfigsResponse;
+
+  static equals(a: ListNotificationConfigsResponse | PlainMessage<ListNotificationConfigsResponse> | undefined, b: ListNotificationConfigsResponse | PlainMessage<ListNotificationConfigsResponse> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.ApproveGateRequest
  */
 export declare class ApproveGateRequest extends Message<ApproveGateRequest> {

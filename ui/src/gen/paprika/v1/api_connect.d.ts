@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListStagesRequest, ListStagesResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -73,6 +73,15 @@ export declare const PaprikaService: {
       readonly name: "GetApplicationSet",
       readonly I: typeof GetApplicationSetRequest,
       readonly O: typeof GetApplicationSetResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListNotificationConfigs
+     */
+    readonly listNotificationConfigs: {
+      readonly name: "ListNotificationConfigs",
+      readonly I: typeof ListNotificationConfigsRequest,
+      readonly O: typeof ListNotificationConfigsResponse,
       readonly kind: MethodKind.Unary,
     },
     /**

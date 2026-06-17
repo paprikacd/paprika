@@ -466,14 +466,21 @@ func (r *ReleaseReconciler) publishReleaseEvent(ctx context.Context, release *pa
 		return
 	}
 	reason := ""
+	message := ""
 	if len(release.Status.Conditions) > 0 {
-		reason = release.Status.Conditions[len(release.Status.Conditions)-1].Reason
+		c := release.Status.Conditions[len(release.Status.Conditions)-1]
+		reason = c.Reason
+		message = c.Message
 	}
-	evt, err := events.NewEvent(events.TypeRelease, map[string]string{
-		"name":      release.Name,
-		"namespace": release.Namespace,
-		"phase":     string(release.Status.Phase),
-		"reason":    reason,
+	evt, err := events.NewEvent(events.TypeRelease, eventPayload{
+		ResourceType:  events.TypeRelease,
+		Name:          release.Name,
+		Namespace:     release.Namespace,
+		Phase:         string(release.Status.Phase),
+		PreviousPhase: string(oldPhase),
+		Reason:        reason,
+		Message:       message,
+		Timestamp:     metav1.Now().UTC().Format(time.RFC3339),
 	})
 	if err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to create release event", "release", release.Name)

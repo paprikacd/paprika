@@ -16,6 +16,7 @@ import { ApplicationCard } from "@/components/dashboard/application-card"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
+import { ToastStack } from "@/components/notifications/toast-stack"
 import {
   GitBranch,
   ListChecks,
@@ -460,6 +461,7 @@ export default function DashboardPage() {
         </div>
       </section>
     </div>
+    <ToastStack />
     </ErrorBoundary>
   )
 }

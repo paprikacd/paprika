@@ -1,0 +1,27 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: NotificationConfig
+metadata:
+  name: notificationconfig-sample
+  labels:
+    app.kubernetes.io/name: paprika
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  triggers:
+    - resourceType: application
+      phase: Failed
+    - resourceType: release
+      phase: RolledBack
+  destinations:
+    - name: slack-alerts
+      slackWebhookUrl: https://hooks.slack.com/services/REPLACE/ME
+    - name: ops-email
+      email: oncall@example.com
+  smtp:
+    host: smtp.example.com
+    port: 587
+    from: paprika@example.com
+    authSecretRef: smtp-auth
+  rateLimit:
+    minInterval: 5m
+  template: |
+    {{ .namespace }}/{{ .name }} moved from {{ .previousPhase }} to {{ .phase }}{{ if .reason }} ({{ .reason }}){{ end }}

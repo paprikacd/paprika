@@ -205,6 +205,11 @@ func (s *Server) GetApplicationSet(ctx context.Context, req *connect.Request[pap
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetApplicationSet"))
 }
 
+// ListNotificationConfigs is not implemented by the repo server.
+func (s *Server) ListNotificationConfigs(ctx context.Context, req *connect.Request[paprikav1.ListNotificationConfigsRequest]) (*connect.Response[paprikav1.ListNotificationConfigsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListNotificationConfigs"))
+}
+
 func decodeTemplate(sourceType string, data []byte) (*paprika.Template, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty spec json")

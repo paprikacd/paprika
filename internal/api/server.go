@@ -298,6 +298,70 @@ func (s *PaprikaServer) ListApplicationSets(
 	return connect.NewResponse(&paprikav1.ListApplicationSetsResponse{Applicationsets: sets}), nil
 }
 
+// ListNotificationConfigs returns a list of NotificationConfigs.
+func (s *PaprikaServer) ListNotificationConfigs(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListNotificationConfigsRequest],
+) (*connect.Response[paprikav1.ListNotificationConfigsResponse], error) {
+	var list pipelinesv1alpha1.NotificationConfigList
+	opts := []client.ListOption{}
+	if req.Msg.Namespace != nil {
+		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
+	}
+	if err := s.List(ctx, &list, opts...); err != nil {
+		return nil, fmt.Errorf("listing notification configs: %w", err)
+	}
+	configs := make([]*paprikav1.NotificationConfig, 0, len(list.Items))
+	for i := range list.Items {
+		configs = append(configs, convertNotificationConfig(&list.Items[i]))
+	}
+	return connect.NewResponse(&paprikav1.ListNotificationConfigsResponse{NotificationConfigs: configs}), nil
+}
+
+func convertNotificationConfig(c *pipelinesv1alpha1.NotificationConfig) *paprikav1.NotificationConfig {
+	triggers := make([]*paprikav1.NotificationTrigger, 0, len(c.Spec.Triggers))
+	for _, t := range c.Spec.Triggers {
+		triggers = append(triggers, &paprikav1.NotificationTrigger{
+			ResourceType: t.ResourceType,
+			Phase:        t.Phase,
+			Reason:       t.Reason,
+		})
+	}
+	destinations := make([]*paprikav1.NotificationDestination, 0, len(c.Spec.Destinations))
+	for _, d := range c.Spec.Destinations {
+		destinations = append(destinations, &paprikav1.NotificationDestination{
+			Name:            d.Name,
+			WebhookUrl:      d.WebhookURL,
+			SlackWebhookUrl: d.SlackWebhookURL,
+			Email:           d.Email,
+			SecretRef:       d.SecretRef,
+			Headers:         d.Headers,
+		})
+	}
+	cfg := &paprikav1.NotificationConfig{
+		Name:         c.Name,
+		Namespace:    c.Namespace,
+		Triggers:     triggers,
+		Destinations: destinations,
+		Template:     c.Spec.Template,
+	}
+	if c.Spec.SMTP != nil {
+		cfg.Smtp = &paprikav1.SMTPConfig{
+			Host:          c.Spec.SMTP.Host,
+			Port:          safeInt32(c.Spec.SMTP.Port),
+			From:          c.Spec.SMTP.From,
+			TlsEnabled:    c.Spec.SMTP.TLSEnabled,
+			AuthSecretRef: c.Spec.SMTP.AuthSecretRef,
+		}
+	}
+	if c.Spec.RateLimit != nil {
+		cfg.RateLimit = &paprikav1.NotificationRateLimit{
+			MinInterval: c.Spec.RateLimit.MinInterval,
+		}
+	}
+	return cfg
+}
+
 // GetApplicationSet returns a single ApplicationSet by name and namespace.
 func (s *PaprikaServer) GetApplicationSet(
 	ctx context.Context,

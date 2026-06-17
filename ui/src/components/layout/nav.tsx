@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { Cpu } from "lucide-react"
 import { useConnection } from "@/lib/connection-context"
+import { NotificationCenter } from "@/components/notifications/notification-center"
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
@@ -37,6 +38,7 @@ export function Nav() {
         </div>
 
         <div className="flex items-center gap-3">
+          <NotificationCenter />
           <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 ${
             connected
               ? "border-success/20 bg-success/10"
