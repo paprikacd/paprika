@@ -202,3 +202,86 @@ func TestApplicationReconciler_recordEvent(t *testing.T) {
 		r.recordEvent(app, corev1.EventTypeNormal, "TestReason", "test message")
 	})
 }
+
+func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name       string
+		annotation string
+	}{
+		{"sync annotation", "paprika.io/sync"},
+		{"legacy resync annotation", "paprika.io/resync"},
+		{"legacy webhook trigger annotation", "paprika.io/webhook-trigger"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "sync-app",
+					Namespace:   "default",
+					Annotations: map[string]string{tc.annotation: "123"},
+				},
+				Status: pipelinesv1alpha1.ApplicationStatus{
+					Phase: pipelinesv1alpha1.ApplicationHealthy,
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			_ = pipelinesv1alpha1.AddToScheme(scheme)
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(app).
+				WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+				Build()
+
+			r := &ApplicationReconciler{Client: c}
+			_, err := r.handleSyncTrigger(ctx, app)
+			if err != nil {
+				t.Fatalf("handleSyncTrigger failed: %v", err)
+			}
+
+			var updated pipelinesv1alpha1.Application
+			if err := c.Get(ctx, client.ObjectKey{Name: "sync-app", Namespace: "default"}, &updated); err != nil {
+				t.Fatalf("get application: %v", err)
+			}
+			if len(updated.Annotations) > 0 {
+				t.Fatalf("expected trigger annotations to be removed, got %v", updated.Annotations)
+			}
+			if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+				t.Fatalf("expected phase Pending, got %s", updated.Status.Phase)
+			}
+		})
+	}
+}
+
+func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
+	cases := []struct {
+		name string
+		ann  map[string]string
+		want bool
+	}{
+		{"sync annotation", map[string]string{"paprika.io/sync": "1"}, true},
+		{"legacy resync annotation", map[string]string{"paprika.io/resync": "1"}, true},
+		{"legacy webhook trigger annotation", map[string]string{"paprika.io/webhook-trigger": "1"}, true},
+		{"no annotations", nil, false},
+		{"unrelated annotation", map[string]string{"other": "1"}, false},
+	}
+
+	r := &ApplicationReconciler{}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "app",
+					Namespace:   "default",
+					Annotations: tc.ann,
+				},
+			}
+			if got := r.hasSyncTrigger(app); got != tc.want {
+				t.Fatalf("hasSyncTrigger = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

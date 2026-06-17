@@ -196,7 +196,7 @@ func (h *Handler) annotateMatchingApplications(ctx context.Context, repoURL, bra
 		if app.Annotations == nil {
 			app.Annotations = make(map[string]string)
 		}
-		app.Annotations["paprika.io/webhook-trigger"] = nowString()
+		app.Annotations["paprika.io/sync"] = nowString()
 
 		if err := h.client.Update(ctx, app); err != nil {
 			log.Error(err, "Failed to annotate application", "name", app.Name)
@@ -225,7 +225,7 @@ func (h *Handler) annotateMatchingTemplates(ctx context.Context, repoURL, branch
 		if tmpl.Annotations == nil {
 			tmpl.Annotations = make(map[string]string)
 		}
-		tmpl.Annotations["paprika.io/webhook-trigger"] = nowString()
+		tmpl.Annotations["paprika.io/sync"] = nowString()
 
 		if err := h.client.Update(ctx, tmpl); err != nil {
 			log.Error(err, "Failed to annotate template", "name", tmpl.Name)

@@ -345,9 +345,9 @@ func (s *PaprikaServer) SyncApplication(
 	if app.Annotations == nil {
 		app.Annotations = make(map[string]string)
 	}
-	app.Annotations["paprika.io/resync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	app.Annotations["paprika.io/sync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
 	if err := s.Update(ctx, &app); err != nil {
-		return nil, fmt.Errorf("triggering resync: %w", err)
+		return nil, fmt.Errorf("triggering sync: %w", err)
 	}
 
 	var refreshed pipelinesv1alpha1.Application

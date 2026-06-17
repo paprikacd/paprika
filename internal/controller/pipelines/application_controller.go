@@ -43,6 +43,15 @@ const (
 	defaultRequeue    = 5 * time.Second
 	maxReleaseHistory = 10
 	releaseLabelKey   = "app.paprika.io/release"
+
+	// syncAnnotation is the canonical annotation used to request an immediate
+	// Application sync. It is set by the API (SyncApplication), webhooks, and
+	// users who want to force a refresh.
+	syncAnnotation = "paprika.io/sync"
+
+	// legacyWebhookTriggerAnnotation was used by early webhook receiver
+	// implementations. Kept for backward compatibility.
+	legacyWebhookTriggerAnnotation = "paprika.io/webhook-trigger"
 )
 
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
@@ -150,8 +159,8 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		projectName = defaultProjectName
 	}
 
-	if _, ok := app.Annotations["paprika.io/resync"]; ok {
-		return r.handleResync(ctx, app)
+	if r.hasSyncTrigger(app) {
+		return r.handleSyncTrigger(ctx, app)
 	}
 
 	if app.Status.Phase == paprikav1.ApplicationHealthy {
@@ -338,22 +347,40 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 }
 
-func (r *ApplicationReconciler) handleResync(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+func syncTriggerPresent(annotations map[string]string) bool {
+	if annotations == nil {
+		return false
+	}
+	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
+		if _, ok := annotations[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *ApplicationReconciler) hasSyncTrigger(app *paprikav1.Application) bool {
+	return syncTriggerPresent(app.Annotations)
+}
+
+func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
-	log.Info("Resync annotation detected, resetting phase to Pending")
+	log.Info("Sync trigger detected, resetting phase to Pending")
 	patch := client.MergeFrom(app.DeepCopy())
-	delete(app.Annotations, "paprika.io/resync")
+	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
+		delete(app.Annotations, key)
+	}
 	if len(app.Annotations) == 0 {
 		app.Annotations = nil
 	}
 	if err := r.Patch(ctx, app, patch); err != nil {
-		log.Error(err, "Failed to remove resync annotation")
-		return ctrl.Result{}, fmt.Errorf("removing resync annotation: %w", err)
+		log.Error(err, "Failed to remove sync trigger annotation")
+		return ctrl.Result{}, fmt.Errorf("removing sync trigger annotation: %w", err)
 	}
 	app.Status.Phase = paprikav1.ApplicationPending
 	if err := r.patchAppStatus(ctx, app); err != nil {
-		log.Error(err, "Failed to update status after resync")
-		return ctrl.Result{}, fmt.Errorf("updating status after resync: %w", err)
+		log.Error(err, "Failed to update status after sync trigger")
+		return ctrl.Result{}, fmt.Errorf("updating status after sync trigger: %w", err)
 	}
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 }

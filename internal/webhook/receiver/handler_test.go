@@ -80,9 +80,9 @@ func TestHandler_ServeHTTP_GitHubPush(t *testing.T) {
 			var updated paprika.Application
 			_ = c.Get(context.Background(), types.NamespacedName{Name: "app-1", Namespace: "default"}, &updated)
 			if tc.wantTrigger {
-				assert.NotEmpty(t, updated.Annotations["paprika.io/webhook-trigger"])
+				assert.NotEmpty(t, updated.Annotations["paprika.io/sync"])
 			} else {
-				assert.Empty(t, updated.Annotations["paprika.io/webhook-trigger"])
+				assert.Empty(t, updated.Annotations["paprika.io/sync"])
 			}
 		})
 	}
@@ -121,7 +121,7 @@ func TestHandler_ServeHTTP_GitLabPush(t *testing.T) {
 
 	var updated paprika.Template
 	_ = c.Get(context.Background(), types.NamespacedName{Name: "tmpl-1", Namespace: "default"}, &updated)
-	assert.NotEmpty(t, updated.Annotations["paprika.io/webhook-trigger"])
+	assert.NotEmpty(t, updated.Annotations["paprika.io/sync"])
 }
 
 func TestHandler_ServeHTTP_Ping(t *testing.T) {
