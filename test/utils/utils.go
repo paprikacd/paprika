@@ -165,13 +165,16 @@ func LoadImageToKindClusterWithName(name, cluster string) error {
 		return fmt.Errorf("create temporary image tar: %w", err)
 	}
 	tarPath := tmpTar.Name()
-	_ = tmpTar.Close()
+	if cerr := tmpTar.Close(); cerr != nil {
+		return fmt.Errorf("close temporary image tar: %w", cerr)
+	}
+	//nolint:errcheck // best-effort temporary file cleanup
 	defer func() { _ = os.Remove(tarPath) }()
 
 	//nolint:noctx // test utility executing docker commands
 	saveCmd := exec.Command("docker", "save", "-o", tarPath, name)
-	if _, err := Run(saveCmd); err != nil {
-		return fmt.Errorf("save docker image %q to tar: %w", name, err)
+	if _, saveErr := Run(saveCmd); saveErr != nil {
+		return fmt.Errorf("save docker image %q to tar: %w", name, saveErr)
 	}
 
 	//nolint:noctx // test utility executing kind commands
