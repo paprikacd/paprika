@@ -53,6 +53,7 @@ func deployment(name string, labels map[string]string) *unstructured.Unstructure
 func makePolicy(name, rego string, enforcement paprikav1.ConftestEnforcementMode, gen int64) *paprikav1.ConftestPolicy {
 	p := &paprikav1.ConftestPolicy{Spec: paprikav1.ConftestPolicySpec{Rego: rego, Enforcement: enforcement}}
 	p.SetName(name)
+	p.SetNamespace("default")
 	p.SetUID(types.UID(name + "-uid"))
 	p.SetGeneration(gen)
 	p.SetGroupVersionKind(paprikav1.GroupVersion.WithKind("ConftestPolicy"))
