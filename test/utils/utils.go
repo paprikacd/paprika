@@ -146,15 +146,37 @@ func IsCertManagerCRDsInstalled() bool {
 }
 
 // LoadImageToKindClusterWithName loads a local docker image to the specified kind cluster.
+// It first tries `kind load docker-image`; if that fails (e.g. due to containerd lease
+// issues with Docker Desktop), it falls back to `docker save` + `kind load image-archive`.
 func LoadImageToKindClusterWithName(name, cluster string) error {
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
 	kindBinary := defaultKindBinary
 	if v, ok := os.LookupEnv("KIND"); ok {
 		kindBinary = v
 	}
+
 	//nolint:noctx // test utility executing kind commands
-	cmd := exec.Command(kindBinary, kindOptions...)
-	_, err := Run(cmd)
+	cmd := exec.Command(kindBinary, "load", "docker-image", name, "--name", cluster)
+	if _, err := Run(cmd); err == nil {
+		return nil
+	}
+
+	tmpTar, err := os.CreateTemp("", "kind-image-*.tar")
+	if err != nil {
+		return fmt.Errorf("create temporary image tar: %w", err)
+	}
+	tarPath := tmpTar.Name()
+	_ = tmpTar.Close()
+	defer func() { _ = os.Remove(tarPath) }()
+
+	//nolint:noctx // test utility executing docker commands
+	saveCmd := exec.Command("docker", "save", "-o", tarPath, name)
+	if _, err := Run(saveCmd); err != nil {
+		return fmt.Errorf("save docker image %q to tar: %w", name, err)
+	}
+
+	//nolint:noctx // test utility executing kind commands
+	cmd = exec.Command(kindBinary, "load", "image-archive", tarPath, "--name", cluster)
+	_, err = Run(cmd)
 	return err
 }
 
