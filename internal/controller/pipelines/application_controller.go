@@ -1198,7 +1198,8 @@ func (r *ApplicationReconciler) checkGates(ctx context.Context, app *paprikav1.A
 
 	targetStage := r.getTargetStage(app)
 
-	for _, gate := range app.Spec.ApprovalGates {
+	for i := range app.Spec.ApprovalGates {
+		gate := &app.Spec.ApprovalGates[i]
 		if !r.isGateRelevant(gate, targetStage) {
 			continue
 		}
@@ -1278,7 +1279,7 @@ func (r *ApplicationReconciler) getTargetStage(app *paprikav1.Application) strin
 	return app.Spec.Stages[0].Name
 }
 
-func (r *ApplicationReconciler) isGateRelevant(gate paprikav1.ApprovalGate, targetStage string) bool {
+func (r *ApplicationReconciler) isGateRelevant(gate *paprikav1.ApprovalGate, targetStage string) bool {
 	if gate.Stage != "" && gate.Stage != targetStage {
 		return false
 	}
@@ -1294,7 +1295,7 @@ func (r *ApplicationReconciler) isGateApproved(app *paprikav1.Application, gateN
 	return false
 }
 
-func (r *ApplicationReconciler) recordPendingGate(ctx context.Context, app *paprikav1.Application, gate paprikav1.ApprovalGate) error {
+func (r *ApplicationReconciler) recordPendingGate(ctx context.Context, app *paprikav1.Application, gate *paprikav1.ApprovalGate) error {
 	if r.gateStatusExists(app, gate.Name) {
 		return nil
 	}
