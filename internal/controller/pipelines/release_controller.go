@@ -107,6 +107,7 @@ type ReleaseReconciler struct {
 	EventRecorder         record.EventRecorder
 	ProjectValidator      *governance.ProjectValidator
 	PolicyEvaluator       *governance.PolicyEvaluator
+	ConftestEvaluator     ConftestEvaluator
 	EventBroker           *events.Broker
 	Telemetry             *observability.Telemetry
 	Clock                 clock.Clock
