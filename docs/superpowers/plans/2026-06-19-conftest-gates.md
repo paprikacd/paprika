@@ -232,6 +232,14 @@ git commit -m "feat(conftest): regenerate CRD, DeepCopy, RBAC for ConftestPolicy
 
 Run: `go get github.com/open-policy-agent/opa@latest`
 
+> **Dependency decision (intentional deviation from the spec's Dependencies section):** the
+> spec listed both `opa` and `conftest`. We use **`opa` only** and re-implement conftest's
+> rule conventions (`deny`/`warn`/`violation`) by hand in Task 7, because the conftest Go
+> module's reusable runner lives under `internal/` and is not importable. This keeps the
+> dependency surface smaller and avoids a subprocess. The behavior is identical for the
+> inline-Rego, single-package policies v1 supports. This is a documented simplification, not
+> an oversight.
+
 - [ ] **Step 2: Verify it resolves**
 
 Run: `go mod tidy && go build ./...`
@@ -273,7 +281,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -454,9 +461,6 @@ func deploymentWithImage(name, image string) *unstructured.Unstructured {
 	}
 	return u
 }
-
-// silence unused import of metav1 when not otherwise referenced
-var _ metav1.ObjectMeta
 ```
 
 > NOTE on `e.cache` access: the test reaches into the unexported `cache` map. Because the test is in `package conftest` (white-box), this is allowed. If the implementer prefers black-box, expose a small `CachedGenerations() map[types.UID]int64` test helper instead.
@@ -703,7 +707,7 @@ package pipelines
 import (
 	"context"
 
-	"github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/governance"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -711,7 +715,7 @@ import (
 // ConftestEvaluator resolves, compiles, and evaluates ConftestPolicies against rendered
 // manifests. Compile errors and missing policies are returned as blocking governance.Violations.
 type ConftestEvaluator interface {
-	Evaluate(ctx context.Context, namespace string, refs []v1alpha1.ConftestPolicyRef, manifests []*unstructured.Unstructured) (governance.Violations, error)
+	Evaluate(ctx context.Context, namespace string, refs []paprikav1.ConftestPolicyRef, manifests []*unstructured.Unstructured) (governance.Violations, error)
 }
 
 const (
@@ -724,7 +728,7 @@ const (
 )
 ```
 
-> NOTE: the import alias `v1alpha1` must match how `release_controller.go` imports the API package. Check the existing alias there (it is `paprikav1` in `release_controller.go`). Use the SAME alias when wiring to avoid two aliases. Adjust the interface signature's import accordingly: if `release_controller.go` uses `paprikav1`, declare the interface with `paprikav1.ConftestPolicyRef` and import as `paprikav1`. Confirm the alias before writing.
+> NOTE: this file uses the alias `paprikav1` — the SAME alias `release_controller.go` uses for the API package. Keep it consistent; do not introduce a second alias.
 
 - [ ] **Step 2: Add the field to `ReleaseReconciler`**
 
@@ -766,6 +770,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 type fakeConftestEvaluator struct {
@@ -779,74 +785,87 @@ func (f *fakeConftestEvaluator) Evaluate(_ context.Context, _ string, refs []pap
 	return f.violations, f.err
 }
 
-func newReconcilerWithConftest(ev ConftestEvaluator) *ReleaseReconciler {
-	r := NewReleaseReconciler(nil)
+// newReconcilerWithConftest builds a ReleaseReconciler backed by a fake client seeded with
+// release. The fake client is required because runConftestGate's blocking path calls
+// patchReleaseStatus, which does client.Get + Status().Update and panics on a nil client.
+func newReconcilerWithConftest(t *testing.T, ev ConftestEvaluator, release *paprikav1.Release) *ReleaseReconciler {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, paprikav1.AddToScheme(scheme))
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&paprikav1.Release{}).
+		WithObjects(release).
+		Build()
+	r := NewReleaseReconciler(c)
 	r.ConftestEvaluator = ev
 	return r
 }
 
-func TestRunConftestGateDisabled(t *testing.T) {
-	r := NewReleaseReconciler(nil) // nil evaluator
+// relForTest returns a Release with name/namespace set (required by patchReleaseStatus).
+func relForTest() *paprikav1.Release {
 	rel := &paprikav1.Release{}
+	rel.SetName("test-release")
+	rel.SetNamespace("default")
 	rel.SetGeneration(1)
+	return rel
+}
+
+func appWithPolicy(name string) *paprikav1.Application {
+	return &paprikav1.Application{Spec: paprikav1.ApplicationSpec{ConftestPolicies: []paprikav1.ConftestPolicyRef{{Name: name}}}}
+}
+
+func conditionReason(rel *paprikav1.Release, wantReason string) bool {
+	for _, c := range rel.Status.Conditions {
+		if c.Type == conftestConditionType && c.Reason == wantReason {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRunConftestGateDisabled(t *testing.T) {
+	// nil evaluator: no-op, no condition, no patch (nil client is safe here).
+	r := NewReleaseReconciler(nil)
+	rel := relForTest()
 	app := &paprikav1.Application{}
 	require.NoError(t, r.runConftestGate(context.Background(), rel, app, nil))
 	assert.Empty(t, rel.Status.Conditions)
 
-	// evaluator set but no policies bound
-	r2 := newReconcilerWithConftest(&fakeConftestEvaluator{})
-	app2 := &paprikav1.Application{}
-	require.NoError(t, r2.runConftestGate(context.Background(), rel, app2, nil))
+	// evaluator set but no policies bound: also a no-op.
+	r2 := newReconcilerWithConftest(t, &fakeConftestEvaluator{}, relForTest())
+	require.NoError(t, r2.runConftestGate(context.Background(), relForTest(), &paprikav1.Application{}, nil))
 }
 
 func TestRunConftestGateBlocksOnEnforceViolation(t *testing.T) {
 	ev := &fakeConftestEvaluator{violations: governance.Violations{
 		{Rule: "p", Severity: "deny", Message: "no label", Action: governance.PolicyActionEnforce},
 	}}
-	r := newReconcilerWithConftest(ev)
-	app := &paprikav1.Application{Spec: paprikav1.ApplicationSpec{ConftestPolicies: []paprikav1.ConftestPolicyRef{{Name: "p"}}}}
-	rel := &paprikav1.Release{}
-	rel.SetGeneration(1)
-	err := r.runConftestGate(context.Background(), rel, app, nil)
+	rel := relForTest()
+	r := newReconcilerWithConftest(t, ev, rel)
+	err := r.runConftestGate(context.Background(), rel, appWithPolicy("p"), nil)
 	require.Error(t, err)
-	// reason is PolicyViolation (no not-ready severity present)
-	found := false
-	for _, c := range rel.Status.Conditions {
-		if c.Type == conftestConditionType && c.Reason == conftestReasonPolicyViolation {
-			found = true
-		}
-	}
-	assert.True(t, found, "expected PolicyViolation condition")
+	assert.True(t, conditionReason(rel, conftestReasonPolicyViolation), "expected PolicyViolation condition")
 }
 
 func TestRunConftestGateNotReadyWhenPolicyUncompilable(t *testing.T) {
 	ev := &fakeConftestEvaluator{violations: governance.Violations{
 		{Rule: "p", Severity: conftestSeverityNotReady, Message: "compile error", Action: governance.PolicyActionEnforce},
 	}}
-	r := newReconcilerWithConftest(ev)
-	app := &paprikav1.Application{Spec: paprikav1.ApplicationSpec{ConftestPolicies: []paprikav1.ConftestPolicyRef{{Name: "p"}}}}
-	rel := &paprikav1.Release{}
-	rel.SetGeneration(1)
-	err := r.runConftestGate(context.Background(), rel, app, nil)
+	rel := relForTest()
+	r := newReconcilerWithConftest(t, ev, rel)
+	err := r.runConftestGate(context.Background(), rel, appWithPolicy("p"), nil)
 	require.Error(t, err)
-	found := false
-	for _, c := range rel.Status.Conditions {
-		if c.Type == conftestConditionType && c.Reason == conftestReasonPolicyNotReady {
-			found = true
-		}
-	}
-	assert.True(t, found, "expected PolicyNotReady condition")
+	assert.True(t, conditionReason(rel, conftestReasonPolicyNotReady), "expected PolicyNotReady condition")
 }
 
 func TestRunConftestGatePassesWithWarnings(t *testing.T) {
 	ev := &fakeConftestEvaluator{violations: governance.Violations{
 		{Rule: "p", Severity: "warn", Message: "soft", Action: governance.PolicyActionWarn},
 	}}
-	r := newReconcilerWithConftest(ev)
-	app := &paprikav1.Application{Spec: paprikav1.ApplicationSpec{ConftestPolicies: []paprikav1.ConftestPolicyRef{{Name: "p"}}}}
-	rel := &paprikav1.Release{}
-	rel.SetGeneration(1)
-	require.NoError(t, r.runConftestGate(context.Background(), rel, app, nil))
+	rel := relForTest()
+	r := newReconcilerWithConftest(t, ev, rel)
+	require.NoError(t, r.runConftestGate(context.Background(), rel, appWithPolicy("p"), nil))
 	found := false
 	for _, c := range rel.Status.Conditions {
 		if c.Type == conftestConditionType && c.Reason == conftestReasonPassedWithWarnings && c.Status == "True" {
@@ -858,11 +877,9 @@ func TestRunConftestGatePassesWithWarnings(t *testing.T) {
 
 func TestRunConftestGateEngineErrorSurfacesNoCondition(t *testing.T) {
 	ev := &fakeConftestEvaluator{err: errors.New("boom")}
-	r := newReconcilerWithConftest(ev)
-	app := &paprikav1.Application{Spec: paprikav1.ApplicationSpec{ConftestPolicies: []paprikav1.ConftestPolicyRef{{Name: "p"}}}}
-	rel := &paprikav1.Release{}
-	rel.SetGeneration(1)
-	err := r.runConftestGate(context.Background(), rel, app, nil)
+	rel := relForTest()
+	r := newReconcilerWithConftest(t, ev, rel)
+	err := r.runConftestGate(context.Background(), rel, appWithPolicy("p"), nil)
 	require.Error(t, err)
 	for _, c := range rel.Status.Conditions {
 		assert.NotEqual(t, conftestConditionType, c.Type, "engine error must not set a conftest condition")
@@ -897,6 +914,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/governance"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/klog/v2"
@@ -951,7 +969,7 @@ func (r *ReleaseReconciler) setReleaseConftestCondition(release *paprikav1.Relea
 	if status {
 		conditionStatus = metav1.ConditionTrue
 	}
-	metav1.SetStatusCondition(&release.Status.Conditions, metav1.Condition{
+	meta.SetStatusCondition(&release.Status.Conditions, metav1.Condition{
 		Type:               conftestConditionType,
 		Status:             conditionStatus,
 		Reason:             reason,
@@ -961,7 +979,7 @@ func (r *ReleaseReconciler) setReleaseConftestCondition(release *paprikav1.Relea
 }
 ```
 
-> Verify the imports match the file: `release_controller.go` uses `logf`/`klog` for logging and `meta` (from `k8s.io/apimachinery/pkg/api/meta`) for `SetStatusCondition`. Use the SAME packages the governance gate uses (see `setReleaseGovernanceCondition` at `release_controller.go:788`). If that helper uses `meta.SetStatusCondition`, use `meta` here too; if it uses `metav1.SetStatusCondition`, match that. Reconcile the import block so there is exactly one alias per package.
+> This mirrors `setReleaseGovernanceCondition` (`release_controller.go:788`) exactly, including the use of `meta.SetStatusCondition` (`k8s.io/apimachinery/pkg/api/meta`) and `LastTransitionTime: metav1.Now()`. Keep the imports identical to that sibling to satisfy `make lint`.
 
 - [ ] **Step 2: Run the gate tests to verify they pass**
 
@@ -1002,14 +1020,22 @@ Immediately after each `runGovernanceGate` error-check block (at the three sites
 - [ ] **Step 2: Verify all three insertions**
 
 Run: `grep -n "runConftestGate" internal/controller/pipelines/release_controller.go`
-Expected: exactly 4 lines — 1 definition site reference is NOT in this file; expect 3 call sites here (plus the definition is in `conftest_gate.go`). So expect exactly 3 matches in `release_controller.go`.
+Expected: exactly 3 call sites in `release_controller.go` (the function itself is defined in `conftest_gate.go`, so it must not appear as a definition here).
 
-- [ ] **Step 3: Build and run the full pipelines test suite**
+- [ ] **Step 3: Add the release-controller RBAC marker**
+
+The release controller reads `ConftestPolicy` objects via the shared manager client (its `ConftestEvaluator`), so it needs read RBAC (spec, RBAC section). Add this marker alongside the other release-controller `+kubebuilder:rbac` markers (around `release_controller.go:130`):
+
+```go
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
+```
+
+- [ ] **Step 4: Build and run the full pipelines test suite**
 
 Run: `go build ./... && go test ./internal/controller/pipelines/... -run TestRunConftestGate -race`
 Expected: build clean, gate tests green.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add internal/controller/pipelines/release_controller.go
@@ -1127,15 +1153,29 @@ Add the import: `"github.com/benebsworth/paprika/internal/conftest"`.
 
 - [ ] **Step 2: Register the status controller**
 
-In `setupPipelineControllers` (alongside the other `SetupWithManager` calls, e.g. after the `NotificationConfigReconciler` registration around line 153), add:
+`setupPipelineControllers` registers controllers via a `controllers` slice of `{name string, setup func() error}` (see `cmd/main_controllers.go:123`), then loops over it. Add an entry to the slice and a matching `setupXxxController` helper, mirroring the existing `setupStageController` (`cmd/main_controllers.go:172`).
+
+Add this entry to the `controllers` slice (e.g. right after the `"stage"` entry):
 
 ```go
-	if err := (&pipelines.ConftestPolicyReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("conftestpolicy controller: %w", err)
-	}
+		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 ```
 
-Use the package alias that `cmd/main_controllers.go` already uses for `internal/controller/pipelines` (confirm it — it registers other controllers from that package). Match the existing error-wrapping style.
+Then add the helper next to `setupStageController`:
+
+```go
+func setupConftestPolicyController(mgr ctrl.Manager) error {
+	if err := (&controller.ConftestPolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up conftestpolicy controller: %w", err)
+	}
+	return nil
+}
+```
+
+> The alias `controller` is how `cmd/main_controllers.go` imports `internal/controller/pipelines` (verified at line 160: `(&controller.PipelineReconciler{...})`). Do **not** use `pipelines` here — it will not compile.
 
 - [ ] **Step 3: Build and run the unit tests**
 
@@ -1185,10 +1225,10 @@ git commit -m "feat(conftest): add ConftestPolicy sample"
 - [ ] **Step 1: Regenerate manifests + RBAC**
 
 Run: `make manifests generate`
-Expected: the release-controller RBAC gains no conftest verbs it doesn't already have via the manager client; the ConftestPolicyReconciler RBAC markers produce `conftestpolicies/status` rules. Verify with:
+Expected: the release-controller RBAC marker added in Task 11 produces a `conftestpolicies` (get/list/watch) rule; the `ConftestPolicyReconciler` markers produce `conftestpolicies` + `conftestpolicies/status` rules. Verify with:
 
 Run: `grep -n "conftestpolicies" config/rbac/role.yaml`
-Expected: matches for `conftestpolicies` and `conftestpolicies/status`.
+Expected: matches for both `conftestpolicies` and `conftestpolicies/status`.
 
 - [ ] **Step 2: Lint**
 
@@ -1214,24 +1254,146 @@ git commit -m "feat(conftest): regenerate RBAC for conftest policy status contro
 ### Task 16: Add a Ginkgo e2e spec
 
 **Files:**
-- Modify: `test/e2e/e2e_test.go` (or a new `test/e2e/conftest_test.go` following the existing e2e file conventions)
+- Create: `test/e2e/conftest_test.go` (same `package e2e`, same `//go:build e2e` tag, same imports as `e2e_test.go`)
 
-- [ ] **Step 1: Add an e2e spec (mirror the existing e2e style in `test/e2e/`)**
+This spec mirrors the established e2e style: YAML applied via `kubectl apply -f -` with `cmd.Stdin`, state polled via `Eventually(func(g Gomega){ ... })` over `kubectl get -o jsonpath`, and cleanup in an `AfterAll`. It uses the same helm `demo-app` source the `ApplicationHealthCheck` context uses (`e2e_test.go:1124`), so the rendered manifests are known to exist.
 
-The spec should:
+- [ ] **Step 1: Create `test/e2e/conftest_test.go`**
 
-1. Create a `ConftestPolicy` (`require-app-label`, `enforce`) that denies Deployments missing `metadata.labels.app`.
-2. Create an `Application` that references it (`spec.conftestPolicies: [{name: require-app-label}]`) and whose source/template renders a Deployment **without** the label.
-3. Create/trigger a `Release`.
-4. Assert the Release does **not** reach a terminal/success phase and that its `ConftestPassed` condition is `False` with reason `PolicyViolation`.
-5. Switch the policy `enforcement` to `warn` (or fix the manifest) and assert the next reconcile promotes successfully and the condition reflects the outcome.
+```go
+//go:build e2e
 
-Follow the helper patterns (client construction, namespace, eventual-consistency helpers) already used in `test/e2e/e2e_test.go`. Match its `Describe`/`It` Ginkgo style and timeout/backoff helpers.
+package e2e
 
-- [ ] **Step 2: Run the e2e suite locally on an isolated Kind cluster (optional)**
+import (
+	"fmt"
+	"os/exec"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/benebsworth/paprika/test/utils"
+)
+
+// conftestPolicy is a policy that denies every rendered Deployment. We use an
+// unconditional deny so the outcome is deterministic regardless of chart details.
+const conftestPolicyEnforceFmt = `{
+	"apiVersion": "pipelines.paprika.io/v1alpha1",
+	"kind": "ConftestPolicy",
+	"metadata": {"name": "e2e-deny-deployment", "namespace": "%s"},
+	"spec": {
+		"enforcement": "%s",
+		"rego": "package main\n\ndeny[msg] {\n  input.kind == \"Deployment\"\n  msg := \"deployments are forbidden\"\n}\n"
+	}
+}`
+
+const conftestApplicationFmt = `{
+	"apiVersion": "pipelines.paprika.io/v1alpha1",
+	"kind": "Application",
+	"metadata": {"name": "e2e-conftest", "namespace": "%s"},
+	"spec": {
+		"source": {"type": "helm", "chart": {"path": "/charts/demo-app"}},
+		"stages": [{"name": "dev", "ring": 1}],
+		"strategy": "Rolling",
+		"syncPolicy": "Auto",
+		"parameters": {
+			"replicaCount": "1",
+			"features.canary.enabled": "false",
+			"features.monitoring.enabled": "false",
+			"features.ingress.enabled": "false"
+		},
+		"conftestPolicies": [{"name": "e2e-deny-deployment"}]
+	}
+}`
+
+// releaseConftestCondition returns the status of the ConftestPassed condition for the
+// app's release, found via the app.paprika.io/name label selector used throughout the suite.
+func releaseConftestCondition(g Gomega, conditionType string) string {
+	cmd := exec.Command("kubectl", "get", "release", "-n", namespace,
+		"-l", "app.paprika.io/name=e2e-conftest",
+		"-o", fmt.Sprintf("jsonpath={.items[0].status.conditions[?(@.type==\"%s\")].status}", conditionType))
+	out, err := utils.Run(cmd)
+	g.Expect(err).NotTo(HaveOccurred())
+	return strings.TrimSpace(out)
+}
+
+var _ = Context("ApplicationConftestGate", Ordered, func() {
+	AfterAll(func() {
+		By("cleaning up conftest e2e resources")
+		cmd := exec.Command("kubectl", "delete", "application", "e2e-conftest", "-n", namespace, "--ignore-not-found", "--timeout=30s")
+		_, _ = utils.Run(cmd)
+		cmd = exec.Command("kubectl", "delete", "conftestpolicy", "e2e-deny-deployment", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+		_, _ = utils.Run(cmd)
+		for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
+			cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-conftest", "-n", namespace, "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+		}
+		for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
+			cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-conftest", "--ignore-not-found", "--timeout=10s")
+			_, _ = utils.Run(cmd)
+		}
+	})
+
+	It("should block promotion when an enforce policy denies the manifests", func() {
+		By("creating an enforce ConftestPolicy that denies Deployments")
+		policy := fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "enforce")
+		cmd := exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(policy)
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create ConftestPolicy")
+
+		By("creating an Application bound to the policy")
+		app := fmt.Sprintf(conftestApplicationFmt, namespace)
+		cmd = exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(app)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
+
+		By("waiting for the Release to report ConftestPassed=False")
+		Eventually(func(g Gomega) {
+			g.Expect(releaseConftestCondition(g, "ConftestPassed")).To(Equal("False"),
+				"expected the release to be blocked by the conftest gate")
+		}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+		By("confirming the Application does not reach Healthy while blocked")
+		Consistently(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "application", "e2e-conftest", "-n", namespace, "-o", "jsonpath={.status.phase}")
+			out, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).NotTo(Equal("Healthy"), "Application must not be Healthy while conftest blocks promotion")
+		}, 30*time.Second, 5*time.Second).Should(Succeed())
+	})
+
+	It("should promote once the policy is switched to warn", func() {
+		By("switching the policy enforcement to warn")
+		policy := fmt.Sprintf(conftestPolicyEnforceFmt, namespace, "warn")
+		cmd := exec.Command("kubectl", "apply", "-f", "-")
+		cmd.Stdin = strings.NewReader(policy)
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to update ConftestPolicy to warn")
+
+		By("waiting for the Application to reach Healthy")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "application", "e2e-conftest", "-n", namespace, "-o", "jsonpath={.status.phase}")
+			out, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy once the gate only warns")
+		}, 4*time.Minute, 2*time.Second).Should(Succeed())
+	})
+})
+```
+
+> **Implementer notes:**
+> - The release-label selector `app.paprika.io/name=...` is the convention used by the existing suite's cleanup (`e2e_test.go:1108`); confirm releases carry this label. If the release does not surface `ConftestPassed` under `status.conditions` by the time promotion is attempted, fall back to asserting the Application never reaches `Healthy` (the `Consistently` block) as the primary signal.
+> - The `demo-app` chart path `/charts/demo-app` is taken from the working `ApplicationHealthCheck` fixture (`e2e_test.go:1124`).
+> - `Consistently` is part of Gomega v2; confirm it is imported (it is via the dot-import of `github.com/onsi/gomega`).
+
+- [ ] **Step 2: Run the e2e suite locally on an isolated Kind cluster**
 
 Run: `make test-e2e`
-Expected: green. (If no local Kind cluster is desired, rely on the on-demand `E2E Tests` workflow.)
+Expected: green. (This requires a dedicated Kind cluster per `AGENTS.md` — do not run against a real dev/prod cluster. If no local cluster is desired, rely on the on-demand workflow.)
 
 - [ ] **Step 3: Trigger the on-demand CI e2e workflow**
 
@@ -1239,10 +1401,16 @@ Expected: green. (If no local Kind cluster is desired, rely on the on-demand `E2
 gh workflow run "E2E Tests" --repo paprikacd/paprika -f ginkgo_focus=Conftest
 ```
 
+Then poll the run:
+
+```bash
+gh run list --repo paprikacd/paprika --workflow "E2E Tests" --limit 1
+```
+
 - [ ] **Step 4: Commit the e2e test**
 
 ```bash
-git add test/e2e/
+git add test/e2e/conftest_test.go
 git commit -m "test(conftest): e2e coverage for enforce-blocks and warn-passes"
 ```
 
