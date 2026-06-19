@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -34,9 +35,20 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/test/utils"
 )
+
+var k8sClient client.Client
 
 const namespace = "paprika-system"
 
@@ -2069,6 +2081,118 @@ data:
 			value, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(strings.TrimSpace(value)).To(Equal("hello-from-paprika-apply-cli"))
+		})
+	})
+
+	Context("when a manual approval gate is configured", func() {
+		const (
+			appName     = "manual-gate-app"
+			stageName   = "manual-gate-stage"
+			releaseName = "manual-gate-release"
+		)
+
+		ctx := context.Background()
+		appKey := types.NamespacedName{Name: appName, Namespace: "default"}
+		releaseKey := types.NamespacedName{Name: releaseName, Namespace: "default"}
+
+		BeforeEach(func() {
+			By("initializing the controller-runtime client")
+			cfg, err := config.GetConfig()
+			Expect(err).NotTo(HaveOccurred())
+			scheme := runtime.NewScheme()
+			Expect(pipelinesv1alpha1.AddToScheme(scheme)).To(Succeed())
+			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+			Expect(err).NotTo(HaveOccurred())
+
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"},
+				Spec: pipelinesv1alpha1.ApplicationSpec{
+					Source: pipelinesv1alpha1.ApplicationSource{Type: "inline"},
+					ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
+						{Name: "prod-approval", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
+					},
+					Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+						{Name: stageName, Ring: 1},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+			stage := &pipelinesv1alpha1.Stage{
+				ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"},
+				Spec: pipelinesv1alpha1.StageSpec{Name: stageName, Ring: 1, Templates: []string{}},
+			}
+			Expect(k8sClient.Create(ctx, stage)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			By("cleaning up the release")
+			release := &pipelinesv1alpha1.Release{ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: "default"}}
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, release))).To(Succeed())
+			By("cleaning up the stage")
+			stage := &pipelinesv1alpha1.Stage{ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"}}
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, stage))).To(Succeed())
+			By("cleaning up the application")
+			app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"}}
+			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, app))).To(Succeed())
+		})
+
+		It("should pause promotion until the gate is approved", func() {
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      releaseName,
+					Namespace: "default",
+					Finalizers: []string{
+						"paprika.io/release-cleanup",
+					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+						Kind:       "Application",
+						Name:       appName,
+					}},
+				},
+				Spec: pipelinesv1alpha1.ReleaseSpec{
+					Target: stageName,
+				},
+				Status: pipelinesv1alpha1.ReleaseStatus{
+					Phase: pipelinesv1alpha1.ReleasePromoting,
+				},
+			}
+			Expect(k8sClient.Create(ctx, release)).To(Succeed())
+
+			controller := pipelines.NewReleaseReconciler(k8sClient)
+			controller.Scheme = k8sClient.Scheme()
+			controller.Namespace = "default"
+			controller.ApprovalGateEvaluator = gates.NewApprovalGateEvaluator(http.DefaultClient)
+
+			By("reconciling the release while the gate is pending")
+			_, err := controller.Reconcile(ctx, reconcile.Request{NamespacedName: releaseKey})
+			Expect(err).NotTo(HaveOccurred())
+
+			var updated pipelinesv1alpha1.Release
+			Eventually(func() pipelinesv1alpha1.ReleasePhase {
+				Expect(k8sClient.Get(ctx, releaseKey, &updated)).To(Succeed())
+				return updated.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(pipelinesv1alpha1.ReleaseAwaitingApproval))
+
+			var app pipelinesv1alpha1.Application
+			Expect(k8sClient.Get(ctx, appKey, &app)).To(Succeed())
+			Expect(app.Status.Gates).To(HaveLen(1))
+			Expect(app.Status.Gates[0].Status).To(Equal(pipelinesv1alpha1.GateStatusPending))
+
+			By("approving the gate")
+			app.Status.Gates[0].Status = pipelinesv1alpha1.GateStatusApproved
+			app.Status.Gates[0].ApprovedBy = "e2e"
+			Expect(k8sClient.Status().Update(ctx, &app)).To(Succeed())
+
+			By("reconciling the release after approval")
+			_, err = controller.Reconcile(ctx, reconcile.Request{NamespacedName: releaseKey})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() pipelinesv1alpha1.ReleasePhase {
+				Expect(k8sClient.Get(ctx, releaseKey, &updated)).To(Succeed())
+				return updated.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(pipelinesv1alpha1.ReleasePromoting))
 		})
 	})
 })
