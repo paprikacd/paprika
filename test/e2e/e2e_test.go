@@ -72,6 +72,15 @@ func waitForWebhookCA() {
 		"deployment/paprika-controller-manager", "--timeout=180s")
 	_, err := utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Operator deployment not available after webhook cert ready")
+
+	By("waiting for webhook service endpoints to be ready")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "endpoints", "paprika-webhook-service", "-n", namespace,
+			"-o", "jsonpath={.subsets[0].addresses[*].ip}")
+		out, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(), "webhook service endpoints have no addresses")
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 func deployManager() {
