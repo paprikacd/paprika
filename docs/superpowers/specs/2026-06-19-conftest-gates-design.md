@@ -210,20 +210,31 @@ internally. No subprocess is spawned (consistent with the in-process Helm migrat
 
 ### Violation mapping
 
-Each Rego result string maps to one `governance.Violation`:
+Each Rego result string maps to one `governance.Violation`. Note that
+`Violation.Blocking()` keys off the **`Action`** field (`== PolicyActionEnforce`), not
+`Severity`, so the evaluator MUST set `Action` correctly:
 
 - `Violation.Rule` = the source `ConftestPolicy` name.
 - `Violation.Message` = the Rego result string.
-- `Violation.Severity` = derived from the rule set + enforcement: `deny`/`violation` on an
-  `enforce` policy → blocking severity; everything else → warning severity. Blocking-vs-warn
-  is ultimately decided by `Violation.Blocking()`, consistent with the governance gate.
+- `Violation.Severity` = the rule set that fired: `"deny"`, `"violation"`, or `"warn"`
+  (informational; does not drive blocking).
+- `Violation.Action` = `governance.PolicyActionEnforce` for a `deny`/`violation` rule on an
+  **`enforce`** policy (so `.Blocking()` is true); `governance.PolicyActionWarn` for `warn`
+  rules and for `deny`/`violation` rules on a **`warn`** policy (so they land in
+  `.Warnings()`). Compile errors and missing policies are blocking, so they use
+  `PolicyActionEnforce`.
+
+This keeps conftest results flowing through the existing `Blocking()` / `Warnings()`
+collectors used by the governance gate.
 
 ### Caching
 
 Compiled policies are cached keyed by `(UID, Generation)`. On each `Evaluate`, entries whose
 generation is unchanged are reused; changed/missing entries are recompiled. The cache keeps
 compile cost off the reconcile hot path. Failed compiles are **not** cached (so a fixed
-policy takes effect on the next reconcile).
+policy takes effect on the next reconcile). The cache is keyed by `UID`, so its size is
+bounded by the number of `ConftestPolicy` objects in the cluster; entries for deleted
+policies are pruned lazily on cache miss during `Evaluate`.
 
 ### Error mapping
 
@@ -281,21 +292,19 @@ Behavior:
 
 ### Hook sites
 
-`runGovernanceGate` is currently called at three sites in `release_controller.go`:
+`runGovernanceGate` is currently called at three sites in `release_controller.go`, and all
+three precede a manifest apply to the cluster:
 
-- `:692` — the direct-promote path (manifests about to be applied).
-- `:1852` — the canary weight-adjustment path (manifests already applied; only traffic
-  weights change).
+- `:692` — the direct-promote path.
+- `:1852` — `applyCanaryWeight`, which **re-renders** templates with `canaryWeight`
+  injected, parses fresh manifest objects, and **calls `applyManifestsForCluster`** — so
+  the weight-step manifests are genuinely applied, not merely traffic tuning.
 - `:1898` — `promoteCanary` (new revision about to be applied).
 
-Conftest validates **manifests**, so it must run wherever new manifests are about to be
-applied, and must **not** run on a pure traffic-weight adjustment where the manifests are
-unchanged and were already gated. Therefore `runConftestGate` is called at **exactly the
-same sites as `runGovernanceGate` that precede a manifest apply** — the direct-promote path
-(`:692`) and `promoteCanary` (`:1898`) — immediately after the corresponding
-`runGovernanceGate` call. It is **not** added to the canary weight-adjustment path
-(`:1852`). (Governance itself can remain at all three; this is a deliberate, documented
-divergence because re-evaluating identical manifests on a weight tweak is pure waste.)
+Because every one of these paths applies manifests that a Rego policy may need to gate
+(e.g. a policy that branches on `canaryWeight`), `runConftestGate` is called at **all three
+sites, immediately after the corresponding `runGovernanceGate` call** — mirroring governance
+exactly, with no divergence to keep track of. There is no skipped path.
 
 ### Reuse of existing helpers
 
@@ -334,15 +343,25 @@ There are two places that compile Rego — the `ConftestPolicy` status controlle
 
 ## RBAC
 
+On the **release controller** (`release_controller.go`) — needed because its
+`ConftestEvaluator` reads policies via the manager client:
+
+```go
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
+```
+
+On the **`ConftestPolicyReconciler`** (status controller) — additionally writes status:
+
 ```go
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 ```
 
-The `conftestpolicies/status` verbs belong to the `ConftestPolicyReconciler` (the status
-controller). The release controller only needs `conftestpolicies` get/list/watch, which its
-`ConftestEvaluator` performs via the shared manager client.
+Both controllers share the events permission:
+
+```go
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
+```
 
 ## ConftestPolicy status controller
 
@@ -436,8 +455,8 @@ this is an accepted cost of in-process policy evaluation and is preferable to a 
 
 ## Decisions
 
-1. A `warn` policy that produces *no* rule matches reports `Passed` (not `PassedWithWarnings`).
-   `PassedWithWarnings` requires ≥1 warning; otherwise `Passed`.
+1. A policy (enforce or warn) that produces *no* rule matches reports `Passed` (not
+   `PassedWithWarnings`). `PassedWithWarnings` requires ≥1 warning; otherwise `Passed`.
 2. Each `ConftestPolicy` is compiled and evaluated independently. Combining multiple policies
    into a single Rego bundle is out of scope for v1.
 3. Violations surface via release conditions and events only. A dedicated CLI/UI view for
