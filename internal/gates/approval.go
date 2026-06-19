@@ -68,34 +68,34 @@ func NewApprovalGateEvaluator(client *http.Client) *ApprovalGateEvaluator {
 }
 
 // Evaluate returns the result for a single gate given its current status.
-func (e *ApprovalGateEvaluator) Evaluate(ctx context.Context, gate *ApprovalGate, payload *ApprovalGatePayload, currentStatus string) ApprovalGateResult {
+func (e *ApprovalGateEvaluator) Evaluate(ctx context.Context, gate *ApprovalGate, payload *ApprovalGatePayload, currentStatus string) *ApprovalGateResult {
 	if currentStatus == ApprovalGateStatusApproved {
-		return ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "manual"}
+		return &ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "manual"}
 	}
 	if currentStatus == ApprovalGateStatusRejected {
-		return ApprovalGateResult{Status: ApprovalGateStatusRejected}
+		return &ApprovalGateResult{Status: ApprovalGateStatusRejected}
 	}
 
 	switch gate.Type {
 	case ApprovalGateTypeManual:
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "waiting for manual approval"}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "waiting for manual approval"}
 	case ApprovalGateTypeWebhook:
 		return e.evaluateWebhook(ctx, gate, payload)
 	case ApprovalGateTypeSlack:
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "Slack interaction is Phase 2"}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "Slack interaction is Phase 2"}
 	default:
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "unknown gate type: " + gate.Type}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "unknown gate type: " + gate.Type}
 	}
 }
 
-func (e *ApprovalGateEvaluator) evaluateWebhook(ctx context.Context, gate *ApprovalGate, payload *ApprovalGatePayload) ApprovalGateResult {
+func (e *ApprovalGateEvaluator) evaluateWebhook(ctx context.Context, gate *ApprovalGate, payload *ApprovalGatePayload) *ApprovalGateResult {
 	if gate.URL == "" {
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "webhook gate missing URL"}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: "webhook gate missing URL"}
 	}
 
 	req, err := buildWebhookRequest(ctx, gate, payload)
 	if err != nil {
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("invalid webhook request: %v", err), Error: err}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("invalid webhook request: %v", err), Error: err}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -103,7 +103,7 @@ func (e *ApprovalGateEvaluator) evaluateWebhook(ctx context.Context, gate *Appro
 
 	resp, err := e.HTTPClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("webhook call failed: %v", err), Error: err}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("webhook call failed: %v", err), Error: err}
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort body close
 
@@ -132,15 +132,15 @@ func buildWebhookRequest(ctx context.Context, gate *ApprovalGate, payload *Appro
 	return req, nil
 }
 
-func webhookResultFromResponse(resp *http.Response, gate *ApprovalGate) ApprovalGateResult {
+func webhookResultFromResponse(resp *http.Response, gate *ApprovalGate) *ApprovalGateResult {
 	if gate.SuccessStatus > 0 {
 		if resp.StatusCode == gate.SuccessStatus {
-			return ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "webhook", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+			return &ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "webhook", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 		}
-		return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("HTTP %d (expected %d)", resp.StatusCode, gate.SuccessStatus)}
+		return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("HTTP %d (expected %d)", resp.StatusCode, gate.SuccessStatus)}
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "webhook", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		return &ApprovalGateResult{Status: ApprovalGateStatusApproved, ApprovedBy: "webhook", Message: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
-	return ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("HTTP %d (expected 2xx)", resp.StatusCode)}
+	return &ApprovalGateResult{Status: ApprovalGateStatusPending, Message: fmt.Sprintf("HTTP %d (expected 2xx)", resp.StatusCode)}
 }
