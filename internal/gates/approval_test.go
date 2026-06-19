@@ -9,12 +9,13 @@ import (
 
 func TestApprovalGateEvaluator_manual(t *testing.T) {
 	e := NewApprovalGateEvaluator(nil)
-	gate := ApprovalGate{Name: "m", Type: ApprovalGateTypeManual}
+	gate := &ApprovalGate{Name: "m", Type: ApprovalGateTypeManual}
+	payload := &ApprovalGatePayload{}
 
-	if got := e.Evaluate(context.Background(), gate, ApprovalGatePayload{}, ""); got.Status != ApprovalGateStatusPending {
+	if got := e.Evaluate(context.Background(), gate, payload, ""); got.Status != ApprovalGateStatusPending {
 		t.Errorf("manual gate = %s, want Pending", got.Status)
 	}
-	if got := e.Evaluate(context.Background(), gate, ApprovalGatePayload{}, ApprovalGateStatusApproved); got.Status != ApprovalGateStatusApproved {
+	if got := e.Evaluate(context.Background(), gate, payload, ApprovalGateStatusApproved); got.Status != ApprovalGateStatusApproved {
 		t.Errorf("approved manual gate = %s, want Approved", got.Status)
 	}
 }
@@ -26,21 +27,23 @@ func TestApprovalGateEvaluator_webhook(t *testing.T) {
 	defer srv.Close()
 
 	e := NewApprovalGateEvaluator(srv.Client())
-	gate := ApprovalGate{Name: "w", Type: ApprovalGateTypeWebhook, URL: srv.URL, Method: http.MethodPost}
-	if got := e.Evaluate(context.Background(), gate, ApprovalGatePayload{}, ""); got.Status != ApprovalGateStatusApproved {
+	gate := &ApprovalGate{Name: "w", Type: ApprovalGateTypeWebhook, URL: srv.URL, Method: http.MethodPost}
+	payload := &ApprovalGatePayload{}
+	if got := e.Evaluate(context.Background(), gate, payload, ""); got.Status != ApprovalGateStatusApproved {
 		t.Errorf("webhook gate = %s, want Approved", got.Status)
 	}
 
 	gate.URL = ""
-	if got := e.Evaluate(context.Background(), gate, ApprovalGatePayload{}, ""); got.Status != ApprovalGateStatusPending {
+	if got := e.Evaluate(context.Background(), gate, payload, ""); got.Status != ApprovalGateStatusPending {
 		t.Errorf("webhook missing url = %s, want Pending", got.Status)
 	}
 }
 
 func TestApprovalGateEvaluator_slack(t *testing.T) {
 	e := NewApprovalGateEvaluator(nil)
-	gate := ApprovalGate{Name: "s", Type: ApprovalGateTypeSlack}
-	if got := e.Evaluate(context.Background(), gate, ApprovalGatePayload{}, ""); got.Status != ApprovalGateStatusPending {
+	gate := &ApprovalGate{Name: "s", Type: ApprovalGateTypeSlack}
+	payload := &ApprovalGatePayload{}
+	if got := e.Evaluate(context.Background(), gate, payload, ""); got.Status != ApprovalGateStatusPending {
 		t.Errorf("slack gate = %s, want Pending", got.Status)
 	}
 }
