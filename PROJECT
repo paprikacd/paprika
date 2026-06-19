@@ -140,4 +140,13 @@ resources:
     defaulting: true
     validation: true
     webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: ConftestPolicy
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
 version: "3"
