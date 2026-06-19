@@ -9,16 +9,20 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 var _ = Describe("Release Controller", func() {
@@ -369,6 +373,195 @@ spec:
 			var app pipelinesv1alpha1.Application
 			Expect(k8sClient.Get(ctx, appKey, &app)).To(Succeed())
 			Expect(app.Status.ReleaseRef).To(Equal(prevReleaseName))
+		})
+	})
+
+	Context("when a Release manifest violates its AppProject boundaries", func() {
+		const (
+			appName      = "governance-block-release-app"
+			stageName    = "governance-block-release-stage"
+			releaseName  = "governance-block-release"
+			snapshotName = "governance-block-release-snapshot"
+			projectName  = "restricted-release-project"
+		)
+
+		ctx := context.Background()
+
+		appKey := types.NamespacedName{Name: appName, Namespace: "default"}
+		stageKey := types.NamespacedName{Name: stageName, Namespace: "default"}
+		releaseKey := types.NamespacedName{Name: releaseName, Namespace: "default"}
+		projectKey := types.NamespacedName{Name: projectName, Namespace: "default"}
+
+		manifests := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blocked-deploy
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blocked
+  template:
+    metadata:
+      labels:
+        app: blocked
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+`
+
+		BeforeEach(func() {
+			project := &corev1alpha1.AppProject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      projectName,
+					Namespace: "default",
+				},
+				Spec: corev1alpha1.AppProjectSpec{
+					Description: "Restricts deployments to allowed namespaces",
+					Destinations: []corev1alpha1.AppProjectDestination{
+						{Server: "*", Namespace: "allowed-ns"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, project)).To(Succeed())
+
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      appName,
+					Namespace: "default",
+				},
+				Spec: pipelinesv1alpha1.ApplicationSpec{
+					Project: projectName,
+					Source: pipelinesv1alpha1.ApplicationSource{
+						Type: "inline",
+					},
+					Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+						{
+							Name: stageName,
+							Ring: 1,
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, app)).To(Succeed())
+
+			stage := &pipelinesv1alpha1.Stage{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      stageName,
+					Namespace: "default",
+				},
+				Spec: pipelinesv1alpha1.StageSpec{
+					Name:      stageName,
+					Ring:      1,
+					Templates: []string{},
+				},
+			}
+			Expect(k8sClient.Create(ctx, stage)).To(Succeed())
+
+			snapshot := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      snapshotName,
+					Namespace: "default",
+				},
+				Data: map[string]string{
+					"manifests.yaml": manifests,
+				},
+			}
+			Expect(k8sClient.Create(ctx, snapshot)).To(Succeed())
+
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       releaseName,
+					Namespace:  "default",
+					Finalizers: []string{releaseFinalizer},
+					Labels: map[string]string{
+						"app.paprika.io/project": projectName,
+					},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+						Kind:       "Application",
+						Name:       appName,
+						UID:        app.UID,
+						Controller: ptr(true),
+					}},
+				},
+				Spec: pipelinesv1alpha1.ReleaseSpec{
+					Pipeline: "test-pipeline",
+					Target:   stageName,
+					ManifestSource: &pipelinesv1alpha1.ManifestSource{
+						ConfigMapRef: snapshotName,
+					},
+				},
+				Status: pipelinesv1alpha1.ReleaseStatus{
+					Phase: pipelinesv1alpha1.ReleasePromoting,
+				},
+			}
+			Expect(k8sClient.Create(ctx, release)).To(Succeed())
+			release.Status = pipelinesv1alpha1.ReleaseStatus{
+				Phase: pipelinesv1alpha1.ReleasePromoting,
+			}
+			Expect(k8sClient.Status().Update(ctx, release)).To(Succeed())
+		})
+
+		AfterEach(func() {
+			release := &pipelinesv1alpha1.Release{}
+			if err := k8sClient.Get(ctx, releaseKey, release); err == nil {
+				release.Finalizers = nil
+				Expect(k8sClient.Update(ctx, release)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, release)).To(Succeed())
+			}
+
+			stage := &pipelinesv1alpha1.Stage{}
+			if err := k8sClient.Get(ctx, stageKey, stage); err == nil {
+				Expect(k8sClient.Delete(ctx, stage)).To(Succeed())
+			}
+
+			app := &pipelinesv1alpha1.Application{}
+			if err := k8sClient.Get(ctx, appKey, app); err == nil {
+				Expect(k8sClient.Delete(ctx, app)).To(Succeed())
+			}
+
+			project := &corev1alpha1.AppProject{}
+			if err := k8sClient.Get(ctx, projectKey, project); err == nil {
+				Expect(k8sClient.Delete(ctx, project)).To(Succeed())
+			}
+
+			snapshot := &corev1.ConfigMap{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: snapshotName, Namespace: "default"}, snapshot); err == nil {
+				Expect(k8sClient.Delete(ctx, snapshot)).To(Succeed())
+			}
+		})
+
+		It("should set GovernanceChecked=False and fail the release", func() {
+			controllerReconciler := &ReleaseReconciler{
+				client:    k8sClient,
+				Scheme:    k8sClient.Scheme(),
+				Namespace: "default",
+				ProjectValidator: governance.NewProjectValidator(
+					governance.NewProjectResolver(k8sClient),
+					governance.NewClusterResolver(k8sClient),
+					nil,
+				),
+				PolicyEvaluator: governance.NewPolicyEvaluator(k8sClient),
+				EventRecorder:   record.NewFakeRecorder(10),
+				Clock:           clock.NewFake(time.Now()),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: releaseKey,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			var release pipelinesv1alpha1.Release
+			Expect(k8sClient.Get(ctx, releaseKey, &release)).To(Succeed())
+			Expect(release.Status.Phase).To(Equal(pipelinesv1alpha1.ReleaseFailed))
+
+			cond := meta.FindStatusCondition(release.Status.Conditions, governanceCheckedCondition)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal(projectViolationReason))
 		})
 	})
 })
