@@ -24,6 +24,7 @@ This file tracks implemented capabilities and planned features. It consolidates 
 - [x] Sync windows (cron-based)
 - [x] Self-healing (auto-sync on drift, auto-revert on health failure)
 - [x] Feature flags (`FeatureFlag` / `FeatureFlagBinding` CRDs + OpenFeature bridge)
+- [x] Project-Scoped Policy Governance — enforce `AppProject` boundaries and `Policy` rules in webhooks, controllers, and API; scope authorization by project
 
 ## P2 — Planned Next
 
@@ -37,12 +38,6 @@ These are the next user-facing features queued after the current MVP.
 - [ ] **Conftest Gates** — Open Policy Agent / Conftest policy checks in the promotion pipeline
   - Priority: medium
   - Status: no detailed plan yet
-  - Owner: TBD
-
-- [ ] **Project-Scoped Policy Governance** — enforce `AppProject` boundaries and `Policy` rules in webhooks, controllers, and API; scope authorization by project
-  - Priority: high
-  - Plan: [docs/superpowers/plans/2026-06-13-project-scoped-policy-governance.md](docs/superpowers/plans/2026-06-13-project-scoped-policy-governance.md)
-  - Spec: [docs/superpowers/specs/2026-06-13-project-scoped-policy-governance-design.md](docs/superpowers/specs/2026-06-13-project-scoped-policy-governance-design.md)
   - Owner: TBD
 
 - [ ] **`paprika apply -f` CLI** — render manifests locally and submit via `ApplyBundle`; `Policy` CRD; Bubble Tea TUI
