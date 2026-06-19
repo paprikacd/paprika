@@ -1,89 +1,70 @@
-/*
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// ConftestEnforcementMode controls how violations from this policy affect promotion.
+// +kubebuilder:validation:Enum=enforce;warn
+type ConftestEnforcementMode string
 
-// ConftestPolicySpec defines the desired state of ConftestPolicy
+const (
+	// ConftestEnforce blocks promotion on any deny/violation result.
+	ConftestEnforce ConftestEnforcementMode = "enforce"
+	// ConftestWarn records violations as warnings but does not block promotion.
+	ConftestWarn ConftestEnforcementMode = "warn"
+)
+
+// ConftestPolicySpec defines a user-authored Rego policy evaluated against rendered
+// manifests before promotion. The Rego source must declare a package and define rule
+// sets named `deny`, `warn`, and/or `violation` (conftest convention); `violation` is
+// treated as `deny`.
 type ConftestPolicySpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// Rego is the policy source. Must declare a package and define `deny`, `warn`,
+	// and/or `violation` rule sets that return string messages.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Rego string `json:"rego"`
 
-	// foo is an example field of ConftestPolicy. Edit conftestpolicy_types.go to remove/update
+	// Enforcement controls whether violations block promotion (enforce) or only warn.
+	// +kubebuilder:default=enforce
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Enforcement ConftestEnforcementMode `json:"enforcement,omitempty"`
 }
 
-// ConftestPolicyStatus defines the observed state of ConftestPolicy.
+// ConftestPolicyStatus reports the last compilation outcome for operator UX.
 type ConftestPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ObservedGeneration is the most recent generation observed.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the ConftestPolicy resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Conditions reflect compile readiness. Type "Ready": True = compiled, False = error.
+	// +optional
+	// +patchMergeKey=type
+	// +patchStrategy=merge
 	// +listType=map
 	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-
-// ConftestPolicy is the Schema for the conftestpolicies API
+// +kubebuilder:resource:scope=Namespaced
+// +kubebuilder:printcolumn:name="Enforce",type=string,JSONPath=".spec.enforcement"
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type ConftestPolicy struct {
-	metav1.TypeMeta `json:",inline"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// metadata is a standard object metadata
-	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
-
-	// spec defines the desired state of ConftestPolicy
-	// +required
-	Spec ConftestPolicySpec `json:"spec"`
-
-	// status defines the observed state of ConftestPolicy
-	// +optional
-	Status ConftestPolicyStatus `json:"status,omitzero"`
+	Spec   ConftestPolicySpec   `json:"spec,omitempty"`
+	Status ConftestPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-
-// ConftestPolicyList contains a list of ConftestPolicy
 type ConftestPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ConftestPolicy `json:"items"`
 }
 
