@@ -20,7 +20,7 @@
 - `internal/conftest/evaluator_test.go` — table-driven unit tests pinning evaluator behavior.
 - `internal/controller/pipelines/conftest_gate.go` — `ConftestEvaluator` interface, `runConftestGate`, `setReleaseConftestCondition`, reason consts.
 - `internal/controller/pipelines/conftest_gate_test.go` — `runConftestGate` unit tests with a hand-rolled fake evaluator.
-- `internal/controller/pipelines/conftest_policy_controller.go` — `ConftestPolicyReconciler` (status `Ready`).
+- `internal/controller/pipelines/conftestpolicy_controller.go` — `ConftestPolicyReconciler` (status `Ready`).
 - `config/samples/pipelines_v1alpha1_conftestpolicy.yaml` — sample CR.
 
 **Modify:**
@@ -612,12 +612,13 @@ func CompilePolicy(ctx context.Context, name, regoSrc string) (*compiledEntry, e
 	entry := &compiledEntry{name: name, queries: map[string]*rego.PreparedEvalQuery{}}
 	for _, rule := range []string{ruleDeny, ruleWarn, ruleViolation} {
 		q := fmt.Sprintf("data.%s.%s", pkgPath, rule)
-		pq, err := rego.New(rego.Module(moduleName, regoSrc), rego.Query(q)).PrepareForEval(ctx)
+		pqs, err := rego.New(rego.Module(moduleName, regoSrc), rego.Query(q)).PrepareForEval(ctx)
 		if err != nil {
 			return nil, err
 		}
-		pqCopy := pq
-		entry.queries[rule] = &pqCopy
+		// PrepareForEval returns one PreparedEvalQuery per query; we pass a single query.
+		pq := pqs[0]
+		entry.queries[rule] = &pq
 	}
 	return entry, nil
 }
@@ -675,7 +676,7 @@ func toViolations(policyName, severity string, action governance.PolicyAction, r
 }
 ```
 
-> **API verification note:** the implementer should confirm `rego.PreparedEvalQuery` is a value returned by `PrepareForEval` and that `rego.EvalInput(...)` is the correct input option for the pinned OPA version (run `go doc github.com/open-policy-agent/opa/rego PreparedEvalQuery` and `rego.EvalInput`). If `PrepareForEval` requires the query at construction (it does in current OPA), the code above is correct. If the pinned OPA version differs, adjust the query preparation while keeping the test contract intact.
+> **API verification note:** `rego.Rego.PrepareForEval(ctx)` returns `([]rego.PreparedEvalQuery, error)` in current OPA — one prepared query per `rego.Query` option. The code above passes a single query and takes `pqs[0]`. Confirm the exact signature for the pinned OPA version with `go doc github.com/open-policy-agent/opa/rego Rego.PrepareForEval`; if the version returns a single value instead, drop the `[0]`. The behavior is pinned by tests, so keep the test contract intact regardless of the API call shape.
 
 - [ ] **Step 2: Run the tests to verify they pass**
 
