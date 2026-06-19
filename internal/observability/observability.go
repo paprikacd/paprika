@@ -4,6 +4,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -20,37 +21,74 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
-const (
-	tracerName      = "github.com/benebsworth/paprika"
-	otelEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
-	otelServiceEnv  = "OTEL_SERVICE_NAME"
-)
+const tracerName = "github.com/benebsworth/paprika"
 
-var (
+// TelemetryConfig holds externally-provided OpenTelemetry settings.
+type TelemetryConfig struct {
+	OTLPEndpoint   string
+	ServiceName    string
+	ServiceVersion string
+}
+
+// Telemetry holds OpenTelemetry state for the process. It replaces the
+// package-level mutable globals used by earlier versions of this package.
+type Telemetry struct {
 	tracer   trace.Tracer
 	provider *sdktrace.TracerProvider
 	enabled  bool
-)
+}
 
-// InitTracing initializes OpenTelemetry tracing with OTLP gRPC exporter.
-func InitTracing() (func(), error) {
-	endpoint := os.Getenv(otelEndpointEnv)
-	if endpoint == "" {
-		return func() {}, nil
+// StartSpan starts a new OpenTelemetry span from context.
+func (t *Telemetry) StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	if t == nil || !t.enabled || t.tracer == nil {
+		return ctx, trace.SpanFromContext(ctx)
+	}
+	return t.tracer.Start(ctx, name, trace.WithAttributes(attrs...))
+}
+
+// SpanFromContext returns the current span from context.
+func (t *Telemetry) SpanFromContext(ctx context.Context) trace.Span {
+	return trace.SpanFromContext(ctx)
+}
+
+// IsTracingEnabled returns whether tracing is active.
+func (t *Telemetry) IsTracingEnabled() bool {
+	return t != nil && t.enabled
+}
+
+// Shutdown gracefully shuts down the tracer provider.
+func (t *Telemetry) Shutdown(ctx context.Context) error {
+	if t == nil || t.provider == nil {
+		return nil
+	}
+	if err := t.provider.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown tracer provider: %w", err)
+	}
+	return nil
+}
+
+// noopTelemetry is the default telemetry instance used by the deprecated
+// package-level helpers. It is immutable and safe for concurrent use.
+var noopTelemetry = &Telemetry{}
+
+// NewTelemetry initializes OpenTelemetry tracing from explicit configuration.
+func NewTelemetry(ctx context.Context, cfg TelemetryConfig) (*Telemetry, error) {
+	if cfg.OTLPEndpoint == "" {
+		return &Telemetry{}, nil
+	}
+	if cfg.ServiceName == "" {
+		cfg.ServiceName = "paprika"
 	}
 
-	serviceName := os.Getenv(otelServiceEnv)
-	if serviceName == "" {
-		serviceName = "paprika"
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	client := otlptracegrpc.NewClient(
-		otlptracegrpc.WithEndpoint(endpoint),
+		otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
 		otlptracegrpc.WithInsecure(),
 	)
 	exporter, err := otlptrace.New(ctx, client)
@@ -60,48 +98,76 @@ func InitTracing() (func(), error) {
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			semconv.ServiceNameKey.String(serviceName),
-			semconv.ServiceVersionKey.String(version()),
+			semconv.ServiceNameKey.String(cfg.ServiceName),
+			semconv.ServiceVersionKey.String(cfg.ServiceVersion),
 		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create trace resource: %w", err)
 	}
 
-	provider = sdktrace.NewTracerProvider(
+	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)
 
 	otel.SetTracerProvider(provider)
-	tracer = provider.Tracer(tracerName)
-	enabled = true
 
-	shutdown := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = provider.Shutdown(ctx)
+	return &Telemetry{
+		provider: provider,
+		tracer:   provider.Tracer(tracerName),
+		enabled:  true,
+	}, nil
+}
+
+// InitTracing initializes OpenTelemetry tracing with OTLP gRPC exporter from
+// environment variables.
+//
+// Deprecated: read OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME and
+// PAPRIKA_VERSION in cmd/main and pass a TelemetryConfig to NewTelemetry.
+func InitTracing(ctx context.Context) (*Telemetry, error) {
+	return NewTelemetry(ctx, TelemetryConfig{
+		OTLPEndpoint:   os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		ServiceName:    os.Getenv("OTEL_SERVICE_NAME"),
+		ServiceVersion: version(),
+	})
+}
+
+// InitTracingLegacy initializes tracing using a background context.
+//
+// Deprecated: use InitTracing(ctx) and the returned *Telemetry instead.
+func InitTracingLegacy() (func(), error) {
+	telemetry, err := InitTracing(context.Background())
+	if err != nil {
+		return nil, err
 	}
-	return shutdown, nil
+	return func() {
+		if shutdownErr := telemetry.Shutdown(context.Background()); shutdownErr != nil {
+			log.Printf("Failed to shutdown tracing: %v", shutdownErr)
+		}
+	}, nil
 }
 
 // StartSpan starts a new OpenTelemetry span from context.
+//
+// Deprecated: use Telemetry.StartSpan on an instance returned by InitTracing.
 func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	if !enabled || tracer == nil {
-		return ctx, trace.SpanFromContext(ctx)
-	}
-	return tracer.Start(ctx, name, trace.WithAttributes(attrs...))
+	return noopTelemetry.StartSpan(ctx, name, attrs...)
 }
 
 // SpanFromContext returns the current span from context.
+//
+// Deprecated: use Telemetry.SpanFromContext.
 func SpanFromContext(ctx context.Context) trace.Span {
-	return trace.SpanFromContext(ctx)
+	return noopTelemetry.SpanFromContext(ctx)
 }
 
 // IsTracingEnabled returns whether tracing is active.
+//
+// Deprecated: use Telemetry.IsTracingEnabled.
 func IsTracingEnabled() bool {
-	return enabled
+	return noopTelemetry.IsTracingEnabled()
 }
 
 // EventRecorder records Kubernetes events for resources.
@@ -133,11 +199,15 @@ func (e *EventRecorder) Warning(obj runtime.Object, reason, message string) {
 // AuditLogger records audit events to stdout.
 type AuditLogger struct {
 	enabled bool
+	clock   clock.Clock
 }
 
 // NewAuditLogger creates an audit logger.
-func NewAuditLogger() *AuditLogger {
-	return &AuditLogger{enabled: os.Getenv("PAPRIKA_AUDIT_LOG") == "true"}
+func NewAuditLogger(enabled bool, clk clock.Clock) *AuditLogger {
+	if clk == nil {
+		clk = clock.Real{}
+	}
+	return &AuditLogger{enabled: enabled, clock: clk}
 }
 
 // Log records an audit event.
@@ -152,7 +222,7 @@ func (a *AuditLogger) Log(action, resource, namespace, name, user string, detail
 		fmt.Fprintf(&b, " %s=%q", k, v)
 	}
 	fmt.Printf(`{"ts":"%s","action":"%s","resource":"%s","namespace":"%s","name":"%s","user":"%s"%s}`+"\n",
-		time.Now().UTC().Format(time.RFC3339Nano),
+		a.clock.Now().UTC().Format(time.RFC3339Nano),
 		action, resource, namespace, name, user, b.String(),
 	)
 }

@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 const pruneTestAppName = "prune-test-app"
@@ -63,7 +63,7 @@ func buildReleases(base time.Time, phases []pipelinesv1alpha1.ReleasePhase) []cl
 func countReleases(ctx context.Context, t *testing.T, r *ApplicationReconciler) int {
 	t.Helper()
 	var list pipelinesv1alpha1.ReleaseList
-	if err := r.List(ctx, &list, client.InNamespace("default"), client.MatchingLabels{engine.ApplicationNameLabelKey: pruneTestAppName}); err != nil {
+	if err := r.client.List(ctx, &list, client.InNamespace("default"), client.MatchingLabels{engine.ApplicationNameLabelKey: pruneTestAppName}); err != nil {
 		t.Fatalf("list releases: %v", err)
 	}
 	return len(list.Items)
@@ -85,7 +85,7 @@ func TestApplicationReconciler_pruneOldReleases_noPruningWhenBelowLimit(t *testi
 		phases[i] = pipelinesv1alpha1.ReleaseSuperseded
 	}
 	recorder := record.NewFakeRecorder(10)
-	r := &ApplicationReconciler{Client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
+	r := &ApplicationReconciler{client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
 
 	if err := r.pruneOldReleases(ctx, pruneTestApp); err != nil {
 		t.Fatalf("pruneOldReleases failed: %v", err)
@@ -120,7 +120,7 @@ func TestApplicationReconciler_pruneOldReleases_prunesOldAndProtectsActiveAndLat
 		pipelinesv1alpha1.ReleaseComplete,   // release-11 is latest non-superseded
 	}
 	recorder := record.NewFakeRecorder(10)
-	r := &ApplicationReconciler{Client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
+	r := &ApplicationReconciler{client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
 
 	if err := r.pruneOldReleases(ctx, pruneTestApp); err != nil {
 		t.Fatalf("pruneOldReleases failed: %v", err)
@@ -131,7 +131,7 @@ func TestApplicationReconciler_pruneOldReleases_prunesOldAndProtectsActiveAndLat
 	}
 
 	var list pipelinesv1alpha1.ReleaseList
-	if err := r.List(ctx, &list, client.InNamespace("default"), client.MatchingLabels{engine.ApplicationNameLabelKey: pruneTestAppName}); err != nil {
+	if err := r.client.List(ctx, &list, client.InNamespace("default"), client.MatchingLabels{engine.ApplicationNameLabelKey: pruneTestAppName}); err != nil {
 		t.Fatalf("list releases: %v", err)
 	}
 	kept := releaseNames(&list)
@@ -167,7 +167,7 @@ func TestApplicationReconciler_pruneOldReleases_missingActiveStillPrunesSafely(t
 	app := pruneTestApp.DeepCopy()
 	app.Status.ReleaseRef = "does-not-exist"
 	recorder := record.NewFakeRecorder(10)
-	r := &ApplicationReconciler{Client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
+	r := &ApplicationReconciler{client: newPruneTestClient(buildReleases(base, phases)...), EventRecorder: recorder}
 
 	if err := r.pruneOldReleases(ctx, app); err != nil {
 		t.Fatalf("pruneOldReleases failed: %v", err)
@@ -236,7 +236,7 @@ func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
 				WithStatusSubresource(&pipelinesv1alpha1.Application{}).
 				Build()
 
-			r := &ApplicationReconciler{Client: c}
+			r := &ApplicationReconciler{client: c}
 			_, err := r.handleSyncTrigger(ctx, app)
 			if err != nil {
 				t.Fatalf("handleSyncTrigger failed: %v", err)
@@ -313,7 +313,7 @@ func TestApplicationReconciler_reconcileAnalysisRuns_createsRunAndAggregates(t *
 		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
 		Build()
 
-	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	r := &ApplicationReconciler{client: c, Scheme: scheme}
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		t.Fatalf("reconcileAnalysisRuns failed: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestApplicationReconciler_reconcileAnalysisRuns_deletesStaleRun(t *testing.
 		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
 		Build()
 
-	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	r := &ApplicationReconciler{client: c, Scheme: scheme}
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		t.Fatalf("reconcileAnalysisRuns failed: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestApplicationReconciler_handleAnalysisFailure_rollback(t *testing.T) {
 		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
 		Build()
 
-	r := &ApplicationReconciler{Client: c, Scheme: scheme}
+	r := &ApplicationReconciler{client: c, Scheme: scheme}
 	if err := r.handleAnalysisFailure(ctx, app); err != nil {
 		t.Fatalf("handleAnalysisFailure failed: %v", err)
 	}

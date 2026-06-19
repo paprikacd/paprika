@@ -23,18 +23,18 @@ type Result struct {
 }
 
 // NewEvaluator creates a default cron-based evaluator.
-func NewEvaluator() Evaluator {
-	return &evaluator{
+func NewEvaluator() *CronEvaluator {
+	return &CronEvaluator{
 		parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
 	}
 }
 
-type evaluator struct {
+type CronEvaluator struct {
 	parser cron.Parser
 }
 
 //nolint:cyclop // window evaluation semantics are inherently branchy.
-func (e *evaluator) IsSyncAllowed(windows []paprikav1.SyncWindow, stage string, now time.Time, manual bool) Result {
+func (e *CronEvaluator) IsSyncAllowed(windows []paprikav1.SyncWindow, stage string, now time.Time, manual bool) Result {
 	if manual {
 		return Result{Allowed: true, Reason: "Manual sync override"}
 	}
@@ -114,7 +114,7 @@ type parsedWindow struct {
 	scheduleExpr string
 }
 
-func (e *evaluator) parse(w *paprikav1.SyncWindow) (parsedWindow, error) {
+func (e *CronEvaluator) parse(w *paprikav1.SyncWindow) (parsedWindow, error) {
 	loc := time.UTC
 	if w.Timezone != "" {
 		var err error

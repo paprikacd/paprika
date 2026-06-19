@@ -1,10 +1,12 @@
-package api
+package apiserver
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/api/events"
 )
@@ -20,6 +22,8 @@ func NewSSEHandler(broker *events.Broker) *SSEHandler {
 }
 
 // ServeHTTP implements the http.Handler interface.
+//
+//nolint:cyclop // SSE handler has sequential event branches.
 func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	topic := r.URL.Query().Get("topic")
@@ -47,7 +51,10 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.broker.Unsubscribe(ctx, topic, ch)
 	}()
 
-	_, _ = fmt.Fprintf(w, ":ok\n\n")
+	if _, err := fmt.Fprintf(w, ":ok\n\n"); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to write SSE heartbeat")
+		return
+	}
 	flusher.Flush()
 
 	for {
@@ -62,7 +69,10 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+				log.FromContext(ctx).Error(err, "Failed to write SSE event")
+				return
+			}
 			flusher.Flush()
 		}
 	}

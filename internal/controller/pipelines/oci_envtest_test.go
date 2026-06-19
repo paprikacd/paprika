@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -11,8 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
-	"github.com/benebsworth/paprika/source"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 type stubOCIRenderer struct{}
@@ -33,7 +32,7 @@ func (stubOCIRenderer) RenderHelmChart(_ context.Context, _, _, _ string, _ map[
 	return nil, nil
 }
 
-var _ engine.TemplateRenderer = stubOCIRenderer{}
+var _ TemplateRenderer = stubOCIRenderer{}
 
 var _ = ginkgo.Describe("Application Controller OCI Source", func() {
 	ctx := context.Background()
@@ -56,7 +55,7 @@ var _ = ginkgo.Describe("Application Controller OCI Source", func() {
 		gomega.Expect(k8sClient.Create(ctx, app)).To(gomega.Succeed())
 
 		rec := &ApplicationReconciler{
-			Client:           k8sClient,
+			client:           k8sClient,
 			Scheme:           k8sClient.Scheme(),
 			WorkDir:          "/tmp/paprika-oci-envtest",
 			TemplateRenderer: stubOCIRenderer{},

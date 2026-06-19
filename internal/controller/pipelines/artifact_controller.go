@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
@@ -26,8 +26,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 const resultSuccess = "success"
@@ -35,9 +36,10 @@ const resultError = "error"
 
 // ArtifactReconciler reconciles a Artifact object
 type ArtifactReconciler struct {
-	client.Client
+	client      client.Client
 	Scheme      *runtime.Scheme
 	ShardFilter *sharding.Filter
+	Clock       clock.Clock
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch;create;update;patch;delete
@@ -55,10 +57,10 @@ type ArtifactReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
 func (r *ArtifactReconciler) Reconcile(_ context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("artifact", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("artifact").Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("artifact").Observe(metrics.Since(r.Clock, start))
 	}()
 
 	return ctrl.Result{}, nil
@@ -66,6 +68,7 @@ func (r *ArtifactReconciler) Reconcile(_ context.Context, _ ctrl.Request) (ctrl.
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ArtifactReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Artifact{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).

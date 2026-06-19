@@ -2,95 +2,111 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/benebsworth/paprika/internal/cache"
 )
 
 func TestAPIModeStartsWithoutError(t *testing.T) {
+	t.Parallel()
+
 	fakeK8s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
+		if _, err := w.Write([]byte(`{}`)); err != nil {
+			t.Errorf("Failed to write fake Kubernetes response: %v", err)
+		}
 	}))
 	defer fakeK8s.Close()
 
-	tokenFile, err := os.CreateTemp(t.TempDir(), "token")
-	if err != nil {
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("fake-token"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if wErr := os.WriteFile(tokenFile.Name(), []byte("fake-token"), 0o600); wErr != nil {
-		t.Fatal(wErr)
-	}
-	_ = tokenFile.Close()
 
-	ports := freePorts(2)
-	addr, probeAddr := ports[0], ports[1]
+	probeAddrCh := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runAPIMode(fakeK8s.URL, tokenFile.Name(), addr, probeAddr,
-			false, "", "", "", "", "", "", false)
+		errCh <- runAPIMode(ctx, &cliConfig{
+			mode:         "api",
+			k8sAPIServer: fakeK8s.URL,
+			k8sTokenFile: tokenFile,
+			uiAddr:       ":0",
+			probeAddr:    ":0",
+		}, newScheme(), logr.Discard(), probeAddrCh)
 	}()
 
+	var probeAddr string
 	select {
-	case e := <-errCh:
-		if e != nil {
-			t.Fatalf("runAPIMode returned error: %v", e)
-		}
-	case <-time.After(3 * time.Second):
+	case probeAddr = <-probeAddrCh:
+	case err := <-errCh:
+		t.Fatalf("runAPIMode exited before binding: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for API mode to bind")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", http.NoBody)
-	if err != nil {
-		t.Fatalf("build healthz request: %v", err)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("healthz request failed: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("healthz returned status %d", resp.StatusCode)
-	}
-}
-
-func freePort() string {
-	lc := net.ListenConfig{}
-	ctx := context.Background()
-	ln, err := lc.Listen(ctx, "tcp", "localhost:0")
-	if err != nil {
-		panic(fmt.Sprintf("no free port found: %v", err))
-	}
-	addr := ln.Addr().String()
-	_ = ln.Close()
-	return addr
-}
-
-func freePorts(n int) []string {
-	addrs := make([]string, n)
-	for i := range n {
-		addrs[i] = freePort()
-	}
-	return addrs
-}
-
-func TestRepoServerHealthEndpoint(t *testing.T) {
-	addr, probeAddr := freePort(), freePort()
-	go func() {
-		_ = runRepoServerMode(addr, probeAddr)
-	}()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 
 	if err := waitForHealthz(ctx, probeAddr); err != nil {
 		t.Fatalf("healthz probe failed: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("runAPIMode returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for runAPIMode to exit")
+	}
+}
+
+func TestRepoServerHealthEndpoint(t *testing.T) {
+	t.Parallel()
+
+	probeAddrCh := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	k8sClient := fake.NewClientBuilder().WithScheme(newScheme()).Build()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runRepoServerMode(ctx, ":0", ":0", t.TempDir(), newScheme(), logr.Discard(), cache.Config{Backend: "memory"}, probeAddrCh, k8sClient)
+	}()
+
+	var probeAddr string
+	select {
+	case probeAddr = <-probeAddrCh:
+	case err := <-errCh:
+		t.Fatalf("runRepoServerMode exited before binding: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for repo server to bind")
+	}
+
+	if err := waitForHealthz(ctx, probeAddr); err != nil {
+		t.Fatalf("healthz probe failed: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("runRepoServerMode returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for runRepoServerMode to exit")
 	}
 }
 

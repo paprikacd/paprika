@@ -184,7 +184,7 @@ func validateCELExpression(expr string) error {
 		return fmt.Errorf("failed to create CEL environment: %w", err)
 	}
 	if _, iss := env.Compile(expr); iss != nil {
-		return fmt.Errorf("CEL compilation failed: %w", iss.Err())
+		return fmt.Errorf("compile CEL expression: %w", iss.Err())
 	}
 	return nil
 }

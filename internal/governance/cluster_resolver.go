@@ -16,16 +16,16 @@ type ClusterResolver interface {
 	ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error)
 }
 
-func NewClusterResolver(c client.Reader) ClusterResolver {
-	return &clusterResolver{client: c}
+func NewClusterResolver(c client.Reader) *ClusterServerResolver {
+	return &ClusterServerResolver{client: c}
 }
 
-type clusterResolver struct {
+type ClusterServerResolver struct {
 	client client.Reader
 }
 
 //nolint:gocritic // heavy ClusterRef passed by value per API
-func (r *clusterResolver) ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error) {
+func (r *ClusterServerResolver) ResolveServer(ctx context.Context, defaultNs string, ref pipelinesv1alpha1.ClusterRef) (string, error) {
 	if ref.Server != "" {
 		return ref.Server, nil
 	}

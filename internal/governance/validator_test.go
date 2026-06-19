@@ -26,7 +26,7 @@ func makeAppProject() *corev1alpha1.AppProject {
 }
 
 func TestProjectValidator_Validate_AllowsCompliant(t *testing.T) {
-	v := NewProjectValidator(nil, &clusterResolver{}, nil)
+	v := NewProjectValidator(nil, &ClusterServerResolver{}, nil)
 	app := &pipelinesv1alpha1.Application{
 		Spec: pipelinesv1alpha1.ApplicationSpec{
 			Project: "payments",
@@ -46,7 +46,7 @@ func TestProjectValidator_Validate_AllowsCompliant(t *testing.T) {
 }
 
 func TestProjectValidator_Validate_SkipsRepoAuthForInlineSource(t *testing.T) {
-	v := NewProjectValidator(nil, &clusterResolver{}, nil)
+	v := NewProjectValidator(nil, &ClusterServerResolver{}, nil)
 	app := &pipelinesv1alpha1.Application{
 		Spec: pipelinesv1alpha1.ApplicationSpec{
 			Project: "payments",
@@ -68,7 +68,7 @@ func TestProjectValidator_Validate_SkipsRepoAuthForInlineSource(t *testing.T) {
 }
 
 func TestProjectValidator_Validate_RejectsBadKind(t *testing.T) {
-	v := NewProjectValidator(nil, &clusterResolver{}, nil)
+	v := NewProjectValidator(nil, &ClusterServerResolver{}, nil)
 	app := &pipelinesv1alpha1.Application{
 		Spec: pipelinesv1alpha1.ApplicationSpec{
 			Project: "payments",

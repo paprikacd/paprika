@@ -1672,9 +1672,14 @@ var _ = Describe("Manager", Ordered, func() {
 			cmd = exec.Command("helm", "upgrade", "--install", "paprika-api", "./charts/chart",
 				"--namespace", apiNamespace,
 				"--create-namespace",
-				"--set", fmt.Sprintf("manager.image.repository=%s", strings.Split(managerImage, ":")[0]),
-				"--set", fmt.Sprintf("manager.image.tag=%s", strings.Split(managerImage, ":")[1]),
+				"--set", fmt.Sprintf("apiServer.image.repository=%s", strings.Split(managerImage, ":")[0]),
+				"--set", fmt.Sprintf("apiServer.image.tag=%s", strings.Split(managerImage, ":")[1]),
 				"--set", "mode=api",
+				"--set", "deploymentMode=split",
+				"--set", "manager.enabled=false",
+				"--set", "webhookReceiver.enabled=false",
+				"--set", "repoServer.enabled=false",
+				"--set", "redis.enabled=false",
 				"--set", "metrics.enable=false",
 				"--set", "crd.enable=false",
 				"--wait",
@@ -1715,7 +1720,7 @@ subjects:
 
 			By("starting port-forward for the api server (port 3000)")
 			getDeploy := exec.Command("kubectl", "get", "deployment", "-n", apiNamespace,
-				"-l", "control-plane=controller-manager", "-o", "name")
+				"-l", "app.kubernetes.io/component=api-server", "-o", "name")
 			deployName, err := utils.Run(getDeploy)
 			Expect(err).NotTo(HaveOccurred(), "Failed to get api deployment name")
 			pfCmd := exec.Command("kubectl", "port-forward", "-n", apiNamespace,

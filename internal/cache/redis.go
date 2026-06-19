@@ -68,5 +68,26 @@ func (c *RedisCache) Close() error {
 	return nil
 }
 
-// Ensure RedisCache implements Cache at compile time.
-var _ Cache = (*RedisCache)(nil)
+// DeleteByPrefix removes all Redis entries whose key starts with prefix.
+func (c *RedisCache) DeleteByPrefix(ctx context.Context, prefix string) error {
+	iter := c.client.Scan(ctx, 0, prefix+"*", 1000).Iterator()
+	for iter.Next(ctx) {
+		if err := c.client.Del(ctx, iter.Val()).Err(); err != nil {
+			return fmt.Errorf("redis del %s: %w", iter.Val(), err)
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("redis scan: %w", err)
+	}
+	return nil
+}
+
+// Ensure RedisCache implements the fine-grained cache roles at compile time.
+var (
+	_ Getter        = (*RedisCache)(nil)
+	_ Setter        = (*RedisCache)(nil)
+	_ Deleter       = (*RedisCache)(nil)
+	_ Pinger        = (*RedisCache)(nil)
+	_ Closer        = (*RedisCache)(nil)
+	_ PrefixDeleter = (*RedisCache)(nil)
+)

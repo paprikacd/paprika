@@ -12,7 +12,7 @@ Thank you for considering contributing to paprika! We welcome contributions of a
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - Docker
 - kubectl
 - Access to a Kubernetes cluster (v1.29+) or [Kind](https://kind.sigs.k8s.io/) for local testing
@@ -36,6 +36,15 @@ make lint
 
 # Run locally against your current kubeconfig context
 ENABLE_WEBHOOKS=false make run
+```
+
+### Pre-commit Hooks
+
+This repo provides a local pre-commit hook that runs `golangci-lint` on staged
+`.go` files. Install it once with:
+
+```sh
+git config core.hooksPath .githooks
 ```
 
 ### E2E Testing

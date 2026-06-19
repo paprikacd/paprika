@@ -1,13 +1,16 @@
-package controller
+package pipelines
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/smtp"
 	"strconv"
 	"strings"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
@@ -48,12 +51,12 @@ func (s *EmailSender) Send(ctx context.Context, to, subject, body string) error 
 		if err != nil {
 			return fmt.Errorf("tls dial: %w", err)
 		}
-		defer func() { _ = conn.Close() }()
+		defer closeSMTPConn(ctx, conn, "TLS SMTP connection")
 		client, err := smtp.NewClient(conn, host)
 		if err != nil {
 			return fmt.Errorf("smtp client: %w", err)
 		}
-		defer func() { _ = client.Close() }()
+		defer closeSMTPConn(ctx, client, "TLS SMTP client")
 		return sendWithClient(ctx, client, s.Auth, s.SMTP.From, []string{to}, msg)
 	}
 
@@ -62,12 +65,12 @@ func (s *EmailSender) Send(ctx context.Context, to, subject, body string) error 
 	if err != nil {
 		return fmt.Errorf("smtp dial: %w", err)
 	}
-	defer func() { _ = conn.Close() }()
+	defer closeSMTPConn(ctx, conn, "SMTP connection")
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return fmt.Errorf("smtp client: %w", err)
 	}
-	defer func() { _ = client.Close() }()
+	defer closeSMTPConn(ctx, client, "SMTP client")
 	if ok, _ := client.Extension("STARTTLS"); ok {
 		if err := client.StartTLS(s.tlsConfig(host)); err != nil {
 			return fmt.Errorf("starttls: %w", err)
@@ -104,6 +107,12 @@ func sendWithClient(_ context.Context, client *smtp.Client, auth smtp.Auth, from
 		return fmt.Errorf("smtp quit: %w", err)
 	}
 	return nil
+}
+
+func closeSMTPConn(ctx context.Context, c io.Closer, what string) {
+	if err := c.Close(); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to close "+what)
+	}
 }
 
 func buildMimeMessage(from, to, subject, body string) []byte {

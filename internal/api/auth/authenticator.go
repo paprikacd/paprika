@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"fmt"
 )
 
 // Authenticator validates credentials and returns a Principal.
@@ -39,7 +38,7 @@ func (m *MultiAuthenticator) Authenticate(ctx context.Context) (*Principal, erro
 		lastErr = err
 	}
 	if lastErr != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnauthenticated, lastErr)
+		return nil, errors.Join(lastErr, ErrUnauthenticated)
 	}
 	return nil, ErrUnauthenticated
 }

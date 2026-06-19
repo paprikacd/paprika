@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -25,44 +27,62 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
-	"github.com/benebsworth/paprika/internal/api"
+	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
-	repoclient "github.com/benebsworth/paprika/internal/reposerver/client"
+	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/webhook/receiver"
 )
 
-var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+const (
+	defaultReadHeaderTimeout     = 10 * time.Second
+	healthProbeReadHeaderTimeout = 5 * time.Second
+	serverShutdownTimeout        = 15 * time.Second
+	defaultRedisAddr             = "localhost:6379"
+	defaultPort                  = "8080"
 )
 
-func init() {
+func newScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
+	return scheme
 }
 
 func main() {
-	if err := run(); err != nil {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	setupLog := ctrl.Log.WithName("setup")
+
+	if err := metrics.RegisterCollectors(crmetrics.Registry); err != nil {
+		setupLog.Error(err, "Failed to register metrics collectors")
+		os.Exit(1)
+	}
+
+	if err := run(setupLog); err != nil {
 		setupLog.Error(err, "Fatal startup error")
 		os.Exit(1)
 	}
 }
 
 //nolint:cyclop,funlen // CLI setup and wiring.
-func run() error {
+func run(setupLog logr.Logger) error {
+	ctx := context.Background()
+
 	var (
 		port                                                        = os.Getenv("PORT")
 		kubeconfig                                                  = flag.String("kubeconfig", "", "Path to kubeconfig. Uses default loading rules (KUBECONFIG env, ~/.kube/config) when empty.")
@@ -85,16 +105,47 @@ func run() error {
 	flag.BoolVar(&authAllowUnauth, "auth-allow-unauthenticated", false, "Allow unauthenticated requests.")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
-
 	if port == "" {
-		port = "8080"
+		port = defaultPort
 	}
 	addr := ":" + port
 
-	shutdownTracing := setupTracing()
-	if shutdownTracing != nil {
-		defer shutdownTracing()
+	repoServerAddr := os.Getenv("PAPRIKA_REPO_SERVER_ADDR")
+	cacheCfg := cache.Config{
+		Backend:       os.Getenv("PAPRIKA_CACHE_BACKEND"),
+		RedisAddr:     os.Getenv("PAPRIKA_REDIS_ADDR"),
+		RedisPassword: os.Getenv("PAPRIKA_REDIS_PASSWORD"),
+		RedisDB:       0,
+	}
+	if cacheCfg.Backend == "" {
+		cacheCfg.Backend = cache.BackendMemory
+	}
+	if cacheCfg.RedisAddr == "" {
+		cacheCfg.RedisAddr = defaultRedisAddr
+	}
+	if dbStr := os.Getenv("PAPRIKA_REDIS_DB"); dbStr != "" {
+		if db, err := strconv.Atoi(dbStr); err == nil {
+			cacheCfg.RedisDB = db
+		}
+	}
+
+	telemetry, err := observability.NewTelemetry(ctx, observability.TelemetryConfig{
+		OTLPEndpoint:   os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		ServiceName:    os.Getenv("OTEL_SERVICE_NAME"),
+		ServiceVersion: os.Getenv("PAPRIKA_VERSION"),
+	})
+	if err != nil {
+		setupLog.Error(err, "Failed to initialize tracing")
+		telemetry = nil
+	} else if telemetry.IsTracingEnabled() {
+		setupLog.Info("OpenTelemetry tracing enabled")
+	}
+	if telemetry != nil {
+		defer func() {
+			if shutdownErr := telemetry.Shutdown(ctx); shutdownErr != nil {
+				setupLog.Error(shutdownErr, "Failed to shutdown tracing")
+			}
+		}()
 	}
 
 	k8sConfig, err := buildK8sConfig(*kubeconfig)
@@ -102,25 +153,27 @@ func run() error {
 		return fmt.Errorf("build K8s config: %w", err)
 	}
 
+	scheme := newScheme()
 	k8sClient, err := client.New(k8sConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("create K8s client: %w", err)
 	}
 
-	renderer := buildRenderer(*workDir, k8sClient)
-
-	paprikaServer := api.NewPaprikaServer(k8sClient, nil)
-	paprikaServer.SetRenderer(renderer)
+	renderer := buildRenderer(ctx, setupLog, *workDir, k8sClient, repoServerAddr, cacheCfg)
 
 	resolver := governance.NewProjectResolver(k8sClient)
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(k8sClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(k8sClient)
-	paprikaServer.SetGovernanceValidator(projectValidator)
-	paprikaServer.SetGovernancePolicyEvaluator(policyEvaluator)
+
+	opts := []apiserver.ServerOption{
+		apiserver.WithRenderer(renderer),
+		apiserver.WithGovernanceValidator(projectValidator),
+		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
+	}
 
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
-	authInterceptor, err := auth.Interceptor(authCfg, k8sClient)
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, k8sClient)
 	if err != nil {
 		return fmt.Errorf("build auth interceptor: %w", err)
 	}
@@ -129,23 +182,29 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("build authorizer: %w", err)
 		}
-		paprikaServer.SetAuthorizer(authz)
+		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
+
+	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)
 
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
 
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
-	mux.Handle("/events", api.NewSSEHandler(paprikaServer.Broker()))
+	mux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
 	mux.Handle("/webhook", receiver.NewHandler(k8sClient, webhookSecret))
-	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/readyz", healthzHandler)
-	mux.Handle("/", api.UIHandler())
+	mux.HandleFunc("/healthz", healthzHandler(setupLog))
+	mux.HandleFunc("/readyz", healthzHandler(setupLog))
+	uiHandler, uiErr := apiserver.UIHandler()
+	if uiErr != nil {
+		return fmt.Errorf("build UI handler: %w", uiErr)
+	}
+	mux.Handle("/", uiHandler)
 
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
 
 	// Cloud Run sends SIGTERM with a grace period (default 30s).
@@ -159,16 +218,19 @@ func run() error {
 		}
 	}()
 
-	startHealthProbe(*probeAddr)
+	healthSrv := startHealthProbe(setupLog, *probeAddr)
 
 	<-ctx.Done()
 	setupLog.Info("Shutting down...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), serverShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		setupLog.Error(err, "Server forced to shutdown")
+	}
+	if err := healthSrv.Shutdown(shutdownCtx); err != nil {
+		setupLog.Error(err, "Health probe server forced to shutdown")
 	}
 
 	setupLog.Info("Server exited")
@@ -196,49 +258,46 @@ func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {
 	return k8sConfig, nil
 }
 
-func buildRenderer(workDir string, k8sClient client.Client) engine.TemplateRenderer {
+func buildRenderer(ctx context.Context, setupLog logr.Logger, workDir string, k8sClient client.Client, repoServerAddr string, cacheCfg cache.Config) pipelines.TemplateRenderer {
 	// When PAPRIKA_REPO_SERVER_ADDR is set, delegate render/resolve to a remote repo server.
-	if repoClient := repoclient.NewFromEnv(); repoClient != nil {
-		setupLog.Info("Using remote repo server", "addr", os.Getenv("PAPRIKA_REPO_SERVER_ADDR"))
+	if repoServerAddr != "" {
+		setupLog.Info("Using remote repo server", "addr", repoServerAddr)
 		base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 		cached := engine.NewCachedTemplateRenderer(base, cache.NewMemoryCache(), workDir, 0)
-		return engine.NewRepoServerRenderer(repoClient, cached)
+		return engine.NewRepoServerRenderer(reposerverclient.New(repoServerAddr), cached)
 	}
 
 	// Embedded renderer with Redis or in-memory cache.
-	c, err := cache.NewFromEnv()
+	var c interface {
+		cache.Getter
+		cache.Setter
+	}
+	cacheClient, err := cache.New(ctx, cacheCfg)
 	if err != nil {
 		setupLog.Info("No external cache found, using in-memory cache")
 		c = cache.NewMemoryCache()
+	} else if pingErr := cacheClient.Ping(ctx); pingErr != nil {
+		setupLog.Error(pingErr, "Cache ping failed, using in-memory cache")
+		if closeErr := cacheClient.Close(); closeErr != nil {
+			setupLog.Error(closeErr, "Failed to close cache after ping failure")
+		}
+		c = cache.NewMemoryCache()
+	} else {
+		c = cacheClient
 	}
 	base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 	return engine.NewCachedTemplateRenderer(base, c, workDir, 0)
 }
 
-func setupTracing() func() {
-	shutdown, err := observability.InitTracing()
-	if err != nil {
-		setupLog.Error(err, "Failed to initialize tracing")
-		return nil
-	}
-	if observability.IsTracingEnabled() {
-		setupLog.Info("OpenTelemetry tracing enabled")
-	}
-	return shutdown
-}
+func startHealthProbe(setupLog logr.Logger, addr string) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", healthzHandler(setupLog))
+	mux.HandleFunc("/readyz", healthzHandler(setupLog))
 
-var muxHealth = http.NewServeMux()
-
-func init() {
-	muxHealth.HandleFunc("/healthz", healthzHandler)
-	muxHealth.HandleFunc("/readyz", healthzHandler)
-}
-
-func startHealthProbe(addr string) {
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           muxHealth,
-		ReadHeaderTimeout: 5 * time.Second,
+		Handler:           mux,
+		ReadHeaderTimeout: healthProbeReadHeaderTimeout,
 	}
 	go func() {
 		setupLog.Info("Starting health probe server", "addr", addr)
@@ -246,11 +305,16 @@ func startHealthProbe(addr string) {
 			setupLog.Error(err, "Health probe server error")
 		}
 	}()
+	return server
 }
 
-func healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = fmt.Fprintln(w, "ok")
+func healthzHandler(setupLog logr.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if _, err := fmt.Fprintln(w, "ok"); err != nil {
+			setupLog.Error(err, "Failed to write health response")
+		}
+	}
 }
 
 func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, allowUnauth bool) auth.Config {

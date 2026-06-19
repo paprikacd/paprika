@@ -39,6 +39,7 @@ var (
 	kindClusterName          = "paprika-test-e2e"
 	shouldCleanupCertManager = false
 	shouldCleanupKindCluster = false
+	oldKubeRC                string
 )
 
 func TestE2E(t *testing.T) {
@@ -93,6 +94,12 @@ var _ = AfterSuite(func() {
 	teardownManager()
 	teardownCertManager()
 
+	if oldKubeRC == "" {
+		_ = os.Unsetenv("KUBECTL_KUBERC")
+	} else {
+		_ = os.Setenv("KUBECTL_KUBERC", oldKubeRC)
+	}
+
 	if shouldCleanupKindCluster {
 		By(fmt.Sprintf("deleting Kind cluster %q", kindClusterName))
 		cmd := exec.Command("kind", "delete", "cluster", "--name", kindClusterName)
@@ -118,7 +125,8 @@ func kindClusterExists(name string) (bool, error) {
 }
 
 func configureKubectlKubeRC() {
-	if os.Getenv("KUBECTL_KUBERC") != "true" {
+	oldKubeRC = os.Getenv("KUBECTL_KUBERC")
+	if oldKubeRC != "true" {
 		By("disabling kubectl kuberc for test isolation")
 		err := os.Setenv("KUBECTL_KUBERC", "false")
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to disable kubectl kuberc")

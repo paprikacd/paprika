@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"testing"
@@ -6,6 +6,8 @@ import (
 )
 
 func TestApplicationReconciler_syncWindowRequeueAfter(t *testing.T) {
+	t.Parallel()
+
 	fixed := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
 	r := &ApplicationReconciler{now: func() time.Time { return fixed }}
 
@@ -38,6 +40,7 @@ func TestApplicationReconciler_syncWindowRequeueAfter(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := r.syncWindowRequeueAfter(tc.next)
 			if got != tc.want {
 				t.Fatalf("syncWindowRequeueAfter() = %v, want %v", got, tc.want)

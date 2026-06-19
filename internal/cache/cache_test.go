@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 func TestMemoryCache_GetSetDelete(t *testing.T) {
@@ -37,7 +39,8 @@ func TestMemoryCache_TTL(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	c := NewMemoryCache()
+	fake := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	c := NewMemoryCacheWithClock(fake)
 	defer func() { _ = c.Close() }()
 
 	require.NoError(t, c.Set(ctx, "key", []byte("value"), 50*time.Millisecond))
@@ -45,7 +48,7 @@ func TestMemoryCache_TTL(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte("value"), val)
 
-	time.Sleep(100 * time.Millisecond)
+	fake.Add(100 * time.Millisecond)
 
 	val, err = c.Get(ctx, "key")
 	require.NoError(t, err)

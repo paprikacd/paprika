@@ -7,13 +7,14 @@ on:
 permissions: {}
 
 jobs:
-  test-e2e:
+  test-chart:
     permissions:
       contents: read
     name: Run on Ubuntu
     runs-on: ubuntu-latest
     env:
       IMG: controller:latest
+      GOTOOLCHAIN: auto
     steps:
       - name: Clone the code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -25,9 +26,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install the latest version of kind
+      - name: Install kind v0.32.0
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-$(go env GOARCH)
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -76,3 +77,7 @@ jobs:
       - name: Check Helm release status
         run: |
           make helm-status
+
+      - name: Wait for controller-manager to be available
+        run: |
+          kubectl wait --for=condition=available deployment/paprika-controller-manager -n paprika-system --timeout=120s

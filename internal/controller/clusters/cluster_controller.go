@@ -40,7 +40,7 @@ import (
 
 // ClusterReconciler reconciles a Cluster object.
 type ClusterReconciler struct {
-	client.Client
+	client     client.Client
 	Scheme     *runtime.Scheme
 	RESTConfig *rest.Config
 }
@@ -55,7 +55,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := logf.FromContext(ctx)
 
 	var cluster clustersv1alpha1.Cluster
-	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting cluster: %w", k8sErr)
 		}
@@ -117,7 +117,7 @@ func (r *ClusterReconciler) configFromSecret(ctx context.Context, cluster *clust
 	}
 
 	var secret corev1.Secret
-	if err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ns}, &secret); err != nil {
+	if err := r.client.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ns}, &secret); err != nil {
 		return nil, fmt.Errorf("getting kubeconfig secret: %w", err)
 	}
 
@@ -185,12 +185,12 @@ func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1
 	desiredStatus := cluster.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh clustersv1alpha1.Cluster
-		if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace}, &fresh); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching cluster for status update: %w", err)
 		}
 		fresh.Status = *desiredStatus
 		fresh.Status.ObservedGeneration = fresh.Generation
-		if err := r.Status().Update(ctx, &fresh); err != nil {
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating cluster status: %w", err)
 		}
 		return nil
@@ -210,6 +210,7 @@ func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&clustersv1alpha1.Cluster{}).
 		Named("clusters-cluster").

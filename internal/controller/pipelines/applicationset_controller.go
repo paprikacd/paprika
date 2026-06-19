@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"bytes"
@@ -28,18 +28,20 @@ import (
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 const applicationSetLabelKey = "applicationset.paprika.io/name"
 
 // ApplicationSetReconciler reconciles ApplicationSet resources.
 type ApplicationSetReconciler struct {
-	client.Client
+	client      client.Client
 	Scheme      *runtime.Scheme
 	ShardFilter *sharding.Filter
+	Clock       clock.Clock
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applicationsets,verbs=get;list;watch;create;update;patch;delete
@@ -53,16 +55,16 @@ type ApplicationSetReconciler struct {
 //nolint:cyclop // create/update/delete flow is inherent to the reconcile loop.
 func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("applicationset", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("applicationset").Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("applicationset").Observe(metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)
 
 	var appSet pipelinesv1alpha1.ApplicationSet
-	if err := r.Get(ctx, req.NamespacedName, &appSet); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &appSet); err != nil {
 		result = resultError
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting applicationset: %w", k8sErr)
@@ -110,7 +112,7 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			}
 			continue
 		}
-		if createErr := r.Create(ctx, &desiredApp); createErr != nil {
+		if createErr := r.client.Create(ctx, &desiredApp); createErr != nil {
 			result = resultError
 			r.patchStatus(ctx, &appSet, len(desired), false, "CreateFailed", createErr.Error())
 			return ctrl.Result{}, fmt.Errorf("creating application %s: %w", name, createErr)
@@ -122,7 +124,7 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if _, ok := desired[name]; ok {
 			continue
 		}
-		if deleteErr := r.Delete(ctx, &existingApp); deleteErr != nil {
+		if deleteErr := r.client.Delete(ctx, &existingApp); deleteErr != nil {
 			result = resultError
 			r.patchStatus(ctx, &appSet, len(desired), false, "DeleteFailed", deleteErr.Error())
 			return ctrl.Result{}, fmt.Errorf("deleting application %s: %w", name, deleteErr)
@@ -230,7 +232,7 @@ func (r *ApplicationSetReconciler) generateClusters(ctx context.Context, ns stri
 
 	if g.Selector != nil {
 		var list clustersv1alpha1.ClusterList
-		if err := r.List(ctx, &list, client.InNamespace(ns)); err != nil {
+		if err := r.client.List(ctx, &list, client.InNamespace(ns)); err != nil {
 			return nil, fmt.Errorf("listing clusters: %w", err)
 		}
 
@@ -319,7 +321,7 @@ func (r *ApplicationSetReconciler) buildDesiredApplications(
 
 func (r *ApplicationSetReconciler) listOwnedApplications(ctx context.Context, appSet *pipelinesv1alpha1.ApplicationSet) ([]pipelinesv1alpha1.Application, error) {
 	var list pipelinesv1alpha1.ApplicationList
-	if err := r.List(ctx, &list,
+	if err := r.client.List(ctx, &list,
 		client.InNamespace(appSet.Namespace),
 		client.MatchingLabels{applicationSetLabelKey: appSet.Name},
 	); err != nil {
@@ -337,7 +339,7 @@ func (r *ApplicationSetReconciler) updateApplication(ctx context.Context, existi
 		existing.Labels[k] = v
 	}
 	existing.OwnerReferences = desired.OwnerReferences
-	if err := r.Update(ctx, existing); err != nil {
+	if err := r.client.Update(ctx, existing); err != nil {
 		return fmt.Errorf("updating application: %w", err)
 	}
 	return nil
@@ -353,7 +355,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 	log := log.FromContext(ctx)
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh pipelinesv1alpha1.ApplicationSet
-		if err := r.Get(ctx, types.NamespacedName{Name: appSet.Name, Namespace: appSet.Namespace}, &fresh); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: appSet.Name, Namespace: appSet.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching applicationset for status update: %w", err)
 		}
 
@@ -372,7 +374,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 			LastTransitionTime: metav1.Now(),
 		})
 
-		if err := r.Status().Update(ctx, &fresh); err != nil {
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating applicationset status: %w", err)
 		}
 		return nil
@@ -419,7 +421,7 @@ func substituteStrings(v interface{}, params map[string]string) error {
 //nolint:gocognit,exhaustive,cyclop // reflect traversal of known spec shapes.
 func substituteValue(v reflect.Value, params map[string]string) error {
 	switch v.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if v.IsNil() {
 			return nil
 		}
@@ -427,7 +429,7 @@ func substituteValue(v reflect.Value, params map[string]string) error {
 	case reflect.Struct:
 		for i := 0; i < v.NumField(); i++ {
 			if err := substituteValue(v.Field(i), params); err != nil {
-				return err
+				return fmt.Errorf("substitute struct field: %w", err)
 			}
 		}
 	case reflect.Map:
@@ -436,19 +438,19 @@ func substituteValue(v reflect.Value, params map[string]string) error {
 			if val.Kind() == reflect.String {
 				rendered, err := renderTemplate(val.String(), params)
 				if err != nil {
-					return err
+					return fmt.Errorf("render map value template: %w", err)
 				}
 				v.SetMapIndex(key, reflect.ValueOf(rendered))
 			} else {
 				if err := substituteValue(val, params); err != nil {
-					return err
+					return fmt.Errorf("substitute map value: %w", err)
 				}
 			}
 		}
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < v.Len(); i++ {
 			if err := substituteValue(v.Index(i), params); err != nil {
-				return err
+				return fmt.Errorf("substitute slice element: %w", err)
 			}
 		}
 	case reflect.String:
@@ -458,7 +460,7 @@ func substituteValue(v reflect.Value, params map[string]string) error {
 		}
 		rendered, err := renderTemplate(s, params)
 		if err != nil {
-			return err
+			return fmt.Errorf("render string template: %w", err)
 		}
 		v.SetString(rendered)
 	default:
@@ -481,6 +483,7 @@ func renderTemplate(tmpl string, params map[string]string) (string, error) {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationSetReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.ApplicationSet{}).
 		Owns(&pipelinesv1alpha1.Application{}).

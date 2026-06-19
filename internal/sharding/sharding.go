@@ -2,6 +2,7 @@
 package sharding
 
 import (
+	"context"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -24,7 +25,11 @@ type Filter struct {
 
 // NewFilterFromEnv creates a shard filter from environment variables.
 // If PAPRIKA_SHARD_TOTAL is unset or <= 1, sharding is disabled.
-func NewFilterFromEnv() *Filter {
+//
+// Deprecated: read PAPRIKA_SHARD_* and POD_NAME in cmd/main and pass explicit
+// values to NewFilter.
+func NewFilterFromEnv(ctx context.Context) *Filter {
+	_ = ctx // reserved for future cancellation/observability
 	totalStr := os.Getenv(shardTotalEnv)
 	if totalStr == "" {
 		return &Filter{enabled: false}
@@ -50,6 +55,14 @@ func NewFilterFromEnv() *Filter {
 		totalShards: total,
 		enabled:     true,
 	}
+}
+
+// NewFilterFromEnvLegacy creates a shard filter from environment variables using
+// a background context.
+//
+// Deprecated: use NewFilterFromEnv(ctx).
+func NewFilterFromEnvLegacy() *Filter {
+	return NewFilterFromEnv(context.Background())
 }
 
 // NewFilter creates a shard filter with explicit values.
@@ -89,7 +102,10 @@ func (f *Filter) TotalShards() int {
 
 func hashNamespace(namespace string) int {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(namespace))
+	if _, err := h.Write([]byte(namespace)); err != nil {
+		// fnv.Hash32a.Write never returns an error in practice.
+		return 0
+	}
 	return int(h.Sum32())
 }
 
@@ -110,7 +126,10 @@ func extractOrdinalFromPodName(name string) int {
 // ValidateShardEnv validates shard environment variables and returns an error if misconfigured.
 func ValidateShardEnv() error {
 	_, err := MustLoadFromEnvOrPod()
-	return err
+	if err != nil {
+		return fmt.Errorf("validate shard environment: %w", err)
+	}
+	return nil
 }
 
 // MustLoadFromEnvOrPod creates a shard filter from explicit env vars or from the pod name.
@@ -122,7 +141,7 @@ func MustLoadFromEnvOrPod() (*Filter, error) {
 	}
 	totalStr := os.Getenv(shardTotalEnv)
 	if totalStr == "" {
-		return NewFilterFromEnv(), nil
+		return NewFilterFromEnv(context.Background()), nil
 	}
 
 	total, err := strconv.Atoi(totalStr)
@@ -130,7 +149,7 @@ func MustLoadFromEnvOrPod() (*Filter, error) {
 		return nil, fmt.Errorf("invalid %s: %w", shardTotalEnv, err)
 	}
 	if total <= 1 {
-		return NewFilterFromEnv(), nil
+		return NewFilterFromEnv(context.Background()), nil
 	}
 
 	id, err := strconv.Atoi(idStr)

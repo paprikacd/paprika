@@ -1,8 +1,9 @@
-package controller
+package pipelines
 
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -11,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 func newTemplateTestClient(objs ...client.Object) client.Client {
@@ -54,7 +56,7 @@ func TestTemplateReconciler_propagateSyncTrigger(t *testing.T) {
 			}
 
 			c := newTemplateTestClient(app, tmpl)
-			r := &TemplateReconciler{Client: c}
+			r := &TemplateReconciler{client: c, Clock: clock.NewFake(time.Now())}
 
 			if err := r.propagateSyncTrigger(ctx, tmpl); err != nil {
 				t.Fatalf("propagateSyncTrigger failed: %v", err)
@@ -87,7 +89,7 @@ func TestTemplateReconciler_propagateSyncTrigger(t *testing.T) {
 			Spec: pipelinesv1alpha1.TemplateSpec{Type: "helm"},
 		}
 		c := newTemplateTestClient(tmpl)
-		r := &TemplateReconciler{Client: c}
+		r := &TemplateReconciler{client: c, Clock: clock.NewFake(time.Now())}
 
 		if err := r.propagateSyncTrigger(ctx, tmpl); err != nil {
 			t.Fatalf("propagateSyncTrigger failed: %v", err)

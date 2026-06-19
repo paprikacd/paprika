@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -16,6 +16,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 const (
@@ -41,23 +43,37 @@ type pooledClient struct {
 // ClusterConnectionPool caches dynamic Kubernetes clients by kubeconfig hash.
 // It provides connection reuse, health checks, and circuit breaker protection.
 type ClusterConnectionPool struct {
-	client.Client
+	client        client.Client
 	defaultConfig *rest.Config
 	clients       map[string]*pooledClient
 	mu            sync.RWMutex
 	ttl           time.Duration
+	Clock         clock.Clock
 }
 
-// NewClusterConnectionPool creates a new ClusterConnectionPool.
-func NewClusterConnectionPool(c client.Client, defaultConfig *rest.Config) *ClusterConnectionPool {
+func (p *ClusterConnectionPool) now() time.Time {
+	if p.Clock != nil {
+		return p.Clock.Now()
+	}
+	return time.Now()
+}
+
+// NewClusterConnectionPoolWithContext creates a new ClusterConnectionPool bound to the
+// provided context. The background health-check loop stops when ctx is cancelled.
+func NewClusterConnectionPoolWithContext(ctx context.Context, c client.Client, defaultConfig *rest.Config) *ClusterConnectionPool {
 	pool := &ClusterConnectionPool{
-		Client:        c,
+		client:        c,
 		defaultConfig: defaultConfig,
 		clients:       make(map[string]*pooledClient),
 		ttl:           defaultClientTTL,
 	}
-	go pool.healthCheckLoop()
+	go pool.healthCheckLoop(ctx)
 	return pool
+}
+
+// NewClusterConnectionPool creates a new ClusterConnectionPool.
+func NewClusterConnectionPool(c client.Client, defaultConfig *rest.Config) *ClusterConnectionPool {
+	return NewClusterConnectionPoolWithContext(context.Background(), c, defaultConfig)
 }
 
 // GetClient returns a dynamic client for the cluster described by the given kubeconfig secret.
@@ -78,7 +94,11 @@ func (p *ClusterConnectionPool) GetClient(ctx context.Context, kubeconfigSecret,
 
 	if exists && p.isValid(pc) {
 		p.mu.Lock()
-		pc.lastUsed = time.Now()
+		if pc.circuitOpen {
+			pc.circuitOpen = false
+			pc.failures = 0
+		}
+		pc.lastUsed = p.now()
 		p.mu.Unlock()
 		return pc.client, nil
 	}
@@ -120,7 +140,11 @@ func (p *ClusterConnectionPool) getDefaultClient() (dynamic.Interface, error) {
 
 	if exists && p.isValid(pc) {
 		p.mu.Lock()
-		pc.lastUsed = time.Now()
+		if pc.circuitOpen {
+			pc.circuitOpen = false
+			pc.failures = 0
+		}
+		pc.lastUsed = p.now()
 		p.mu.Unlock()
 		return pc.client, nil
 	}
@@ -134,8 +158,8 @@ func (p *ClusterConnectionPool) getDefaultClient() (dynamic.Interface, error) {
 	p.clients[key] = &pooledClient{
 		client:     dynClient,
 		restConfig: p.defaultConfig,
-		createdAt:  time.Now(),
-		lastUsed:   time.Now(),
+		createdAt:  p.now(),
+		lastUsed:   p.now(),
 		healthy:    true,
 	}
 	p.mu.Unlock()
@@ -145,7 +169,7 @@ func (p *ClusterConnectionPool) getDefaultClient() (dynamic.Interface, error) {
 
 func (p *ClusterConnectionPool) kubeconfigHash(ctx context.Context, kubeconfigSecret, namespace string) (string, error) {
 	var secret corev1.Secret
-	if err := p.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
+	if err := p.client.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
 		return "", fmt.Errorf("get kubeconfig secret: %w", err)
 	}
 
@@ -173,8 +197,8 @@ func (p *ClusterConnectionPool) createAndCacheClient(ctx context.Context, hash, 
 		client:         dynClient,
 		restConfig:     restConfig,
 		kubeconfigHash: hash,
-		createdAt:      time.Now(),
-		lastUsed:       time.Now(),
+		createdAt:      p.now(),
+		lastUsed:       p.now(),
 		healthy:        true,
 	}
 
@@ -187,7 +211,7 @@ func (p *ClusterConnectionPool) createAndCacheClient(ctx context.Context, hash, 
 
 func (p *ClusterConnectionPool) buildRestConfig(ctx context.Context, kubeconfigSecret, namespace string) (*rest.Config, error) {
 	var secret corev1.Secret
-	if err := p.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
+	if err := p.client.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
 		return nil, fmt.Errorf("get kubeconfig secret: %w", err)
 	}
 
@@ -212,77 +236,105 @@ func (p *ClusterConnectionPool) isValid(pc *pooledClient) bool {
 	if pc == nil {
 		return false
 	}
+	now := p.now()
 	if pc.circuitOpen {
-		if time.Since(pc.circuitOpenAt) > circuitBreakerReset {
-			pc.circuitOpen = false
-			pc.failures = 0
-			return true
-		}
-		return false
+		return now.Sub(pc.circuitOpenAt) > circuitBreakerReset
 	}
-	if time.Since(pc.lastUsed) > p.ttl {
+	if now.Sub(pc.lastUsed) > p.ttl {
 		return false
 	}
 	return pc.healthy
 }
 
-func (p *ClusterConnectionPool) healthCheckLoop() {
+func (p *ClusterConnectionPool) healthCheckLoop(ctx context.Context) {
 	ticker := time.NewTicker(healthCheckInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		p.runHealthChecks()
-		p.evictExpired()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			p.runHealthChecks(ctx)
+			p.evictExpired()
+		}
 	}
 }
 
-func (p *ClusterConnectionPool) runHealthChecks() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *ClusterConnectionPool) runHealthChecks(ctx context.Context) {
+	type clientHealth struct {
+		hash       string
+		restConfig *rest.Config
+		healthy    bool
+		failures   int
+	}
 
-	for _, pc := range p.clients {
+	p.mu.RLock()
+	toCheck := make([]clientHealth, 0, len(p.clients))
+	for hash, pc := range p.clients {
 		if pc.kubeconfigHash == "" {
 			continue
 		}
+		toCheck = append(toCheck, clientHealth{
+			hash:       hash,
+			restConfig: pc.restConfig,
+			healthy:    pc.healthy,
+			failures:   pc.failures,
+		})
+	}
+	p.mu.RUnlock()
 
-		if pc.restConfig == nil {
-			pc.healthy = false
+	results := make([]clientHealth, 0, len(toCheck))
+	for _, ch := range toCheck {
+		updated := clientHealth{hash: ch.hash, healthy: ch.healthy, failures: ch.failures}
+		if ch.restConfig == nil {
+			updated.healthy = false
+			results = append(results, updated)
 			continue
 		}
 
-		dynClient, err := dynamic.NewForConfig(pc.restConfig)
+		dynClient, err := dynamic.NewForConfig(ch.restConfig)
 		if err != nil {
-			pc.failures++
-			if pc.failures >= circuitBreakerThreshold {
-				pc.circuitOpen = true
-				pc.circuitOpenAt = time.Now()
-			}
+			updated.failures = ch.failures + 1
+			results = append(results, updated)
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		healthCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		_, err = dynClient.Resource(corev1.SchemeGroupVersion.WithResource("namespaces")).
-			List(ctx, metav1.ListOptions{Limit: 1})
+			List(healthCtx, metav1.ListOptions{Limit: 1})
 		cancel()
 		if err != nil {
-			pc.failures++
-			if pc.failures >= circuitBreakerThreshold {
-				pc.circuitOpen = true
-				pc.circuitOpenAt = time.Now()
-			}
-			pc.healthy = false
+			updated.failures = ch.failures + 1
+			updated.healthy = false
 		} else {
-			pc.failures = 0
-			pc.healthy = true
+			updated.failures = 0
+			updated.healthy = true
+		}
+		results = append(results, updated)
+	}
+
+	p.mu.Lock()
+	for _, res := range results {
+		pc, ok := p.clients[res.hash]
+		if !ok {
+			continue
+		}
+		pc.healthy = res.healthy
+		pc.failures = res.failures
+		if res.failures >= circuitBreakerThreshold {
+			pc.circuitOpen = true
+			pc.circuitOpenAt = p.now()
 		}
 	}
+	p.mu.Unlock()
 }
 
 func (p *ClusterConnectionPool) evictExpired() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	now := time.Now()
+	now := p.now()
 	for key, pc := range p.clients {
 		if key == "default" {
 			continue

@@ -11,28 +11,33 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/rest"
 
-	agentclient "github.com/benebsworth/paprika/internal/agent/client"
 	agentsrv "github.com/benebsworth/paprika/internal/agent/server"
+	agentclient "github.com/benebsworth/paprika/internal/agentclient"
 )
 
-func fakeK8sServer() *httptest.Server {
+func fakeK8sServer(t testing.TB) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		var err error
 		switch r.URL.Path {
 		case "/api":
-			_, _ = fmt.Fprint(w, `{"versions":["v1"]}`)
+			_, err = fmt.Fprint(w, `{"versions":["v1"]}`)
 		case "/api/v1":
-			_, _ = fmt.Fprint(w, `{"groupVersion":"v1","resources":[]}`)
+			_, err = fmt.Fprint(w, `{"groupVersion":"v1","resources":[]}`)
 		case "/apis":
-			_, _ = fmt.Fprint(w, `{"groups":[]}`)
+			_, err = fmt.Fprint(w, `{"groups":[]}`)
 		default:
 			http.Error(w, "not found", http.StatusNotFound)
+		}
+		if err != nil {
+			t.Errorf("Failed to write fake Kubernetes response: %v", err)
 		}
 	}))
 }
 
 func TestServerHealth(t *testing.T) {
-	k8s := fakeK8sServer()
+	t.Parallel()
+	k8s := fakeK8sServer(t)
 	defer k8s.Close()
 
 	srv, err := agentsrv.NewServer("cluster-1", &rest.Config{Host: k8s.URL})
@@ -45,7 +50,8 @@ func TestServerHealth(t *testing.T) {
 }
 
 func TestControllerClient_Health(t *testing.T) {
-	k8s := fakeK8sServer()
+	t.Parallel()
+	k8s := fakeK8sServer(t)
 	defer k8s.Close()
 
 	srv, err := agentsrv.NewServer("cluster-1", &rest.Config{Host: k8s.URL})
@@ -53,7 +59,7 @@ func TestControllerClient_Health(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	c := agentclient.NewControllerClient(ts.URL)
+	c := agentclient.NewControllerClient(ts.URL, ts.Client())
 	require.NoError(t, c.Health(context.Background()))
 	assert.True(t, c.Enabled())
 }

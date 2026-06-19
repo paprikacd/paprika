@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 func TestMatchesTrigger(t *testing.T) {
@@ -98,104 +99,126 @@ func TestRenderMessage(t *testing.T) {
 	})
 }
 
-func TestNotificationSender_sendWebhook(t *testing.T) {
+func TestNotificationSender(t *testing.T) {
 	t.Parallel()
 
 	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Content-Type") != "application/json" {
-			t.Errorf("expected application/json content type, got %s", r.Header.Get("Content-Type"))
-		}
-		if r.Header.Get("X-Custom") != "value" {
-			t.Errorf("expected custom header, got %s", r.Header.Get("X-Custom"))
-		}
-		if r.Header.Get("Authorization") != "Bearer token123" {
-			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
-		}
-		body, _ := io.ReadAll(r.Body)
-		var received eventPayload
-		if err := json.Unmarshal(body, &received); err != nil {
-			t.Errorf("failed to decode webhook payload: %v", err)
-		}
-		if received != *payload {
-			t.Errorf("webhook payload mismatch: got %+v, want %+v", received, *payload)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
 
-	sender := NewNotificationSender()
-	secret := map[string]string{"token": "token123"}
-	headers := map[string]string{"X-Custom": "value"}
-	if err := sender.sendWebhook(context.Background(), server.URL, payload, headers, secret); err != nil {
-		t.Errorf("sendWebhook() error = %v", err)
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		call    func(sender *NotificationSender, url string) error
+		wantErr bool
+	}{
+		{
+			name: "sendWebhook with headers and bearer token",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Content-Type") != "application/json" {
+					t.Errorf("expected application/json content type, got %s", r.Header.Get("Content-Type"))
+				}
+				if r.Header.Get("X-Custom") != "value" {
+					t.Errorf("expected custom header, got %s", r.Header.Get("X-Custom"))
+				}
+				if r.Header.Get("Authorization") != "Bearer token123" {
+					t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read webhook body: %v", err)
+					return
+				}
+				var received eventPayload
+				if err := json.Unmarshal(body, &received); err != nil {
+					t.Errorf("failed to decode webhook payload: %v", err)
+				}
+				if received != *payload {
+					t.Errorf("webhook payload mismatch: got %+v, want %+v", received, *payload)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			call: func(sender *NotificationSender, url string) error {
+				secret := map[string]string{"token": "token123"}
+				headers := map[string]string{"X-Custom": "value"}
+				return sender.sendWebhook(context.Background(), url, payload, headers, secret)
+			},
+		},
+		{
+			name: "sendWebhook with basic auth",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				u, p, ok := r.BasicAuth()
+				if !ok || u != "user" || p != "pass" {
+					t.Errorf("expected basic auth user/pass, got %q/%q", u, p)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			call: func(sender *NotificationSender, url string) error {
+				secret := map[string]string{"username": "user", "password": "pass"}
+				return sender.sendWebhook(context.Background(), url, &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed"}, nil, secret)
+			},
+		},
+		{
+			name: "sendSlack",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer slack-token" {
+					t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read slack body: %v", err)
+					return
+				}
+				var msg map[string]string
+				if err := json.Unmarshal(body, &msg); err != nil {
+					t.Errorf("failed to decode slack payload: %v", err)
+				}
+				if msg["text"] != "test message" {
+					t.Errorf("slack text mismatch: got %q", msg["text"])
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			call: func(sender *NotificationSender, url string) error {
+				secret := map[string]string{"token": "slack-token"}
+				return sender.sendSlack(context.Background(), url, "test message", secret)
+			},
+		},
+		{
+			name: "non-2xx response returns error",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			call: func(sender *NotificationSender, url string) error {
+				return sender.sendWebhook(context.Background(), url, &eventPayload{}, nil, nil)
+			},
+			wantErr: true,
+		},
 	}
-}
 
-func TestNotificationSender_sendWebhook_basicAuth(t *testing.T) {
-	t.Parallel()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed"}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, p, ok := r.BasicAuth()
-		if !ok || u != "user" || p != "pass" {
-			t.Errorf("expected basic auth user/pass, got %q/%q", u, p)
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
+			server := httptest.NewServer(tc.handler)
+			defer server.Close()
 
-	sender := NewNotificationSender()
-	secret := map[string]string{"username": "user", "password": "pass"}
-	if err := sender.sendWebhook(context.Background(), server.URL, payload, nil, secret); err != nil {
-		t.Errorf("sendWebhook() error = %v", err)
-	}
-}
-
-func TestNotificationSender_sendSlack(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer slack-token" {
-			t.Errorf("expected bearer token, got %s", r.Header.Get("Authorization"))
-		}
-		body, _ := io.ReadAll(r.Body)
-		var msg map[string]string
-		if err := json.Unmarshal(body, &msg); err != nil {
-			t.Errorf("failed to decode slack payload: %v", err)
-		}
-		if msg["text"] != "test message" {
-			t.Errorf("slack text mismatch: got %q", msg["text"])
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	sender := NewNotificationSender()
-	secret := map[string]string{"token": "slack-token"}
-	if err := sender.sendSlack(context.Background(), server.URL, "test message", secret); err != nil {
-		t.Errorf("sendSlack() error = %v", err)
-	}
-}
-
-func TestNotificationSender_non2xxReturnsError(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	sender := NewNotificationSender()
-	if err := sender.sendWebhook(context.Background(), server.URL, &eventPayload{}, nil, nil); err == nil {
-		t.Error("expected error for non-2xx response")
+			sender := NewNotificationSender()
+			err := tc.call(sender, server.URL)
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error for non-2xx response")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("call() error = %v", err)
+			}
+		})
 	}
 }
 
 func TestRateLimitAllowed(t *testing.T) {
 	t.Parallel()
 
-	r := &NotificationConfigReconciler{rateLimits: make(map[rateLimitKey]time.Time)}
+	r := NewNotificationConfigReconciler(nil, nil, nil, nil, clock.NewFake(time.Now()))
 	cfg := &paprikav1.NotificationConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: "cfg"},
 		Spec: paprikav1.NotificationConfigSpec{

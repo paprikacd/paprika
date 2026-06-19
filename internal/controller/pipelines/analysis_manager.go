@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 const analysisRunNameFmt = "%s-%s-analysis"
@@ -67,7 +67,7 @@ func argsEqual(a, b map[string]string) bool {
 
 func (r *ApplicationReconciler) ensureAnalysisRun(ctx context.Context, app *pipelinesv1alpha1.Application, ref pipelinesv1alpha1.AnalysisTemplateRef, runName string) error {
 	var existing pipelinesv1alpha1.AnalysisRun
-	err := r.Get(ctx, types.NamespacedName{Name: runName, Namespace: app.Namespace}, &existing)
+	err := r.client.Get(ctx, types.NamespacedName{Name: runName, Namespace: app.Namespace}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("getting analysisrun %s: %w", runName, err)
 	}
@@ -75,7 +75,7 @@ func (r *ApplicationReconciler) ensureAnalysisRun(ctx context.Context, app *pipe
 		if existing.Spec.IntervalSeconds != ref.IntervalSeconds || !argsEqual(existing.Spec.Args, ref.Args) {
 			existing.Spec.IntervalSeconds = ref.IntervalSeconds
 			existing.Spec.Args = ref.Args
-			if updateErr := r.Update(ctx, &existing); updateErr != nil {
+			if updateErr := r.client.Update(ctx, &existing); updateErr != nil {
 				return fmt.Errorf("updating analysisrun %s: %w", runName, updateErr)
 			}
 		}
@@ -101,7 +101,7 @@ func (r *ApplicationReconciler) ensureAnalysisRun(ctx context.Context, app *pipe
 	if err := ctrl.SetControllerReference(app, run, r.Scheme); err != nil {
 		return fmt.Errorf("setting controller reference: %w", err)
 	}
-	if createErr := r.Create(ctx, run); createErr != nil {
+	if createErr := r.client.Create(ctx, run); createErr != nil {
 		return fmt.Errorf("creating analysisrun %s: %w", runName, createErr)
 	}
 	return nil
@@ -109,7 +109,7 @@ func (r *ApplicationReconciler) ensureAnalysisRun(ctx context.Context, app *pipe
 
 func (r *ApplicationReconciler) deleteStaleAnalysisRuns(ctx context.Context, app *pipelinesv1alpha1.Application, desired map[string]bool) error {
 	var list pipelinesv1alpha1.AnalysisRunList
-	if err := r.List(ctx, &list,
+	if err := r.client.List(ctx, &list,
 		client.InNamespace(app.Namespace),
 		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
 	); err != nil {
@@ -120,7 +120,7 @@ func (r *ApplicationReconciler) deleteStaleAnalysisRuns(ctx context.Context, app
 		if desired[run.Name] {
 			continue
 		}
-		if err := r.Delete(ctx, run); client.IgnoreNotFound(err) != nil {
+		if err := r.client.Delete(ctx, run); client.IgnoreNotFound(err) != nil {
 			return fmt.Errorf("deleting analysis run %s: %w", run.Name, err)
 		}
 	}
@@ -129,7 +129,7 @@ func (r *ApplicationReconciler) deleteStaleAnalysisRuns(ctx context.Context, app
 
 func (r *ApplicationReconciler) aggregateAnalysisResults(ctx context.Context, app *pipelinesv1alpha1.Application) ([]pipelinesv1alpha1.AnalysisResult, error) {
 	var list pipelinesv1alpha1.AnalysisRunList
-	if err := r.List(ctx, &list,
+	if err := r.client.List(ctx, &list,
 		client.InNamespace(app.Namespace),
 		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
 	); err != nil {
@@ -166,8 +166,11 @@ func (r *ApplicationReconciler) handleAnalysisFailure(ctx context.Context, app *
 	}
 
 	var release pipelinesv1alpha1.Release
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
-		return fmt.Errorf("fetching release for analysis failure: %w", client.IgnoreNotFound(err))
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return fmt.Errorf("fetching release for analysis failure: %w", err)
+		}
+		return nil
 	}
 	if release.Status.Phase != pipelinesv1alpha1.ReleaseComplete {
 		return nil
@@ -179,7 +182,7 @@ func (r *ApplicationReconciler) handleAnalysisFailure(ctx context.Context, app *
 	for _, ref := range app.Spec.AnalysisTemplates {
 		runName := analysisRunName(app.Name, ref.Name)
 		var run pipelinesv1alpha1.AnalysisRun
-		if err := r.Get(ctx, types.NamespacedName{Name: runName, Namespace: app.Namespace}, &run); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: runName, Namespace: app.Namespace}, &run); err != nil {
 			continue
 		}
 		if run.Status.Phase != pipelinesv1alpha1.AnalysisRunFailed {
@@ -193,7 +196,7 @@ func (r *ApplicationReconciler) handleAnalysisFailure(ctx context.Context, app *
 			release.Annotations = map[string]string{}
 		}
 		release.Annotations[rollbackAnnotation] = metav1.Now().String()
-		if err := r.Update(ctx, &release); err != nil {
+		if err := r.client.Update(ctx, &release); err != nil {
 			return fmt.Errorf("annotating release for rollback: %w", err)
 		}
 		r.recordEvent(app, corev1.EventTypeWarning, "AnalysisFailureRollback", fmt.Sprintf("Analysis %s failed; requested rollback", ref.Name))

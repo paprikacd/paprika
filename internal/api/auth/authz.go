@@ -89,7 +89,7 @@ func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Actio
 		}
 		return nil
 	}
-	return fmt.Errorf("%w: %s cannot %s %s/%s (project=%s)", ErrUnauthorized, p.Subject, action, resource, namespace, project)
+	return fmt.Errorf("%s cannot %s %s/%s (project=%s): %w", p.Subject, action, resource, namespace, project, ErrUnauthorized)
 }
 
 func (r *RBACAuthorizer) matchesSubjects(rule *RBACRule, p *Principal) bool {

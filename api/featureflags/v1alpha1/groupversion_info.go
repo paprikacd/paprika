@@ -1,4 +1,5 @@
 // +kubebuilder:object:generate=true
+// +groupName=featureflags.paprika.io
 package v1alpha1
 
 import (

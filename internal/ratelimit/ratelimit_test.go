@@ -7,10 +7,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 func TestLimiter_Allow(t *testing.T) {
-	l := NewLimiter(10, 5) // 10 tokens/sec, burst of 5
+	fake := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	l := NewLimiterWithClock(10, 5, fake) // 10 tokens/sec, burst of 5
 
 	// Should allow 5 immediately (burst)
 	for i := 0; i < 5; i++ {
@@ -20,8 +23,8 @@ func TestLimiter_Allow(t *testing.T) {
 	// 6th should fail (out of tokens)
 	assert.False(t, l.Allow())
 
-	// Wait for refill
-	time.Sleep(200 * time.Millisecond)
+	// Advance the fake clock to refill 2 tokens.
+	fake.Add(200 * time.Millisecond)
 	assert.True(t, l.Allow())
 }
 
@@ -42,31 +45,33 @@ func TestLimiter_Tokens(t *testing.T) {
 }
 
 func TestLimiter_Wait(t *testing.T) {
-	l := NewLimiter(100, 1) // 100 tokens/sec, burst of 1
+	fake := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	l := NewLimiterWithClock(100, 1, fake) // 100 tokens/sec, burst of 1
 
 	// Consume the burst
 	assert.True(t, l.Allow())
 	assert.False(t, l.Allow())
 
-	// Wait should succeed after refill
+	// Advance the clock so the limiter refills.
+	fake.Add(20 * time.Millisecond)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
 	err := l.Wait(ctx)
 	require.NoError(t, err)
-	assert.True(t, time.Since(start) > 5*time.Millisecond, "should have waited for refill")
 }
 
 func TestLimiter_Wait_ContextCancelled(t *testing.T) {
-	l := NewLimiter(0.1, 0) // Very slow refill
+	fake := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	l := NewLimiterWithClock(0.1, 0, fake) // Very slow refill
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	err := l.Wait(ctx)
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.ErrorIs(t, err, context.Canceled)
 }
 
 func TestManager_Get(t *testing.T) {

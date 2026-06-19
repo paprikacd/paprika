@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -20,25 +20,40 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/benebsworth/paprika/analysis"
-	analysismocks "github.com/benebsworth/paprika/analysis/mocks"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
-	"github.com/benebsworth/paprika/gates"
-	gatesmocks "github.com/benebsworth/paprika/gates/mocks"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
-	"github.com/benebsworth/paprika/internal/controller/pipelines/mocks"
+	"github.com/benebsworth/paprika/internal/analysis"
+	"github.com/benebsworth/paprika/internal/clock"
+	pipelinesmocks "github.com/benebsworth/paprika/internal/controller/pipelines/mocks"
+	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
-	"github.com/benebsworth/paprika/traffic"
-	trafficmocks "github.com/benebsworth/paprika/traffic/mocks"
+	"github.com/benebsworth/paprika/internal/traffic"
+	trafficmocks "github.com/benebsworth/paprika/internal/traffic/mocks"
 )
 
 // mockTrafficRouterFactory returns a TrafficRouterFactory that always returns the given router and error.
-func mockTrafficRouterFactory(router traffic.Router, err error) TrafficRouterFactory {
-	return func(_ *pipelinesv1alpha1.TrafficRouter, _ dynamic.Interface, _, _, _ string) (traffic.Router, error) {
+func mockTrafficRouterFactory(router traffic.WeightRouter, err error) TrafficRouterFactory {
+	return func(_ *pipelinesv1alpha1.TrafficRouter, _ dynamic.Interface, _, _, _ string) (traffic.WeightRouter, error) {
 		return router, err
 	}
+}
+
+type releaseFakeAnalyzer struct {
+	results []analysis.Result
+}
+
+func (f *releaseFakeAnalyzer) RunChecks(_ context.Context, _ []pipelinesv1alpha1.AnalysisCheck) []analysis.Result {
+	return f.results
+}
+
+type fakeGateExecutor struct {
+	result gates.GateResult
+}
+
+func (f *fakeGateExecutor) Execute(_ context.Context, _ gates.GateConfig) gates.GateResult {
+	return f.result
 }
 
 func TestReleaseReconciler_verify(t *testing.T) {
@@ -47,13 +62,13 @@ func TestReleaseReconciler_verify(t *testing.T) {
 	tests := []struct {
 		name      string
 		gateCfgs  []pipelinesv1alpha1.GateConfig
-		setupMock func(m *gatesmocks.MockGateExecutor)
+		setupMock func(m *fakeGateExecutor)
 		want      bool
 	}{
 		{
 			name:     "no gates returns true",
 			gateCfgs: nil,
-			setupMock: func(m *gatesmocks.MockGateExecutor) {
+			setupMock: func(m *fakeGateExecutor) {
 				// no calls expected
 			},
 			want: true,
@@ -63,9 +78,8 @@ func TestReleaseReconciler_verify(t *testing.T) {
 			gateCfgs: []pipelinesv1alpha1.GateConfig{
 				{Type: "smoke-test", Endpoint: "http://test"},
 			},
-			setupMock: func(m *gatesmocks.MockGateExecutor) {
-				m.EXPECT().Execute(gomock.Any(), gates.GateConfig{Type: "smoke-test", Endpoint: "http://test"}).
-					Return(gates.GateResult{Passed: true}).Times(1)
+			setupMock: func(m *fakeGateExecutor) {
+				m.result = gates.GateResult{Passed: true}
 			},
 			want: true,
 		},
@@ -74,9 +88,8 @@ func TestReleaseReconciler_verify(t *testing.T) {
 			gateCfgs: []pipelinesv1alpha1.GateConfig{
 				{Type: "smoke-test", Endpoint: "http://test"},
 			},
-			setupMock: func(m *gatesmocks.MockGateExecutor) {
-				m.EXPECT().Execute(gomock.Any(), gates.GateConfig{Type: "smoke-test", Endpoint: "http://test"}).
-					Return(gates.GateResult{Passed: false, Message: "timeout"}).Times(1)
+			setupMock: func(m *fakeGateExecutor) {
+				m.result = gates.GateResult{Passed: false, Message: "timeout"}
 			},
 			want: false,
 		},
@@ -86,11 +99,8 @@ func TestReleaseReconciler_verify(t *testing.T) {
 				{Type: "smoke-test", Endpoint: "http://a"},
 				{Type: "duration", Timeout: 1},
 			},
-			setupMock: func(m *gatesmocks.MockGateExecutor) {
-				m.EXPECT().Execute(gomock.Any(), gates.GateConfig{Type: "smoke-test", Endpoint: "http://a"}).
-					Return(gates.GateResult{Passed: true}).Times(1)
-				m.EXPECT().Execute(gomock.Any(), gates.GateConfig{Type: "duration", Timeout: 1}).
-					Return(gates.GateResult{Passed: true}).Times(1)
+			setupMock: func(m *fakeGateExecutor) {
+				m.result = gates.GateResult{Passed: true}
 			},
 			want: true,
 		},
@@ -98,10 +108,9 @@ func TestReleaseReconciler_verify(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
+			t.Parallel()
 
-			mockGate := gatesmocks.NewMockGateExecutor(ctrl)
+			mockGate := &fakeGateExecutor{}
 			tc.setupMock(mockGate)
 
 			r := &ReleaseReconciler{
@@ -128,14 +137,14 @@ func TestReleaseReconciler_runCanaryAnalysis(t *testing.T) {
 	tests := []struct {
 		name         string
 		checks       []pipelinesv1alpha1.AnalysisCheck
-		setupMock    func(m *analysismocks.MockAnalyzer)
+		setupMock    func(m *releaseFakeAnalyzer)
 		wantRollback bool
 		wantErr      bool
 	}{
 		{
 			name:   "no checks returns no rollback",
 			checks: nil,
-			setupMock: func(m *analysismocks.MockAnalyzer) {
+			setupMock: func(m *releaseFakeAnalyzer) {
 				// no calls
 			},
 			wantRollback: false,
@@ -146,9 +155,8 @@ func TestReleaseReconciler_runCanaryAnalysis(t *testing.T) {
 			checks: []pipelinesv1alpha1.AnalysisCheck{
 				{Type: "http", URL: "http://test"},
 			},
-			setupMock: func(m *analysismocks.MockAnalyzer) {
-				m.EXPECT().RunChecks(gomock.Any(), gomock.Any()).
-					Return([]analysis.Result{{Passed: true, Message: "OK"}}).Times(1)
+			setupMock: func(m *releaseFakeAnalyzer) {
+				m.results = []analysis.Result{{Passed: true, Message: "OK"}}
 			},
 			wantRollback: false,
 			wantErr:      false,
@@ -158,9 +166,8 @@ func TestReleaseReconciler_runCanaryAnalysis(t *testing.T) {
 			checks: []pipelinesv1alpha1.AnalysisCheck{
 				{Type: "http", URL: "http://test"},
 			},
-			setupMock: func(m *analysismocks.MockAnalyzer) {
-				m.EXPECT().RunChecks(gomock.Any(), gomock.Any()).
-					Return([]analysis.Result{{Passed: false, Message: "timeout"}}).Times(1)
+			setupMock: func(m *releaseFakeAnalyzer) {
+				m.results = []analysis.Result{{Passed: false, Message: "timeout"}}
 			},
 			wantRollback: false,
 			wantErr:      false,
@@ -169,10 +176,9 @@ func TestReleaseReconciler_runCanaryAnalysis(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
+			t.Parallel()
 
-			mockAnalyzer := analysismocks.NewMockAnalyzer(ctrl)
+			mockAnalyzer := &releaseFakeAnalyzer{}
 			tc.setupMock(mockAnalyzer)
 
 			r := &ReleaseReconciler{
@@ -225,7 +231,7 @@ func TestReleaseReconciler_routerForStage(t *testing.T) {
 					CanaryService: "svc-canary",
 				},
 			},
-			setupFactory: mockTrafficRouterFactory(&trafficmocks.MockRouter{}, nil),
+			setupFactory: mockTrafficRouterFactory(&trafficmocks.MockWeightRouter{}, nil),
 			wantErr:      false,
 			wantNil:      false,
 		},
@@ -246,6 +252,7 @@ func TestReleaseReconciler_routerForStage(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r := &ReleaseReconciler{
 				TrafficRouterFactory: tc.setupFactory,
 			}
@@ -281,23 +288,37 @@ func TestCanaryStepStartedAt_advancesOnlyAfterInterval(t *testing.T) {
 
 	interval := 5 * time.Second
 	stepIdx := 1
-	stepStartedAt := metav1.NewTime(time.Now())
-	nextStepAt := stepStartedAt.Add(time.Duration(stepIdx) * interval)
+	fakeClock := clock.NewFake(time.Now())
+	r := &ReleaseReconciler{Clock: fakeClock}
 
-	if time.Now().Before(nextStepAt) {
-		// We are inside the wait window — controller must not advance.
-		// (This is the same predicate the controller uses.)
-		t.Logf("inside wait window: step=%d startedAt=%v nextAt=%v (interval=%v)",
-			stepIdx, stepStartedAt, nextStepAt, interval)
-	} else {
-		t.Errorf("expected to be inside wait window, next step at %v (now=%v)",
-			nextStepAt, time.Now())
+	stepStartedAt := metav1.NewTime(fakeClock.Now())
+	release := &pipelinesv1alpha1.Release{
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			CanaryStepIndex:     stepIdx,
+			CanaryStepStartedAt: &stepStartedAt,
+		},
+	}
+	canaryCfg := &pipelinesv1alpha1.CanaryConfig{
+		IntervalSeconds: int(interval.Seconds()),
 	}
 
-	// After waiting past the threshold, the same predicate would let the step advance.
-	future := time.Now().Add(2 * interval)
-	if !future.After(nextStepAt) {
-		t.Errorf("expected %v to be after %v (wait window passed)", future, nextStepAt)
+	// We are inside the wait window — controller must not advance.
+	res, throttled := r.checkCanaryThrottle(logr.Discard(), release, canaryCfg, stepIdx)
+	if !throttled {
+		t.Error("expected canary step to be throttled inside the wait window")
+	}
+	if res.RequeueAfter <= 0 {
+		t.Errorf("expected positive RequeueAfter, got %v", res.RequeueAfter)
+	}
+
+	// After waiting past the threshold, the step should be allowed to advance.
+	fakeClock.Add(2 * interval)
+	res, throttled = r.checkCanaryThrottle(logr.Discard(), release, canaryCfg, stepIdx)
+	if throttled {
+		t.Error("expected canary step to advance after the wait window passed")
+	}
+	if res.RequeueAfter != 0 {
+		t.Errorf("expected zero RequeueAfter when not throttled, got %v", res.RequeueAfter)
 	}
 }
 
@@ -307,7 +328,7 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 	tests := []struct {
 		name        string
 		cluster     pipelinesv1alpha1.ClusterRef
-		setupMock   func(m *mocks.MockAgentClient)
+		setupMock   func(m *pipelinesmocks.MockAgentClient)
 		wantErr     bool
 		errContains string
 	}{
@@ -319,7 +340,7 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *mocks.MockAgentClient) {
+			setupMock: func(m *pipelinesmocks.MockAgentClient) {
 				m.EXPECT().Apply(gomock.Any(), &agentserver.ApplyRequest{
 					Namespace: "default",
 					AppName:   "my-app",
@@ -335,7 +356,7 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *mocks.MockAgentClient) {
+			setupMock: func(m *pipelinesmocks.MockAgentClient) {
 				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
 					Return(nil, errors.New("connection refused"))
 			},
@@ -350,7 +371,7 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *mocks.MockAgentClient) {
+			setupMock: func(m *pipelinesmocks.MockAgentClient) {
 				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
 					Return(&agentserver.ApplyResponse{Errors: []string{"forbidden"}}, nil)
 			},
@@ -361,12 +382,13 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctrl := gomock.NewController(t)
-			mockClient := mocks.NewMockAgentClient(ctrl)
+			mockClient := pipelinesmocks.NewMockAgentClient(ctrl)
 			tc.setupMock(mockClient)
 
 			r := &ReleaseReconciler{
-				AgentClientBuilder: func(_ string) AgentClient {
+				AgentClientBuilder: func(_ string) AgentApplier {
 					return mockClient
 				},
 			}
@@ -390,12 +412,12 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
-	mockClient := mocks.NewMockAgentClient(ctrl)
+	mockClient := pipelinesmocks.NewMockAgentClient(ctrl)
 	mockClient.EXPECT().Apply(gomock.Any(), gomock.Any()).
 		Return(&agentserver.ApplyResponse{}, nil)
 
 	r := &ReleaseReconciler{
-		AgentClientBuilder: func(_ string) AgentClient {
+		AgentClientBuilder: func(_ string) AgentApplier {
 			return mockClient
 		},
 	}
@@ -413,6 +435,7 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 }
 
 func TestReleaseReconciler_promote_blocksGovernanceViolation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	const ns = "default"
 	const projectName = "restricted-release-project"
@@ -501,7 +524,7 @@ func TestReleaseReconciler_promote_blocksGovernanceViolation(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(project, app, stage, snapshot, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}).Build()
 
 	r := &ReleaseReconciler{
-		Client:        c,
+		client:        c,
 		Scheme:        scheme,
 		EventRecorder: record.NewFakeRecorder(10),
 		ProjectValidator: governance.NewProjectValidator(
@@ -575,7 +598,7 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 	t.Run("no previous releases returns nil", func(t *testing.T) {
 		ctx := context.Background()
 		current := newRelease("current", base, pipelinesv1alpha1.ReleaseFailed, "snap-current")
-		r := &ReleaseReconciler{Client: buildClient(current)}
+		r := &ReleaseReconciler{client: buildClient(current)}
 
 		target, err := r.findRollbackTarget(ctx, current, appName)
 		if err != nil {
@@ -591,7 +614,7 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		current := newRelease("current", base.Add(3*time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
 		oldComplete := newRelease("old-complete", base, pipelinesv1alpha1.ReleaseComplete, "snap-old")
 		newComplete := newRelease("new-complete", base.Add(2*time.Hour), pipelinesv1alpha1.ReleaseComplete, "snap-new")
-		r := &ReleaseReconciler{Client: buildClient(current, oldComplete, newComplete)}
+		r := &ReleaseReconciler{client: buildClient(current, oldComplete, newComplete)}
 
 		target, err := r.findRollbackTarget(ctx, current, appName)
 		if err != nil {
@@ -608,7 +631,7 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		failed := newRelease("failed", base, pipelinesv1alpha1.ReleaseFailed, "snap-failed")
 		superseded := newRelease("superseded", base.Add(time.Hour), pipelinesv1alpha1.ReleaseSuperseded, "snap-super")
 		viable := newRelease("viable", base.Add(30*time.Minute), pipelinesv1alpha1.ReleasePromoting, "snap-viable")
-		r := &ReleaseReconciler{Client: buildClient(current, failed, superseded, viable)}
+		r := &ReleaseReconciler{client: buildClient(current, failed, superseded, viable)}
 
 		target, err := r.findRollbackTarget(ctx, current, appName)
 		if err != nil {
@@ -623,7 +646,7 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		ctx := context.Background()
 		current := newRelease("current", base.Add(time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
 		noSnapshot := newRelease("no-snapshot", base, pipelinesv1alpha1.ReleaseComplete, "")
-		r := &ReleaseReconciler{Client: buildClient(current, noSnapshot)}
+		r := &ReleaseReconciler{client: buildClient(current, noSnapshot)}
 
 		target, err := r.findRollbackTarget(ctx, current, appName)
 		if err != nil {
@@ -639,7 +662,7 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		current := newRelease("current", base.Add(time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
 		otherTarget := newRelease("other-target", base, pipelinesv1alpha1.ReleaseComplete, "snap-other")
 		otherTarget.Spec.Target = "prod"
-		r := &ReleaseReconciler{Client: buildClient(current, otherTarget)}
+		r := &ReleaseReconciler{client: buildClient(current, otherTarget)}
 
 		target, err := r.findRollbackTarget(ctx, current, appName)
 		if err != nil {
@@ -652,6 +675,8 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 }
 
 func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
 	_ = pipelinesv1alpha1.AddToScheme(scheme)
@@ -671,6 +696,7 @@ func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			release := &pipelinesv1alpha1.Release{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "app-release",
@@ -680,7 +706,7 @@ func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
 				Status: pipelinesv1alpha1.ReleaseStatus{Phase: tc.phase},
 			}
 			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release).WithStatusSubresource(release).Build()
-			r := &ReleaseReconciler{Client: client, Scheme: scheme}
+			r := &ReleaseReconciler{client: client, Scheme: scheme}
 			var result string
 			res, handled, err := r.handleResyncAnnotation(ctx, release, &result)
 			if err != nil {

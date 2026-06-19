@@ -121,6 +121,7 @@ func evaluate[T any](_ context.Context, ff *featureflagsv1alpha1.FeatureFlag, ev
 	return &featureflag.ProviderResult[T]{Value: val, Reason: "STATIC", Flag: ff.Name}, nil
 }
 
+//nolint:cyclop // CEL evaluation has sequential setup steps.
 func evaluateCEL(condition string, evalCtx featureflag.EvaluationContext) (bool, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("user", cel.MapType(cel.StringType, cel.StringType)),
@@ -143,9 +144,18 @@ func evaluateCEL(condition string, evalCtx featureflag.EvaluationContext) (bool,
 		return false, fmt.Errorf("create CEL program: %w", err)
 	}
 
-	userVal, _ := mapToCEL(evalCtx.User)
-	groupVal, _ := mapToCEL(evalCtx.Group)
-	deviceVal, _ := mapToCEL(evalCtx.Device)
+	userVal, err := mapToCEL(evalCtx.User)
+	if err != nil {
+		return false, fmt.Errorf("convert user context: %w", err)
+	}
+	groupVal, err := mapToCEL(evalCtx.Group)
+	if err != nil {
+		return false, fmt.Errorf("convert group context: %w", err)
+	}
+	deviceVal, err := mapToCEL(evalCtx.Device)
+	if err != nil {
+		return false, fmt.Errorf("convert device context: %w", err)
+	}
 
 	out, _, err := prg.Eval(map[string]any{
 		"user":         userVal,
@@ -164,7 +174,7 @@ func evaluateCEL(condition string, evalCtx featureflag.EvaluationContext) (bool,
 
 	result, ok := val.(bool)
 	if !ok {
-		return false, fmt.Errorf("CEL expression %q did not evaluate to bool", condition)
+		return false, fmt.Errorf("evaluate CEL expression %q: result is not a bool", condition)
 	}
 	return result, nil
 }

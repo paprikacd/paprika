@@ -2,11 +2,23 @@ package featureflag
 
 import "context"
 
-type Provider interface {
+type BoolProvider interface {
 	BoolEvaluation(ctx context.Context, flag string, defaultValue bool, evalCtx EvaluationContext) (*ProviderResult[bool], error)
+}
+
+type StringProvider interface {
 	StringEvaluation(ctx context.Context, flag, defaultValue string, evalCtx EvaluationContext) (*ProviderResult[string], error)
+}
+
+type IntProvider interface {
 	IntEvaluation(ctx context.Context, flag string, defaultValue int64, evalCtx EvaluationContext) (*ProviderResult[int64], error)
+}
+
+type FloatProvider interface {
 	FloatEvaluation(ctx context.Context, flag string, defaultValue float64, evalCtx EvaluationContext) (*ProviderResult[float64], error)
+}
+
+type MetadataProvider interface {
 	Metadata() ProviderMetadata
 }
 

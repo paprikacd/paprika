@@ -14,27 +14,35 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/engine"
 )
+
+// repoCache is the smallest cache interface needed by the repo server.
+type repoCache interface {
+	cache.Getter
+	cache.Setter
+	cache.PrefixDeleter
+}
 
 // Server provides cached source resolution and manifest rendering.
 type Server struct {
-	renderer    engine.TemplateRenderer
+	renderer    pipelines.SourceResolvingRenderer
 	workDir     string
-	cache       cache.Cache
+	cache       repoCache
 	invalidator *cache.Invalidator
 }
 
 // NewServer creates a repo server with the given working directory and cache.
-func NewServer(workDir string, c cache.Cache) *Server {
+func NewServer(workDir string, c repoCache) *Server {
 	return NewServerWithClient(workDir, c, nil)
 }
 
 // NewServerWithClient creates a repo server with the given working directory, cache, and Kubernetes client.
-func NewServerWithClient(workDir string, c cache.Cache, k8sClient client.Client) *Server {
+func NewServerWithClient(workDir string, c repoCache, k8sClient client.Client) *Server {
 	base := engine.NewHelmSDKRendererWithClient(workDir, k8sClient)
 	s := &Server{
 		renderer: engine.NewCachedTemplateRenderer(base, c, workDir, 0),
@@ -99,9 +107,11 @@ func (s *Server) Handler() http.Handler {
 	_, handler := v1connect.NewPaprikaServiceHandler(s)
 	mux.Handle("/paprika.v1.PaprikaService/", handler)
 	mux.HandleFunc("/invalidate", s.handleInvalidate)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		if _, err := w.Write([]byte("ok")); err != nil {
+			log.FromContext(r.Context()).Error(err, "Failed to write healthz response")
+		}
 	})
 	return mux
 }
@@ -131,7 +141,9 @@ func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		log.FromContext(r.Context()).Error(err, "Failed to write invalidate response")
+	}
 }
 
 // Run starts the repo server on the given address.
@@ -144,7 +156,9 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	log.FromContext(ctx).Info("Starting repo server", "addr", addr)
 	go func() {
 		<-ctx.Done()
-		_ = srv.Close()
+		if err := srv.Close(); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to close repo server")
+		}
 	}()
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("repo server error: %w", err)

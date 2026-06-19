@@ -37,12 +37,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/benebsworth/paprika/analysis"
+	"github.com/go-logr/logr"
+
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/analysis"
 	"github.com/benebsworth/paprika/internal/rollout"
 	"github.com/benebsworth/paprika/internal/rollout/core"
-	"github.com/benebsworth/paprika/traffic"
+	"github.com/benebsworth/paprika/internal/traffic"
 )
 
 const (
@@ -53,12 +55,37 @@ const (
 	defaultServicePortName = "http"
 )
 
+// TrafficRouter is the composed interface this controller needs from a traffic
+// provider. It is defined on the consumer side so callers depend on the
+// fine-grained role interfaces exported by the traffic package rather than a
+// single producer-side composed interface.
+type TrafficRouter interface {
+	traffic.WeightRouter
+	traffic.HeaderRouter
+	traffic.MirrorRouter
+	traffic.Provider
+}
+
+// abTestRouter is the smallest interface needed for A/B test traffic
+// configuration.
+type abTestRouter interface {
+	traffic.HeaderRouter
+	traffic.Provider
+}
+
+// mirrorRouter is the smallest interface needed for mirror traffic
+// configuration.
+type mirrorRouter interface {
+	traffic.MirrorRouter
+	traffic.Provider
+}
+
 // RolloutReconciler reconciles Rollout resources.
 type RolloutReconciler struct {
-	client.Client
+	client        client.Client
 	Scheme        *runtime.Scheme
 	DynamicClient dynamic.Interface
-	Analyzer      analysis.Analyzer
+	Analyzer      *analysis.CELAnalyzer
 	EventRecorder record.EventRecorder
 }
 
@@ -72,18 +99,24 @@ type RolloutReconciler struct {
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
 
+func (r *RolloutReconciler) patchStatusOrLog(ctx context.Context, ro *rolloutsv1alpha1.Rollout, log logr.Logger) {
+	if err := r.patchStatus(ctx, ro); err != nil {
+		log.Error(err, "Failed to patch rollout status")
+	}
+}
+
 // Reconcile handles Rollout reconciliation.
 func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
 	var ro rolloutsv1alpha1.Rollout
-	if err := r.Get(ctx, req.NamespacedName, &ro); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &ro); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if !controllerutil.ContainsFinalizer(&ro, rolloutFinalizer) {
 		controllerutil.AddFinalizer(&ro, rolloutFinalizer)
-		if err := r.Update(ctx, &ro); err != nil {
+		if err := r.client.Update(ctx, &ro); err != nil {
 			return ctrl.Result{}, fmt.Errorf("adding rollout finalizer: %w", err)
 		}
 		return ctrl.Result{Requeue: true}, nil
@@ -108,7 +141,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.resolveTarget(ctx, &ro); err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
-		_ = r.patchStatus(ctx, &ro)
+		r.patchStatusOrLog(ctx, &ro, log)
 		return ctrl.Result{}, fmt.Errorf("resolving target: %w", err)
 	}
 
@@ -116,7 +149,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
-		_ = r.patchStatus(ctx, &ro)
+		r.patchStatusOrLog(ctx, &ro, log)
 		return ctrl.Result{}, fmt.Errorf("creating strategy: %w", err)
 	}
 
@@ -124,21 +157,21 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
-		_ = r.patchStatus(ctx, &ro)
+		r.patchStatusOrLog(ctx, &ro, log)
 		return ctrl.Result{}, fmt.Errorf("strategy sync: %w", err)
 	}
 
 	if err := r.executeReplicaSetActions(ctx, &ro, result.ReplicaSets); err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
-		_ = r.patchStatus(ctx, &ro)
+		r.patchStatusOrLog(ctx, &ro, log)
 		return ctrl.Result{}, fmt.Errorf("executing replica set actions: %w", err)
 	}
 
 	if err := r.ensureServices(ctx, &ro, result); err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
-		_ = r.patchStatus(ctx, &ro)
+		r.patchStatusOrLog(ctx, &ro, log)
 		return ctrl.Result{}, fmt.Errorf("ensuring services: %w", err)
 	}
 
@@ -174,11 +207,13 @@ func (r *RolloutReconciler) handleDeletion(ctx context.Context, ro *rolloutsv1al
 	}
 	if r.DynamicClient != nil && ro.Spec.TrafficRouter != nil {
 		if router, err := r.buildRouter(ro); err == nil && router != nil {
-			_ = router.RemoveCanary(ctx)
+			if err := router.RemoveCanary(ctx); err != nil {
+				logf.FromContext(ctx).Error(err, "Failed to remove canary route")
+			}
 		}
 	}
 	controllerutil.RemoveFinalizer(ro, rolloutFinalizer)
-	if err := r.Update(ctx, ro); err != nil {
+	if err := r.client.Update(ctx, ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing rollout finalizer: %w", err)
 	}
 	return ctrl.Result{}, nil
@@ -246,7 +281,7 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 		return nil
 	}
 	var deploy appsv1.Deployment
-	if err := r.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
+	if err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -263,7 +298,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 
 	for _, action := range actions {
 		var rs appsv1.ReplicaSet
-		err := r.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
+		err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("getting ReplicaSet %s: %w", action.Name, err)
 		}
@@ -300,7 +335,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		}
 
 		if err != nil && apierrors.IsNotFound(err) {
-			if err := r.Create(ctx, desired); err != nil {
+			if err := r.client.Create(ctx, desired); err != nil {
 				return fmt.Errorf("creating ReplicaSet %s: %w", action.Name, err)
 			}
 			log.Info("Created ReplicaSet", "name", desired.Name)
@@ -310,7 +345,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		rs.Spec.Replicas = desired.Spec.Replicas
 		rs.Spec.Template = desired.Spec.Template
 		rs.Labels = desired.Labels
-		if err := r.Update(ctx, &rs); err != nil {
+		if err := r.client.Update(ctx, &rs); err != nil {
 			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
 		}
 		log.Info("Updated ReplicaSet", "name", rs.Name, "replicas", action.Replicas)
@@ -325,7 +360,7 @@ func (r *RolloutReconciler) ensureServices(ctx context.Context, ro *rolloutsv1al
 			continue
 		}
 		if err := r.ensureService(ctx, ro, svcName, selector); err != nil {
-			return err
+			return fmt.Errorf("ensure service %s: %w", svcName, err)
 		}
 	}
 
@@ -373,7 +408,7 @@ func (r *RolloutReconciler) serviceNames(ro *rolloutsv1alpha1.Rollout) map[strin
 
 func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alpha1.Rollout, name, role string) error {
 	var svc corev1.Service
-	err := r.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
+	err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("getting service %s: %w", name, err)
 	}
@@ -409,12 +444,12 @@ func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alp
 	}
 
 	if err != nil && apierrors.IsNotFound(err) {
-		return r.Create(ctx, desired)
+		return r.client.Create(ctx, desired)
 	}
 	svc.Spec.Selector = selector
 	svc.Spec.Ports = desired.Spec.Ports
 	svc.OwnerReferences = desired.OwnerReferences
-	return r.Update(ctx, &svc)
+	return r.client.Update(ctx, &svc)
 }
 
 func intstrFromInt(i int32) intstr.IntOrString {
@@ -437,7 +472,7 @@ func (r *RolloutReconciler) configureTraffic(ctx context.Context, ro *rolloutsv1
 	}
 	router, err := r.buildRouter(ro)
 	if err != nil {
-		return err
+		return fmt.Errorf("build traffic router: %w", err)
 	}
 	if router == nil {
 		return nil
@@ -456,7 +491,7 @@ func (r *RolloutReconciler) configureTraffic(ctx context.Context, ro *rolloutsv1
 	return nil
 }
 
-func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.Router) error {
+func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
 	switch result.Action {
 	case core.ActionPromote, core.ActionComplete:
 		return router.RemoveCanary(ctx)
@@ -466,21 +501,23 @@ func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *roll
 	return nil
 }
 
-func (r *RolloutReconciler) configureBlueGreenTraffic(ctx context.Context, _ *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.Router) error {
+func (r *RolloutReconciler) configureBlueGreenTraffic(ctx context.Context, _ *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
 	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
 		return router.SetWeight(ctx, 100)
 	}
 	return nil
 }
 
-func (r *RolloutReconciler) configureABTestTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.Router) error {
-	if router.Type() == "gateway-api" {
+func (r *RolloutReconciler) configureABTestTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router abTestRouter) error {
+	if router.Type() == traffic.ProviderGatewayAPI {
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support header routing")
 		return nil
 	}
 	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
 		for _, route := range ro.Spec.Strategy.ABTest.Routes {
-			_ = router.RemoveHeaderRoute(ctx, route.Name)
+			if err := router.RemoveHeaderRoute(ctx, route.Name); err != nil {
+				logf.FromContext(ctx).Error(err, "Failed to remove header route", "route", route.Name)
+			}
 		}
 		return nil
 	}
@@ -490,14 +527,14 @@ func (r *RolloutReconciler) configureABTestTraffic(ctx context.Context, ro *roll
 			svc = ro.Spec.Strategy.ABTest.CanaryService
 		}
 		if err := router.SetHeaderRoute(ctx, route.Name, route.Value, svc); err != nil {
-			return err
+			return fmt.Errorf("set header route %s: %w", route.Name, err)
 		}
 	}
 	return nil
 }
 
-func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.Router) error {
-	if router.Type() == "gateway-api" {
+func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router mirrorRouter) error {
+	if router.Type() == traffic.ProviderGatewayAPI {
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support traffic mirroring")
 		return nil
 	}
@@ -507,7 +544,7 @@ func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *roll
 	return router.SetMirror(ctx, ro.Spec.Strategy.Mirror.MirrorPercent)
 }
 
-func (r *RolloutReconciler) buildRouter(ro *rolloutsv1alpha1.Rollout) (traffic.Router, error) {
+func (r *RolloutReconciler) buildRouter(ro *rolloutsv1alpha1.Rollout) (TrafficRouter, error) {
 	if r.DynamicClient == nil {
 		return nil, nil
 	}
@@ -634,11 +671,12 @@ func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout,
 }
 
 func (r *RolloutReconciler) patchStatus(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
-	return r.Status().Update(ctx, ro)
+	return r.client.Status().Update(ctx, ro)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rolloutsv1alpha1.Rollout{}).
 		Owns(&appsv1.ReplicaSet{}).

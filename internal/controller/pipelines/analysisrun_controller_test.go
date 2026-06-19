@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/benebsworth/paprika/analysis"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/analysis"
 )
 
 type fakeAnalyzer struct {
@@ -43,7 +43,7 @@ func TestAnalysisRunReconciler_reconcileRun_pendingToSuccessful(t *testing.T) {
 		},
 	}
 	r := &AnalysisRunReconciler{
-		Client:   newAnalysisRunTestClient(template, run),
+		client:   newAnalysisRunTestClient(template, run),
 		Analyzer: &fakeAnalyzer{results: []analysis.Result{{Name: "check", Passed: true}}},
 	}
 
@@ -68,7 +68,7 @@ func TestAnalysisRunReconciler_reconcileRun_missingTemplate(t *testing.T) {
 		},
 	}
 	r := &AnalysisRunReconciler{
-		Client:   newAnalysisRunTestClient(run),
+		client:   newAnalysisRunTestClient(run),
 		Analyzer: &fakeAnalyzer{},
 	}
 
@@ -96,7 +96,7 @@ func TestAnalysisRunReconciler_reconcileRun_countTermination(t *testing.T) {
 		},
 	}
 	r := &AnalysisRunReconciler{
-		Client:   newAnalysisRunTestClient(template, run),
+		client:   newAnalysisRunTestClient(template, run),
 		Analyzer: &fakeAnalyzer{results: []analysis.Result{{Passed: true}}},
 	}
 
@@ -127,7 +127,7 @@ func TestAnalysisRunReconciler_reconcileRun_terminateOnFailure(t *testing.T) {
 		},
 	}
 	r := &AnalysisRunReconciler{
-		Client:   newAnalysisRunTestClient(template, run),
+		client:   newAnalysisRunTestClient(template, run),
 		Analyzer: &fakeAnalyzer{results: []analysis.Result{{Passed: false}}},
 	}
 

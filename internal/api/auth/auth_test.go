@@ -21,12 +21,14 @@ const (
 )
 
 func TestPrincipal_IsInGroup(t *testing.T) {
+	t.Parallel()
 	p := &Principal{Groups: []string{"admin", "dev"}}
 	assert.True(t, p.IsInGroup("admin"))
 	assert.False(t, p.IsInGroup("ops"))
 }
 
 func TestPrincipal_HasScope(t *testing.T) {
+	t.Parallel()
 	p := &Principal{Claims: map[string]interface{}{
 		"role":  "admin",
 		"roles": []interface{}{"read", "write"},
@@ -37,6 +39,7 @@ func TestPrincipal_HasScope(t *testing.T) {
 }
 
 func TestPrincipalContext(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	assert.Nil(t, PrincipalFromContext(ctx))
 
@@ -46,6 +49,7 @@ func TestPrincipalContext(t *testing.T) {
 }
 
 func TestBasicAuthenticator(t *testing.T) {
+	t.Parallel()
 	h := sha256.Sum256([]byte(testPassword))
 	authn, err := NewBasicAuthenticator(BasicAuthConfig{
 		Username:     testUsername,
@@ -70,11 +74,13 @@ func TestBasicAuthenticator(t *testing.T) {
 }
 
 func TestBasicAuthenticator_MissingUsername(t *testing.T) {
+	t.Parallel()
 	_, err := NewBasicAuthenticator(BasicAuthConfig{Password: "x"})
 	assert.Error(t, err)
 }
 
 func TestMultiAuthenticator(t *testing.T) {
+	t.Parallel()
 	h := sha256.Sum256([]byte(testPassword))
 	basic, _ := NewBasicAuthenticator(BasicAuthConfig{
 		Username:     testUsername,
@@ -96,6 +102,7 @@ func TestMultiAuthenticator(t *testing.T) {
 }
 
 func TestRBACAuthorizer(t *testing.T) {
+	t.Parallel()
 	rules := []RBACRule{
 		{
 			Subjects:   []string{"admin"},
@@ -126,6 +133,7 @@ func TestRBACAuthorizer(t *testing.T) {
 }
 
 func TestRBACAuthorizer_Projects(t *testing.T) {
+	t.Parallel()
 	authz := NewRBACAuthorizer([]RBACRule{{
 		Subjects:   []string{"alice"},
 		Actions:    []string{"read"},
@@ -138,11 +146,13 @@ func TestRBACAuthorizer_Projects(t *testing.T) {
 }
 
 func TestAllowAllAuthorizer(t *testing.T) {
+	t.Parallel()
 	authz := &AllowAllAuthorizer{}
 	assert.NoError(t, authz.Authorize(context.Background(), &Principal{}, ActionAdmin, ResourceApplications, "*", ""))
 }
 
 func TestClassify(t *testing.T) {
+	t.Parallel()
 	action, resource := classify("/paprika.v1.PaprikaService/ListApplications")
 	assert.Equal(t, ActionRead, action)
 	assert.Equal(t, ResourceApplications, resource)
@@ -153,6 +163,7 @@ func TestClassify(t *testing.T) {
 }
 
 func TestNamespaceFromRequest(t *testing.T) {
+	t.Parallel()
 	ns := testNS
 	req := connect.NewRequest(&paprikav1.ListApplicationsRequest{Namespace: &ns})
 	got := namespaceFromRequest(req)
@@ -160,7 +171,8 @@ func TestNamespaceFromRequest(t *testing.T) {
 }
 
 func TestInterceptor_Disabled(t *testing.T) {
-	interceptor, err := Interceptor(Config{Enabled: false}, nil)
+	t.Parallel()
+	interceptor, err := Interceptor(context.Background(), Config{Enabled: false}, nil)
 	require.NoError(t, err)
 
 	next := func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -175,8 +187,9 @@ func TestInterceptor_Disabled(t *testing.T) {
 }
 
 func TestInterceptor_BasicAuth(t *testing.T) {
+	t.Parallel()
 	h := sha256.Sum256([]byte(testPassword))
-	interceptor, err := Interceptor(Config{
+	interceptor, err := Interceptor(context.Background(), Config{
 		Enabled: true,
 		BasicAuth: &BasicAuthConfig{
 			Username:     testUsername,
@@ -202,7 +215,8 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 }
 
 func TestInterceptor_Unauthenticated(t *testing.T) {
-	interceptor, err := Interceptor(Config{
+	t.Parallel()
+	interceptor, err := Interceptor(context.Background(), Config{
 		Enabled: true,
 		BasicAuth: &BasicAuthConfig{
 			Username: testUsername,
@@ -224,6 +238,7 @@ func TestInterceptor_Unauthenticated(t *testing.T) {
 }
 
 func TestStringSlice(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, []string{"a", "b"}, stringSlice([]interface{}{"a", "b"}))
 	assert.Equal(t, []string{"x"}, stringSlice("x"))
 	assert.Equal(t, []string{"a", "b"}, stringSlice([]string{"a", "b"}))

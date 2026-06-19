@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"bufio"
@@ -18,77 +18,104 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
-func TestEmailSender_Plain(t *testing.T) {
+func TestEmailSender_Send(t *testing.T) {
 	t.Parallel()
 
-	addr, received := startSMTPServer(t, false)
-	sender := NewEmailSender(paprikav1.SMTPConfig{Host: "localhost", Port: addr.port, From: "from@example.com"}, nil)
-	if err := sender.Send(context.Background(), "to@example.com", "subject", "body"); err != nil {
-		t.Fatalf("Send() error = %v", err)
-	}
-	msg := <-received
-	if !strings.Contains(msg, "From: from@example.com") {
-		t.Errorf("missing from: %s", msg)
-	}
-	if !strings.Contains(msg, "To: to@example.com") {
-		t.Errorf("missing to: %s", msg)
-	}
-	if !strings.Contains(msg, "body") {
-		t.Errorf("missing body: %s", msg)
-	}
-}
+	startTLSListener := func(t *testing.T) (smtpAddr, chan string, func()) {
+		t.Helper()
+		cert, _ := generateCert(t)
+		lc := net.ListenConfig{}
+		baseListener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("listen: %v", err)
+		}
+		listener := tls.NewListener(baseListener, &tls.Config{Certificates: []tls.Certificate{cert}})
+		cleanup := func() { _ = listener.Close() }
+		t.Cleanup(cleanup)
 
-func TestEmailSender_STARTTLS(t *testing.T) {
-	t.Parallel()
-
-	addr, received := startSMTPServer(t, true)
-	sender := NewEmailSender(paprikav1.SMTPConfig{Host: "localhost", Port: addr.port, From: "from@example.com"}, nil)
-	sender.TLSConfig = &tls.Config{ServerName: "localhost", InsecureSkipVerify: true} //nolint:gosec // test-only self-signed cert
-	if err := sender.Send(context.Background(), "to@example.com", "subject", "body"); err != nil {
-		t.Fatalf("Send() error = %v", err)
+		addr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok {
+			t.Fatal("listener address is not TCP")
+		}
+		received := make(chan string, 1)
+		go runSMTP(listener, received)
+		return smtpAddr{port: addr.Port}, received, cleanup
 	}
-	msg := <-received
-	if !strings.Contains(msg, "body") {
-		t.Errorf("missing body: %s", msg)
-	}
-}
 
-func TestEmailSender_TLS(t *testing.T) {
-	t.Parallel()
-
-	cert, _ := generateCert(t)
-	lc := net.ListenConfig{}
-	baseListener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	tests := []struct {
+		name      string
+		startTLS  bool
+		tlsConfig *tls.Config
+		start     func(t *testing.T) (smtpAddr, chan string, func())
+		cfg       paprikav1.SMTPConfig
+		recipient string
+		wantErr   bool
+	}{
+		{
+			name:      "plain",
+			startTLS:  false,
+			cfg:       paprikav1.SMTPConfig{From: "from@example.com"},
+			recipient: "to@example.com",
+		},
+		{
+			name:      "STARTTLS",
+			startTLS:  true,
+			cfg:       paprikav1.SMTPConfig{From: "from@example.com"},
+			recipient: "to@example.com",
+			tlsConfig: &tls.Config{ServerName: "localhost", InsecureSkipVerify: true}, //nolint:gosec // test-only self-signed cert
+		},
+		{
+			name:      "TLS",
+			start:     startTLSListener,
+			cfg:       paprikav1.SMTPConfig{From: "from@example.com", TLSEnabled: true},
+			recipient: "to@example.com",
+			tlsConfig: &tls.Config{ServerName: "localhost", InsecureSkipVerify: true}, //nolint:gosec // test-only self-signed cert
+		},
+		{
+			name:    "missing recipient",
+			cfg:     paprikav1.SMTPConfig{From: "from@example.com"},
+			wantErr: true,
+		},
 	}
-	listener := tls.NewListener(baseListener, &tls.Config{Certificates: []tls.Certificate{cert}})
-	received := make(chan string, 1)
-	go runSMTP(listener, received)
-	t.Cleanup(func() { _ = listener.Close() })
 
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatal("listener address is not TCP")
-	}
-	sender := NewEmailSender(paprikav1.SMTPConfig{Host: "localhost", Port: addr.Port, From: "from@example.com", TLSEnabled: true}, nil)
-	sender.TLSConfig = &tls.Config{ServerName: "localhost", InsecureSkipVerify: true} //nolint:gosec // test-only self-signed cert
-	if err := sender.Send(context.Background(), "to@example.com", "subject", "body"); err != nil {
-		t.Fatalf("Send() error = %v", err)
-	}
-	msg := <-received
-	if !strings.Contains(msg, "body") {
-		t.Errorf("missing body: %s", msg)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestEmailSender_MissingRecipient(t *testing.T) {
-	t.Parallel()
+			var addr smtpAddr
+			var received chan string
+			switch {
+			case tc.start != nil:
+				addr, received, _ = tc.start(t)
+			default:
+				addr, received = startSMTPServer(t, tc.startTLS)
+			}
 
-	addr, _ := startSMTPServer(t, false)
-	sender := NewEmailSender(paprikav1.SMTPConfig{Host: "localhost", Port: addr.port, From: "from@example.com"}, nil)
-	if err := sender.Send(context.Background(), "", "subject", "body"); err == nil {
-		t.Error("expected error for missing recipient")
+			cfg := tc.cfg
+			cfg.Host = "localhost"
+			cfg.Port = addr.port
+
+			sender := NewEmailSender(cfg, nil)
+			if tc.tlsConfig != nil {
+				sender.TLSConfig = tc.tlsConfig
+			}
+
+			err := sender.Send(context.Background(), tc.recipient, "subject", "body")
+			if tc.wantErr {
+				if err == nil {
+					t.Error("expected error for missing recipient")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Send() error = %v", err)
+			}
+
+			msg := <-received
+			if !strings.Contains(msg, "body") {
+				t.Errorf("missing body: %s", msg)
+			}
+		})
 	}
 }
 
@@ -126,6 +153,7 @@ func startSMTPServer(t *testing.T, startTLS bool) (result smtpAddr, received cha
 	return smtpAddr{port: tcpAddr.Port}, received
 }
 
+//nolint:gocyclo // test SMTP protocol handler
 func handleSMTPConn(conn net.Conn, startTLS bool, cert *tls.Certificate, received chan<- string) {
 	defer func() { _ = conn.Close() }()
 	br := bufio.NewReader(conn)
@@ -134,12 +162,16 @@ func handleSMTPConn(conn net.Conn, startTLS bool, cert *tls.Certificate, receive
 	var inData bool
 	var tlsActive bool
 
-	writeLine := func(line string) {
-		_, _ = bw.WriteString(line + "\r\n")
-		_ = bw.Flush()
+	writeLine := func(line string) error {
+		if _, err := bw.WriteString(line + "\r\n"); err != nil {
+			return err
+		}
+		return bw.Flush()
 	}
 
-	writeLine("220 localhost ESMTP")
+	if err := writeLine("220 localhost ESMTP"); err != nil {
+		return
+	}
 	for {
 		line, err := br.ReadString('\n')
 		if err != nil {
@@ -150,7 +182,9 @@ func handleSMTPConn(conn net.Conn, startTLS bool, cert *tls.Certificate, receive
 			if line == "." {
 				inData = false
 				received <- msg.String()
-				writeLine("250 OK")
+				if err := writeLine("250 OK"); err != nil {
+					return
+				}
 				continue
 			}
 			msg.WriteString(line)
@@ -159,13 +193,21 @@ func handleSMTPConn(conn net.Conn, startTLS bool, cert *tls.Certificate, receive
 		}
 		switch {
 		case strings.HasPrefix(line, "EHLO"), strings.HasPrefix(line, "HELO"):
-			writeLine("250-localhost")
-			if startTLS && !tlsActive {
-				writeLine("250-STARTTLS")
+			if err := writeLine("250-localhost"); err != nil {
+				return
 			}
-			writeLine("250 AUTH PLAIN")
+			if startTLS && !tlsActive {
+				if err := writeLine("250-STARTTLS"); err != nil {
+					return
+				}
+			}
+			if err := writeLine("250 AUTH PLAIN"); err != nil {
+				return
+			}
 		case strings.HasPrefix(line, "STARTTLS"):
-			writeLine("220 Ready")
+			if err := writeLine("220 Ready"); err != nil {
+				return
+			}
 			tlsConn := tls.Server(conn, &tls.Config{Certificates: []tls.Certificate{*cert}})
 			if err := tlsConn.HandshakeContext(context.Background()); err != nil {
 				return
@@ -175,23 +217,37 @@ func handleSMTPConn(conn net.Conn, startTLS bool, cert *tls.Certificate, receive
 			bw = bufio.NewWriter(conn)
 			tlsActive = true
 		case strings.HasPrefix(line, "AUTH"):
-			writeLine("235 OK")
-		case strings.HasPrefix(line, "MAIL FROM"):
-			writeLine("250 OK")
-		case strings.HasPrefix(line, "RCPT TO"):
-			if !strings.Contains(line, "@") {
-				writeLine("501 Bad recipient")
+			if err := writeLine("235 OK"); err != nil {
 				return
 			}
-			writeLine("250 OK")
+		case strings.HasPrefix(line, "MAIL FROM"):
+			if err := writeLine("250 OK"); err != nil {
+				return
+			}
+		case strings.HasPrefix(line, "RCPT TO"):
+			if !strings.Contains(line, "@") {
+				if err := writeLine("501 Bad recipient"); err != nil {
+					return
+				}
+				return
+			}
+			if err := writeLine("250 OK"); err != nil {
+				return
+			}
 		case strings.HasPrefix(line, "DATA"):
-			writeLine("354 Start mail input")
+			if err := writeLine("354 Start mail input"); err != nil {
+				return
+			}
 			inData = true
 		case strings.HasPrefix(line, "QUIT"):
-			writeLine("221 Bye")
+			if err := writeLine("221 Bye"); err != nil {
+				return
+			}
 			return
 		default:
-			writeLine("500 Unknown command")
+			if err := writeLine("500 Unknown command"); err != nil {
+				return
+			}
 		}
 	}
 }

@@ -6,21 +6,57 @@ import (
 	"time"
 )
 
-//go:generate mockgen -destination=mocks/cache.go -package=mocks . Cache
-
-// Cache is a generic key-value cache with TTL support.
-type Cache interface {
-	// Get retrieves a value from the cache.
+// Getter retrieves cached values.
+type Getter interface {
 	Get(ctx context.Context, key string) ([]byte, error)
-	// Set stores a value in the cache with an optional TTL.
+}
+
+// Setter stores values in the cache.
+type Setter interface {
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
-	// Delete removes a value from the cache.
+}
+
+// Deleter removes values from the cache.
+type Deleter interface {
 	Delete(ctx context.Context, key string) error
-	// Ping checks connectivity to the cache backend.
+}
+
+// Pinger checks connectivity to the cache backend.
+type Pinger interface {
 	Ping(ctx context.Context) error
-	// Close closes the cache connection.
+}
+
+// Closer closes the cache connection.
+type Closer interface {
 	Close() error
 }
+
+// PrefixDeleter removes all cache entries matching a key prefix.
+type PrefixDeleter interface {
+	DeleteByPrefix(ctx context.Context, prefix string) error
+}
+
+// cacheImpl is the union of the fine-grained cache roles. It is kept unexported
+// so that callers depend on the smallest role interface practical instead of a
+// single producer-side composed interface.
+type cacheImpl interface {
+	Getter
+	Setter
+	Deleter
+	Pinger
+	Closer
+	PrefixDeleter
+}
+
+// Cache is a concrete key-value cache with TTL support. The exported methods
+// are promoted from the embedded role interfaces, so consumers can define their
+// own composed interfaces or depend on individual roles such as Getter,
+// Setter, or PrefixDeleter.
+type Cache struct {
+	cacheImpl
+}
+
+//go:generate mockgen -destination=mocks/cache.go -package=mocks -typed . Getter,Setter,Deleter,Pinger,Closer,PrefixDeleter
 
 // Key helpers for Paprika cache namespaces.
 const (

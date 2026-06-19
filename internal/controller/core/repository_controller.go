@@ -45,7 +45,7 @@ const (
 // RepositoryReconciler reconciles Repository objects, testing connectivity and
 // updating the connection state on the status.
 type RepositoryReconciler struct {
-	client.Client
+	client client.Client
 	Scheme *runtime.Scheme
 }
 
@@ -55,7 +55,7 @@ type RepositoryReconciler struct {
 // Reconcile tests the connection state of the Repository and updates its status.
 func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var repo corev1alpha1.Repository
-	if err := r.Get(ctx, req.NamespacedName, &repo); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &repo); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
@@ -68,7 +68,7 @@ func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if !connectionStateEqual(oldState, newState) {
 		repo.Status.ConnectionState = newState
 		repo.Status.ObservedGeneration = repo.Generation
-		if err := r.Status().Update(ctx, &repo); err != nil {
+		if err := r.client.Status().Update(ctx, &repo); err != nil {
 			return ctrl.Result{}, fmt.Errorf("update repository status: %w", err)
 		}
 		logger.Info("Updated repository connection state", "status", newState.Status, "message", newState.Message)
@@ -126,7 +126,11 @@ func (r *RepositoryReconciler) testHTTP(ctx context.Context, repo *corev1alpha1.
 	if err != nil {
 		return fmt.Errorf("http request: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.FromContext(ctx).Error(cerr, "Failed to close repository health-check response body")
+		}
+	}()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("repository returned status %d", resp.StatusCode)
 	}
@@ -136,7 +140,7 @@ func (r *RepositoryReconciler) testHTTP(ctx context.Context, repo *corev1alpha1.
 // loadBasicAuth reads username/password from the referenced Secret.
 func (r *RepositoryReconciler) loadBasicAuth(ctx context.Context, repo *corev1alpha1.Repository) (username, password string, err error) {
 	var secret corev1.Secret
-	if err = r.Get(ctx, client.ObjectKey{Name: repo.Spec.SecretRef.Name, Namespace: repo.Namespace}, &secret); err != nil {
+	if err = r.client.Get(ctx, client.ObjectKey{Name: repo.Spec.SecretRef.Name, Namespace: repo.Namespace}, &secret); err != nil {
 		return "", "", fmt.Errorf("get secret: %w", err)
 	}
 	return string(secret.Data["username"]), string(secret.Data["password"]), nil
@@ -152,6 +156,7 @@ func connectionStateEqual(a, b *corev1alpha1.ConnectionState) bool {
 
 // SetupWithManager sets up the Repository controller with the Manager.
 func (r *RepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1alpha1.Repository{}).
 		Complete(r); err != nil {

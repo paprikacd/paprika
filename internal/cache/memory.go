@@ -2,8 +2,11 @@ package cache
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 // MemoryCache implements Cache with an in-memory map.
@@ -11,6 +14,7 @@ import (
 type MemoryCache struct {
 	mu    sync.RWMutex
 	items map[string]memoryItem
+	clock clock.Clock
 }
 
 type memoryItem struct {
@@ -20,8 +24,18 @@ type memoryItem struct {
 
 // NewMemoryCache creates a new in-memory cache.
 func NewMemoryCache() *MemoryCache {
+	return NewMemoryCacheWithClock(clock.Real{})
+}
+
+// NewMemoryCacheWithClock creates a new in-memory cache that uses the provided
+// clock for TTL checks. A nil clock falls back to the real clock.
+func NewMemoryCacheWithClock(c clock.Clock) *MemoryCache {
+	if c == nil {
+		c = clock.Real{}
+	}
 	return &MemoryCache{
 		items: make(map[string]memoryItem),
+		clock: c,
 	}
 }
 
@@ -34,7 +48,7 @@ func (c *MemoryCache) Get(ctx context.Context, key string) ([]byte, error) {
 	if !ok {
 		return nil, nil
 	}
-	if !item.expiry.IsZero() && time.Now().After(item.expiry) {
+	if !item.expiry.IsZero() && c.clock.Now().After(item.expiry) {
 		return nil, nil
 	}
 	return item.value, nil
@@ -47,7 +61,7 @@ func (c *MemoryCache) Set(ctx context.Context, key string, value []byte, ttl tim
 
 	var expiry time.Time
 	if ttl > 0 {
-		expiry = time.Now().Add(ttl)
+		expiry = c.clock.Now().Add(ttl)
 	}
 	c.items[key] = memoryItem{value: value, expiry: expiry}
 	return nil
@@ -71,5 +85,24 @@ func (c *MemoryCache) Close() error {
 	return nil
 }
 
-// Ensure MemoryCache implements Cache at compile time.
-var _ Cache = (*MemoryCache)(nil)
+// DeleteByPrefix removes all in-memory entries whose key starts with prefix.
+func (c *MemoryCache) DeleteByPrefix(_ context.Context, prefix string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key := range c.items {
+		if strings.HasPrefix(key, prefix) {
+			delete(c.items, key)
+		}
+	}
+	return nil
+}
+
+// Ensure MemoryCache implements the fine-grained cache roles at compile time.
+var (
+	_ Getter        = (*MemoryCache)(nil)
+	_ Setter        = (*MemoryCache)(nil)
+	_ Deleter       = (*MemoryCache)(nil)
+	_ Pinger        = (*MemoryCache)(nil)
+	_ Closer        = (*MemoryCache)(nil)
+	_ PrefixDeleter = (*MemoryCache)(nil)
+)

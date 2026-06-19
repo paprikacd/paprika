@@ -33,7 +33,7 @@ func TestRepositoryReconciler_Reconcile(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(repo).WithStatusSubresource(repo).Build()
-	r := &RepositoryReconciler{Client: c, Scheme: scheme}
+	r := &RepositoryReconciler{client: c, Scheme: scheme}
 
 	res, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "repo", Namespace: "default"}})
 	require.NoError(t, err)
@@ -51,7 +51,7 @@ func TestRepositoryReconciler_Reconcile_notFound(t *testing.T) {
 	require.NoError(t, corev1alpha1.AddToScheme(scheme))
 
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
-	r := &RepositoryReconciler{Client: c, Scheme: scheme}
+	r := &RepositoryReconciler{client: c, Scheme: scheme}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "repo", Namespace: "default"}})
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestLoadBasicAuth(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret, repo).Build()
-	r := &RepositoryReconciler{Client: c}
+	r := &RepositoryReconciler{client: c}
 
 	username, password, err := r.loadBasicAuth(context.Background(), repo)
 	require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestLoadBasicAuth_secretNotFound(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(repo).Build()
-	r := &RepositoryReconciler{Client: c}
+	r := &RepositoryReconciler{client: c}
 
 	_, _, err := r.loadBasicAuth(context.Background(), repo)
 	require.Error(t, err)

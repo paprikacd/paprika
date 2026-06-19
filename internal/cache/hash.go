@@ -9,7 +9,7 @@ import (
 
 func hashKey(s string) string {
 	h := sha256.New()
-	_, _ = h.Write([]byte(s))
+	h.Write([]byte(s))
 	return hex.EncodeToString(h.Sum(nil))[:32]
 }
 

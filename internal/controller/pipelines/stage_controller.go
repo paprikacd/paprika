@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -11,15 +11,17 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 // StageReconciler reconciles Stage resources.
 type StageReconciler struct {
-	client.Client
+	client      client.Client
 	Scheme      *runtime.Scheme
 	ShardFilter *sharding.Filter
+	Clock       clock.Clock
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
@@ -30,16 +32,16 @@ type StageReconciler struct {
 // Reconcile handles Stage reconciliation.
 func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("stage", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("stage").Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("stage").Observe(metrics.Since(r.Clock, start))
 	}()
 
 	log := logf.FromContext(ctx)
 
 	var stage pipelinesv1alpha1.Stage
-	if err := r.Get(ctx, req.NamespacedName, &stage); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &stage); err != nil {
 		result = resultError
 		k8sErr := client.IgnoreNotFound(err)
 		if k8sErr != nil {
@@ -55,7 +57,7 @@ func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	for _, tmplName := range stage.Spec.Templates {
 		var tmpl pipelinesv1alpha1.Template
-		if err := r.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: tmplName}, &tmpl); err != nil {
+		if err := r.client.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: tmplName}, &tmpl); err != nil {
 			log.Error(err, "Referenced template not found", "template", tmplName, "stage", req.Name)
 			continue
 		}
@@ -66,6 +68,7 @@ func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *StageReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Stage{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).

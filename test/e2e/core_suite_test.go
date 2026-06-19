@@ -35,8 +35,8 @@ import (
 const coreNamespace = "paprika-system"
 
 var (
-	coreManagerImage       = "paprika-core:e2e"
-	coreClusterName        = "paprika-core-e2e"
+	coreManagerImage         = "paprika-core:e2e"
+	coreClusterName          = "paprika-core-e2e"
 	shouldCleanupCoreCluster = false
 )
 

@@ -30,7 +30,7 @@ import (
 
 // PolicyReconciler reconciles a Policy object
 type PolicyReconciler struct {
-	client.Client
+	client client.Client
 	Scheme *runtime.Scheme
 }
 
@@ -57,6 +57,7 @@ func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&policyv1alpha1.Policy{}).
 		Named("policy-policy").

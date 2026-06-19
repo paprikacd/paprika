@@ -9,6 +9,8 @@ import (
 )
 
 func TestEvaluator_IsSyncAllowed(t *testing.T) {
+	t.Parallel()
+
 	fixed := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
 	e := NewEvaluator()
 
@@ -166,6 +168,7 @@ func TestEvaluator_IsSyncAllowed(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			res := e.IsSyncAllowed(tc.windows, tc.stage, fixed, tc.manual)
 			if res.Allowed != tc.allowed {
 				t.Fatalf("allowed: got %v, want %v (reason: %s)", res.Allowed, tc.allowed, res.Reason)
@@ -178,6 +181,8 @@ func TestEvaluator_IsSyncAllowed(t *testing.T) {
 }
 
 func TestEvaluator_IsSyncAllowed_NextTransition(t *testing.T) {
+	t.Parallel()
+
 	fixed := time.Date(2026, 6, 16, 20, 0, 0, 0, time.UTC)
 	e := NewEvaluator()
 
@@ -200,6 +205,8 @@ func TestEvaluator_IsSyncAllowed_NextTransition(t *testing.T) {
 }
 
 func TestEvaluator_IsSyncAllowed_BlockNextTransition(t *testing.T) {
+	t.Parallel()
+
 	fixed := time.Date(2026, 6, 16, 10, 0, 0, 0, time.UTC)
 	e := NewEvaluator()
 

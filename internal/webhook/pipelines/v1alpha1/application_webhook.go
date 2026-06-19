@@ -98,7 +98,7 @@ func (v *ApplicationCustomValidator) validateApplication(ctx context.Context, ap
 	)
 }
 
-//nolint:cyclop // source type validation branches are inherent.
+// source type validation branches are inherent.
 func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Application) field.ErrorList {
 	var allErrs field.ErrorList
 	sourcePath := field.NewPath("spec").Child("source")
@@ -118,9 +118,8 @@ func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Appli
 			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "Repo URL is required for git sources"))
 		}
 	case pipelinesv1alpha1.SourceTypeOCI:
-		//nolint:staticcheck // allow deprecated Image field as fallback
-		if app.Spec.Source.OCI == nil || (app.Spec.Source.OCI.URL == "" && app.Spec.Source.Image == "") {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url or image is required for oci sources"))
+		if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
+			allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url is required for oci sources"))
 		}
 	}
 	return allErrs

@@ -8,11 +8,17 @@ resources:
 - bases/pipelines.paprika.io_templates.yaml
 - bases/pipelines.paprika.io_artifacts.yaml
 - bases/pipelines.paprika.io_applications.yaml
+- bases/pipelines.paprika.io_applicationsets.yaml
+- bases/pipelines.paprika.io_analysisruns.yaml
+- bases/pipelines.paprika.io_analysistemplates.yaml
 - bases/pipelines.paprika.io_notificationconfigs.yaml
 - bases/clusters.paprika.io_clusters.yaml
 - bases/core.paprika.io_appprojects.yaml
 - bases/core.paprika.io_repositories.yaml
 - bases/policy.paprika.io_policies.yaml
+- bases/rollouts.paprika.io_rollouts.yaml
+- bases/featureflags.paprika.io_featureflags.yaml
+- bases/featureflags.paprika.io_featureflagbindings.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

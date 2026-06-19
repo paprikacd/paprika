@@ -9,6 +9,8 @@ import (
 	"math/big"
 	"sync"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 // Limiter is a token bucket rate limiter.
@@ -18,15 +20,26 @@ type Limiter struct {
 	maxTokens  float64
 	refillRate float64 // tokens per second
 	lastRefill time.Time
+	clock      clock.Clock
 }
 
 // NewLimiter creates a new token bucket rate limiter.
 func NewLimiter(rate float64, burst int) *Limiter {
+	return NewLimiterWithClock(rate, burst, clock.Real{})
+}
+
+// NewLimiterWithClock creates a limiter that uses the provided clock instead of
+// the system clock. A nil clock falls back to the real clock.
+func NewLimiterWithClock(rate float64, burst int, c clock.Clock) *Limiter {
+	if c == nil {
+		c = clock.Real{}
+	}
 	return &Limiter{
 		tokens:     float64(burst),
 		maxTokens:  float64(burst),
 		refillRate: rate,
-		lastRefill: time.Now(),
+		lastRefill: c.Now(),
+		clock:      c,
 	}
 }
 
@@ -76,7 +89,7 @@ func (l *Limiter) Tokens() float64 {
 }
 
 func (l *Limiter) refill() {
-	now := time.Now()
+	now := l.clock.Now()
 	elapsed := now.Sub(l.lastRefill).Seconds()
 	l.tokens = math.Min(l.maxTokens, l.tokens+elapsed*l.refillRate)
 	l.lastRefill = now
@@ -100,14 +113,25 @@ type Manager struct {
 	limiters     map[string]*Limiter
 	defaultRate  float64
 	defaultBurst int
+	clock        clock.Clock
 }
 
 // NewManager creates a new rate limit manager with default settings.
 func NewManager(defaultRate float64, defaultBurst int) *Manager {
+	return NewManagerWithClock(defaultRate, defaultBurst, clock.Real{})
+}
+
+// NewManagerWithClock creates a manager that passes the provided clock to every
+// limiter it creates. A nil clock falls back to the real clock.
+func NewManagerWithClock(defaultRate float64, defaultBurst int, c clock.Clock) *Manager {
+	if c == nil {
+		c = clock.Real{}
+	}
 	return &Manager{
 		limiters:     make(map[string]*Limiter),
 		defaultRate:  defaultRate,
 		defaultBurst: defaultBurst,
+		clock:        c,
 	}
 }
 
@@ -126,7 +150,7 @@ func (m *Manager) Get(key string) *Limiter {
 	if lim, exists := m.limiters[key]; exists {
 		return lim
 	}
-	l = NewLimiter(m.defaultRate, m.defaultBurst)
+	l = NewLimiterWithClock(m.defaultRate, m.defaultBurst, m.clock)
 	m.limiters[key] = l
 	return l
 }
@@ -145,7 +169,7 @@ func (m *Manager) GetOrCreate(key string, rate float64, burst int) *Limiter {
 	if lim, exists := m.limiters[key]; exists {
 		return lim
 	}
-	l = NewLimiter(rate, burst)
+	l = NewLimiterWithClock(rate, burst, m.clock)
 	m.limiters[key] = l
 	return l
 }
@@ -175,7 +199,12 @@ type GlobalLimiter struct {
 
 // NewGlobalLimiter creates a global rate limiter.
 func NewGlobalLimiter(rate float64, burst int) *GlobalLimiter {
-	return &GlobalLimiter{limiter: NewLimiter(rate, burst)}
+	return NewGlobalLimiterWithClock(rate, burst, clock.Real{})
+}
+
+// NewGlobalLimiterWithClock creates a global limiter using the provided clock.
+func NewGlobalLimiterWithClock(rate float64, burst int, c clock.Clock) *GlobalLimiter {
+	return &GlobalLimiter{limiter: NewLimiterWithClock(rate, burst, c)}
 }
 
 // Allow returns true if the global rate limit allows.
@@ -252,10 +281,19 @@ type ControllerRateLimit struct {
 
 // NewControllerRateLimit creates a controller rate limiter with sensible defaults.
 func NewControllerRateLimit() *ControllerRateLimit {
+	return NewControllerRateLimitWithClock(clock.Real{})
+}
+
+// NewControllerRateLimitWithClock creates a controller rate limiter using the
+// provided clock. A nil clock falls back to the real clock.
+func NewControllerRateLimitWithClock(c clock.Clock) *ControllerRateLimit {
+	if c == nil {
+		c = clock.Real{}
+	}
 	return &ControllerRateLimit{
-		global:    NewGlobalLimiter(100, 200), // 100 reconciles/sec global
-		perApp:    NewManager(10, 20),         // 10 reconciles/sec per app
-		perSource: NewManager(5, 10),          // 5 reconciles/sec per source
+		global:    NewGlobalLimiterWithClock(100, 200, c), // 100 reconciles/sec global
+		perApp:    NewManagerWithClock(10, 20, c),         // 10 reconciles/sec per app
+		perSource: NewManagerWithClock(5, 10, c),          // 5 reconciles/sec per source
 	}
 }
 

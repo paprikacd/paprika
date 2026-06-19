@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
@@ -72,7 +72,7 @@ var _ = ginkgo.Describe("Artifact Controller", func() {
 		ginkgo.It("should successfully reconcile the resource", func() {
 			ginkgo.By("Reconciling the created resource")
 			controllerReconciler := &ArtifactReconciler{
-				Client: k8sClient,
+				client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 

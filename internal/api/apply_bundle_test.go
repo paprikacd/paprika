@@ -1,4 +1,4 @@
-package api
+package apiserver
 
 import (
 	"context"
@@ -14,14 +14,16 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
-	"github.com/benebsworth/paprika/policy"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
-// fakeEvaluator is a test double for policy.Evaluator.
+// fakeEvaluator is a test double for apiserver.Evaluator.
 type fakeEvaluator struct {
 	result *policy.EvaluationResult
 	err    error
 }
+
+var _ Evaluator = (*fakeEvaluator)(nil)
 
 func (f *fakeEvaluator) Evaluate(_ context.Context, _ []byte, _ policy.EvaluateOptions) (*policy.EvaluationResult, error) {
 	if f.err != nil {
@@ -62,8 +64,7 @@ func TestApplyBundle_Success(t *testing.T) {
 
 	ctx := context.Background()
 	c := newApplyBundleClient(t)
-	srv := NewPaprikaServer(c, nil)
-	srv.SetPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}})
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}}))
 
 	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace: "test-ns",
@@ -108,8 +109,7 @@ func TestApplyBundle_BlockedByPolicy(t *testing.T) {
 
 	ctx := context.Background()
 	c := newApplyBundleClient(t)
-	srv := NewPaprikaServer(c, nil)
-	srv.SetPolicyEvaluator(&fakeEvaluator{
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{
 		result: &policy.EvaluationResult{
 			Passed:  false,
 			Blocked: true,
@@ -124,7 +124,7 @@ func TestApplyBundle_BlockedByPolicy(t *testing.T) {
 				},
 			},
 		},
-	})
+	}))
 
 	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace: "blocked-ns",
@@ -159,8 +159,7 @@ func TestApplyBundle_DryRun(t *testing.T) {
 
 	ctx := context.Background()
 	c := newApplyBundleClient(t)
-	srv := NewPaprikaServer(c, nil)
-	srv.SetPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}})
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}}))
 
 	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace: "dryrun-ns",
@@ -199,6 +198,8 @@ func TestApplyBundle_DryRun(t *testing.T) {
 // to a warn.
 type overrideEvaluator struct{}
 
+var _ Evaluator = overrideEvaluator{}
+
 func (overrideEvaluator) Evaluate(_ context.Context, _ []byte, opts policy.EvaluateOptions) (*policy.EvaluationResult, error) {
 	if opts.PolicyOverrides["check-labels"] == policy.WarnAction {
 		return &policy.EvaluationResult{
@@ -236,8 +237,7 @@ func TestApplyBundle_PolicyOverride(t *testing.T) {
 
 	ctx := context.Background()
 	c := newApplyBundleClient(t)
-	srv := NewPaprikaServer(c, nil)
-	srv.SetPolicyEvaluator(overrideEvaluator{})
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(overrideEvaluator{}))
 
 	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace:       "override-ns",

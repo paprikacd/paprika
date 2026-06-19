@@ -1,5 +1,5 @@
 //nolint:dupl // repetitive list filtering patterns
-package api
+package apiserver
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -19,53 +20,84 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
-	"github.com/benebsworth/paprika/policy"
 )
+
+// ServerOption configures a PaprikaServer via functional options.
+type ServerOption func(*PaprikaServer)
+
+// WithRenderer sets the template renderer for ResolveSource and Render methods.
+func WithRenderer(r pipelines.SourceResolvingRenderer) ServerOption {
+	return func(s *PaprikaServer) { s.renderer = r }
+}
+
+// WithAuthorizer sets the project/RBAC authorizer for server-side access checks.
+func WithAuthorizer(a auth.Authorizer) ServerOption {
+	return func(s *PaprikaServer) { s.authorizer = a }
+}
+
+// WithClock sets the clock used for annotation timestamps.
+func WithClock(clk clock.Clock) ServerOption {
+	return func(s *PaprikaServer) { s.Clock = clk }
+}
 
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
-	client.Client
+	client                    client.Client
 	broker                    *events.Broker
-	renderer                  engine.TemplateRenderer
-	evaluator                 policy.Evaluator
+	renderer                  pipelines.SourceResolvingRenderer
+	evaluator                 Evaluator
 	governanceValidator       *governance.ProjectValidator
 	governancePolicyEvaluator *governance.PolicyEvaluator
 	authorizer                auth.Authorizer
+	Clock                     clock.Clock
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
 // If broker is nil, an in-memory broker is created. Pass a Redis UniversalClient
 // via NewPaprikaServerWithRedis to fan-out events across API server replicas.
-func NewPaprikaServer(c client.Client, broker *events.Broker) *PaprikaServer {
+func NewPaprikaServer(c client.Client, broker *events.Broker, opts ...ServerOption) *PaprikaServer {
 	if broker == nil {
-		broker = events.NewBroker()
+		broker = events.NewBroker(logr.Discard())
 	}
-	return &PaprikaServer{Client: c, broker: broker}
+	s := &PaprikaServer{client: c, broker: broker, Clock: clock.Real{}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.Clock == nil {
+		s.Clock = clock.Real{}
+	}
+	return s
 }
 
 // NewPaprikaServerWithRedis creates an API server backed by Redis pub/sub events.
-func NewPaprikaServerWithRedis(c client.Client, redisClient redis.UniversalClient) (*PaprikaServer, error) {
-	broker, err := events.NewRedisBroker(redisClient)
+func NewPaprikaServerWithRedis(ctx context.Context, c client.Client, redisClient redis.UniversalClient, opts ...ServerOption) (*PaprikaServer, error) {
+	broker, err := events.NewRedisBrokerWithContext(ctx, redisClient, logr.Discard())
 	if err != nil {
 		return nil, fmt.Errorf("create redis broker: %w", err)
 	}
-	return &PaprikaServer{Client: c, broker: broker}, nil
+	s := &PaprikaServer{client: c, broker: broker, Clock: clock.Real{}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.Clock == nil {
+		s.Clock = clock.Real{}
+	}
+	return s, nil
 }
 
-// SetRenderer sets the template renderer for ResolveSource and Render methods.
-func (s *PaprikaServer) SetRenderer(r engine.TemplateRenderer) {
-	s.renderer = r
-}
-
-// SetAuthorizer sets the project/RBAC authorizer for server-side access checks.
-func (s *PaprikaServer) SetAuthorizer(a auth.Authorizer) {
-	s.authorizer = a
+func (s *PaprikaServer) now() time.Time {
+	if s.Clock != nil {
+		return s.Clock.Now()
+	}
+	return time.Now()
 }
 
 func (s *PaprikaServer) authorizeApplication(ctx context.Context, action auth.Action, app *pipelinesv1alpha1.Application) error {
@@ -93,7 +125,7 @@ func (s *PaprikaServer) authorizeProject(ctx context.Context, action auth.Action
 	}
 	p := auth.PrincipalFromContext(ctx)
 	if p == nil {
-		return fmt.Errorf("%w: no principal in context", auth.ErrUnauthorized)
+		return fmt.Errorf("no principal in context: %w", auth.ErrUnauthorized)
 	}
 	if err := s.authorizer.Authorize(ctx, p, action, resource, namespace, project); err != nil {
 		return fmt.Errorf("authorize %s %s in project %q: %w", action, resource, project, err)
@@ -118,7 +150,7 @@ func (s *PaprikaServer) ListPipelines(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing pipelines: %w", err)
 	}
 	pipelines := make([]*paprikav1.Pipeline, 0, len(list.Items))
@@ -132,13 +164,13 @@ func (s *PaprikaServer) ListPipelines(
 	return connect.NewResponse(&paprikav1.ListPipelinesResponse{Pipelines: pipelines}), nil
 }
 
-// ResolveSource resolves a template source. Requires a renderer (via SetRenderer).
+// ResolveSource resolves a template source. Requires a renderer (via WithRenderer).
 func (s *PaprikaServer) ResolveSource(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ResolveSourceRequest],
 ) (*connect.Response[paprikav1.ResolveSourceResponse], error) {
 	if s.renderer == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ResolveSource is not available on this server"))
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("resolveSource is not available on this server"))
 	}
 	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
 	if err != nil {
@@ -158,13 +190,13 @@ func (s *PaprikaServer) ResolveSource(
 	}), nil
 }
 
-// Render renders a template into manifests. Requires a renderer (via SetRenderer).
+// Render renders a template into manifests. Requires a renderer (via WithRenderer).
 func (s *PaprikaServer) Render(
 	ctx context.Context,
 	req *connect.Request[paprikav1.RenderRequest],
 ) (*connect.Response[paprikav1.RenderResponse], error) {
 	if s.renderer == nil {
-		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("Render is not available on this server"))
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("render is not available on this server"))
 	}
 	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
 	if err != nil {
@@ -191,7 +223,7 @@ func (s *PaprikaServer) ListReleases(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing releases: %w", err)
 	}
 	releases := make([]*paprikav1.Release, 0, len(list.Items))
@@ -215,7 +247,7 @@ func (s *PaprikaServer) ListStages(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing stages: %w", err)
 	}
 	stages := make([]*paprikav1.Stage, 0, len(list.Items))
@@ -239,7 +271,7 @@ func (s *PaprikaServer) ListApplications(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing applications: %w", err)
 	}
 	applications := make([]*paprikav1.Application, 0, len(list.Items))
@@ -263,7 +295,7 @@ func (s *PaprikaServer) ListPolicies(
 	req *connect.Request[paprikav1.ListPoliciesRequest],
 ) (*connect.Response[paprikav1.ListPoliciesResponse], error) {
 	var list policyv1alpha1.PolicyList
-	if err := s.List(ctx, &list); err != nil {
+	if err := s.client.List(ctx, &list); err != nil {
 		return nil, fmt.Errorf("listing policies: %w", err)
 	}
 	policies := make([]*paprikav1.Policy, 0, len(list.Items))
@@ -289,7 +321,7 @@ func (s *PaprikaServer) ListApplicationSets(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing applicationsets: %w", err)
 	}
 	sets := make([]*paprikav1.ApplicationSet, 0, len(list.Items))
@@ -309,7 +341,7 @@ func (s *PaprikaServer) ListNotificationConfigs(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing notification configs: %w", err)
 	}
 	configs := make([]*paprikav1.NotificationConfig, 0, len(list.Items))
@@ -369,7 +401,7 @@ func (s *PaprikaServer) GetApplicationSet(
 	req *connect.Request[paprikav1.GetApplicationSetRequest],
 ) (*connect.Response[paprikav1.GetApplicationSetResponse], error) {
 	var set pipelinesv1alpha1.ApplicationSet
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &set); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &set); err != nil {
 		return nil, fmt.Errorf("getting applicationset: %w", err)
 	}
 	return connect.NewResponse(&paprikav1.GetApplicationSetResponse{
@@ -383,7 +415,7 @@ func (s *PaprikaServer) GetApplication(
 	req *connect.Request[paprikav1.GetApplicationRequest],
 ) (*connect.Response[paprikav1.GetApplicationResponse], error) {
 	var app pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
 	}
 	if err := s.authorizeApplication(ctx, auth.ActionRead, &app); err != nil {
@@ -400,7 +432,7 @@ func (s *PaprikaServer) SyncApplication(
 	req *connect.Request[paprikav1.SyncApplicationRequest],
 ) (*connect.Response[paprikav1.SyncApplicationResponse], error) {
 	var app pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
 	}
 	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
@@ -410,14 +442,14 @@ func (s *PaprikaServer) SyncApplication(
 	if app.Annotations == nil {
 		app.Annotations = make(map[string]string)
 	}
-	app.Annotations["paprika.io/sync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
-	app.Annotations["paprika.io/manual-sync"] = strconv.FormatInt(time.Now().UnixNano(), 10)
-	if err := s.Update(ctx, &app); err != nil {
+	app.Annotations["paprika.io/sync"] = strconv.FormatInt(s.now().UnixNano(), 10)
+	app.Annotations["paprika.io/manual-sync"] = strconv.FormatInt(s.now().UnixNano(), 10)
+	if err := s.client.Update(ctx, &app); err != nil {
 		return nil, fmt.Errorf("triggering sync: %w", err)
 	}
 
 	var refreshed pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
 		return nil, fmt.Errorf("getting refreshed application: %w", err)
 	}
 
@@ -432,7 +464,7 @@ func (s *PaprikaServer) ApproveGate(
 	req *connect.Request[paprikav1.ApproveGateRequest],
 ) (*connect.Response[paprikav1.ApproveGateResponse], error) {
 	var app pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
 		return nil, fmt.Errorf("getting application: %w", err)
 	}
 	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
@@ -452,12 +484,12 @@ func (s *PaprikaServer) ApproveGate(
 		return nil, fmt.Errorf("gate %s not found", req.Msg.Gate)
 	}
 
-	if err := s.Status().Update(ctx, &app); err != nil {
+	if err := s.client.Status().Update(ctx, &app); err != nil {
 		return nil, fmt.Errorf("updating gate status: %w", err)
 	}
 
 	var refreshed pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
 		return nil, fmt.Errorf("getting refreshed application: %w", err)
 	}
 
@@ -482,7 +514,7 @@ func (s *PaprikaServer) RollbackRelease(
 	req *connect.Request[paprikav1.RollbackReleaseRequest],
 ) (*connect.Response[paprikav1.RollbackReleaseResponse], error) {
 	var release pipelinesv1alpha1.Release
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &release); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &release); err != nil {
 		return nil, fmt.Errorf("getting release: %w", err)
 	}
 
@@ -490,7 +522,7 @@ func (s *PaprikaServer) RollbackRelease(
 	appName := release.Labels[engine.ApplicationNameLabelKey]
 	if appName != "" {
 		var app pipelinesv1alpha1.Application
-		if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: appName}, &app); err == nil {
+		if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: appName}, &app); err == nil {
 			if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
 				return nil, connect.NewError(connect.CodePermissionDenied, err)
 			}
@@ -500,18 +532,18 @@ func (s *PaprikaServer) RollbackRelease(
 	if release.Annotations == nil {
 		release.Annotations = make(map[string]string)
 	}
-	release.Annotations[rollbackAnnotation] = strconv.FormatInt(time.Now().UnixNano(), 10)
+	release.Annotations[rollbackAnnotation] = strconv.FormatInt(s.now().UnixNano(), 10)
 	if release.Spec.OnFailure == nil {
 		release.Spec.OnFailure = &pipelinesv1alpha1.FailureAction{}
 	}
 	release.Spec.OnFailure.Action = "rollback"
 
-	if err := s.Update(ctx, &release); err != nil {
+	if err := s.client.Update(ctx, &release); err != nil {
 		return nil, fmt.Errorf("requesting rollback: %w", err)
 	}
 
 	var refreshed pipelinesv1alpha1.Release
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
 		return nil, fmt.Errorf("getting refreshed release: %w", err)
 	}
 
@@ -530,7 +562,7 @@ func (s *PaprikaServer) ListRollouts(
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
-	if err := s.List(ctx, &list, opts...); err != nil {
+	if err := s.client.List(ctx, &list, opts...); err != nil {
 		return nil, fmt.Errorf("listing rollouts: %w", err)
 	}
 	rollouts := make([]*paprikav1.Rollout, 0, len(list.Items))
@@ -550,7 +582,7 @@ func (s *PaprikaServer) GetRollout(
 	req *connect.Request[paprikav1.GetRolloutRequest],
 ) (*connect.Response[paprikav1.GetRolloutResponse], error) {
 	var ro rolloutsv1alpha1.Rollout
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
 		return nil, fmt.Errorf("getting rollout: %w", err)
 	}
 	if !s.authorizeProjectFromLabels(ctx, &ro, auth.ResourceRollouts) {
@@ -565,7 +597,7 @@ func (s *PaprikaServer) PromoteRollout(
 	req *connect.Request[paprikav1.PromoteRolloutRequest],
 ) (*connect.Response[paprikav1.PromoteRolloutResponse], error) {
 	var ro rolloutsv1alpha1.Rollout
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
 		return nil, fmt.Errorf("getting rollout: %w", err)
 	}
 	if err := s.authorizeRolloutWrite(ctx, &ro); err != nil {
@@ -574,12 +606,12 @@ func (s *PaprikaServer) PromoteRollout(
 	if ro.Annotations == nil {
 		ro.Annotations = make(map[string]string)
 	}
-	ro.Annotations["paprika.io/promote"] = strconv.FormatInt(time.Now().UnixNano(), 10)
-	if err := s.Update(ctx, &ro); err != nil {
+	ro.Annotations["paprika.io/promote"] = strconv.FormatInt(s.now().UnixNano(), 10)
+	if err := s.client.Update(ctx, &ro); err != nil {
 		return nil, fmt.Errorf("promoting rollout: %w", err)
 	}
 	var refreshed rolloutsv1alpha1.Rollout
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
 		return nil, fmt.Errorf("getting refreshed rollout: %w", err)
 	}
 	return connect.NewResponse(&paprikav1.PromoteRolloutResponse{Rollout: convertRollout(&refreshed)}), nil
@@ -591,7 +623,7 @@ func (s *PaprikaServer) AbortRollout(
 	req *connect.Request[paprikav1.AbortRolloutRequest],
 ) (*connect.Response[paprikav1.AbortRolloutResponse], error) {
 	var ro rolloutsv1alpha1.Rollout
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &ro); err != nil {
 		return nil, fmt.Errorf("getting rollout: %w", err)
 	}
 	if err := s.authorizeRolloutWrite(ctx, &ro); err != nil {
@@ -600,12 +632,12 @@ func (s *PaprikaServer) AbortRollout(
 	if ro.Annotations == nil {
 		ro.Annotations = make(map[string]string)
 	}
-	ro.Annotations["paprika.io/abort"] = strconv.FormatInt(time.Now().UnixNano(), 10)
-	if err := s.Update(ctx, &ro); err != nil {
+	ro.Annotations["paprika.io/abort"] = strconv.FormatInt(s.now().UnixNano(), 10)
+	if err := s.client.Update(ctx, &ro); err != nil {
 		return nil, fmt.Errorf("aborting rollout: %w", err)
 	}
 	var refreshed rolloutsv1alpha1.Rollout
-	if err := s.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
 		return nil, fmt.Errorf("getting refreshed rollout: %w", err)
 	}
 	return connect.NewResponse(&paprikav1.AbortRolloutResponse{Rollout: convertRollout(&refreshed)}), nil
@@ -615,7 +647,7 @@ func (s *PaprikaServer) authorizeRolloutWrite(ctx context.Context, ro *rolloutsv
 	appName := ro.Labels[engine.ApplicationNameLabelKey]
 	if appName != "" {
 		var app pipelinesv1alpha1.Application
-		if err := s.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: appName}, &app); err == nil {
+		if err := s.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: appName}, &app); err == nil {
 			return s.authorizeApplication(ctx, auth.ActionWrite, &app)
 		}
 	}

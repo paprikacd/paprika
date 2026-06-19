@@ -549,6 +549,23 @@ type ApplicationList struct {
 	Items           []Application `json:"items"`
 }
 
+// EffectiveOCI returns the OCI source spec to use, migrating the deprecated
+// Image field into the URL when OCI is unset or has no URL.
+func (s *ApplicationSource) EffectiveOCI() *OCISourceSpec {
+	if s.OCI != nil && s.OCI.URL != "" {
+		return s.OCI
+	}
+	if s.Image != "" {
+		out := &OCISourceSpec{}
+		if s.OCI != nil {
+			*out = *s.OCI
+		}
+		out.URL = s.Image
+		return out
+	}
+	return s.OCI
+}
+
 func init() {
 	SchemeBuilder.Register(&Application{}, &ApplicationList{})
 }

@@ -40,6 +40,26 @@ type Handler struct {
 	secret    string
 	cache     cacheInvalidator
 	repoCache repoInvalidator
+	clock     Clock
+}
+
+// Clock returns the current time. It is injected so tests can use a fixed clock.
+type Clock interface {
+	Now() time.Time
+}
+
+type realClock struct{}
+
+func (realClock) Now() time.Time { return time.Now() }
+
+// HandlerOption configures a Handler.
+type HandlerOption func(*Handler)
+
+// WithClock sets the clock used by the handler. The default is time.Now.
+func WithClock(c Clock) HandlerOption {
+	return func(h *Handler) {
+		h.clock = c
+	}
 }
 
 // cacheInvalidator invalidates cached manifests and source resolutions.
@@ -53,21 +73,27 @@ type repoInvalidator interface {
 }
 
 // NewHandler creates a new webhook handler.
-func NewHandler(c client.Client, secret string) *Handler {
-	return NewHandlerWithCache(c, secret, nil)
+func NewHandler(c client.Client, secret string, opts ...HandlerOption) *Handler {
+	return NewHandlerWithCache(c, secret, nil, opts...)
 }
 
 // NewHandlerWithCache creates a new webhook handler that can invalidate caches.
-func NewHandlerWithCache(c client.Client, secret string, inv cacheInvalidator) *Handler {
-	return &Handler{client: c, secret: secret, cache: inv}
+func NewHandlerWithCache(c client.Client, secret string, inv cacheInvalidator, opts ...HandlerOption) *Handler {
+	return NewHandlerWithCacheAndRepo(c, secret, inv, nil, opts...)
 }
 
 // NewHandlerWithCacheAndRepo creates a handler that invalidates both local and repo-server caches.
-func NewHandlerWithCacheAndRepo(c client.Client, secret string, inv cacheInvalidator, repo repoInvalidator) *Handler {
-	return &Handler{client: c, secret: secret, cache: inv, repoCache: repo}
+func NewHandlerWithCacheAndRepo(c client.Client, secret string, inv cacheInvalidator, repo repoInvalidator, opts ...HandlerOption) *Handler {
+	h := &Handler{client: c, secret: secret, cache: inv, repoCache: repo, clock: realClock{}}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 // ServeHTTP implements http.Handler for Git webhooks.
+//
+//nolint:cyclop // webhook event dispatch has several event types.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log := log.FromContext(ctx)
@@ -98,7 +124,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case githubPingEvent, gitlabPingEvent:
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("pong"))
+		if _, err := w.Write([]byte("pong")); err != nil {
+			log.Error(err, "Failed to write webhook pong")
+		}
 		return
 	default:
 		http.Error(w, "unsupported event", http.StatusBadRequest)
@@ -106,7 +134,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-	_, _ = w.Write([]byte(`{"status":"accepted"}`))
+	if _, err := w.Write([]byte(`{"status":"accepted"}`)); err != nil {
+		log.Error(err, "Failed to write webhook accepted response")
+	}
 }
 
 func (h *Handler) handleGitHubPush(ctx context.Context, r *http.Request, body []byte) error {
@@ -165,12 +195,12 @@ func (h *Handler) triggerReconciliation(ctx context.Context, repoURL, branch str
 
 	updated, err := h.annotateMatchingApplications(ctx, repoURL, branch)
 	if err != nil {
-		return err
+		return fmt.Errorf("annotate matching applications: %w", err)
 	}
 
 	tmplUpdated, err := h.annotateMatchingTemplates(ctx, repoURL, branch)
 	if err != nil {
-		return err
+		return fmt.Errorf("annotate matching templates: %w", err)
 	}
 	updated += tmplUpdated
 
@@ -196,7 +226,7 @@ func (h *Handler) annotateMatchingApplications(ctx context.Context, repoURL, bra
 		if app.Annotations == nil {
 			app.Annotations = make(map[string]string)
 		}
-		app.Annotations["paprika.io/sync"] = nowString()
+		app.Annotations["paprika.io/sync"] = h.nowString()
 
 		if err := h.client.Update(ctx, app); err != nil {
 			log.Error(err, "Failed to annotate application", "name", app.Name)
@@ -225,7 +255,7 @@ func (h *Handler) annotateMatchingTemplates(ctx context.Context, repoURL, branch
 		if tmpl.Annotations == nil {
 			tmpl.Annotations = make(map[string]string)
 		}
-		tmpl.Annotations["paprika.io/sync"] = nowString()
+		tmpl.Annotations["paprika.io/sync"] = h.nowString()
 
 		if err := h.client.Update(ctx, tmpl); err != nil {
 			log.Error(err, "Failed to annotate template", "name", tmpl.Name)
@@ -309,11 +339,9 @@ func verifyGitHubSignature(sig, secret string, body []byte) error {
 	return nil
 }
 
-func nowString() string {
-	return strconv.FormatInt(timeNow().Unix(), 10)
+func (h *Handler) nowString() string {
+	return strconv.FormatInt(h.clock.Now().Unix(), 10)
 }
-
-var timeNow = time.Now
 
 // Payload structures.
 

@@ -37,6 +37,7 @@ type testGitlabProject struct {
 }
 
 func TestHandler_ServeHTTP_GitHubPush(t *testing.T) {
+	t.Parallel()
 	scheme := runtime.NewScheme()
 	_ = paprika.AddToScheme(scheme)
 
@@ -50,7 +51,9 @@ func TestHandler_ServeHTTP_GitHubPush(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			app := &paprika.Application{
 				ObjectMeta: metav1.ObjectMeta{Name: "app-1", Namespace: "default"},
 				Spec: paprika.ApplicationSpec{
@@ -89,6 +92,7 @@ func TestHandler_ServeHTTP_GitHubPush(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP_GitLabPush(t *testing.T) {
+	t.Parallel()
 	scheme := runtime.NewScheme()
 	_ = paprika.AddToScheme(scheme)
 
@@ -125,6 +129,7 @@ func TestHandler_ServeHTTP_GitLabPush(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP_Ping(t *testing.T) {
+	t.Parallel()
 	c := fake.NewClientBuilder().Build()
 	h := NewHandler(c, "")
 
@@ -137,6 +142,7 @@ func TestHandler_ServeHTTP_Ping(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP_InvalidEvent(t *testing.T) {
+	t.Parallel()
 	c := fake.NewClientBuilder().Build()
 	h := NewHandler(c, "")
 
@@ -149,6 +155,7 @@ func TestHandler_ServeHTTP_InvalidEvent(t *testing.T) {
 }
 
 func TestHandler_ServeHTTP_GitHubSignature(t *testing.T) {
+	t.Parallel()
 	scheme := runtime.NewScheme()
 	_ = paprika.AddToScheme(scheme)
 
@@ -182,6 +189,7 @@ func TestHandler_ServeHTTP_GitHubSignature(t *testing.T) {
 }
 
 func TestUrlsEqual(t *testing.T) {
+	t.Parallel()
 	assert.True(t, urlsEqual("https://github.com/org/repo.git", "https://github.com/org/repo"))
 	assert.True(t, urlsEqual("https://github.com/org/repo", "https://github.com/org/repo"))
 	assert.False(t, urlsEqual("https://github.com/org/repo", "https://github.com/org/other"))
@@ -189,17 +197,25 @@ func TestUrlsEqual(t *testing.T) {
 }
 
 func TestNormalizeURL(t *testing.T) {
+	t.Parallel()
 	u, err := normalizeURL("https://github.com/org/repo.git")
 	require.NoError(t, err)
 	assert.Equal(t, "https://github.com/org/repo", u)
 }
 
-func TestNowString(t *testing.T) {
-	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	timeNow = func() time.Time { return now }
-	defer func() { timeNow = time.Now }()
+type fixedClock struct {
+	now time.Time
+}
 
-	assert.Equal(t, "1704067200", nowString())
+func (f *fixedClock) Now() time.Time { return f.now }
+
+func TestNowString(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	c := fake.NewClientBuilder().Build()
+	h := NewHandler(c, "", WithClock(&fixedClock{now: now}))
+
+	assert.Equal(t, "1704067200", h.nowString())
 }
 
 // Ensure Handler implements http.Handler.

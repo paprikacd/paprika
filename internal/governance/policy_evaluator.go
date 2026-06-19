@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
-	"github.com/benebsworth/paprika/policy"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
 type PolicyEvaluator struct {
@@ -40,7 +40,7 @@ func (e *PolicyEvaluator) Evaluate(ctx context.Context, project string, manifest
 		return nil, fmt.Errorf("render bundle: %w", err)
 	}
 
-	result, err := policy.NewEvaluator(selected).Evaluate(ctx, bundle, opts)
+	result, err := policy.NewCELEvaluator(selected).Evaluate(ctx, bundle, opts)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate policies: %w", err)
 	}

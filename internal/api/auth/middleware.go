@@ -21,14 +21,14 @@ type Config struct {
 }
 
 // Interceptor creates a connect.UnaryInterceptorFunc from auth config.
-func Interceptor(cfg Config, reader client.Reader) (connect.UnaryInterceptorFunc, error) {
+func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect.UnaryInterceptorFunc, error) {
 	if !cfg.Enabled {
 		return func(next connect.UnaryFunc) connect.UnaryFunc {
 			return next
 		}, nil
 	}
 
-	authn, authz, err := buildAuthnAuthz(cfg, reader)
+	authn, authz, err := buildAuthnAuthz(ctx, cfg, reader)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func Interceptor(cfg Config, reader client.Reader) (connect.UnaryInterceptorFunc
 	}, nil
 }
 
-func buildAuthnAuthz(cfg Config, reader client.Reader) (Authenticator, Authorizer, error) {
+func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Authenticator, Authorizer, error) {
 	authenticators := []Authenticator{}
 
 	if cfg.BasicAuth != nil {
@@ -75,7 +75,7 @@ func buildAuthnAuthz(cfg Config, reader client.Reader) (Authenticator, Authorize
 	}
 
 	if cfg.OIDC != nil {
-		oidcAuth, err := NewOIDCAuthenticator(context.Background(), cfg.OIDC)
+		oidcAuth, err := NewOIDCAuthenticator(ctx, cfg.OIDC)
 		if err != nil {
 			return nil, nil, fmt.Errorf("oidc auth: %w", err)
 		}

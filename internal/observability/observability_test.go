@@ -7,45 +7,52 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
-func TestInitTracing_Disabled(t *testing.T) {
-	t.Setenv(otelEndpointEnv, "")
-	shutdown, err := InitTracing()
+func TestNewTelemetry_Disabled(t *testing.T) {
+	t.Parallel()
+	telemetry, err := NewTelemetry(context.Background(), TelemetryConfig{})
 	require.NoError(t, err)
-	defer shutdown()
-	assert.False(t, IsTracingEnabled())
+	defer func() {
+		require.NoError(t, telemetry.Shutdown(context.Background()))
+	}()
+	assert.False(t, telemetry.IsTracingEnabled())
 }
 
 func TestStartSpan_Disabled(t *testing.T) {
-	t.Setenv(otelEndpointEnv, "")
-	_, err := InitTracing()
+	t.Parallel()
+	telemetry, err := NewTelemetry(context.Background(), TelemetryConfig{})
 	require.NoError(t, err)
 
-	ctx, span := StartSpan(context.Background(), "test")
+	ctx, span := telemetry.StartSpan(context.Background(), "test")
 	assert.NotNil(t, ctx)
 	assert.NotNil(t, span)
 	span.End()
 }
 
 func TestStartSpan_WithAttributes(t *testing.T) {
-	t.Setenv(otelEndpointEnv, "")
-	_, err := InitTracing()
+	t.Parallel()
+	telemetry, err := NewTelemetry(context.Background(), TelemetryConfig{})
 	require.NoError(t, err)
 
-	ctx, span := StartSpan(context.Background(), "test", attribute.String("key", "value"))
+	ctx, span := telemetry.StartSpan(context.Background(), "test", attribute.String("key", "value"))
 	assert.NotNil(t, ctx)
 	assert.NotNil(t, span)
 	span.End()
 }
 
 func TestSpanFromContext(t *testing.T) {
+	t.Parallel()
+	telemetry := &Telemetry{}
 	ctx := context.Background()
-	span := SpanFromContext(ctx)
+	span := telemetry.SpanFromContext(ctx)
 	assert.NotNil(t, span)
 }
 
 func TestCorrelationID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	assert.Equal(t, "", CorrelationID(ctx))
 
@@ -54,8 +61,8 @@ func TestCorrelationID(t *testing.T) {
 }
 
 func TestAuditLogger(t *testing.T) {
-	t.Setenv("PAPRIKA_AUDIT_LOG", "true")
-	logger := NewAuditLogger()
+	t.Parallel()
+	logger := NewAuditLogger(true, &clock.Fake{})
 	assert.True(t, logger.enabled)
 
 	// Should not panic
@@ -63,8 +70,8 @@ func TestAuditLogger(t *testing.T) {
 }
 
 func TestAuditLogger_Disabled(t *testing.T) {
-	t.Setenv("PAPRIKA_AUDIT_LOG", "false")
-	logger := NewAuditLogger()
+	t.Parallel()
+	logger := NewAuditLogger(false, &clock.Fake{})
 	assert.False(t, logger.enabled)
 
 	// Should not panic or print

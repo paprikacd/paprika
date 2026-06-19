@@ -33,14 +33,14 @@ type applyOptions struct {
 	server          string
 }
 
-func newApplyCmd() *cobra.Command {
+func newApplyCmd(ctx context.Context) *cobra.Command {
 	opts := &applyOptions{}
 	cmd := &cobra.Command{
 		Use:   "apply -f <path> [-f <path>...]",
 		Short: "Apply a manifest bundle to Paprika",
 		Long:  "Render raw YAML files or directories into a manifest bundle and submit it to the Paprika API server.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runApply(cmd.Context(), opts)
+			return runApply(ctx, opts)
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.files, "file", "f", nil, "File, directory, or archive to apply (repeatable)")
@@ -53,7 +53,7 @@ func newApplyCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.wait, "wait", true, "Block and watch until terminal phase")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", 5*time.Minute, "Watch timeout")
 	cmd.Flags().StringVar(&opts.server, "server", defaultServer(), "Paprika API server URL")
-	_ = cmd.MarkFlagRequired("file")
+	cobra.CheckErr(cmd.MarkFlagRequired("file"))
 	return cmd
 }
 
@@ -64,6 +64,7 @@ func defaultServer() string {
 	return "http://localhost:3000"
 }
 
+//nolint:cyclop // apply reconciles multiple resource types
 func runApply(ctx context.Context, opts *applyOptions) error {
 	if len(opts.files) == 0 {
 		return errors.New("at least one -f path is required")
@@ -81,12 +82,15 @@ func runApply(ctx context.Context, opts *applyOptions) error {
 
 	appName := opts.name
 	if appName == "" {
-		appName = deriveAppName(bundle, opts.files[0], suggestedName)
+		appName, err = deriveAppName(bundle, opts.files[0], suggestedName)
+		if err != nil {
+			return fmt.Errorf("derive application name: %w", err)
+		}
 	}
 
 	overrides, err := parsePolicyOverrides(opts.policyOverrides)
 	if err != nil {
-		return err
+		return fmt.Errorf("parse policy overrides: %w", err)
 	}
 
 	client := v1connect.NewPaprikaServiceClient(http.DefaultClient, opts.server)
@@ -101,7 +105,7 @@ func runApply(ctx context.Context, opts *applyOptions) error {
 		DryRun:          opts.dryRun,
 	}))
 	if err != nil {
-		return fmt.Errorf("ApplyBundle RPC failed: %w", err)
+		return fmt.Errorf("apply bundle RPC failed: %w", err)
 	}
 
 	if resp.Msg.Blocked {
@@ -191,7 +195,7 @@ func fileBaseName(p string) string {
 	return filepath.Base(strings.TrimSuffix(p, filepath.Ext(p)))
 }
 
-func deriveAppName(bundle []byte, firstPath, suggestedName string) string {
+func deriveAppName(bundle []byte, firstPath, suggestedName string) (string, error) {
 	docs := strings.Split(string(bundle), "\n---\n")
 	for _, doc := range docs {
 		var obj map[string]interface{}
@@ -201,18 +205,24 @@ func deriveAppName(bundle []byte, firstPath, suggestedName string) string {
 		if obj == nil {
 			continue
 		}
-		meta, _ := obj["metadata"].(map[string]interface{})
+		meta, ok := obj["metadata"].(map[string]interface{})
+		if !ok {
+			if obj["metadata"] == nil {
+				continue
+			}
+			return "", errors.New("manifest metadata is not an object")
+		}
 		if meta == nil {
 			continue
 		}
 		if name, ok := meta["name"].(string); ok && name != "" {
-			return name
+			return name, nil
 		}
 	}
 	if suggestedName != "" {
-		return suggestedName
+		return suggestedName, nil
 	}
-	return fileBaseName(firstPath)
+	return fileBaseName(firstPath), nil
 }
 
 func parsePolicyOverrides(in []string) (map[string]string, error) {

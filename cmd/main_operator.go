@@ -1,0 +1,407 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"connectrpc.com/connect"
+	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	apiserver "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/controller/bootstrap"
+	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/observability"
+	"github.com/benebsworth/paprika/internal/ratelimit"
+	"github.com/benebsworth/paprika/internal/sharding"
+	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
+)
+
+// operatorCache is the cache surface the operator dependency container needs:
+// manifest rendering reads and writes, and shutdown closes the backend.
+type operatorCache interface {
+	cache.Getter
+	cache.Setter
+	cache.Closer
+}
+
+type operatorDependencies struct {
+	cache          operatorCache
+	telemetry      *observability.Telemetry
+	shardFilter    *sharding.Filter
+	broker         *events.Broker
+	repoServerAddr string
+}
+
+func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog logr.Logger) (*operatorDependencies, error) {
+	c, err := newCacheFromConfig(ctx, cfg.cacheConfig(), setupLog)
+	if err != nil {
+		return nil, fmt.Errorf("create cache: %w", err)
+	}
+
+	telemetry, err := observability.NewTelemetry(ctx, cfg.telemetryConfig())
+	if err != nil {
+		setupLog.Error(err, "Failed to initialize tracing")
+		telemetry = nil
+	} else if telemetry.IsTracingEnabled() {
+		setupLog.Info("OpenTelemetry tracing enabled")
+	}
+
+	shardFilter := cfg.shardFilter()
+	if shardFilter.Enabled() {
+		setupLog.Info("Controller sharding enabled", "shard", shardFilter.ShardID(), "total", shardFilter.TotalShards())
+	}
+
+	broker, err := newBrokerFromConfig(ctx, cfg.cacheConfig(), setupLog)
+	if err != nil {
+		return nil, fmt.Errorf("create event broker: %w", err)
+	}
+
+	return &operatorDependencies{
+		cache:          c,
+		telemetry:      telemetry,
+		shardFilter:    shardFilter,
+		broker:         broker,
+		repoServerAddr: cfg.repoServerAddr,
+	}, nil
+}
+
+func closeOperatorDependencies(ctx context.Context, deps *operatorDependencies, setupLog logr.Logger) {
+	if deps == nil {
+		return
+	}
+	deps.broker.Close()
+	if deps.telemetry != nil {
+		if shutdownErr := deps.telemetry.Shutdown(ctx); shutdownErr != nil {
+			setupLog.Error(shutdownErr, "Failed to shutdown tracing")
+		}
+	}
+	if closeErr := deps.cache.Close(); closeErr != nil {
+		setupLog.Error(closeErr, "Failed to close cache")
+	}
+}
+
+type operatorGovernance struct {
+	authCfg          auth.Config
+	authz            auth.Authorizer
+	k8sClient        kubernetes.Interface
+	projectValidator *governance.ProjectValidator
+	policyEvaluator  *governance.PolicyEvaluator
+	rateLimiter      *ratelimit.ControllerRateLimit
+}
+
+func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
+	opCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	deps, err := buildOperatorDependencies(opCtx, cfg, setupLog)
+	if err != nil {
+		return fmt.Errorf("build operator dependencies: %w", err)
+	}
+	defer closeOperatorDependencies(opCtx, deps, setupLog)
+
+	mgr, err := buildOperatorManagerAndServer(cfg, scheme, setupLog)
+	if err != nil {
+		return fmt.Errorf("build operator manager and server: %w", err)
+	}
+
+	if err = registerDefaultProjectBootstrap(mgr, cfg.operatorNamespace); err != nil {
+		return fmt.Errorf("register default project bootstrap: %w", err)
+	}
+
+	gov, err := newOperatorGovernance(mgr, cfg, setupLog)
+	if err != nil {
+		return fmt.Errorf("build operator governance: %w", err)
+	}
+
+	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.enableWebhooks); err != nil {
+		return fmt.Errorf("setup operator controllers: %w", err)
+	}
+
+	if err := startOperatorUIServer(opCtx, mgr, cfg.uiAddr, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, setupLog); err != nil {
+		return fmt.Errorf("start UI server: %w", err)
+	}
+
+	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.webhookSecret, setupLog); err != nil {
+		return fmt.Errorf("start inline webhook server: %w", err)
+	}
+
+	setupLog.Info("Starting manager")
+	if err := mgr.Start(opCtx); err != nil {
+		return fmt.Errorf("failed to run manager: %w", err)
+	}
+	return nil
+}
+
+func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (ctrl.Manager, error) {
+	tlsOpts := buildOperatorTLSOptions(cfg.enableHTTP2, setupLog)
+	webhookServer := buildOperatorWebhookServer(tlsOpts, cfg.webhookCertPath, cfg.webhookCertName, cfg.webhookCertKey, setupLog)
+	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, cfg.metricsAddr, cfg.metricsCertPath, cfg.metricsCertName, cfg.metricsCertKey, cfg.secureMetrics, setupLog)
+	return buildOperatorManager(cfg, scheme, &metricsServerOptions, webhookServer)
+}
+
+func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
+	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth, cfg.authRBACRules, setupLog)
+
+	resolver := governance.NewProjectResolver(mgr.GetClient())
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
+	policyEvaluator := governance.NewPolicyEvaluator(mgr.GetClient())
+
+	authz, err := buildOperatorAuthorizer(authCfg, mgr.GetClient())
+	if err != nil {
+		return operatorGovernance{}, fmt.Errorf("build operator authorizer: %w", err)
+	}
+
+	k8sClient, err := kubernetes.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return operatorGovernance{}, fmt.Errorf("failed to create kubernetes clientset: %w", err)
+	}
+
+	rateLimiter := ratelimit.NewControllerRateLimit()
+	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
+
+	return operatorGovernance{
+		authCfg:          authCfg,
+		authz:            authz,
+		k8sClient:        k8sClient,
+		projectValidator: projectValidator,
+		policyEvaluator:  policyEvaluator,
+		rateLimiter:      rateLimiter,
+	}, nil
+}
+
+func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *metricsserver.Options, webhookSrv webhook.Server) (ctrl.Manager, error) {
+	restCfg := ctrl.GetConfigOrDie()
+	restCfg.QPS = 50
+	restCfg.Burst = 100
+
+	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
+		Scheme:                 scheme,
+		Metrics:                *metricsOpts,
+		WebhookServer:          webhookSrv,
+		HealthProbeBindAddress: cfg.probeAddr,
+		LeaderElection:         cfg.enableLeaderElection,
+		LeaderElectionID:       "paprika-operator.paprika.io",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start manager: %w", err)
+	}
+	return mgr, nil
+}
+
+func buildOperatorAuthorizer(cfg auth.Config, c client.Client) (auth.Authorizer, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+	authz, err := auth.BuildAuthorizer(cfg, c)
+	if err != nil {
+		return nil, fmt.Errorf("build authorizer: %w", err)
+	}
+	return authz, nil
+}
+
+func registerDefaultProjectBootstrap(mgr ctrl.Manager, operatorNamespace string) error {
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		// Run bootstrapping in a goroutine so that manager startup is not blocked
+		// while waiting for the local webhook endpoints to become reachable.
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bootstrapDefaultProjects(ctx, mgr.GetClient(), operatorNamespace)
+		}()
+		<-ctx.Done()
+		wg.Wait()
+		return nil
+	})); err != nil {
+		return fmt.Errorf("register default appproject bootstrap: %w", err)
+	}
+	return nil
+}
+
+func bootstrapDefaultProjects(ctx context.Context, c client.Client, operatorNamespace string) {
+	log := ctrl.Log.WithName("bootstrap")
+
+	if err := ensureProjectWithRetry(ctx, c, operatorNamespace, log); err != nil {
+		log.Error(err, "Failed to ensure operator namespace default AppProject")
+		return
+	}
+
+	var apps pipelinesv1alpha1.ApplicationList
+	if err := c.List(ctx, &apps); err != nil {
+		log.Error(err, "Failed to list applications during bootstrap")
+		return
+	}
+
+	seen := map[string]bool{operatorNamespace: true}
+	for i := range apps.Items {
+		ns := apps.Items[i].Namespace
+		if seen[ns] {
+			continue
+		}
+		seen[ns] = true
+		if err := ensureProjectWithRetry(ctx, c, ns, log); err != nil {
+			log.Error(err, "Failed to ensure default AppProject", "namespace", ns)
+		}
+	}
+}
+
+func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log logr.Logger) error {
+	if err := wait.ExponentialBackoffWithContext(ctx, wait.Backoff{
+		Duration: 1 * time.Second,
+		Factor:   2,
+		Cap:      30 * time.Second,
+		Steps:    20,
+	}, func(ctx context.Context) (bool, error) {
+		if err := bootstrap.EnsureDefaultAppProject(ctx, c, ns); err != nil {
+			log.Error(err, "Failed to ensure default AppProject, will retry", "namespace", ns)
+			return false, nil
+		}
+		log.Info("Ensured default AppProject", "namespace", ns)
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("ensure default AppProject in %q: %w", ns, err)
+	}
+	return nil
+}
+
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker, setupLog)
+	if err != nil {
+		return fmt.Errorf("build operator UI server: %w", err)
+	}
+	go func() {
+		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil); srvErr != nil {
+			setupLog.Error(srvErr, "UI server exited with error")
+		}
+	}()
+	return nil
+}
+
+func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecret string, setupLog logr.Logger) error {
+	webhookSrv := buildInlineWebhookServer(c, webhookSecret)
+	go func() {
+		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil); srvErr != nil {
+			setupLog.Error(srvErr, "Inline webhook receiver exited with error")
+		}
+	}()
+	return nil
+}
+
+func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
+	handler := webhookreceiver.NewHandler(c, secret)
+	webhookMux := http.NewServeMux()
+	webhookMux.Handle("/webhook", handler)
+	return &http.Server{
+		Addr:              ":8080",
+		Handler:           webhookMux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+}
+
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, setupLog logr.Logger) (*http.Server, error) {
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
+	if err != nil {
+		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
+	}
+
+	opts := []apiserver.ServerOption{
+		apiserver.WithGovernanceValidator(projectValidator),
+		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
+	}
+	if authz != nil {
+		opts = append(opts, apiserver.WithAuthorizer(authz))
+	}
+	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
+
+	uiMux := http.NewServeMux()
+	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	uiMux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
+	uiHandler, err := apiserver.UIHandler()
+	if err != nil {
+		return nil, fmt.Errorf("build UI handler: %w", err)
+	}
+	uiMux.Handle("/", uiHandler)
+
+	return &http.Server{
+		Addr:              uiAddr,
+		Handler:           uiMux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}, nil
+}
+
+func buildOperatorTLSOptions(enableHTTP2 bool, setupLog logr.Logger) []func(*tls.Config) {
+	if enableHTTP2 {
+		return nil
+	}
+	setupLog.Info("Disabling HTTP/2")
+	return []func(*tls.Config){func(c *tls.Config) {
+		c.NextProtos = []string{"http/1.1"}
+	}}
+}
+
+func buildOperatorWebhookServer(tlsOpts []func(*tls.Config), certPath, certName, certKey string, setupLog logr.Logger) webhook.Server {
+	options := webhook.Options{TLSOpts: tlsOpts}
+	if certPath != "" {
+		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
+			"webhook-cert-path", certPath, "webhook-cert-name", certName, "webhook-cert-key", certKey)
+		options.CertDir = certPath
+		options.CertName = certName
+		options.KeyName = certKey
+	}
+	return webhook.NewServer(options)
+}
+
+func buildOperatorMetricsOptions(tlsOpts []func(*tls.Config), bindAddr, certPath, certName, certKey string, secure bool, setupLog logr.Logger) metricsserver.Options {
+	options := metricsserver.Options{
+		BindAddress:   bindAddr,
+		SecureServing: secure,
+		TLSOpts:       tlsOpts,
+	}
+	if secure {
+		options.FilterProvider = filters.WithAuthenticationAndAuthorization
+	}
+	if certPath != "" {
+		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
+			"metrics-cert-path", certPath, "metrics-cert-name", certName, "metrics-cert-key", certKey)
+		options.CertDir = certPath
+		options.CertName = certName
+		options.KeyName = certKey
+	}
+	return options
+}

@@ -6,11 +6,22 @@ const (
 	reasonError = "ERROR"
 )
 
-type FlagClient struct {
-	providers []Provider
+// EvaluationProvider is the composed interface FlagClient needs from a feature
+// flag provider. It is defined on the consumer side so callers depend on the
+// fine-grained role interfaces exported by the featureflag package rather than
+// a single producer-side composed interface.
+type EvaluationProvider interface {
+	BoolProvider
+	StringProvider
+	IntProvider
+	FloatProvider
 }
 
-func NewClient(providers []Provider) *FlagClient {
+type FlagClient struct {
+	providers []EvaluationProvider
+}
+
+func NewClient(providers []EvaluationProvider) *FlagClient {
 	return &FlagClient{providers: providers}
 }
 

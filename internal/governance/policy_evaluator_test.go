@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
-	"github.com/benebsworth/paprika/policy"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
 func TestPolicyEvaluator_SelectsByProject(t *testing.T) {

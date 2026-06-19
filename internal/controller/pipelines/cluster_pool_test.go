@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -10,9 +10,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 func createTestScheme() *runtime.Scheme {
@@ -21,12 +24,21 @@ func createTestScheme() *runtime.Scheme {
 	return s
 }
 
+func testContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func TestClusterConnectionPool_GetClient_DefaultCluster(t *testing.T) {
 	scheme := createTestScheme()
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
 	defaultConfig := &rest.Config{Host: "https://default.cluster"}
 
-	pool := NewClusterConnectionPool(c, defaultConfig)
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
 	pool.ttl = time.Hour
 
 	client1, err := pool.GetClient(context.Background(), "", "default")
@@ -48,7 +60,9 @@ func TestClusterConnectionPool_GetClient_CachesByKubeconfigHash(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 	defaultConfig := &rest.Config{Host: "https://default.cluster"}
 
-	pool := NewClusterConnectionPool(c, defaultConfig)
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
 	pool.ttl = time.Hour
 
 	client1, err := pool.GetClient(context.Background(), "test-kc", "default")
@@ -74,7 +88,9 @@ func TestClusterConnectionPool_GetClient_DifferentSecrets(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret1, secret2).Build()
 	defaultConfig := &rest.Config{Host: "https://default.cluster"}
 
-	pool := NewClusterConnectionPool(c, defaultConfig)
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
 	pool.ttl = time.Hour
 
 	client1, err := pool.GetClient(context.Background(), "kc-1", "default")
@@ -95,7 +111,9 @@ func TestClusterConnectionPool_GetClient_MissingKubeconfigKey(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
 	defaultConfig := &rest.Config{Host: "https://default.cluster"}
 
-	pool := NewClusterConnectionPool(c, defaultConfig)
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
 
 	_, err := pool.GetClient(context.Background(), "bad-kc", "default")
 	assert.Error(t, err)
@@ -107,7 +125,9 @@ func TestClusterConnectionPool_GetRestConfig_Default(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
 	defaultConfig := &rest.Config{Host: "https://default.cluster"}
 
-	pool := NewClusterConnectionPool(c, defaultConfig)
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
 
 	cfg, err := pool.GetRestConfig(context.Background(), "", "default")
 	require.NoError(t, err)
@@ -115,28 +135,32 @@ func TestClusterConnectionPool_GetRestConfig_Default(t *testing.T) {
 }
 
 func TestClusterConnectionPool_isValid(t *testing.T) {
-	pool := &ClusterConnectionPool{ttl: time.Minute}
+	fakeClock := clock.NewFake(time.Now())
+	pool := &ClusterConnectionPool{ttl: time.Minute, Clock: fakeClock}
+
+	now := fakeClock.Now()
 
 	// Valid client
 	pc := &pooledClient{
-		lastUsed: time.Now(),
+		lastUsed: now,
 		healthy:  true,
 	}
 	assert.True(t, pool.isValid(pc))
 
 	// Expired client
-	pc.lastUsed = time.Now().Add(-2 * time.Minute)
+	pc.lastUsed = now.Add(-2 * time.Minute)
 	assert.False(t, pool.isValid(pc))
 
 	// Circuit breaker open
-	pc.lastUsed = time.Now()
+	pc.lastUsed = now
 	pc.circuitOpen = true
-	pc.circuitOpenAt = time.Now()
+	pc.circuitOpenAt = now
 	assert.False(t, pool.isValid(pc))
 
-	// Circuit breaker expired
-	pc.circuitOpenAt = time.Now().Add(-3 * time.Minute)
+	// Circuit breaker expired but still open; isValid is read-only and does not reset state
+	pc.circuitOpenAt = now.Add(-3 * time.Minute)
 	assert.True(t, pool.isValid(pc))
+	assert.True(t, pc.circuitOpen, "isValid must not mutate circuitOpen")
 
 	// Unhealthy
 	pc.circuitOpen = false
@@ -147,16 +171,66 @@ func TestClusterConnectionPool_isValid(t *testing.T) {
 	assert.False(t, pool.isValid(nil))
 }
 
+func TestClusterConnectionPool_GetClient_ResetsExpiredCircuitBreaker(t *testing.T) {
+	scheme := createTestScheme()
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-kc", Namespace: "default"},
+		Data:       map[string][]byte{"kubeconfig": []byte(testKubeconfig)},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
+	defaultConfig := &rest.Config{Host: "https://default.cluster"}
+
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, defaultConfig)
+	pool.Clock = fakeClock
+	pool.ttl = time.Hour
+
+	hash, err := pool.kubeconfigHash(context.Background(), "test-kc", "default")
+	require.NoError(t, err)
+
+	dynClient, err := dynamic.NewForConfig(defaultConfig)
+	require.NoError(t, err)
+
+	now := fakeClock.Now()
+
+	// Seed a client whose circuit breaker is open but whose reset window has passed.
+	pool.mu.Lock()
+	pool.clients[hash] = &pooledClient{
+		client:         dynClient,
+		restConfig:     defaultConfig,
+		kubeconfigHash: hash,
+		lastUsed:       now,
+		healthy:        true,
+		circuitOpen:    true,
+		circuitOpenAt:  now.Add(-3 * time.Minute),
+	}
+	pool.mu.Unlock()
+
+	client, err := pool.GetClient(context.Background(), "test-kc", "default")
+	require.NoError(t, err)
+	assert.NotNil(t, client)
+
+	pool.mu.RLock()
+	pc := pool.clients[hash]
+	pool.mu.RUnlock()
+	assert.False(t, pc.circuitOpen, "circuit breaker should have been reset")
+	assert.Equal(t, 0, pc.failures, "failure count should have been reset")
+}
+
 func TestClusterConnectionPool_evictExpired(t *testing.T) {
 	scheme := createTestScheme()
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
-	pool := NewClusterConnectionPool(c, &rest.Config{})
+	fakeClock := clock.NewFake(time.Now())
+	pool := NewClusterConnectionPoolWithContext(testContext(t), c, &rest.Config{})
+	pool.Clock = fakeClock
 	pool.ttl = time.Minute
 
+	now := fakeClock.Now()
+
 	// Add clients
-	pool.clients["default"] = &pooledClient{lastUsed: time.Now()}
-	pool.clients["expired"] = &pooledClient{lastUsed: time.Now().Add(-10 * time.Minute)}
-	pool.clients["fresh"] = &pooledClient{lastUsed: time.Now()}
+	pool.clients["default"] = &pooledClient{lastUsed: now}
+	pool.clients["expired"] = &pooledClient{lastUsed: now.Add(-10 * time.Minute)}
+	pool.clients["fresh"] = &pooledClient{lastUsed: now}
 
 	pool.evictExpired()
 

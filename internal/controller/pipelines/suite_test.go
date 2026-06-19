@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
@@ -52,14 +52,12 @@ var (
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
 
+	t.Setenv("ENABLE_WEBHOOKS", "false")
 	RunSpecs(t, "Controller Suite")
 }
 
 var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	// Disable webhooks during controller tests to avoid fixture rejection
-	Expect(os.Setenv("ENABLE_WEBHOOKS", "false")).To(Succeed())
 
 	ctx, cancel = context.WithCancel(context.TODO())
 

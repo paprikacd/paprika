@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -79,7 +79,7 @@ var _ = ginkgo.Describe("Application Controller", func() {
 		ginkgo.It("should successfully reconcile the resource", func() {
 			ginkgo.By("Reconciling the created resource")
 			controllerReconciler := &ApplicationReconciler{
-				Client:  k8sClient,
+				client:  k8sClient,
 				Scheme:  k8sClient.Scheme(),
 				WorkDir: "/tmp/paprika-sources-test",
 			}
@@ -165,7 +165,7 @@ var _ = ginkgo.Describe("Application Controller", func() {
 			)
 
 			controllerReconciler := &ApplicationReconciler{
-				Client:           k8sClient,
+				client:           k8sClient,
 				Scheme:           k8sClient.Scheme(),
 				WorkDir:          "/tmp/paprika-sources-test",
 				EventRecorder:    rec,

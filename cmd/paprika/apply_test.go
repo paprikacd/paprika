@@ -9,6 +9,8 @@ import (
 )
 
 func TestLoadPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		setup           func(t *testing.T) (path string, wantSuggested string)
@@ -62,6 +64,7 @@ func TestLoadPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			path, wantSuggested := tt.setup(t)
 			docs, suggested, err := loadPath(path)
 			if (err != nil) != tt.wantErr {
@@ -92,6 +95,8 @@ func TestLoadPath(t *testing.T) {
 }
 
 func TestLoadManifestBundle(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		setup           func(t *testing.T) (paths []string, wantSuggested string)
@@ -161,6 +166,7 @@ func TestLoadManifestBundle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			paths, wantSuggested := tt.setup(t)
 			bundle, suggested, err := loadManifestBundle(paths)
 			if (err != nil) != tt.wantErr {
@@ -186,6 +192,8 @@ func TestLoadManifestBundle(t *testing.T) {
 }
 
 func TestDeriveAppName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		bundle        []byte
@@ -225,7 +233,11 @@ func TestDeriveAppName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := deriveAppName(tt.bundle, tt.firstPath, tt.suggestedName)
+			t.Parallel()
+			got, err := deriveAppName(tt.bundle, tt.firstPath, tt.suggestedName)
+			if err != nil {
+				t.Fatalf("deriveAppName() unexpected error: %v", err)
+			}
 			if got != tt.want {
 				t.Errorf("deriveAppName() = %q, want %q", got, tt.want)
 			}
@@ -234,6 +246,8 @@ func TestDeriveAppName(t *testing.T) {
 }
 
 func TestParsePolicyOverrides(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		in              []string
@@ -272,6 +286,7 @@ func TestParsePolicyOverrides(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := parsePolicyOverrides(tt.in)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("parsePolicyOverrides() error = %v, wantErr %v", err, tt.wantErr)
@@ -290,15 +305,7 @@ func TestParsePolicyOverrides(t *testing.T) {
 }
 
 func TestCurrentNamespace(t *testing.T) {
-	oldKubeconfig := os.Getenv("KUBECONFIG")
-	defer func() {
-		if oldKubeconfig == "" {
-			_ = os.Unsetenv("KUBECONFIG")
-		} else {
-			_ = os.Setenv("KUBECONFIG", oldKubeconfig)
-		}
-	}()
-	_ = os.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "nonexistent"))
+	t.Setenv("KUBECONFIG", filepath.Join(t.TempDir(), "nonexistent"))
 
 	got := currentNamespace()
 	if got != "default" {

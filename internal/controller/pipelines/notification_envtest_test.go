@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -15,8 +15,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/go-logr/logr"
+
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 var _ = Describe("Notification Controller", func() {
@@ -35,7 +38,11 @@ var _ = Describe("Notification Controller", func() {
 
 		var received []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, _ := io.ReadAll(r.Body)
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 			received = body
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -57,12 +64,7 @@ var _ = Describe("Notification Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
 
-		r := &NotificationConfigReconciler{
-			Client:      k8sClient,
-			EventBroker: events.NewBroker(),
-			Sender:      NewNotificationSender(),
-			rateLimits:  make(map[rateLimitKey]time.Time),
-		}
+		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
 		evt, err := events.NewEvent(events.TypeApplication, &eventPayload{
 			ResourceType:  events.TypeApplication,
@@ -73,7 +75,7 @@ var _ = Describe("Notification Controller", func() {
 			Reason:        "TestFailure",
 			Message:       "application failed",
 			Timestamp:     metav1.Now().UTC().Format(time.RFC3339),
-		})
+		}, &clock.Fake{})
 		Expect(err).NotTo(HaveOccurred())
 		r.handleEvent(ctx, evt)
 
@@ -123,12 +125,7 @@ var _ = Describe("Notification Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
 
-		r := &NotificationConfigReconciler{
-			Client:      k8sClient,
-			EventBroker: events.NewBroker(),
-			Sender:      NewNotificationSender(),
-			rateLimits:  make(map[rateLimitKey]time.Time),
-		}
+		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
 		evt, _ := events.NewEvent(events.TypeApplication, &eventPayload{
 			ResourceType: events.TypeApplication,
@@ -136,7 +133,7 @@ var _ = Describe("Notification Controller", func() {
 			Namespace:    ns,
 			Phase:        "Failed",
 			Timestamp:    metav1.Now().UTC().Format(time.RFC3339),
-		})
+		}, &clock.Fake{})
 		r.handleEvent(ctx, evt)
 
 		Expect(authHeader).To(Equal("Bearer bearer123"))
@@ -160,12 +157,7 @@ var _ = Describe("Notification Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, cfg)).To(Succeed())
 
-		r := &NotificationConfigReconciler{
-			Client:      k8sClient,
-			EventBroker: events.NewBroker(),
-			Sender:      NewNotificationSender(),
-			rateLimits:  make(map[rateLimitKey]time.Time),
-		}
+		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
 		evt, _ := events.NewEvent(events.TypeApplication, &eventPayload{
 			ResourceType: events.TypeApplication,
@@ -173,7 +165,7 @@ var _ = Describe("Notification Controller", func() {
 			Namespace:    ns,
 			Phase:        "Failed",
 			Timestamp:    metav1.Now().UTC().Format(time.RFC3339),
-		})
+		}, &clock.Fake{})
 		r.handleEvent(ctx, evt)
 
 		var updated paprikav1.NotificationConfig

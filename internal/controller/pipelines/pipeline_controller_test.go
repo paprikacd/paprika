@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -58,7 +58,7 @@ var _ = Describe("Pipeline Controller", func() {
 		It("should add finalizer on creation", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &PipelineReconciler{
-				Client: k8sClient,
+				client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 

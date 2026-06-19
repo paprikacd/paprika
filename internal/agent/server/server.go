@@ -174,9 +174,11 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	_, handler := v1connect.NewPaprikaServiceHandler(s)
 	mux.Handle("/paprika.v1.PaprikaService/", handler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		if _, err := w.Write([]byte("ok")); err != nil {
+			log.FromContext(r.Context()).Error(err, "Failed to write healthz response")
+		}
 	})
 	mux.HandleFunc("/apply", s.handleApply)
 	return mux
@@ -202,7 +204,9 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		log.FromContext(r.Context()).Error(err, "Failed to encode apply response")
+	}
 }
 
 // Run starts the agent server on the given address.
@@ -215,7 +219,9 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	log.FromContext(ctx).Info("Starting agent server", "addr", addr, "cluster", s.clusterID)
 	go func() {
 		<-ctx.Done()
-		_ = srv.Close()
+		if err := srv.Close(); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to close agent server")
+		}
 	}()
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("agent server error: %w", err)
@@ -318,20 +324,20 @@ var _ v1connect.PaprikaServiceHandler = (*Server)(nil)
 
 func (s *Server) ListRollouts(ctx context.Context, _ *connect.Request[paprikav1.ListRolloutsRequest]) (*connect.Response[paprikav1.ListRolloutsResponse], error) {
 	log.FromContext(ctx).Info("ListRollouts not implemented on agent")
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListRollouts is not implemented on the agent"))
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("listRollouts is not implemented on the agent"))
 }
 
 func (s *Server) GetRollout(ctx context.Context, _ *connect.Request[paprikav1.GetRolloutRequest]) (*connect.Response[paprikav1.GetRolloutResponse], error) {
 	log.FromContext(ctx).Info("GetRollout not implemented on agent")
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("GetRollout is not implemented on the agent"))
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getRollout is not implemented on the agent"))
 }
 
 func (s *Server) PromoteRollout(ctx context.Context, _ *connect.Request[paprikav1.PromoteRolloutRequest]) (*connect.Response[paprikav1.PromoteRolloutResponse], error) {
 	log.FromContext(ctx).Info("PromoteRollout not implemented on agent")
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("PromoteRollout is not implemented on the agent"))
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("promoteRollout is not implemented on the agent"))
 }
 
 func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.AbortRolloutRequest]) (*connect.Response[paprikav1.AbortRolloutResponse], error) {
 	log.FromContext(ctx).Info("AbortRollout not implemented on agent")
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("AbortRollout is not implemented on the agent"))
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("abortRollout is not implemented on the agent"))
 }

@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -18,21 +18,22 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 const pipelineFinalizer = "paprika.io/pipeline-cleanup"
 
 // PipelineReconciler reconciles Pipeline resources.
 type PipelineReconciler struct {
-	client.Client
+	client         client.Client
 	Scheme         *runtime.Scheme
 	K8sClient      kubernetes.Interface
 	Namespace      string
-	WorkflowEngine engine.WorkflowEngine
+	WorkflowEngine PipelineRunner
 	ShardFilter    *sharding.Filter
+	Clock          clock.Clock
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -45,14 +46,14 @@ type PipelineReconciler struct {
 // Reconcile handles Pipeline reconciliation.
 func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("pipeline", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(r.Clock, start))
 	}()
 
 	var pipeline pipelinesv1alpha1.Pipeline
-	if err := r.Get(ctx, req.NamespacedName, &pipeline); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &pipeline); err != nil {
 		result = resultError
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting pipeline: %w", k8sErr)
@@ -87,12 +88,12 @@ func (r *PipelineReconciler) patchPipelineStatus(ctx context.Context, pipeline *
 	desiredStatus := pipeline.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh pipelinesv1alpha1.Pipeline
-		if err := r.Get(ctx, types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, &fresh); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching pipeline for status update: %w", err)
 		}
 		fresh.Status = *desiredStatus
 		fresh.Status.ObservedGeneration = fresh.Generation
-		if err := r.Status().Update(ctx, &fresh); err != nil {
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating pipeline status: %w", err)
 		}
 		return nil
@@ -115,7 +116,7 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 	if allSucceeded {
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineSucceeded
 		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Succeeded").Inc()
-		metrics.PipelineDuration.WithLabelValues(pipeline.Name, pipeline.Namespace).Observe(metrics.Since(start))
+		metrics.PipelineDuration.WithLabelValues(pipeline.Name, pipeline.Namespace).Observe(metrics.Since(r.Clock, start))
 		pipeline.Status.StepStatuses = stepStatuses
 		if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
 			*result = resultError
@@ -144,7 +145,7 @@ func (r *PipelineReconciler) handlePipelineDeletion(ctx context.Context, pipelin
 		return nil
 	}
 	controllerutil.RemoveFinalizer(pipeline, pipelineFinalizer)
-	if err := r.Update(ctx, pipeline); err != nil {
+	if err := r.client.Update(ctx, pipeline); err != nil {
 		return fmt.Errorf("removing pipeline finalizer: %w", err)
 	}
 	return nil
@@ -155,7 +156,7 @@ func (r *PipelineReconciler) ensurePipelineFinalizer(ctx context.Context, pipeli
 		return nil
 	}
 	controllerutil.AddFinalizer(pipeline, pipelineFinalizer)
-	if err := r.Update(ctx, pipeline); err != nil {
+	if err := r.client.Update(ctx, pipeline); err != nil {
 		return fmt.Errorf("adding pipeline finalizer: %w", err)
 	}
 	return nil
@@ -214,7 +215,7 @@ func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipel
 			},
 		},
 	}
-	if err := r.Create(ctx, artifact); err != nil {
+	if err := r.client.Create(ctx, artifact); err != nil {
 		return fmt.Errorf("creating artifact: %w", err)
 	}
 	return nil
@@ -222,6 +223,7 @@ func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipel
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Pipeline{}).
 		Owns(&corev1.Pod{}).

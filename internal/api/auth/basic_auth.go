@@ -53,7 +53,7 @@ func NewBasicAuthenticator(cfg BasicAuthConfig) (*BasicAuthenticator, error) {
 func (b *BasicAuthenticator) Authenticate(ctx context.Context) (*Principal, error) {
 	req, err := requestFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnauthenticated, err)
+		return nil, errors.Join(err, ErrUnauthenticated)
 	}
 
 	auth := req.Header().Get("Authorization")
@@ -63,17 +63,17 @@ func (b *BasicAuthenticator) Authenticate(ctx context.Context) (*Principal, erro
 
 	parts := strings.SplitN(auth, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Basic") {
-		return nil, fmt.Errorf("%w: invalid authorization header", ErrUnauthenticated)
+		return nil, fmt.Errorf("invalid authorization header: %w", ErrUnauthenticated)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid base64: %w", ErrUnauthenticated, err)
+		return nil, errors.Join(fmt.Errorf("invalid base64: %w", err), ErrUnauthenticated)
 	}
 
 	creds := strings.SplitN(string(decoded), ":", 2)
 	if len(creds) != 2 {
-		return nil, fmt.Errorf("%w: invalid credentials format", ErrUnauthenticated)
+		return nil, fmt.Errorf("invalid credentials format: %w", ErrUnauthenticated)
 	}
 
 	username := creds[0]

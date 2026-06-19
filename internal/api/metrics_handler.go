@@ -1,5 +1,5 @@
 // Package api provides the Paprika API server handlers and middleware.
-package api
+package apiserver
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/benebsworth/paprika/metrics"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 // MetricsHandler returns an HTTP handler for Prometheus metrics.

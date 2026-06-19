@@ -44,7 +44,7 @@ func (a *ProjectAuthorizer) Authorize(ctx context.Context, p *Principal, action 
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: principal %q cannot %s %s in project %q", ErrUnauthorized, p.Subject, action, resource, project)
+	return fmt.Errorf("principal %q cannot %s %s in project %q: %w", p.Subject, action, resource, project, ErrUnauthorized)
 }
 
 // actionAllowed reports whether the supplied role actions permit action.

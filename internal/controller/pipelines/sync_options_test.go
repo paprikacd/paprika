@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"testing"
@@ -27,6 +27,7 @@ func TestPropagationPolicy(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got := propagationPolicy(tc.opts)
 			if tc.want == "" {
 				if got != nil {
@@ -73,65 +74,88 @@ func TestResourceInSync(t *testing.T) {
 		}
 	}
 
-	t.Run("equal resources", func(t *testing.T) {
-		desired := deployment("nginx:1.0")
-		live := deployment("nginx:1.0")
-		metadata, ok := live.Object["metadata"].(map[string]interface{})
-		require.True(t, ok)
-		metadata["resourceVersion"] = "123"
-		metadata["uid"] = "abc"
-		if !resourceInSync(desired, live) {
-			t.Error("expected resources to be in sync")
-		}
-	})
-
-	t.Run("different spec", func(t *testing.T) {
-		desired := deployment("nginx:2.0")
-		live := deployment("nginx:1.0")
-		if resourceInSync(desired, live) {
-			t.Error("expected resources to be out of sync")
-		}
-	})
-
-	t.Run("extra live metadata ignored", func(t *testing.T) {
-		desired := deployment("nginx:1.0")
-		live := deployment("nginx:1.0")
-		metadata, ok := live.Object["metadata"].(map[string]interface{})
-		require.True(t, ok)
-		metadata["annotations"] = map[string]interface{}{
-			"deployment.kubernetes.io/revision": "1",
-		}
-		if !resourceInSync(desired, live) {
-			t.Error("expected server-added annotations to be ignored")
-		}
-	})
-
-	t.Run("missing desired key", func(t *testing.T) {
-		desired := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "v1",
-				"kind":       "ConfigMap",
-				"metadata": map[string]interface{}{
-					"name": "cfg",
-				},
-				"data": map[string]interface{}{
-					"key": "value",
-				},
+	tests := []struct {
+		name   string
+		setup  func() (*unstructured.Unstructured, *unstructured.Unstructured)
+		wantIn bool
+	}{
+		{
+			name: "equal resources",
+			setup: func() (*unstructured.Unstructured, *unstructured.Unstructured) {
+				desired := deployment("nginx:1.0")
+				live := deployment("nginx:1.0")
+				metadata, ok := live.Object["metadata"].(map[string]interface{})
+				require.True(t, ok)
+				metadata["resourceVersion"] = "123"
+				metadata["uid"] = "abc"
+				return desired, live
 			},
-		}
-		live := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "v1",
-				"kind":       "ConfigMap",
-				"metadata": map[string]interface{}{
-					"name": "cfg",
-				},
+			wantIn: true,
+		},
+		{
+			name: "different spec",
+			setup: func() (*unstructured.Unstructured, *unstructured.Unstructured) {
+				return deployment("nginx:2.0"), deployment("nginx:1.0")
 			},
-		}
-		if resourceInSync(desired, live) {
-			t.Error("expected missing data to be out of sync")
-		}
-	})
+			wantIn: false,
+		},
+		{
+			name: "extra live metadata ignored",
+			setup: func() (*unstructured.Unstructured, *unstructured.Unstructured) {
+				desired := deployment("nginx:1.0")
+				live := deployment("nginx:1.0")
+				metadata, ok := live.Object["metadata"].(map[string]interface{})
+				require.True(t, ok)
+				metadata["annotations"] = map[string]interface{}{
+					"deployment.kubernetes.io/revision": "1",
+				}
+				return desired, live
+			},
+			wantIn: true,
+		},
+		{
+			name: "missing desired key",
+			setup: func() (*unstructured.Unstructured, *unstructured.Unstructured) {
+				desired := &unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "ConfigMap",
+						"metadata": map[string]interface{}{
+							"name": "cfg",
+						},
+						"data": map[string]interface{}{
+							"key": "value",
+						},
+					},
+				}
+				live := &unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "v1",
+						"kind":       "ConfigMap",
+						"metadata": map[string]interface{}{
+							"name": "cfg",
+						},
+					},
+				}
+				return desired, live
+			},
+			wantIn: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			desired, live := tc.setup()
+			got, err := resourceInSync(desired, live)
+			if err != nil {
+				t.Fatalf("resourceInSync() unexpected error: %v", err)
+			}
+			if got != tc.wantIn {
+				t.Errorf("resourceInSync() = %v, want %v", got, tc.wantIn)
+			}
+		})
+	}
 }
 
 func TestIsEmptyValue(t *testing.T) {
@@ -151,6 +175,7 @@ func TestIsEmptyValue(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			if got := isEmptyValue(tc.v); got != tc.want {
 				t.Errorf("isEmptyValue(%v) = %v, want %v", tc.v, got, tc.want)
 			}

@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -29,16 +30,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
-	"github.com/benebsworth/paprika/health"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/health"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/repository"
 	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/internal/syncwindow"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 const (
@@ -70,25 +72,42 @@ func withProjectLabels(app *paprikav1.Application, labels map[string]string) map
 
 // ApplicationReconciler reconciles Application resources.
 type ApplicationReconciler struct {
-	client.Client
+	client              client.Client
 	Scheme              *runtime.Scheme
 	K8sClient           *kubernetes.Clientset
 	Namespace           string
 	RestConfig          *rest.Config
 	WorkDir             string
-	HealthEval          health.HealthEvaluator
-	DiffEngine          engine.DiffEngine
-	ResHealth           health.ResourceHealthChecker
+	HealthEval          *health.CELEvaluator
+	DiffEngine          DiffEngine
+	ResHealth           *health.ResourceHealthChecker
 	ClusterMgr          ClusterClientManager
-	TemplateRenderer    engine.TemplateRenderer
+	TemplateRenderer    SourceResolvingRenderer
 	ShardFilter         *sharding.Filter
 	RateLimiter         *ratelimit.ControllerRateLimit
 	EventRecorder       record.EventRecorder
 	ProjectValidator    *governance.ProjectValidator
 	EventBroker         *events.Broker
 	SyncWindowEvaluator syncwindow.Evaluator
+	Telemetry           *observability.Telemetry
+	Clock               clock.Clock
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
+}
+
+// NewApplicationReconciler returns an ApplicationReconciler initialized with the
+// given Kubernetes client. Callers should set the exported dependencies before
+// calling SetupWithManager.
+func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
+	return &ApplicationReconciler{client: c}
+}
+
+func (r *ApplicationReconciler) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
+	if r.Telemetry != nil {
+		return r.Telemetry.StartSpan(ctx, name, attrs...)
+	}
+	//nolint:staticcheck // fallback when Telemetry is not initialized
+	return observability.StartSpan(ctx, name, attrs...)
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -107,7 +126,7 @@ type ApplicationReconciler struct {
 
 // Reconcile handles Application reconciliation.
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx, span := observability.StartSpan(ctx, "ApplicationReconcile",
+	ctx, span := r.startSpan(ctx, "ApplicationReconcile",
 		attribute.String("namespace", req.Namespace),
 		attribute.String("name", req.Name),
 	)
@@ -115,17 +134,17 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	var app paprikav1.Application
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("application", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("application").Observe(metrics.Since(start))
-		metrics.ApplicationReconcileDuration.WithLabelValues(app.Name, app.Namespace).Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("application").Observe(metrics.Since(r.Clock, start))
+		metrics.ApplicationReconcileDuration.WithLabelValues(app.Name, app.Namespace).Observe(metrics.Since(r.Clock, start))
 	}()
 
 	log := log.FromContext(ctx)
 	log.Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
 
-	if err := r.Get(ctx, req.NamespacedName, &app); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &app); err != nil {
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			result = resultError
 			return ctrl.Result{}, fmt.Errorf("getting application: %w", k8sErr)
@@ -217,7 +236,7 @@ func (r *ApplicationReconciler) mirrorReleaseGovernanceFailure(ctx context.Conte
 		return
 	}
 	var release paprikav1.Release
-	if err := r.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}, &release); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}, &release); err != nil {
 		log.Error(err, "Failed to fetch Release for governance failure mirror", "app", app.Name, "release", app.Status.ReleaseRef)
 		return
 	}
@@ -232,7 +251,7 @@ func (r *ApplicationReconciler) mirrorReleaseGovernanceFailure(ctx context.Conte
 		Message:            cond.Message,
 		LastTransitionTime: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, app); err != nil {
+	if err := r.client.Status().Update(ctx, app); err != nil {
 		log.Error(err, "Failed to mirror governance failure to Application", "app", app.Name, "release", release.Name)
 	}
 }
@@ -383,7 +402,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		app.Annotations = map[string]string{}
 	}
 	app.Annotations[manualSyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
-	if err := r.Patch(ctx, app, patch); err != nil {
+	if err := r.client.Patch(ctx, app, patch); err != nil {
 		log.Error(err, "Failed to set manual sync annotation")
 		return ctrl.Result{}, fmt.Errorf("setting manual sync annotation: %w", err)
 	}
@@ -399,7 +418,7 @@ func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprika
 	desiredStatus := app.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh paprikav1.Application
-		if err := r.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching application for status update: %w", err)
 		}
 		// Preserve fields that may be set concurrently by other actors (e.g.
@@ -411,7 +430,7 @@ func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprika
 		}
 		fresh.Status = *desiredStatus
 		fresh.Status.ObservedGeneration = fresh.Generation
-		if err := r.Status().Update(ctx, &fresh); err != nil {
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating application status: %w", err)
 		}
 		return nil
@@ -506,7 +525,7 @@ func (r *ApplicationReconciler) buildTemplateSpec(ctx context.Context, app *papr
 	if app.Spec.Source.RepoRef == "" {
 		return spec
 	}
-	resolver := repository.NewResolver(r.Client)
+	resolver := repository.NewResolver(r.client)
 	resolved, err := resolver.ResolveTemplate(ctx, app.Namespace, &spec)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to resolve repository", "repoRef", app.Spec.Source.RepoRef)
@@ -537,13 +556,13 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	}
 
 	var existing paprikav1.Template
-	err := r.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
+	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to get template: %w", err)
 	}
 
 	if err != nil {
-		if err := r.Create(ctx, expected); err != nil {
+		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
 		}
 	} else {
@@ -554,7 +573,7 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		for k, v := range expected.Labels {
 			existing.Labels[k] = v
 		}
-		if err := r.Update(ctx, &existing); err != nil {
+		if err := r.client.Update(ctx, &existing); err != nil {
 			return fmt.Errorf("failed to update template: %w", err)
 		}
 	}
@@ -601,13 +620,13 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 	}
 
 	var existing paprikav1.Pipeline
-	err := r.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
+	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to get pipeline: %w", err)
 	}
 
 	if err != nil {
-		if err := r.Create(ctx, expected); err != nil {
+		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create pipeline: %w", err)
 		}
 	} else {
@@ -618,7 +637,7 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		for k, v := range expected.Labels {
 			existing.Labels[k] = v
 		}
-		if err := r.Update(ctx, &existing); err != nil {
+		if err := r.client.Update(ctx, &existing); err != nil {
 			return fmt.Errorf("failed to update pipeline: %w", err)
 		}
 	}
@@ -634,7 +653,7 @@ func (r *ApplicationReconciler) reconcileStages(ctx context.Context, app *paprik
 	for i := range app.Spec.Stages {
 		stageName := app.Name + "-" + app.Spec.Stages[i].Name
 		if err := r.reconcileSingleStage(ctx, app, &app.Spec.Stages[i], templateName, stageName); err != nil {
-			return err
+			return fmt.Errorf("reconcile stage %s: %w", stageName, err)
 		}
 		stageRefs = append(stageRefs, stageName)
 	}
@@ -653,7 +672,7 @@ func (r *ApplicationReconciler) reconcileSingleStage(ctx context.Context, app *p
 	}
 
 	var existing paprikav1.Stage
-	err := r.Get(ctx, types.NamespacedName{Name: stageName, Namespace: app.Namespace}, &existing)
+	err := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: app.Namespace}, &existing)
 	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to get stage %s: %w", stageName, err)
 	}
@@ -706,7 +725,7 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 }
 
 func (r *ApplicationReconciler) createStage(ctx context.Context, expected *paprikav1.Stage, stageName string) error {
-	if err := r.Create(ctx, expected); err != nil {
+	if err := r.client.Create(ctx, expected); err != nil {
 		return fmt.Errorf("failed to create stage %s: %w", stageName, err)
 	}
 	return nil
@@ -720,7 +739,7 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 	for k, v := range expected.Labels {
 		existing.Labels[k] = v
 	}
-	if err := r.Update(ctx, existing); err != nil {
+	if err := r.client.Update(ctx, existing); err != nil {
 		return fmt.Errorf("failed to update stage %s: %w", stageName, err)
 	}
 	return nil
@@ -782,7 +801,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return ctrl.Result{}, fmt.Errorf("failed to set controller reference on release: %w", err)
 	}
 
-	if err := r.Create(ctx, release); err != nil {
+	if err := r.client.Create(ctx, release); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create release: %w", err)
 	}
 
@@ -863,7 +882,7 @@ func (r *ApplicationReconciler) getCurrentReleasePhase(ctx context.Context, app 
 	}
 
 	var release paprikav1.Release
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
 		return ""
 	}
 
@@ -876,7 +895,7 @@ func (r *ApplicationReconciler) getPipelinePhase(ctx context.Context, app *papri
 	}
 
 	var pipeline paprikav1.Pipeline
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.PipelineRef, Namespace: app.Namespace}, &pipeline); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.PipelineRef, Namespace: app.Namespace}, &pipeline); err != nil {
 		return ""
 	}
 
@@ -950,8 +969,8 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 		PreviousPhase: string(previousPhase),
 		Reason:        reason,
 		Message:       message,
-		Timestamp:     metav1.Now().UTC().Format(time.RFC3339),
-	})
+		Timestamp:     r.now().UTC().Format(time.RFC3339),
+	}, r.Clock)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to create application event", "app", app.Name)
 		return
@@ -992,12 +1011,12 @@ func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *papr
 	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize || app.Spec.Source.Type == paprikav1.SourceTypeOCI {
 		renderer := r.TemplateRenderer
 		if renderer == nil {
-			renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.Client)
+			renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
 		}
 
 		templateName := app.Name + "-template"
 		var tmpl paprikav1.Template
-		if getErr := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
+		if getErr := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
 			return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
 		}
 
@@ -1098,13 +1117,13 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 
 	templateName := app.Name + "-template"
 	var tmpl paprikav1.Template
-	if err := r.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); err != nil {
 		return nil, fmt.Errorf("get template for diff: %w", err)
 	}
 
 	renderer := r.TemplateRenderer
 	if renderer == nil {
-		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.Client)
+		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
 	}
 	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
 	if err != nil {
@@ -1118,7 +1137,7 @@ func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *pa
 		return nil, errors.New("no active release for inline source")
 	}
 	var release paprikav1.Release
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
 		return nil, fmt.Errorf("get release for inline manifests: %w", err)
 	}
 	snapshotName := release.Status.RenderedManifestSnapshot
@@ -1129,7 +1148,7 @@ func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *pa
 		return nil, errors.New("release has no manifest snapshot")
 	}
 	var cm corev1.ConfigMap
-	if err := r.Get(ctx, types.NamespacedName{Name: snapshotName, Namespace: app.Namespace}, &cm); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: snapshotName, Namespace: app.Namespace}, &cm); err != nil {
 		return nil, fmt.Errorf("get manifest snapshot: %w", err)
 	}
 	data, ok := cm.Data["manifests.yaml"]
@@ -1198,7 +1217,7 @@ func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *pa
 	log := log.FromContext(ctx)
 
 	var list paprikav1.ReleaseList
-	if err := r.List(ctx, &list,
+	if err := r.client.List(ctx, &list,
 		client.InNamespace(app.Namespace),
 		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
 	); err != nil {
@@ -1232,7 +1251,7 @@ func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *pa
 		if rel.Name == activeRelease {
 			continue
 		}
-		if err := r.Delete(ctx, rel); client.IgnoreNotFound(err) != nil {
+		if err := r.client.Delete(ctx, rel); client.IgnoreNotFound(err) != nil {
 			log.Error(err, "Failed to prune old release", "release", rel.Name)
 			continue
 		}
@@ -1361,7 +1380,7 @@ func (r *ApplicationReconciler) pruneReleasesIfInline(ctx context.Context, app *
 func (r *ApplicationReconciler) pruneOldReleases(ctx context.Context, app *paprikav1.Application) error {
 	all, err := r.listReleasesSorted(ctx, app)
 	if err != nil {
-		return err
+		return fmt.Errorf("list releases: %w", err)
 	}
 	if len(all) <= maxReleaseHistory {
 		return nil
@@ -1370,7 +1389,7 @@ func (r *ApplicationReconciler) pruneOldReleases(ctx context.Context, app *papri
 	keep := r.selectReleasesToKeep(all, app.Status.ReleaseRef)
 	deleted, err := r.deleteReleases(ctx, all, keep, app)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete releases: %w", err)
 	}
 	if deleted > 0 {
 		r.recordEvent(app, corev1.EventTypeNormal, "PrunedReleases", fmt.Sprintf("Pruned %d old releases", deleted))
@@ -1380,7 +1399,7 @@ func (r *ApplicationReconciler) pruneOldReleases(ctx context.Context, app *papri
 
 func (r *ApplicationReconciler) listReleasesSorted(ctx context.Context, app *paprikav1.Application) ([]*paprikav1.Release, error) {
 	var list paprikav1.ReleaseList
-	if err := r.List(ctx, &list,
+	if err := r.client.List(ctx, &list,
 		client.InNamespace(app.Namespace),
 		client.MatchingLabels{engine.ApplicationNameLabelKey: app.Name},
 	); err != nil {
@@ -1448,7 +1467,7 @@ func (r *ApplicationReconciler) deleteReleases(ctx context.Context, all []*papri
 		if _, ok := keep[rel.Name]; ok {
 			continue
 		}
-		if err := r.Delete(ctx, rel); err != nil {
+		if err := r.client.Delete(ctx, rel); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
@@ -1467,8 +1486,13 @@ func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventTyp
 }
 
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if r.now == nil {
-		r.now = time.Now
+		if r.Clock != nil {
+			r.now = r.Clock.Now
+		} else {
+			r.now = time.Now
+		}
 	}
 	if r.SyncWindowEvaluator == nil {
 		r.SyncWindowEvaluator = syncwindow.NewEvaluator()

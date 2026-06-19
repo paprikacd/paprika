@@ -1,6 +1,7 @@
 version: "2"
 run:
   timeout: 5m
+  modules-download-mode: readonly
 linters:
   default: none
   enable:
@@ -16,7 +17,6 @@ linters:
     - forcetypeassert
     - funlen
     - gocognit
-    - goconst
     - gocritic
     - gocyclo
     - goprintffuncname
@@ -40,6 +40,9 @@ linters:
     - wastedassign
     - wrapcheck
   settings:
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
     govet:
       enable-all: true
       disable:
@@ -116,6 +119,8 @@ linters:
           - funlen
           - gocognit
           - gocritic
+          - errcheck
+          - staticcheck
       - path: _test\.go
         regex: true
         text: dot-imports
@@ -124,14 +129,12 @@ linters:
       - path: internal/rollout/.*
         regex: true
         linters:
-          - goconst
           - gocritic
           - cyclop
       - path: internal/controller/rollouts/.*
         regex: true
         linters:
           - gocognit
-          - goconst
           - cyclop
           - exhaustive
           - wrapcheck
@@ -141,7 +144,6 @@ linters:
         regex: true
         linters:
           - gocognit
-          - goconst
           - cyclop
           - gocritic
           - gocyclo

@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -13,22 +13,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ClusterClientManagerImpl manages dynamic Kubernetes clients for target clusters.
-type ClusterClientManagerImpl struct {
-	client.Client
+// clusterClientManager manages dynamic Kubernetes clients for target clusters.
+type clusterClientManager struct {
+	client        client.Client
 	defaultConfig *rest.Config
 }
 
-// NewClusterClientManager creates a new ClusterClientManagerImpl.
-func NewClusterClientManager(c client.Client, defaultConfig *rest.Config) *ClusterClientManagerImpl {
-	return &ClusterClientManagerImpl{
-		Client:        c,
+// NewClusterClientManager creates a new ClusterClientManager implementation.
+func NewClusterClientManager(c client.Client, defaultConfig *rest.Config) ClusterClientManager {
+	return &clusterClientManager{
+		client:        c,
 		defaultConfig: defaultConfig,
 	}
 }
 
 // GetClient returns a dynamic client for the cluster described by the given kubeconfig secret.
-func (m *ClusterClientManagerImpl) GetClient(ctx context.Context, kubeconfigSecret, namespace string) (dynamic.Interface, error) {
+func (m *clusterClientManager) GetClient(ctx context.Context, kubeconfigSecret, namespace string) (dynamic.Interface, error) {
 	if kubeconfigSecret == "" {
 		dynClient, err := dynamic.NewForConfig(m.defaultConfig)
 		if err != nil {
@@ -38,7 +38,7 @@ func (m *ClusterClientManagerImpl) GetClient(ctx context.Context, kubeconfigSecr
 	}
 
 	var secret corev1.Secret
-	if err := m.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
+	if err := m.client.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
 		return nil, fmt.Errorf("get kubeconfig secret: %w", err)
 	}
 
@@ -65,13 +65,13 @@ func (m *ClusterClientManagerImpl) GetClient(ctx context.Context, kubeconfigSecr
 }
 
 // GetRestConfig returns a REST config for the cluster described by the given kubeconfig secret.
-func (m *ClusterClientManagerImpl) GetRestConfig(ctx context.Context, kubeconfigSecret, namespace string) (*rest.Config, error) {
+func (m *clusterClientManager) GetRestConfig(ctx context.Context, kubeconfigSecret, namespace string) (*rest.Config, error) {
 	if kubeconfigSecret == "" {
 		return m.defaultConfig, nil
 	}
 
 	var secret corev1.Secret
-	if err := m.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
+	if err := m.client.Get(ctx, types.NamespacedName{Name: kubeconfigSecret, Namespace: namespace}, &secret); err != nil {
 		return nil, fmt.Errorf("get kubeconfig secret: %w", err)
 	}
 

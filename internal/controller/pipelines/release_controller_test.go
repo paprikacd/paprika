@@ -1,7 +1,8 @@
-package controller
+package pipelines
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,7 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 var _ = Describe("Release Controller", func() {
@@ -82,9 +84,10 @@ var _ = Describe("Release Controller", func() {
 		It("should add finalizer on creation and handle cleanup on deletion", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ReleaseReconciler{
-				Client:    k8sClient,
+				client:    k8sClient,
 				Scheme:    k8sClient.Scheme(),
 				Namespace: "default",
+				Clock:     clock.NewFake(time.Now()),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -317,10 +320,11 @@ spec:
 
 			By("reconciling the failed release")
 			controllerReconciler := &ReleaseReconciler{
-				Client:        k8sClient,
+				client:        k8sClient,
 				Scheme:        k8sClient.Scheme(),
 				RestConfig:    cfg,
 				DynamicClient: dynClient,
+				Clock:         clock.NewFake(time.Now()),
 			}
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{

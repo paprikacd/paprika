@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -90,7 +90,7 @@ var _ = ginkgo.Describe("ApplicationSet Controller", func() {
 
 	ginkgo.It("should create Applications from a list generator", func() {
 		rec := &ApplicationSetReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
 
@@ -117,7 +117,7 @@ var _ = ginkgo.Describe("ApplicationSet Controller", func() {
 
 	ginkgo.It("should prune stale Applications", func() {
 		rec := &ApplicationSetReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
 
@@ -152,11 +152,7 @@ var _ = ginkgo.Describe("ApplicationSet Controller", func() {
 	})
 
 	ginkgo.It("should discover directories with a gitDirectories generator", func() {
-		tmpDir, err := os.MkdirTemp("", "applicationset-git-test")
-		gomega.Expect(err).NotTo(gomega.HaveOccurred())
-		defer func() {
-			_ = os.RemoveAll(tmpDir)
-		}()
+		tmpDir := ginkgo.GinkgoT().TempDir()
 
 		gomega.Expect(os.Mkdir(filepath.Join(tmpDir, "a"), 0o750)).To(gomega.Succeed())
 		gomega.Expect(os.Mkdir(filepath.Join(tmpDir, "b"), 0o750)).To(gomega.Succeed())
@@ -197,11 +193,11 @@ var _ = ginkgo.Describe("ApplicationSet Controller", func() {
 		}()
 
 		rec := &ApplicationSetReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
 
-		_, err = rec.Reconcile(ctx, reconcile.Request{
+		_, err := rec.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: gitSet.Name, Namespace: namespace},
 		})
 		gomega.Expect(err).NotTo(gomega.HaveOccurred())

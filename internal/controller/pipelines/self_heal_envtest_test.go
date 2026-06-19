@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
@@ -113,7 +113,7 @@ var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Seria
 		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 			now:    func() time.Time { return fixedNow },
 		}
@@ -143,7 +143,7 @@ var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Seria
 		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 			now:    func() time.Time { return fixedNow },
 		}
@@ -174,7 +174,7 @@ var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Seria
 		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 			now:    func() time.Time { return fixedNow.Add(1 * time.Second) },
 		}

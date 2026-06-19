@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -51,7 +51,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),
@@ -94,7 +94,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 		gomega.Expect(k8sClient.Create(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),
@@ -153,7 +153,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 		gomega.Expect(k8sClient.Create(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),
@@ -211,7 +211,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 		gomega.Expect(k8sClient.Status().Update(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),
@@ -257,7 +257,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 		gomega.Expect(k8sClient.Create(ctx, app)).To(gomega.Succeed())
 
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),
@@ -300,7 +300,7 @@ var _ = ginkgo.Describe("Application Controller Sync Windows", func() {
 
 		fixed := time.Date(2026, 6, 16, 20, 0, 0, 0, time.UTC)
 		r := &ApplicationReconciler{
-			Client:              k8sClient,
+			client:              k8sClient,
 			Scheme:              k8sClient.Scheme(),
 			WorkDir:             "/tmp/paprika-sources-test",
 			SyncWindowEvaluator: syncwindow.NewEvaluator(),

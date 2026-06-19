@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"bytes"
@@ -22,7 +22,10 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
 )
+
+const defaultHTTPTimeout = 10 * time.Second
 
 // NotificationSender delivers notification payloads to destinations.
 type NotificationSender struct {
@@ -32,7 +35,7 @@ type NotificationSender struct {
 // NewNotificationSender creates a sender with a sensible default timeout.
 func NewNotificationSender() *NotificationSender {
 	return &NotificationSender{
-		HTTPClient: &http.Client{Timeout: 10 * time.Second},
+		HTTPClient: &http.Client{Timeout: defaultHTTPTimeout},
 	}
 }
 
@@ -45,18 +48,42 @@ type rateLimitKey struct {
 // NotificationConfigReconciler watches NotificationConfig resources and forwards
 // matching broker events to configured destinations.
 type NotificationConfigReconciler struct {
-	client.Client
+	client      client.Client
 	EventBroker *events.Broker
 	Sender      *NotificationSender
 	Emailer     *EmailSender
 	rateLimits  map[rateLimitKey]time.Time
 	rateMu      sync.Mutex
+	Clock       clock.Clock
+}
+
+func (r *NotificationConfigReconciler) now() time.Time {
+	if r.Clock != nil {
+		return r.Clock.Now()
+	}
+	return time.Now()
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=notificationconfigs/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
+
+// NewNotificationConfigReconciler creates a reconciler that initializes the
+// internal rate-limit map so rateLimitAllowed is safe to call before Start.
+func NewNotificationConfigReconciler(c client.Client, broker *events.Broker, sender *NotificationSender, emailer *EmailSender, clk clock.Clock) *NotificationConfigReconciler {
+	if clk == nil {
+		clk = clock.Real{}
+	}
+	return &NotificationConfigReconciler{
+		client:      c,
+		EventBroker: broker,
+		Sender:      sender,
+		Emailer:     emailer,
+		rateLimits:  make(map[rateLimitKey]time.Time),
+		Clock:       clk,
+	}
+}
 
 // Reconcile is intentionally a no-op; the controller does its work in Start.
 func (r *NotificationConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -104,7 +131,7 @@ func (r *NotificationConfigReconciler) handleEvent(ctx context.Context, evt *eve
 	}
 
 	var configs paprikav1.NotificationConfigList
-	if err := r.List(ctx, &configs); err != nil {
+	if err := r.client.List(ctx, &configs); err != nil {
 		log.FromContext(ctx).Error(err, "Failed to list NotificationConfigs")
 		return
 	}
@@ -121,7 +148,7 @@ func (r *NotificationConfigReconciler) handleEvent(ctx context.Context, evt *eve
 		emailer := r.buildEmailer(ctx, cfg)
 		r.dispatchConfig(ctx, cfg, payload, emailer)
 
-		if err := r.Status().Update(ctx, cfg); err != nil {
+		if err := r.client.Status().Update(ctx, cfg); err != nil {
 			log.FromContext(ctx).Error(err, "Failed to update NotificationConfig status", "config", cfg.Name)
 		}
 	}
@@ -147,12 +174,16 @@ func (r *NotificationConfigReconciler) dispatchConfig(ctx context.Context, cfg *
 	for i := range cfg.Spec.Destinations {
 		dest := &cfg.Spec.Destinations[i]
 		message := renderMessage(cfg.Spec.Template, payload)
-		secret, _ := r.resolveSecret(ctx, cfg.Namespace, dest.SecretRef)
+		secret, secretErr := r.resolveSecret(ctx, cfg.Namespace, dest.SecretRef)
+		if secretErr != nil {
+			log.FromContext(ctx).Error(secretErr, "Failed to resolve notification secret",
+				"config", cfg.Name, "destination", dest.Name)
+		}
 
 		record := paprikav1.NotificationDelivery{
 			DestinationName: dest.Name,
 			Phase:           payload.Phase,
-			SentAt:          ptr(metav1.Now()),
+			SentAt:          ptr(metav1.NewTime(r.now())),
 		}
 
 		deliveryErr := r.dispatchDestination(ctx, payload, emailer, dest, message, secret)
@@ -196,7 +227,7 @@ func (r *NotificationConfigReconciler) resolveSecret(ctx context.Context, ns, na
 		return nil, nil
 	}
 	var sec corev1.Secret
-	if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sec); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &sec); err != nil {
 		return nil, fmt.Errorf("getting secret %s/%s: %w", ns, name, err)
 	}
 	out := make(map[string]string, len(sec.Data))
@@ -221,10 +252,10 @@ func (r *NotificationConfigReconciler) rateLimitAllowed(cfg *paprikav1.Notificat
 	}
 	r.rateMu.Lock()
 	defer r.rateMu.Unlock()
-	if last, ok := r.rateLimits[key]; ok && time.Since(last) < d {
+	if last, ok := r.rateLimits[key]; ok && r.now().Sub(last) < d {
 		return false
 	}
-	r.rateLimits[key] = time.Now()
+	r.rateLimits[key] = r.now()
 	return true
 }
 
@@ -312,6 +343,7 @@ func reasonSuffix(reason string) string {
 	return " (" + reason + ")"
 }
 
+//nolint:cyclop // webhook dispatch handles multiple auth branches and response cleanup
 func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payload *eventPayload, headers, secret map[string]string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -334,7 +366,11 @@ func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payloa
 	if err != nil {
 		return fmt.Errorf("post webhook: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.FromContext(ctx).Error(cerr, "Failed to close webhook response body")
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
@@ -358,7 +394,11 @@ func (s *NotificationSender) sendSlack(ctx context.Context, url, message string,
 	if err != nil {
 		return fmt.Errorf("post slack: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			log.FromContext(ctx).Error(cerr, "Failed to close slack response body")
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("slack returned status %d", resp.StatusCode)
 	}
@@ -367,6 +407,7 @@ func (s *NotificationSender) sendSlack(ctx context.Context, url, message string,
 
 // SetupWithManager registers the notification controller as a runnable.
 func (r *NotificationConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := mgr.Add(r); err != nil {
 		return fmt.Errorf("register notification controller: %w", err)
 	}

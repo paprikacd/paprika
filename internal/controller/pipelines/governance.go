@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 const (
 	defaultProjectName         = "default"

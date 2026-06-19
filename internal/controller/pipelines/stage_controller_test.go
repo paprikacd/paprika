@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
@@ -74,7 +74,7 @@ var _ = Describe("Stage Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &StageReconciler{
-				Client: k8sClient,
+				client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 

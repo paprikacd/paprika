@@ -14,10 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package pipelines
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
 var _ = Describe("Template Controller", func() {
@@ -77,8 +79,9 @@ var _ = Describe("Template Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &TemplateReconciler{
-				Client: k8sClient,
+				client: k8sClient,
 				Scheme: k8sClient.Scheme(),
+				Clock:  clock.NewFake(time.Now()),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

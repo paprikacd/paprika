@@ -11,6 +11,12 @@
 networkPolicy:
   enabled: false
 
+## Webhook configuration.
+##
+webhook:
+  enabled: true
+  port: 9443
+
 ## Configure the controller manager deployment
 ##
 manager:

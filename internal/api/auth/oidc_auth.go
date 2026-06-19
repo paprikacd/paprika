@@ -36,10 +36,10 @@ type OIDCAuthenticator struct {
 // NewOIDCAuthenticator creates a new OIDC authenticator.
 func NewOIDCAuthenticator(ctx context.Context, cfg *OIDCConfig) (*OIDCAuthenticator, error) {
 	if cfg.IssuerURL == "" {
-		return nil, errors.New("OIDC issuer URL is required")
+		return nil, errors.New("oidc issuer URL is required")
 	}
 	if cfg.ClientID == "" {
-		return nil, errors.New("OIDC client ID is required")
+		return nil, errors.New("oidc client ID is required")
 	}
 
 	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
@@ -79,7 +79,7 @@ func NewOIDCAuthenticator(ctx context.Context, cfg *OIDCConfig) (*OIDCAuthentica
 func (o *OIDCAuthenticator) Authenticate(ctx context.Context) (*Principal, error) {
 	req, err := requestFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnauthenticated, err)
+		return nil, errors.Join(err, ErrUnauthenticated)
 	}
 
 	auth := req.Header().Get("Authorization")
@@ -89,22 +89,23 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context) (*Principal, error
 
 	parts := strings.SplitN(auth, " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return nil, fmt.Errorf("%w: invalid authorization header", ErrUnauthenticated)
+		return nil, fmt.Errorf("invalid authorization header: %w", ErrUnauthenticated)
 	}
 
 	rawToken := parts[1]
 
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	token, err := o.verifier.Verify(ctx, rawToken)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnauthenticated, err)
+		return nil, errors.Join(err, ErrUnauthenticated)
 	}
 
 	var claims map[string]interface{}
 	if err := token.Claims(&claims); err != nil {
-		return nil, fmt.Errorf("%w: parse claims: %w", ErrUnauthenticated, err)
+		return nil, errors.Join(fmt.Errorf("parse claims: %w", err), ErrUnauthenticated)
 	}
 
 	principal := &Principal{

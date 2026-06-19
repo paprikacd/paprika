@@ -26,6 +26,7 @@ func newFakeClient(t *testing.T, objs ...client.Object) client.Client {
 }
 
 func TestResolveTemplate_NoRepoRef(t *testing.T) {
+	t.Parallel()
 	c := newFakeClient(t)
 	r := NewResolver(c)
 
@@ -35,85 +36,109 @@ func TestResolveTemplate_NoRepoRef(t *testing.T) {
 	assert.Nil(t, resolved)
 }
 
-func TestResolveTemplate_Git(t *testing.T) {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "git-creds", Namespace: "default"},
-		Data:       map[string][]byte{"username": []byte("user"), "password": []byte("pass")},
-	}
-	repo := &corev1alpha1.Repository{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-repo", Namespace: "default"},
-		Spec: corev1alpha1.RepositorySpec{
-			Type:      corev1alpha1.RepositoryTypeGit,
-			URL:       "https://github.com/org/repo",
-			SecretRef: &corev1alpha1.SecretRef{Name: "git-creds"},
+func TestResolveTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		objs    []client.Object
+		repoRef string
+		spec    paprikav1.TemplateSpec
+		want    func(t *testing.T, got *Resolved)
+	}{
+		{
+			name: "Git",
+			objs: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "git-creds", Namespace: "default"},
+					Data:       map[string][]byte{"username": []byte("user"), "password": []byte("pass")},
+				},
+				&corev1alpha1.Repository{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-repo", Namespace: "default"},
+					Spec: corev1alpha1.RepositorySpec{
+						Type:      corev1alpha1.RepositoryTypeGit,
+						URL:       "https://github.com/org/repo",
+						SecretRef: &corev1alpha1.SecretRef{Name: "git-creds"},
+					},
+				},
+			},
+			repoRef: "my-repo",
+			spec: paprikav1.TemplateSpec{
+				Type:    paprikav1.SourceTypeGit,
+				RepoRef: "my-repo",
+				Git:     &paprikav1.GitSourceSpec{Revision: "main", Path: "chart"},
+			},
+			want: func(t *testing.T, got *Resolved) {
+				assert.Equal(t, "https://github.com/org/repo", got.Spec.Git.RepoURL)
+				assert.Equal(t, "git-creds", got.Spec.Git.SecretRef)
+				assert.Equal(t, "user", got.Username)
+				assert.Equal(t, "pass", got.Password)
+			},
+		},
+		{
+			name: "Helm",
+			objs: []client.Object{
+				&corev1alpha1.Repository{
+					ObjectMeta: metav1.ObjectMeta{Name: "helm-repo", Namespace: "default"},
+					Spec: corev1alpha1.RepositorySpec{
+						Type: corev1alpha1.RepositoryTypeHelm,
+						URL:  "https://charts.example.com",
+					},
+				},
+			},
+			repoRef: "helm-repo",
+			spec: paprikav1.TemplateSpec{
+				Type:    paprikav1.SourceTypeHelm,
+				RepoRef: "helm-repo",
+				Chart:   paprikav1.ChartRef{Name: "app", Version: "1.0.0"},
+			},
+			want: func(t *testing.T, got *Resolved) {
+				assert.Equal(t, "https://charts.example.com", got.Spec.Chart.Repo)
+				assert.Equal(t, "app", got.Spec.Chart.Name)
+			},
+		},
+		{
+			name: "OCI",
+			objs: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "oci-creds", Namespace: "default"},
+					Data:       map[string][]byte{"username": []byte("u"), "password": []byte("p")},
+				},
+				&corev1alpha1.Repository{
+					ObjectMeta: metav1.ObjectMeta{Name: "oci-repo", Namespace: "default"},
+					Spec: corev1alpha1.RepositorySpec{
+						Type:      corev1alpha1.RepositoryTypeOCI,
+						URL:       "oci://registry.example.com/charts",
+						Insecure:  true,
+						SecretRef: &corev1alpha1.SecretRef{Name: "oci-creds"},
+					},
+				},
+			},
+			repoRef: "oci-repo",
+			spec: paprikav1.TemplateSpec{
+				Type:    paprikav1.SourceTypeOCI,
+				RepoRef: "oci-repo",
+				OCI:     &paprikav1.OCISourceSpec{Tag: "1.0.0"},
+			},
+			want: func(t *testing.T, got *Resolved) {
+				assert.True(t, got.Spec.OCI.Insecure)
+				assert.Equal(t, "u", got.Username)
+				assert.Equal(t, "p", got.Password)
+			},
 		},
 	}
-	c := newFakeClient(t, secret, repo)
-	r := NewResolver(c)
 
-	spec := paprikav1.TemplateSpec{
-		Type:    paprikav1.SourceTypeGit,
-		RepoRef: "my-repo",
-		Git:     &paprikav1.GitSourceSpec{Revision: "main", Path: "chart"},
-	}
-	resolved, err := r.ResolveTemplate(context.Background(), "default", &spec)
-	require.NoError(t, err)
-	require.NotNil(t, resolved)
-	assert.Equal(t, "https://github.com/org/repo", resolved.Spec.Git.RepoURL)
-	assert.Equal(t, "git-creds", resolved.Spec.Git.SecretRef)
-	assert.Equal(t, "user", resolved.Username)
-	assert.Equal(t, "pass", resolved.Password)
-}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := newFakeClient(t, tc.objs...)
+			r := NewResolver(c)
 
-func TestResolveTemplate_Helm(t *testing.T) {
-	repo := &corev1alpha1.Repository{
-		ObjectMeta: metav1.ObjectMeta{Name: "helm-repo", Namespace: "default"},
-		Spec: corev1alpha1.RepositorySpec{
-			Type: corev1alpha1.RepositoryTypeHelm,
-			URL:  "https://charts.example.com",
-		},
+			resolved, err := r.ResolveTemplate(context.Background(), "default", &tc.spec)
+			require.NoError(t, err)
+			require.NotNil(t, resolved)
+			tc.want(t, resolved)
+		})
 	}
-	c := newFakeClient(t, repo)
-	r := NewResolver(c)
-
-	spec := paprikav1.TemplateSpec{
-		Type:    paprikav1.SourceTypeHelm,
-		RepoRef: "helm-repo",
-		Chart:   paprikav1.ChartRef{Name: "app", Version: "1.0.0"},
-	}
-	resolved, err := r.ResolveTemplate(context.Background(), "default", &spec)
-	require.NoError(t, err)
-	require.NotNil(t, resolved)
-	assert.Equal(t, "https://charts.example.com", resolved.Spec.Chart.Repo)
-	assert.Equal(t, "app", resolved.Spec.Chart.Name)
-}
-
-func TestResolveTemplate_OCI(t *testing.T) {
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "oci-creds", Namespace: "default"},
-		Data:       map[string][]byte{"username": []byte("u"), "password": []byte("p")},
-	}
-	repo := &corev1alpha1.Repository{
-		ObjectMeta: metav1.ObjectMeta{Name: "oci-repo", Namespace: "default"},
-		Spec: corev1alpha1.RepositorySpec{
-			Type:      corev1alpha1.RepositoryTypeOCI,
-			URL:       "oci://registry.example.com/charts",
-			Insecure:  true,
-			SecretRef: &corev1alpha1.SecretRef{Name: "oci-creds"},
-		},
-	}
-	c := newFakeClient(t, secret, repo)
-	r := NewResolver(c)
-
-	spec := paprikav1.TemplateSpec{
-		Type:    paprikav1.SourceTypeOCI,
-		RepoRef: "oci-repo",
-		OCI:     &paprikav1.OCISourceSpec{Tag: "1.0.0"},
-	}
-	resolved, err := r.ResolveTemplate(context.Background(), "default", &spec)
-	require.NoError(t, err)
-	require.NotNil(t, resolved)
-	assert.True(t, resolved.Spec.OCI.Insecure)
-	assert.Equal(t, "u", resolved.Username)
-	assert.Equal(t, "p", resolved.Password)
 }

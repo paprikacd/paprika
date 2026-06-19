@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -86,7 +86,7 @@ var _ = Describe("Application Controller Analysis Envtest", Serial, func() {
 		Expect(k8sClient.Get(ctx, appKey, app)).To(Succeed())
 
 		r := &ApplicationReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
 		Expect(r.reconcileAnalysisRuns(ctx, app)).To(Succeed())
@@ -101,7 +101,7 @@ var _ = Describe("Application Controller Analysis Envtest", Serial, func() {
 		Expect(k8sClient.Get(ctx, appKey, app)).To(Succeed())
 
 		r := &ApplicationReconciler{
-			Client: k8sClient,
+			client: k8sClient,
 			Scheme: k8sClient.Scheme(),
 		}
 		Expect(r.reconcileAnalysisRuns(ctx, app)).To(Succeed())

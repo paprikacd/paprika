@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -106,7 +106,7 @@ func (r *ApplicationReconciler) selfHealDriftSync(ctx context.Context, app *papr
 	}
 
 	var release paprikav1.Release
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil
 		}
@@ -117,6 +117,7 @@ func (r *ApplicationReconciler) selfHealDriftSync(ctx context.Context, app *papr
 		return nil
 	}
 	if _, ok := release.Annotations[resyncAnnotation]; ok {
+		r.setSelfHealCondition(app, metav1.ConditionTrue, "DriftDetected", "Out-of-sync resources detected; triggered re-sync")
 		return nil
 	}
 
@@ -125,7 +126,7 @@ func (r *ApplicationReconciler) selfHealDriftSync(ctx context.Context, app *papr
 		release.Annotations = map[string]string{}
 	}
 	release.Annotations[resyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
-	if err := r.Patch(ctx, &release, patch); err != nil {
+	if err := r.client.Patch(ctx, &release, patch); err != nil {
 		return fmt.Errorf("annotating release for resync: %w", err)
 	}
 
@@ -142,7 +143,7 @@ func (r *ApplicationReconciler) selfHealHealthRevert(ctx context.Context, app *p
 	}
 
 	var release paprikav1.Release
-	if err := r.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil
 		}
@@ -164,7 +165,7 @@ func (r *ApplicationReconciler) selfHealHealthRevert(ctx context.Context, app *p
 		release.Annotations = map[string]string{}
 	}
 	release.Annotations[rollbackAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
-	if err := r.Patch(ctx, &release, patch); err != nil {
+	if err := r.client.Patch(ctx, &release, patch); err != nil {
 		return fmt.Errorf("annotating release for rollback: %w", err)
 	}
 

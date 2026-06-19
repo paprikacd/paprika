@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -16,15 +16,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/benebsworth/paprika/analysis"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/analysis"
 )
 
 // AnalysisRunReconciler reconciles AnalysisRun resources.
 type AnalysisRunReconciler struct {
-	client.Client
+	client        client.Client
 	Scheme        *runtime.Scheme
-	Analyzer      analysis.Analyzer
+	Analyzer      Analyzer
 	EventRecorder record.EventRecorder
 }
 
@@ -39,7 +39,7 @@ func (r *AnalysisRunReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.Info("Reconciling AnalysisRun", "namespace", req.Namespace, "name", req.Name)
 
 	var run pipelinesv1alpha1.AnalysisRun
-	if err := r.Get(ctx, req.NamespacedName, &run); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &run); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return ctrl.Result{}, fmt.Errorf("getting analysisrun: %w", err)
 		}
@@ -116,7 +116,7 @@ func (r *AnalysisRunReconciler) reconcileRun(ctx context.Context, run *pipelines
 		run.Status.CompletedAt = &now
 	}
 
-	if err := r.Status().Update(ctx, run); err != nil {
+	if err := r.client.Status().Update(ctx, run); err != nil {
 		return fmt.Errorf("updating analysisrun status: %w", err)
 	}
 	return nil
@@ -124,7 +124,7 @@ func (r *AnalysisRunReconciler) reconcileRun(ctx context.Context, run *pipelines
 
 func (r *AnalysisRunReconciler) resolveTemplate(ctx context.Context, run *pipelinesv1alpha1.AnalysisRun) (*pipelinesv1alpha1.AnalysisTemplate, error) {
 	var template pipelinesv1alpha1.AnalysisTemplate
-	if err := r.Get(ctx, types.NamespacedName{Name: run.Spec.TemplateRef, Namespace: run.Namespace}, &template); err != nil {
+	if err := r.client.Get(ctx, types.NamespacedName{Name: run.Spec.TemplateRef, Namespace: run.Namespace}, &template); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, nil
 		}
@@ -178,7 +178,7 @@ func (r *AnalysisRunReconciler) markRunError(ctx context.Context, run *pipelines
 		Message:            message,
 		LastTransitionTime: metav1.Now(),
 	})
-	if err := r.Status().Update(ctx, run); err != nil {
+	if err := r.client.Status().Update(ctx, run); err != nil {
 		return fmt.Errorf("updating analysisrun error status: %w", err)
 	}
 	return nil
@@ -186,6 +186,7 @@ func (r *AnalysisRunReconciler) markRunError(ctx context.Context, run *pipelines
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AnalysisRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.AnalysisRun{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).

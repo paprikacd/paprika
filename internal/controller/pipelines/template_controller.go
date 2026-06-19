@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -14,15 +14,24 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
-	"github.com/benebsworth/paprika/metrics"
 )
 
 // TemplateReconciler reconciles Template resources.
 type TemplateReconciler struct {
-	client.Client
+	client      client.Client
 	Scheme      *runtime.Scheme
 	ShardFilter *sharding.Filter
+	Clock       clock.Clock
+}
+
+func (r *TemplateReconciler) now() time.Time {
+	if r.Clock != nil {
+		return r.Clock.Now()
+	}
+	return time.Now()
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch;create;update;patch;delete
@@ -33,16 +42,16 @@ type TemplateReconciler struct {
 // Reconcile handles Template reconciliation.
 func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
-	start := metrics.Timer()
+	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileTotal.WithLabelValues("template", result).Inc()
-		metrics.ReconcileDuration.WithLabelValues("template").Observe(metrics.Since(start))
+		metrics.ReconcileDuration.WithLabelValues("template").Observe(metrics.Since(r.Clock, start))
 	}()
 
 	log := logf.FromContext(ctx)
 
 	var tmpl pipelinesv1alpha1.Template
-	if err := r.Get(ctx, req.NamespacedName, &tmpl); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, &tmpl); err != nil {
 		result = resultError
 		k8sErr := client.IgnoreNotFound(err)
 		if k8sErr != nil {
@@ -76,6 +85,7 @@ func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Template{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
@@ -100,7 +110,7 @@ func (r *TemplateReconciler) propagateSyncTrigger(ctx context.Context, tmpl *pip
 	ownerNames := ownerApplicationNames(tmpl)
 	for _, name := range ownerNames {
 		var app pipelinesv1alpha1.Application
-		if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: tmpl.Namespace}, &app); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: name, Namespace: tmpl.Namespace}, &app); err != nil {
 			return fmt.Errorf("getting owner application %q: %w", name, err)
 		}
 
@@ -108,8 +118,8 @@ func (r *TemplateReconciler) propagateSyncTrigger(ctx context.Context, tmpl *pip
 		if app.Annotations == nil {
 			app.Annotations = map[string]string{}
 		}
-		app.Annotations[syncAnnotation] = strconv.FormatInt(time.Now().Unix(), 10)
-		if err := r.Patch(ctx, &app, patch); err != nil {
+		app.Annotations[syncAnnotation] = strconv.FormatInt(r.now().Unix(), 10)
+		if err := r.client.Patch(ctx, &app, patch); err != nil {
 			return fmt.Errorf("annotating owner application %q: %w", name, err)
 		}
 	}
@@ -120,7 +130,7 @@ func (r *TemplateReconciler) propagateSyncTrigger(ctx context.Context, tmpl *pip
 	if len(tmpl.Annotations) == 0 {
 		tmpl.Annotations = nil
 	}
-	if err := r.Patch(ctx, tmpl, patch); err != nil {
+	if err := r.client.Patch(ctx, tmpl, patch); err != nil {
 		return fmt.Errorf("removing sync trigger annotation from template: %w", err)
 	}
 	return nil

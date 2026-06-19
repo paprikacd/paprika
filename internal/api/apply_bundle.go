@@ -1,4 +1,4 @@
-package api
+package apiserver
 
 import (
 	"context"
@@ -18,14 +18,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	k8syaml "sigs.k8s.io/yaml"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
-	"github.com/benebsworth/paprika/engine"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
-	"github.com/benebsworth/paprika/policy"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
 // PaprikaServer RBAC for ApplyBundle.
@@ -47,19 +48,19 @@ const (
 	rollbackAnnotation = "paprika.io/rollback-requested"
 )
 
-// SetPolicyEvaluator sets the policy evaluator used by ApplyBundle.
-func (s *PaprikaServer) SetPolicyEvaluator(e policy.Evaluator) {
-	s.evaluator = e
+// WithPolicyEvaluator sets the policy evaluator used by ApplyBundle.
+func WithPolicyEvaluator(e Evaluator) ServerOption {
+	return func(s *PaprikaServer) { s.evaluator = e }
 }
 
-// SetGovernanceValidator sets the project boundary validator used by ApplyBundle.
-func (s *PaprikaServer) SetGovernanceValidator(v *governance.ProjectValidator) {
-	s.governanceValidator = v
+// WithGovernanceValidator sets the project boundary validator used by ApplyBundle.
+func WithGovernanceValidator(v *governance.ProjectValidator) ServerOption {
+	return func(s *PaprikaServer) { s.governanceValidator = v }
 }
 
-// SetGovernancePolicyEvaluator sets the project-scoped policy evaluator used by ApplyBundle.
-func (s *PaprikaServer) SetGovernancePolicyEvaluator(e *governance.PolicyEvaluator) {
-	s.governancePolicyEvaluator = e
+// WithGovernancePolicyEvaluator sets the project-scoped policy evaluator used by ApplyBundle.
+func WithGovernancePolicyEvaluator(e *governance.PolicyEvaluator) ServerOption {
+	return func(s *PaprikaServer) { s.governancePolicyEvaluator = e }
 }
 
 // ApplyBundle accepts a rendered manifest bundle and creates or updates the
@@ -173,12 +174,12 @@ func (s *PaprikaServer) ApplyBundle(
 
 func (s *PaprikaServer) ensureNamespace(ctx context.Context, namespace string) error {
 	var ns corev1.Namespace
-	if err := s.Get(ctx, types.NamespacedName{Name: namespace}, &ns); err != nil {
+	if err := s.client.Get(ctx, types.NamespacedName{Name: namespace}, &ns); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("get namespace: %w", err)
 		}
 		ns.Name = namespace
-		if err := s.Create(ctx, &ns); err != nil {
+		if err := s.client.Create(ctx, &ns); err != nil {
 			return fmt.Errorf("create namespace: %w", err)
 		}
 	}
@@ -194,7 +195,7 @@ func (s *PaprikaServer) prepareBundle(raw []byte, namespace string) ([]byte, err
 	for _, doc := range docs {
 		prepared, err := prepareDocument(doc, namespace)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("prepare document: %w", err)
 		}
 		if prepared == "" {
 			continue
@@ -281,12 +282,12 @@ func (s *PaprikaServer) evaluatePolicies(
 	}
 
 	var polList policyv1alpha1.PolicyList
-	if err := s.List(ctx, &polList); err != nil {
+	if err := s.client.List(ctx, &polList); err != nil {
 		return nil, fmt.Errorf("list policies: %w", err)
 	}
 	pols := make([]policyv1alpha1.Policy, len(polList.Items))
 	copy(pols, polList.Items)
-	ev := policy.NewEvaluator(pols)
+	ev := policy.NewCELEvaluator(pols)
 	res, err := ev.Evaluate(ctx, bundle, opts)
 	if err != nil {
 		return nil, fmt.Errorf("policy evaluator: %w", err)
@@ -386,11 +387,11 @@ func (s *PaprikaServer) applyInline(
 
 	app, err := s.createOrUpdateApplication(ctx, appName, namespace, snapshotName, project)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("create or update application: %w", err)
 	}
 
 	if err := s.ensureStage(ctx, appName, namespace, project, releaseName, stageName); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("ensure stage: %w", err)
 	}
 
 	release := s.buildRelease(appName, namespace, snapshotName, project, bundle, policyResults)
@@ -401,42 +402,48 @@ func (s *PaprikaServer) applyInline(
 		UID:        app.UID,
 		Controller: ptr(true),
 	}}
-	if err := s.Create(ctx, release); err != nil {
+	if err := s.client.Create(ctx, release); err != nil {
 		return nil, nil, fmt.Errorf("create release: %w", err)
 	}
 
 	if err := s.createSnapshot(ctx, release, appName, namespace, project, snapshotName, releaseName, bundle); err != nil {
-		_ = s.Delete(ctx, release)
-		return nil, nil, err
+		if delErr := s.client.Delete(ctx, release); delErr != nil {
+			log.FromContext(ctx).Error(delErr, "Failed to clean up release after snapshot error", "release", release.Name)
+		}
+		return nil, nil, fmt.Errorf("create manifest snapshot: %w", err)
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var freshRelease pipelinesv1alpha1.Release
-		if err := s.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &freshRelease); err != nil {
+		if err := s.client.Get(ctx, types.NamespacedName{Name: release.Name, Namespace: release.Namespace}, &freshRelease); err != nil {
 			return fmt.Errorf("fetching release for policy results: %w", err)
 		}
 		freshRelease.Status.PolicyResults = toReleasePolicyResults(policyResults)
-		if err := s.Status().Update(ctx, &freshRelease); err != nil {
+		if err := s.client.Status().Update(ctx, &freshRelease); err != nil {
 			return fmt.Errorf("updating release policy results: %w", err)
 		}
 		return nil
 	}); err != nil {
-		_ = s.Delete(ctx, release)
+		if delErr := s.client.Delete(ctx, release); delErr != nil {
+			log.FromContext(ctx).Error(delErr, "Failed to clean up release after policy result update error", "release", release.Name)
+		}
 		return nil, nil, fmt.Errorf("update release policy results: %w", err)
 	}
 
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var freshApp pipelinesv1alpha1.Application
-		if err := s.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &freshApp); err != nil {
+		if err := s.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &freshApp); err != nil {
 			return fmt.Errorf("fetching application for releaseRef: %w", err)
 		}
 		freshApp.Status.ReleaseRef = release.Name
-		if err := s.Status().Update(ctx, &freshApp); err != nil {
+		if err := s.client.Status().Update(ctx, &freshApp); err != nil {
 			return fmt.Errorf("updating application releaseRef: %w", err)
 		}
 		return nil
 	}); err != nil {
-		_ = s.Delete(ctx, release)
+		if delErr := s.client.Delete(ctx, release); delErr != nil {
+			log.FromContext(ctx).Error(delErr, "Failed to clean up release after application releaseRef update error", "release", release.Name)
+		}
 		return nil, nil, fmt.Errorf("update application releaseRef: %w", err)
 	}
 
@@ -449,11 +456,11 @@ func (s *PaprikaServer) createOrUpdateApplication(
 ) (*pipelinesv1alpha1.Application, error) {
 	app := s.buildApplication(appName, namespace, snapshotName, project)
 	var existing pipelinesv1alpha1.Application
-	if err := s.Get(ctx, client.ObjectKey{Namespace: namespace, Name: appName}, &existing); err != nil {
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: appName}, &existing); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("get application: %w", err)
 		}
-		if err := s.Create(ctx, app); err != nil {
+		if err := s.client.Create(ctx, app); err != nil {
 			return nil, fmt.Errorf("create application: %w", err)
 		}
 		return app, nil
@@ -465,7 +472,7 @@ func (s *PaprikaServer) createOrUpdateApplication(
 	for k, v := range app.Labels {
 		existing.Labels[k] = v
 	}
-	if err := s.Update(ctx, &existing); err != nil {
+	if err := s.client.Update(ctx, &existing); err != nil {
 		return nil, fmt.Errorf("update application: %w", err)
 	}
 	return &existing, nil
@@ -489,12 +496,12 @@ func (s *PaprikaServer) ensureStage(
 			Templates: []string{},
 		},
 	}
-	if err := s.Create(ctx, stage); err != nil {
+	if err := s.client.Create(ctx, stage); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("create stage: %w", err)
 		}
 		var existing pipelinesv1alpha1.Stage
-		if getErr := s.Get(ctx, client.ObjectKey{Namespace: namespace, Name: stageName}, &existing); getErr != nil {
+		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: stageName}, &existing); getErr != nil {
 			return fmt.Errorf("get existing stage: %w", getErr)
 		}
 		if existing.Labels == nil {
@@ -508,7 +515,7 @@ func (s *PaprikaServer) ensureStage(
 			}
 		}
 		if changed {
-			if updateErr := s.Update(ctx, &existing); updateErr != nil {
+			if updateErr := s.client.Update(ctx, &existing); updateErr != nil {
 				return fmt.Errorf("update stage labels: %w", updateErr)
 			}
 		}
@@ -539,7 +546,7 @@ func (s *PaprikaServer) createSnapshot(
 			"manifests.yaml": string(bundle),
 		},
 	}
-	if err := s.Create(ctx, cm); err != nil {
+	if err := s.client.Create(ctx, cm); err != nil {
 		return fmt.Errorf("create manifest snapshot: %w", err)
 	}
 	return nil

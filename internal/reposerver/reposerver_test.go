@@ -20,8 +20,16 @@ func (noopCache) Set(_ context.Context, _ string, _ []byte, _ time.Duration) err
 func (noopCache) Delete(_ context.Context, _ string) error                         { return nil }
 func (noopCache) Ping(_ context.Context) error                                     { return nil }
 func (noopCache) Close() error                                                     { return nil }
+func (noopCache) DeleteByPrefix(_ context.Context, _ string) error                 { return nil }
 
-var _ cache.Cache = noopCache{}
+var (
+	_ cache.Getter        = noopCache{}
+	_ cache.Setter        = noopCache{}
+	_ cache.Deleter       = noopCache{}
+	_ cache.Pinger        = noopCache{}
+	_ cache.Closer        = noopCache{}
+	_ cache.PrefixDeleter = noopCache{}
+)
 
 func TestServerHealth(t *testing.T) {
 	srv := NewServer(t.TempDir(), noopCache{})

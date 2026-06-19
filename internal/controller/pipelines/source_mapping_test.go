@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func newTestClient(t *testing.T, objs ...client.Object) client.Client {
 func newApplicationReconciler(t *testing.T, objs ...client.Object) *ApplicationReconciler {
 	t.Helper()
 	return &ApplicationReconciler{
-		Client: newTestClient(t, objs...),
+		client: newTestClient(t, objs...),
 	}
 }
 

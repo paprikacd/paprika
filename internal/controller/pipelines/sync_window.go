@@ -1,4 +1,4 @@
-package controller
+package pipelines
 
 import (
 	"context"
@@ -77,7 +77,7 @@ func (r *ApplicationReconciler) clearManualSyncAnnotation(ctx context.Context, a
 	}
 	patch := client.MergeFrom(app.DeepCopy())
 	delete(app.Annotations, manualSyncAnnotation)
-	if err := r.Patch(ctx, app, patch); err != nil {
+	if err := r.client.Patch(ctx, app, patch); err != nil {
 		return fmt.Errorf("clearing manual sync annotation: %w", err)
 	}
 	return nil

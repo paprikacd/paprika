@@ -68,7 +68,7 @@ func watchApplication(
 
 	p := tea.NewProgram(m, tea.WithContext(ctx))
 	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("TUI error: %w", err)
+		return fmt.Errorf("run TUI: %w", err)
 	}
 	return nil
 }
@@ -251,7 +251,7 @@ func watchPlain(
 				Name:      name,
 			}))
 			if err != nil {
-				return fmt.Errorf("GetApplication failed: %w", err)
+				return fmt.Errorf("get application: %w", err)
 			}
 			app := resp.Msg.Application
 			fmt.Printf("[%s] %s phase=%s health=%s resources=%d\n", time.Now().Format(time.TimeOnly), app.Name, app.Phase, app.Health, len(app.Resources))

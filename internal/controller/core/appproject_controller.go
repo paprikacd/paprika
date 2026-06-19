@@ -29,7 +29,7 @@ import (
 
 // AppProjectReconciler reconciles a AppProject object.
 type AppProjectReconciler struct {
-	client.Client
+	client client.Client
 	Scheme *runtime.Scheme
 }
 
@@ -41,14 +41,17 @@ type AppProjectReconciler struct {
 // can detect when the spec has been processed.
 func (r *AppProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var project corev1alpha1.AppProject
-	if err := r.Get(ctx, req.NamespacedName, &project); err != nil {
-		return ctrl.Result{}, fmt.Errorf("get appproject: %w", client.IgnoreNotFound(err))
+	if err := r.client.Get(ctx, req.NamespacedName, &project); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, fmt.Errorf("get appproject: %w", err)
+		}
+		return ctrl.Result{}, nil
 	}
 	if project.Status.ObservedGeneration == project.Generation {
 		return ctrl.Result{}, nil
 	}
 	project.Status.ObservedGeneration = project.Generation
-	if err := r.Status().Update(ctx, &project); err != nil {
+	if err := r.client.Status().Update(ctx, &project); err != nil {
 		return ctrl.Result{}, fmt.Errorf("update appproject status: %w", err)
 	}
 	return ctrl.Result{}, nil
@@ -56,6 +59,7 @@ func (r *AppProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppProjectReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	r.client = mgr.GetClient()
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1alpha1.AppProject{}).
 		Named("core-appproject").

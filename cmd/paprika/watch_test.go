@@ -24,6 +24,7 @@ func newTestWatchModel() *watchModel {
 }
 
 func TestWatchModel_Init(t *testing.T) {
+	t.Parallel()
 	m := newTestWatchModel()
 	cmd := m.Init()
 	if cmd == nil {
@@ -41,6 +42,8 @@ func TestWatchModel_Init(t *testing.T) {
 }
 
 func TestWatchModel_Update(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		msg      tea.Msg
@@ -121,6 +124,7 @@ func TestWatchModel_Update(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			m := newTestWatchModel()
 			if tt.setup != nil {
 				tt.setup(m)

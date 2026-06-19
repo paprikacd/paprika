@@ -1,8 +1,8 @@
 package sharding
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,9 +10,9 @@ import (
 )
 
 func TestNewFilterFromEnv_Disabled(t *testing.T) {
-	_ = os.Unsetenv(shardTotalEnv)
-	_ = os.Unsetenv(shardIDEnv)
-	f := NewFilterFromEnv()
+	t.Setenv(shardTotalEnv, "")
+	t.Setenv(shardIDEnv, "")
+	f := NewFilterFromEnv(context.Background())
 	assert.False(t, f.Enabled())
 	assert.True(t, f.Matches("any-namespace"))
 }
@@ -21,7 +21,7 @@ func TestNewFilterFromEnv_Enabled(t *testing.T) {
 	t.Setenv(shardTotalEnv, "4")
 	t.Setenv(shardIDEnv, "2")
 
-	f := NewFilterFromEnv()
+	f := NewFilterFromEnv(context.Background())
 	assert.True(t, f.Enabled())
 	assert.Equal(t, 2, f.ShardID())
 	assert.Equal(t, 4, f.TotalShards())
@@ -29,18 +29,19 @@ func TestNewFilterFromEnv_Enabled(t *testing.T) {
 
 func TestNewFilterFromEnv_InvalidTotal(t *testing.T) {
 	t.Setenv(shardTotalEnv, "abc")
-	f := NewFilterFromEnv()
+	f := NewFilterFromEnv(context.Background())
 	assert.False(t, f.Enabled())
 }
 
 func TestNewFilterFromEnv_InvalidID(t *testing.T) {
 	t.Setenv(shardTotalEnv, "4")
 	t.Setenv(shardIDEnv, "10")
-	f := NewFilterFromEnv()
+	f := NewFilterFromEnv(context.Background())
 	assert.False(t, f.Enabled())
 }
 
 func TestNewFilter(t *testing.T) {
+	t.Parallel()
 	f := NewFilter(1, 4)
 	assert.True(t, f.Enabled())
 	assert.Equal(t, 1, f.ShardID())
@@ -57,6 +58,7 @@ func TestNewFilter(t *testing.T) {
 }
 
 func TestFilter_Matches_Distribution(t *testing.T) {
+	t.Parallel()
 	namespaces := []string{
 		"default", "kube-system", "app-1", "app-2", "app-3",
 		"team-a", "team-b", "team-c", "prod", "staging", "dev",
@@ -76,6 +78,7 @@ func TestFilter_Matches_Distribution(t *testing.T) {
 }
 
 func TestFilter_Matches_Consistency(t *testing.T) {
+	t.Parallel()
 	f := NewFilter(2, 8)
 
 	// Find a namespace that matches this shard by brute force.
@@ -112,8 +115,8 @@ func TestValidateShardEnv_Valid(t *testing.T) {
 }
 
 func TestValidateShardEnv_Missing(t *testing.T) {
-	_ = os.Unsetenv(shardTotalEnv)
-	_ = os.Unsetenv(shardIDEnv)
+	t.Setenv(shardTotalEnv, "")
+	t.Setenv(shardIDEnv, "")
 	require.NoError(t, ValidateShardEnv())
 }
 
@@ -131,7 +134,7 @@ func TestValidateShardEnv_OutOfRange(t *testing.T) {
 func TestMustLoadFromEnvOrPod(t *testing.T) {
 	t.Setenv(podNameEnv, "paprika-controller-manager-2")
 	t.Setenv(shardTotalEnv, "4")
-	_ = os.Unsetenv(shardIDEnv)
+	t.Setenv(shardIDEnv, "")
 
 	f, err := MustLoadFromEnvOrPod()
 	require.NoError(t, err)
@@ -141,9 +144,9 @@ func TestMustLoadFromEnvOrPod(t *testing.T) {
 }
 
 func TestMustLoadFromEnvOrPod_NoSharding(t *testing.T) {
-	_ = os.Unsetenv(shardTotalEnv)
-	_ = os.Unsetenv(shardIDEnv)
-	_ = os.Unsetenv(podNameEnv)
+	t.Setenv(shardTotalEnv, "")
+	t.Setenv(shardIDEnv, "")
+	t.Setenv(podNameEnv, "")
 
 	f, err := MustLoadFromEnvOrPod()
 	require.NoError(t, err)
@@ -164,6 +167,7 @@ func TestMustLoadFromEnvOrPod_OutOfRange(t *testing.T) {
 }
 
 func TestExtractOrdinalFromPodName(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 0, extractOrdinalFromPodName("controller-manager-0"))
 	assert.Equal(t, 5, extractOrdinalFromPodName("my-pod-5"))
 	assert.Equal(t, 123, extractOrdinalFromPodName("paprika-123"))
@@ -175,7 +179,7 @@ func TestNewFilterFromEnv_StatefulSetPodName(t *testing.T) {
 	t.Setenv(shardTotalEnv, "4")
 	t.Setenv(shardIDEnv, "controller-manager-2")
 
-	f := NewFilterFromEnv()
+	f := NewFilterFromEnv(context.Background())
 	assert.True(t, f.Enabled())
 	assert.Equal(t, 2, f.ShardID())
 	assert.Equal(t, 4, f.TotalShards())
