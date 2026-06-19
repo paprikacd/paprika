@@ -9,4 +9,5 @@ resources:
 - clusters_v1alpha1_cluster.yaml
 - core_v1alpha1_appproject.yaml
 - policy_v1alpha1_policy.yaml
+- pipelines_v1alpha1_conftestpolicy.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

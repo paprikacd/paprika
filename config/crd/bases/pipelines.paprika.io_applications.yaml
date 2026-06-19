@@ -304,6 +304,23 @@ spec:
                 required:
                 - steps
                 type: object
+              conftestPolicies:
+                description: |-
+                  ConftestPolicies are Rego policies evaluated against rendered manifests before each
+                  promotion. References are namespace-scoped. A missing or uncompilable policy blocks
+                  promotion (fail-closed).
+                items:
+                  description: ConftestPolicyRef references a ConftestPolicy by name
+                    in the Application's namespace.
+                  properties:
+                    name:
+                      description: Name of the ConftestPolicy.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               healthChecks:
                 description: HealthChecks define custom CEL-based health checks for
                   the application.

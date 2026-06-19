@@ -167,6 +167,7 @@ rules:
   - applications
   - applicationsets
   - artifacts
+  - conftestpolicies
   - pipelines
   - releases
   - stages
@@ -186,6 +187,7 @@ rules:
   - applications/finalizers
   - applicationsets/finalizers
   - artifacts/finalizers
+  - conftestpolicies/finalizers
   - notificationconfigs/finalizers
   - pipelines/finalizers
   - releases/finalizers
@@ -200,6 +202,7 @@ rules:
   - applications/status
   - applicationsets/status
   - artifacts/status
+  - conftestpolicies/status
   - notificationconfigs/status
   - pipelines/status
   - releases/status

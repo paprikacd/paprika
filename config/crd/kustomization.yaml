@@ -19,6 +19,7 @@ resources:
 - bases/rollouts.paprika.io_rollouts.yaml
 - bases/featureflags.paprika.io_featureflags.yaml
 - bases/featureflags.paprika.io_featureflagbindings.yaml
+- bases/pipelines.paprika.io_conftestpolicies.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
