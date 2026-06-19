@@ -320,26 +320,73 @@ type HealthCheck struct {
 	Interval string `json:"interval,omitempty"`
 }
 
+// ApprovalGateType values.
+const (
+	ApprovalGateTypeManual  = "manual"
+	ApprovalGateTypeWebhook = "webhook"
+	ApprovalGateTypeSlack   = "slack"
+)
+
+// GateStatus values.
+const (
+	GateStatusPending  = "Pending"
+	GateStatusApproved = "Approved"
+	GateStatusRejected = "Rejected"
+)
+
 // ApprovalGate defines a manual or automated approval gate for stage transitions.
 type ApprovalGate struct {
 	// Name of the gate
 	Name string `json:"name"`
-	// Stage at which this gate applies (e.g., "prod")
-	Stage string `json:"stage"`
+	// Stage at which this gate applies (e.g., "prod"). Empty applies to all stages.
+	// +optional
+	Stage string `json:"stage,omitempty"`
 	// Type of gate: manual, webhook, slack
 	// +kubebuilder:validation:Enum=manual;webhook;slack
 	Type string `json:"type"`
 	// Whether the gate is required (default true)
 	// +kubebuilder:default=true
+	// +optional
 	Required bool `json:"required,omitempty"`
+
+	// URL is the webhook URL for webhook gates.
+	// +optional
+	URL string `json:"url,omitempty"`
+	// HTTP method for webhook gates. Defaults to POST.
+	// +kubebuilder:default=POST
+	// +optional
+	Method string `json:"method,omitempty"`
+	// Headers to send with webhook requests.
+	// +optional
+	Headers map[string]string `json:"headers,omitempty"`
+	// Body template sent to webhook gates.
+	// +optional
+	Body string `json:"body,omitempty"`
+	// SuccessStatus is the expected HTTP status code for approval (default any 2xx).
+	// +kubebuilder:default=200
+	// +optional
+	SuccessStatus int `json:"successStatus,omitempty"`
+	// SecretRef names a Secret in the same namespace whose data is added to webhook headers.
+	// +optional
+	SecretRef string `json:"secretRef,omitempty"`
+
+	// SlackWebhookURL is the incoming Slack webhook URL used to notify a channel.
+	// Phase 2: actual Slack interaction handling.
+	// +optional
+	SlackWebhookURL string `json:"slackWebhookUrl,omitempty"`
+	// SlackChannel is the channel to notify for Slack gates.
+	// +optional
+	SlackChannel string `json:"slackChannel,omitempty"`
 }
 
 // GateStatus represents the current status of an approval gate.
 type GateStatus struct {
 	Name       string `json:"name"`
 	Stage      string `json:"stage"`
+	Type       string `json:"type,omitempty"`
 	Status     string `json:"status"` // Pending, Approved, Rejected
 	ApprovedBy string `json:"approvedBy,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 // HealthCheckResult contains the result of a single health check evaluation.
