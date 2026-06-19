@@ -382,6 +382,14 @@ type ApprovalGate struct {
 	SlackChannel string `json:"slackChannel,omitempty"`
 }
 
+// ConftestPolicyRef references a ConftestPolicy by name in the Application's namespace.
+type ConftestPolicyRef struct {
+	// Name of the ConftestPolicy.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
 // GateStatus represents the current status of an approval gate.
 type GateStatus struct {
 	Name       string `json:"name"`
@@ -456,6 +464,12 @@ type ApplicationSpec struct {
 	// ApprovalGates define manual approval gates for stage transitions.
 	// +optional
 	ApprovalGates []ApprovalGate `json:"approvalGates,omitempty"`
+
+	// ConftestPolicies are Rego policies evaluated against rendered manifests before each
+	// promotion. References are namespace-scoped. A missing or uncompilable policy blocks
+	// promotion (fail-closed).
+	// +optional
+	ConftestPolicies []ConftestPolicyRef `json:"conftestPolicies,omitempty"`
 
 	// SelfHeal controls automatic remediation when drift or health failures are detected.
 	// +optional
