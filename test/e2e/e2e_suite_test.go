@@ -67,23 +67,39 @@ var _ = BeforeSuite(func() {
 		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to switch kubectl context")
 	}
 
-	By("building the manager image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
-	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
+	if !skipImageBuild() {
+		By("building the manager image")
+		cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", managerImage))
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping manager image build (E2E_SKIP_IMAGE_BUILD=true)\n")
+	}
 
-	By("loading the manager image on Kind")
-	err = utils.LoadImageToKindClusterWithName(managerImage, kindClusterName)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
+	if !skipImageLoad() {
+		By("loading the manager image on Kind")
+		err = utils.LoadImageToKindClusterWithName(managerImage, kindClusterName)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping manager image load (E2E_SKIP_IMAGE_LOAD=true)\n")
+	}
 
-	By("building the demo app image")
-	cmd = exec.Command("docker", "build", "-t", demoImage, "-f", "demo/Dockerfile", "demo")
-	_, err = utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the demo image")
+	if !skipImageBuild() {
+		By("building the demo app image")
+		cmd := exec.Command("docker", "build", "-t", demoImage, "-f", "demo/Dockerfile", "demo")
+		_, err = utils.Run(cmd)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the demo image")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping demo image build (E2E_SKIP_IMAGE_BUILD=true)\n")
+	}
 
-	By("loading the demo app image on Kind")
-	err = utils.LoadImageToKindClusterWithName(demoImage, kindClusterName)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the demo image into Kind")
+	if !skipImageLoad() {
+		By("loading the demo app image on Kind")
+		err = utils.LoadImageToKindClusterWithName(demoImage, kindClusterName)
+		ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the demo image into Kind")
+	} else {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping demo image load (E2E_SKIP_IMAGE_LOAD=true)\n")
+	}
 
 	configureKubectlKubeRC()
 	setupCertManager()
@@ -109,6 +125,14 @@ var _ = AfterSuite(func() {
 		}
 	}
 })
+
+func skipImageBuild() bool {
+	return os.Getenv("E2E_SKIP_IMAGE_BUILD") == "true"
+}
+
+func skipImageLoad() bool {
+	return os.Getenv("E2E_SKIP_IMAGE_LOAD") == "true"
+}
 
 func kindClusterExists(name string) (bool, error) {
 	cmd := exec.Command("kind", "get", "clusters")
