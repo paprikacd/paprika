@@ -217,12 +217,13 @@ Each Rego result string maps to one `governance.Violation`. Note that
 - `Violation.Rule` = the source `ConftestPolicy` name.
 - `Violation.Message` = the Rego result string.
 - `Violation.Severity` = the rule set that fired: `"deny"`, `"violation"`, or `"warn"`
-  (informational; does not drive blocking).
+  (informational; does not drive blocking). **Compile errors and missing policies use the
+  sentinel `Severity = "not-ready"`** so the gate can distinguish an incomplete evaluation
+  from a real policy denial (see `runConftestGate` reason selection).
 - `Violation.Action` = `governance.PolicyActionEnforce` for a `deny`/`violation` rule on an
-  **`enforce`** policy (so `.Blocking()` is true); `governance.PolicyActionWarn` for `warn`
-  rules and for `deny`/`violation` rules on a **`warn`** policy (so they land in
-  `.Warnings()`). Compile errors and missing policies are blocking, so they use
-  `PolicyActionEnforce`.
+  **`enforce`** policy (so `.Blocking()` is true), and for compile errors / missing policies
+  (fail-closed); `governance.PolicyActionWarn` for `warn` rules and for `deny`/`violation`
+  rules on a **`warn`** policy (so they land in `.Warnings()`).
 
 This keeps conftest results flowing through the existing `Blocking()` / `Warnings()`
 collectors used by the governance gate.
@@ -281,14 +282,22 @@ Behavior:
 1. If `r.ConftestEvaluator == nil` or `len(app.Spec.ConftestPolicies) == 0`, return nil
    (gate disabled).
 2. `violations, err := r.ConftestEvaluator.Evaluate(ctx, release.Namespace, app.Spec.ConftestPolicies, manifestObjects)`.
-   A non-nil `err` is a reconcile error → requeue (do not mark the release terminal).
 3. Partition `violations` via `.Blocking()` / `.Warnings()`:
-   - Blocking non-empty → set `ConftestPassed=False, Reason=PolicyViolation`, emit a Warning
-     event with the first violation message, patch release status, and return a blocking
-     error so promotion aborts. The release stays in its current (non-terminal) phase and
-     retries on the next reconcile; fixing the policy or manifest auto-resumes promotion.
+   - Blocking non-empty → this is a **gate-decided abort** (distinct from an unexpected
+     failure in step 2). Choose the condition reason from the blocking violations:
+     `PolicyNotReady` if **any** blocking violation is a not-ready type
+     (`Severity == "not-ready"` — compile error or missing policy, where evaluation was
+     incomplete); otherwise `PolicyViolation`. Set `ConftestPassed=False` with that reason,
+     emit a Warning event with the first blocking violation's message, patch release status,
+     and return a blocking error so promotion aborts. The release stays in its current
+     (non-terminal) phase and retries on the next reconcile; fixing the policy or manifest
+     auto-resumes promotion.
    - Warnings only → set `ConftestPassed=True, Reason=PassedWithWarnings`, promotion proceeds.
    - Clean → set `ConftestPassed=True, Reason=Passed`, promotion proceeds.
+4. A non-nil `err` from step 2 is an **unexpected engine failure**, not a gate decision:
+     set no condition, surface it as a reconcile error, and requeue (do not mark the release
+     terminal). This keeps "policy said no" (condition set, abort) separate from "evaluator
+     broke" (no condition, requeue).
 
 ### Hook sites
 
