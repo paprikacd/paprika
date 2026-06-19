@@ -599,6 +599,16 @@ export declare class GateStatus extends Message<GateStatus> {
    */
   approvedBy: string;
 
+  /**
+   * @generated from field: string type = 5;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string message = 6;
+   */
+  message: string;
+
   constructor(data?: PartialMessage<GateStatus>);
 
   static readonly runtime: typeof proto3;
@@ -2133,6 +2143,117 @@ export declare class ApproveGateResponse extends Message<ApproveGateResponse> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApproveGateResponse;
 
   static equals(a: ApproveGateResponse | PlainMessage<ApproveGateResponse> | undefined, b: ApproveGateResponse | PlainMessage<ApproveGateResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListGateStatusRequest
+ */
+export declare class ListGateStatusRequest extends Message<ListGateStatusRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<ListGateStatusRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListGateStatusRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListGateStatusRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListGateStatusRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListGateStatusRequest;
+
+  static equals(a: ListGateStatusRequest | PlainMessage<ListGateStatusRequest> | undefined, b: ListGateStatusRequest | PlainMessage<ListGateStatusRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListGateStatusResponse
+ */
+export declare class ListGateStatusResponse extends Message<ListGateStatusResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.GateStatus gates = 1;
+   */
+  gates: GateStatus[];
+
+  constructor(data?: PartialMessage<ListGateStatusResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListGateStatusResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListGateStatusResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListGateStatusResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListGateStatusResponse;
+
+  static equals(a: ListGateStatusResponse | PlainMessage<ListGateStatusResponse> | undefined, b: ListGateStatusResponse | PlainMessage<ListGateStatusResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RejectGateRequest
+ */
+export declare class RejectGateRequest extends Message<RejectGateRequest> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string gate = 3;
+   */
+  gate: string;
+
+  constructor(data?: PartialMessage<RejectGateRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RejectGateRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RejectGateRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RejectGateRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RejectGateRequest;
+
+  static equals(a: RejectGateRequest | PlainMessage<RejectGateRequest> | undefined, b: RejectGateRequest | PlainMessage<RejectGateRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RejectGateResponse
+ */
+export declare class RejectGateResponse extends Message<RejectGateResponse> {
+  /**
+   * @generated from field: paprika.v1.Application application = 1;
+   */
+  application?: Application;
+
+  constructor(data?: PartialMessage<RejectGateResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RejectGateResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RejectGateResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RejectGateResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RejectGateResponse;
+
+  static equals(a: RejectGateResponse | PlainMessage<RejectGateResponse> | undefined, b: RejectGateResponse | PlainMessage<RejectGateResponse> | undefined): boolean;
 }
 
 /**
