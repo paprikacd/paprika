@@ -55,7 +55,7 @@ type ConftestPolicyStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type ConftestPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	Spec   ConftestPolicySpec   `json:"spec,omitempty"`
 	Status ConftestPolicyStatus `json:"status,omitempty"`
@@ -64,7 +64,7 @@ type ConftestPolicy struct {
 // +kubebuilder:object:root=true
 type ConftestPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []ConftestPolicy `json:"items"`
 }
 
