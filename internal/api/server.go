@@ -458,6 +458,9 @@ func (s *PaprikaServer) SyncApplication(
 	}), nil
 }
 
+// PaprikaServer RBAC for approval gates.
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
+
 // ApproveGate approves a manual approval gate for an application.
 func (s *PaprikaServer) ApproveGate(
 	ctx context.Context,
@@ -474,7 +477,7 @@ func (s *PaprikaServer) ApproveGate(
 	found := false
 	for i, g := range app.Status.Gates {
 		if g.Name == req.Msg.Gate {
-			app.Status.Gates[i].Status = "Approved"
+			app.Status.Gates[i].Status = pipelinesv1alpha1.GateStatusApproved
 			app.Status.Gates[i].ApprovedBy = "api"
 			found = true
 			break
@@ -494,6 +497,61 @@ func (s *PaprikaServer) ApproveGate(
 	}
 
 	return connect.NewResponse(&paprikav1.ApproveGateResponse{
+		Application: convertApplication(&refreshed),
+	}), nil
+}
+
+// ListGateStatus returns the approval gate statuses for an application.
+func (s *PaprikaServer) ListGateStatus(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListGateStatusRequest],
+) (*connect.Response[paprikav1.ListGateStatusResponse], error) {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
+		return nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionRead, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	return connect.NewResponse(&paprikav1.ListGateStatusResponse{Gates: convertGateStatuses(app.Status.Gates)}), nil
+}
+
+// RejectGate rejects a manual approval gate for an application.
+func (s *PaprikaServer) RejectGate(
+	ctx context.Context,
+	req *connect.Request[paprikav1.RejectGateRequest],
+) (*connect.Response[paprikav1.RejectGateResponse], error) {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
+		return nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+
+	found := false
+	for i := range app.Status.Gates {
+		if app.Status.Gates[i].Name == req.Msg.Gate {
+			app.Status.Gates[i].Status = pipelinesv1alpha1.GateStatusRejected
+			app.Status.Gates[i].ApprovedBy = ""
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("gate %s not found", req.Msg.Gate)
+	}
+
+	if err := s.client.Status().Update(ctx, &app); err != nil {
+		return nil, fmt.Errorf("updating gate status: %w", err)
+	}
+
+	var refreshed pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &refreshed); err != nil {
+		return nil, fmt.Errorf("getting refreshed application: %w", err)
+	}
+
+	return connect.NewResponse(&paprikav1.RejectGateResponse{
 		Application: convertApplication(&refreshed),
 	}), nil
 }
@@ -863,9 +921,26 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		ResourceHealth:  convertResourceHealth(a.Status.ResourceHealth),
 		OutOfSync:       safeInt32(a.Status.OutOfSync),
 		PrunedResources: safeInt32(a.Status.PrunedResources),
+		Gates:           convertGateStatuses(a.Status.Gates),
 		Conditions:      convertConditions(a.Status.Conditions),
 		AnalysisResults: convertAnalysisResults(a.Status.AnalysisResults),
 	}
+}
+
+func convertGateStatuses(statuses []pipelinesv1alpha1.GateStatus) []*paprikav1.GateStatus {
+	out := make([]*paprikav1.GateStatus, 0, len(statuses))
+	for i := range statuses {
+		s := &statuses[i]
+		out = append(out, &paprikav1.GateStatus{
+			Name:       s.Name,
+			Stage:      s.Stage,
+			Type:       s.Type,
+			Status:     s.Status,
+			ApprovedBy: s.ApprovedBy,
+			Message:    s.Message,
+		})
+	}
+	return out
 }
 
 func convertApplicationSet(set *pipelinesv1alpha1.ApplicationSet) *paprikav1.ApplicationSet {
