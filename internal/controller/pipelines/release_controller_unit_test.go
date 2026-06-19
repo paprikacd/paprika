@@ -760,7 +760,7 @@ func TestReleaseReconciler_handlePromotingPhase_awaitsApproval(t *testing.T) {
 	}
 	stage := &pipelinesv1alpha1.Stage{
 		ObjectMeta: metav1.ObjectMeta{Name: "gate-stage", Namespace: "default"},
-		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
 	}
 	release := &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
@@ -774,7 +774,7 @@ func TestReleaseReconciler_handlePromotingPhase_awaitsApproval(t *testing.T) {
 				UID:        app.UID,
 			}},
 		},
-		Spec: pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Spec:   pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
 		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleasePromoting},
 	}
 
@@ -828,7 +828,7 @@ func TestReleaseReconciler_handleAwaitingApprovalPhase_promotesWhenApproved(t *t
 	}
 	stage := &pipelinesv1alpha1.Stage{
 		ObjectMeta: metav1.ObjectMeta{Name: "gate-stage", Namespace: "default"},
-		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
 	}
 	release := &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
@@ -842,7 +842,7 @@ func TestReleaseReconciler_handleAwaitingApprovalPhase_promotesWhenApproved(t *t
 				UID:        app.UID,
 			}},
 		},
-		Spec: pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Spec:   pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
 		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseAwaitingApproval},
 	}
 
