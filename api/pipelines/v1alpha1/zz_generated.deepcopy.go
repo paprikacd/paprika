@@ -511,6 +511,13 @@ func (in *ApplicationPromotionStage) DeepCopyInto(out *ApplicationPromotionStage
 		*out = make([]GateConfig, len(*in))
 		copy(*out, *in)
 	}
+	if in.ApprovalGates != nil {
+		in, out := &in.ApprovalGates, &out.ApprovalGates
+		*out = make([]ApprovalGate, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Parameters != nil {
 		in, out := &in.Parameters, &out.Parameters
 		*out = make(map[string]string, len(*in))

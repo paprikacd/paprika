@@ -261,6 +261,9 @@ type ApplicationPromotionStage struct {
 	// Verification gates to run after promotion
 	// +optional
 	Gates []GateConfig `json:"gates,omitempty"`
+	// ApprovalGates define manual/webhook/Slack approval gates for promotion into this stage.
+	// +optional
+	ApprovalGates []ApprovalGate `json:"approvalGates,omitempty"`
 	// Feature flag / parameter overrides for this stage
 	// +optional
 	Parameters map[string]string `json:"parameters,omitempty"`
