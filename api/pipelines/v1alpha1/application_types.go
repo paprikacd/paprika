@@ -385,7 +385,6 @@ type ApprovalGate struct {
 // ConftestPolicyRef references a ConftestPolicy by name in the Application's namespace.
 type ConftestPolicyRef struct {
 	// Name of the ConftestPolicy.
-	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
 }

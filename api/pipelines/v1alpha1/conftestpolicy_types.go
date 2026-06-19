@@ -57,8 +57,8 @@ type ConftestPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	Spec   ConftestPolicySpec   `json:"spec,omitempty"`
-	Status ConftestPolicyStatus `json:"status,omitempty"`
+	Spec   ConftestPolicySpec   `json:"spec"`
+	Status ConftestPolicyStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
