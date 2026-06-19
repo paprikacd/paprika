@@ -139,6 +139,9 @@ func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ..
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;update;patch
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
 
 // Reconcile handles Release reconciliation.
 //
