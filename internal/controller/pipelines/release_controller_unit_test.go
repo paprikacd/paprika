@@ -56,6 +56,17 @@ func (f *fakeGateExecutor) Execute(_ context.Context, _ gates.GateConfig) gates.
 	return f.result
 }
 
+type fakeApprovalEvaluator struct {
+	results map[string]*gates.ApprovalGateResult
+}
+
+func (f *fakeApprovalEvaluator) Evaluate(_ context.Context, gate *gates.ApprovalGate, _ *gates.ApprovalGatePayload, _ string) *gates.ApprovalGateResult {
+	if r, ok := f.results[gate.Name]; ok {
+		return r
+	}
+	return &gates.ApprovalGateResult{Status: gates.ApprovalGateStatusPending}
+}
+
 func TestReleaseReconciler_verify(t *testing.T) {
 	t.Parallel()
 
@@ -730,5 +741,132 @@ func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {
 				t.Fatalf("expected resync annotation to be removed")
 			}
 		})
+	}
+}
+
+func TestReleaseReconciler_handlePromotingPhase_awaitsApproval(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "gate-app", Namespace: "default", UID: types.UID("uid")},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
+				{Name: "manual-gate", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
+			},
+		},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "gate-stage", Namespace: "default"},
+		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "gate-release",
+			Namespace:  "default",
+			Finalizers: []string{releaseFinalizer},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+				Kind:       "Application",
+				Name:       app.Name,
+				UID:        app.UID,
+			}},
+		},
+		Spec: pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleasePromoting},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, stage, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}, &pipelinesv1alpha1.Application{}).Build()
+	r := &ReleaseReconciler{
+		client:                c,
+		Scheme:                scheme,
+		ApprovalGateEvaluator: &fakeApprovalEvaluator{},
+	}
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: release.Name, Namespace: release.Namespace}})
+	if err != nil {
+		t.Fatalf("reconcile error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKeyFromObject(release), &updated); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ReleaseAwaitingApproval {
+		t.Errorf("phase = %s, want AwaitingApproval", updated.Status.Phase)
+	}
+
+	var updatedApp pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKeyFromObject(app), &updatedApp); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if len(updatedApp.Status.Gates) != 1 || updatedApp.Status.Gates[0].Status != pipelinesv1alpha1.GateStatusPending {
+		t.Errorf("gate status = %+v, want one Pending", updatedApp.Status.Gates)
+	}
+}
+
+func TestReleaseReconciler_handleAwaitingApprovalPhase_promotesWhenApproved(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "gate-app", Namespace: "default", UID: types.UID("uid")},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
+				{Name: "manual-gate", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Gates: []pipelinesv1alpha1.GateStatus{
+				{Name: "manual-gate", Status: pipelinesv1alpha1.GateStatusApproved, ApprovedBy: "test"},
+			},
+		},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "gate-stage", Namespace: "default"},
+		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "gate-release",
+			Namespace:  "default",
+			Finalizers: []string{releaseFinalizer},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+				Kind:       "Application",
+				Name:       app.Name,
+				UID:        app.UID,
+			}},
+		},
+		Spec: pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseAwaitingApproval},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, stage, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}, &pipelinesv1alpha1.Application{}).Build()
+	r := &ReleaseReconciler{
+		client: c,
+		Scheme: scheme,
+		ApprovalGateEvaluator: &fakeApprovalEvaluator{
+			results: map[string]*gates.ApprovalGateResult{
+				"manual-gate": {Status: gates.ApprovalGateStatusApproved, ApprovedBy: "test"},
+			},
+		},
+	}
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: release.Name, Namespace: release.Namespace}})
+	if err != nil {
+		t.Fatalf("reconcile error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKeyFromObject(release), &updated); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ReleasePromoting {
+		t.Errorf("phase = %s, want Promoting", updated.Status.Phase)
 	}
 }
