@@ -7,6 +7,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -259,4 +260,123 @@ func TestApplyBundle_PolicyOverride(t *testing.T) {
 
 	var release pipelinesv1alpha1.Release
 	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "override-ns", Name: resp.Msg.Release.Name}, &release))
+}
+
+func TestApplyBundle_DeriveNameFromManifest(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := newApplyBundleClient(t)
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}}))
+
+	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
+		Namespace: "derive-ns",
+		Name:      "",
+		Manifests: sampleManifests(),
+	})
+
+	resp, err := srv.ApplyBundle(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.Msg.Blocked)
+	require.Equal(t, "sample-cm", resp.Msg.Application.Name)
+
+	var app pipelinesv1alpha1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "derive-ns", Name: "sample-cm"}, &app))
+}
+
+func TestApplyBundle_IdempotentReapply(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := newApplyBundleClient(t)
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}}))
+
+	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
+		Namespace: "idempotent-ns",
+		Name:      "idempotent-app",
+		Manifests: sampleManifests(),
+	})
+
+	resp1, err := srv.ApplyBundle(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp1)
+	existingReleaseName := resp1.Msg.Release.Name
+
+	var release pipelinesv1alpha1.Release
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "idempotent-ns", Name: existingReleaseName}, &release))
+	release.Status.Phase = pipelinesv1alpha1.ReleaseComplete
+	require.NoError(t, c.Status().Update(ctx, &release))
+
+	resp2, err := srv.ApplyBundle(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp2)
+	require.False(t, resp2.Msg.Blocked)
+	require.Equal(t, existingReleaseName, resp2.Msg.Release.Name)
+
+	var releases pipelinesv1alpha1.ReleaseList
+	require.NoError(t, c.List(ctx, &releases))
+	require.Len(t, releases.Items, 1)
+}
+
+func TestApplyBundle_SupersedesPreviousTerminalRelease(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := newApplyBundleClient(t)
+	srv := NewPaprikaServer(c, nil, WithPolicyEvaluator(&fakeEvaluator{result: &policy.EvaluationResult{Passed: true}}))
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "super-app",
+			Namespace: "supersede-ns",
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Project: "default",
+		},
+	}
+	require.NoError(t, c.Create(ctx, app))
+
+	oldRelease := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "super-app-release-old",
+			Namespace: "supersede-ns",
+			Annotations: map[string]string{
+				bundleSHAAnnotation: "old-sha",
+			},
+		},
+		Spec: pipelinesv1alpha1.ReleaseSpec{
+			Target: "super-app-default",
+		},
+	}
+	require.NoError(t, c.Create(ctx, oldRelease))
+	oldRelease.Status.Phase = pipelinesv1alpha1.ReleaseComplete
+	require.NoError(t, c.Status().Update(ctx, oldRelease))
+
+	app.Status.ReleaseRef = oldRelease.Name
+	require.NoError(t, c.Status().Update(ctx, app))
+
+	req := connect.NewRequest(&paprikav1.ApplyBundleRequest{
+		Namespace: "supersede-ns",
+		Name:      "super-app",
+		Manifests: sampleManifests(),
+	})
+
+	resp, err := srv.ApplyBundle(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.False(t, resp.Msg.Blocked)
+	require.NotEqual(t, oldRelease.Name, resp.Msg.Release.Name)
+
+	var updatedOld pipelinesv1alpha1.Release
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "supersede-ns", Name: oldRelease.Name}, &updatedOld))
+	require.Equal(t, pipelinesv1alpha1.ReleaseSuperseded, updatedOld.Status.Phase)
+
+	var appUpdated pipelinesv1alpha1.Application
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Namespace: "supersede-ns", Name: "super-app"}, &appUpdated))
+	require.Equal(t, resp.Msg.Release.Name, appUpdated.Status.ReleaseRef)
+
+	var releases pipelinesv1alpha1.ReleaseList
+	require.NoError(t, c.List(ctx, &releases))
+	require.Len(t, releases.Items, 2)
 }

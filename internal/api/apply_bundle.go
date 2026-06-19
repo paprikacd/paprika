@@ -39,13 +39,14 @@ import (
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;create
 
 const (
-	managedByLabel     = "app.paprika.io/managed-by"
-	nameLabel          = "app.paprika.io/name"
-	releaseLabel       = "app.paprika.io/release"
-	historyLabel       = "app.paprika.io/history"
-	projectLabelKey    = "app.paprika.io/project"
-	defaultProjectName = "default"
-	rollbackAnnotation = "paprika.io/rollback-requested"
+	managedByLabel      = "app.paprika.io/managed-by"
+	nameLabel           = "app.paprika.io/name"
+	releaseLabel        = "app.paprika.io/release"
+	historyLabel        = "app.paprika.io/history"
+	projectLabelKey     = "app.paprika.io/project"
+	defaultProjectName  = "default"
+	rollbackAnnotation  = "paprika.io/rollback-requested"
+	bundleSHAAnnotation = "paprika.io/bundle-sha"
 )
 
 // WithPolicyEvaluator sets the policy evaluator used by ApplyBundle.
@@ -78,9 +79,6 @@ func (s *PaprikaServer) ApplyBundle(
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("namespace is required"))
 	}
 	appName := req.Msg.Name
-	if appName == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("application name is required"))
-	}
 	project := req.Msg.Project
 	if project == "" {
 		project = defaultProjectName
@@ -95,6 +93,13 @@ func (s *PaprikaServer) ApplyBundle(
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("prepare bundle: %w", err))
 	}
 
+	if appName == "" {
+		appName, err = deriveAppName(bundle)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("derive application name: %w", err))
+		}
+	}
+
 	var manifests []*unstructured.Unstructured
 	if s.governanceValidator != nil || s.governancePolicyEvaluator != nil {
 		manifests, err = manifestsFromBundle(bundle)
@@ -103,43 +108,12 @@ func (s *PaprikaServer) ApplyBundle(
 		}
 	}
 
-	var boundaryResults []policy.Result
-	if s.governanceValidator != nil {
-		source := pipelinesv1alpha1.ApplicationSource{
-			Type:   pipelinesv1alpha1.SourceTypeInline,
-			Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: ""},
-		}
-
-		projectObj, resolveErr := s.governanceValidator.ResolveProject(ctx, namespace, project)
-		if resolveErr != nil {
-			return nil, fmt.Errorf("resolve project: %w", resolveErr)
-		}
-
-		violations, vErr := s.governanceValidator.ValidateBundle(ctx, projectObj, source, nil, namespace, "", manifests)
-		if vErr != nil {
-			return nil, fmt.Errorf("validate bundle: %w", vErr)
-		}
-		if blocking := violations.Blocking(); len(blocking) > 0 {
-			return connect.NewResponse(&paprikav1.ApplyBundleResponse{
-				PolicyResults: convertViolationsToPolicyResults(violations),
-				Blocked:       true,
-				BlockReason:   blocking[0].Message,
-			}), nil
-		}
-		boundaryResults = toPolicyResults(violations)
-	}
-
-	var evResult *policy.EvaluationResult
-	if s.governancePolicyEvaluator != nil {
-		evResult, err = s.evaluatePoliciesForProject(ctx, project, manifests, namespace, appName, req.Msg.SkipPolicies, req.Msg.PolicyOverrides)
-	} else {
-		evResult, err = s.evaluatePolicies(ctx, bundle, namespace, appName, req.Msg.SkipPolicies, req.Msg.PolicyOverrides)
-	}
+	evResult, err := s.evaluateBundle(
+		ctx, bundle, manifests, namespace, appName, project, req.Msg.SkipPolicies, req.Msg.PolicyOverrides,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate policies: %w", err)
 	}
-	evResult.Results = append(evResult.Results, boundaryResults...)
-
 	if evResult.Blocked {
 		return connect.NewResponse(&paprikav1.ApplyBundleResponse{
 			PolicyResults: convertPolicyResults(evResult.Results),
@@ -159,7 +133,7 @@ func (s *PaprikaServer) ApplyBundle(
 		}), nil
 	}
 
-	app, release, err := s.applyInline(ctx, appName, namespace, project, bundle, evResult.Results)
+	app, release, err := s.applyIfNeeded(ctx, appName, namespace, project, bundle, evResult.Results)
 	if err != nil {
 		return nil, fmt.Errorf("apply inline bundle: %w", err)
 	}
@@ -170,6 +144,55 @@ func (s *PaprikaServer) ApplyBundle(
 		PolicyResults: convertPolicyResults(evResult.Results),
 		Blocked:       false,
 	}), nil
+}
+
+func (s *PaprikaServer) evaluateBundle(
+	ctx context.Context,
+	bundle []byte,
+	manifests []*unstructured.Unstructured,
+	namespace, appName, project string,
+	skip []string,
+	overrides map[string]string,
+) (*policy.EvaluationResult, error) {
+	var boundaryResults []policy.Result
+	if s.governanceValidator != nil {
+		source := pipelinesv1alpha1.ApplicationSource{
+			Type:   pipelinesv1alpha1.SourceTypeInline,
+			Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: ""},
+		}
+
+		projectObj, err := s.governanceValidator.ResolveProject(ctx, namespace, project)
+		if err != nil {
+			return nil, fmt.Errorf("resolve project: %w", err)
+		}
+
+		violations, err := s.governanceValidator.ValidateBundle(ctx, projectObj, source, nil, namespace, "", manifests)
+		if err != nil {
+			return nil, fmt.Errorf("validate bundle: %w", err)
+		}
+		boundaryResults = toPolicyResults(violations)
+		if blocking := violations.Blocking(); len(blocking) > 0 {
+			return &policy.EvaluationResult{
+				Passed:  false,
+				Blocked: true,
+				Message: blocking[0].Message,
+				Results: boundaryResults,
+			}, nil
+		}
+	}
+
+	var evResult *policy.EvaluationResult
+	var err error
+	if s.governancePolicyEvaluator != nil {
+		evResult, err = s.evaluatePoliciesForProject(ctx, project, manifests, namespace, appName, skip, overrides)
+	} else {
+		evResult, err = s.evaluatePolicies(ctx, bundle, namespace, appName, skip, overrides)
+	}
+	if err != nil {
+		return nil, err
+	}
+	evResult.Results = append(evResult.Results, boundaryResults...)
+	return evResult, nil
 }
 
 func (s *PaprikaServer) ensureNamespace(ctx context.Context, namespace string) error {
@@ -348,21 +371,6 @@ func toPolicyResults(violations governance.Violations) []policy.Result {
 	return out
 }
 
-func convertViolationsToPolicyResults(violations governance.Violations) []*paprikav1.PolicyResult {
-	out := make([]*paprikav1.PolicyResult, 0, len(violations))
-	for _, v := range violations {
-		converted := violationToPolicyResult(v)
-		out = append(out, &paprikav1.PolicyResult{
-			Name:     converted.Name,
-			Severity: converted.Severity,
-			Action:   converted.Action,
-			Passed:   converted.Passed,
-			Message:  converted.Message,
-		})
-	}
-	return out
-}
-
 func toPolicyActions(in map[string]string) map[string]policy.Action {
 	if len(in) == 0 {
 		return nil
@@ -372,6 +380,94 @@ func toPolicyActions(in map[string]string) map[string]policy.Action {
 		out[k] = policy.Action(v)
 	}
 	return out
+}
+
+func deriveAppName(bundle []byte) (string, error) {
+	manifests, err := manifestsFromBundle(bundle)
+	if err != nil {
+		return "", fmt.Errorf("parse bundle: %w", err)
+	}
+	if len(manifests) == 0 {
+		return "", errors.New("no valid manifests in bundle")
+	}
+	name := manifests[0].GetName()
+	if name == "" {
+		return "", errors.New("first manifest has no metadata.name")
+	}
+	return name, nil
+}
+
+func (s *PaprikaServer) findExistingCompleteRelease(
+	ctx context.Context,
+	appName, namespace string,
+	bundle []byte,
+) (*pipelinesv1alpha1.Application, *pipelinesv1alpha1.Release, bool, error) {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: appName}, &app); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil, false, nil
+		}
+		return nil, nil, false, fmt.Errorf("get application: %w", err)
+	}
+	if app.Status.ReleaseRef == "" {
+		return nil, nil, false, nil
+	}
+
+	var release pipelinesv1alpha1.Release
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: app.Status.ReleaseRef}, &release); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil, false, nil
+		}
+		return nil, nil, false, fmt.Errorf("get active release: %w", err)
+	}
+	if release.Status.Phase != pipelinesv1alpha1.ReleaseComplete {
+		return nil, nil, false, nil
+	}
+	if release.Annotations[bundleSHAAnnotation] != fullBundleSHA(bundle) {
+		return nil, nil, false, nil
+	}
+	return &app, &release, true, nil
+}
+
+func isTerminalReleasePhase(phase pipelinesv1alpha1.ReleasePhase) bool {
+	return phase == pipelinesv1alpha1.ReleaseComplete ||
+		phase == pipelinesv1alpha1.ReleaseFailed ||
+		phase == pipelinesv1alpha1.ReleaseRolledBack ||
+		phase == pipelinesv1alpha1.ReleaseSuperseded
+}
+
+func (s *PaprikaServer) supersedeRelease(ctx context.Context, releaseName, namespace string) error {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var release pipelinesv1alpha1.Release
+		if err := s.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: namespace}, &release); err != nil {
+			return fmt.Errorf("get previous release: %w", err)
+		}
+		if !isTerminalReleasePhase(release.Status.Phase) {
+			return nil
+		}
+		release.Status.Phase = pipelinesv1alpha1.ReleaseSuperseded
+		if err := s.client.Status().Update(ctx, &release); err != nil {
+			return fmt.Errorf("update previous release phase: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("supersede release %s: %w", releaseName, err)
+	}
+	return nil
+}
+
+func (s *PaprikaServer) applyIfNeeded(
+	ctx context.Context,
+	appName, namespace, project string,
+	bundle []byte,
+	policyResults []policy.Result,
+) (*pipelinesv1alpha1.Application, *pipelinesv1alpha1.Release, error) {
+	if existingApp, existingRelease, found, err := s.findExistingCompleteRelease(ctx, appName, namespace, bundle); err != nil {
+		return nil, nil, fmt.Errorf("check existing release: %w", err)
+	} else if found {
+		return existingApp, existingRelease, nil
+	}
+	return s.applyInline(ctx, appName, namespace, project, bundle, policyResults)
 }
 
 //nolint:cyclop // inline apply orchestration is inherently sequential.
@@ -389,6 +485,7 @@ func (s *PaprikaServer) applyInline(
 	if err != nil {
 		return nil, nil, fmt.Errorf("create or update application: %w", err)
 	}
+	oldReleaseRef := app.Status.ReleaseRef
 
 	if err := s.ensureStage(ctx, appName, namespace, project, releaseName, stageName); err != nil {
 		return nil, nil, fmt.Errorf("ensure stage: %w", err)
@@ -445,6 +542,13 @@ func (s *PaprikaServer) applyInline(
 			log.FromContext(ctx).Error(delErr, "Failed to clean up release after application releaseRef update error", "release", release.Name)
 		}
 		return nil, nil, fmt.Errorf("update application releaseRef: %w", err)
+	}
+	app.Status.ReleaseRef = release.Name
+
+	if oldReleaseRef != "" && oldReleaseRef != release.Name {
+		if err := s.supersedeRelease(ctx, oldReleaseRef, namespace); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to supersede previous release", "release", oldReleaseRef)
+		}
 	}
 
 	return app, release, nil
@@ -598,7 +702,7 @@ func (s *PaprikaServer) buildRelease(
 			Namespace: namespace,
 			Labels:    s.baseLabels(appName, releaseName, project),
 			Annotations: map[string]string{
-				"paprika.io/bundle-sha": fullBundleSHA(bundle),
+				bundleSHAAnnotation: fullBundleSHA(bundle),
 			},
 		},
 		Spec: pipelinesv1alpha1.ReleaseSpec{
