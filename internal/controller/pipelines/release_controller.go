@@ -217,6 +217,10 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 		return r.handlePendingPhase(ctx, release, result)
 	}
 
+	if release.Status.Phase == paprikav1.ReleaseAwaitingApproval {
+		return r.handleAwaitingApprovalPhase(ctx, release, result)
+	}
+
 	if err := r.checkConcurrentRelease(ctx, release); err != nil {
 		*result = resultError
 		return ctrl.Result{}, err
@@ -362,6 +366,28 @@ func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *pap
 	return ctrl.Result{Requeue: true}, nil
 }
 
+func (r *ReleaseReconciler) handleAwaitingApprovalPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
+	approved, rejected, err := r.checkApprovalGates(ctx, release)
+	if err != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("checking approval gates: %w", err)
+	}
+	if rejected {
+		return r.failRelease(ctx, release, result)
+	}
+	if approved {
+		oldPhase := release.Status.Phase
+		release.Status.Phase = paprikav1.ReleasePromoting
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Promoting").Inc()
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to transition from awaiting approval to promoting: %w", err)
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
 func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprikav1.Release, namespace string, result *string) (ctrl.Result, error) {
 	var stage paprikav1.Stage
 	if err := r.client.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: namespace}, &stage); err != nil {
@@ -388,6 +414,31 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
+
+	approved, rejected, err := r.checkApprovalGates(ctx, release)
+	if err != nil {
+		log.Error(err, "Failed to check approval gates", "release", release.Name)
+		release.Status.Phase = paprikav1.ReleaseFailed
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
+		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
+		}
+		return ctrl.Result{}, nil
+	}
+	if rejected {
+		return r.failRelease(ctx, release, result)
+	}
+	if !approved {
+		release.Status.Phase = paprikav1.ReleaseAwaitingApproval
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "AwaitingApproval").Inc()
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to transition to awaiting approval: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
 	if err := r.promote(ctx, release); err != nil {
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
@@ -645,7 +696,8 @@ func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, rele
 		}
 		if other.Spec.Target == release.Spec.Target &&
 			(other.Status.Phase == paprikav1.ReleasePromoting ||
-				other.Status.Phase == paprikav1.ReleaseVerifying) {
+				other.Status.Phase == paprikav1.ReleaseVerifying ||
+				other.Status.Phase == paprikav1.ReleaseAwaitingApproval) {
 			return true, nil
 		}
 	}
