@@ -714,12 +714,13 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 			}),
 		},
 		Spec: paprikav1.StageSpec{
-			Name:      promotionStage.Name,
-			Ring:      promotionStage.Ring,
-			Cluster:   promotionStage.Cluster,
-			Templates: templates,
-			Gates:     promotionStage.Gates,
-			Canary:    stageCanary,
+			Name:          promotionStage.Name,
+			Ring:          promotionStage.Ring,
+			Cluster:       promotionStage.Cluster,
+			Templates:     templates,
+			Gates:         promotionStage.Gates,
+			ApprovalGates: promotionStage.ApprovalGates,
+			Canary:        stageCanary,
 		},
 	}
 }
