@@ -50,8 +50,9 @@ This design reuses `governance.Violations` for results and mirrors the
 - OPA bundle download / signature verification.
 - A new API / connect RPC or UI surface. The gate surfaces via release conditions and
   events, consistent with the governance gate.
-- Parameterizing policies with arbitrary structured input. v1 supports a flat
-  `map[string]string` parameter map only.
+- Policy parameterization. Each manifest object is provided to Rego as `input` (the standard
+  conftest convention, so off-the-shelf conftest policies work unchanged). Injecting extra
+  parameters via `input.parameters` or a `data` document is deferred (see Decisions).
 
 ## API Changes
 
@@ -85,10 +86,6 @@ type ConftestPolicySpec struct {
     // +kubebuilder:default=enforce
     // +optional
     Enforcement ConftestEnforcementMode `json:"enforcement,omitempty"`
-
-    // Parameters are exposed to the policy as `input.parameters.<key>`.
-    // +optional
-    Parameters map[string]string `json:"parameters,omitempty"`
 }
 
 // ConftestPolicyStatus reports the last compilation/evaluation outcome for operator UX.
@@ -128,10 +125,11 @@ type ConftestPolicyList struct {
 }
 ```
 
-A small controller (or webhook) compiles each `ConftestPolicy` and writes a `Ready`
-condition (`True`/compiled-ok, `False`/compile-error with the Rego error in the message).
-A policy that does not compile can never be enforced; the gate treats a missing/`False`
-`Ready` referenced policy as a **blocking** violation ("policy not ready").
+A small controller (`ConftestPolicyReconciler`, see below) compiles each `ConftestPolicy`
+and writes a `Ready` condition (`True`/compiled-ok, `False`/compile-error with the Rego
+error in the message). This condition is **informational UX only** — the gate always
+recompiles authoritatively via its own evaluator and is never gated by this status (see
+*Source of Truth*).
 
 ### Binding: `ApplicationSpec.ConftestPolicies`
 
@@ -160,40 +158,37 @@ governance project boundary.
 
 ## Evaluator
 
-New package `internal/conftest`:
+New package `internal/conftest`. The public surface is a single method so consumers never
+handle concrete compiled-policy types (mirroring how `GateExecutor` only references data
+types, not the executor implementation):
 
 ```go
 package conftest
 
-// Policy is a compiled policy ready for evaluation.
-type Policy struct {
-    UID       types.UID
-    Generation int64
-    Enforcement governance.ConftestEnforcementMode // re-export or alias from v1alpha1
-    Parameters  map[string]string
-    // compiled *rego.Rego or cached prepared query (internal)
-}
-
-// Evaluator compiles and evaluates ConftestPolicies against rendered manifests.
+// Evaluator resolves, compiles, and evaluates ConftestPolicies against rendered manifests.
+// Compile errors and missing referenced policies are returned as blocking governance.Violations.
 type Evaluator struct {
     client client.Client
-    cache  map[types.UID]*compiledEntry
+    cache  map[types.UID]*compiledEntry // keyed by (UID, Generation)
     mu     sync.RWMutex
 }
 
 func NewEvaluator(c client.Client) *Evaluator
 
-// LoadPolicies resolves and compiles the referenced policies. Policies that fail to
-// compile or are not Ready are returned as blocking Violations ("policy <name> not ready"
-// / "<name>: <compile error>").
-func (e *Evaluator) LoadPolicies(ctx context.Context, namespace string, refs []paprikav1.ConftestPolicyRef) ([]Policy, governance.Violations, error)
-
-// Evaluate runs the policies against the manifest objects and returns Violations.
-// deny/violation rules on an `enforce` policy -> Blocking.
-// deny/violation rules on a `warn` policy     -> Warnings.
-// warn rules on any policy                    -> Warnings.
-func (e *Evaluator) Evaluate(ctx context.Context, policies []Policy, manifests []*unstructured.Unstructured) (governance.Violations, error)
+// Evaluate resolves and compiles the referenced policies and runs them against the manifest
+// objects. It returns all violations across all policies/objects.
+//
+// deny/violation rules on an `enforce` policy -> Blocking violation.
+// deny/violation rules on a `warn` policy     -> Warning violation.
+// warn rules on any policy                    -> Warning violation.
+//
+// Compile errors and missing policies are returned as blocking Violations (fail-closed);
+// post-compile evaluation engine errors are returned as the Go error.
+func (e *Evaluator) Evaluate(ctx context.Context, namespace string, refs []paprikav1.ConftestPolicyRef, manifests []*unstructured.Unstructured) (governance.Violations, error)
 ```
+
+`compiledEntry` (the compiled `*rego.Rego` / prepared query, the policy name, and its
+`paprikav1.ConftestEnforcementMode`) is unexported and never escapes the package.
 
 ### Evaluation engine
 
@@ -202,26 +197,40 @@ Uses the Open Policy Agent **in-process** (`github.com/open-policy-agent/opa/reg
 
 - Rule sets named `deny`, `warn`, and `violation`.
 - `violation` rules are treated as `deny` (conftest compatibility).
-- Each manifest object is provided as `input` (one evaluation per object), matching how
-  conftest iterates documents. `input.parameters` carries the policy's parameter map.
+- **Input shape:** each manifest object is provided to Rego as `input`, one evaluation per
+  object, matching how conftest iterates documents. This means off-the-shelf conftest
+  policies (e.g. `deny { input.kind == "Deployment" }`) work unchanged. There is no
+  `input.parameters` — OPA's `rego.Input()` takes a single value, which is the manifest
+  object itself.
 
 The conftest Go module (`github.com/open-policy-agent/conftest`) is added to `go.mod` and
 its `parser`/`output` packages are used where they aid multi-doc handling and result
 shaping; the evaluation itself uses OPA's `rego` package, exactly as conftest does
 internally. No subprocess is spawned (consistent with the in-process Helm migration).
 
+### Violation mapping
+
+Each Rego result string maps to one `governance.Violation`:
+
+- `Violation.Rule` = the source `ConftestPolicy` name.
+- `Violation.Message` = the Rego result string.
+- `Violation.Severity` = derived from the rule set + enforcement: `deny`/`violation` on an
+  `enforce` policy → blocking severity; everything else → warning severity. Blocking-vs-warn
+  is ultimately decided by `Violation.Blocking()`, consistent with the governance gate.
+
 ### Caching
 
-Compiled policies are cached keyed by `(UID, Generation)`. On each `LoadPolicies`, entries
-whose generation is unchanged are reused; changed/missing entries are recompiled. The cache
-keeps compile cost off the reconcile hot path.
+Compiled policies are cached keyed by `(UID, Generation)`. On each `Evaluate`, entries whose
+generation is unchanged are reused; changed/missing entries are recompiled. The cache keeps
+compile cost off the reconcile hot path. Failed compiles are **not** cached (so a fixed
+policy takes effect on the next reconcile).
 
 ### Error mapping
 
 - Compile error on a referenced policy → blocking `Violation` (message includes the Rego
   compile error and policy name). Promotion is blocked until the policy is fixed.
 - Referenced policy not found → blocking `Violation` ("conftest policy <name> not found").
-- Evaluation internal error (should not happen after successful compile) → returned as the
+- Evaluation engine error after a successful compile (should not happen) → returned as the
   Go `error` from `Evaluate`; the release controller surfaces it as a reconcile error and
   requeues.
 
@@ -229,13 +238,14 @@ keeps compile cost off the reconcile hot path.
 
 ### Consumer-side interface
 
-Mirror the `GateExecutor` pattern. In the `pipelines` package:
+Mirror the `GateExecutor` pattern. In the `pipelines` package, a single-method interface so
+the consumer never depends on concrete `conftest` types:
 
 ```go
-// ConftestEvaluator evaluates ConftestPolicies against rendered manifests.
+// ConftestEvaluator resolves, compiles, and evaluates ConftestPolicies against rendered
+// manifests. Compile errors and missing policies are returned as blocking governance.Violations.
 type ConftestEvaluator interface {
-    LoadPolicies(ctx context.Context, namespace string, refs []paprikav1.ConftestPolicyRef) ([]conftest.Policy, governance.Violations, error)
-    Evaluate(ctx context.Context, policies []conftest.Policy, manifests []*unstructured.Unstructured) (governance.Violations, error)
+    Evaluate(ctx context.Context, namespace string, refs []paprikav1.ConftestPolicyRef, manifests []*unstructured.Unstructured) (governance.Violations, error)
 }
 ```
 
@@ -259,22 +269,38 @@ Behavior:
 
 1. If `r.ConftestEvaluator == nil` or `len(app.Spec.ConftestPolicies) == 0`, return nil
    (gate disabled).
-2. `LoadPolicies(ctx, release.Namespace, app.Spec.ConftestPolicies)`. Load-time blocking
-   violations abort promotion with a `ConftestPassed=False` condition and a Warning event.
-3. `Evaluate(...)`. On blocking violations, set
-   `ConftestPassed=False, Reason=PolicyViolation`, emit a Warning event with the first
-   violation message, patch release status, and return a blocking error (promotion aborts).
-   On warnings only, set `ConftestPassed=True, Reason=PassedWithWarnings`.
-   On a clean pass, set `ConftestPassed=True, Reason=Passed`.
+2. `violations, err := r.ConftestEvaluator.Evaluate(ctx, release.Namespace, app.Spec.ConftestPolicies, manifestObjects)`.
+   A non-nil `err` is a reconcile error → requeue (do not mark the release terminal).
+3. Partition `violations` via `.Blocking()` / `.Warnings()`:
+   - Blocking non-empty → set `ConftestPassed=False, Reason=PolicyViolation`, emit a Warning
+     event with the first violation message, patch release status, and return a blocking
+     error so promotion aborts. The release stays in its current (non-terminal) phase and
+     retries on the next reconcile; fixing the policy or manifest auto-resumes promotion.
+   - Warnings only → set `ConftestPassed=True, Reason=PassedWithWarnings`, promotion proceeds.
+   - Clean → set `ConftestPassed=True, Reason=Passed`, promotion proceeds.
 
-`runConftestGate` is called in both promotion entry points that currently call
-`runGovernanceGate` (the canary/blue-green path and the direct-apply path) so policy is
-enforced regardless of rollout strategy.
+### Hook sites
+
+`runGovernanceGate` is currently called at three sites in `release_controller.go`:
+
+- `:692` — the direct-promote path (manifests about to be applied).
+- `:1852` — the canary weight-adjustment path (manifests already applied; only traffic
+  weights change).
+- `:1898` — `promoteCanary` (new revision about to be applied).
+
+Conftest validates **manifests**, so it must run wherever new manifests are about to be
+applied, and must **not** run on a pure traffic-weight adjustment where the manifests are
+unchanged and were already gated. Therefore `runConftestGate` is called at **exactly the
+same sites as `runGovernanceGate` that precede a manifest apply** — the direct-promote path
+(`:692`) and `promoteCanary` (`:1898`) — immediately after the corresponding
+`runGovernanceGate` call. It is **not** added to the canary weight-adjustment path
+(`:1852`). (Governance itself can remain at all three; this is a deliberate, documented
+divergence because re-evaluating identical manifests on a weight tweak is pure waste.)
 
 ### Reuse of existing helpers
 
-- `setReleaseGovernanceCondition`-style helper is generalized (or a thin
-  `setReleaseConftestCondition` sibling is added) to set the `ConftestPassed` condition.
+- A thin `setReleaseConftestCondition(release, passed bool, reason, msg string)` sibling of
+  `setReleaseGovernanceCondition` sets the `ConftestPassed` condition.
 - Violation messages flow through the existing `patchReleaseStatus` + `EventRecorder` path
   used by the governance gate.
 
@@ -292,6 +318,19 @@ New release condition type `ConftestPassed`:
 When the gate is disabled (no policies / evaluator nil), no condition is written.
 
 `ConftestPolicy.Status.Conditions` carries `Ready` (`True`=compiled, `False`=compile error).
+This is **informational UX only**; it never gates promotion (see Source of Truth below).
+
+### Source of truth: a single compiler
+
+There are two places that compile Rego — the `ConftestPolicy` status controller (which writes
+`Ready`) and the `Evaluator` cache (used by the gate). To avoid ambiguity:
+
+- The **gate's `Evaluator.Evaluate` is authoritative.** It always compiles fresh (or from
+  its `(UID, Generation)` cache) and its result decides promotion, fail-closed.
+- The status controller's `Ready` condition is best-effort operator feedback and is **never
+  read** by `runConftestGate`. A stale `Ready=False` therefore cannot block promotion if the
+  policy actually compiles, and a stale `Ready=True` cannot unblock a policy that fails to
+  compile. This removes all precedence ambiguity between the two compilers.
 
 ## RBAC
 
@@ -301,7 +340,18 @@ When the gate is disabled (no policies / evaluator nil), no condition is written
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 ```
 
-These are added to the release controller and the small conftest-policy controller.
+The `conftestpolicies/status` verbs belong to the `ConftestPolicyReconciler` (the status
+controller). The release controller only needs `conftestpolicies` get/list/watch, which its
+`ConftestEvaluator` performs via the shared manager client.
+
+## ConftestPolicy status controller
+
+A small **controller** (`ConftestPolicyReconciler` in
+`internal/controller/pipelines/conftest_policy_controller.go`) — not a webhook — watches
+`ConftestPolicy` create/update, compiles the Rego, and writes the `Ready` condition (and
+`observedGeneration`). A controller is chosen over a webhook because it re-validates on OPA
+upgrades, requires no webhook server/certs, and matches the rest of the codebase. It writes
+status only; it never gates promotion.
 
 ## Safety
 
@@ -326,12 +376,12 @@ These are added to the release controller and the small conftest-policy controll
   - `warn` policy with a `deny` rule → Warning, not blocking.
   - `warn` rule on an `enforce` policy → Warning, not blocking.
   - Clean pass → no violations.
-  - Compile error → blocking "not ready" violation; cache does not cache failed compiles.
+  - Compile error → blocking violation; cache does not cache failed compiles.
   - Cache: bumping `generation` recompiles; unchanged generation reuses the entry.
-  - `input.parameters` is accessible from Rego.
+  - `input` is the manifest object itself (a `deny` rule keyed on `input.kind` matches).
 - `internal/controller/pipelines/conftest_gate_test.go`:
   - `runConftestGate` blocks on a violating enforce policy (`ConftestPassed=False`,
-    promotion aborted).
+    promotion aborted, release left in its non-terminal phase).
   - Warn-only policy → `ConftestPassed=True, PassedWithWarnings`, promotion proceeds.
   - No policies / nil evaluator → no-op, no condition.
   - Missing referenced policy → blocking `PolicyNotReady`.
@@ -339,10 +389,11 @@ These are added to the release controller and the small conftest-policy controll
 ### Envtest / e2e tests
 
 - A `ConftestPolicy` that denies Deployments missing `metadata.labels.app`:
-  - Application referencing it: release is created, rendered manifests evaluated, release
-    stays blocked (`Failed`/non-terminal) and the `ConftestPassed=False` condition is set.
-- After fixing the manifest (or switching the policy to `warn`), promotion succeeds and the
-  condition reflects the outcome.
+  - Application referencing it: release is created, rendered manifests evaluated, promotion
+    is blocked — the release is **not** advanced to a terminal phase; it remains retryable
+    and the `ConftestPassed=False` condition is set.
+- After fixing the manifest (or switching the policy to `warn`), the next reconcile
+  re-evaluates, promotion succeeds, and the condition reflects the outcome.
 
 ### Verification commands
 
@@ -379,15 +430,18 @@ Add to `go.mod`:
 - `github.com/open-policy-agent/opa` (rego engine)
 - `github.com/open-policy-agent/conftest` (parser/output + rule conventions)
 
-Both are well-maintained Apache-2.0 Go libraries with no CGO requirement.
+Both are well-maintained Apache-2.0 Go libraries with no CGO requirement. Note: OPA pulls a
+large transitive tree (Rego VM, AST, parser) that will noticeably grow the manager binary;
+this is an accepted cost of in-process policy evaluation and is preferable to a subprocess.
 
-## Open Questions
+## Decisions
 
-1. Should a `warn` policy that produces *no* rules matched still report `PassedWithWarnings`
-   only when warnings exist? Yes — `PassedWithWarnings` requires ≥1 warning; otherwise
-   `Passed`.
-2. Should conftest policies support combining into a single Rego bundle across multiple
-   `ConftestPolicy` objects? Out of scope for v1; each policy is compiled and evaluated
-   independently.
-3. CLI/UI surface for browsing violations? Out of scope; violations appear in release
-   conditions and events. A dedicated view can follow.
+1. A `warn` policy that produces *no* rule matches reports `Passed` (not `PassedWithWarnings`).
+   `PassedWithWarnings` requires ≥1 warning; otherwise `Passed`.
+2. Each `ConftestPolicy` is compiled and evaluated independently. Combining multiple policies
+   into a single Rego bundle is out of scope for v1.
+3. Violations surface via release conditions and events only. A dedicated CLI/UI view for
+   browsing violations can follow; no new API RPC in v1.
+4. Policy parameterization (exposing extra values to Rego beyond the manifest `input`) is
+   deferred. v1 gives each policy the manifest object as `input`, matching standard conftest
+   policies.
