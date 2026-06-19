@@ -123,6 +123,45 @@ Use this before claiming an e2e failure is a flake or a controller bug.
    - `helm lint ./charts/chart`
    - Then run `make test-e2e`
 
+## Validating Fixes in CI (E2E Tests)
+
+The `E2E Tests` workflow is intentionally **on-demand** (`workflow_dispatch`) to keep GitHub Actions minute usage low. Trigger it after controller/webhook/API/RBAC/Helm changes before claiming a deployment is safe.
+
+### Trigger a run
+
+```bash
+# Full e2e suite
+gh workflow run "E2E Tests" --repo paprikacd/paprika
+
+# Focused run, e.g. governance specs only
+gh workflow run "E2E Tests" --repo paprikacd/paprika -f ginkgo_focus=Governance
+
+# Keep the Kind cluster alive for post-failure inspection
+gh workflow run "E2E Tests" --repo paprikacd/paprika -f retain_cluster=true
+```
+
+### What the workflow does
+
+1. Pre-builds the manager and demo images with Docker layer caching (`type=gha`).
+2. Creates a fresh Kind cluster and loads the images.
+3. Runs the Ginkgo e2e suite with a 30-minute timeout.
+4. Tears down the Kind cluster (unless `retain_cluster=true`).
+
+### Interpreting results
+
+- **Pass**: the change is safe to deploy.
+- **Fail in `BeforeSuite`**: usually an image-build, Kind cluster, or cert-manager issue. Inspect the manager/demo image build steps first.
+- **Fail in a spec**: follow the [Diagnostic Moves](#diagnostic-moves) above using the downloaded job logs. Look for:
+  - `Forbidden` project-boundary errors → AppProject/Policy mismatch.
+  - Webhook connection refused → manager pod not ready or cert-manager CA not injected.
+  - Application stuck in a non-terminal phase → status-patch bottleneck.
+
+### Cost guardrails
+
+- The workflow only runs when manually triggered; it does **not** run on every push or PR.
+- Use `ginkgo_focus` to run only the specs relevant to your change when iterating.
+- Avoid `retain_cluster=true` unless you need live debugging; the cluster continues to consume runner time until the job times out or is cancelled.
+
 ## When NOT to Use
 
 - For obvious compile-time or test assertion failures (use normal debugging).
