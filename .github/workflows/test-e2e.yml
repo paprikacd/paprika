@@ -1,31 +1,16 @@
 name: E2E Tests
 
 on:
-  push:
-    branches: [master]
-    paths:
-      - '**.go'
-      - 'api/**'
-      - 'config/**'
-      - 'charts/**'
-      - 'test/e2e/**'
-      - 'Makefile'
-      - 'Dockerfile'
-      - 'demo/**'
-      - '.github/workflows/test-e2e.yml'
-  pull_request:
-    branches: [master]
-    paths:
-      - '**.go'
-      - 'api/**'
-      - 'config/**'
-      - 'charts/**'
-      - 'test/e2e/**'
-      - 'Makefile'
-      - 'Dockerfile'
-      - 'demo/**'
-      - '.github/workflows/test-e2e.yml'
   workflow_dispatch:
+    inputs:
+      ginkgo_focus:
+        description: 'Ginkgo focus filter (empty = all specs)'
+        required: false
+        default: ''
+      retain_cluster:
+        description: 'Keep the Kind cluster after the run for debugging'
+        required: false
+        default: 'false'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -94,8 +79,13 @@ jobs:
           kind load docker-image localhost/paprika-demo:latest --name ${{ env.KIND_CLUSTER }}
 
       - name: Run e2e tests
-        run: go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m
+        run: |
+          focus_flag=""
+          if [ -n "${{ inputs.ginkgo_focus }}" ]; then
+            focus_flag="-ginkgo.focus=${{ inputs.ginkgo_focus }}"
+          fi
+          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m $focus_flag
 
       - name: Cleanup kind cluster
-        if: always()
+        if: always() && inputs.retain_cluster != 'true'
         run: make cleanup-test-e2e
