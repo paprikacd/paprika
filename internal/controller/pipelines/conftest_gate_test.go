@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -124,4 +125,33 @@ func TestRunConftestGateEngineErrorSurfacesNoCondition(t *testing.T) {
 	for _, c := range rel.Status.Conditions {
 		assert.NotEqual(t, conftestConditionType, c.Type, "engine error must not set a conftest condition")
 	}
+}
+
+func TestRunConftestGateDoesNotSpamEventsOnRepeatedBlock(t *testing.T) {
+	rec := record.NewFakeRecorder(10)
+	ev := &fakeConftestEvaluator{violations: governance.Violations{
+		{Rule: "p", Severity: "deny", Message: "no label", Action: governance.PolicyActionEnforce},
+	}}
+	rel := relForTest()
+	r := newReconcilerWithConftest(t, ev, rel)
+	r.EventRecorder = rec
+	app := appWithPolicy("p")
+
+	// A blocked release requeues and re-evaluates; the identical violation must produce
+	// only one warning event across repeated reconciles.
+	require.Error(t, r.runConftestGate(context.Background(), rel, app, nil))
+	require.Error(t, r.runConftestGate(context.Background(), rel, app, nil))
+	require.Error(t, r.runConftestGate(context.Background(), rel, app, nil))
+
+	count := 0
+loop:
+	for {
+		select {
+		case <-rec.Events:
+			count++
+		default:
+			break loop
+		}
+	}
+	assert.Equal(t, 1, count, "expected exactly one warning event across identical repeated reconciles")
 }

@@ -52,15 +52,19 @@ func (r *ReleaseReconciler) runConftestGate(ctx context.Context, release *paprik
 				break
 			}
 		}
-		r.setReleaseConftestCondition(release, false, reason, blocking[0].Message)
-		if r.EventRecorder != nil {
-			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, reason, "%s", blocking[0].Message)
+		message := blocking[0].Message
+		// Only emit when the outcome changes; the release stays non-terminal and requeues
+		// while blocked, so re-emitting the identical event each reconcile floods the stream.
+		existing := meta.FindStatusCondition(release.Status.Conditions, conftestConditionType)
+		r.setReleaseConftestCondition(release, false, reason, message)
+		if r.EventRecorder != nil && (existing == nil || existing.Reason != reason || existing.Message != message) {
+			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, reason, "%s", message)
 		}
 		if patchErr := r.patchReleaseStatus(ctx, release, release.Status.Phase); patchErr != nil {
 			log.Error(patchErr, "Failed to patch release status after conftest violation",
 				"release", release.Name, "namespace", release.Namespace)
 		}
-		return fmt.Errorf("conftest %s: %s", reason, blocking[0].Message)
+		return fmt.Errorf("conftest %s: %s", reason, message)
 	}
 
 	if warnings := violations.Warnings(); len(warnings) > 0 {
