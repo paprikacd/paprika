@@ -51,6 +51,10 @@ const statusConfig: Record<string, { icon: typeof Loader2; className: string }> 
     icon: Activity,
     className: "bg-primary/10 text-primary border-primary/20 [&_svg]:animate-pulse",
   },
+  AwaitingApproval: {
+    icon: PauseCircle,
+    className: "bg-warning/10 text-warning border-warning/20",
+  },
   Paused: {
     icon: PauseCircle,
     className: "bg-warning/10 text-warning border-warning/20",
