@@ -95,20 +95,21 @@ type ReleaseReconciler struct {
 	Namespace            string
 	RestConfig           *rest.Config
 	ClusterMgr           ClusterClientGetter
-	DynamicClient        dynamic.Interface
-	GateExecutor         GateExecutor
-	Analyzer             Analyzer
-	TemplateRenderer     AllTemplatesRenderer
-	TrafficRouterFactory TrafficRouterFactory
-	ShardFilter          *sharding.Filter
-	RateLimiter          *ratelimit.ControllerRateLimit
-	AgentClientBuilder   func(baseURL string) AgentApplier
-	EventRecorder        record.EventRecorder
-	ProjectValidator     *governance.ProjectValidator
-	PolicyEvaluator      *governance.PolicyEvaluator
-	EventBroker          *events.Broker
-	Telemetry            *observability.Telemetry
-	Clock                clock.Clock
+	DynamicClient         dynamic.Interface
+	GateExecutor          GateExecutor
+	ApprovalGateEvaluator ApprovalGateEvaluator
+	Analyzer              Analyzer
+	TemplateRenderer      AllTemplatesRenderer
+	TrafficRouterFactory  TrafficRouterFactory
+	ShardFilter           *sharding.Filter
+	RateLimiter           *ratelimit.ControllerRateLimit
+	AgentClientBuilder    func(baseURL string) AgentApplier
+	EventRecorder         record.EventRecorder
+	ProjectValidator      *governance.ProjectValidator
+	PolicyEvaluator       *governance.PolicyEvaluator
+	EventBroker           *events.Broker
+	Telemetry             *observability.Telemetry
+	Clock                 clock.Clock
 }
 
 // NewReleaseReconciler returns a ReleaseReconciler initialized with the given
