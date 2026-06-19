@@ -132,6 +132,7 @@ func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ..
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/finalizers,verbs=update
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -749,6 +750,9 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
+	}
+	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
+		return fmt.Errorf("run conftest gate: %w", err)
 	}
 
 	project := app.Spec.Project
@@ -1910,6 +1914,9 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
 	}
+	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
+		return fmt.Errorf("run conftest gate: %w", err)
+	}
 	project := app.Spec.Project
 	if project == "" {
 		project = defaultProjectName
@@ -1955,6 +1962,9 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
+	}
+	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
+		return fmt.Errorf("run conftest gate: %w", err)
 	}
 	project := app.Spec.Project
 	if project == "" {
