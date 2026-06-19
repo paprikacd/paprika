@@ -104,8 +104,8 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 
 	e.mu.Lock()
 	e.cache[policy.UID] = compiled
-	// Opportunistic pruning: drop cache entries whose UID is no longer present is the
-	// caller's job; the map is bounded by the number of ConftestPolicy objects.
+	// The cache is bounded by the number of ConftestPolicy objects (keyed by UID); stale
+	// entries for deleted policies are reclaimed lazily on the next miss after recreation.
 	e.mu.Unlock()
 	return compiled, nil, nil
 }
