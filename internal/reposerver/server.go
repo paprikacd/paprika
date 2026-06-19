@@ -199,6 +199,16 @@ func (s *Server) ApproveGate(ctx context.Context, req *connect.Request[paprikav1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ApproveGate"))
 }
 
+// ListGateStatus is not implemented by the repo server.
+func (s *Server) ListGateStatus(ctx context.Context, req *connect.Request[paprikav1.ListGateStatusRequest]) (*connect.Response[paprikav1.ListGateStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListGateStatus"))
+}
+
+// RejectGate is not implemented by the repo server.
+func (s *Server) RejectGate(ctx context.Context, req *connect.Request[paprikav1.RejectGateRequest]) (*connect.Response[paprikav1.RejectGateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement RejectGate"))
+}
+
 // ApplyBundle is not implemented by the repo server.
 func (s *Server) ApplyBundle(ctx context.Context, req *connect.Request[paprikav1.ApplyBundleRequest]) (*connect.Response[paprikav1.ApplyBundleResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ApplyBundle"))
