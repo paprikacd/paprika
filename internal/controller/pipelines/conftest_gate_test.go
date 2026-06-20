@@ -92,7 +92,7 @@ func TestRunConftestGateBlocksOnEnforceViolation(t *testing.T) {
 
 func TestRunConftestGateNotReadyWhenPolicyUncompilable(t *testing.T) {
 	ev := &fakeConftestEvaluator{violations: governance.Violations{
-		{Rule: "p", Severity: conftestSeverityNotReady, Message: "compile error", Action: governance.PolicyActionEnforce},
+		{Rule: "p", Severity: governance.SeverityNotReady, Message: "compile error", Action: governance.PolicyActionEnforce},
 	}}
 	rel := relForTest()
 	r := newReconcilerWithConftest(t, ev, rel)
@@ -118,7 +118,7 @@ func TestRunConftestGateBlockWrapsSentinel(t *testing.T) {
 		},
 		{
 			name:    "policy not-ready wraps sentinel",
-			violate: governance.Violation{Rule: "p", Severity: conftestSeverityNotReady, Message: "missing", Action: governance.PolicyActionEnforce},
+			violate: governance.Violation{Rule: "p", Severity: governance.SeverityNotReady, Message: "missing", Action: governance.PolicyActionEnforce},
 			reason:  conftestReasonPolicyNotReady,
 		},
 	}

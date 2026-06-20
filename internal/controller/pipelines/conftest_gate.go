@@ -28,7 +28,6 @@ const (
 	conftestReasonPassedWithWarnings = "PassedWithWarnings"
 	conftestReasonPolicyViolation    = "PolicyViolation"
 	conftestReasonPolicyNotReady     = "PolicyNotReady"
-	conftestSeverityNotReady         = "not-ready"
 
 	// conftestBlockedRequeueInterval is how long the release waits before re-evaluating the
 	// gate after a blocking violation. The release stays non-terminal (Promoting) so a
@@ -76,7 +75,7 @@ func (r *ReleaseReconciler) blockOnConftestViolation(ctx context.Context, releas
 	log := logf.FromContext(ctx)
 	reason := conftestReasonPolicyViolation
 	for _, v := range blocking {
-		if v.Severity == conftestSeverityNotReady {
+		if v.Severity == governance.SeverityNotReady {
 			reason = conftestReasonPolicyNotReady
 			break
 		}

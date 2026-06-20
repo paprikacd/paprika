@@ -21,11 +21,10 @@ import (
 )
 
 const (
-	ruleDeny         = "deny"
-	ruleWarn         = "warn"
-	ruleViolation    = "violation"
-	severityNotReady = "not-ready"
-	moduleName       = "policy.rego"
+	ruleDeny      = "deny"
+	ruleWarn      = "warn"
+	ruleViolation = "violation"
+	moduleName    = "policy.rego"
 )
 
 type compiledEntry struct {
@@ -77,7 +76,7 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 	if err := e.client.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, &policy); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, governance.Violations{{
-				Rule: ref.Name, Severity: severityNotReady,
+				Rule: ref.Name, Severity: governance.SeverityNotReady,
 				Message: fmt.Sprintf("conftest policy %q not found", ref.Name),
 				Action:  governance.PolicyActionEnforce,
 			}}, nil
@@ -96,7 +95,7 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 	if err != nil {
 		// Do not cache failed compiles so a fixed policy takes effect on the next reconcile.
 		return nil, governance.Violations{{
-			Rule: policy.Name, Severity: severityNotReady,
+			Rule: policy.Name, Severity: governance.SeverityNotReady,
 			Message: fmt.Sprintf("compile conftest policy %q: %v", policy.Name, err),
 			Action:  governance.PolicyActionEnforce,
 		}}, nil
@@ -106,8 +105,10 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 
 	e.mu.Lock()
 	e.cache[policy.UID] = compiled
-	// The cache is bounded by the number of ConftestPolicy objects (keyed by UID); stale
-	// entries for deleted policies are reclaimed lazily on the next miss after recreation.
+	// The cache is keyed by ConftestPolicy UID and only grows on a generation change for an
+	// existing UID. Delete/recreate churn produces a new UID per object, so the prior entry is
+	// not reclaimed until process restart; in practice this is bounded by distinct policy
+	// lifetimes. A periodic prune against a List is a possible future improvement.
 	e.mu.Unlock()
 	return compiled, nil, nil
 }
