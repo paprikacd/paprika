@@ -336,11 +336,7 @@ func setApplicationGovernanceCondition(app *paprikav1.Application, status metav1
 func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	if blocked, msg := r.checkGates(ctx, app); blocked {
-		log.Info("Gate blocked release", "app", app.Name, "reason", msg)
-		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "GatePending", msg)
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-	}
+	// Approval gates are now evaluated by the Release controller before promotion.
 
 	result, err := r.reconcileRelease(ctx, app)
 	if err != nil {
@@ -714,12 +710,13 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 			}),
 		},
 		Spec: paprikav1.StageSpec{
-			Name:      promotionStage.Name,
-			Ring:      promotionStage.Ring,
-			Cluster:   promotionStage.Cluster,
-			Templates: templates,
-			Gates:     promotionStage.Gates,
-			Canary:    stageCanary,
+			Name:          promotionStage.Name,
+			Ring:          promotionStage.Ring,
+			Cluster:       promotionStage.Cluster,
+			Templates:     templates,
+			Gates:         promotionStage.Gates,
+			ApprovalGates: promotionStage.ApprovalGates,
+			Canary:        stageCanary,
 		},
 	}
 }
@@ -816,13 +813,14 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 		reason   string
 		requeue  bool
 	}{
-		paprikav1.ReleasePending:    {paprikav1.ApplicationPromoting, "ReleasePromoting", true},
-		paprikav1.ReleasePromoting:  {paprikav1.ApplicationPromoting, "ReleasePromoting", true},
-		paprikav1.ReleaseCanarying:  {paprikav1.ApplicationCanarying, "ReleaseCanarying", true},
-		paprikav1.ReleaseVerifying:  {paprikav1.ApplicationVerifying, "ReleaseVerifying", true},
-		paprikav1.ReleaseComplete:   {paprikav1.ApplicationHealthy, "ReleaseComplete", false},
-		paprikav1.ReleaseFailed:     {paprikav1.ApplicationDegraded, "ReleaseFailed", true},
-		paprikav1.ReleaseRolledBack: {paprikav1.ApplicationRolledBack, "ReleaseRolledBack", true},
+		paprikav1.ReleasePending:          {paprikav1.ApplicationPromoting, "ReleasePromoting", true},
+		paprikav1.ReleasePromoting:        {paprikav1.ApplicationPromoting, "ReleasePromoting", true},
+		paprikav1.ReleaseAwaitingApproval: {paprikav1.ApplicationPromoting, "ReleaseAwaitingApproval", true},
+		paprikav1.ReleaseCanarying:        {paprikav1.ApplicationCanarying, "ReleaseCanarying", true},
+		paprikav1.ReleaseVerifying:        {paprikav1.ApplicationVerifying, "ReleaseVerifying", true},
+		paprikav1.ReleaseComplete:         {paprikav1.ApplicationHealthy, "ReleaseComplete", false},
+		paprikav1.ReleaseFailed:           {paprikav1.ApplicationDegraded, "ReleaseFailed", true},
+		paprikav1.ReleaseRolledBack:       {paprikav1.ApplicationRolledBack, "ReleaseRolledBack", true},
 	}
 
 	mapping, ok := phaseMap[phase]
@@ -1190,29 +1188,6 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 	app.Status.ResourceHealth = healthResults
 }
 
-func (r *ApplicationReconciler) checkGates(ctx context.Context, app *paprikav1.Application) (blocked bool, reason string) {
-	if len(app.Spec.ApprovalGates) == 0 {
-		return false, ""
-	}
-
-	targetStage := r.getTargetStage(app)
-
-	for _, gate := range app.Spec.ApprovalGates {
-		if !r.isGateRelevant(gate, targetStage) {
-			continue
-		}
-		if r.isGateApproved(app, gate.Name) {
-			continue
-		}
-		if err := r.recordPendingGate(ctx, app, gate); err != nil {
-			log.FromContext(ctx).Error(err, "Failed to record pending gate")
-		}
-		return true, fmt.Sprintf("approval gate %s pending for stage %s", gate.Name, gate.Stage)
-	}
-
-	return false, ""
-}
-
 func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *paprikav1.Application) error {
 	log := log.FromContext(ctx)
 
@@ -1275,46 +1250,6 @@ func (r *ApplicationReconciler) getTargetStage(app *paprikav1.Application) strin
 		return ""
 	}
 	return app.Spec.Stages[0].Name
-}
-
-func (r *ApplicationReconciler) isGateRelevant(gate paprikav1.ApprovalGate, targetStage string) bool {
-	if gate.Stage != "" && gate.Stage != targetStage {
-		return false
-	}
-	return gate.Required
-}
-
-func (r *ApplicationReconciler) isGateApproved(app *paprikav1.Application, gateName string) bool {
-	for _, gs := range app.Status.Gates {
-		if gs.Name == gateName && gs.Status == "Approved" {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *ApplicationReconciler) recordPendingGate(ctx context.Context, app *paprikav1.Application, gate paprikav1.ApprovalGate) error {
-	if r.gateStatusExists(app, gate.Name) {
-		return nil
-	}
-	app.Status.Gates = append(app.Status.Gates, paprikav1.GateStatus{
-		Name:   gate.Name,
-		Stage:  gate.Stage,
-		Status: "Pending",
-	})
-	if err := r.patchAppStatus(ctx, app); err != nil {
-		return fmt.Errorf("recording pending gate: %w", err)
-	}
-	return nil
-}
-
-func (r *ApplicationReconciler) gateStatusExists(app *paprikav1.Application, gateName string) bool {
-	for _, gs := range app.Status.Gates {
-		if gs.Name == gateName {
-			return true
-		}
-	}
-	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.

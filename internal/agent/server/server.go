@@ -285,6 +285,16 @@ func (s *Server) ApproveGate(ctx context.Context, req *connect.Request[paprikav1
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ApproveGate"))
 }
 
+// ListGateStatus is not implemented by the agent.
+func (s *Server) ListGateStatus(ctx context.Context, req *connect.Request[paprikav1.ListGateStatusRequest]) (*connect.Response[paprikav1.ListGateStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ListGateStatus"))
+}
+
+// RejectGate is not implemented by the agent.
+func (s *Server) RejectGate(ctx context.Context, req *connect.Request[paprikav1.RejectGateRequest]) (*connect.Response[paprikav1.RejectGateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement RejectGate"))
+}
+
 // ResolveSource is not implemented by the agent.
 func (s *Server) ResolveSource(ctx context.Context, req *connect.Request[paprikav1.ResolveSourceRequest]) (*connect.Response[paprikav1.ResolveSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agent does not implement ResolveSource"))

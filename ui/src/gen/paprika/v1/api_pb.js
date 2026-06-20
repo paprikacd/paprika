@@ -194,6 +194,8 @@ export const GateStatus = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "approved_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -705,6 +707,49 @@ export const ApproveGateRequest = /*@__PURE__*/ proto3.makeMessageType(
  */
 export const ApproveGateResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ApproveGateResponse",
+  () => [
+    { no: 1, name: "application", kind: "message", T: Application },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListGateStatusRequest
+ */
+export const ListGateStatusRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListGateStatusRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListGateStatusResponse
+ */
+export const ListGateStatusResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListGateStatusResponse",
+  () => [
+    { no: 1, name: "gates", kind: "message", T: GateStatus, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RejectGateRequest
+ */
+export const RejectGateRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RejectGateRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "gate", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RejectGateResponse
+ */
+export const RejectGateResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RejectGateResponse",
   () => [
     { no: 1, name: "application", kind: "message", T: Application },
   ],

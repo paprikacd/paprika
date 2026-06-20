@@ -104,6 +104,7 @@ function ApplicationDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState<string | null>(null);
+  const [actingGate, setActingGate] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!namespace || !name) return;
@@ -163,6 +164,27 @@ function ApplicationDetail() {
       }
     },
     [fetchData],
+  );
+
+  const handleGateAction = useCallback(
+    async (gateName: string, action: "approve" | "reject") => {
+      if (!application) return;
+      setActingGate(gateName);
+      try {
+        if (action === "approve") {
+          await client.approveGate({ namespace, name, gate: gateName });
+        } else {
+          await client.rejectGate({ namespace, name, gate: gateName });
+        }
+        await fetchData();
+      } catch (err) {
+        setError(`${action === "approve" ? "Approval" : "Rejection"} failed for ${gateName}`);
+        console.error(err);
+      } finally {
+        setActingGate(null);
+      }
+    },
+    [application, namespace, name, fetchData],
   );
 
   const pageTitle = application?.name ?? name;
@@ -271,6 +293,67 @@ function ApplicationDetail() {
               </CardContent>
             </Card>
           </div>
+
+          {application.gates && application.gates.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5" />
+                  Approval Gates
+                </CardTitle>
+                <CardDescription>Gates that must pass before promotion continues.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Stage</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {application.gates.map((gate) => (
+                      <TableRow key={gate.name}>
+                        <TableCell className="font-medium">{gate.name}</TableCell>
+                        <TableCell>{gate.stage || "—"}</TableCell>
+                        <TableCell>{gate.type || "—"}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={gate.status} />
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{gate.message || "—"}</TableCell>
+                        <TableCell className="text-right">
+                          {gate.status === "Pending" && (
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleGateAction(gate.name, "approve")}
+                                disabled={actingGate === gate.name}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleGateAction(gate.name, "reject")}
+                                disabled={actingGate === gate.name}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

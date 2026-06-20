@@ -131,6 +131,9 @@ type StageSpec struct {
 	Cluster   ClusterRef   `json:"cluster,omitempty"`
 	Templates []string     `json:"templates"`
 	Gates     []GateConfig `json:"gates,omitempty"`
+	// ApprovalGates define manual/webhook/Slack approval gates for promotion into this stage.
+	// +optional
+	ApprovalGates []ApprovalGate `json:"approvalGates,omitempty"`
 	// +optional
 	Canary *CanaryConfig `json:"canary,omitempty"`
 	// RolloutStrategy is an advanced deployment strategy managed by the Rollout controller.
