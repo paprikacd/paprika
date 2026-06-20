@@ -89,26 +89,27 @@ type TrafficRouterFactory func(cfg *paprikav1.TrafficRouter, client dynamic.Inte
 
 // ReleaseReconciler reconciles Release resources.
 type ReleaseReconciler struct {
-	client               client.Client
-	Scheme               *runtime.Scheme
-	K8sClient            kubernetes.Interface
-	Namespace            string
-	RestConfig           *rest.Config
-	ClusterMgr           ClusterClientGetter
-	DynamicClient        dynamic.Interface
-	GateExecutor         GateExecutor
-	Analyzer             Analyzer
-	TemplateRenderer     AllTemplatesRenderer
-	TrafficRouterFactory TrafficRouterFactory
-	ShardFilter          *sharding.Filter
-	RateLimiter          *ratelimit.ControllerRateLimit
-	AgentClientBuilder   func(baseURL string) AgentApplier
-	EventRecorder        record.EventRecorder
-	ProjectValidator     *governance.ProjectValidator
-	PolicyEvaluator      *governance.PolicyEvaluator
-	EventBroker          *events.Broker
-	Telemetry            *observability.Telemetry
-	Clock                clock.Clock
+	client                client.Client
+	Scheme                *runtime.Scheme
+	K8sClient             kubernetes.Interface
+	Namespace             string
+	RestConfig            *rest.Config
+	ClusterMgr            ClusterClientGetter
+	DynamicClient         dynamic.Interface
+	GateExecutor          GateExecutor
+	ApprovalGateEvaluator ApprovalGateEvaluator
+	Analyzer              Analyzer
+	TemplateRenderer      AllTemplatesRenderer
+	TrafficRouterFactory  TrafficRouterFactory
+	ShardFilter           *sharding.Filter
+	RateLimiter           *ratelimit.ControllerRateLimit
+	AgentClientBuilder    func(baseURL string) AgentApplier
+	EventRecorder         record.EventRecorder
+	ProjectValidator      *governance.ProjectValidator
+	PolicyEvaluator       *governance.PolicyEvaluator
+	EventBroker           *events.Broker
+	Telemetry             *observability.Telemetry
+	Clock                 clock.Clock
 }
 
 // NewReleaseReconciler returns a ReleaseReconciler initialized with the given
@@ -138,6 +139,9 @@ func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ..
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;update;patch
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
 
 // Reconcile handles Release reconciliation.
 //
@@ -214,6 +218,10 @@ func (r *ReleaseReconciler) reconcileReleasePhase(ctx context.Context, req ctrl.
 
 	if release.Status.Phase == paprikav1.ReleasePending {
 		return r.handlePendingPhase(ctx, release, result)
+	}
+
+	if release.Status.Phase == paprikav1.ReleaseAwaitingApproval {
+		return r.handleAwaitingApprovalPhase(ctx, release, result)
 	}
 
 	if err := r.checkConcurrentRelease(ctx, release); err != nil {
@@ -361,6 +369,28 @@ func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *pap
 	return ctrl.Result{Requeue: true}, nil
 }
 
+func (r *ReleaseReconciler) handleAwaitingApprovalPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
+	approved, rejected, err := r.checkApprovalGates(ctx, release)
+	if err != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("checking approval gates: %w", err)
+	}
+	if rejected {
+		return r.failRelease(ctx, release, result)
+	}
+	if approved {
+		oldPhase := release.Status.Phase
+		release.Status.Phase = paprikav1.ReleasePromoting
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Promoting").Inc()
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to transition from awaiting approval to promoting: %w", err)
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
 func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprikav1.Release, namespace string, result *string) (ctrl.Result, error) {
 	var stage paprikav1.Stage
 	if err := r.client.Get(ctx, types.NamespacedName{Name: release.Spec.Target, Namespace: namespace}, &stage); err != nil {
@@ -387,6 +417,31 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
+
+	approved, rejected, err := r.checkApprovalGates(ctx, release)
+	if err != nil {
+		log.Error(err, "Failed to check approval gates", "release", release.Name)
+		release.Status.Phase = paprikav1.ReleaseFailed
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
+		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to set release failed: %w", updateErr)
+		}
+		return ctrl.Result{}, nil
+	}
+	if rejected {
+		return r.failRelease(ctx, release, result)
+	}
+	if !approved {
+		release.Status.Phase = paprikav1.ReleaseAwaitingApproval
+		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "AwaitingApproval").Inc()
+		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
+			*result = resultError
+			return ctrl.Result{}, fmt.Errorf("failed to transition to awaiting approval: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
 	if err := r.promote(ctx, release); err != nil {
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
@@ -644,7 +699,8 @@ func (r *ReleaseReconciler) hasActiveConcurrentRelease(ctx context.Context, rele
 		}
 		if other.Spec.Target == release.Spec.Target &&
 			(other.Status.Phase == paprikav1.ReleasePromoting ||
-				other.Status.Phase == paprikav1.ReleaseVerifying) {
+				other.Status.Phase == paprikav1.ReleaseVerifying ||
+				other.Status.Phase == paprikav1.ReleaseAwaitingApproval) {
 			return true, nil
 		}
 	}
@@ -2005,6 +2061,144 @@ func (r *ReleaseReconciler) cleanupCanaryResources(ctx context.Context, namespac
 		return fmt.Errorf("errors during canary cleanup: %w", errors.Join(errs...))
 	}
 	return nil
+}
+
+//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
+func (r *ReleaseReconciler) effectiveApprovalGates(app *paprikav1.Application, stage *paprikav1.Stage) []*gates.ApprovalGate {
+	target := stage.Spec.Name
+	var out []*gates.ApprovalGate
+	for i := range app.Spec.ApprovalGates {
+		g := &app.Spec.ApprovalGates[i]
+		if !g.Required {
+			continue
+		}
+		if g.Stage != "" && g.Stage != target {
+			continue
+		}
+		out = append(out, convertApprovalGate(g))
+	}
+	for i := range stage.Spec.ApprovalGates {
+		g := &stage.Spec.ApprovalGates[i]
+		if !g.Required {
+			continue
+		}
+		out = append(out, convertApprovalGate(g))
+	}
+	return out
+}
+
+//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
+func convertApprovalGate(g *paprikav1.ApprovalGate) *gates.ApprovalGate {
+	return &gates.ApprovalGate{
+		Name:            g.Name,
+		Stage:           g.Stage,
+		Type:            g.Type,
+		Required:        g.Required,
+		URL:             g.URL,
+		Method:          g.Method,
+		Headers:         g.Headers,
+		Body:            g.Body,
+		SuccessStatus:   g.SuccessStatus,
+		SlackWebhookURL: g.SlackWebhookURL,
+		SlackChannel:    g.SlackChannel,
+	}
+}
+
+//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
+func (r *ReleaseReconciler) findGateStatus(app *paprikav1.Application, name string) *paprikav1.GateStatus {
+	for i := range app.Status.Gates {
+		if app.Status.Gates[i].Name == name {
+			return &app.Status.Gates[i]
+		}
+	}
+	return nil
+}
+
+//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
+func (r *ReleaseReconciler) syncApplicationGateStatus(ctx context.Context, app *paprikav1.Application, statuses []paprikav1.GateStatus) error {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var fresh paprikav1.Application
+		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+			return fmt.Errorf("fetch application for gate sync: %w", err)
+		}
+		fresh.Status.Gates = statuses
+		if err := r.client.Status().Update(ctx, &fresh); err != nil {
+			return fmt.Errorf("update application gate status: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("sync application gate status: %w", err)
+	}
+	return nil
+}
+
+//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
+func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *paprikav1.Release) (approved, rejected bool, err error) {
+	log := logf.FromContext(ctx)
+	app, err := r.resolveOwningApplication(ctx, release)
+	if err != nil {
+		return false, false, fmt.Errorf("resolve owning application: %w", err)
+	}
+	stage, err := r.fetchStage(ctx, release)
+	if err != nil {
+		return false, false, fmt.Errorf("fetch stage: %w", err)
+	}
+
+	gateList := r.effectiveApprovalGates(app, stage)
+	if len(gateList) == 0 {
+		return true, false, nil
+	}
+
+	payload := &gates.ApprovalGatePayload{
+		Application: app.Name,
+		Namespace:   app.Namespace,
+		Release:     release.Name,
+		Stage:       stage.Spec.Name,
+	}
+
+	statuses := make([]paprikav1.GateStatus, 0, len(gateList))
+	anyPending := false
+	anyRejected := false
+
+	for _, g := range gateList {
+		current := r.findGateStatus(app, g.Name)
+		currentStatus := ""
+		if current != nil {
+			currentStatus = current.Status
+		}
+		result := r.ApprovalGateEvaluator.Evaluate(ctx, g, payload, currentStatus)
+		status := paprikav1.GateStatus{
+			Name:   g.Name,
+			Stage:  g.Stage,
+			Type:   g.Type,
+			Status: result.Status,
+		}
+		if result.Status == paprikav1.GateStatusApproved {
+			status.ApprovedBy = result.ApprovedBy
+		} else {
+			status.Message = result.Message
+		}
+		statuses = append(statuses, status)
+		if result.Status == paprikav1.GateStatusPending {
+			anyPending = true
+		}
+		if result.Status == paprikav1.GateStatusRejected {
+			anyRejected = true
+		}
+		log.Info("Evaluated approval gate", "gate", g.Name, "type", g.Type, "status", result.Status)
+	}
+
+	if err := r.syncApplicationGateStatus(ctx, app, statuses); err != nil {
+		return false, false, fmt.Errorf("sync gate status: %w", err)
+	}
+
+	if anyRejected {
+		return false, true, nil
+	}
+	if anyPending {
+		return false, false, nil
+	}
+	return true, false, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

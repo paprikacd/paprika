@@ -116,6 +116,8 @@ message GateStatus {
   string stage = 2;
   string status = 3;
   string approved_by = 4;
+  string type = 5;
+  string message = 6;
 }
 
 message Condition {
@@ -393,6 +395,25 @@ message ApproveGateResponse {
   Application application = 1;
 }
 
+message ListGateStatusRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListGateStatusResponse {
+  repeated GateStatus gates = 1;
+}
+
+message RejectGateRequest {
+  string name = 1;
+  string namespace = 2;
+  string gate = 3;
+}
+
+message RejectGateResponse {
+  Application application = 1;
+}
+
 message ResolveSourceRequest {
   string namespace = 1;
   string name = 2;
@@ -511,6 +532,8 @@ service PaprikaService {
   rpc GetApplication(GetApplicationRequest) returns (GetApplicationResponse);
   rpc SyncApplication(SyncApplicationRequest) returns (SyncApplicationResponse);
   rpc ApproveGate(ApproveGateRequest) returns (ApproveGateResponse);
+  rpc ListGateStatus(ListGateStatusRequest) returns (ListGateStatusResponse);
+  rpc RejectGate(RejectGateRequest) returns (RejectGateResponse);
   rpc ResolveSource(ResolveSourceRequest) returns (ResolveSourceResponse);
   rpc Render(RenderRequest) returns (RenderResponse);
   rpc ApplyBundle(ApplyBundleRequest) returns (ApplyBundleResponse);

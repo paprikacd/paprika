@@ -11,3 +11,8 @@ import (
 type GateExecutor interface {
 	Execute(ctx context.Context, config gates.GateConfig) gates.GateResult
 }
+
+// ApprovalGateEvaluator evaluates approval gates before a Release is promoted.
+type ApprovalGateEvaluator interface {
+	Evaluate(ctx context.Context, gate *gates.ApprovalGate, payload *gates.ApprovalGatePayload, currentStatus string) *gates.ApprovalGateResult
+}

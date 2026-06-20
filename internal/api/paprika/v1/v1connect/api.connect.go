@@ -66,6 +66,12 @@ const (
 	// PaprikaServiceApproveGateProcedure is the fully-qualified name of the PaprikaService's
 	// ApproveGate RPC.
 	PaprikaServiceApproveGateProcedure = "/paprika.v1.PaprikaService/ApproveGate"
+	// PaprikaServiceListGateStatusProcedure is the fully-qualified name of the PaprikaService's
+	// ListGateStatus RPC.
+	PaprikaServiceListGateStatusProcedure = "/paprika.v1.PaprikaService/ListGateStatus"
+	// PaprikaServiceRejectGateProcedure is the fully-qualified name of the PaprikaService's RejectGate
+	// RPC.
+	PaprikaServiceRejectGateProcedure = "/paprika.v1.PaprikaService/RejectGate"
 	// PaprikaServiceResolveSourceProcedure is the fully-qualified name of the PaprikaService's
 	// ResolveSource RPC.
 	PaprikaServiceResolveSourceProcedure = "/paprika.v1.PaprikaService/ResolveSource"
@@ -104,6 +110,8 @@ type PaprikaServiceClient interface {
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
+	ListGateStatus(context.Context, *connect.Request[v1.ListGateStatusRequest]) (*connect.Response[v1.ListGateStatusResponse], error)
+	RejectGate(context.Context, *connect.Request[v1.RejectGateRequest]) (*connect.Response[v1.RejectGateResponse], error)
 	ResolveSource(context.Context, *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error)
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
@@ -191,6 +199,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("ApproveGate")),
 			connect.WithClientOptions(opts...),
 		),
+		listGateStatus: connect.NewClient[v1.ListGateStatusRequest, v1.ListGateStatusResponse](
+			httpClient,
+			baseURL+PaprikaServiceListGateStatusProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListGateStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		rejectGate: connect.NewClient[v1.RejectGateRequest, v1.RejectGateResponse](
+			httpClient,
+			baseURL+PaprikaServiceRejectGateProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("RejectGate")),
+			connect.WithClientOptions(opts...),
+		),
 		resolveSource: connect.NewClient[v1.ResolveSourceRequest, v1.ResolveSourceResponse](
 			httpClient,
 			baseURL+PaprikaServiceResolveSourceProcedure,
@@ -255,6 +275,8 @@ type paprikaServiceClient struct {
 	getApplication          *connect.Client[v1.GetApplicationRequest, v1.GetApplicationResponse]
 	syncApplication         *connect.Client[v1.SyncApplicationRequest, v1.SyncApplicationResponse]
 	approveGate             *connect.Client[v1.ApproveGateRequest, v1.ApproveGateResponse]
+	listGateStatus          *connect.Client[v1.ListGateStatusRequest, v1.ListGateStatusResponse]
+	rejectGate              *connect.Client[v1.RejectGateRequest, v1.RejectGateResponse]
 	resolveSource           *connect.Client[v1.ResolveSourceRequest, v1.ResolveSourceResponse]
 	render                  *connect.Client[v1.RenderRequest, v1.RenderResponse]
 	applyBundle             *connect.Client[v1.ApplyBundleRequest, v1.ApplyBundleResponse]
@@ -320,6 +342,16 @@ func (c *paprikaServiceClient) ApproveGate(ctx context.Context, req *connect.Req
 	return c.approveGate.CallUnary(ctx, req)
 }
 
+// ListGateStatus calls paprika.v1.PaprikaService.ListGateStatus.
+func (c *paprikaServiceClient) ListGateStatus(ctx context.Context, req *connect.Request[v1.ListGateStatusRequest]) (*connect.Response[v1.ListGateStatusResponse], error) {
+	return c.listGateStatus.CallUnary(ctx, req)
+}
+
+// RejectGate calls paprika.v1.PaprikaService.RejectGate.
+func (c *paprikaServiceClient) RejectGate(ctx context.Context, req *connect.Request[v1.RejectGateRequest]) (*connect.Response[v1.RejectGateResponse], error) {
+	return c.rejectGate.CallUnary(ctx, req)
+}
+
 // ResolveSource calls paprika.v1.PaprikaService.ResolveSource.
 func (c *paprikaServiceClient) ResolveSource(ctx context.Context, req *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error) {
 	return c.resolveSource.CallUnary(ctx, req)
@@ -373,6 +405,8 @@ type PaprikaServiceHandler interface {
 	GetApplication(context.Context, *connect.Request[v1.GetApplicationRequest]) (*connect.Response[v1.GetApplicationResponse], error)
 	SyncApplication(context.Context, *connect.Request[v1.SyncApplicationRequest]) (*connect.Response[v1.SyncApplicationResponse], error)
 	ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error)
+	ListGateStatus(context.Context, *connect.Request[v1.ListGateStatusRequest]) (*connect.Response[v1.ListGateStatusResponse], error)
+	RejectGate(context.Context, *connect.Request[v1.RejectGateRequest]) (*connect.Response[v1.RejectGateResponse], error)
 	ResolveSource(context.Context, *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error)
 	Render(context.Context, *connect.Request[v1.RenderRequest]) (*connect.Response[v1.RenderResponse], error)
 	ApplyBundle(context.Context, *connect.Request[v1.ApplyBundleRequest]) (*connect.Response[v1.ApplyBundleResponse], error)
@@ -456,6 +490,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("ApproveGate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListGateStatusHandler := connect.NewUnaryHandler(
+		PaprikaServiceListGateStatusProcedure,
+		svc.ListGateStatus,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListGateStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceRejectGateHandler := connect.NewUnaryHandler(
+		PaprikaServiceRejectGateProcedure,
+		svc.RejectGate,
+		connect.WithSchema(paprikaServiceMethods.ByName("RejectGate")),
+		connect.WithHandlerOptions(opts...),
+	)
 	paprikaServiceResolveSourceHandler := connect.NewUnaryHandler(
 		PaprikaServiceResolveSourceProcedure,
 		svc.ResolveSource,
@@ -528,6 +574,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceSyncApplicationHandler.ServeHTTP(w, r)
 		case PaprikaServiceApproveGateProcedure:
 			paprikaServiceApproveGateHandler.ServeHTTP(w, r)
+		case PaprikaServiceListGateStatusProcedure:
+			paprikaServiceListGateStatusHandler.ServeHTTP(w, r)
+		case PaprikaServiceRejectGateProcedure:
+			paprikaServiceRejectGateHandler.ServeHTTP(w, r)
 		case PaprikaServiceResolveSourceProcedure:
 			paprikaServiceResolveSourceHandler.ServeHTTP(w, r)
 		case PaprikaServiceRenderProcedure:
@@ -595,6 +645,14 @@ func (UnimplementedPaprikaServiceHandler) SyncApplication(context.Context, *conn
 
 func (UnimplementedPaprikaServiceHandler) ApproveGate(context.Context, *connect.Request[v1.ApproveGateRequest]) (*connect.Response[v1.ApproveGateResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ApproveGate is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListGateStatus(context.Context, *connect.Request[v1.ListGateStatusRequest]) (*connect.Response[v1.ListGateStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListGateStatus is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) RejectGate(context.Context, *connect.Request[v1.RejectGateRequest]) (*connect.Response[v1.RejectGateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.RejectGate is not implemented"))
 }
 
 func (UnimplementedPaprikaServiceHandler) ResolveSource(context.Context, *connect.Request[v1.ResolveSourceRequest]) (*connect.Response[v1.ResolveSourceResponse], error) {

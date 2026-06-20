@@ -24,6 +24,8 @@ const (
 	ReleaseRolledBack ReleasePhase = "RolledBack"
 	// ReleaseSuperseded indicates the release was superseded by a newer one.
 	ReleaseSuperseded ReleasePhase = "Superseded"
+	// ReleaseAwaitingApproval indicates the release is waiting for approval gates.
+	ReleaseAwaitingApproval ReleasePhase = "AwaitingApproval"
 )
 
 // FailureAction defines the action to take on failure.
@@ -81,7 +83,7 @@ type ReleaseStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// +kubebuilder:validation:Enum=Pending;Promoting;Canarying;Verifying;Complete;Failed;RolledBack;Superseded
+	// +kubebuilder:validation:Enum=Pending;Promoting;Canarying;Verifying;Complete;Failed;RolledBack;Superseded;AwaitingApproval
 	Phase                    ReleasePhase       `json:"phase,omitempty"`
 	CurrentStage             string             `json:"currentStage,omitempty"`
 	PromotionHistory         []PromotionEntry   `json:"promotionHistory,omitempty"`

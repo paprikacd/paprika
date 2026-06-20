@@ -228,6 +228,7 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	releaseRec.ClusterMgr = clusterMgr
 	releaseRec.Clock = clock.Real{}
 	releaseRec.GateExecutor = gates.NewSmokeGate(http.DefaultClient)
+	releaseRec.ApprovalGateEvaluator = gates.NewApprovalGateEvaluator(http.DefaultClient)
 	releaseRec.Analyzer = analysis.NewCELAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig(), http.DefaultClient)
 	releaseRec.TemplateRenderer = renderer
 	releaseRec.TrafficRouterFactory = newTrafficRouter

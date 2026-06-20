@@ -212,6 +212,7 @@ spec:
                 - Failed
                 - RolledBack
                 - Superseded
+                - AwaitingApproval
                 type: string
               policyResults:
                 description: PolicyResults records the outcome of policy evaluation
