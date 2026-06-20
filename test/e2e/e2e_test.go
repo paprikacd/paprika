@@ -2154,26 +2154,31 @@ data:
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, manifests))).To(Succeed())
 	})
 
-		It("should pause promotion until the gate is approved", func() {
-			release := &pipelinesv1alpha1.Release{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      releaseName,
-					Namespace: "default",
-					Finalizers: []string{
-						"paprika.io/release-cleanup",
-					},
-					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: pipelinesv1alpha1.GroupVersion.String(),
-						Kind:       "Application",
-						Name:       appName,
-					}},
+	It("should pause promotion until the gate is approved", func() {
+		By("fetching the owning Application to set its UID on the Release owner reference")
+		var owner pipelinesv1alpha1.Application
+		Expect(k8sClient.Get(ctx, appKey, &owner)).To(Succeed())
+
+		release := &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      releaseName,
+				Namespace: "default",
+				Finalizers: []string{
+					"paprika.io/release-cleanup",
 				},
-				Spec: pipelinesv1alpha1.ReleaseSpec{
-					Target: stageName,
-				},
-				Status: pipelinesv1alpha1.ReleaseStatus{
-					Phase: pipelinesv1alpha1.ReleasePromoting,
-				},
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+					Kind:       "Application",
+					Name:       appName,
+					UID:        owner.UID,
+				}},
+			},
+			Spec: pipelinesv1alpha1.ReleaseSpec{
+				Target: stageName,
+			},
+			Status: pipelinesv1alpha1.ReleaseStatus{
+				Phase: pipelinesv1alpha1.ReleasePromoting,
+			},
 			}
 			Expect(k8sClient.Create(ctx, release)).To(Succeed())
 
