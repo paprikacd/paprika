@@ -62,14 +62,14 @@ func makePolicy(name, rego string, enforcement paprikav1.ConftestEnforcementMode
 
 func TestEvaluate(t *testing.T) {
 	cases := []struct {
-		name             string
-		policy           *paprikav1.ConftestPolicy
-		manifests        []*unstructured.Unstructured
-		wantBlock        int
-		wantWarn         int
-		wantErr          bool
-		wantBlockSev     string // if set, first blocking violation's Severity must match (distinguishes a real rule fire from a not-found/compile error)
-		wantBlockMsgSub  string // if set, first blocking violation's Message must contain it
+		name            string
+		policy          *paprikav1.ConftestPolicy
+		manifests       []*unstructured.Unstructured
+		wantBlock       int
+		wantWarn        int
+		wantErr         bool
+		wantBlockSev    string // if set, first blocking violation's Severity must match (distinguishes a real rule fire from a not-found/compile error)
+		wantBlockMsgSub string // if set, first blocking violation's Message must contain it
 	}{
 		{
 			name:            "enforce deny blocks on missing label",
@@ -127,15 +127,15 @@ func TestEvaluate(t *testing.T) {
 				require.Error(t, err)
 				return
 			}
-		require.NoError(t, err)
-		assert.Len(t, vs.Blocking(), tc.wantBlock, "blocking")
-		assert.Len(t, vs.Warnings(), tc.wantWarn, "warnings")
-		if tc.wantBlockSev != "" {
-			blocking := vs.Blocking()
-			require.NotEmpty(t, blocking, "expected a blocking violation to inspect")
-			assert.Equal(t, tc.wantBlockSev, blocking[0].Severity, "blocking violation severity")
-			assert.Contains(t, blocking[0].Message, tc.wantBlockMsgSub, "blocking violation message")
-		}
+			require.NoError(t, err)
+			assert.Len(t, vs.Blocking(), tc.wantBlock, "blocking")
+			assert.Len(t, vs.Warnings(), tc.wantWarn, "warnings")
+			if tc.wantBlockSev != "" {
+				blocking := vs.Blocking()
+				require.NotEmpty(t, blocking, "expected a blocking violation to inspect")
+				assert.Equal(t, tc.wantBlockSev, blocking[0].Severity, "blocking violation severity")
+				assert.Contains(t, blocking[0].Message, tc.wantBlockMsgSub, "blocking violation message")
+			}
 		})
 	}
 }

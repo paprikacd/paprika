@@ -167,7 +167,6 @@ rules:
   - applications
   - applicationsets
   - artifacts
-  - conftestpolicies
   - pipelines
   - releases
   - stages
@@ -187,7 +186,6 @@ rules:
   - applications/finalizers
   - applicationsets/finalizers
   - artifacts/finalizers
-  - conftestpolicies/finalizers
   - notificationconfigs/finalizers
   - pipelines/finalizers
   - releases/finalizers
@@ -216,6 +214,7 @@ rules:
   - pipelines.paprika.io
   resources:
   - analysistemplates
+  - conftestpolicies
   - notificationconfigs
   verbs:
   - get
