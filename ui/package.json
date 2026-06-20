@@ -7,7 +7,8 @@
     "build": "next build",
     "build:gh-pages": "PAPRIKA_BASE_PATH=/paprika next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate": "cd .. && buf generate"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
