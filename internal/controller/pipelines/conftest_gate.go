@@ -2,7 +2,9 @@ package pipelines
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -27,7 +29,17 @@ const (
 	conftestReasonPolicyViolation    = "PolicyViolation"
 	conftestReasonPolicyNotReady     = "PolicyNotReady"
 	conftestSeverityNotReady         = "not-ready"
+
+	// conftestBlockedRequeueInterval is how long the release waits before re-evaluating the
+	// gate after a blocking violation. The release stays non-terminal (Promoting) so a
+	// policy/manifest fix takes effect on the next attempt without manual intervention.
+	conftestBlockedRequeueInterval = 30 * time.Second
 )
+
+// errConftestBlocked is a sentinel wrapping every blocking conftest error so callers can
+// distinguish a retryable gate block (leave the release non-terminal, requeue) from a hard
+// promotion failure (mark the release terminal Failed). Match it with errors.Is.
+var errConftestBlocked = errors.New("conftest gate blocked promotion")
 
 // runConftestGate evaluates the application's ConftestPolicies against the rendered
 // manifests. It is a no-op when the evaluator is nil or no policies are bound. Blocking
@@ -79,7 +91,7 @@ func (r *ReleaseReconciler) blockOnConftestViolation(ctx context.Context, releas
 		log.Error(patchErr, "Failed to patch release status after conftest violation",
 			"release", release.Name, "namespace", release.Namespace)
 	}
-	return fmt.Errorf("conftest %s: %s", reason, message)
+	return fmt.Errorf("conftest %s: %s: %w", reason, message, errConftestBlocked)
 }
 
 func (r *ReleaseReconciler) setReleaseConftestCondition(release *paprikav1.Release, status bool, reason, message string) {

@@ -445,6 +445,13 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	}
 
 	if err := r.promote(ctx, release); err != nil {
+		if errors.Is(err, errConftestBlocked) {
+			// Conftest gate blocked promotion (fail-closed). The gate has already recorded the
+			// ConftestPassed=False condition and patched status; leave the release non-terminal
+			// (Promoting) so the next reconcile re-evaluates after the policy/manifest is fixed.
+			log.Info("Promotion blocked by conftest gate; requeuing", "release", release.Name, "err", err)
+			return ctrl.Result{RequeueAfter: conftestBlockedRequeueInterval}, nil
+		}
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()

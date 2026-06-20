@@ -101,6 +101,41 @@ func TestRunConftestGateNotReadyWhenPolicyUncompilable(t *testing.T) {
 	assert.True(t, conditionReason(rel, conftestReasonPolicyNotReady), "expected PolicyNotReady condition")
 }
 
+// TestRunConftestGateBlockIsSentinelRetryable pins the contract handlePromotingPhase relies
+// on: a blocking conftest gate returns an error that matches errConftestBlocked via errors.Is,
+// for both PolicyViolation and PolicyNotReady outcomes. This keeps the release non-terminal so
+// the next reconcile retries after the policy/manifest is fixed.
+func TestRunConftestGateBlockIsSentinelRetryable(t *testing.T) {
+	cases := []struct {
+		name    string
+		violate governance.Violation
+		reason  string
+	}{
+		{
+			name:    "policy violation wraps sentinel",
+			violate: governance.Violation{Rule: "p", Severity: "deny", Message: "no label", Action: governance.PolicyActionEnforce},
+			reason:  conftestReasonPolicyViolation,
+		},
+		{
+			name:    "policy not-ready wraps sentinel",
+			violate: governance.Violation{Rule: "p", Severity: conftestSeverityNotReady, Message: "missing", Action: governance.PolicyActionEnforce},
+			reason:  conftestReasonPolicyNotReady,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := &fakeConftestEvaluator{violations: governance.Violations{tc.violate}}
+			rel := relForTest()
+			r := newReconcilerWithConftest(t, ev, rel)
+			err := r.runConftestGate(context.Background(), rel, appWithPolicy("p"), nil)
+			require.Error(t, err)
+			assert.True(t, errors.Is(err, errConftestBlocked),
+				"blocking conftest error must match errConftestBlocked so handlePromotingPhase treats it as retryable")
+			assert.True(t, conditionReason(rel, tc.reason), "expected %s condition", tc.reason)
+		})
+	}
+}
+
 func TestRunConftestGatePassesWithWarnings(t *testing.T) {
 	ev := &fakeConftestEvaluator{violations: governance.Violations{
 		{Rule: "p", Severity: "warn", Message: "soft", Action: governance.PolicyActionWarn},
