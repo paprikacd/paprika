@@ -2180,9 +2180,14 @@ data:
 				Phase: pipelinesv1alpha1.ReleasePromoting,
 			},
 			}
-			Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		Expect(k8sClient.Create(ctx, release)).To(Succeed())
+		// Create ignores status (Release has a status subresource), so set the initial phase
+		// via the status subresource. The reconcile must see an already-Promoting release to
+		// enter handlePromotingPhase and evaluate the approval gate.
+		release.Status.Phase = pipelinesv1alpha1.ReleasePromoting
+		Expect(k8sClient.Status().Update(ctx, release)).To(Succeed())
 
-			controller := pipelines.NewReleaseReconciler(k8sClient)
+		controller := pipelines.NewReleaseReconciler(k8sClient)
 			controller.Scheme = k8sClient.Scheme()
 			controller.Namespace = "default"
 			controller.ApprovalGateEvaluator = gates.NewApprovalGateEvaluator(http.DefaultClient)
