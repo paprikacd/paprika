@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/governance"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 // ConftestEvaluator resolves, compiles, and evaluates ConftestPolicies against rendered
@@ -37,7 +38,6 @@ func (r *ReleaseReconciler) runConftestGate(ctx context.Context, release *paprik
 	if r.ConftestEvaluator == nil || len(app.Spec.ConftestPolicies) == 0 {
 		return nil
 	}
-	log := logf.FromContext(ctx)
 
 	violations, err := r.ConftestEvaluator.Evaluate(ctx, release.Namespace, app.Spec.ConftestPolicies, manifests)
 	if err != nil {
@@ -45,26 +45,7 @@ func (r *ReleaseReconciler) runConftestGate(ctx context.Context, release *paprik
 	}
 
 	if blocking := violations.Blocking(); len(blocking) > 0 {
-		reason := conftestReasonPolicyViolation
-		for _, v := range blocking {
-			if v.Severity == conftestSeverityNotReady {
-				reason = conftestReasonPolicyNotReady
-				break
-			}
-		}
-		message := blocking[0].Message
-		// Only emit when the outcome changes; the release stays non-terminal and requeues
-		// while blocked, so re-emitting the identical event each reconcile floods the stream.
-		existing := meta.FindStatusCondition(release.Status.Conditions, conftestConditionType)
-		r.setReleaseConftestCondition(release, false, reason, message)
-		if r.EventRecorder != nil && (existing == nil || existing.Reason != reason || existing.Message != message) {
-			r.EventRecorder.Eventf(release, corev1.EventTypeWarning, reason, "%s", message)
-		}
-		if patchErr := r.patchReleaseStatus(ctx, release, release.Status.Phase); patchErr != nil {
-			log.Error(patchErr, "Failed to patch release status after conftest violation",
-				"release", release.Name, "namespace", release.Namespace)
-		}
-		return fmt.Errorf("conftest %s: %s", reason, message)
+		return r.blockOnConftestViolation(ctx, release, blocking)
 	}
 
 	if warnings := violations.Warnings(); len(warnings) > 0 {
@@ -74,6 +55,31 @@ func (r *ReleaseReconciler) runConftestGate(ctx context.Context, release *paprik
 		r.setReleaseConftestCondition(release, true, conftestReasonPassed, "Conftest checks passed")
 	}
 	return nil
+}
+
+// blockOnConftestViolation records the failure on the release and returns a blocking error
+// so promotion aborts. The release stays non-terminal and requeues; the event is suppressed
+// when the outcome is unchanged to avoid flooding the stream on repeated reconciles.
+func (r *ReleaseReconciler) blockOnConftestViolation(ctx context.Context, release *paprikav1.Release, blocking governance.Violations) error {
+	log := logf.FromContext(ctx)
+	reason := conftestReasonPolicyViolation
+	for _, v := range blocking {
+		if v.Severity == conftestSeverityNotReady {
+			reason = conftestReasonPolicyNotReady
+			break
+		}
+	}
+	message := blocking[0].Message
+	existing := meta.FindStatusCondition(release.Status.Conditions, conftestConditionType)
+	r.setReleaseConftestCondition(release, false, reason, message)
+	if r.EventRecorder != nil && (existing == nil || existing.Reason != reason || existing.Message != message) {
+		r.EventRecorder.Eventf(release, corev1.EventTypeWarning, reason, "%s", message)
+	}
+	if patchErr := r.patchReleaseStatus(ctx, release, release.Status.Phase); patchErr != nil {
+		log.Error(patchErr, "Failed to patch release status after conftest violation",
+			"release", release.Name, "namespace", release.Namespace)
+	}
+	return fmt.Errorf("conftest %s: %s", reason, message)
 }
 
 func (r *ReleaseReconciler) setReleaseConftestCondition(release *paprikav1.Release, status bool, reason, message string) {

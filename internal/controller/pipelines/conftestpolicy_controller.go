@@ -54,7 +54,7 @@ func (r *ConftestPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("getting conftestpolicy: %w", err)
 	}
 
-	_, compileErr := conftest.CompilePolicy(ctx, policy.Name, policy.Spec.Rego)
+	compileErr := conftest.CompilePolicy(ctx, policy.Name, policy.Spec.Rego)
 
 	status := metav1.ConditionFalse
 	reason := "CompileError"

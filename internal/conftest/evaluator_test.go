@@ -4,14 +4,15 @@ import (
 	"context"
 	"testing"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 const (

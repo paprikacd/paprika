@@ -4,18 +4,20 @@ package conftest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/governance"
-	"github.com/open-policy-agent/opa/ast"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/ast"  //nolint:staticcheck // OPA v0-compat shim: accepts the legacy Rego syntax (deny[msg]{...}) used by off-the-shelf conftest policies.
+	"github.com/open-policy-agent/opa/rego" //nolint:staticcheck // OPA v0-compat shim: accepts the legacy Rego syntax (deny[msg]{...}) used by off-the-shelf conftest policies.
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 const (
@@ -90,7 +92,7 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 		return entry, nil, nil
 	}
 
-	compiled, err := CompilePolicy(ctx, policy.Name, policy.Spec.Rego)
+	compiled, err := compile(ctx, policy.Name, policy.Spec.Rego)
 	if err != nil {
 		// Do not cache failed compiles so a fixed policy takes effect on the next reconcile.
 		return nil, governance.Violations{{
@@ -110,24 +112,29 @@ func (e *Evaluator) load(ctx context.Context, namespace string, ref paprikav1.Co
 	return compiled, nil, nil
 }
 
-// CompilePolicy parses and compiles a Rego source, preparing deny/warn/violation queries.
-// Exposed so the status controller can validate policies without re-implementing compilation.
-func CompilePolicy(ctx context.Context, name, regoSrc string) (*compiledEntry, error) {
+// CompilePolicy validates that the Rego source compiles. Exposed so the status controller
+// can report policy readiness without depending on the internal compiled representation.
+func CompilePolicy(ctx context.Context, name, regoSrc string) error {
+	_, err := compile(ctx, name, regoSrc)
+	return err
+}
+
+// compile parses and compiles a Rego source, preparing deny/warn/violation queries.
+func compile(ctx context.Context, name, regoSrc string) (*compiledEntry, error) {
 	mod, err := ast.ParseModule(moduleName, regoSrc)
 	if err != nil {
 		return nil, err
 	}
 	if mod == nil || mod.Package == nil {
-		return nil, fmt.Errorf("rego source has no package declaration")
+		return nil, errors.New("rego source has no package declaration")
 	}
 	pkgPath := strings.TrimPrefix(mod.Package.Path.String(), "data.")
 
 	entry := &compiledEntry{name: name, queries: map[string]*rego.PreparedEvalQuery{}}
 	for _, rule := range []string{ruleDeny, ruleWarn, ruleViolation} {
 		q := fmt.Sprintf("data.%s.%s", pkgPath, rule)
-		// NOTE: in OPA v1.x (e.g. v1.17.1) Rego.PrepareForEval returns a single
-		// PreparedEvalQuery per Rego (not a slice); we pass a single query so we take
-		// the value directly.
+		// In OPA v1.x Rego.PrepareForEval returns a single PreparedEvalQuery per Rego
+		// (not a slice); we pass a single query so we take the value directly.
 		pq, err := rego.New(rego.Module(moduleName, regoSrc), rego.Query(q)).PrepareForEval(ctx)
 		if err != nil {
 			return nil, err
@@ -179,7 +186,10 @@ func toViolations(policyName, severity string, action governance.PolicyAction, r
 				continue
 			}
 			for _, item := range list {
-				msg, _ := item.(string)
+				msg, ok := item.(string)
+				if !ok {
+					continue
+				}
 				out = append(out, governance.Violation{
 					Rule: policyName, Severity: severity, Message: msg, Action: action,
 				})

@@ -751,8 +751,8 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
 	}
-	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
-		return fmt.Errorf("run conftest gate: %w", err)
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
 	}
 
 	project := app.Spec.Project
@@ -1914,8 +1914,8 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
 	}
-	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
-		return fmt.Errorf("run conftest gate: %w", err)
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
 	}
 	project := app.Spec.Project
 	if project == "" {
@@ -1963,8 +1963,8 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
 	}
-	if err := r.runConftestGate(ctx, release, app, manifestObjects); err != nil {
-		return fmt.Errorf("run conftest gate: %w", err)
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
 	}
 	project := app.Spec.Project
 	if project == "" {
