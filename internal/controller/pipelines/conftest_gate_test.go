@@ -101,11 +101,11 @@ func TestRunConftestGateNotReadyWhenPolicyUncompilable(t *testing.T) {
 	assert.True(t, conditionReason(rel, conftestReasonPolicyNotReady), "expected PolicyNotReady condition")
 }
 
-// TestRunConftestGateBlockIsSentinelRetryable pins the contract handlePromotingPhase relies
-// on: a blocking conftest gate returns an error that matches errConftestBlocked via errors.Is,
-// for both PolicyViolation and PolicyNotReady outcomes. This keeps the release non-terminal so
-// the next reconcile retries after the policy/manifest is fixed.
-func TestRunConftestGateBlockIsSentinelRetryable(t *testing.T) {
+// TestRunConftestGateBlockWrapsSentinel pins that a blocking conftest gate returns an error
+// matching errConftestBlocked via errors.Is, for both PolicyViolation and PolicyNotReady. The
+// sentinel is what handlePromotingPhase recognizes to requeue without going terminal; the full
+// non-terminal-requeue behavior is covered end-to-end by the Conftest e2e spec.
+func TestRunConftestGateBlockWrapsSentinel(t *testing.T) {
 	cases := []struct {
 		name    string
 		violate governance.Violation
