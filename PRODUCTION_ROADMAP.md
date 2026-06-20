@@ -1,5 +1,14 @@
 # Paprika Production Readiness Roadmap
 
+> **Status (updated 2026-06-20):** The per-section "Current" snapshots below are **pre-refactor
+> and stale** — they describe the codebase as a small-scale MVP. In reality, nearly all the P0/P1
+> items below are now implemented (label-selector diff engine, Redis source cache, in-process Helm
+> SDK, split control plane + sharding, status subresources, multi-cluster connection pooling,
+> rate limiting, OIDC/basic/project auth, tracing, HPA + PDBs). The accurate current status and
+> the genuinely-remaining gaps live in [TODO.md](TODO.md) ("Production hardening — status" and
+> "Genuinely remaining"). This document is retained for historical context; treat its "Current"
+> and "Required Fix" blocks as already-addressed unless listed as remaining in TODO.md.
+
 ## Current State: MVP → ArgoCD-Scale Production
 
 The codebase has solid foundations but is currently architected for small-scale, single-cluster deployments. To operate at ArgoCD scale (10,000+ applications, 100+ clusters, millions of resources), fundamental architectural changes are required.

@@ -1,74 +1,80 @@
 # Paprika Feature TODO
 
-This file tracks implemented capabilities and planned features. It consolidates the [unified platform roadmap](docs/superpowers/plans/2026-06-09-unified-platform-roadmap.md), [production roadmap](PRODUCTION_ROADMAP.md), and pending P2 work.
+This file tracks implemented capabilities and remaining work. It was reconciled against the
+actual codebase on 2026-06-20 — most items previously listed as "planned" are now implemented.
 
 ## Implemented
 
+### Core platform
 - [x] Pipeline CRD (DAG workflow execution)
-- [x] Template CRD (Helm rendering)
+- [x] Template CRD (Helm rendering, in-process Helm SDK)
 - [x] Stage CRD (canary / blue-green progression)
 - [x] Release CRD (promotion to stages)
-- [x] Application CRD (unified resource owning Pipeline/Template/Stage/Release)
-- [x] Multi-source rendering (git, S3, Helm, OCI)
+- [x] Application CRD (unified owner of Pipeline/Template/Stage/Release)
+- [x] Multi-source rendering (git, S3, Helm, OCI, inline)
+- [x] App-of-Apps / ApplicationSet
+- [x] Multi-cluster deployment via `Stage.Spec.Cluster` (cluster pool + agent apply path)
+
+### Sync, health, governance
 - [x] CEL health checks with HTTP probes
-- [x] Resource diff detection (`Application` status resources / outOfSync)
-- [x] Resource pruning
-- [x] Resource health tracking
-- [x] Prometheus metrics
-- [x] API / UI dashboard
+- [x] Resource diff detection (`Application.Status.Resources` / `OutOfSync`)
+- [x] Resource pruning; resource health tracking
 - [x] Event-driven sync (`paprika.io/sync`, `paprika.io/refresh`)
-- [x] Advanced rollout strategies (A/B testing, blue-green, canary, mirroring, header-based routing)
+- [x] Self-healing (auto-sync on drift, auto-revert on health failure)
+- [x] Sync windows (cron-based)
+- [x] Project-Scoped Policy Governance — enforce `AppProject` boundaries and `Policy` rules in webhooks, controllers, API; project-scoped authorization (OIDC + basic + project authorizer)
+
+### Rollouts & analysis
+- [x] Advanced rollout strategies (A/B, blue-green, canary, mirroring, header-based routing)
 - [x] Analysis Templates and AnalysisRuns
+- [x] Feature flags (`FeatureFlag` / `FeatureFlagBinding` CRDs + OpenFeature bridge)
+
+### Gates (promotion controls)
+- [x] **Approval Gates** — manual / webhook / Slack gates between stages; `AwaitingApproval` phase; CLI + UI (PR #17)
+- [x] **Conftest / OPA Gates** — user-authored Rego evaluated against rendered manifests before promotion; in-process OPA, fail-closed, retryable (PR #16 — rebased & merge-ready)
+
+### CLI / API / UI / ops
+- [x] `paprika apply -f` CLI — render locally, submit via `ApplyBundle`; app-name derivation, idempotent re-apply, supersede previous release
+- [x] API + Next.js UI dashboard
 - [x] Notifications (Slack, email, webhook, delivery status)
 - [x] OCI source support
-- [x] Sync windows (cron-based)
-- [x] Self-healing (auto-sync on drift, auto-revert on health failure)
-- [x] Feature flags (`FeatureFlag` / `FeatureFlagBinding` CRDs + OpenFeature bridge)
-- [x] Project-Scoped Policy Governance — enforce `AppProject` boundaries and `Policy` rules in webhooks, controllers, and API; scope authorization by project
+- [x] Prometheus metrics; Grafana dashboard; PrometheusRules; OpenTelemetry tracing wired into controllers
 
-## P2 — Planned Next
+## Production hardening — status
 
-These are the next user-facing features queued after the current MVP.
+See [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md) for the original detail (its per-section
+"Current" snapshots are pre-refactor and stale). Current status:
 
-- [ ] **Approval Gates** — manual/webhook/Slack gates between stages; pause promotion until approved
-  - Priority: high
-  - Status: no detailed plan yet
-  - Owner: TBD
+**Done**
+- [x] Label-selector / informer-based diff engine (no `ServerPreferredResources()` scan)
+- [x] Source cache (Redis) + webhook receiver + background poller
+- [x] Helm SDK in-process (no `helm template` subprocess)
+- [x] Split control plane: `controller-manager`, `api-server`, `repo-server`, `webhook-receiver` (`deploymentMode: split`) with sharding (`internal/sharding`) + split-plane e2e
+- [x] Status-subresource updates; `ObservedGeneration` on statuses
+- [x] Multi-cluster connection pooling (`ClusterConnectionPool`, context-cancelable)
+- [x] Redis-backed manifest cache; per-Application / per-source rate limiting
+- [x] HPA + PodDisruptionBudgets per split-plane component
 
-- [ ] **Conftest Gates** — Open Policy Agent / Conftest policy checks in the promotion pipeline
-  - Priority: medium
-  - Status: no detailed plan yet
-  - Owner: TBD
+## Genuinely remaining (the real backlog)
 
-- [ ] **`paprika apply -f` CLI** — render manifests locally and submit via `ApplyBundle`; `Policy` CRD; Bubble Tea TUI
-  - Priority: high
-  - Plan: [docs/superpowers/plans/2026-06-13-paprika-apply.md](docs/superpowers/plans/2026-06-13-paprika-apply.md)
-  - Spec: [docs/superpowers/specs/2026-06-13-paprika-apply-design.md](docs/superpowers/specs/2026-06-13-paprika-apply-design.md)
-  - Owner: TBD
+Ordered by rough impact. Each is unstarted or partial.
 
-## Mid-Term
-
-- [ ] **Multi-Cluster Deployment** — deploy to target clusters via `Stage.clusterRef`
-- [ ] **App-of-Apps / ApplicationSet** — parent Application or ApplicationSet managing child Applications
-- [ ] **HA / Sharded Repo Server** — horizontally scalable source/render service
-
-## Production Hardening (P0/P1)
-
-See [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md) for full details.
-
-- [ ] Informer-based diff engine (avoid `ServerPreferredResources()` on every reconcile)
-- [ ] Source cache with Redis + webhook receiver + background poller
-- [ ] Helm SDK in-process rendering (replace `helm template` subprocess)
-- [ ] Split monolithic controller (`controller-manager`, `api-server`, `repo-server`, `webhook-receiver`)
-- [ ] Status-subresource-only updates
-- [ ] Multi-cluster connection pooling
-- [ ] Redis-backed API / manifest cache
-- [ ] Per-Application and per-source rate limiting
-- [ ] Security model hardening
+- [ ] **Conftest gates — land PR #16** (rebased onto master, build + gate tests green; merge-ready) and complete follow-ups:
+  - Canary-promotion path marks the release terminal on a gate block (the rolling/direct path retries via `errConftestBlocked`) — unify for consistency.
+  - Evaluator compiles the module up to 3× per cache miss (one per rule set); optimize to a single shared compile.
+  - Conftest parameterization and git/OCI policy sources (v1 is inline Rego only).
+- [ ] **Approval-gates e2e refresh** — the manual-gate integration spec is pending; its fixture predates master-side changes (inline `configMapRef`, ownerRef uid, Release status subresource, Application gate-status sync) and needs a comprehensive refresh.
+- [ ] **Disaster recovery** — backup/restore CRDs to object storage (Velero integration); GitOps backup of Application specs; multi-region guide. No code yet.
+- [ ] **Real-time UI** — the dashboard is static; add WebSocket/SSE live updates (application topology, diff viewer, audit log viewer).
+- [ ] **Audit logging** — structured audit trail of API/controller actions to stdout/file. Minimal today.
+- [ ] **HA cross-replica coordination** — Redis-backed work queue so sharded replicas share work beyond leader election.
+- [ ] **Multi-tenancy resource quotas** — per-project `ResourceQuota` enforcement + namespace isolation hardening.
+- [ ] **Security model finishing** — mTLS for inter-service traffic; git/kubeconfig credential rotation.
+- [ ] **CI hygiene** — `make test` / `test.yml` fail at `generate-proto` because `protoc-gen-go` / `protoc-gen-connect-go` are not installed in CI. Pre-existing gap affecting every PR's "Tests" check; install the plugins (or make `generate-proto` non-fatal when generated files are committed).
 
 ## How to Pick Up Work
 
-1. Choose a feature from **P2 — Planned Next**.
-2. If a plan exists, follow it and use `superpowers:subagent-driven-development`.
-3. If no plan exists, write one first using `superpowers:writing-plans`.
-4. Create a feature branch / worktree, implement, and run `make test` + `make lint` before merging.
+1. Pick an item from **Genuinely remaining** (the lists above are accurate as of 2026-06-20).
+2. If a plan exists, follow it with `superpowers:subagent-driven-development`; otherwise write one with `superpowers:writing-plans`.
+3. Work in a feature branch / worktree; run `make manifests generate`, `make lint`, and `make test` before merging (note: `make test` needs the proto plugins — see CI hygiene above).
+4. E2E validation runs via the on-demand `E2E Tests` workflow (`gh workflow run test-e2e.yml --ref <branch> -f ginkgo_focus=<focus>`), not on every push.
