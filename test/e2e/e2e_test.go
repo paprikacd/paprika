@@ -35,6 +35,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -2095,47 +2096,63 @@ data:
 		appKey := types.NamespacedName{Name: appName, Namespace: "default"}
 		releaseKey := types.NamespacedName{Name: releaseName, Namespace: "default"}
 
-		BeforeEach(func() {
-			By("initializing the controller-runtime client")
-			cfg, err := config.GetConfig()
-			Expect(err).NotTo(HaveOccurred())
-			scheme := runtime.NewScheme()
-			Expect(pipelinesv1alpha1.AddToScheme(scheme)).To(Succeed())
-			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
-			Expect(err).NotTo(HaveOccurred())
+	BeforeEach(func() {
+		By("initializing the controller-runtime client")
+		cfg, err := config.GetConfig()
+		Expect(err).NotTo(HaveOccurred())
+		scheme := runtime.NewScheme()
+		Expect(pipelinesv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+		Expect(err).NotTo(HaveOccurred())
 
-			app := &pipelinesv1alpha1.Application{
-				ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"},
-				Spec: pipelinesv1alpha1.ApplicationSpec{
-					Source: pipelinesv1alpha1.ApplicationSource{Type: "inline"},
-					ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
-						{Name: "prod-approval", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
-					},
-					Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
-						{Name: stageName, Ring: 1},
-					},
+		By("creating a ConfigMap with a trivial manifest for the inline source")
+		manifests := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: appName + "-manifests", Namespace: "default"},
+			Data: map[string]string{
+				"manifests.yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + appName + "-rendered\n",
+			},
+		}
+		Expect(k8sClient.Create(ctx, manifests)).To(Succeed())
+
+		app := &pipelinesv1alpha1.Application{
+			ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"},
+			Spec: pipelinesv1alpha1.ApplicationSpec{
+				Source: pipelinesv1alpha1.ApplicationSource{
+					Type:   pipelinesv1alpha1.SourceTypeInline,
+					Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: appName + "-manifests"},
 				},
-			}
-			Expect(k8sClient.Create(ctx, app)).To(Succeed())
+				ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
+					{Name: "prod-approval", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
+				},
+				Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+					{Name: stageName, Ring: 1},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, app)).To(Succeed())
 
-			stage := &pipelinesv1alpha1.Stage{
-				ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"},
-				Spec: pipelinesv1alpha1.StageSpec{Name: stageName, Ring: 1, Templates: []string{}},
-			}
-			Expect(k8sClient.Create(ctx, stage)).To(Succeed())
-		})
+		stage := &pipelinesv1alpha1.Stage{
+			ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"},
+			Spec: pipelinesv1alpha1.StageSpec{Name: stageName, Ring: 1, Templates: []string{}},
+		}
+		Expect(k8sClient.Create(ctx, stage)).To(Succeed())
+	})
 
-		AfterEach(func() {
-			By("cleaning up the release")
-			release := &pipelinesv1alpha1.Release{ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: "default"}}
-			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, release))).To(Succeed())
-			By("cleaning up the stage")
-			stage := &pipelinesv1alpha1.Stage{ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"}}
-			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, stage))).To(Succeed())
-			By("cleaning up the application")
-			app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"}}
-			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, app))).To(Succeed())
-		})
+	AfterEach(func() {
+		By("cleaning up the release")
+		release := &pipelinesv1alpha1.Release{ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: "default"}}
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, release))).To(Succeed())
+		By("cleaning up the stage")
+		stage := &pipelinesv1alpha1.Stage{ObjectMeta: metav1.ObjectMeta{Name: stageName, Namespace: "default"}}
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, stage))).To(Succeed())
+		By("cleaning up the application")
+		app := &pipelinesv1alpha1.Application{ObjectMeta: metav1.ObjectMeta{Name: appName, Namespace: "default"}}
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, app))).To(Succeed())
+		By("cleaning up the manifest ConfigMap")
+		manifests := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: appName + "-manifests", Namespace: "default"}}
+		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, manifests))).To(Succeed())
+	})
 
 		It("should pause promotion until the gate is approved", func() {
 			release := &pipelinesv1alpha1.Release{
