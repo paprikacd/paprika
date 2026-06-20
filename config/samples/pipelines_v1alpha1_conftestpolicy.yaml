@@ -1,9 +1,14 @@
 apiVersion: pipelines.paprika.io/v1alpha1
 kind: ConftestPolicy
 metadata:
-  labels:
-    app.kubernetes.io/name: paprika
-    app.kubernetes.io/managed-by: kustomize
-  name: conftestpolicy-sample
+  name: require-app-label
 spec:
-  # TODO(user): Add fields here
+  enforcement: enforce
+  rego: |
+    package main
+
+    deny[msg] {
+      input.kind == "Deployment"
+      not input.metadata.labels.app
+      msg := sprintf("Deployment %s must have an 'app' label", [input.metadata.name])
+    }
