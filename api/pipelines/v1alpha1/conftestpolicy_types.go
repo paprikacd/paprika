@@ -57,7 +57,8 @@ type ConftestPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	Spec   ConftestPolicySpec   `json:"spec"`
+	Spec ConftestPolicySpec `json:"spec"`
+	// +optional
 	Status ConftestPolicyStatus `json:"status,omitzero"`
 }
 
