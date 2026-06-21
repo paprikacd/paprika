@@ -107,6 +107,7 @@ type ReleaseReconciler struct {
 	EventRecorder         record.EventRecorder
 	ProjectValidator      *governance.ProjectValidator
 	PolicyEvaluator       *governance.PolicyEvaluator
+	ConftestEvaluator     ConftestEvaluator
 	EventBroker           *events.Broker
 	Telemetry             *observability.Telemetry
 	Clock                 clock.Clock
@@ -131,6 +132,7 @@ func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ..
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases/finalizers,verbs=update
+// +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
@@ -443,6 +445,13 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	}
 
 	if err := r.promote(ctx, release); err != nil {
+		if errors.Is(err, errConftestBlocked) {
+			// Conftest gate blocked promotion (fail-closed). The gate has already recorded the
+			// ConftestPassed=False condition and patched status; leave the release non-terminal
+			// (Promoting) so the next reconcile re-evaluates after the policy/manifest is fixed.
+			log.Info("Promotion blocked by conftest gate; requeuing", "release", release.Name, "err", err)
+			return ctrl.Result{RequeueAfter: conftestBlockedRequeueInterval}, nil
+		}
 		log.Error(err, "Promotion failed", "release", release.Name)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
@@ -748,6 +757,9 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
+	}
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
 	}
 
 	project := app.Spec.Project
@@ -1843,6 +1855,14 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
 	if err := r.promoteCanary(ctx, release, stage); err != nil {
+		if errors.Is(err, errConftestBlocked) {
+			// Conftest gate blocked canary promotion (fail-closed). The gate has already
+			// recorded the ConftestPassed=False condition and patched status; leave the
+			// release non-terminal so the next reconcile re-evaluates after the policy/
+			// manifest is fixed. Mirrors handlePromotingPhase's retryable-block handling.
+			log.Info("Canary promotion blocked by conftest gate; requeuing", "release", release.Name, "err", err)
+			return ctrl.Result{RequeueAfter: conftestBlockedRequeueInterval}, nil
+		}
 		log.Error(err, "Failed to promote canary to stable")
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
@@ -1909,6 +1929,9 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
 	}
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
+	}
 	project := app.Spec.Project
 	if project == "" {
 		project = defaultProjectName
@@ -1954,6 +1977,9 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 	app, err := r.runGovernanceGate(ctx, release, manifestObjects)
 	if err != nil {
 		return fmt.Errorf("run governance gate: %w", err)
+	}
+	if gateErr := r.runConftestGate(ctx, release, app, manifestObjects); gateErr != nil {
+		return fmt.Errorf("run conftest gate: %w", gateErr)
 	}
 	project := app.Spec.Project
 	if project == "" {

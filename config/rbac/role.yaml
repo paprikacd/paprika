@@ -200,6 +200,7 @@ rules:
   - applications/status
   - applicationsets/status
   - artifacts/status
+  - conftestpolicies/status
   - notificationconfigs/status
   - pipelines/status
   - releases/status
@@ -213,6 +214,7 @@ rules:
   - pipelines.paprika.io
   resources:
   - analysistemplates
+  - conftestpolicies
   - notificationconfigs
   verbs:
   - get

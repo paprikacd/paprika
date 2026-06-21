@@ -36,6 +36,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/conftest"
 	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
@@ -127,6 +128,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		{"analysisrun", func() error { return setupAnalysisRunController(mgr, k8sClient, operatorNamespace, deps.broker) }},
 		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter) }},
 		{"stage", func() error { return setupStageController(mgr, deps.shardFilter) }},
+		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {
 			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.telemetry, deps.repoServerAddr)
 		}},
@@ -176,6 +178,16 @@ func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error 
 		Clock:       clock.Real{},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up stage controller: %w", err)
+	}
+	return nil
+}
+
+func setupConftestPolicyController(mgr ctrl.Manager) error {
+	if err := (&controller.ConftestPolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setting up conftestpolicy controller: %w", err)
 	}
 	return nil
 }
@@ -237,6 +249,7 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	releaseRec.EventRecorder = newLegacyEventRecorder(mgr.GetEventRecorder("release-controller"))
 	releaseRec.ProjectValidator = projectValidator
 	releaseRec.PolicyEvaluator = policyEvaluator
+	releaseRec.ConftestEvaluator = conftest.NewEvaluator(mgr.GetClient())
 	releaseRec.EventBroker = broker
 	releaseRec.Telemetry = telemetry
 	if err := releaseRec.SetupWithManager(mgr); err != nil {

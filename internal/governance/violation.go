@@ -16,6 +16,11 @@ type Violation struct {
 	Action   PolicyAction
 }
 
+// SeverityNotReady is a sentinel Severity marking a violation produced because a policy
+// could not be fully evaluated (it failed to compile, or was missing/unresolvable). Consumers
+// use it to distinguish "evaluation incomplete" from a genuine policy denial.
+const SeverityNotReady = "not-ready"
+
 func (v Violation) Blocking() bool {
 	return v.Action == PolicyActionEnforce
 }

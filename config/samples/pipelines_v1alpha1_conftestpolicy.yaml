@@ -1,0 +1,14 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: ConftestPolicy
+metadata:
+  name: require-app-label
+spec:
+  enforcement: enforce
+  rego: |
+    package main
+
+    deny[msg] {
+      input.kind == "Deployment"
+      not input.metadata.labels.app
+      msg := sprintf("Deployment %s must have an 'app' label", [input.metadata.name])
+    }
