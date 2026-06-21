@@ -258,7 +258,7 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	return nil
 }
 
-func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ string, shardFilter *sharding.Filter, _ *ratelimit.ControllerRateLimit, _ *governance.ProjectValidator, _ *governance.PolicyEvaluator, _ *events.Broker) error {
+func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ string, shardFilter *sharding.Filter, _ *ratelimit.ControllerRateLimit, _ *governance.ProjectValidator, _ *governance.PolicyEvaluator, broker *events.Broker) error {
 	_ = shardFilter // rollouts inherit the namespace of their parent Release; sharding is applied there.
 	dynamicClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
@@ -269,6 +269,7 @@ func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ 
 		DynamicClient: dynamicClient,
 		Analyzer:      analysis.NewCELAnalyzer(k8sClient, "paprika-system", mgr.GetConfig(), http.DefaultClient),
 		EventRecorder: newLegacyEventRecorder(mgr.GetEventRecorder("rollout-controller")),
+		EventBroker:   broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up rollout controller: %w", err)
 	}
