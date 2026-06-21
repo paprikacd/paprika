@@ -678,7 +678,7 @@ func (r *ReleaseReconciler) publishReleaseEvent(ctx context.Context, release *pa
 		reason = c.Reason
 		message = c.Message
 	}
-	evt, err := events.NewEvent(events.TypeRelease, eventPayload{
+	evt, err := events.NewEvent(events.TypeRelease, events.EventPayload{
 		ResourceType:  events.TypeRelease,
 		Name:          release.Name,
 		Namespace:     release.Namespace,

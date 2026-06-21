@@ -964,7 +964,7 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 	if r.EventBroker == nil {
 		return
 	}
-	evt, err := events.NewEvent(events.TypeApplication, eventPayload{
+	evt, err := events.NewEvent(events.TypeApplication, events.EventPayload{
 		ResourceType:  events.TypeApplication,
 		Name:          app.Name,
 		Namespace:     app.Namespace,
