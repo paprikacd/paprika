@@ -2154,15 +2154,17 @@ data:
 			Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, manifests))).To(Succeed())
 		})
 
-		// TODO(approval-gates,e2e): this integration spec is pending because its fixture predates
-		// several master-side changes since the branch diverged and needs a comprehensive refresh:
-		//   1. inline source now requires spec.source.inline.configMapRef (fixed below in BeforeEach)
-		//   2. Release ownerReferences now require a non-empty uid (fixed: fetched from the app)
-		//   3. Release now has a status subresource, so Create ignores Status.Phase (fixed: set via Status().Update)
-		//   4. after reconcile the Application status gates are not populated as this spec expects —
-		//      needs syncApplicationGateStatus/resolveOwningApplication semantics reconciled with the fixture.
-		// The gate logic itself is covered by internal/controller/pipelines unit tests.
-		PIt("should pause promotion until the gate is approved", func() {
+		// This spec drives the Release lifecycle in-process against the same API server
+		// the in-cluster operator is watching. The in-cluster Release controller races
+		// with the test on Release.Status (initiateRelease bumps ResourceVersion between
+		// Create and our Status().Update), and the in-cluster Application controller's
+		// patchAppStatus (internal/controller/pipelines/application_controller.go:413)
+		// can transiently overwrite Application.Status.Gates from a stale in-memory copy
+		// when its Get races ahead of the Release controller's syncApplicationGateStatus
+		// write. Both race windows are bounded (the Release controller rewrites Gates on
+		// every AwaitingApproval requeue), so we wrap writes in conflict-retries and use
+		// Eventually for the gate-status assertion.
+		It("should pause promotion until the gate is approved", func() {
 			By("fetching the owning Application to set its UID on the Release owner reference")
 			var owner pipelinesv1alpha1.Application
 			Expect(k8sClient.Get(ctx, appKey, &owner)).To(Succeed())
@@ -2184,16 +2186,20 @@ data:
 				Spec: pipelinesv1alpha1.ReleaseSpec{
 					Target: stageName,
 				},
-				Status: pipelinesv1alpha1.ReleaseStatus{
-					Phase: pipelinesv1alpha1.ReleasePromoting,
-				},
 			}
 			Expect(k8sClient.Create(ctx, release)).To(Succeed())
-			// Create ignores status (Release has a status subresource), so set the initial phase
-			// via the status subresource. The reconcile must see an already-Promoting release to
-			// enter handlePromotingPhase and evaluate the approval gate.
-			release.Status.Phase = pipelinesv1alpha1.ReleasePromoting
-			Expect(k8sClient.Status().Update(ctx, release)).To(Succeed())
+			// Create ignores status (Release has a status subresource), so set the
+			// initial phase via the status subresource. Retry on conflict: the
+			// in-cluster Release controller's initiateRelease races to set the same
+			// phase and bumps ResourceVersion between our Create and Status().Update.
+			// Setting Promoting forces the in-process Reconcile below straight into
+			// handlePromotingPhase so checkApprovalGates is exercised deterministically.
+			Eventually(func(g Gomega) {
+				var fresh pipelinesv1alpha1.Release
+				g.Expect(k8sClient.Get(ctx, releaseKey, &fresh)).To(Succeed())
+				fresh.Status.Phase = pipelinesv1alpha1.ReleasePromoting
+				g.Expect(k8sClient.Status().Update(ctx, &fresh)).To(Succeed())
+			}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 			controller := pipelines.NewReleaseReconciler(k8sClient)
 			controller.Scheme = k8sClient.Scheme()
@@ -2210,15 +2216,35 @@ data:
 				return updated.Status.Phase
 			}, 5*time.Second, 200*time.Millisecond).Should(Equal(pipelinesv1alpha1.ReleaseAwaitingApproval))
 
+			// syncApplicationGateStatus (release_controller.go:2118) writes
+			// Application.Status.Gates on every Release reconcile. The Application
+			// controller's patchAppStatus (application_controller.go:413) does not
+			// preserve Gates from concurrent writers, so a transient clobber is
+			// possible until the Release controller's next requeue rewrites Pending.
+			// Use Eventually to wait for the Release controller's write to land.
 			var app pipelinesv1alpha1.Application
-			Expect(k8sClient.Get(ctx, appKey, &app)).To(Succeed())
-			Expect(app.Status.Gates).To(HaveLen(1))
-			Expect(app.Status.Gates[0].Status).To(Equal(pipelinesv1alpha1.GateStatusPending))
+			Eventually(func(g Gomega) {
+				g.Expect(k8sClient.Get(ctx, appKey, &app)).To(Succeed())
+				g.Expect(app.Status.Gates).To(HaveLen(1))
+				g.Expect(app.Status.Gates[0].Status).To(Equal(pipelinesv1alpha1.GateStatusPending))
+			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			By("approving the gate")
-			app.Status.Gates[0].Status = pipelinesv1alpha1.GateStatusApproved
-			app.Status.Gates[0].ApprovedBy = "e2e"
-			Expect(k8sClient.Status().Update(ctx, &app)).To(Succeed())
+			// Retry on conflict for the same reason as the Phase=Promoting write above:
+			// the in-cluster Application controller may bump ResourceVersion via
+			// patchAppStatus between our read and Status().Update.
+			Eventually(func(g Gomega) {
+				var fresh pipelinesv1alpha1.Application
+				g.Expect(k8sClient.Get(ctx, appKey, &fresh)).To(Succeed())
+				if len(fresh.Status.Gates) != 1 || fresh.Status.Gates[0].Status != pipelinesv1alpha1.GateStatusPending {
+					// Clobbered by the Application controller since the assertion above;
+					// the Release controller will rewrite Pending on its next requeue.
+					return
+				}
+				fresh.Status.Gates[0].Status = pipelinesv1alpha1.GateStatusApproved
+				fresh.Status.Gates[0].ApprovedBy = "e2e"
+				g.Expect(k8sClient.Status().Update(ctx, &fresh)).To(Succeed())
+			}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
 
 			By("reconciling the release after approval")
 			_, err = controller.Reconcile(ctx, reconcile.Request{NamespacedName: releaseKey})
