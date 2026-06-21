@@ -147,7 +147,12 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
-        {{- $hasEnv := or .Values.audit.enabled .Values.repoServer.enabled .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
+          {{- if .Values.mtls.enabled }}
+          - name: mtls-cert
+            mountPath: /etc/paprika/tls
+            readOnly: true
+          {{- end }}
+        {{- $hasEnv := or .Values.audit.enabled .Values.repoServer.enabled .Values.redis.enabled (and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) .Values.mtls.enabled }}
         {{- if $hasEnv }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
@@ -163,6 +168,14 @@ spec:
               name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
               key: rbac.json
         {{- end }}
+        {{- if .Values.mtls.enabled }}
+        - name: PAPRIKA_MTLS_ENABLED
+          value: "true"
+        - name: PAPRIKA_TLS_CERT
+          value: /etc/paprika/tls/tls.crt
+        - name: PAPRIKA_TLS_KEY
+          value: /etc/paprika/tls/tls.key
+        {{- end }}
         {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
@@ -176,4 +189,9 @@ spec:
       {{- end }}
       volumes:
         {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: mtls-cert
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "controller-manager-mtls" "context" $) }}
+        {{- end }}
 {{- end }}

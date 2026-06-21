@@ -87,8 +87,21 @@ spec:
               name: {{ .Values.webhookReceiver.secret.existingSecretName }}
               key: {{ .Values.webhookReceiver.secret.existingSecretKey }}
         {{- end }}
+        {{- if .Values.mtls.enabled }}
+        - name: PAPRIKA_MTLS_ENABLED
+          value: "true"
+        - name: PAPRIKA_TLS_CERT
+          value: /etc/paprika/tls/tls.crt
+        - name: PAPRIKA_TLS_KEY
+          value: /etc/paprika/tls/tls.key
+        {{- end }}
         volumeMounts:
           {{- toYaml .Values.webhookReceiver.extraVolumeMounts | nindent 10 }}
+          {{- if .Values.mtls.enabled }}
+          - name: mtls-cert
+            mountPath: /etc/paprika/tls
+            readOnly: true
+          {{- end }}
       securityContext:
         {{- if .Values.webhookReceiver.podSecurityContext }}
         {{- toYaml .Values.webhookReceiver.podSecurityContext | nindent 8 }}
@@ -98,4 +111,9 @@ spec:
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
       volumes:
         {{- toYaml .Values.webhookReceiver.extraVolumes | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: mtls-cert
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver-mtls" "context" $) }}
+        {{- end }}
 {{- end }}

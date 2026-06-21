@@ -79,7 +79,12 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.apiServer.extraVolumeMounts | nindent 10 }}
-        {{- if or .Values.audit.enabled .Values.redis.enabled (and .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) }}
+          {{- if .Values.mtls.enabled }}
+          - name: mtls-cert
+            mountPath: /etc/paprika/tls
+            readOnly: true
+          {{- end }}
+        {{- if or .Values.audit.enabled .Values.redis.enabled (and .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) .Values.mtls.enabled }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
@@ -89,6 +94,14 @@ spec:
             configMapKeyRef:
               name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
               key: rbac.json
+        {{- end }}
+        {{- if .Values.mtls.enabled }}
+        - name: PAPRIKA_MTLS_ENABLED
+          value: "true"
+        - name: PAPRIKA_TLS_CERT
+          value: /etc/paprika/tls/tls.crt
+        - name: PAPRIKA_TLS_KEY
+          value: /etc/paprika/tls/tls.key
         {{- end }}
         {{- end }}
       securityContext:
@@ -100,4 +113,9 @@ spec:
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
       volumes:
         {{- toYaml .Values.apiServer.extraVolumes | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: mtls-cert
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "api-server-mtls" "context" $) }}
+        {{- end }}
 {{- end }}

@@ -76,8 +76,21 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.repoServer.extraVolumeMounts | nindent 10 }}
+          {{- if .Values.mtls.enabled }}
+          - name: mtls-cert
+            mountPath: /etc/paprika/tls
+            readOnly: true
+          {{- end }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: PAPRIKA_MTLS_ENABLED
+          value: "true"
+        - name: PAPRIKA_TLS_CERT
+          value: /etc/paprika/tls/tls.crt
+        - name: PAPRIKA_TLS_KEY
+          value: /etc/paprika/tls/tls.key
+        {{- end }}
       securityContext:
         {{- if .Values.repoServer.podSecurityContext }}
         {{- toYaml .Values.repoServer.podSecurityContext | nindent 8 }}
@@ -87,4 +100,9 @@ spec:
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
       volumes:
         {{- toYaml .Values.repoServer.extraVolumes | nindent 8 }}
+        {{- if .Values.mtls.enabled }}
+        - name: mtls-cert
+          secret:
+            secretName: {{ include "paprika.resourceName" (dict "suffix" "repo-server-mtls" "context" $) }}
+        {{- end }}
 {{- end }}
