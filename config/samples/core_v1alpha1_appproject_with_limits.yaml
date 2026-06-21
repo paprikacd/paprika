@@ -1,0 +1,19 @@
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  labels:
+    app.kubernetes.io/name: paprika
+    app.kubernetes.io/managed-by: kustomize
+  name: appproject-with-limits
+spec:
+  description: Sample AppProject demonstrating per-project resource quotas.
+  sourceRepos:
+  - "*"
+  destinations:
+  - server: "*"
+    namespace: "*"
+  kinds:
+  - "*"
+  limits:
+    maxApplications: 5
+    maxReleases: 20

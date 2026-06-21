@@ -24,17 +24,21 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/governance"
 )
 
 var releaselog = logf.Log.WithName("release-resource")
 
 func SetupReleaseWebhookWithManager(mgr ctrl.Manager) error {
+	resolver := governance.NewProjectResolver(mgr.GetClient())
+	validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
 	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Release{}).
-		WithValidator(&ReleaseCustomValidator{}).
+		WithValidator(&ReleaseCustomValidator{validator: validator, client: mgr.GetClient()}).
 		WithDefaulter(&ReleaseCustomDefaulter{}).
 		Complete(); err != nil {
 		return fmt.Errorf("setting up release webhook: %w", err)
@@ -53,9 +57,12 @@ func (d *ReleaseCustomDefaulter) Default(_ context.Context, obj *pipelinesv1alph
 
 // +kubebuilder:webhook:path=/validate-pipelines-paprika-io-v1alpha1-release,mutating=false,failurePolicy=fail,sideEffects=None,groups=pipelines.paprika.io,resources=releases,verbs=create;update,versions=v1alpha1,name=vrelease-v1alpha1.kb.io,admissionReviewVersions=v1
 
-type ReleaseCustomValidator struct{}
+type ReleaseCustomValidator struct {
+	validator *governance.ProjectValidator
+	client    client.Reader
+}
 
-func (v *ReleaseCustomValidator) ValidateCreate(_ context.Context, obj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
+func (v *ReleaseCustomValidator) ValidateCreate(ctx context.Context, obj *pipelinesv1alpha1.Release) (admission.Warnings, error) {
 	releaselog.Info("Validation for Release upon creation", "name", obj.GetName())
 	if errs := v.validateReleaseCreate(obj); len(errs) > 0 {
 		return nil, apierrors.NewInvalid(
@@ -63,6 +70,9 @@ func (v *ReleaseCustomValidator) ValidateCreate(_ context.Context, obj *pipeline
 			obj.Name,
 			errs,
 		)
+	}
+	if err := v.enforceReleaseQuota(ctx, obj); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
@@ -117,4 +127,59 @@ func (v *ReleaseCustomValidator) validateReleaseCreate(r *pipelinesv1alpha1.Rele
 	}
 
 	return allErrs
+}
+
+// projectLabelKey is the label used to associate a Release with its AppProject.
+const projectLabelKey = "app.paprika.io/project"
+
+// enforceReleaseQuota rejects Release creation when the governing AppProject
+// has reached its MaxReleases limit. It is a no-op when the validator or
+// client are unset (test harness), when no Limits are configured, or when
+// MaxReleases is zero (unlimited).
+func (v *ReleaseCustomValidator) enforceReleaseQuota(ctx context.Context, release *pipelinesv1alpha1.Release) error {
+	if v.client == nil || v.validator == nil {
+		return nil
+	}
+	projectName := v.resolveProjectName(ctx, release)
+	if projectName == "" {
+		projectName = "default"
+	}
+	project, err := v.validator.ResolveProject(ctx, release.Namespace, projectName)
+	if err != nil {
+		return apierrors.NewInternalError(fmt.Errorf("resolve project %s/%s: %w", release.Namespace, projectName, err))
+	}
+	if project == nil || project.Spec.Limits == nil || project.Spec.Limits.MaxReleases <= 0 {
+		return nil
+	}
+
+	var releases pipelinesv1alpha1.ReleaseList
+	if err := v.client.List(ctx, &releases, client.InNamespace(release.Namespace), client.MatchingLabels{projectLabelKey: project.Name}); err != nil {
+		return apierrors.NewInternalError(fmt.Errorf("list releases: %w", err))
+	}
+	if len(releases.Items) >= project.Spec.Limits.MaxReleases {
+		return apierrors.NewForbidden(
+			schema.GroupResource{Group: "pipelines.paprika.io", Resource: "releases"},
+			release.Name,
+			fmt.Errorf("project %q has reached its MaxReleases limit of %d (current count: %d)", project.Name, project.Spec.Limits.MaxReleases, len(releases.Items)),
+		)
+	}
+	return nil
+}
+
+// resolveProjectName determines the AppProject name governing a Release. It
+// prefers the project label, then falls back to the owning Application's
+// Spec.Project. An empty result lets ResolveProject apply its "default" fallback.
+func (v *ReleaseCustomValidator) resolveProjectName(ctx context.Context, release *pipelinesv1alpha1.Release) string {
+	if name := release.Labels[projectLabelKey]; name != "" {
+		return name
+	}
+	for _, ref := range release.OwnerReferences {
+		if ref.Kind == "Application" && ref.APIVersion == pipelinesv1alpha1.GroupVersion.String() {
+			var app pipelinesv1alpha1.Application
+			if err := v.client.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: release.Namespace}, &app); err == nil {
+				return app.Spec.Project
+			}
+		}
+	}
+	return ""
 }

@@ -83,6 +83,19 @@ spec:
                 items:
                   type: string
                 type: array
+              limits:
+                description: Limits constrain resource usage within this project.
+                  Zero/unset means unlimited.
+                properties:
+                  maxApplications:
+                    description: MaxApplications is the maximum number of Applications
+                      in this project. Zero = unlimited.
+                    type: integer
+                  maxReleases:
+                    description: MaxReleases is the maximum number of Releases (across
+                      all Applications in the project). Zero = unlimited.
+                    type: integer
+                type: object
               repositories:
                 description: |-
                   Repositories restricts which core.paprika.io Repository names are allowed.
