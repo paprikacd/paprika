@@ -56,7 +56,14 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 .PHONY: generate-proto
 generate-proto: ## Generate protobuf Go and TypeScript clients from proto definitions.
 	@echo "Generating protobuf clients..."
-	go tool buf generate
+	@if command -v protoc-gen-go >/dev/null 2>&1 && command -v protoc-gen-connect-go >/dev/null 2>&1 && [ -x ui/node_modules/.bin/protoc-gen-es ]; then \
+		go tool buf generate; \
+	else \
+		echo "generate-proto: protoc plugins not installed; keeping committed generated files."; \
+		echo "  To enable: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest"; \
+		echo "             go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest"; \
+		echo "             (cd ui && npm ci)  # for protoc-gen-es / protoc-gen-connect-es"; \
+	fi
 
 .PHONY: generate
 generate: controller-gen generate-proto mockgen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations, plus protobuf clients and mocks.
