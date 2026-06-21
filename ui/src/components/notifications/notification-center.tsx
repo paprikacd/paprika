@@ -45,15 +45,39 @@ export function NotificationCenter() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  const typeLabels: Record<string, string> = {
+    application: "Application",
+    release: "Release",
+    rollout: "Rollout",
+    audit: "Audit",
+    gate: "Gate",
+  }
+
   const notifications: NotificationItem[] = events
     .map((raw, idx) => {
       try {
         const data = JSON.parse(raw)
         const payload = data.payload || {}
+        const eventType: string = data.type || payload.resourceType || ""
+        const label = typeLabels[eventType] || eventType
+        let title: string
+        let body: string
+        if (eventType === "audit") {
+          title = `${payload.principal || "unknown"} ${payload.action} ${payload.resource}`
+          body = payload.success
+            ? `${payload.action} ${payload.resource} succeeded`
+            : `${payload.action} ${payload.resource} failed: ${payload.error || "unknown error"}`
+        } else if (eventType === "gate") {
+          title = `${payload.namespace || ""}/${payload.name || ""}`
+          body = `Gate ${payload.reason || payload.phase || ""}`
+        } else {
+          title = `${payload.namespace || ""}/${payload.name || ""}`
+          body = `${label} is now ${payload.phase}${payload.reason ? ` (${payload.reason})` : ""}`
+        }
         return {
           id: `${idx}-${payload.timestamp || raw}`,
-          title: `${payload.namespace}/${payload.name}`,
-          body: `${payload.resourceType} is now ${payload.phase}${payload.reason ? ` (${payload.reason})` : ""}`,
+          title: title || payload.name || "unknown",
+          body,
           phase: payload.phase || "",
           timestamp: data.timestamp || new Date().toISOString(),
         }
