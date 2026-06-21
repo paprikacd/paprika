@@ -19,6 +19,7 @@ import (
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/mtls"
 )
 
 // repoCache is the smallest cache interface needed by the repo server.
@@ -160,6 +161,13 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 			log.FromContext(ctx).Error(err, "Failed to close repo server")
 		}
 	}()
+	if cert, key, ok := mtls.ServingConfig(); ok {
+		log.FromContext(ctx).Info("Starting repo server with TLS", "addr", addr, "cert", cert, "key", key)
+		if err := srv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
+			return fmt.Errorf("repo server error: %w", err)
+		}
+		return nil
+	}
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("repo server error: %w", err)
 	}

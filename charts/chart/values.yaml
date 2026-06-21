@@ -578,3 +578,11 @@ velero:
   ## so the custom resource definitions are restored before their instances.
   includeNamespaces: []
 
+## Mutual TLS for inter-service communication (split-plane mode).
+## When enabled, renders cert-manager Certificates for each component's
+## serving TLS + a CA Certificate. Components mount the certs and serve TLS.
+## Requires cert-manager to be installed.
+mtls:
+  enabled: false
+  # cert-manager Issuer to use for the mTLS CA (self-signed if empty).
+  caIssuer: ""

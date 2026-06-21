@@ -306,7 +306,7 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string,
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
 	go func() {
-		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil); srvErr != nil {
+		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true); srvErr != nil {
 			setupLog.Error(srvErr, "UI server exited with error")
 		}
 	}()
@@ -316,7 +316,7 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string,
 func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecret string, setupLog logr.Logger) error {
 	webhookSrv := buildInlineWebhookServer(c, webhookSecret)
 	go func() {
-		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil); srvErr != nil {
+		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil, true); srvErr != nil {
 			setupLog.Error(srvErr, "Inline webhook receiver exited with error")
 		}
 	}()

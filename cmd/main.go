@@ -56,6 +56,7 @@ import (
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/mtls"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
@@ -337,7 +338,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh); srvErr != nil {
+		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -396,7 +397,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	healthMux := buildHealthMux(setupLog)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(whCtx, healthSrv, "health probe server", setupLog, nil); srvErr != nil {
+		if srvErr := runHTTPServer(whCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -406,7 +407,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
-	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil)
+	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true)
 }
 
 func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
@@ -443,7 +444,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir string, sch
 	healthMux := buildHealthMux(setupLog)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(rsCtx, healthSrv, "health probe server", setupLog, probeAddrCh); srvErr != nil {
+		if srvErr := runHTTPServer(rsCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -475,7 +476,7 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID string, setupL
 	healthMux := buildHealthMux(setupLog)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(agentCtx, healthSrv, "health probe server", setupLog, nil); srvErr != nil {
+		if srvErr := runHTTPServer(agentCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -574,10 +575,10 @@ func startAPIServer(ctx context.Context, mux *http.ServeMux, uiAddr string, log 
 		Handler:           mux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
-	return runHTTPServer(ctx, server, "API server", log, nil)
+	return runHTTPServer(ctx, server, "API server", log, nil, true)
 }
 
-func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.Logger, boundAddrCh chan<- string) error {
+func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.Logger, boundAddrCh chan<- string, useMTLS bool) error {
 	go func() {
 		<-ctx.Done()
 		// Use WithoutCancel so the shutdown deadline is independent of the
@@ -599,6 +600,21 @@ func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.
 		}
 	}
 	log.Info("Starting "+name, "addr", ln.Addr().String())
+	return serveListener(ln, srv, name, useMTLS, log)
+}
+
+// serveListener serves HTTP on ln, optionally with TLS when useMTLS is true and
+// the mTLS env vars are set. It falls back to plaintext serving otherwise.
+func serveListener(ln net.Listener, srv *http.Server, name string, useMTLS bool, log logr.Logger) error {
+	if useMTLS {
+		if cert, key, ok := mtls.ServingConfig(); ok {
+			log.Info("Starting "+name+" with TLS", "cert", cert, "key", key)
+			if err := srv.ServeTLS(ln, cert, key); err != nil && err != http.ErrServerClosed {
+				return fmt.Errorf("%s error: %w", name, err)
+			}
+			return nil
+		}
+	}
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("%s error: %w", name, err)
 	}

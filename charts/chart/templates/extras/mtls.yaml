@@ -1,0 +1,73 @@
+{{- if .Values.mtls.enabled }}
+{{- $namespace := .Release.Namespace }}
+{{- $caIssuer := .Values.mtls.caIssuer | default "" }}
+{{- $selfSigned := eq $caIssuer "" }}
+{{- if $selfSigned }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "mtls-selfsigned-issuer" "context" $) }}
+  namespace: {{ $namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "mtls-ca" "context" $) }}
+  namespace: {{ $namespace }}
+spec:
+  isCA: true
+  commonName: paprika-mtls-ca
+  secretName: {{ include "paprika.resourceName" (dict "suffix" "mtls-ca" "context" $) }}
+  issuerRef:
+    name: {{ include "paprika.resourceName" (dict "suffix" "mtls-selfsigned-issuer" "context" $) }}
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "mtls-ca-issuer" "context" $) }}
+  namespace: {{ $namespace }}
+spec:
+  ca:
+    secretName: {{ include "paprika.resourceName" (dict "suffix" "mtls-ca" "context" $) }}
+{{- end }}
+{{- range $component := list "api-server" "repo-server" "webhook-receiver" "controller-manager" }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" $ }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: {{ $component }}
+  name: {{ include "paprika.resourceName" (dict "suffix" (printf "%s-mtls" $component) "context" $) }}
+  namespace: {{ $namespace }}
+spec:
+  dnsNames:
+  - {{ include "paprika.resourceName" (dict "suffix" $component "context" $) }}.{{ $namespace }}.svc
+  - {{ include "paprika.resourceName" (dict "suffix" $component "context" $) }}.{{ $namespace }}.svc.cluster.local
+  secretName: {{ include "paprika.resourceName" (dict "suffix" (printf "%s-mtls" $component) "context" $) }}
+  issuerRef:
+    name: {{ if $selfSigned }}{{ include "paprika.resourceName" (dict "suffix" "mtls-ca-issuer" "context" $) }}{{ else }}{{ $caIssuer }}{{ end }}
+    kind: Issuer
+{{- end }}
+{{- end }}
