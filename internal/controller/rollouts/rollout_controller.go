@@ -108,7 +108,7 @@ func (r *RolloutReconciler) patchStatusOrLog(ctx context.Context, ro *rolloutsv1
 }
 
 func (r *RolloutReconciler) publishRolloutEvent(ctx context.Context, ro *rolloutsv1alpha1.Rollout) {
-	if r.EventBroker == nil {
+	if r.EventBroker == nil || ro.Status.Phase == "" {
 		return
 	}
 	evt, err := events.NewEvent(events.TypeRollout, events.EventPayload{
@@ -209,16 +209,12 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.Error(err, "Analysis failed")
 	}
 
-	oldPhase := ro.Status.Phase
 	r.updateStatusFromResult(&ro, result)
 
 	if err := r.patchStatus(ctx, &ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patching rollout status: %w", err)
 	}
-
-	if oldPhase != ro.Status.Phase {
-		r.publishRolloutEvent(ctx, &ro)
-	}
+	r.publishRolloutEvent(ctx, &ro)
 
 	if result.Action == core.ActionPause {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
