@@ -193,27 +193,54 @@ export default function DashboardPage() {
   }, [setConnected])
 
   const debounceRef = useRef<number | null>(null)
+  const sseConnectedRef = useRef(true)
+  const lastFetchRef = useRef(0)
+  const MIN_FETCH_INTERVAL = 5000
 
   useEffect(() => {
     const timeout = setTimeout(() => fetchData(), 0)
-    const fallback = setInterval(fetchData, 60000)
+    let fallback: ReturnType<typeof setInterval> | null = null
+
+    const startFallback = () => {
+      if (fallback != null) return
+      fallback = setInterval(() => {
+        if (!sseConnectedRef.current) {
+          fetchData()
+        }
+      }, 60000)
+    }
+    const stopFallback = () => {
+      if (fallback != null) {
+        clearInterval(fallback)
+        fallback = null
+      }
+    }
 
     const eventSource = new EventSource("/events?topic=dashboard")
-    eventSource.onmessage = () => {
+    eventSource.onopen = () => {
+      sseConnectedRef.current = true
+      stopFallback()
+    }
+    eventSource.onmessage = (e) => {
+      sseConnectedRef.current = true
+      const now = Date.now()
+      if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current)
       }
       debounceRef.current = window.setTimeout(() => {
+        lastFetchRef.current = Date.now()
         fetchData()
       }, 300)
     }
     eventSource.onerror = () => {
-      // Connection errors are handled by the browser reconnect and the fallback poll.
+      sseConnectedRef.current = false
+      startFallback()
     }
 
     return () => {
       clearTimeout(timeout)
-      clearInterval(fallback)
+      stopFallback()
       eventSource.close()
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current)
