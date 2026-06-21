@@ -1,0 +1,25 @@
+{{- if .Values.velero.enabled }}
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "backup" "context" $) }}
+  namespace: {{ .Values.velero.namespace }}
+  labels:
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/name: paprika
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: paprika
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+spec:
+  schedule: {{ .Values.velero.schedule | quote }}
+  template:
+    storageLocation: {{ .Values.velero.storageLocation | quote }}
+    ttl: {{ .Values.velero.ttl | quote }}
+    includedNamespaces:
+      - {{ .Release.Namespace }}
+      {{- range .Values.velero.includeNamespaces }}
+      - {{ . | quote }}
+      {{- end }}
+    includeClusterResources: true
+{{- end }}

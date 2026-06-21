@@ -553,3 +553,23 @@ redis:
   password: ""
   db: 0
 
+## Disaster recovery via Velero. When enabled, renders a Velero Schedule that backs up the
+## Paprika control-plane state (CRDs in the release namespace) on a cron schedule.
+## Velero must already be installed in the cluster (https://velero.io/docs/) with a
+## BackupStorageLocation; the Schedule is created in the Velero namespace.
+##
+velero:
+  enabled: false
+  ## Namespace where Velero is installed. Schedules must live here for Velero to reconcile them.
+  namespace: velero
+  ## Name of an existing Velero BackupStorageLocation to send backups to.
+  storageLocation: default
+  ## Cron schedule for backups. Default: every 6 hours.
+  schedule: "0 */6 * * *"
+  ## How long Velero retains each backup. Default: 30 days.
+  ttl: "720h"
+  ## Extra namespaces to include in the backup (e.g. namespaces where your Applications live).
+  ## The Paprika release namespace is always included, and cluster-scoped CRDs are backed up
+  ## so the custom resource definitions are restored before their instances.
+  includeNamespaces: []
+
