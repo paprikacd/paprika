@@ -123,7 +123,7 @@ func (s *PaprikaServer) auditor() audit.Auditor {
 // events for mutating RPCs via the server's Auditor. Install it after the auth
 // interceptor so the authenticated principal is available.
 func (s *PaprikaServer) AuditInterceptor() connect.UnaryInterceptorFunc {
-	return NewAuditInterceptor(s.auditor())
+	return NewAuditInterceptor(s.auditor(), s.broker)
 }
 
 func (s *PaprikaServer) authorizeApplication(ctx context.Context, action auth.Action, app *pipelinesv1alpha1.Application) error {
