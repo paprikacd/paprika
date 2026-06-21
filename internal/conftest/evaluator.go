@@ -131,12 +131,22 @@ func compile(ctx context.Context, name, regoSrc string) (*compiledEntry, error) 
 	}
 	pkgPath := strings.TrimPrefix(mod.Package.Path.String(), "data.")
 
+	// Compile the module once and reuse the compiler across the deny/warn/violation queries.
+	// Previously each rule built its own rego.Rego with rego.Module(...), which re-parsed and
+	// recompiled the same source three times; sharing the compiler keeps the module compiled
+	// exactly once and only the (cheap) per-query compilation runs per rule.
+	compiler := ast.NewCompiler()
+	compiler.Compile(map[string]*ast.Module{moduleName: mod})
+	if compiler.Failed() {
+		return nil, compiler.Errors
+	}
+
 	entry := &compiledEntry{name: name, queries: map[string]*rego.PreparedEvalQuery{}}
 	for _, rule := range []string{ruleDeny, ruleWarn, ruleViolation} {
 		q := fmt.Sprintf("data.%s.%s", pkgPath, rule)
 		// In OPA v1.x Rego.PrepareForEval returns a single PreparedEvalQuery per Rego
 		// (not a slice); we pass a single query so we take the value directly.
-		pq, err := rego.New(rego.Module(moduleName, regoSrc), rego.Query(q)).PrepareForEval(ctx)
+		pq, err := rego.New(rego.Compiler(compiler), rego.Query(q)).PrepareForEval(ctx)
 		if err != nil {
 			return nil, err
 		}
