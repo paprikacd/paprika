@@ -170,7 +170,7 @@ func (r *NotificationConfigReconciler) buildEmailer(ctx context.Context, cfg *pa
 	return NewEmailSender(*cfg.Spec.SMTP, auth)
 }
 
-func (r *NotificationConfigReconciler) dispatchConfig(ctx context.Context, cfg *paprikav1.NotificationConfig, payload *eventPayload, emailer *EmailSender) {
+func (r *NotificationConfigReconciler) dispatchConfig(ctx context.Context, cfg *paprikav1.NotificationConfig, payload *events.EventPayload, emailer *EmailSender) {
 	for i := range cfg.Spec.Destinations {
 		dest := &cfg.Spec.Destinations[i]
 		message := renderMessage(cfg.Spec.Template, payload)
@@ -201,7 +201,7 @@ func (r *NotificationConfigReconciler) dispatchConfig(ctx context.Context, cfg *
 
 func (r *NotificationConfigReconciler) dispatchDestination(
 	ctx context.Context,
-	payload *eventPayload,
+	payload *events.EventPayload,
 	emailer *EmailSender,
 	dest *paprikav1.NotificationDestination,
 	message string,
@@ -237,7 +237,7 @@ func (r *NotificationConfigReconciler) resolveSecret(ctx context.Context, ns, na
 	return out, nil
 }
 
-func (r *NotificationConfigReconciler) rateLimitAllowed(cfg *paprikav1.NotificationConfig, payload *eventPayload) bool {
+func (r *NotificationConfigReconciler) rateLimitAllowed(cfg *paprikav1.NotificationConfig, payload *events.EventPayload) bool {
 	if cfg.Spec.RateLimit == nil || cfg.Spec.RateLimit.MinInterval == "" {
 		return true
 	}
@@ -266,27 +266,15 @@ func (r *NotificationConfigReconciler) appendDelivery(cfg *paprikav1.Notificatio
 	}
 }
 
-// eventPayload is the shape of data published by application/release controllers.
-type eventPayload struct {
-	ResourceType  string `json:"resourceType"`
-	Name          string `json:"name"`
-	Namespace     string `json:"namespace"`
-	Phase         string `json:"phase"`
-	PreviousPhase string `json:"previousPhase,omitempty"`
-	Reason        string `json:"reason,omitempty"`
-	Message       string `json:"message,omitempty"`
-	Timestamp     string `json:"timestamp"`
-}
-
-func decodeEventPayload(evt *events.Event) (*eventPayload, error) {
-	var payload eventPayload
+func decodeEventPayload(evt *events.Event) (*events.EventPayload, error) {
+	var payload events.EventPayload
 	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
 		return nil, fmt.Errorf("unmarshal event payload: %w", err)
 	}
 	return &payload, nil
 }
 
-func matchesTrigger(evt *events.Event, payload *eventPayload, triggers []paprikav1.NotificationTrigger) bool {
+func matchesTrigger(evt *events.Event, payload *events.EventPayload, triggers []paprikav1.NotificationTrigger) bool {
 	if len(triggers) == 0 {
 		return true
 	}
@@ -305,7 +293,7 @@ func matchesTrigger(evt *events.Event, payload *eventPayload, triggers []paprika
 	return false
 }
 
-func renderMessage(tmpl string, payload *eventPayload) string {
+func renderMessage(tmpl string, payload *events.EventPayload) string {
 	if tmpl == "" {
 		return fmt.Sprintf("%s/%s is now %s%s",
 			payload.Namespace, payload.Name, payload.Phase,
@@ -344,7 +332,7 @@ func reasonSuffix(reason string) string {
 }
 
 //nolint:cyclop // webhook dispatch handles multiple auth branches and response cleanup
-func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payload *eventPayload, headers, secret map[string]string) error {
+func (s *NotificationSender) sendWebhook(ctx context.Context, url string, payload *events.EventPayload, headers, secret map[string]string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal webhook payload: %w", err)

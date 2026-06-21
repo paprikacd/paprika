@@ -247,6 +247,12 @@ const (
 	TypeApplication = "application"
 	// TypeRelease identifies events for Release resources.
 	TypeRelease = "release"
+	// TypeRollout identifies events for Rollout resources.
+	TypeRollout = "rollout"
+	// TypeAudit identifies events for user action audit records.
+	TypeAudit = "audit"
+	// TypeGate identifies events for gate approval/rejection.
+	TypeGate = "gate"
 )
 
 // NewEvent creates an event with the given type and payload.

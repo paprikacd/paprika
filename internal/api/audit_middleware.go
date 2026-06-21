@@ -8,6 +8,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/audit"
 )
 
@@ -26,12 +27,13 @@ var auditVerbs = map[string]string{
 
 // NewAuditInterceptor returns a connect unary interceptor that records an audit
 // event for each mutating RPC via the provided Auditor. If the auditor is nil,
-// a NoopAuditor is used so the interceptor is a no-op.
+// a NoopAuditor is used so the interceptor is a no-op. If broker is non-nil,
+// audit events are also published to the event broker for real-time UI feedback.
 //
 // The interceptor must be installed after the auth interceptor
 // (connect.WithInterceptors(authInterceptor, auditInterceptor)) so the
 // authenticated principal is present in the request context.
-func NewAuditInterceptor(a audit.Auditor) connect.UnaryInterceptorFunc {
+func NewAuditInterceptor(a audit.Auditor, broker *events.Broker) connect.UnaryInterceptorFunc {
 	if a == nil {
 		a = audit.NoopAuditor{}
 	}
@@ -61,6 +63,23 @@ func NewAuditInterceptor(a audit.Auditor) connect.UnaryInterceptorFunc {
 				event.Error = err.Error()
 			}
 			a.Record(ctx, event)
+
+			if broker != nil {
+				brokerEvt, brokerErr := events.NewEvent(events.TypeAudit, events.AuditPayload{
+					Action:    action,
+					Resource:  resource,
+					Name:      event.Name,
+					Namespace: event.Namespace,
+					Principal: event.Principal,
+					Success:   event.Success,
+					Error:     event.Error,
+					Timestamp: event.Timestamp,
+				}, nil)
+				if brokerErr == nil {
+					broker.Publish(ctx, events.TopicDashboard, brokerEvt)
+				}
+			}
+
 			return resp, err
 		}
 	}

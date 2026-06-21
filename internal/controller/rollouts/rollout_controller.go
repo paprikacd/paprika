@@ -42,6 +42,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/rollout"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/traffic"
@@ -87,6 +88,7 @@ type RolloutReconciler struct {
 	DynamicClient dynamic.Interface
 	Analyzer      *analysis.CELAnalyzer
 	EventRecorder record.EventRecorder
+	EventBroker   *events.Broker
 }
 
 // +kubebuilder:rbac:groups=rollouts.paprika.io,resources=rollouts,verbs=get;list;watch;create;update;patch;delete
@@ -103,6 +105,26 @@ func (r *RolloutReconciler) patchStatusOrLog(ctx context.Context, ro *rolloutsv1
 	if err := r.patchStatus(ctx, ro); err != nil {
 		log.Error(err, "Failed to patch rollout status")
 	}
+}
+
+func (r *RolloutReconciler) publishRolloutEvent(ctx context.Context, ro *rolloutsv1alpha1.Rollout) {
+	if r.EventBroker == nil || ro.Status.Phase == "" {
+		return
+	}
+	evt, err := events.NewEvent(events.TypeRollout, events.EventPayload{
+		ResourceType: events.TypeRollout,
+		Name:         ro.Name,
+		Namespace:    ro.Namespace,
+		Phase:        string(ro.Status.Phase),
+		Reason:       "",
+		Message:      ro.Status.Message,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+	}, nil)
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to create rollout event", "rollout", ro.Name)
+		return
+	}
+	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
 // Reconcile handles Rollout reconciliation.
@@ -131,6 +153,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if err := r.patchStatus(ctx, &ro); err != nil {
 			return ctrl.Result{}, err
 		}
+		r.publishRolloutEvent(ctx, &ro)
 		return ctrl.Result{}, nil
 	}
 
@@ -191,6 +214,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.patchStatus(ctx, &ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patching rollout status: %w", err)
 	}
+	r.publishRolloutEvent(ctx, &ro)
 
 	if result.Action == core.ActionPause {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil

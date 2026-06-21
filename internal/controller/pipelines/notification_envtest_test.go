@@ -66,7 +66,7 @@ var _ = Describe("Notification Controller", func() {
 
 		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
-		evt, err := events.NewEvent(events.TypeApplication, &eventPayload{
+		evt, err := events.NewEvent(events.TypeApplication, &events.EventPayload{
 			ResourceType:  events.TypeApplication,
 			Name:          "test-app",
 			Namespace:     ns,
@@ -80,7 +80,7 @@ var _ = Describe("Notification Controller", func() {
 		r.handleEvent(ctx, evt)
 
 		Expect(received).NotTo(BeEmpty())
-		var payload eventPayload
+		var payload events.EventPayload
 		Expect(json.Unmarshal(received, &payload)).To(Succeed())
 		Expect(payload.Phase).To(Equal("Failed"))
 		Expect(payload.Reason).To(Equal("TestFailure"))
@@ -127,7 +127,7 @@ var _ = Describe("Notification Controller", func() {
 
 		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
-		evt, _ := events.NewEvent(events.TypeApplication, &eventPayload{
+		evt, _ := events.NewEvent(events.TypeApplication, &events.EventPayload{
 			ResourceType: events.TypeApplication,
 			Name:         "app",
 			Namespace:    ns,
@@ -159,7 +159,7 @@ var _ = Describe("Notification Controller", func() {
 
 		r := NewNotificationConfigReconciler(k8sClient, events.NewBroker(logr.Discard()), NewNotificationSender(), nil, clock.Real{})
 
-		evt, _ := events.NewEvent(events.TypeApplication, &eventPayload{
+		evt, _ := events.NewEvent(events.TypeApplication, &events.EventPayload{
 			ResourceType: events.TypeApplication,
 			Name:         "app",
 			Namespace:    ns,

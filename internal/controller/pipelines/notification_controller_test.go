@@ -19,7 +19,7 @@ import (
 func TestMatchesTrigger(t *testing.T) {
 	t.Parallel()
 
-	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &events.EventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 	evt := &events.Event{Type: events.TypeApplication}
 
 	tests := []struct {
@@ -71,7 +71,7 @@ func TestMatchesTrigger(t *testing.T) {
 func TestRenderMessage(t *testing.T) {
 	t.Parallel()
 
-	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &events.EventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 
 	t.Run("default message", func(t *testing.T) {
 		got := renderMessage("", payload)
@@ -102,7 +102,7 @@ func TestRenderMessage(t *testing.T) {
 func TestNotificationSender(t *testing.T) {
 	t.Parallel()
 
-	payload := &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
+	payload := &events.EventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed", Reason: "ValidationFailed"}
 
 	tests := []struct {
 		name    string
@@ -127,7 +127,7 @@ func TestNotificationSender(t *testing.T) {
 					t.Errorf("read webhook body: %v", err)
 					return
 				}
-				var received eventPayload
+				var received events.EventPayload
 				if err := json.Unmarshal(body, &received); err != nil {
 					t.Errorf("failed to decode webhook payload: %v", err)
 				}
@@ -153,7 +153,7 @@ func TestNotificationSender(t *testing.T) {
 			},
 			call: func(sender *NotificationSender, url string) error {
 				secret := map[string]string{"username": "user", "password": "pass"}
-				return sender.sendWebhook(context.Background(), url, &eventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed"}, nil, secret)
+				return sender.sendWebhook(context.Background(), url, &events.EventPayload{ResourceType: "application", Name: "app", Namespace: "default", Phase: "Failed"}, nil, secret)
 			},
 		},
 		{
@@ -187,7 +187,7 @@ func TestNotificationSender(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 			},
 			call: func(sender *NotificationSender, url string) error {
-				return sender.sendWebhook(context.Background(), url, &eventPayload{}, nil, nil)
+				return sender.sendWebhook(context.Background(), url, &events.EventPayload{}, nil, nil)
 			},
 			wantErr: true,
 		},
@@ -225,7 +225,7 @@ func TestRateLimitAllowed(t *testing.T) {
 			RateLimit: &paprikav1.NotificationRateLimit{MinInterval: "1h"},
 		},
 	}
-	payload := &eventPayload{ResourceType: "application", Namespace: "default", Name: "app", Phase: "Failed"}
+	payload := &events.EventPayload{ResourceType: "application", Namespace: "default", Name: "app", Phase: "Failed"}
 
 	if !r.rateLimitAllowed(cfg, payload) {
 		t.Error("first event should be allowed")
