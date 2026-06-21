@@ -20,7 +20,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/mattn/go-isatty v0.0.22
 	github.com/onsi/ginkgo/v2 v2.27.2
-	github.com/onsi/gomega v1.38.2
+	github.com/onsi/gomega v1.42.0
 	github.com/open-feature/go-sdk v1.17.2
 	github.com/open-policy-agent/opa v1.17.1
 	github.com/prometheus/client_golang v1.23.2
