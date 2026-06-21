@@ -52,6 +52,20 @@ type AppProjectSpec struct {
 
 	// Roles define project-level RBAC subjects.
 	Roles []AppProjectRole `json:"roles,omitempty"`
+
+	// Limits constrain resource usage within this project. Zero/unset means unlimited.
+	// +optional
+	Limits *ProjectLimits `json:"limits,omitempty"`
+}
+
+// ProjectLimits defines per-project resource quotas.
+type ProjectLimits struct {
+	// MaxApplications is the maximum number of Applications in this project. Zero = unlimited.
+	// +optional
+	MaxApplications int `json:"maxApplications,omitempty"`
+	// MaxReleases is the maximum number of Releases (across all Applications in the project). Zero = unlimited.
+	// +optional
+	MaxReleases int `json:"maxReleases,omitempty"`
 }
 
 // AppProjectDestination restricts where applications may deploy.

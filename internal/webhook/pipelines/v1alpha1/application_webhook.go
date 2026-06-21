@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -38,7 +39,7 @@ func SetupApplicationWebhookWithManager(mgr ctrl.Manager) error {
 	resolver := governance.NewProjectResolver(mgr.GetClient())
 	validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
 	if err := ctrl.NewWebhookManagedBy(mgr, &pipelinesv1alpha1.Application{}).
-		WithValidator(&ApplicationCustomValidator{validator: validator}).
+		WithValidator(&ApplicationCustomValidator{validator: validator, client: mgr.GetClient()}).
 		WithDefaulter(&ApplicationCustomDefaulter{}).
 		Complete(); err != nil {
 		return fmt.Errorf("setting up application webhook: %w", err)
@@ -62,11 +63,18 @@ func (d *ApplicationCustomDefaulter) Default(_ context.Context, obj *pipelinesv1
 
 type ApplicationCustomValidator struct {
 	validator *governance.ProjectValidator
+	client    client.Reader
 }
 
 func (v *ApplicationCustomValidator) ValidateCreate(ctx context.Context, obj *pipelinesv1alpha1.Application) (admission.Warnings, error) {
 	applicationlog.Info("Validation for Application upon creation", "name", obj.GetName())
-	return nil, v.validateApplication(ctx, obj)
+	if err := v.validateApplication(ctx, obj); err != nil {
+		return nil, err
+	}
+	if err := v.enforceApplicationQuota(ctx, obj); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (v *ApplicationCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *pipelinesv1alpha1.Application) (admission.Warnings, error) {
@@ -149,4 +157,50 @@ func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *p
 		errs = append(errs, field.Forbidden(field.NewPath("spec").Child("project"), blocking[0].Message))
 	}
 	return errs
+}
+
+// enforceApplicationQuota rejects Application creation when the governing
+// AppProject has reached its MaxApplications limit. It is a no-op when the
+// validator or client are unset (test harness), when no Limits are configured,
+// or when MaxApplications is zero (unlimited).
+//
+//nolint:cyclop // quota enforcement has sequential guard branches.
+func (v *ApplicationCustomValidator) enforceApplicationQuota(ctx context.Context, app *pipelinesv1alpha1.Application) error {
+	if v.client == nil || v.validator == nil {
+		return nil
+	}
+	projectName := app.Spec.Project
+	if projectName == "" {
+		projectName = "default"
+	}
+	project, err := v.validator.ResolveProject(ctx, app.Namespace, projectName)
+	if err != nil {
+		return apierrors.NewInternalError(fmt.Errorf("resolve project %s/%s: %w", app.Namespace, projectName, err))
+	}
+	if project == nil || project.Spec.Limits == nil || project.Spec.Limits.MaxApplications <= 0 {
+		return nil
+	}
+
+	var apps pipelinesv1alpha1.ApplicationList
+	if err := v.client.List(ctx, &apps, client.InNamespace(app.Namespace)); err != nil {
+		return apierrors.NewInternalError(fmt.Errorf("list applications: %w", err))
+	}
+	count := 0
+	for i := range apps.Items {
+		name := apps.Items[i].Spec.Project
+		if name == "" {
+			name = "default"
+		}
+		if name == project.Name {
+			count++
+		}
+	}
+	if count >= project.Spec.Limits.MaxApplications {
+		return apierrors.NewForbidden(
+			schema.GroupResource{Group: "pipelines.paprika.io", Resource: "applications"},
+			app.Name,
+			fmt.Errorf("project %q has reached its MaxApplications limit of %d (current count: %d)", project.Name, project.Spec.Limits.MaxApplications, count),
+		)
+	}
+	return nil
 }

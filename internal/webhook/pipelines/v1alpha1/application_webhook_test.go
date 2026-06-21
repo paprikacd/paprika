@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
@@ -201,4 +202,111 @@ func TestApplicationCustomValidator_GovernanceValidator(t *testing.T) {
 	err := v.validateApplication(context.Background(), app)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not allowed")
+}
+
+// newQuotaApp builds a minimal valid Application in the given project.
+func newQuotaApp(name, project string) *pipelinesv1alpha1.Application {
+	return &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Project: project,
+			Source:  pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeGit, RepoURL: "https://github.com/org/repo"},
+			Stages:  []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+		},
+	}
+}
+
+func TestApplicationCustomValidator_Quota(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1alpha1.AddToScheme(scheme))
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	buildValidator := func(project *corev1alpha1.AppProject, existing ...*pipelinesv1alpha1.Application) *ApplicationCustomValidator {
+		objs := make([]client.Object, 0, 1+len(existing))
+		objs = append(objs, project)
+		for _, a := range existing {
+			objs = append(objs, a)
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+		resolver := governance.NewProjectResolver(c)
+		validator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(c), nil)
+		return &ApplicationCustomValidator{validator: validator, client: c}
+	}
+
+	t.Run("allowed when under the limit", func(t *testing.T) {
+		project := &corev1alpha1.AppProject{
+			ObjectMeta: metav1.ObjectMeta{Name: "quota", Namespace: "default"},
+			Spec: corev1alpha1.AppProjectSpec{
+				SourceRepos: []string{"*"},
+				Destinations: []corev1alpha1.AppProjectDestination{
+					{Server: "*", Namespace: "*"},
+				},
+				Kinds:  []string{"*"},
+				Limits: &corev1alpha1.ProjectLimits{MaxApplications: 2},
+			},
+		}
+		existing := newQuotaApp("app-1", "quota")
+		v := buildValidator(project, existing)
+		_, err := v.ValidateCreate(context.Background(), newQuotaApp("app-2", "quota"))
+		require.NoError(t, err)
+	})
+
+	t.Run("rejected when at the limit", func(t *testing.T) {
+		project := &corev1alpha1.AppProject{
+			ObjectMeta: metav1.ObjectMeta{Name: "quota", Namespace: "default"},
+			Spec: corev1alpha1.AppProjectSpec{
+				SourceRepos: []string{"*"},
+				Destinations: []corev1alpha1.AppProjectDestination{
+					{Server: "*", Namespace: "*"},
+				},
+				Kinds:  []string{"*"},
+				Limits: &corev1alpha1.ProjectLimits{MaxApplications: 2},
+			},
+		}
+		existing := []*pipelinesv1alpha1.Application{
+			newQuotaApp("app-1", "quota"),
+			newQuotaApp("app-2", "quota"),
+		}
+		v := buildValidator(project, existing...)
+		_, err := v.ValidateCreate(context.Background(), newQuotaApp("app-3", "quota"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "MaxApplications limit")
+	})
+
+	t.Run("allowed when no limit set (Limits nil)", func(t *testing.T) {
+		project := &corev1alpha1.AppProject{
+			ObjectMeta: metav1.ObjectMeta{Name: "nolimits", Namespace: "default"},
+			Spec: corev1alpha1.AppProjectSpec{
+				SourceRepos: []string{"*"},
+				Destinations: []corev1alpha1.AppProjectDestination{
+					{Server: "*", Namespace: "*"},
+				},
+				Kinds: []string{"*"},
+			},
+		}
+		v := buildValidator(project)
+		_, err := v.ValidateCreate(context.Background(), newQuotaApp("app-1", "nolimits"))
+		require.NoError(t, err)
+	})
+
+	t.Run("allowed when MaxApplications is zero (unlimited)", func(t *testing.T) {
+		project := &corev1alpha1.AppProject{
+			ObjectMeta: metav1.ObjectMeta{Name: "zero", Namespace: "default"},
+			Spec: corev1alpha1.AppProjectSpec{
+				SourceRepos: []string{"*"},
+				Destinations: []corev1alpha1.AppProjectDestination{
+					{Server: "*", Namespace: "*"},
+				},
+				Kinds:  []string{"*"},
+				Limits: &corev1alpha1.ProjectLimits{MaxApplications: 0},
+			},
+		}
+		existing := []*pipelinesv1alpha1.Application{
+			newQuotaApp("app-1", "zero"),
+			newQuotaApp("app-2", "zero"),
+		}
+		v := buildValidator(project, existing...)
+		_, err := v.ValidateCreate(context.Background(), newQuotaApp("app-3", "zero"))
+		require.NoError(t, err)
+	})
 }
