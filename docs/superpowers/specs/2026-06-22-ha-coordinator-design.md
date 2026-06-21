@@ -68,17 +68,55 @@ Four files:
          │  paprika:coordinator│
          │   :replicas (SET)   │
          │   :heartbeat:<pod>  │
-         │   :ring-token       │
-         └─────────────────────┘
+          └─────────────────────┘
+```
+
+### Coordinator API
+
+```go
+type Coordinator struct {
+    // unexported fields
+}
+
+// Join registers this replica in Redis and performs initial ring sync.
+func (c *Coordinator) Join(ctx context.Context) error
+
+// Leave deregisters this replica from Redis.
+func (c *Coordinator) Leave(ctx context.Context) error
+
+// Healthy returns true if the last heartbeat succeeded.
+func (c *Coordinator) Healthy(ctx context.Context) bool
+
+// Ring returns a snapshot of the current hash ring (thread-safe).
+func (c *Coordinator) Ring() *Ring
+
+// Events returns a channel that receives ring-change notifications.
+// Consumers re-read Ring() when a value arrives.
+func (c *Coordinator) Events() <-chan struct{}
+```
+
+`syncRing()` is unexported — called by the heartbeat goroutine and on join. It reads
+`SMEMBERS`, rebuilds the ring, and notifies `Events()` subscribers. The `RingShardFilter`
+polls `Ring()` on each `ShouldReconcile` call via the atomic pointer swap.
+
+### Coordinator Construction
+
+```go
+func NewCoordinator(redisClient redis.UniversalClient, podName string, opts ...Option) *Coordinator
+
+type Options struct {
+    HeartbeatInterval time.Duration  // default 15s
+    HeartbeatTTL      time.Duration  // default 30s
+}
 ```
 
 ### Redis Key Schema
 
 | Key | Type | TTL | Purpose |
 |---|---|---|---|
-| `paprika:coordinator:replicas` | SET | permanent | Active replica pod names |
+| `paprika:coordinator:replicas` | SET | rolling TTL (30s, renewed each heartbeat) | Active replica pod names |
 | `paprika:coordinator:heartbeat:<pod>` | STRING | 30s | Liveness heartbeat |
-| `paprika:coordinator:ring-token` | INT | permanent | Monotonic version for CAS |
+| _(omitted — CAS is unnecessary; each replica reads `SMEMBERS` independently)_ |
 | `paprika:coordinator:assigned:<pod>` | SET | 30s | Current namespace assignment (observability) |
 
 ### Consistent Hash Ring
@@ -132,8 +170,8 @@ Controllers pass `ShouldReconcile` in their event predicates — no controller c
 3. `coordinator.syncRing()`:
    - `SMEMBERS paprika:coordinator:replicas`
    - Build ring from all members
-   - Compare new vs old assignment (`RingShardFilter.Relinquished()`, `RingShardFilter.Acquired()`)
-4. Controllers rebuild informers for new namespace set
+   - Swap the ring pointer on `RingShardFilter` atomically
+4. No informer rebuild needed. New predicates immediately reflect the updated assignment as `ShouldReconcile` uses the live ring pointer. Any events "missed" during the transition are naturally covered by controller-runtime's existing reconciliation loop (resync period + periodic re-queues).
 
 ### Heartbeat
 
@@ -146,29 +184,26 @@ Controllers pass `ShouldReconcile` in their event predicates — no controller c
 ### Rebalance
 
 Triggers:
-- New replica joins (detected via NEW `SADD` or pub/sub event)
+- Replica join or leave detected during the heartbeat cycle (15s polling)
 - Replica heartbeat TTL expires (stale entry detected)
-- Replica gracefully leaves (pub/sub unregister event)
 
 Protocol:
-1. Each replica independently detects the change (pub/sub notification + polling backup)
+1. Each replica independently detects the change during its next heartbeat poll
 2. Random jitter 0-5s to avoid thundering herd
 3. `coordinator.syncRing()`:
    - Merge stale detection: `SREM` any entries whose heartbeat TTL has expired
    - Rebuild ring from `SMEMBERS`
    - Compute delta: which namespaces changed owner
-4. For newly acquired namespaces: controllers start informers
-5. For relinquished namespaces: controllers stop informers
-6. Update `paprika:coordinator:assigned:<self>` SET
+4. Swap the ring pointer on `RingShardFilter` (atomic). New predicates immediately reflect the updated assignment.
+5. Update `paprika:coordinator:assigned:<self>` SET for observability.
 
 ### Graceful Leave
 
-1. SIGTERM handler calls `coordinator.Leave()`:
-   - `SREM paprika:coordinator:replicas <self>`
+1. SIGTERM triggers `coordinator.Leave()` before controller manager shutdown:
    - `DEL paprika:coordinator:heartbeat:<self>`
-   - `PUBLISH paprika:coordinator:events` with leave payload
-   - Sleep 2s to let peers observe the departure
-2. Then proceed with normal controller manager shutdown
+   - `SREM paprika:coordinator:replicas <self>`
+   - Sleep 2s to let peers observe the departure on next heartbeat poll
+2. Then proceed with normal controller manager graceful shutdown (existing SIGTERM handler that cancels the context and waits for reconcilers to finish)
 
 ## CLI Flags
 
@@ -180,11 +215,13 @@ Added to `cmd/main.go` `cliConfig`:
 | `--coordinator-heartbeat` | `PAPRIKA_COORDINATOR_HEARTBEAT` | `15s` | Heartbeat interval |
 | `--coordinator-ttl` | `PAPRIKA_COORDINATOR_TTL` | `30s` | Heartbeat TTL (must be > interval) |
 
+Coordinator flags are silently ignored when `--coordinator-mode` is `false` (they have no effect on leader-election-based operation).
+
 When `--coordinator-mode` is enabled:
 - Manager is created with `LeaderElection: false`
 - `CoordinatorShardFilter` replaces the env-var `ShardFilter`
-- `PAPRIKA_POD_NAME` is required (fallback: `os.Hostname()`)
-- `PAPRIKA_REDIS_ADDR` is required
+- `PAPRIKA_POD_NAME` — defaults to `os.Hostname()` if unset
+- `PAPRIKA_REDIS_ADDR` is required if `--coordinator-mode` is true (fail-fast with error message)
 
 ## Observability
 
@@ -217,8 +254,9 @@ When `--coordinator-mode` is enabled:
 | **Redis unavailable at startup** | Coordinator enters degraded mode: all namespaces pass through (no filtering). Operator runs as if unsharded. Logs startup warning. |
 | **Redis unavailable mid-operation** | Keeps last known ring. Controllers continue with last assignment. Retry reconnect every 5s. Metrics show 0 replicas. |
 | **Stale replica (TTL expired but not cleaned)** | On each heartbeat cycle: `SMEMBERS replicas`, check TTL of each. `SREM` stale entries before computing ring. |
-| **Duplicate rebalance (concurrent detection)** | Ring rebuild is idempotent. `SMEMBERS` returns the canonical set. CAS on `ring-token` prevents concurrent updates to assignment SETs. |
+| **Duplicate rebalance (concurrent detection)** | Ring rebuild is idempotent. `SMEMBERS` returns the canonical set. Each replica independently computes the same ring from the same input — no CAS needed. |
 | **Partial namespace adoption (rebalance race)** | Both old and new owner may process the same namespace temporarily. Controller reconciliation is already idempotent — safe. |
+| **Empty ring (SMEMBERS returns < 1 replica)** | Guard: if ring has < 1 member, `RingShardFilter` falls through to let all namespaces pass. This prevents a total outage during coordinator startup race. |
 | **Quick restart (crash < TTL)** | TTL (30s) prevents premature takeover by other replicas. Restarted pod re-registers within heartbeat interval. Grace period avoids churn. |
 
 ## Migration Path
@@ -271,7 +309,7 @@ When `--coordinator-mode` is enabled:
   - Instance leaves → remaining 2 rebalance
   - Instance crashes (no Leave) → TTL expiry → remaining rebalance
 
-### E2E Test
+### E2E Test (Phase 3)
 
 - Deploy operator with `coordinator.enabled=true` and `replicas=3`
 - Verify all 3 pods are processing work (check controller-runtime metrics)
@@ -280,13 +318,10 @@ When `--coordinator-mode` is enabled:
 
 ## Open Questions
 
-1. **Should `ring-token` CAS be implemented, or is the "each replica reads `SMEMBERS` independently" model sufficient?**
-   - Decision: `SMEMBERS` is atomic per-Redis-node. In a single Redis instance (our target), consistency is sufficient without CAS. Skip `ring-token`.
-
-2. **Should virtual node count be configurable or hardcoded?**
+1. **Should virtual node count be configurable or hardcoded?**
    - Decision: Hardcoded to 16. Can be lifted to a flag if uneven distribution is observed in production.
 
-3. **How should the coordinator integrate with the controller manager's informer start/stop?**
+2. **How should the coordinator integrate with the controller manager's informer start/stop?**
    - Decision: Controllers don't need per-namespace informers — `ShardFilter` is applied in event predicates (existing pattern). When namespace assignment changes, the filter simply starts allowing/blocking events. No informer rebuild needed. The existing reconciliation will pick up any missed events naturally.
 
 ## References
