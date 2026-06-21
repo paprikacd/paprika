@@ -418,11 +418,16 @@ func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprika
 			return fmt.Errorf("fetching application for status update: %w", err)
 		}
 		// Preserve fields that may be set concurrently by other actors (e.g.
-		// ApplyBundle setting ReleaseRef) when the current reconcile did not
+		// ApplyBundle setting ReleaseRef, the Release controller's
+		// syncApplicationGateStatus setting Gates) when the current reconcile did not
 		// populate them.
 		if desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
 			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
 			app.Status.ReleaseRef = fresh.Status.ReleaseRef
+		}
+		if len(desiredStatus.Gates) == 0 && len(fresh.Status.Gates) > 0 {
+			desiredStatus.Gates = fresh.Status.Gates
+			app.Status.Gates = fresh.Status.Gates
 		}
 		fresh.Status = *desiredStatus
 		fresh.Status.ObservedGeneration = fresh.Generation
