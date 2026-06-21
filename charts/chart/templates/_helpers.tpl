@@ -81,6 +81,17 @@ Cache environment variables shared across all components.
 {{- end }}
 
 {{/*
+Audit logging environment variable. When audit is enabled, the API server
+records structured JSON audit events for mutating operations to stdout.
+*/}}
+{{- define "paprika.auditEnv" -}}
+{{- if .Values.audit.enabled }}
+- name: PAPRIKA_AUDIT_ENABLED
+  value: "true"
+{{- end }}
+{{- end }}
+
+{{/*
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}

@@ -52,6 +52,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
@@ -269,7 +270,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	cfg.otelEndpoint = getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	cfg.otelServiceName = getenv("OTEL_SERVICE_NAME")
 	cfg.version = getenv("PAPRIKA_VERSION")
-	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_LOG") == "true"
+	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 
 	cfg.zapOptions = zap.Options{Development: true}
 	cfg.zapOptions.BindFlags(fs)
@@ -321,9 +322,12 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		}
 		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
+	if cfg.auditLogEnabled {
+		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
+	}
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
 	if muxErr != nil {

@@ -24,6 +24,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
@@ -48,6 +49,12 @@ func WithClock(clk clock.Clock) ServerOption {
 	return func(s *PaprikaServer) { s.Clock = clk }
 }
 
+// WithAuditor sets the audit logger used to record mutating API operations.
+// If not set, auditing is disabled (NoopAuditor).
+func WithAuditor(a audit.Auditor) ServerOption {
+	return func(s *PaprikaServer) { s.Auditor = a }
+}
+
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
 	client                    client.Client
@@ -57,7 +64,10 @@ type PaprikaServer struct {
 	governanceValidator       *governance.ProjectValidator
 	governancePolicyEvaluator *governance.PolicyEvaluator
 	authorizer                auth.Authorizer
-	Clock                     clock.Clock
+	// Auditor records structured audit events for mutating API operations. When
+	// nil, the AuditInterceptor falls back to a NoopAuditor.
+	Auditor audit.Auditor
+	Clock   clock.Clock
 }
 
 // NewPaprikaServer creates a new PaprikaServer with the given Kubernetes client.
@@ -98,6 +108,22 @@ func (s *PaprikaServer) now() time.Time {
 		return s.Clock.Now()
 	}
 	return time.Now()
+}
+
+// auditor returns the configured Auditor, or a NoopAuditor when none is set so
+// callers never need a nil check.
+func (s *PaprikaServer) auditor() audit.Auditor {
+	if s.Auditor == nil {
+		return audit.NoopAuditor{}
+	}
+	return s.Auditor
+}
+
+// AuditInterceptor returns a connect unary interceptor that records audit
+// events for mutating RPCs via the server's Auditor. Install it after the auth
+// interceptor so the authenticated principal is available.
+func (s *PaprikaServer) AuditInterceptor() connect.UnaryInterceptorFunc {
+	return NewAuditInterceptor(s.auditor())
 }
 
 func (s *PaprikaServer) authorizeApplication(ctx context.Context, action auth.Action, app *pipelinesv1alpha1.Application) error {
