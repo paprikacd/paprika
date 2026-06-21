@@ -1,0 +1,51 @@
+name: Proto Drift
+
+on:
+  push:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  check:
+    permissions:
+      contents: read
+    name: Verify committed generated files match regeneration
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install UI dependencies
+        run: |
+          cd ui
+          npm ci
+
+      - name: Install protoc Go plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@latest
+
+      - name: Regenerate protobuf clients
+        run: make generate-proto
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Committed protobuf-generated files differ from regeneration. Run 'make generate-proto' and commit the result."
+            exit 1
+          fi
