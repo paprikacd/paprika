@@ -553,6 +553,11 @@ redis:
   password: ""
   db: 0
 
+## Audit logging. When enabled, the API server records structured JSON audit
+## events for mutating operations to stdout.
+audit:
+  enabled: true
+
 ## Disaster recovery via Velero. When enabled, renders a Velero Schedule that backs up the
 ## Paprika control-plane state (CRDs in the release namespace) on a cron schedule.
 ## Velero must already be installed in the cluster (https://velero.io/docs/) with a

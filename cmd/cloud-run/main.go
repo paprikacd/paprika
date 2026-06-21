@@ -36,6 +36,7 @@ import (
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
@@ -79,7 +80,7 @@ func main() {
 	}
 }
 
-//nolint:cyclop,funlen // CLI setup and wiring.
+//nolint:cyclop,funlen,gocyclo // CLI setup and wiring.
 func run(setupLog logr.Logger) error {
 	ctx := context.Background()
 
@@ -110,6 +111,7 @@ func run(setupLog logr.Logger) error {
 	}
 	addr := ":" + port
 
+	auditEnabled := os.Getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 	repoServerAddr := os.Getenv("PAPRIKA_REPO_SERVER_ADDR")
 	cacheCfg := cache.Config{
 		Backend:       os.Getenv("PAPRIKA_CACHE_BACKEND"),
@@ -184,10 +186,13 @@ func run(setupLog logr.Logger) error {
 		}
 		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
+	if auditEnabled {
+		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
+	}
 
 	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
 
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)

@@ -41,6 +41,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
 	"github.com/benebsworth/paprika/internal/governance"
@@ -151,7 +152,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg.uiAddr, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg.uiAddr, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, cfg.auditLogEnabled, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
@@ -299,8 +300,8 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker, setupLog)
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker, auditEnabled, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
@@ -333,7 +334,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -346,8 +347,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authC
 	if authz != nil {
 		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
+	if auditEnabled {
+		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
+	}
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor))
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
 
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
