@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -190,4 +193,92 @@ loop:
 		}
 	}
 	assert.Equal(t, 1, count, "expected exactly one warning event across identical repeated reconciles")
+}
+
+// fakeAllTemplatesRenderer is a minimal AllTemplatesRenderer used to drive promoteCanary's
+// render step without a real template engine. It returns the configured manifests/error.
+type fakeAllTemplatesRenderer struct {
+	manifests []byte
+	err       error
+}
+
+func (f *fakeAllTemplatesRenderer) RenderAll(_ context.Context, _ []paprikav1.Template, _ map[string]string) ([]byte, error) {
+	return f.manifests, f.err
+}
+
+// buildCanaryPromotionReconciler wires a ReleaseReconciler just far enough for
+// handleCanaryPromotion to reach runConftestGate: a Release owning an Application that binds
+// a conftest policy, an empty-template Stage, a no-op governance gate (nil validators), and
+// the supplied conftest evaluator and renderer.
+func buildCanaryPromotionReconciler(t *testing.T, ev ConftestEvaluator, renderer AllTemplatesRenderer) (*ReleaseReconciler, *paprikav1.Release, *paprikav1.Stage) {
+	t.Helper()
+	app := &paprikav1.Application{}
+	app.SetName("canary-app")
+	app.SetNamespace("default")
+	app.SetUID(types.UID("canary-app-uid"))
+	app.Spec.ConftestPolicies = []paprikav1.ConftestPolicyRef{{Name: "p"}}
+
+	release := relForTest()
+	release.SetOwnerReferences([]metav1.OwnerReference{{
+		APIVersion: paprikav1.GroupVersion.String(),
+		Kind:       "Application",
+		Name:       app.Name,
+		UID:        app.UID,
+	}})
+	release.Status.Phase = paprikav1.ReleaseCanarying
+
+	stage := &paprikav1.Stage{}
+	stage.SetName("canary-stage")
+	stage.Spec.Templates = nil // empty: fetchStageTemplates has nothing to fetch
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, paprikav1.AddToScheme(scheme))
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&paprikav1.Release{}).
+		WithObjects(app, release).
+		Build()
+
+	r := NewReleaseReconciler(c)
+	r.Scheme = scheme
+	r.ConftestEvaluator = ev
+	r.TemplateRenderer = renderer
+	r.EventRecorder = record.NewFakeRecorder(10)
+	return r, release, stage
+}
+
+// TestHandleCanaryPromotion_ConftestBlockStaysNonTerminal pins that a conftest gate block
+// during canary promotion leaves the release non-terminal and requeues, mirroring the
+// direct/rolling path (handlePromotingPhase). A non-sentinel promotion error still goes
+// terminal Failed, confirming the sentinel branch is specific.
+func TestHandleCanaryPromotion_ConftestBlockStaysNonTerminal(t *testing.T) {
+	t.Run("conftest block requeues without going terminal", func(t *testing.T) {
+		ev := &fakeConftestEvaluator{violations: governance.Violations{
+			{Rule: "p", Severity: "deny", Message: "no label", Action: governance.PolicyActionEnforce},
+		}}
+		r, release, stage := buildCanaryPromotionReconciler(t, ev, &fakeAllTemplatesRenderer{})
+
+		var result string
+		res, err := r.handleCanaryPromotion(context.Background(), release, stage, &result)
+		require.NoError(t, err, "a retryable conftest block must not surface as a reconcile error")
+		assert.Equal(t, conftestBlockedRequeueInterval, res.RequeueAfter, "expected non-terminal requeue")
+		assert.NotEqual(t, paprikav1.ReleaseFailed, release.Status.Phase,
+			"conftest-blocked canary promotion must not go terminal")
+		assert.True(t, conditionReason(release, conftestReasonPolicyViolation),
+			"expected the gate to have recorded a PolicyViolation condition")
+	})
+
+	t.Run("non-sentinel promotion error still goes terminal", func(t *testing.T) {
+		// A render error surfaces as a hard promotion failure (not errConftestBlocked), so the
+		// release must still transition to Failed.
+		renderErr := &fakeAllTemplatesRenderer{err: errors.New("render boom")}
+		r, release, stage := buildCanaryPromotionReconciler(t, &fakeConftestEvaluator{}, renderErr)
+
+		var result string
+		res, err := r.handleCanaryPromotion(context.Background(), release, stage, &result)
+		require.NoError(t, err)
+		assert.Equal(t, time.Duration(0), res.RequeueAfter, "hard promotion failure must not requeue")
+		assert.Equal(t, paprikav1.ReleaseFailed, release.Status.Phase,
+			"non-sentinel promotion error must go terminal")
+	})
 }

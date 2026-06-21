@@ -1855,10 +1855,14 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
 	if err := r.promoteCanary(ctx, release, stage); err != nil {
-		// NOTE: a conftest gate block surfaces here as a hard error and marks the release
-		// terminal Failed. This is an accepted v1 divergence from the direct/rolling path,
-		// where errConftestBlocked is retried non-terminally (see handlePromotingPhase).
-		// Unifying canary promotion with the retryable sentinel is tracked as a follow-up.
+		if errors.Is(err, errConftestBlocked) {
+			// Conftest gate blocked canary promotion (fail-closed). The gate has already
+			// recorded the ConftestPassed=False condition and patched status; leave the
+			// release non-terminal so the next reconcile re-evaluates after the policy/
+			// manifest is fixed. Mirrors handlePromotingPhase's retryable-block handling.
+			log.Info("Canary promotion blocked by conftest gate; requeuing", "release", release.Name, "err", err)
+			return ctrl.Result{RequeueAfter: conftestBlockedRequeueInterval}, nil
+		}
 		log.Error(err, "Failed to promote canary to stable")
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
