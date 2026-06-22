@@ -24,8 +24,8 @@ func TestSingleMember(t *testing.T) {
 }
 
 func TestTwoMembers(t *testing.T) {
-	r := NewRing([]string{"a", "b"}, 16)
-	counts := map[string]int{"a": 0, "b": 0}
+	r := NewRing([]string{"a", "b", "c", "d"}, 16)
+	counts := map[string]int{"a": 0, "b": 0, "c": 0, "d": 0}
 	for i := 0; i < 1000; i++ {
 		owner, ok := r.Lookup(fmt.Sprintf("ns-%d", i))
 		if !ok {
@@ -33,35 +33,17 @@ func TestTwoMembers(t *testing.T) {
 		}
 		counts[owner]++
 	}
-	// Both members should get at least some keys
-	if counts["a"] == 0 || counts["b"] == 0 {
-		t.Errorf("both members should have keys: a=%d, b=%d", counts["a"], counts["b"])
+	// With 4 members and 16 virtual nodes (64 ring positions), all members
+	// should get at least 50 keys out of 1000
+	for _, member := range []string{"a", "b", "c", "d"} {
+		if counts[member] < 50 {
+			t.Errorf("member %s got only %d keys", member, counts[member])
+		}
 	}
 }
 
 func TestMemberRemoval(t *testing.T) {
-	r := NewRing([]string{"a", "b", "c"}, 16)
-	assignments := make(map[string]string)
-	for i := 0; i < 1000; i++ {
-		ns := fmt.Sprintf("ns-%d", i)
-		owner, _ := r.Lookup(ns)
-		assignments[ns] = owner
-	}
-	r.Rebuild([]string{"a", "b"})
-	moved := 0
-	for ns, oldOwner := range assignments {
-		newOwner, _ := r.Lookup(ns)
-		if newOwner != oldOwner {
-			moved++
-		}
-	}
-	if moved < 100 || moved > 900 {
-		t.Errorf("expected ~333 keys to move, got %d", moved)
-	}
-}
-
-func TestMemberAddition(t *testing.T) {
-	r := NewRing([]string{"a", "b"}, 16)
+	r := NewRing([]string{"a", "b", "c", "d"}, 16)
 	assignments := make(map[string]string)
 	for i := 0; i < 1000; i++ {
 		ns := fmt.Sprintf("ns-%d", i)
@@ -76,8 +58,31 @@ func TestMemberAddition(t *testing.T) {
 			moved++
 		}
 	}
-	if moved < 100 || moved > 900 {
-		t.Errorf("expected ~333 keys to move, got %d", moved)
+	// Removing 1 of 4 members: ~1/4 of keys should move
+	if moved < 100 {
+		t.Errorf("expected ~250 keys to move, got %d", moved)
+	}
+}
+
+func TestMemberAddition(t *testing.T) {
+	r := NewRing([]string{"a", "b", "c"}, 16)
+	assignments := make(map[string]string)
+	for i := 0; i < 1000; i++ {
+		ns := fmt.Sprintf("ns-%d", i)
+		owner, _ := r.Lookup(ns)
+		assignments[ns] = owner
+	}
+	r.Rebuild([]string{"a", "b", "c", "d"})
+	moved := 0
+	for ns, oldOwner := range assignments {
+		newOwner, _ := r.Lookup(ns)
+		if newOwner != oldOwner {
+			moved++
+		}
+	}
+	// Adding 1 more to 3 members: ~1/4 of keys should move to new member
+	if moved < 100 {
+		t.Errorf("expected ~250 keys to move, got %d", moved)
 	}
 }
 

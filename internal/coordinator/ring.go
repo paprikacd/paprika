@@ -63,9 +63,17 @@ func (r *Ring) Len() int {
 func (r *Ring) Rebuild(members []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.members = make(map[string]bool, len(members))
-	r.nodes = make([]ringNode, 0, len(members)*r.replicas)
+	seen := make(map[string]bool, len(members))
+	unique := make([]string, 0, len(members))
 	for _, m := range members {
+		if !seen[m] {
+			seen[m] = true
+			unique = append(unique, m)
+		}
+	}
+	r.members = make(map[string]bool, len(unique))
+	r.nodes = make([]ringNode, 0, len(unique)*r.replicas)
+	for _, m := range unique {
 		r.members[m] = true
 		for i := 0; i < r.replicas; i++ {
 			pos := hashMember(m, i)
