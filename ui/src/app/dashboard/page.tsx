@@ -136,8 +136,19 @@ export default function DashboardPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const { setConnected } = useConnection()
 
+  const fetchPipelines = useCallback(() =>
+    client.listPipelines({}).then(r => setPipelines(r.pipelines)), [])
+
+  const fetchReleases = useCallback(() =>
+    client.listReleases({}).then(r => setReleases(r.releases)), [])
+
+  const fetchApplications = useCallback(() =>
+    client.listApplications({}).then(r => setApplications(r.applications)), [])
+
+  const fetchApplicationSets = useCallback(() =>
+    client.listApplicationSets({}).then(r => setApplicationSets(r.applicationsets)), [])
+
   const fetchData = useCallback(() => {
-    setLoading(true)
     setErrors({})
     Promise.allSettled([
       client.listPipelines({}),
@@ -192,6 +203,21 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [setConnected])
 
+  const refetchByEvent = useCallback((eventType: string) => {
+    switch (eventType) {
+      case "application":
+        fetchApplications()
+        fetchApplicationSets()
+        break
+      case "release":
+        fetchReleases()
+        fetchApplications()
+        break
+      default:
+        fetchData()
+    }
+  }, [fetchApplications, fetchApplicationSets, fetchReleases, fetchData])
+
   const debounceRef = useRef<number | null>(null)
   const sseConnectedRef = useRef(true)
   const lastFetchRef = useRef(0)
@@ -230,7 +256,9 @@ export default function DashboardPage() {
       }
       debounceRef.current = window.setTimeout(() => {
         lastFetchRef.current = Date.now()
-        fetchData()
+        let eventType = "audit"
+        try { const parsed = JSON.parse(e.data); if (typeof parsed.type === "string") eventType = parsed.type } catch {}
+        refetchByEvent(eventType)
       }, 300)
     }
     eventSource.onerror = () => {
@@ -246,7 +274,7 @@ export default function DashboardPage() {
         window.clearTimeout(debounceRef.current)
       }
     }
-  }, [fetchData])
+  }, [fetchData, refetchByEvent])
 
   const runningCount = pipelines.filter((p) => p.phase === "Running").length
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
