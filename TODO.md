@@ -61,11 +61,20 @@ All items from the original roadmap have been implemented.
 
 - [x] **HA cross-replica coordination** — Redis-backed replica registry, consistent hash ring, heartbeat with jitter, `ShardFilter` for per-replica resource ownership. Merged to master.
 
-- [x] **API/UI: incremental dashboard updates** — SSE event type parsing, targeted RPC refetch instead of full 5-RPC reload. Merged to master.
+- [x] **API/UI: incremental dashboard updates** — SSE event parsing, targeted RPC refetch instead of full 5-RPC reload. Merged to master.
+
+- [x] **Pipeline DAG detail page** — interactive DAG visualization, step logs, Retry/Skip/Cancel actions, per-pipeline SSE. Merged to master.
+
+- [ ] **Pipeline DAG live execution streaming** — show real-time step progress (start/running/completed timestamps) via SSE as the controller executes steps.
+- [ ] **Pipeline step artifacts / outputs** — expose produced artifacts in the step detail panel with download links for OCI artifacts and config-map outputs.
+- [ ] **Pipeline run history / executions** — add `PipelineRun` CRD or history entries so users can view previous runs, compare outcomes, and retry from an old run.
+- [ ] **Pipeline as-code editor** — an edit page for the pipeline CRD with a YAML editor and validation, plus dry-run execution preview.
+- [ ] **Global pipeline list enhancements** — filters by phase, namespace, project; search; sorting; bulk cancel.
+- [ ] **Pipeline step-level metrics** — duration, success/failure rates per step surfaced in the UI and Prometheus metrics.
 
 ## How to Pick Up Work
 
-1. Pick an item from **Genuinely remaining** (the lists above are accurate as of 2026-06-20).
+1. Pick an item from **Genuinely remaining** (the lists above are accurate as of 2026-06-22).
 2. If a plan exists, follow it with `superpowers:subagent-driven-development`; otherwise write one with `superpowers:writing-plans`.
 3. Work in a feature branch / worktree; run `make manifests generate`, `make lint`, and `make test` before merging (note: `make test` needs the proto plugins — see CI hygiene above).
 4. E2E validation runs via the on-demand `E2E Tests` workflow (`gh workflow run test-e2e.yml --ref <branch> -f ginkgo_focus=<focus>`), not on every push.
