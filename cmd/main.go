@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -325,6 +326,11 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return fmt.Errorf("create API client: %w", err)
 	}
 
+	k8sClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("create k8s clientset: %w", err)
+	}
+
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
 		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth, cfg.authRBACRules, setupLog)
 	authInterceptor, err := auth.Interceptor(apiCtx, authCfg, apiClient)
@@ -356,6 +362,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	if cfg.auditLogEnabled {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
+	opts = append(opts, apiserver.WithK8sClient(k8sClient))
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))

@@ -95,6 +95,20 @@ const (
 	// PaprikaServiceAbortRolloutProcedure is the fully-qualified name of the PaprikaService's
 	// AbortRollout RPC.
 	PaprikaServiceAbortRolloutProcedure = "/paprika.v1.PaprikaService/AbortRollout"
+	// PaprikaServiceGetPipelineProcedure is the fully-qualified name of the PaprikaService's
+	// GetPipeline RPC.
+	PaprikaServiceGetPipelineProcedure = "/paprika.v1.PaprikaService/GetPipeline"
+	// PaprikaServiceRetryStepProcedure is the fully-qualified name of the PaprikaService's RetryStep
+	// RPC.
+	PaprikaServiceRetryStepProcedure = "/paprika.v1.PaprikaService/RetryStep"
+	// PaprikaServiceSkipStepProcedure is the fully-qualified name of the PaprikaService's SkipStep RPC.
+	PaprikaServiceSkipStepProcedure = "/paprika.v1.PaprikaService/SkipStep"
+	// PaprikaServiceCancelPipelineProcedure is the fully-qualified name of the PaprikaService's
+	// CancelPipeline RPC.
+	PaprikaServiceCancelPipelineProcedure = "/paprika.v1.PaprikaService/CancelPipeline"
+	// PaprikaServiceGetStepLogsProcedure is the fully-qualified name of the PaprikaService's
+	// GetStepLogs RPC.
+	PaprikaServiceGetStepLogsProcedure = "/paprika.v1.PaprikaService/GetStepLogs"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -120,6 +134,11 @@ type PaprikaServiceClient interface {
 	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
+	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
+	RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error)
+	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
+	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
+	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -259,6 +278,36 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
 			connect.WithClientOptions(opts...),
 		),
+		getPipeline: connect.NewClient[v1.GetPipelineRequest, v1.GetPipelineResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetPipelineProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetPipeline")),
+			connect.WithClientOptions(opts...),
+		),
+		retryStep: connect.NewClient[v1.RetryStepRequest, v1.RetryStepResponse](
+			httpClient,
+			baseURL+PaprikaServiceRetryStepProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("RetryStep")),
+			connect.WithClientOptions(opts...),
+		),
+		skipStep: connect.NewClient[v1.SkipStepRequest, v1.SkipStepResponse](
+			httpClient,
+			baseURL+PaprikaServiceSkipStepProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("SkipStep")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelPipeline: connect.NewClient[v1.CancelPipelineRequest, v1.CancelPipelineResponse](
+			httpClient,
+			baseURL+PaprikaServiceCancelPipelineProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("CancelPipeline")),
+			connect.WithClientOptions(opts...),
+		),
+		getStepLogs: connect.NewClient[v1.GetStepLogsRequest, v1.GetStepLogsResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetStepLogsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetStepLogs")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -285,6 +334,11 @@ type paprikaServiceClient struct {
 	getRollout              *connect.Client[v1.GetRolloutRequest, v1.GetRolloutResponse]
 	promoteRollout          *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
 	abortRollout            *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
+	getPipeline             *connect.Client[v1.GetPipelineRequest, v1.GetPipelineResponse]
+	retryStep               *connect.Client[v1.RetryStepRequest, v1.RetryStepResponse]
+	skipStep                *connect.Client[v1.SkipStepRequest, v1.SkipStepResponse]
+	cancelPipeline          *connect.Client[v1.CancelPipelineRequest, v1.CancelPipelineResponse]
+	getStepLogs             *connect.Client[v1.GetStepLogsRequest, v1.GetStepLogsResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -392,6 +446,31 @@ func (c *paprikaServiceClient) AbortRollout(ctx context.Context, req *connect.Re
 	return c.abortRollout.CallUnary(ctx, req)
 }
 
+// GetPipeline calls paprika.v1.PaprikaService.GetPipeline.
+func (c *paprikaServiceClient) GetPipeline(ctx context.Context, req *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error) {
+	return c.getPipeline.CallUnary(ctx, req)
+}
+
+// RetryStep calls paprika.v1.PaprikaService.RetryStep.
+func (c *paprikaServiceClient) RetryStep(ctx context.Context, req *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error) {
+	return c.retryStep.CallUnary(ctx, req)
+}
+
+// SkipStep calls paprika.v1.PaprikaService.SkipStep.
+func (c *paprikaServiceClient) SkipStep(ctx context.Context, req *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error) {
+	return c.skipStep.CallUnary(ctx, req)
+}
+
+// CancelPipeline calls paprika.v1.PaprikaService.CancelPipeline.
+func (c *paprikaServiceClient) CancelPipeline(ctx context.Context, req *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error) {
+	return c.cancelPipeline.CallUnary(ctx, req)
+}
+
+// GetStepLogs calls paprika.v1.PaprikaService.GetStepLogs.
+func (c *paprikaServiceClient) GetStepLogs(ctx context.Context, req *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error) {
+	return c.getStepLogs.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -415,6 +494,11 @@ type PaprikaServiceHandler interface {
 	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
+	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
+	RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error)
+	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
+	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
+	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -550,6 +634,36 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetPipelineHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetPipelineProcedure,
+		svc.GetPipeline,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetPipeline")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceRetryStepHandler := connect.NewUnaryHandler(
+		PaprikaServiceRetryStepProcedure,
+		svc.RetryStep,
+		connect.WithSchema(paprikaServiceMethods.ByName("RetryStep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceSkipStepHandler := connect.NewUnaryHandler(
+		PaprikaServiceSkipStepProcedure,
+		svc.SkipStep,
+		connect.WithSchema(paprikaServiceMethods.ByName("SkipStep")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceCancelPipelineHandler := connect.NewUnaryHandler(
+		PaprikaServiceCancelPipelineProcedure,
+		svc.CancelPipeline,
+		connect.WithSchema(paprikaServiceMethods.ByName("CancelPipeline")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetStepLogsHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetStepLogsProcedure,
+		svc.GetStepLogs,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetStepLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -594,6 +708,16 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServicePromoteRolloutHandler.ServeHTTP(w, r)
 		case PaprikaServiceAbortRolloutProcedure:
 			paprikaServiceAbortRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetPipelineProcedure:
+			paprikaServiceGetPipelineHandler.ServeHTTP(w, r)
+		case PaprikaServiceRetryStepProcedure:
+			paprikaServiceRetryStepHandler.ServeHTTP(w, r)
+		case PaprikaServiceSkipStepProcedure:
+			paprikaServiceSkipStepHandler.ServeHTTP(w, r)
+		case PaprikaServiceCancelPipelineProcedure:
+			paprikaServiceCancelPipelineHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetStepLogsProcedure:
+			paprikaServiceGetStepLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -685,4 +809,24 @@ func (UnimplementedPaprikaServiceHandler) PromoteRollout(context.Context, *conne
 
 func (UnimplementedPaprikaServiceHandler) AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.AbortRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetPipeline is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.RetryStep is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.SkipStep is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.CancelPipeline is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetStepLogs is not implemented"))
 }

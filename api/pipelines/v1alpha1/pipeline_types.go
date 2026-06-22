@@ -15,6 +15,8 @@ const (
 	PipelineSucceeded PipelinePhase = "Succeeded"
 	// PipelineFailed indicates the pipeline failed.
 	PipelineFailed PipelinePhase = "Failed"
+	// PipelineCancelled indicates the pipeline was cancelled.
+	PipelineCancelled PipelinePhase = "Cancelled"
 )
 
 // StepPhase represents the phase of a pipeline step.
@@ -31,6 +33,8 @@ const (
 	StepFailed StepPhase = "Failed"
 	// StepSkipped indicates the step was skipped.
 	StepSkipped StepPhase = "Skipped"
+	// StepCancelled indicates the step was cancelled.
+	StepCancelled StepPhase = "Cancelled"
 )
 
 // Source defines a source for the pipeline.
@@ -63,7 +67,7 @@ type PipelineOutput struct {
 // StepStatus represents the status of a pipeline step.
 type StepStatus struct {
 	Name string `json:"name"`
-	// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed;Skipped
+	// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed;Skipped;Cancelled
 	Phase       StepPhase    `json:"phase"`
 	LogRef      string       `json:"logRef,omitempty"`
 	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
@@ -87,7 +91,7 @@ type PipelineStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// +kubebuilder:validation:Enum=Running;Succeeded;Failed
+	// +kubebuilder:validation:Enum=Running;Succeeded;Failed;Cancelled
 	Phase             PipelinePhase `json:"phase,omitempty"`
 	StepStatuses      []StepStatus  `json:"stepStatuses,omitempty"`
 	LastExecutionTime *metav1.Time  `json:"lastExecutionTime,omitempty"`

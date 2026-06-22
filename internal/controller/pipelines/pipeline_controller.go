@@ -18,6 +18,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -34,6 +35,7 @@ type PipelineReconciler struct {
 	WorkflowEngine PipelineRunner
 	ShardFilter    *sharding.Filter
 	Clock          clock.Clock
+	EventBroker    *events.Broker
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -122,6 +124,7 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to succeeded: %w", err)
 		}
+		r.publishPipelineEvents(ctx, pipeline)
 
 		for _, output := range pipeline.Spec.Artifacts {
 			if err := r.createArtifact(ctx, pipeline, output); err != nil {
@@ -136,6 +139,7 @@ func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline 
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", err)
 		}
+		r.publishPipelineEvents(ctx, pipeline)
 	}
 	return ctrl.Result{}, nil
 }
@@ -164,7 +168,8 @@ func (r *PipelineReconciler) ensurePipelineFinalizer(ctx context.Context, pipeli
 
 func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Request, pipeline *pipelinesv1alpha1.Pipeline, start time.Time, result *string) (ctrl.Result, error) {
 	if pipeline.Status.Phase == pipelinesv1alpha1.PipelineSucceeded ||
-		pipeline.Status.Phase == pipelinesv1alpha1.PipelineFailed {
+		pipeline.Status.Phase == pipelinesv1alpha1.PipelineFailed ||
+		pipeline.Status.Phase == pipelinesv1alpha1.PipelineCancelled {
 		return ctrl.Result{}, nil
 	}
 
@@ -178,6 +183,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
 		}
+		r.publishPipelineEvent(ctx, pipeline, "")
 	}
 
 	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipeline)
@@ -191,6 +197,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
 		}
+		r.publishPipelineEvents(ctx, pipeline)
 		return ctrl.Result{}, fmt.Errorf("running pipeline workflow: %w", err)
 	}
 
@@ -233,4 +240,41 @@ func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("setting up pipeline controller: %w", err)
 	}
 	return nil
+}
+
+func (r *PipelineReconciler) publishPipelineEvent(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepName string) {
+	if r.EventBroker == nil {
+		return
+	}
+	payload := events.EventPayload{
+		ResourceType: events.TypePipeline,
+		Namespace:    pipeline.Namespace,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+	}
+	if stepName == "" {
+		payload.Name = pipeline.Name
+		payload.Phase = string(pipeline.Status.Phase)
+	} else {
+		payload.Name = stepName
+		for _, st := range pipeline.Status.StepStatuses {
+			if st.Name == stepName {
+				payload.Phase = string(st.Phase)
+				break
+			}
+		}
+	}
+	evt, err := events.NewEvent(events.TypePipeline, payload, r.Clock)
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to create pipeline event", "pipeline", pipeline.Name, "step", stepName)
+		return
+	}
+	topic := fmt.Sprintf("pipeline/%s/%s", pipeline.Namespace, pipeline.Name)
+	r.EventBroker.Publish(ctx, topic, evt)
+}
+
+func (r *PipelineReconciler) publishPipelineEvents(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) {
+	r.publishPipelineEvent(ctx, pipeline, "")
+	for i := range pipeline.Status.StepStatuses {
+		r.publishPipelineEvent(ctx, pipeline, pipeline.Status.StepStatuses[i].Name)
+	}
 }

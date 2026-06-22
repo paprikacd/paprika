@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetRolloutRequest, GetRolloutResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListGateStatusRequest, ListGateStatusResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RollbackReleaseRequest, RollbackReleaseResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetPipelineRequest, GetPipelineResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListGateStatusRequest, ListGateStatusResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -199,6 +199,51 @@ export const PaprikaService = {
       name: "AbortRollout",
       I: AbortRolloutRequest,
       O: AbortRolloutResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetPipeline
+     */
+    getPipeline: {
+      name: "GetPipeline",
+      I: GetPipelineRequest,
+      O: GetPipelineResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.RetryStep
+     */
+    retryStep: {
+      name: "RetryStep",
+      I: RetryStepRequest,
+      O: RetryStepResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.SkipStep
+     */
+    skipStep: {
+      name: "SkipStep",
+      I: SkipStepRequest,
+      O: SkipStepResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.CancelPipeline
+     */
+    cancelPipeline: {
+      name: "CancelPipeline",
+      I: CancelPipelineRequest,
+      O: CancelPipelineResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetStepLogs
+     */
+    getStepLogs: {
+      name: "GetStepLogs",
+      I: GetStepLogsRequest,
+      O: GetStepLogsResponse,
       kind: MethodKind.Unary,
     },
   }

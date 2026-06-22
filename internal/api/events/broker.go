@@ -253,6 +253,8 @@ const (
 	TypeAudit = "audit"
 	// TypeGate identifies events for gate approval/rejection.
 	TypeGate = "gate"
+	// TypePipeline identifies events for Pipeline resources.
+	TypePipeline = "pipeline"
 )
 
 // NewEvent creates an event with the given type and payload.

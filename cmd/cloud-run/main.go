@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -161,6 +162,11 @@ func run(setupLog logr.Logger) error {
 		return fmt.Errorf("create K8s client: %w", err)
 	}
 
+	k8sClientset, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		return fmt.Errorf("create k8s clientset: %w", err)
+	}
+
 	renderer := buildRenderer(ctx, setupLog, *workDir, k8sClient, repoServerAddr, cacheCfg)
 
 	resolver := governance.NewProjectResolver(k8sClient)
@@ -189,6 +195,7 @@ func run(setupLog logr.Logger) error {
 	if auditEnabled {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
+	opts = append(opts, apiserver.WithK8sClient(k8sClientset))
 
 	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)
 

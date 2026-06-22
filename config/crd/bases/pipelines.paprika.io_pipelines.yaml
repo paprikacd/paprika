@@ -118,6 +118,7 @@ spec:
                 - Running
                 - Succeeded
                 - Failed
+                - Cancelled
                 type: string
               stepStatuses:
                 items:
@@ -138,6 +139,7 @@ spec:
                       - Succeeded
                       - Failed
                       - Skipped
+                      - Cancelled
                       type: string
                     startedAt:
                       format: date-time

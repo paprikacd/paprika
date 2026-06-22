@@ -520,6 +520,40 @@ message AbortRolloutResponse {
   Rollout rollout = 1;
 }
 
+message GetPipelineRequest {
+  string name = 1;
+  string namespace = 2;
+}
+message GetPipelineResponse { Pipeline pipeline = 1; }
+
+message RetryStepRequest {
+  string pipeline_name = 1;
+  string pipeline_namespace = 2;
+  string step_name = 3;
+}
+message RetryStepResponse {}
+
+message SkipStepRequest {
+  string pipeline_name = 1;
+  string pipeline_namespace = 2;
+  string step_name = 3;
+}
+message SkipStepResponse {}
+
+message CancelPipelineRequest {
+  string name = 1;
+  string namespace = 2;
+}
+message CancelPipelineResponse {}
+
+message GetStepLogsRequest {
+  string pipeline_name = 1;
+  string pipeline_namespace = 2;
+  string step_name = 3;
+  int32 tail_lines = 4;
+}
+message GetStepLogsResponse { string logs = 1; }
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -542,4 +576,9 @@ service PaprikaService {
   rpc GetRollout(GetRolloutRequest) returns (GetRolloutResponse);
   rpc PromoteRollout(PromoteRolloutRequest) returns (PromoteRolloutResponse);
   rpc AbortRollout(AbortRolloutRequest) returns (AbortRolloutResponse);
+  rpc GetPipeline(GetPipelineRequest) returns (GetPipelineResponse);
+  rpc RetryStep(RetryStepRequest) returns (RetryStepResponse);
+  rpc SkipStep(SkipStepRequest) returns (SkipStepResponse);
+  rpc CancelPipeline(CancelPipelineRequest) returns (CancelPipelineResponse);
+  rpc GetStepLogs(GetStepLogsRequest) returns (GetStepLogsResponse);
 }

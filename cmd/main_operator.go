@@ -160,7 +160,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg.uiAddr, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, cfg.auditLogEnabled, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg.uiAddr, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, cfg.auditLogEnabled, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
@@ -360,8 +360,8 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, uiAddr, authCfg, projectValidator, policyEvaluator, authz, broker, auditEnabled, setupLog)
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, uiAddr, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, auditEnabled, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
@@ -394,7 +394,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -410,6 +410,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, authC
 	if auditEnabled {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
+	opts = append(opts, apiserver.WithK8sClient(k8sClient))
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
 

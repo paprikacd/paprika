@@ -2854,3 +2854,273 @@ export declare class AbortRolloutResponse extends Message<AbortRolloutResponse> 
   static equals(a: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined, b: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined): boolean;
 }
 
+/**
+ * @generated from message paprika.v1.GetPipelineRequest
+ */
+export declare class GetPipelineRequest extends Message<GetPipelineRequest> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  constructor(data?: PartialMessage<GetPipelineRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetPipelineRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetPipelineRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetPipelineRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetPipelineRequest;
+
+  static equals(a: GetPipelineRequest | PlainMessage<GetPipelineRequest> | undefined, b: GetPipelineRequest | PlainMessage<GetPipelineRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetPipelineResponse
+ */
+export declare class GetPipelineResponse extends Message<GetPipelineResponse> {
+  /**
+   * @generated from field: paprika.v1.Pipeline pipeline = 1;
+   */
+  pipeline?: Pipeline;
+
+  constructor(data?: PartialMessage<GetPipelineResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetPipelineResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetPipelineResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetPipelineResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetPipelineResponse;
+
+  static equals(a: GetPipelineResponse | PlainMessage<GetPipelineResponse> | undefined, b: GetPipelineResponse | PlainMessage<GetPipelineResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RetryStepRequest
+ */
+export declare class RetryStepRequest extends Message<RetryStepRequest> {
+  /**
+   * @generated from field: string pipeline_name = 1;
+   */
+  pipelineName: string;
+
+  /**
+   * @generated from field: string pipeline_namespace = 2;
+   */
+  pipelineNamespace: string;
+
+  /**
+   * @generated from field: string step_name = 3;
+   */
+  stepName: string;
+
+  constructor(data?: PartialMessage<RetryStepRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RetryStepRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RetryStepRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RetryStepRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RetryStepRequest;
+
+  static equals(a: RetryStepRequest | PlainMessage<RetryStepRequest> | undefined, b: RetryStepRequest | PlainMessage<RetryStepRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RetryStepResponse
+ */
+export declare class RetryStepResponse extends Message<RetryStepResponse> {
+  constructor(data?: PartialMessage<RetryStepResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RetryStepResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RetryStepResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RetryStepResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RetryStepResponse;
+
+  static equals(a: RetryStepResponse | PlainMessage<RetryStepResponse> | undefined, b: RetryStepResponse | PlainMessage<RetryStepResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SkipStepRequest
+ */
+export declare class SkipStepRequest extends Message<SkipStepRequest> {
+  /**
+   * @generated from field: string pipeline_name = 1;
+   */
+  pipelineName: string;
+
+  /**
+   * @generated from field: string pipeline_namespace = 2;
+   */
+  pipelineNamespace: string;
+
+  /**
+   * @generated from field: string step_name = 3;
+   */
+  stepName: string;
+
+  constructor(data?: PartialMessage<SkipStepRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SkipStepRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SkipStepRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SkipStepRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SkipStepRequest;
+
+  static equals(a: SkipStepRequest | PlainMessage<SkipStepRequest> | undefined, b: SkipStepRequest | PlainMessage<SkipStepRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SkipStepResponse
+ */
+export declare class SkipStepResponse extends Message<SkipStepResponse> {
+  constructor(data?: PartialMessage<SkipStepResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SkipStepResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SkipStepResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SkipStepResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SkipStepResponse;
+
+  static equals(a: SkipStepResponse | PlainMessage<SkipStepResponse> | undefined, b: SkipStepResponse | PlainMessage<SkipStepResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CancelPipelineRequest
+ */
+export declare class CancelPipelineRequest extends Message<CancelPipelineRequest> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  constructor(data?: PartialMessage<CancelPipelineRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CancelPipelineRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CancelPipelineRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CancelPipelineRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CancelPipelineRequest;
+
+  static equals(a: CancelPipelineRequest | PlainMessage<CancelPipelineRequest> | undefined, b: CancelPipelineRequest | PlainMessage<CancelPipelineRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CancelPipelineResponse
+ */
+export declare class CancelPipelineResponse extends Message<CancelPipelineResponse> {
+  constructor(data?: PartialMessage<CancelPipelineResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CancelPipelineResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CancelPipelineResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CancelPipelineResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CancelPipelineResponse;
+
+  static equals(a: CancelPipelineResponse | PlainMessage<CancelPipelineResponse> | undefined, b: CancelPipelineResponse | PlainMessage<CancelPipelineResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetStepLogsRequest
+ */
+export declare class GetStepLogsRequest extends Message<GetStepLogsRequest> {
+  /**
+   * @generated from field: string pipeline_name = 1;
+   */
+  pipelineName: string;
+
+  /**
+   * @generated from field: string pipeline_namespace = 2;
+   */
+  pipelineNamespace: string;
+
+  /**
+   * @generated from field: string step_name = 3;
+   */
+  stepName: string;
+
+  /**
+   * @generated from field: int32 tail_lines = 4;
+   */
+  tailLines: number;
+
+  constructor(data?: PartialMessage<GetStepLogsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetStepLogsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetStepLogsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetStepLogsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetStepLogsRequest;
+
+  static equals(a: GetStepLogsRequest | PlainMessage<GetStepLogsRequest> | undefined, b: GetStepLogsRequest | PlainMessage<GetStepLogsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetStepLogsResponse
+ */
+export declare class GetStepLogsResponse extends Message<GetStepLogsResponse> {
+  /**
+   * @generated from field: string logs = 1;
+   */
+  logs: string;
+
+  constructor(data?: PartialMessage<GetStepLogsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetStepLogsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetStepLogsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetStepLogsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetStepLogsResponse;
+
+  static equals(a: GetStepLogsResponse | PlainMessage<GetStepLogsResponse> | undefined, b: GetStepLogsResponse | PlainMessage<GetStepLogsResponse> | undefined): boolean;
+}
+

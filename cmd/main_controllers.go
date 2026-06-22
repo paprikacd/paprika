@@ -126,7 +126,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		setup func() error
 	}{
 		{"analysisrun", func() error { return setupAnalysisRunController(mgr, k8sClient, operatorNamespace, deps.broker) }},
-		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter) }},
+		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter, deps.broker) }},
 		{"stage", func() error { return setupStageController(mgr, deps.shardFilter) }},
 		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {
@@ -158,13 +158,14 @@ func setupNotificationController(mgr ctrl.Manager, broker *events.Broker) error 
 	return nil
 }
 
-func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter) error {
+func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter, broker *events.Broker) error {
 	if err := (&controller.PipelineReconciler{
 		Scheme:    mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
 		WorkflowEngine: engine.NewWorkflowEngine(k8sClient, operatorNamespace),
 		ShardFilter:    shardFilter,
 		Clock:          clock.Real{},
+		EventBroker:    broker,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up pipeline controller: %w", err)
 	}

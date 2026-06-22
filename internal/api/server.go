@@ -13,6 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +50,12 @@ func WithClock(clk clock.Clock) ServerOption {
 	return func(s *PaprikaServer) { s.Clock = clk }
 }
 
+// WithK8sClient sets the raw Kubernetes clientset used for Pod logs and Job
+// operations that the controller-runtime client does not expose directly.
+func WithK8sClient(c kubernetes.Interface) ServerOption {
+	return func(s *PaprikaServer) { s.k8sClient = c }
+}
+
 // WithAuditor sets the audit logger used to record mutating API operations.
 // If not set, auditing is disabled (NoopAuditor).
 func WithAuditor(a audit.Auditor) ServerOption {
@@ -58,6 +65,7 @@ func WithAuditor(a audit.Auditor) ServerOption {
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
 	client                    client.Client
+	k8sClient                 kubernetes.Interface
 	broker                    *events.Broker
 	renderer                  pipelines.SourceResolvingRenderer
 	evaluator                 Evaluator

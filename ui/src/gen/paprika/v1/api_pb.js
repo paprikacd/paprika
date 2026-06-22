@@ -963,3 +963,106 @@ export const AbortRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
   ],
 );
 
+/**
+ * @generated from message paprika.v1.GetPipelineRequest
+ */
+export const GetPipelineRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetPipelineRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetPipelineResponse
+ */
+export const GetPipelineResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetPipelineResponse",
+  () => [
+    { no: 1, name: "pipeline", kind: "message", T: Pipeline },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RetryStepRequest
+ */
+export const RetryStepRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RetryStepRequest",
+  () => [
+    { no: 1, name: "pipeline_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "pipeline_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "step_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RetryStepResponse
+ */
+export const RetryStepResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RetryStepResponse",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.SkipStepRequest
+ */
+export const SkipStepRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SkipStepRequest",
+  () => [
+    { no: 1, name: "pipeline_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "pipeline_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "step_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SkipStepResponse
+ */
+export const SkipStepResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SkipStepResponse",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.CancelPipelineRequest
+ */
+export const CancelPipelineRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CancelPipelineRequest",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CancelPipelineResponse
+ */
+export const CancelPipelineResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CancelPipelineResponse",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.GetStepLogsRequest
+ */
+export const GetStepLogsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetStepLogsRequest",
+  () => [
+    { no: 1, name: "pipeline_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "pipeline_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "step_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "tail_lines", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetStepLogsResponse
+ */
+export const GetStepLogsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetStepLogsResponse",
+  () => [
+    { no: 1, name: "logs", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+

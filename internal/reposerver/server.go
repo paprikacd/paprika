@@ -290,3 +290,33 @@ func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.
 	log.FromContext(ctx).Info("AbortRollout not implemented on repo server")
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement AbortRollout"))
 }
+
+// GetPipeline is not implemented by the repo server.
+func (s *Server) GetPipeline(ctx context.Context, _ *connect.Request[paprikav1.GetPipelineRequest]) (*connect.Response[paprikav1.GetPipelineResponse], error) {
+	log.FromContext(ctx).Info("GetPipeline not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetPipeline"))
+}
+
+// RetryStep is not implemented by the repo server.
+func (s *Server) RetryStep(ctx context.Context, _ *connect.Request[paprikav1.RetryStepRequest]) (*connect.Response[paprikav1.RetryStepResponse], error) {
+	log.FromContext(ctx).Info("RetryStep not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement RetryStep"))
+}
+
+// SkipStep is not implemented by the repo server.
+func (s *Server) SkipStep(ctx context.Context, _ *connect.Request[paprikav1.SkipStepRequest]) (*connect.Response[paprikav1.SkipStepResponse], error) {
+	log.FromContext(ctx).Info("SkipStep not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement SkipStep"))
+}
+
+// CancelPipeline is not implemented by the repo server.
+func (s *Server) CancelPipeline(ctx context.Context, _ *connect.Request[paprikav1.CancelPipelineRequest]) (*connect.Response[paprikav1.CancelPipelineResponse], error) {
+	log.FromContext(ctx).Info("CancelPipeline not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement CancelPipeline"))
+}
+
+// GetStepLogs is not implemented by the repo server.
+func (s *Server) GetStepLogs(ctx context.Context, _ *connect.Request[paprikav1.GetStepLogsRequest]) (*connect.Response[paprikav1.GetStepLogsResponse], error) {
+	log.FromContext(ctx).Info("GetStepLogs not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetStepLogs"))
+}
