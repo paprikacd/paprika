@@ -8,7 +8,7 @@ import (
 )
 
 type ringNode struct {
-	position uint32
+	position uint64
 	member   string
 }
 
@@ -19,7 +19,12 @@ type Ring struct {
 	replicas int
 }
 
+const defaultReplicas = 16
+
 func NewRing(members []string, replicas int) *Ring {
+	if replicas < 1 {
+		replicas = defaultReplicas
+	}
 	r := &Ring{
 		members:  make(map[string]bool),
 		replicas: replicas,
@@ -85,12 +90,12 @@ func (r *Ring) Rebuild(members []string) {
 	})
 }
 
-func hashKey(key string) uint32 {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	return h.Sum32()
+func hashKey(key string) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(key))
+	return h.Sum64()
 }
 
-func hashMember(member string, idx int) uint32 {
+func hashMember(member string, idx int) uint64 {
 	return hashKey(fmt.Sprintf("%s:%d", member, idx))
 }
