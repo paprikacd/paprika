@@ -57,11 +57,11 @@ See [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md) for the original detail (its 
 
 ## Genuinely remaining (the real backlog)
 
-Ordered by rough impact. Each is unstarted or partial.
+All items from the original roadmap have been implemented.
 
-- [ ] **HA cross-replica coordination** — Redis-backed work queue so sharded replicas share work beyond leader election. (Last remaining feature backlog item.)
+- [x] **HA cross-replica coordination** — Redis-backed replica registry, consistent hash ring, heartbeat with jitter, `ShardFilter` for per-replica resource ownership. Merged to master.
 
-- [ ] **API/UI: incremental dashboard updates** — instead of full 5-RPC re-fetch on every SSE event, parse the event type and only re-fetch affected resources. (SSE + adaptive polling is live; this is a polish optimization.)
+- [x] **API/UI: incremental dashboard updates** — SSE event type parsing, targeted RPC refetch instead of full 5-RPC reload. Merged to master.
 
 ## How to Pick Up Work
 
