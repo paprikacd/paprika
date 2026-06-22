@@ -1,9 +1,24 @@
 "use client"
 
+import { useEffect, useState } from "react"
+
 import type { Step, StepStatus } from "@/gen/paprika/v1/api_pb"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Loader2 } from "lucide-react"
+
+function useElapsedMs(startedAt?: bigint) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!startedAt) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [startedAt])
+  if (!startedAt) return null
+  const startMs = Number(startedAt) * 1000
+  if (now < startMs) return null
+  return `${Math.floor((now - startMs) / 1000)}s`
+}
 
 interface StepDetailPanelProps {
   step: Step | null
@@ -24,12 +39,18 @@ export function StepDetailPanel({ step, status, logs, logsLoading, onRetry, onSk
   }
 
   const phase = status?.phase ?? ""
+  const elapsed = useElapsedMs(status?.startedAt)
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">
       <div className="flex items-center justify-between">
         <h3 className="font-mono text-sm font-semibold">{step.name}</h3>
-        {phase && <StatusBadge status={phase} />}
+        <div className="flex items-center gap-2">
+          {phase && <StatusBadge status={phase} />}
+          {phase === "Running" && elapsed && (
+            <span className="text-xs text-muted-foreground">({elapsed})</span>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-2">

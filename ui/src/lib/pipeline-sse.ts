@@ -12,6 +12,8 @@ export interface PipelineSSEEvent {
   reason?: string
   message?: string
   timestamp: string
+  startedAt?: number
+  completedAt?: number
 }
 
 export function usePipelineSSE(

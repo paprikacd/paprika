@@ -65,4 +65,29 @@ describe("usePipelineSSE", () => {
     unmount()
     expect(mockEventSource.close).toHaveBeenCalledTimes(1)
   })
+
+  it("parses events with timestamps", () => {
+    const onEvent = vi.fn()
+    renderHook(() => usePipelineSSE("ns", "pipe", onEvent))
+
+    mockEventSource.onmessage?.({
+      data: JSON.stringify({
+        type: "pipeline",
+        name: "build",
+        phase: "Running",
+        startedAt: 1000,
+        completedAt: 1010,
+      }),
+    })
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "pipeline",
+        name: "build",
+        phase: "Running",
+        startedAt: 1000,
+        completedAt: 1010,
+      })
+    )
+  })
 })

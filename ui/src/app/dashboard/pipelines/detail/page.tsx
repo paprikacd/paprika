@@ -37,7 +37,14 @@ export default function PipelineDetailPage() {
       if (!prev) return prev
       const plain = toPlainMessage(prev)
       plain.stepStatuses = (plain.stepStatuses ?? []).map((st) =>
-        st.name === event.name ? { ...st, phase: event.phase } : st
+        st.name === event.name
+          ? {
+              ...st,
+              phase: event.phase,
+              startedAt: event.startedAt !== undefined ? BigInt(event.startedAt) : st.startedAt,
+              completedAt: event.completedAt !== undefined ? BigInt(event.completedAt) : st.completedAt,
+            }
+          : st
       )
       if (event.name === "" && event.phase) {
         plain.phase = event.phase

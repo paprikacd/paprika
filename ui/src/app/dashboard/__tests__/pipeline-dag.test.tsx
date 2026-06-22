@@ -10,8 +10,8 @@ const mockSteps: Step[] = [
 ]
 
 const mockStatuses: StepStatus[] = [
-  new StepStatus({ name: "build", phase: "Succeeded" }),
-  new StepStatus({ name: "test", phase: "Running" }),
+  new StepStatus({ name: "build", phase: "Succeeded", startedAt: BigInt(1000), completedAt: BigInt(1010) }),
+  new StepStatus({ name: "test", phase: "Running", startedAt: BigInt(1020) }),
 ]
 
 vi.mock("@xyflow/react", async () => {
