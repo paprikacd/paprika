@@ -77,6 +77,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
+	github.com/alicebob/miniredis/v2 v2.38.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.13 // indirect
@@ -238,6 +239,7 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.lsp.dev/jsonrpc2 v0.10.0 // indirect
 	go.lsp.dev/pkg v0.0.0-20210717090340-384b27a52fb2 // indirect
 	go.lsp.dev/protocol v0.12.0 // indirect

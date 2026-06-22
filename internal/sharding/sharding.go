@@ -16,11 +16,18 @@ const (
 	podNameEnv    = "POD_NAME"
 )
 
+// Matcher is an optional strategy for namespace matching.
+// When set on a Filter, it overrides the hash-based sharding logic.
+type Matcher interface {
+	Matches(namespace string) bool
+}
+
 // Filter determines whether a resource belongs to this controller shard.
 type Filter struct {
 	shardID     int
 	totalShards int
 	enabled     bool
+	matcher     Matcher
 }
 
 // NewFilterFromEnv creates a shard filter from environment variables.
@@ -77,10 +84,18 @@ func NewFilter(shardID, totalShards int) *Filter {
 	}
 }
 
+// SetMatcher installs an optional matching strategy, overriding hash-based sharding.
+func (f *Filter) SetMatcher(m Matcher) {
+	f.matcher = m
+}
+
 // Matches returns true if the given namespace belongs to this shard.
 func (f *Filter) Matches(namespace string) bool {
 	if !f.enabled {
 		return true
+	}
+	if f.matcher != nil {
+		return f.matcher.Matches(namespace)
 	}
 	return hashNamespace(namespace)%f.totalShards == f.shardID
 }

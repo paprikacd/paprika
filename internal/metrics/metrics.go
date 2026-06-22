@@ -134,6 +134,22 @@ var (
 		},
 		[]string{"controller"},
 	)
+
+	CoordinatorReplicas = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "paprika_coordinator_replicas",
+		Help: "Number of active replicas in the coordinator ring",
+	})
+
+	CoordinatorHeartbeatSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "paprika_coordinator_heartbeat_seconds",
+		Help:    "Coordinator heartbeat round-trip latency in seconds",
+		Buckets: prometheus.DefBuckets,
+	})
+
+	CoordinatorHeartbeatFailuresTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "paprika_coordinator_heartbeat_failures_total",
+		Help: "Number of failed coordinator heartbeat attempts",
+	})
 )
 
 var allCollectors = []prometheus.Collector{
@@ -150,6 +166,9 @@ var allCollectors = []prometheus.Collector{
 	APIRequestTotal,
 	ReconcileTotal,
 	ReconcileDuration,
+	CoordinatorReplicas,
+	CoordinatorHeartbeatSeconds,
+	CoordinatorHeartbeatFailuresTotal,
 }
 
 // RegisterCollectors registers Paprika collectors with the provided registerer.

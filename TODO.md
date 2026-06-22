@@ -59,18 +59,9 @@ See [PRODUCTION_ROADMAP.md](PRODUCTION_ROADMAP.md) for the original detail (its 
 
 Ordered by rough impact. Each is unstarted or partial.
 
-- [ ] **Conftest gates — land PR #16** (rebased onto master, build + gate tests green; merge-ready) and complete follow-ups:
-  - Canary-promotion path marks the release terminal on a gate block (the rolling/direct path retries via `errConftestBlocked`) — unify for consistency.
-  - Evaluator compiles the module up to 3× per cache miss (one per rule set); optimize to a single shared compile.
-  - Conftest parameterization and git/OCI policy sources (v1 is inline Rego only).
-- [ ] **Approval-gates e2e refresh** — the manual-gate integration spec is pending; its fixture predates master-side changes (inline `configMapRef`, ownerRef uid, Release status subresource, Application gate-status sync) and needs a comprehensive refresh.
-- [ ] **Disaster recovery** — backup/restore CRDs to object storage (Velero integration); GitOps backup of Application specs; multi-region guide. No code yet.
-- [ ] **Real-time UI** — the dashboard is static; add WebSocket/SSE live updates (application topology, diff viewer, audit log viewer).
-- [ ] **Audit logging** — structured audit trail of API/controller actions to stdout/file. Minimal today.
-- [ ] **HA cross-replica coordination** — Redis-backed work queue so sharded replicas share work beyond leader election.
-- [ ] **Multi-tenancy resource quotas** — per-project `ResourceQuota` enforcement + namespace isolation hardening.
-- [ ] **Security model finishing** — mTLS for inter-service traffic; git/kubeconfig credential rotation.
-- [ ] **CI hygiene** — `make test` / `test.yml` fail at `generate-proto` because `protoc-gen-go` / `protoc-gen-connect-go` are not installed in CI. Pre-existing gap affecting every PR's "Tests" check; install the plugins (or make `generate-proto` non-fatal when generated files are committed).
+- [ ] **HA cross-replica coordination** — Redis-backed work queue so sharded replicas share work beyond leader election. (Last remaining feature backlog item.)
+
+- [ ] **API/UI: incremental dashboard updates** — instead of full 5-RPC re-fetch on every SSE event, parse the event type and only re-fetch affected resources. (SSE + adaptive polling is live; this is a polish optimization.)
 
 ## How to Pick Up Work
 
