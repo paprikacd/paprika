@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -321,8 +323,49 @@ func TestRunPipeline_FailedStepDoesNotDeadlock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := engine.RunPipeline(ctx, pipeline)
+	_, err := engine.RunPipeline(ctx, pipeline, nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
+}
+
+func TestRunPipeline_InvokesProgressCallback(t *testing.T) {
+	t.Parallel()
+
+	fakeClient := fake.NewSimpleClientset()
+	fakeClient.PrependReactor("create", "jobs", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("forced create failure")
+	})
+	engine := NewWorkflowEngine(fakeClient, "default")
+
+	pipeline := &paprika.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pipeline"},
+		Spec: paprika.PipelineSpec{
+			Steps: []paprika.PipelineStep{
+				{Name: "step1", Image: "golang:1.22", Script: "go build"},
+			},
+		},
+	}
+
+	var progress []StepProgress
+	onProgress := func(_ context.Context, _ *paprika.Pipeline, p StepProgress) {
+		progress = append(progress, p)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := engine.RunPipeline(ctx, pipeline, onProgress)
+	require.Error(t, err)
+	t.Logf("progress count: %d", len(progress))
+	for i, p := range progress {
+		t.Logf("progress[%d] name=%s phase=%s startedAt=%v completedAt=%v", i, p.Name, p.Phase, p.StartedAt, p.CompletedAt)
+	}
+	require.GreaterOrEqual(t, len(progress), 2, "expected at least start + finish callbacks")
+	require.Equal(t, "step1", progress[0].Name)
+	require.Equal(t, paprika.StepRunning, progress[0].Phase)
+	require.NotNil(t, progress[0].StartedAt)
+	require.Equal(t, "step1", progress[len(progress)-1].Name)
+	require.Equal(t, paprika.StepFailed, progress[len(progress)-1].Phase)
+	require.NotNil(t, progress[len(progress)-1].CompletedAt)
 }

@@ -11,6 +11,8 @@ type EventPayload struct {
 	Reason        string `json:"reason,omitempty"`
 	Message       string `json:"message,omitempty"`
 	Timestamp     string `json:"timestamp"`
+	StartedAt     *int64 `json:"startedAt,omitempty"`
+	CompletedAt   *int64 `json:"completedAt,omitempty"`
 }
 
 // AuditPayload is the shape for user action events from the audit interceptor.

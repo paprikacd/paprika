@@ -33,6 +33,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
+	pipelines "github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/clock"
@@ -164,7 +165,7 @@ func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, o
 	if err := (&controller.PipelineReconciler{
 		Scheme:    mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
-		WorkflowEngine: engine.NewWorkflowEngine(k8sClient, operatorNamespace),
+		WorkflowEngine: workflowRunnerAdapter{engine.NewWorkflowEngine(k8sClient, operatorNamespace)},
 		ShardFilter:    shardFilter,
 		Clock:          clock.Real{},
 		EventBroker:    broker,
@@ -172,6 +173,23 @@ func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, o
 		return fmt.Errorf("setting up pipeline controller: %w", err)
 	}
 	return nil
+}
+
+type workflowRunnerAdapter struct {
+	engine *engine.WorkflowEngine
+}
+
+func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress pipelines.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
+	return a.engine.RunPipeline(ctx, pipeline, func(ctx context.Context, _ *pipelinesv1alpha1.Pipeline, progress engine.StepProgress) {
+		if onProgress != nil {
+			onProgress(ctx, pipeline, pipelinesv1alpha1.StepStatus{
+				Name:        progress.Name,
+				Phase:       progress.Phase,
+				StartedAt:   progress.StartedAt,
+				CompletedAt: progress.CompletedAt,
+			})
+		}
+	})
 }
 
 func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {

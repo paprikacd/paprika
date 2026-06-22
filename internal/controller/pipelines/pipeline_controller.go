@@ -186,13 +186,19 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		r.publishPipelineEvent(ctx, pipeline, "")
 	}
 
-	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipeline)
+	pipelineCopy := pipeline.DeepCopy()
+	onProgress := func(_ context.Context, _ *pipelinesv1alpha1.Pipeline, st pipelinesv1alpha1.StepStatus) {
+		r.updateStepStatus(ctx, pipelineCopy, st)
+		r.publishPipelineEvent(ctx, pipelineCopy, st.Name)
+	}
+
+	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipelineCopy, onProgress)
 	if err != nil {
 		log := logf.FromContext(ctx)
 		log.Error(err, "Pipeline execution failed", "pipeline", req.Name)
 		pipeline.Status.Phase = pipelinesv1alpha1.PipelineFailed
+		pipeline.Status.StepStatuses = pipelineCopy.Status.StepStatuses
 		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Failed").Inc()
-		pipeline.Status.StepStatuses = stepStatuses
 		if updateErr := r.patchPipelineStatus(ctx, pipeline); updateErr != nil {
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to update pipeline status to failed: %w", updateErr)
@@ -201,6 +207,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, fmt.Errorf("running pipeline workflow: %w", err)
 	}
 
+	pipeline.Status.StepStatuses = stepStatuses
 	return r.handlePipelineResult(ctx, pipeline, stepStatuses, start, result)
 }
 
@@ -242,6 +249,31 @@ func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return nil
 }
 
+func (r *PipelineReconciler) updateStepStatus(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, st pipelinesv1alpha1.StepStatus) {
+	found := false
+	for i := range pipeline.Status.StepStatuses {
+		if pipeline.Status.StepStatuses[i].Name == st.Name {
+			pipeline.Status.StepStatuses[i] = st
+			found = true
+			break
+		}
+	}
+	if !found {
+		pipeline.Status.StepStatuses = append(pipeline.Status.StepStatuses, st)
+	}
+	if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to patch step status", "pipeline", pipeline.Name, "step", st.Name)
+	}
+}
+
+func stepStatusPtrValue(t *metav1.Time) *int64 {
+	if t == nil {
+		return nil
+	}
+	v := t.Unix()
+	return &v
+}
+
 func (r *PipelineReconciler) publishPipelineEvent(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepName string) {
 	if r.EventBroker == nil {
 		return
@@ -259,6 +291,8 @@ func (r *PipelineReconciler) publishPipelineEvent(ctx context.Context, pipeline 
 		for _, st := range pipeline.Status.StepStatuses {
 			if st.Name == stepName {
 				payload.Phase = string(st.Phase)
+				payload.StartedAt = stepStatusPtrValue(st.StartedAt)
+				payload.CompletedAt = stepStatusPtrValue(st.CompletedAt)
 				break
 			}
 		}

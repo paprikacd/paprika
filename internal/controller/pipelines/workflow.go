@@ -11,9 +11,12 @@ import (
 
 //go:generate mockgen -destination=mocks/workflow_engine.go -package=mocks -typed . WorkflowEngine
 
+// StepProgressCallback is invoked by the workflow engine when a step changes phase.
+type StepProgressCallback func(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, step pipelinesv1alpha1.StepStatus)
+
 // PipelineRunner executes a pipeline workflow.
 type PipelineRunner interface {
-	RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) ([]pipelinesv1alpha1.StepStatus, error)
+	RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error)
 }
 
 // StepJobCreator creates a Kubernetes Job for a pipeline step.

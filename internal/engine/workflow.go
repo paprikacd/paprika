@@ -143,6 +143,17 @@ type WorkflowEngine struct {
 	Namespace string
 }
 
+// StepProgress reports a step transition during pipeline execution.
+type StepProgress struct {
+	Name        string
+	Phase       paprika.StepPhase
+	StartedAt   *metav1.Time
+	CompletedAt *metav1.Time
+}
+
+// StepProgressCallback is invoked synchronously when a step changes phase.
+type StepProgressCallback func(ctx context.Context, pipeline *paprika.Pipeline, progress StepProgress)
+
 // NewWorkflowEngine creates a new WorkflowEngine with the given Kubernetes client and namespace.
 func NewWorkflowEngine(client kubernetes.Interface, namespace string) *WorkflowEngine {
 	return &WorkflowEngine{
@@ -152,7 +163,7 @@ func NewWorkflowEngine(client kubernetes.Interface, namespace string) *WorkflowE
 }
 
 // RunPipeline executes all steps in a pipeline, respecting the DAG and parallelism.
-func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipeline) ([]paprika.StepStatus, error) {
+func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipeline, onProgress StepProgressCallback) ([]paprika.StepStatus, error) {
 	batches, err := ResolveDAG(pipeline.Spec.Steps)
 	if err != nil {
 		return nil, fmt.Errorf("resolve DAG failed: %w", err)
@@ -167,7 +178,7 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 	completed := make(map[string]bool)
 
 	for _, batch := range batches {
-		if err := e.executeBatch(ctx, batch, pipeline.Name, maxParallel, completed, &stepStatuses); err != nil {
+		if err := e.executeBatch(ctx, batch, pipeline, maxParallel, completed, &stepStatuses, onProgress); err != nil {
 			return stepStatuses, fmt.Errorf("execute batch: %w", err)
 		}
 	}
@@ -175,26 +186,26 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 	return stepStatuses, nil
 }
 
-func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
+func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
 	for i := 0; i < len(batch); i += maxParallel {
 		end := min(i+maxParallel, len(batch))
 		subBatch := batch[i:end]
 
-		if err := e.executeSubBatch(ctx, subBatch, pipelineName, completed, stepStatuses); err != nil {
+		if err := e.executeSubBatch(ctx, subBatch, pipeline, completed, stepStatuses, onProgress); err != nil {
 			return fmt.Errorf("execute sub-batch: %w", err)
 		}
 	}
 	return nil
 }
 
-func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus) error {
+func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, completed map[string]bool, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
 	var mu sync.Mutex
 	g, gCtx := errgroup.WithContext(ctx)
 
 	for _, step := range batch {
 		g.Go(func(s paprika.PipelineStep) func() error {
 			return func() error {
-				return e.runStepJob(gCtx, &s, pipelineName, completed, stepStatuses, &mu)
+				return e.runStepJob(gCtx, pipeline, &s, completed, stepStatuses, &mu, onProgress)
 			}
 		}(step))
 	}
@@ -205,7 +216,7 @@ func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.Pi
 	return nil
 }
 
-func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep, pipelineName string, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex) error {
+func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, onProgress StepProgressCallback) error {
 	mu.Lock()
 	depsSatisfied := true
 	for dep := range s.Depends {
@@ -215,8 +226,12 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep
 		}
 	}
 	if !depsSatisfied {
-		status := paprika.StepStatus{Name: s.Name, Phase: paprika.StepSkipped}
+		now := metav1.Now()
+		status := paprika.StepStatus{Name: s.Name, Phase: paprika.StepSkipped, CompletedAt: &now}
 		*stepStatuses = append(*stepStatuses, status)
+		if onProgress != nil {
+			onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, CompletedAt: status.CompletedAt})
+		}
 		mu.Unlock()
 		return nil
 	}
@@ -226,26 +241,38 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep
 	now := metav1.Now()
 	status.StartedAt = &now
 
-	job, err := e.CreateStepJob(ctx, s, pipelineName)
+	if onProgress != nil {
+		onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt})
+	}
+
+	job, err := e.CreateStepJob(ctx, s, pipeline.Name)
 	if err != nil {
 		status.Phase = paprika.StepFailed
+		completedAt := metav1.Now()
+		status.CompletedAt = &completedAt
 		mu.Lock()
 		*stepStatuses = append(*stepStatuses, status)
 		mu.Unlock()
+		if onProgress != nil {
+			onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt, CompletedAt: status.CompletedAt})
+		}
 		return fmt.Errorf("step %q: failed to create job: %w", s.Name, err)
 	}
 
-	stepResult := e.watchJob(ctx, job, pipelineName)
+	stepResult := e.watchJob(ctx, job, pipeline.Name)
 	status.CompletedAt = stepResult.CompletedAt
 	status.Phase = stepResult.Phase
-	status.LogRef = fmt.Sprintf("%s/%s/logs", pipelineName, s.Name)
+	status.LogRef = fmt.Sprintf("%s/%s/logs", pipeline.Name, s.Name)
 
 	if stepResult.Phase == paprika.StepFailed && s.Retry > 0 {
-		if err := e.retryStep(ctx, s, pipelineName, &status, &now); err != nil {
+		if err := e.retryStep(ctx, pipeline, s, &status, &now, onProgress); err != nil {
 			mu.Lock()
 			*stepStatuses = append(*stepStatuses, status)
 			completed[s.Name] = status.Phase == paprika.StepSucceeded
 			mu.Unlock()
+			if onProgress != nil {
+				onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt, CompletedAt: status.CompletedAt})
+			}
 			return fmt.Errorf("retry step %q: %w", s.Name, err)
 		}
 	}
@@ -255,22 +282,30 @@ func (e *WorkflowEngine) runStepJob(ctx context.Context, s *paprika.PipelineStep
 	completed[s.Name] = status.Phase == paprika.StepSucceeded
 	mu.Unlock()
 
+	if onProgress != nil {
+		onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt, CompletedAt: status.CompletedAt})
+	}
+
 	if status.Phase == paprika.StepFailed {
 		return fmt.Errorf("step %q: failed after %d retries", s.Name, s.Retry)
 	}
 	return nil
 }
 
-func (e *WorkflowEngine) retryStep(ctx context.Context, s *paprika.PipelineStep, pipelineName string, status *paprika.StepStatus, startedAt *metav1.Time) error {
+func (e *WorkflowEngine) retryStep(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, status *paprika.StepStatus, startedAt *metav1.Time, onProgress StepProgressCallback) error {
 	for attempt := 0; attempt < s.Retry; attempt++ {
 		status.StartedAt = startedAt
-		job, err := e.CreateStepJob(ctx, s, pipelineName)
+		job, err := e.CreateStepJob(ctx, s, pipeline.Name)
 		if err != nil {
 			return fmt.Errorf("step %q: retry %d failed to create job: %w", s.Name, attempt+1, err)
 		}
-		stepResult := e.watchJob(ctx, job, pipelineName)
+		stepResult := e.watchJob(ctx, job, pipeline.Name)
+		status.CompletedAt = stepResult.CompletedAt
+		status.Phase = stepResult.Phase
+		if onProgress != nil {
+			onProgress(ctx, pipeline, StepProgress{Name: s.Name, Phase: status.Phase, StartedAt: status.StartedAt, CompletedAt: status.CompletedAt})
+		}
 		if stepResult.Phase == paprika.StepSucceeded {
-			status.Phase = paprika.StepSucceeded
 			break
 		}
 	}
