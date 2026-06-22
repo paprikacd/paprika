@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -74,8 +75,8 @@ func TestRetryStep_IdempotencyGuard(t *testing.T) {
 			PipelineName: "p", PipelineNamespace: "ns", StepName: "build",
 		}))
 	require.Error(t, err)
-	connErr, ok := err.(*connect.Error)
-	require.True(t, ok)
+	var connErr *connect.Error
+	require.True(t, errors.As(err, &connErr))
 	require.Equal(t, connect.CodeFailedPrecondition, connErr.Code())
 	require.Contains(t, connErr.Message(), "Running")
 }
@@ -177,7 +178,8 @@ func TestCancelPipeline_TerminalGuard(t *testing.T) {
 			Name: "p", Namespace: "ns",
 		}))
 	require.Error(t, err)
-	connErr := err.(*connect.Error)
+	var connErr *connect.Error
+	require.True(t, errors.As(err, &connErr))
 	require.Equal(t, connect.CodeFailedPrecondition, connErr.Code())
 }
 
@@ -195,7 +197,8 @@ func TestGetStepLogs_NoJob(t *testing.T) {
 			PipelineName: "p", PipelineNamespace: "ns", StepName: "build",
 		}))
 	require.Error(t, err)
-	connErr := err.(*connect.Error)
+	var connErr *connect.Error
+	require.True(t, errors.As(err, &connErr))
 	require.Equal(t, connect.CodeNotFound, connErr.Code())
 }
 

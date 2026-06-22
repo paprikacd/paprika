@@ -126,7 +126,9 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		setup func() error
 	}{
 		{"analysisrun", func() error { return setupAnalysisRunController(mgr, k8sClient, operatorNamespace, deps.broker) }},
-		{"pipeline", func() error { return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter, deps.broker) }},
+		{"pipeline", func() error {
+			return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter, deps.broker)
+		}},
 		{"stage", func() error { return setupStageController(mgr, deps.shardFilter) }},
 		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {

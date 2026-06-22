@@ -459,7 +459,7 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	case paprikav1.PipelineRunning:
 		r.updatePhase(ctx, app, paprikav1.ApplicationBuilding, "PipelineRunning", fmt.Sprintf("pipeline phase: %s", pipelinePhase))
 		return &ctrl.Result{RequeueAfter: defaultRequeue}, nil
-	case paprikav1.PipelineFailed:
+	case paprikav1.PipelineFailed, paprikav1.PipelineCancelled:
 		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "PipelineFailed", "pipeline failed")
 		return &ctrl.Result{}, nil
 	case paprikav1.PipelineSucceeded:

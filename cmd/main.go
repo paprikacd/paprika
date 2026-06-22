@@ -35,8 +35,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -312,6 +312,32 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	return &cfg, nil
 }
 
+func buildAPIServerOptions(
+	authCfg auth.Config,
+	apiClient client.Client,
+	k8sClient kubernetes.Interface,
+	auditLogEnabled bool,
+	projectValidator *governance.ProjectValidator,
+	policyEvaluator *governance.PolicyEvaluator,
+) ([]apiserver.ServerOption, error) {
+	opts := []apiserver.ServerOption{
+		apiserver.WithGovernanceValidator(projectValidator),
+		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
+	}
+	if authCfg.Enabled {
+		authz, err := auth.BuildAuthorizer(authCfg, apiClient)
+		if err != nil {
+			return nil, fmt.Errorf("build authorizer: %w", err)
+		}
+		opts = append(opts, apiserver.WithAuthorizer(authz))
+	}
+	if auditLogEnabled {
+		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
+	}
+	opts = append(opts, apiserver.WithK8sClient(k8sClient))
+	return opts, nil
+}
+
 func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger, probeAddrCh chan<- string) error {
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -326,9 +352,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return fmt.Errorf("create API client: %w", err)
 	}
 
-	k8sClient, err := kubernetes.NewForConfig(config)
+	k8sClient, err := createK8sClient(config)
 	if err != nil {
-		return fmt.Errorf("create k8s clientset: %w", err)
+		return err
 	}
 
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
@@ -348,21 +374,10 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
 
-	opts := []apiserver.ServerOption{
-		apiserver.WithGovernanceValidator(projectValidator),
-		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
+	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	if err != nil {
+		return err
 	}
-	if authCfg.Enabled {
-		authz, err := auth.BuildAuthorizer(authCfg, apiClient)
-		if err != nil {
-			return fmt.Errorf("build authorizer: %w", err)
-		}
-		opts = append(opts, apiserver.WithAuthorizer(authz))
-	}
-	if cfg.auditLogEnabled {
-		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
-	}
-	opts = append(opts, apiserver.WithK8sClient(k8sClient))
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
@@ -567,6 +582,14 @@ func createAPIClient(config *rest.Config, scheme *runtime.Scheme) (client.Client
 		return nil, fmt.Errorf("create k8s client: %w", err)
 	}
 	return apiClient, nil
+}
+
+func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
+	k8sClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("create k8s clientset: %w", err)
+	}
+	return k8sClient, nil
 }
 
 func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger) (*http.ServeMux, error) {
