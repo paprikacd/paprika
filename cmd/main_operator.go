@@ -21,11 +21,13 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
+	"github.com/redis/go-redis/v9"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -44,6 +46,7 @@ import (
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
+	"github.com/benebsworth/paprika/internal/coordinator"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -65,6 +68,7 @@ type operatorDependencies struct {
 	shardFilter    *sharding.Filter
 	broker         *events.Broker
 	repoServerAddr string
+	coordinator    *coordinator.Coordinator
 }
 
 func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog logr.Logger) (*operatorDependencies, error) {
@@ -139,6 +143,10 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator manager and server: %w", err)
 	}
 
+	if coordErr := startCoordinatorIfMode(opCtx, cfg, deps, mgr, setupLog); coordErr != nil {
+		return fmt.Errorf("start coordinator: %w", coordErr)
+	}
+
 	if err = registerDefaultProjectBootstrap(mgr, cfg.operatorNamespace); err != nil {
 		return fmt.Errorf("register default project bootstrap: %w", err)
 	}
@@ -164,6 +172,53 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	if err := mgr.Start(opCtx); err != nil {
 		return fmt.Errorf("failed to run manager: %w", err)
 	}
+	return nil
+}
+
+func startCoordinatorIfMode(ctx context.Context, cfg *cliConfig, deps *operatorDependencies, mgr ctrl.Manager, setupLog logr.Logger) error {
+	if !cfg.coordinatorMode {
+		return nil
+	}
+	redisAddr := cfg.cacheRedisAddr
+	redisPassword := cfg.cacheRedisPassword
+	redisDB := cfg.cacheRedisDB
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: redisPassword,
+		DB:       redisDB,
+	})
+	podName := cfg.shardIDSource
+	if podName == "" {
+		var hostErr error
+		podName, hostErr = os.Hostname()
+		if hostErr != nil {
+			return fmt.Errorf("cannot determine pod identity: %w", hostErr)
+		}
+	}
+
+	c := coordinator.NewCoordinator(client, podName,
+		coordinator.WithHeartbeatInterval(cfg.coordinatorHeartbeat),
+		coordinator.WithHeartbeatTTL(cfg.coordinatorTTL),
+	)
+	if err := c.Join(ctx); err != nil {
+		return fmt.Errorf("coordinator join: %w", err)
+	}
+	deps.shardFilter.SetMatcher(coordinator.NewRingShardFilter(c.Ring(), podName))
+	deps.coordinator = c
+
+	go func() {
+		for range c.Events() {
+			deps.shardFilter.SetMatcher(coordinator.NewRingShardFilter(c.Ring(), podName))
+		}
+	}()
+
+	setupLog.Info("Coordinator started",
+		"pod", podName,
+		"redis", redisAddr,
+		"heartbeat", cfg.coordinatorHeartbeat,
+		"ttl", cfg.coordinatorTTL,
+	)
 	return nil
 }
 
@@ -210,12 +265,17 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 	restCfg.QPS = 50
 	restCfg.Burst = 100
 
+	leaderElect := cfg.enableLeaderElection
+	if cfg.coordinatorMode {
+		leaderElect = false
+	}
+
 	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                *metricsOpts,
 		WebhookServer:          webhookSrv,
 		HealthProbeBindAddress: cfg.probeAddr,
-		LeaderElection:         cfg.enableLeaderElection,
+		LeaderElection:         leaderElect,
 		LeaderElectionID:       "paprika-operator.paprika.io",
 	})
 	if err != nil {

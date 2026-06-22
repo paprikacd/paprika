@@ -100,6 +100,8 @@ type cliConfig struct {
 	authEnabled, authAllowUnauth, enableWebhooks                  bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
+	coordinatorMode                                               bool
+	coordinatorHeartbeat, coordinatorTTL                          time.Duration
 	zapOptions                                                    zap.Options
 }
 
@@ -132,6 +134,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, _ io.Re
 func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	if err := validateMode(cfg.mode); err != nil {
 		return fmt.Errorf("validate mode: %w", err)
+	}
+	if err := validateCoordinatorConfig(cfg); err != nil {
+		return err
 	}
 
 	switch cfg.mode {
@@ -184,6 +189,30 @@ func validateMode(mode string) error {
 	return nil
 }
 
+func registerCoordinatorFlags(fs *flag.FlagSet, cfg *cliConfig) {
+	fs.BoolVar(&cfg.coordinatorMode, "coordinator-mode", false,
+		"Enable Redis-backed coordinator for active-active sharding (requires PAPRIKA_REDIS_ADDR). "+
+			"Each replica processes a subset of namespaces via consistent hash ring.")
+	fs.DurationVar(&cfg.coordinatorHeartbeat, "coordinator-heartbeat", 15*time.Second,
+		"Coordinator heartbeat interval. How often replicas refresh their registration.")
+	fs.DurationVar(&cfg.coordinatorTTL, "coordinator-ttl", 30*time.Second,
+		"Coordinator heartbeat TTL. Must be greater than --coordinator-heartbeat. "+
+			"Stale replicas are removed after this duration.")
+}
+
+func validateCoordinatorConfig(cfg *cliConfig) error {
+	if !cfg.coordinatorMode {
+		return nil
+	}
+	if cfg.cacheRedisAddr == "" {
+		return errors.New("--coordinator-mode requires PAPRIKA_REDIS_ADDR environment variable")
+	}
+	if cfg.coordinatorHeartbeat >= cfg.coordinatorTTL {
+		return fmt.Errorf("--coordinator-heartbeat (%v) must be less than --coordinator-ttl (%v)", cfg.coordinatorHeartbeat, cfg.coordinatorTTL)
+	}
+	return nil
+}
+
 func registerFlags(args []string, getenv func(string) string, stderr io.Writer) (*cliConfig, error) {
 	var cfg cliConfig
 	fs := flag.NewFlagSet("paprika", flag.ContinueOnError)
@@ -194,6 +223,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	registerCoordinatorFlags(fs, &cfg)
 	fs.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	fs.StringVar(&cfg.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
