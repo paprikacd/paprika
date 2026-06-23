@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,13 +24,25 @@ import (
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	"github.com/benebsworth/paprika/internal/analysis"
 	"github.com/benebsworth/paprika/internal/clock"
-	pipelinesmocks "github.com/benebsworth/paprika/internal/controller/pipelines/mocks"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/traffic"
 	trafficmocks "github.com/benebsworth/paprika/internal/traffic/mocks"
 )
+
+// fakeAgentClient is a test double for AgentClient that avoids importing the
+// generated mocks package and the resulting import cycle.
+type fakeAgentClient struct {
+	applyFunc func(context.Context, *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error)
+}
+
+func (f *fakeAgentClient) Apply(ctx context.Context, req *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error) {
+	if f.applyFunc != nil {
+		return f.applyFunc(ctx, req)
+	}
+	return &agentserver.ApplyResponse{}, nil
+}
 
 // mockTrafficRouterFactory returns a TrafficRouterFactory that always returns the given router and error.
 func mockTrafficRouterFactory(router traffic.WeightRouter, err error) TrafficRouterFactory {
@@ -339,7 +350,7 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 	tests := []struct {
 		name        string
 		cluster     pipelinesv1alpha1.ClusterRef
-		setupMock   func(m *pipelinesmocks.MockAgentClient)
+		applyFunc   func(context.Context, *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error)
 		wantErr     bool
 		errContains string
 	}{
@@ -351,12 +362,16 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *pipelinesmocks.MockAgentClient) {
-				m.EXPECT().Apply(gomock.Any(), &agentserver.ApplyRequest{
+			applyFunc: func(_ context.Context, req *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error) {
+				expected := &agentserver.ApplyRequest{
 					Namespace: "default",
 					AppName:   "my-app",
 					Manifests: []byte("kind: ConfigMap\n"),
-				}).Return(&agentserver.ApplyResponse{}, nil)
+				}
+				if req.Namespace != expected.Namespace || req.AppName != expected.AppName || string(req.Manifests) != string(expected.Manifests) {
+					return nil, errors.New("unexpected request")
+				}
+				return &agentserver.ApplyResponse{}, nil
 			},
 		},
 		{
@@ -367,9 +382,8 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *pipelinesmocks.MockAgentClient) {
-				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
-					Return(nil, errors.New("connection refused"))
+			applyFunc: func(context.Context, *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error) {
+				return nil, errors.New("connection refused")
 			},
 			wantErr:     true,
 			errContains: "agent apply",
@@ -382,9 +396,8 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 				Mode:         pipelinesv1alpha1.ClusterModeAgent,
 				AgentAddress: "http://agent.example:8083",
 			},
-			setupMock: func(m *pipelinesmocks.MockAgentClient) {
-				m.EXPECT().Apply(gomock.Any(), gomock.Any()).
-					Return(&agentserver.ApplyResponse{Errors: []string{"forbidden"}}, nil)
+			applyFunc: func(context.Context, *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error) {
+				return &agentserver.ApplyResponse{Errors: []string{"forbidden"}}, nil
 			},
 			wantErr:     true,
 			errContains: "forbidden",
@@ -394,13 +407,11 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ctrl := gomock.NewController(t)
-			mockClient := pipelinesmocks.NewMockAgentClient(ctrl)
-			tc.setupMock(mockClient)
+			fake := &fakeAgentClient{applyFunc: tc.applyFunc}
 
 			r := &ReleaseReconciler{
 				AgentClientBuilder: func(_ string) AgentApplier {
-					return mockClient
+					return fake
 				},
 			}
 
@@ -422,14 +433,13 @@ func TestReleaseReconciler_applyViaAgent(t *testing.T) {
 func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) {
 	t.Parallel()
 
-	ctrl := gomock.NewController(t)
-	mockClient := pipelinesmocks.NewMockAgentClient(ctrl)
-	mockClient.EXPECT().Apply(gomock.Any(), gomock.Any()).
-		Return(&agentserver.ApplyResponse{}, nil)
+	fake := &fakeAgentClient{applyFunc: func(context.Context, *agentserver.ApplyRequest) (*agentserver.ApplyResponse, error) {
+		return &agentserver.ApplyResponse{}, nil
+	}}
 
 	r := &ReleaseReconciler{
 		AgentClientBuilder: func(_ string) AgentApplier {
-			return mockClient
+			return fake
 		},
 	}
 

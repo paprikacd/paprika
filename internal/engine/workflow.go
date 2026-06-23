@@ -216,6 +216,7 @@ func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.Pi
 	return nil
 }
 
+//nolint:cyclop // step execution has many sequential branches.
 func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, onProgress StepProgressCallback) error {
 	mu.Lock()
 	depsSatisfied := true

@@ -75,6 +75,10 @@ resources:
   kind: Artifact
   path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -84,6 +88,75 @@ resources:
   kind: Application
   path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: AnalysisTemplate
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: AnalysisRun
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: NotificationConfig
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: ApplicationSet
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: pipelines
+  kind: ConftestPolicy
+  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -93,6 +166,10 @@ resources:
   kind: Cluster
   path: github.com/benebsworth/paprika/api/clusters/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
     namespaced: true
@@ -102,6 +179,23 @@ resources:
   kind: AppProject
   path: github.com/benebsworth/paprika/api/core/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: core
+  kind: Repository
+  path: github.com/benebsworth/paprika/api/core/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 - api:
     crdVersion: v1
   controller: true
@@ -145,8 +239,12 @@ resources:
     namespaced: true
   controller: true
   domain: paprika.io
-  group: pipelines
-  kind: ConftestPolicy
-  path: github.com/benebsworth/paprika/api/pipelines/v1alpha1
+  group: rollouts
+  kind: Rollout
+  path: github.com/benebsworth/paprika/api/rollouts/v1alpha1
   version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 version: "3"

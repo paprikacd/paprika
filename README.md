@@ -56,14 +56,26 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 
 ### CRDs
 
-| Kind | Purpose |
-|------|---------|
-| `Application` | Top-level resource, owns template + pipeline + stages + releases |
-| `Template` | Source configuration (Helm/Git/S3) for rendering manifests |
-| `Pipeline` | Sequential build/test/deploy steps as Kubernetes Jobs |
-| `Stage` | Environment definition with cluster ref, canary config, gates |
-| `Release` | Promotion of rendered manifests through a stage lifecycle |
-| `Artifact` | Build artifact reference (image, binary) |
+| Kind | Group | Purpose |
+|------|-------|---------|
+| `Application` | pipelines.paprika.io | Top-level resource, owns template + pipeline + stages + releases |
+| `ApplicationSet` | pipelines.paprika.io | Templated set of Applications |
+| `Pipeline` | pipelines.paprika.io | DAG build/test/deploy steps as Kubernetes Jobs |
+| `Stage` | pipelines.paprika.io | Environment definition with cluster ref, canary config, gates |
+| `Release` | pipelines.paprika.io | Promotion of rendered manifests through a stage lifecycle |
+| `Template` | pipelines.paprika.io | Source configuration (Helm/Git/S3/OCI/inline) for rendering manifests |
+| `Artifact` | pipelines.paprika.io | Build artifact reference (OCI) with verification |
+| `AnalysisTemplate` | pipelines.paprika.io | Reusable analysis checks for canary verification |
+| `AnalysisRun` | pipelines.paprika.io | Instance of an AnalysisTemplate executing for an Application |
+| `ConftestPolicy` | pipelines.paprika.io | User-authored Rego policy evaluated before promotion |
+| `NotificationConfig` | pipelines.paprika.io | Event-driven notifications (Slack/email/webhook) |
+| `Cluster` | clusters.paprika.io | Registered target cluster with health checks |
+| `AppProject` | core.paprika.io | Tenant boundaries / quotas / RBAC |
+| `Repository` | core.paprika.io | Named Git / Helm / OCI source config |
+| `Policy` | policy.paprika.io | Cluster-scoped CEL governance policy |
+| `FeatureFlag` | featureflags.paprika.io | Feature flag definition with targeting rules |
+| `FeatureFlagBinding` | featureflags.paprika.io | Binding flags to workloads |
+| `Rollout` | rollouts.paprika.io | Advanced deployment strategies (canary, blue-green, A/B, mirror) |
 
 ## Quickstart
 

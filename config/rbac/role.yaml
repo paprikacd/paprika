@@ -129,6 +129,35 @@ rules:
   - patch
   - update
 - apiGroups:
+  - featureflags.paprika.io
+  resources:
+  - featureflagbindings
+  - featureflags
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - featureflags.paprika.io
+  resources:
+  - featureflagbindings/finalizers
+  - featureflags/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - featureflags.paprika.io
+  resources:
+  - featureflagbindings/status
+  - featureflags/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - gateway.networking.k8s.io
   resources:
   - httproutes
