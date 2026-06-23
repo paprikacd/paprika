@@ -10,6 +10,46 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-analysisrun
+  failurePolicy: Fail
+  name: manalysisrun-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - analysisruns
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-analysistemplate
+  failurePolicy: Fail
+  name: manalysistemplate-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - analysistemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-pipelines-paprika-io-v1alpha1-application
   failurePolicy: Fail
   name: mapplication-v1alpha1.kb.io
@@ -30,6 +70,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-applicationset
+  failurePolicy: Fail
+  name: mapplicationset-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applicationsets
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-core-paprika-io-v1alpha1-appproject
   failurePolicy: Fail
   name: mappproject-v1alpha1.kb.io
@@ -43,6 +103,126 @@ webhooks:
     - UPDATE
     resources:
     - appprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-artifact
+  failurePolicy: Fail
+  name: martifact-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - artifacts
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-clusters-paprika-io-v1alpha1-cluster
+  failurePolicy: Fail
+  name: mcluster-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - clusters.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - clusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-conftestpolicy
+  failurePolicy: Fail
+  name: mconftestpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - conftestpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-featureflags-paprika-io-v1alpha1-featureflag
+  failurePolicy: Fail
+  name: mfeatureflag-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - featureflags.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - featureflags
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-featureflags-paprika-io-v1alpha1-featureflagbinding
+  failurePolicy: Fail
+  name: mfeatureflagbinding-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - featureflags.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - featureflagbindings
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-pipelines-paprika-io-v1alpha1-notificationconfig
+  failurePolicy: Fail
+  name: mnotificationconfig-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - notificationconfigs
   sideEffects: None
 - admissionReviewVersions:
   - v1
@@ -196,6 +376,46 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-analysisrun
+  failurePolicy: Fail
+  name: vanalysisrun-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - analysisruns
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-analysistemplate
+  failurePolicy: Fail
+  name: vanalysistemplate-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - analysistemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-pipelines-paprika-io-v1alpha1-application
   failurePolicy: Fail
   name: vapplication-v1alpha1.kb.io
@@ -216,6 +436,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-applicationset
+  failurePolicy: Fail
+  name: vapplicationset-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - applicationsets
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-core-paprika-io-v1alpha1-appproject
   failurePolicy: Fail
   name: vappproject-v1alpha1.kb.io
@@ -229,6 +469,126 @@ webhooks:
     - UPDATE
     resources:
     - appprojects
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-artifact
+  failurePolicy: Fail
+  name: vartifact-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - artifacts
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-clusters-paprika-io-v1alpha1-cluster
+  failurePolicy: Fail
+  name: vcluster-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - clusters.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - clusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-conftestpolicy
+  failurePolicy: Fail
+  name: vconftestpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - conftestpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-featureflags-paprika-io-v1alpha1-featureflag
+  failurePolicy: Fail
+  name: vfeatureflag-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - featureflags.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - featureflags
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-featureflags-paprika-io-v1alpha1-featureflagbinding
+  failurePolicy: Fail
+  name: vfeatureflagbinding-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - featureflags.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - featureflagbindings
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-pipelines-paprika-io-v1alpha1-notificationconfig
+  failurePolicy: Fail
+  name: vnotificationconfig-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - pipelines.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - notificationconfigs
   sideEffects: None
 - admissionReviewVersions:
   - v1

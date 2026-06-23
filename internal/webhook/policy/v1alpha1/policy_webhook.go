@@ -20,13 +20,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/cel-go/cel"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
 // policylog is used by the defaulting and validating webhooks.
@@ -170,21 +170,8 @@ func validatePolicyProjects(p *policyv1alpha1.Policy, path *field.Path) field.Er
 }
 
 func validateCELExpression(expr string) error {
-	env, err := cel.NewEnv(
-		cel.Variable("object", cel.MapType(cel.StringType, cel.AnyType)),
-		cel.Variable("kind", cel.StringType),
-		cel.Variable("apiVersion", cel.StringType),
-		cel.Variable("name", cel.StringType),
-		cel.Variable("namespace", cel.StringType),
-		cel.Variable("labels", cel.MapType(cel.StringType, cel.StringType)),
-		cel.Variable("annotations", cel.MapType(cel.StringType, cel.StringType)),
-		cel.Variable("spec", cel.MapType(cel.StringType, cel.AnyType)),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create CEL environment: %w", err)
-	}
-	if _, iss := env.Compile(expr); iss != nil {
-		return fmt.Errorf("compile CEL expression: %w", iss.Err())
+	if err := policy.CompileExpression(expr); err != nil {
+		return fmt.Errorf("compile CEL expression: %w", err)
 	}
 	return nil
 }

@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/oci"
 )
 
 var _ = ginkgo.Describe("Artifact Controller", func() {
@@ -72,14 +73,51 @@ var _ = ginkgo.Describe("Artifact Controller", func() {
 		ginkgo.It("should successfully reconcile the resource", func() {
 			ginkgo.By("Reconciling the created resource")
 			controllerReconciler := &ArtifactReconciler{
-				client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Verifier: oci.NopVerifier{},
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			ginkgo.By("Checking the artifact status is verified")
+			updated := &pipelinesv1alpha1.Artifact{}
+			gomega.Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(gomega.Succeed())
+			gomega.Expect(updated.Status.Verified).To(gomega.BeTrue())
+			gomega.Expect(updated.Status.ObservedGeneration).To(gomega.Equal(updated.Generation))
+			gomega.Expect(updated.Status.Conditions).To(gomega.HaveLen(1))
+			gomega.Expect(updated.Status.Conditions[0].Type).To(gomega.Equal("Ready"))
+			gomega.Expect(updated.Status.Conditions[0].Status).To(gomega.Equal(metav1.ConditionTrue))
+		})
+
+		ginkgo.It("should detect digest mismatch", func() {
+			ginkgo.By("Updating artifact with expected digest")
+			existing := &pipelinesv1alpha1.Artifact{}
+			gomega.Expect(k8sClient.Get(ctx, typeNamespacedName, existing)).To(gomega.Succeed())
+			existing.Spec.Digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+			gomega.Expect(k8sClient.Update(ctx, existing)).To(gomega.Succeed())
+
+			ginkgo.By("Reconciling with a mismatched verifier")
+			controllerReconciler := &ArtifactReconciler{
+				client:   k8sClient,
+				Scheme:   k8sClient.Scheme(),
+				Verifier: oci.NopVerifier{},
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			gomega.Expect(err).NotTo(gomega.HaveOccurred())
+
+			ginkgo.By("Checking the artifact status reports digest mismatch")
+			updated := &pipelinesv1alpha1.Artifact{}
+			gomega.Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(gomega.Succeed())
+			gomega.Expect(updated.Status.Verified).To(gomega.BeFalse())
+			gomega.Expect(updated.Status.Conditions).To(gomega.HaveLen(1))
+			gomega.Expect(updated.Status.Conditions[0].Status).To(gomega.Equal(metav1.ConditionFalse))
+			gomega.Expect(updated.Status.Conditions[0].Reason).To(gomega.Equal("DigestMismatch"))
 		})
 	})
 })

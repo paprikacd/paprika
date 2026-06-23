@@ -6,10 +6,25 @@ import (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=ffb
+// +kubebuilder:subresource:status
+
 type FeatureFlagBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              FeatureFlagBindingSpec `json:"spec,omitempty"`
+	Spec              FeatureFlagBindingSpec   `json:"spec,omitempty"`
+	Status            FeatureFlagBindingStatus `json:"status,omitempty"`
+}
+
+type FeatureFlagBindingStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions reflect binding readiness.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type FeatureFlagBindingSpec struct {

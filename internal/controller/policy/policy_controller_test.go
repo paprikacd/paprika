@@ -80,8 +80,40 @@ var _ = Describe("Policy Controller", func() {
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			By("Checking the policy status is ready")
+			updated := &policyv1alpha1.Policy{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.ObservedGeneration).To(Equal(updated.Generation))
+			Expect(updated.Status.Conditions).To(HaveLen(1))
+			Expect(updated.Status.Conditions[0].Type).To(Equal("Ready"))
+			Expect(updated.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("should surface a compile error in status", func() {
+			By("Updating the policy with an invalid expression")
+			existing := &policyv1alpha1.Policy{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, existing)).To(Succeed())
+			existing.Spec.Expression = "broken("
+			Expect(k8sClient.Update(ctx, existing)).To(Succeed())
+
+			By("Reconciling the invalid resource")
+			controllerReconciler := &PolicyReconciler{
+				client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking the policy status reports the compile failure")
+			updated := &policyv1alpha1.Policy{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			Expect(updated.Status.Conditions).To(HaveLen(1))
+			Expect(updated.Status.Conditions[0].Type).To(Equal("Ready"))
+			Expect(updated.Status.Conditions[0].Status).To(Equal(metav1.ConditionFalse))
+			Expect(updated.Status.Conditions[0].Reason).To(Equal("CompileFailed"))
 		})
 	})
 })

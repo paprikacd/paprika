@@ -20,37 +20,87 @@ import (
 	"context"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/policy"
 )
 
-// PolicyReconciler reconciles a Policy object
+const (
+	policyResultSuccess = "success"
+	policyResultError   = "error"
+)
+
+// PolicyReconciler reconciles a Policy object.
 type PolicyReconciler struct {
 	client client.Client
 	Scheme *runtime.Scheme
+	Clock  clock.Clock
 }
 
 // +kubebuilder:rbac:groups=policy.paprika.io,resources=policies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy.paprika.io,resources=policies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=policy.paprika.io,resources=policies/finalizers,verbs=update
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Policy object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
+// Reconcile compiles the policy expression and records the outcome in status.
 func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	result := policyResultSuccess
+	start := metrics.Timer(r.Clock)
+	defer func() {
+		metrics.ReconcileTotal.WithLabelValues("policy", result).Inc()
+		metrics.ReconcileDuration.WithLabelValues("policy").Observe(metrics.Since(r.Clock, start))
+	}()
 
-	// TODO(user): your logic here
+	log := log.FromContext(ctx)
+
+	var pol policyv1alpha1.Policy
+	if err := r.client.Get(ctx, req.NamespacedName, &pol); err != nil {
+		result = policyResultError
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, fmt.Errorf("getting policy: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	compileErr := policy.CompileExpression(pol.Spec.Expression)
+
+	status := metav1.ConditionTrue
+	reason := "Compiled"
+	message := "Policy expression compiled successfully"
+	if compileErr != nil {
+		result = policyResultError
+		status = metav1.ConditionFalse
+		reason = "CompileFailed"
+		message = compileErr.Error()
+		log.Info("Policy expression failed to compile", "policy", pol.Name, "error", compileErr)
+	}
+
+	pol.Status.ObservedGeneration = pol.Generation
+	meta.SetStatusCondition(&pol.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: pol.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+
+	if err := r.client.Status().Update(ctx, &pol); err != nil {
+		result = policyResultError
+		if apierrors.IsConflict(err) {
+			log.Info("Conflict updating Policy status; will retry", "policy", pol.Name)
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("updating policy status: %w", err)
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -58,6 +108,9 @@ func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 // SetupWithManager sets up the controller with the Manager.
 func (r *PolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
+	if r.Clock == nil {
+		r.Clock = clock.Real{}
+	}
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&policyv1alpha1.Policy{}).
 		Named("policy-policy").

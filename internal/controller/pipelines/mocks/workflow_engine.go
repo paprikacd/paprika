@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	v1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	pipelines "github.com/benebsworth/paprika/internal/controller/pipelines"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/batch/v1"
 )
@@ -121,18 +122,18 @@ func (c *MockWorkflowEngineGetStepLogsCall) DoAndReturn(f func(context.Context, 
 }
 
 // RunPipeline mocks base method.
-func (m *MockWorkflowEngine) RunPipeline(ctx context.Context, pipeline *v1alpha1.Pipeline) ([]v1alpha1.StepStatus, error) {
+func (m *MockWorkflowEngine) RunPipeline(ctx context.Context, pipeline *v1alpha1.Pipeline, onProgress pipelines.StepProgressCallback) ([]v1alpha1.StepStatus, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RunPipeline", ctx, pipeline)
+	ret := m.ctrl.Call(m, "RunPipeline", ctx, pipeline, onProgress)
 	ret0, _ := ret[0].([]v1alpha1.StepStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // RunPipeline indicates an expected call of RunPipeline.
-func (mr *MockWorkflowEngineMockRecorder) RunPipeline(ctx, pipeline any) *MockWorkflowEngineRunPipelineCall {
+func (mr *MockWorkflowEngineMockRecorder) RunPipeline(ctx, pipeline, onProgress any) *MockWorkflowEngineRunPipelineCall {
 	mr.mock.ctrl.T.Helper()
-	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPipeline", reflect.TypeOf((*MockWorkflowEngine)(nil).RunPipeline), ctx, pipeline)
+	call := mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RunPipeline", reflect.TypeOf((*MockWorkflowEngine)(nil).RunPipeline), ctx, pipeline, onProgress)
 	return &MockWorkflowEngineRunPipelineCall{Call: call}
 }
 
@@ -148,13 +149,13 @@ func (c *MockWorkflowEngineRunPipelineCall) Return(arg0 []v1alpha1.StepStatus, a
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockWorkflowEngineRunPipelineCall) Do(f func(context.Context, *v1alpha1.Pipeline) ([]v1alpha1.StepStatus, error)) *MockWorkflowEngineRunPipelineCall {
+func (c *MockWorkflowEngineRunPipelineCall) Do(f func(context.Context, *v1alpha1.Pipeline, pipelines.StepProgressCallback) ([]v1alpha1.StepStatus, error)) *MockWorkflowEngineRunPipelineCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockWorkflowEngineRunPipelineCall) DoAndReturn(f func(context.Context, *v1alpha1.Pipeline) ([]v1alpha1.StepStatus, error)) *MockWorkflowEngineRunPipelineCall {
+func (c *MockWorkflowEngineRunPipelineCall) DoAndReturn(f func(context.Context, *v1alpha1.Pipeline, pipelines.StepProgressCallback) ([]v1alpha1.StepStatus, error)) *MockWorkflowEngineRunPipelineCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }

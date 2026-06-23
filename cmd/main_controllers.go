@@ -33,13 +33,13 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
-	pipelines "github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/conftest"
 	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
+	featureflagscontroller "github.com/benebsworth/paprika/internal/controller/featureflags"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
 	rolloutscontroller "github.com/benebsworth/paprika/internal/controller/rollouts"
@@ -53,7 +53,9 @@ import (
 	"github.com/benebsworth/paprika/internal/sharding"
 	"github.com/benebsworth/paprika/internal/syncwindow"
 	"github.com/benebsworth/paprika/internal/traffic"
+	webhookclustersv1alpha1 "github.com/benebsworth/paprika/internal/webhook/clusters/v1alpha1"
 	webhookcorev1alpha1 "github.com/benebsworth/paprika/internal/webhook/core/v1alpha1"
+	webhookfeatureflagsv1alpha1 "github.com/benebsworth/paprika/internal/webhook/featureflags/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
 	webhookrollouts "github.com/benebsworth/paprika/internal/webhook/rollouts/v1alpha1"
@@ -179,8 +181,8 @@ type workflowRunnerAdapter struct {
 	engine *engine.WorkflowEngine
 }
 
-func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress pipelines.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
-	return a.engine.RunPipeline(ctx, pipeline, func(ctx context.Context, _ *pipelinesv1alpha1.Pipeline, progress engine.StepProgress) {
+func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress controller.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
+	statuses, err := a.engine.RunPipeline(ctx, pipeline, func(ctx context.Context, _ *pipelinesv1alpha1.Pipeline, progress engine.StepProgress) {
 		if onProgress != nil {
 			onProgress(ctx, pipeline, pipelinesv1alpha1.StepStatus{
 				Name:        progress.Name,
@@ -190,6 +192,10 @@ func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipeli
 			})
 		}
 	})
+	if err != nil {
+		return nil, fmt.Errorf("run pipeline: %w", err)
+	}
+	return statuses, nil
 }
 
 func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
@@ -400,10 +406,19 @@ func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool) error {
 		{"Release", webhookpipelinesv1alpha1.SetupReleaseWebhookWithManager},
 		{"Template", webhookpipelinesv1alpha1.SetupTemplateWebhookWithManager},
 		{"Application", webhookpipelinesv1alpha1.SetupApplicationWebhookWithManager},
+		{"AnalysisTemplate", webhookpipelinesv1alpha1.SetupAnalysisTemplateWebhookWithManager},
+		{"AnalysisRun", webhookpipelinesv1alpha1.SetupAnalysisRunWebhookWithManager},
+		{"NotificationConfig", webhookpipelinesv1alpha1.SetupNotificationConfigWebhookWithManager},
+		{"ApplicationSet", webhookpipelinesv1alpha1.SetupApplicationSetWebhookWithManager},
+		{"ConftestPolicy", webhookpipelinesv1alpha1.SetupConftestPolicyWebhookWithManager},
+		{"Artifact", webhookpipelinesv1alpha1.SetupArtifactWebhookWithManager},
 		{"AppProject", webhookcorev1alpha1.SetupAppProjectWebhookWithManager},
 		{"Repository", webhookcorev1alpha1.SetupRepositoryWebhookWithManager},
 		{"Policy", webhookpolicyv1alpha1.SetupPolicyWebhookWithManager},
 		{"Rollout", webhookrollouts.SetupRolloutWebhookWithManager},
+		{"FeatureFlag", webhookfeatureflagsv1alpha1.SetupFeatureFlagWebhookWithManager},
+		{"FeatureFlagBinding", webhookfeatureflagsv1alpha1.SetupFeatureFlagBindingWebhookWithManager},
+		{"Cluster", webhookclustersv1alpha1.SetupClusterWebhookWithManager},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
@@ -425,7 +440,9 @@ func setupCoreControllers(mgr ctrl.Manager) error {
 		{"clusters-cluster", &clusterscontroller.ClusterReconciler{Scheme: mgr.GetScheme()}},
 		{"core-appproject", &corecontroller.AppProjectReconciler{Scheme: mgr.GetScheme()}},
 		{"core-repository", &corecontroller.RepositoryReconciler{Scheme: mgr.GetScheme()}},
-		{"policy-policy", &policycontroller.PolicyReconciler{Scheme: mgr.GetScheme()}},
+		{"policy-policy", &policycontroller.PolicyReconciler{Scheme: mgr.GetScheme(), Clock: clock.Real{}}},
+		{"featureflag", &featureflagscontroller.FeatureFlagReconciler{Scheme: mgr.GetScheme(), Clock: clock.Real{}}},
+		{"featureflagbinding", &featureflagscontroller.FeatureFlagBindingReconciler{Scheme: mgr.GetScheme(), Clock: clock.Real{}}},
 	}
 	for _, c := range controllers {
 		if err := c.rec.SetupWithManager(mgr); err != nil {

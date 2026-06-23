@@ -146,6 +146,18 @@ type StageSpec struct {
 
 // StageStatus represents the status of a stage.
 type StageStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions represent the current state of the Stage.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// LastPromotion records the last time a release was promoted into this stage.
+	// +optional
 	LastPromotion *metav1.Time `json:"lastPromotion,omitempty"`
 }
 

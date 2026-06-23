@@ -22,7 +22,23 @@ type ArtifactSpec struct {
 
 // ArtifactStatus represents the status of an artifact.
 type ArtifactStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Verified reports whether the artifact reference was resolved successfully.
+	// +optional
 	Verified bool `json:"verified,omitempty"`
+
+	// ResolvedDigest is the digest returned by the registry for the reference.
+	// +optional
+	ResolvedDigest string `json:"resolvedDigest,omitempty"`
+
+	// Conditions reflect artifact verification readiness.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true

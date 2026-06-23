@@ -39,7 +39,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -66,7 +66,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-	err = pipelinesv1alpha1.AddToScheme(scheme.Scheme)
+	err = featureflagsv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:scheme
@@ -109,22 +109,10 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	err = SetupPipelineWebhookWithManager(mgr)
+	err = SetupFeatureFlagWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
-	err = SetupApplicationWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupStageWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupReleaseWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupTemplateWebhookWithManager(mgr)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = SetupArtifactWebhookWithManager(mgr)
+	err = SetupFeatureFlagBindingWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:webhook
@@ -139,8 +127,7 @@ var _ = BeforeSuite(func() {
 	dialer := &net.Dialer{Timeout: time.Second}
 	addrPort := fmt.Sprintf("%s:%d", webhookInstallOptions.LocalServingHost, webhookInstallOptions.LocalServingPort)
 	Eventually(func() error {
-		// #nosec G402 -- connecting to local test webhook server with self-signed cert
-		conn, err := tls.DialWithDialer(dialer, "tcp", addrPort, &tls.Config{InsecureSkipVerify: true})
+		conn, err := tls.DialWithDialer(dialer, "tcp", addrPort, &tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test-only self-signed cert
 		if err != nil {
 			return err
 		}
