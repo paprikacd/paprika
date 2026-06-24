@@ -9,11 +9,13 @@ import (
 type ArtifactProvenance struct {
 	Pipeline string `json:"pipeline,omitempty"`
 	Build    string `json:"build,omitempty"`
+	// +optional
+	Step string `json:"step,omitempty"`
 }
 
 // ArtifactSpec defines the specification for an artifact.
 type ArtifactSpec struct {
-	// +kubebuilder:validation:Enum=oci
+	// +kubebuilder:validation:Enum=oci;configmap
 	Type       string             `json:"type"`
 	Reference  string             `json:"reference"`
 	Digest     string             `json:"digest,omitempty"`
