@@ -56,12 +56,16 @@ type PipelineStep struct {
 	Timeout int `json:"timeout,omitempty"`
 	// +optional
 	Retry int `json:"retry,omitempty"`
+	// +optional
+	Outputs []PipelineOutput `json:"outputs,omitempty"`
 }
 
 // PipelineOutput defines an output artifact of a pipeline.
 type PipelineOutput struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// +optional
+	Step string `json:"step,omitempty"`
 }
 
 // StepStatus represents the status of a pipeline step.
