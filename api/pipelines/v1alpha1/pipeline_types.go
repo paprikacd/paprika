@@ -78,6 +78,31 @@ type StepStatus struct {
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
 }
 
+// PipelineArtifactPhase represents the verification phase of a pipeline artifact.
+// +kubebuilder:validation:Enum=Pending;Ready;Failed
+type PipelineArtifactPhase string
+
+const (
+	// PipelineArtifactPhasePending indicates the artifact is pending verification.
+	PipelineArtifactPhasePending PipelineArtifactPhase = "Pending"
+	// PipelineArtifactPhaseReady indicates the artifact was verified successfully.
+	PipelineArtifactPhaseReady PipelineArtifactPhase = "Ready"
+	// PipelineArtifactPhaseFailed indicates the artifact verification failed.
+	PipelineArtifactPhaseFailed PipelineArtifactPhase = "Failed"
+)
+
+// PipelineArtifactRef records an artifact produced by a pipeline run.
+type PipelineArtifactRef struct {
+	Name              string                `json:"name"`
+	Kind              string                `json:"kind"`
+	Reference         string                `json:"reference,omitempty"`
+	ResolvedReference string                `json:"resolvedReference,omitempty"`
+	Digest            string                `json:"digest,omitempty"`
+	Phase             PipelineArtifactPhase `json:"phase,omitempty"`
+	ProducingStep     string                `json:"producingStep,omitempty"`
+	CreatedAt         int64                 `json:"createdAt,omitempty"`
+}
+
 // PipelineSpec defines the specification for a pipeline.
 type PipelineSpec struct {
 	// +optional
@@ -96,10 +121,12 @@ type PipelineStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// +kubebuilder:validation:Enum=Running;Succeeded;Failed;Cancelled
-	Phase             PipelinePhase `json:"phase,omitempty"`
-	StepStatuses      []StepStatus  `json:"stepStatuses,omitempty"`
-	LastExecutionTime *metav1.Time  `json:"lastExecutionTime,omitempty"`
-	LastExecutionID   string        `json:"lastExecutionId,omitempty"`
+	Phase             PipelinePhase         `json:"phase,omitempty"`
+	StepStatuses      []StepStatus          `json:"stepStatuses,omitempty"`
+	LastExecutionTime *metav1.Time          `json:"lastExecutionTime,omitempty"`
+	LastExecutionID   string                `json:"lastExecutionId,omitempty"`
+	// +optional
+	ArtifactRefs []PipelineArtifactRef `json:"artifactRefs,omitempty"`
 }
 
 // +kubebuilder:object:root=true
