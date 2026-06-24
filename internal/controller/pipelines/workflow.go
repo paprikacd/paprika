@@ -7,12 +7,13 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 )
 
 //go:generate mockgen -destination=mocks/workflow_engine.go -package=mocks -typed . WorkflowEngine
 
 // StepProgressCallback is invoked by the workflow engine when a step changes phase.
-type StepProgressCallback func(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, step pipelinesv1alpha1.StepStatus)
+type StepProgressCallback = progress.StepProgressCallback
 
 // PipelineRunner executes a pipeline workflow.
 type PipelineRunner interface {

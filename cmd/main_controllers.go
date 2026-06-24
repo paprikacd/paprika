@@ -41,6 +41,7 @@ import (
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	featureflagscontroller "github.com/benebsworth/paprika/internal/controller/featureflags"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
+	progress "github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
 	rolloutscontroller "github.com/benebsworth/paprika/internal/controller/rollouts"
 	"github.com/benebsworth/paprika/internal/engine"
@@ -177,11 +178,13 @@ func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, o
 	return nil
 }
 
+// workflowRunnerAdapter adapts the engine.WorkflowEngine to the controller.PipelineRunner
+// interface while converting engine.StepProgress to controller progress callback types.
 type workflowRunnerAdapter struct {
 	engine *engine.WorkflowEngine
 }
 
-func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress controller.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
+func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, onProgress progress.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
 	statuses, err := a.engine.RunPipeline(ctx, pipeline, func(ctx context.Context, _ *pipelinesv1alpha1.Pipeline, progress engine.StepProgress) {
 		if onProgress != nil {
 			onProgress(ctx, pipeline, pipelinesv1alpha1.StepStatus{

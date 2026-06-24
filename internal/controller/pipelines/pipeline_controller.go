@@ -20,6 +20,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
@@ -192,7 +193,7 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		r.publishPipelineEvent(ctx, pipelineCopy, st.Name)
 	}
 
-	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipelineCopy, onProgress)
+	stepStatuses, err := r.WorkflowEngine.RunPipeline(ctx, pipelineCopy, progress.StepProgressCallback(onProgress))
 	if err != nil {
 		log := logf.FromContext(ctx)
 		log.Error(err, "Pipeline execution failed", "pipeline", req.Name)
