@@ -7,9 +7,6 @@ import (
 
 func TestPipelineStepOutputs(t *testing.T) {
 	step := PipelineStep{
-		Name:    "build",
-		Image:   "alpine:latest",
-		Script:  "echo hello",
 		Outputs: []PipelineOutput{{Name: "binary", Path: "oci://registry.io/repo:tag"}},
 	}
 
@@ -31,6 +28,12 @@ func TestPipelineOutputStep(t *testing.T) {
 		Step: "build",
 	}
 
+	if output.Name != "binary" {
+		t.Errorf("expected name 'binary', got %q", output.Name)
+	}
+	if output.Path != "oci://registry.io/repo:tag" {
+		t.Errorf("expected path 'oci://registry.io/repo:tag', got %q", output.Path)
+	}
 	if output.Step != "build" {
 		t.Errorf("expected step 'build', got %q", output.Step)
 	}
@@ -82,11 +85,17 @@ func TestPipelineArtifactRef(t *testing.T) {
 	if ref.Kind != "oci" {
 		t.Errorf("expected kind 'oci', got %q", ref.Kind)
 	}
+	if ref.Reference != "oci://registry.io/repo:tag" {
+		t.Errorf("expected reference 'oci://registry.io/repo:tag', got %q", ref.Reference)
+	}
 	if ref.Phase != PipelineArtifactPhasePending {
 		t.Errorf("expected phase Pending, got %q", ref.Phase)
 	}
 	if ref.ProducingStep != "build" {
 		t.Errorf("expected producing step 'build', got %q", ref.ProducingStep)
+	}
+	if ref.CreatedAt != 1782000000 {
+		t.Errorf("expected created at 1782000000, got %d", ref.CreatedAt)
 	}
 }
 

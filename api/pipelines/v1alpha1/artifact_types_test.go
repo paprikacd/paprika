@@ -11,6 +11,12 @@ func TestArtifactProvenanceStep(t *testing.T) {
 		Step:     "build",
 	}
 
+	if provenance.Pipeline != "my-pipeline" {
+		t.Errorf("expected pipeline 'my-pipeline', got %q", provenance.Pipeline)
+	}
+	if provenance.Build != "build-123" {
+		t.Errorf("expected build 'build-123', got %q", provenance.Build)
+	}
 	if provenance.Step != "build" {
 		t.Errorf("expected step 'build', got %q", provenance.Step)
 	}
@@ -25,7 +31,7 @@ func TestArtifactSpecTypeValues(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		spec := ArtifactSpec{Type: tc.specType, Reference: "example"}
+		spec := ArtifactSpec{Type: tc.specType}
 		if spec.Type != tc.specType {
 			t.Errorf("expected type %q, got %q", tc.specType, spec.Type)
 		}

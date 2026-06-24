@@ -121,10 +121,10 @@ type PipelineStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// +kubebuilder:validation:Enum=Running;Succeeded;Failed;Cancelled
-	Phase             PipelinePhase         `json:"phase,omitempty"`
-	StepStatuses      []StepStatus          `json:"stepStatuses,omitempty"`
-	LastExecutionTime *metav1.Time          `json:"lastExecutionTime,omitempty"`
-	LastExecutionID   string                `json:"lastExecutionId,omitempty"`
+	Phase             PipelinePhase `json:"phase,omitempty"`
+	StepStatuses      []StepStatus  `json:"stepStatuses,omitempty"`
+	LastExecutionTime *metav1.Time  `json:"lastExecutionTime,omitempty"`
+	LastExecutionID   string        `json:"lastExecutionId,omitempty"`
 	// +optional
 	ArtifactRefs []PipelineArtifactRef `json:"artifactRefs,omitempty"`
 }

@@ -50,12 +50,15 @@ spec:
                     type: string
                   pipeline:
                     type: string
+                  step:
+                    type: string
                 type: object
               reference:
                 type: string
               type:
                 enum:
                 - oci
+                - configmap
                 type: string
             required:
             - reference

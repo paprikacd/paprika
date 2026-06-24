@@ -47,6 +47,8 @@ spec:
                       type: string
                     path:
                       type: string
+                    step:
+                      type: string
                   required:
                   - name
                   - path
@@ -82,6 +84,22 @@ spec:
                       type: string
                     name:
                       type: string
+                    outputs:
+                      items:
+                        description: PipelineOutput defines an output artifact of
+                          a pipeline.
+                        properties:
+                          name:
+                            type: string
+                          path:
+                            type: string
+                          step:
+                            type: string
+                        required:
+                        - name
+                        - path
+                        type: object
+                      type: array
                     retry:
                       type: integer
                     script:
@@ -100,6 +118,39 @@ spec:
           status:
             description: PipelineStatus represents the status of a pipeline.
             properties:
+              artifactRefs:
+                items:
+                  description: PipelineArtifactRef records an artifact produced by
+                    a pipeline run.
+                  properties:
+                    createdAt:
+                      format: int64
+                      type: integer
+                    digest:
+                      type: string
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    phase:
+                      description: PipelineArtifactPhase represents the verification
+                        phase of a pipeline artifact.
+                      enum:
+                      - Pending
+                      - Ready
+                      - Failed
+                      type: string
+                    producingStep:
+                      type: string
+                    reference:
+                      type: string
+                    resolvedReference:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                type: array
               lastExecutionId:
                 type: string
               lastExecutionTime:

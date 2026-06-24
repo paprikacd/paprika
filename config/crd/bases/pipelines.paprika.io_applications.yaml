@@ -173,6 +173,8 @@ spec:
                           type: string
                         path:
                           type: string
+                        step:
+                          type: string
                       required:
                       - name
                       - path
