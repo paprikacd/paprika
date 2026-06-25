@@ -54,6 +54,8 @@ type ArtifactReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list
+// +kubebuilder:rbac:groups="",resources=configmaps/status,verbs=get
 
 // Reconcile verifies the artifact reference and updates status.
 //
