@@ -57,6 +57,56 @@ func TestGetPipeline(t *testing.T) {
 	require.Len(t, resp.Msg.Pipeline.Steps, 1)
 }
 
+func TestGetPipeline_MapsStatusArtifactRefs(t *testing.T) {
+	cl := newPipelineTestClient(
+		&pipelinesv1alpha1.Pipeline{
+			ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns", Labels: map[string]string{"app.paprika.io/project": "default"}},
+			Status: pipelinesv1alpha1.PipelineStatus{
+				ArtifactRefs: []pipelinesv1alpha1.PipelineArtifactRef{
+					{
+						Name:              "p-build-image",
+						Kind:              "oci",
+						Reference:         "oci://registry.io/repo:tag",
+						ResolvedReference: "oci://registry.io/repo:tag@sha256:abc",
+						Digest:            "sha256:abc",
+						Phase:             pipelinesv1alpha1.PipelineArtifactPhaseReady,
+						ProducingStep:     "build",
+						CreatedAt:         1700000000,
+					},
+					{
+						Name:      "p-config",
+						Kind:      "configmap",
+						Reference: "configmap://ns/result-cm",
+						Phase:     pipelinesv1alpha1.PipelineArtifactPhasePending,
+					},
+				},
+			},
+		},
+	)
+
+	srv := NewPaprikaServer(cl, nil)
+	resp, err := srv.GetPipeline(context.Background(), connect.NewRequest(&paprikav1.GetPipelineRequest{
+		Name: "p", Namespace: "ns",
+	}))
+	require.NoError(t, err)
+	require.Len(t, resp.Msg.Pipeline.Artifacts, 2)
+
+	ready := resp.Msg.Pipeline.Artifacts[0]
+	require.Equal(t, "p-build-image", ready.Name)
+	require.Equal(t, "oci", ready.Kind)
+	require.Equal(t, "oci://registry.io/repo:tag", ready.Path)
+	require.Equal(t, "oci://registry.io/repo:tag", ready.Reference)
+	require.Equal(t, "oci://registry.io/repo:tag@sha256:abc", ready.ResolvedReference)
+	require.Equal(t, "sha256:abc", ready.Digest)
+	require.Equal(t, "Ready", ready.Phase)
+	require.Equal(t, "build", ready.ProducingStep)
+	require.EqualValues(t, 1700000000, ready.CreatedAt)
+
+	pending := resp.Msg.Pipeline.Artifacts[1]
+	require.Equal(t, "Pending", pending.Phase)
+	require.Empty(t, pending.ResolvedReference)
+}
+
 func TestRetryStep_IdempotencyGuard(t *testing.T) {
 	cl := newPipelineTestClient(
 		&pipelinesv1alpha1.Pipeline{

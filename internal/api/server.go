@@ -1000,12 +1000,9 @@ func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 		}
 		stepStatuses = append(stepStatuses, ss)
 	}
-	artifacts := make([]*paprikav1.ArtifactRef, 0, len(p.Spec.Artifacts))
-	for _, a := range p.Spec.Artifacts {
-		artifacts = append(artifacts, &paprikav1.ArtifactRef{
-			Name: a.Name,
-			Path: a.Path,
-		})
+	artifacts := make([]*paprikav1.ArtifactRef, 0, len(p.Status.ArtifactRefs))
+	for i := range p.Status.ArtifactRefs {
+		artifacts = append(artifacts, convertPipelineArtifactRef(&p.Status.ArtifactRefs[i]))
 	}
 	return &paprikav1.Pipeline{
 		Name:         p.Name,
@@ -1016,6 +1013,24 @@ func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 		Phase:        string(p.Status.Phase),
 		StepStatuses: stepStatuses,
 		Artifacts:    artifacts,
+	}
+}
+
+// convertPipelineArtifactRef maps a status PipelineArtifactRef to the protobuf
+// ArtifactRef. PipelineArtifactRef.Reference stores the full "type://reference"
+// path, so it populates both path and reference. failed_reason is not tracked at
+// the pipeline-status level and is left empty.
+func convertPipelineArtifactRef(ref *pipelinesv1alpha1.PipelineArtifactRef) *paprikav1.ArtifactRef {
+	return &paprikav1.ArtifactRef{
+		Name:              ref.Name,
+		Path:              ref.Reference,
+		Kind:              ref.Kind,
+		Reference:         ref.Reference,
+		ResolvedReference: ref.ResolvedReference,
+		Digest:            ref.Digest,
+		Phase:             string(ref.Phase),
+		ProducingStep:     ref.ProducingStep,
+		CreatedAt:         ref.CreatedAt,
 	}
 }
 
