@@ -12,9 +12,11 @@ import { Pipeline } from "@/gen/paprika/v1/api_pb"
 
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { ArtifactCard } from "@/components/dashboard/artifact-card"
 import { PipelineDAG } from "@/components/dashboard/pipeline-dag"
 import { StepDetailPanel } from "@/components/dashboard/step-detail-panel"
 import { usePipelineSSE, type PipelineSSEEvent } from "@/lib/pipeline-sse"
+import { useStepArtifacts } from "@/lib/use-step-artifacts"
 
 const transport = createConnectTransport({ baseUrl: "" })
 const client = createPromiseClient(PaprikaService, transport)
@@ -31,6 +33,8 @@ export default function PipelineDetailPage() {
   const [logsLoading, setLogsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
+
+  const pipelineArtifacts = useStepArtifacts(pipeline?.artifacts ?? [], "")
 
   const fetchPipeline = useCallback(() => {
     if (!namespace || !name) return
@@ -218,6 +222,17 @@ export default function PipelineDetailPage() {
           </div>
         </div>
       </div>
+
+      {pipelineArtifacts.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold">Pipeline Artifacts</h2>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pipelineArtifacts.map((a) => (
+              <ArtifactCard key={a.name} artifact={a} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

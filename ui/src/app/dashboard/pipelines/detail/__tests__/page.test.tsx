@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, waitFor, act } from "@testing-library/react"
+import { render, screen, waitFor, act } from "@testing-library/react"
 import type { PartialMessage } from "@bufbuild/protobuf"
 import { ArtifactRef, Pipeline, Step, StepStatus } from "@/gen/paprika/v1/api_pb"
 
@@ -68,6 +68,7 @@ describe("PipelineDetailPage pipeline-artifact SSE handling", () => {
     mockClient.getPipeline.mockResolvedValue({
       pipeline: makePipeline([
         { name: "build-image", kind: "oci", phase: "Ready", producingStep: "build" },
+        { name: "pipeline-report", kind: "configmap", phase: "Ready", producingStep: "" },
       ]),
     })
     mockEventSource = {
@@ -112,5 +113,17 @@ describe("PipelineDetailPage pipeline-artifact SSE handling", () => {
     await waitFor(() => {
       expect(mockClient.getPipeline).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it("renders a Pipeline Artifacts section for artifacts without a producingStep", async () => {
+    render(<PipelineDetailPage />)
+
+    await waitFor(() => {
+      expect(mockClient.getPipeline).toHaveBeenCalledTimes(1)
+    })
+
+    expect(await screen.findByText("Pipeline Artifacts")).toBeInTheDocument()
+    expect(screen.getByText("pipeline-report")).toBeInTheDocument()
+    expect(screen.queryByText("build-image")).not.toBeInTheDocument()
   })
 })
