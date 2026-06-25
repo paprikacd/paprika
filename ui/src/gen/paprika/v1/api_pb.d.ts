@@ -102,6 +102,46 @@ export declare class ArtifactRef extends Message<ArtifactRef> {
    */
   path: string;
 
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string reference = 4;
+   */
+  reference: string;
+
+  /**
+   * @generated from field: string resolved_reference = 5;
+   */
+  resolvedReference: string;
+
+  /**
+   * @generated from field: string digest = 6;
+   */
+  digest: string;
+
+  /**
+   * @generated from field: string phase = 7;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: string producing_step = 8;
+   */
+  producingStep: string;
+
+  /**
+   * @generated from field: int64 created_at = 9;
+   */
+  createdAt: bigint;
+
+  /**
+   * @generated from field: string failed_reason = 10;
+   */
+  failedReason: string;
+
   constructor(data?: PartialMessage<ArtifactRef>);
 
   static readonly runtime: typeof proto3;
@@ -2905,6 +2945,117 @@ export declare class GetPipelineResponse extends Message<GetPipelineResponse> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetPipelineResponse;
 
   static equals(a: GetPipelineResponse | PlainMessage<GetPipelineResponse> | undefined, b: GetPipelineResponse | PlainMessage<GetPipelineResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetArtifactRequest
+ */
+export declare class GetArtifactRequest extends Message<GetArtifactRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetArtifactRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetArtifactRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetArtifactRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetArtifactRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetArtifactRequest;
+
+  static equals(a: GetArtifactRequest | PlainMessage<GetArtifactRequest> | undefined, b: GetArtifactRequest | PlainMessage<GetArtifactRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetArtifactResponse
+ */
+export declare class GetArtifactResponse extends Message<GetArtifactResponse> {
+  /**
+   * @generated from field: paprika.v1.ArtifactRef artifact = 1;
+   */
+  artifact?: ArtifactRef;
+
+  /**
+   * @generated from field: string download_url = 2;
+   */
+  downloadUrl: string;
+
+  constructor(data?: PartialMessage<GetArtifactResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetArtifactResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetArtifactResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetArtifactResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetArtifactResponse;
+
+  static equals(a: GetArtifactResponse | PlainMessage<GetArtifactResponse> | undefined, b: GetArtifactResponse | PlainMessage<GetArtifactResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListArtifactsRequest
+ */
+export declare class ListArtifactsRequest extends Message<ListArtifactsRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: optional string pipeline_name = 2;
+   */
+  pipelineName?: string;
+
+  constructor(data?: PartialMessage<ListArtifactsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListArtifactsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListArtifactsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListArtifactsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListArtifactsRequest;
+
+  static equals(a: ListArtifactsRequest | PlainMessage<ListArtifactsRequest> | undefined, b: ListArtifactsRequest | PlainMessage<ListArtifactsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListArtifactsResponse
+ */
+export declare class ListArtifactsResponse extends Message<ListArtifactsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.ArtifactRef artifacts = 1;
+   */
+  artifacts: ArtifactRef[];
+
+  constructor(data?: PartialMessage<ListArtifactsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListArtifactsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListArtifactsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListArtifactsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListArtifactsResponse;
+
+  static equals(a: ListArtifactsResponse | PlainMessage<ListArtifactsResponse> | undefined, b: ListArtifactsResponse | PlainMessage<ListArtifactsResponse> | undefined): boolean;
 }
 
 /**

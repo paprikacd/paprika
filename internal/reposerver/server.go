@@ -320,3 +320,15 @@ func (s *Server) GetStepLogs(ctx context.Context, _ *connect.Request[paprikav1.G
 	log.FromContext(ctx).Info("GetStepLogs not implemented on repo server")
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetStepLogs"))
 }
+
+// GetArtifact is not implemented by the repo server.
+func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
+	log.FromContext(ctx).Info("GetArtifact not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetArtifact"))
+}
+
+// ListArtifacts is not implemented by the repo server.
+func (s *Server) ListArtifacts(ctx context.Context, _ *connect.Request[paprikav1.ListArtifactsRequest]) (*connect.Response[paprikav1.ListArtifactsResponse], error) {
+	log.FromContext(ctx).Info("ListArtifacts not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListArtifacts"))
+}

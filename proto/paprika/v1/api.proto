@@ -23,6 +23,14 @@ message StepStatus {
 message ArtifactRef {
   string name = 1;
   string path = 2;
+  string kind = 3;
+  string reference = 4;
+  string resolved_reference = 5;
+  string digest = 6;
+  string phase = 7;
+  string producing_step = 8;
+  int64 created_at = 9;
+  string failed_reason = 10;
 }
 
 message ChartRef {
@@ -526,6 +534,23 @@ message GetPipelineRequest {
 }
 message GetPipelineResponse { Pipeline pipeline = 1; }
 
+message GetArtifactRequest {
+  string namespace = 1;
+  string name = 2;
+}
+message GetArtifactResponse {
+  ArtifactRef artifact = 1;
+  string download_url = 2;
+}
+
+message ListArtifactsRequest {
+  string namespace = 1;
+  optional string pipeline_name = 2;
+}
+message ListArtifactsResponse {
+  repeated ArtifactRef artifacts = 1;
+}
+
 message RetryStepRequest {
   string pipeline_name = 1;
   string pipeline_namespace = 2;
@@ -577,6 +602,8 @@ service PaprikaService {
   rpc PromoteRollout(PromoteRolloutRequest) returns (PromoteRolloutResponse);
   rpc AbortRollout(AbortRolloutRequest) returns (AbortRolloutResponse);
   rpc GetPipeline(GetPipelineRequest) returns (GetPipelineResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
   rpc RetryStep(RetryStepRequest) returns (RetryStepResponse);
   rpc SkipStep(SkipStepRequest) returns (SkipStepResponse);
   rpc CancelPipeline(CancelPipelineRequest) returns (CancelPipelineResponse);

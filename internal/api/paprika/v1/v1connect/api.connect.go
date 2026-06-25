@@ -98,6 +98,12 @@ const (
 	// PaprikaServiceGetPipelineProcedure is the fully-qualified name of the PaprikaService's
 	// GetPipeline RPC.
 	PaprikaServiceGetPipelineProcedure = "/paprika.v1.PaprikaService/GetPipeline"
+	// PaprikaServiceGetArtifactProcedure is the fully-qualified name of the PaprikaService's
+	// GetArtifact RPC.
+	PaprikaServiceGetArtifactProcedure = "/paprika.v1.PaprikaService/GetArtifact"
+	// PaprikaServiceListArtifactsProcedure is the fully-qualified name of the PaprikaService's
+	// ListArtifacts RPC.
+	PaprikaServiceListArtifactsProcedure = "/paprika.v1.PaprikaService/ListArtifacts"
 	// PaprikaServiceRetryStepProcedure is the fully-qualified name of the PaprikaService's RetryStep
 	// RPC.
 	PaprikaServiceRetryStepProcedure = "/paprika.v1.PaprikaService/RetryStep"
@@ -135,6 +141,8 @@ type PaprikaServiceClient interface {
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
 	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
+	GetArtifact(context.Context, *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error)
+	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
 	RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error)
 	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
 	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
@@ -284,6 +292,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("GetPipeline")),
 			connect.WithClientOptions(opts...),
 		),
+		getArtifact: connect.NewClient[v1.GetArtifactRequest, v1.GetArtifactResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetArtifactProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetArtifact")),
+			connect.WithClientOptions(opts...),
+		),
+		listArtifacts: connect.NewClient[v1.ListArtifactsRequest, v1.ListArtifactsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListArtifactsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListArtifacts")),
+			connect.WithClientOptions(opts...),
+		),
 		retryStep: connect.NewClient[v1.RetryStepRequest, v1.RetryStepResponse](
 			httpClient,
 			baseURL+PaprikaServiceRetryStepProcedure,
@@ -335,6 +355,8 @@ type paprikaServiceClient struct {
 	promoteRollout          *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
 	abortRollout            *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
 	getPipeline             *connect.Client[v1.GetPipelineRequest, v1.GetPipelineResponse]
+	getArtifact             *connect.Client[v1.GetArtifactRequest, v1.GetArtifactResponse]
+	listArtifacts           *connect.Client[v1.ListArtifactsRequest, v1.ListArtifactsResponse]
 	retryStep               *connect.Client[v1.RetryStepRequest, v1.RetryStepResponse]
 	skipStep                *connect.Client[v1.SkipStepRequest, v1.SkipStepResponse]
 	cancelPipeline          *connect.Client[v1.CancelPipelineRequest, v1.CancelPipelineResponse]
@@ -451,6 +473,16 @@ func (c *paprikaServiceClient) GetPipeline(ctx context.Context, req *connect.Req
 	return c.getPipeline.CallUnary(ctx, req)
 }
 
+// GetArtifact calls paprika.v1.PaprikaService.GetArtifact.
+func (c *paprikaServiceClient) GetArtifact(ctx context.Context, req *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error) {
+	return c.getArtifact.CallUnary(ctx, req)
+}
+
+// ListArtifacts calls paprika.v1.PaprikaService.ListArtifacts.
+func (c *paprikaServiceClient) ListArtifacts(ctx context.Context, req *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error) {
+	return c.listArtifacts.CallUnary(ctx, req)
+}
+
 // RetryStep calls paprika.v1.PaprikaService.RetryStep.
 func (c *paprikaServiceClient) RetryStep(ctx context.Context, req *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error) {
 	return c.retryStep.CallUnary(ctx, req)
@@ -495,6 +527,8 @@ type PaprikaServiceHandler interface {
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
 	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
+	GetArtifact(context.Context, *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error)
+	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
 	RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error)
 	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
 	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
@@ -640,6 +674,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("GetPipeline")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetArtifactHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetArtifactProcedure,
+		svc.GetArtifact,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetArtifact")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListArtifactsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListArtifactsProcedure,
+		svc.ListArtifacts,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListArtifacts")),
+		connect.WithHandlerOptions(opts...),
+	)
 	paprikaServiceRetryStepHandler := connect.NewUnaryHandler(
 		PaprikaServiceRetryStepProcedure,
 		svc.RetryStep,
@@ -710,6 +756,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceAbortRolloutHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetPipelineProcedure:
 			paprikaServiceGetPipelineHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetArtifactProcedure:
+			paprikaServiceGetArtifactHandler.ServeHTTP(w, r)
+		case PaprikaServiceListArtifactsProcedure:
+			paprikaServiceListArtifactsHandler.ServeHTTP(w, r)
 		case PaprikaServiceRetryStepProcedure:
 			paprikaServiceRetryStepHandler.ServeHTTP(w, r)
 		case PaprikaServiceSkipStepProcedure:
@@ -813,6 +863,14 @@ func (UnimplementedPaprikaServiceHandler) AbortRollout(context.Context, *connect
 
 func (UnimplementedPaprikaServiceHandler) GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetPipeline is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetArtifact(context.Context, *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetArtifact is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListArtifacts is not implemented"))
 }
 
 func (UnimplementedPaprikaServiceHandler) RetryStep(context.Context, *connect.Request[v1.RetryStepRequest]) (*connect.Response[v1.RetryStepResponse], error) {

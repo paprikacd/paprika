@@ -39,6 +39,14 @@ export const ArtifactRef = /*@__PURE__*/ proto3.makeMessageType(
   () => [
     { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "path", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "reference", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resolved_reference", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "digest", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "producing_step", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "created_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 10, name: "failed_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -981,6 +989,49 @@ export const GetPipelineResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.GetPipelineResponse",
   () => [
     { no: 1, name: "pipeline", kind: "message", T: Pipeline },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetArtifactRequest
+ */
+export const GetArtifactRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetArtifactRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetArtifactResponse
+ */
+export const GetArtifactResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetArtifactResponse",
+  () => [
+    { no: 1, name: "artifact", kind: "message", T: ArtifactRef },
+    { no: 2, name: "download_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListArtifactsRequest
+ */
+export const ListArtifactsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListArtifactsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "pipeline_name", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListArtifactsResponse
+ */
+export const ListArtifactsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListArtifactsResponse",
+  () => [
+    { no: 1, name: "artifacts", kind: "message", T: ArtifactRef, repeated: true },
   ],
 );
 

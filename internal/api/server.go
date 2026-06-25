@@ -169,6 +169,22 @@ func (s *PaprikaServer) authorizeProject(ctx context.Context, action auth.Action
 
 var _ v1connect.PaprikaServiceHandler = (*PaprikaServer)(nil)
 
+// GetArtifact returns a single artifact by name and namespace.
+func (s *PaprikaServer) GetArtifact(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetArtifactRequest],
+) (*connect.Response[paprikav1.GetArtifactResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("GetArtifact is not yet implemented"))
+}
+
+// ListArtifacts returns a list of artifacts, optionally filtered by pipeline.
+func (s *PaprikaServer) ListArtifacts(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListArtifactsRequest],
+) (*connect.Response[paprikav1.ListArtifactsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListArtifacts is not yet implemented"))
+}
+
 // Broker returns the event broker used by the API server.
 func (s *PaprikaServer) Broker() *events.Broker {
 	return s.broker
