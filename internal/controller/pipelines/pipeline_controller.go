@@ -527,6 +527,8 @@ func (r *PipelineReconciler) publishPipelineArtifactEvent(ctx context.Context, p
 		logf.FromContext(ctx).Error(err, "Failed to create pipeline-artifact event", "artifact", ref.Name)
 		return
 	}
+	topic := fmt.Sprintf("pipeline/%s/%s", pipeline.Namespace, pipeline.Name)
+	r.EventBroker.Publish(ctx, topic, evt)
 	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 

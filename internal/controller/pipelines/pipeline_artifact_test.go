@@ -424,28 +424,38 @@ func TestReconcilePipeline_PublishesArtifactSSE(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch := broker.Subscribe(ctx, events.TopicDashboard)
+	dashboardCh := broker.Subscribe(ctx, events.TopicDashboard)
+	pipelineTopic := "pipeline/default/my-pipeline"
+	pipelineCh := broker.Subscribe(ctx, pipelineTopic)
 
 	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
 	require.NoError(t, err)
 
-	select {
-	case evt := <-ch:
-		require.Equal(t, events.TypePipelineArtifact, evt.Type)
-		var payload PipelineArtifactEventPayload
-		require.NoError(t, json.Unmarshal(evt.Payload, &payload))
-		assert.Equal(t, events.TypePipelineArtifact, payload.ResourceType)
-		assert.Equal(t, "my-pipeline", payload.Pipeline)
-		assert.Equal(t, "default", payload.Namespace)
-		assert.Equal(t, "my-pipeline-build-image", payload.Name)
-		assert.Equal(t, "oci", payload.Kind)
-		assert.Equal(t, "Ready", payload.Phase)
-		assert.Equal(t, "Pending", payload.PreviousPhase)
-		assert.Equal(t, "oci://repo:tag", payload.Reference)
-		assert.Equal(t, "sha256:abc", payload.Digest)
-		assert.Equal(t, "build", payload.ProducingStep)
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected pipeline-artifact SSE event")
+	for _, ch := range []struct {
+		name string
+		c    <-chan *events.Event
+	}{
+		{"dashboard", dashboardCh},
+		{"pipeline", pipelineCh},
+	} {
+		select {
+		case evt := <-ch.c:
+			require.Equal(t, events.TypePipelineArtifact, evt.Type, ch.name)
+			var payload PipelineArtifactEventPayload
+			require.NoError(t, json.Unmarshal(evt.Payload, &payload), ch.name)
+			assert.Equal(t, events.TypePipelineArtifact, payload.ResourceType, ch.name)
+			assert.Equal(t, "my-pipeline", payload.Pipeline, ch.name)
+			assert.Equal(t, "default", payload.Namespace, ch.name)
+			assert.Equal(t, "my-pipeline-build-image", payload.Name, ch.name)
+			assert.Equal(t, "oci", payload.Kind, ch.name)
+			assert.Equal(t, "Ready", payload.Phase, ch.name)
+			assert.Equal(t, "Pending", payload.PreviousPhase, ch.name)
+			assert.Equal(t, "oci://repo:tag", payload.Reference, ch.name)
+			assert.Equal(t, "sha256:abc", payload.Digest, ch.name)
+			assert.Equal(t, "build", payload.ProducingStep, ch.name)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected pipeline-artifact SSE event on %s topic", ch.name)
+		}
 	}
 }
 
