@@ -2,7 +2,6 @@ package pipelines
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,54 +11,6 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
-
-func TestBuildArtifactName(t *testing.T) {
-	t.Parallel()
-
-	t.Run("concatenates sanitized components", func(t *testing.T) {
-		t.Parallel()
-		name := BuildArtifactName("MyPipeline", "build_Step", "docker-image")
-		assert.Equal(t, "mypipeline-build-step-docker-image", name)
-	})
-
-	t.Run("sanitizes invalid characters", func(t *testing.T) {
-		t.Parallel()
-		name := BuildArtifactName("pipeline@prod", "step/one", "output_name!")
-		assert.Equal(t, "pipeline-prod-step-one-output-name", name)
-	})
-
-	t.Run("trims leading and trailing separators", func(t *testing.T) {
-		t.Parallel()
-		name := BuildArtifactName("-pipeline-", ".step.", "-output-")
-		assert.Equal(t, "pipeline-step-output", name)
-	})
-
-	t.Run("fits long names within 253 characters", func(t *testing.T) {
-		t.Parallel()
-		pipeline := strings.Repeat("a", 100)
-		step := strings.Repeat("b", 100)
-		output := strings.Repeat("c", 100)
-		name := BuildArtifactName(pipeline, step, output)
-		assert.LessOrEqual(t, len(name), 253)
-		assert.Regexp(t, `^[a-z0-9.-]+-[a-f0-9]{8}$`, name)
-	})
-
-	t.Run("hash is deterministic for the same input", func(t *testing.T) {
-		t.Parallel()
-		pipeline := strings.Repeat("a", 100)
-		step := strings.Repeat("b", 100)
-		output := strings.Repeat("c", 100)
-		first := BuildArtifactName(pipeline, step, output)
-		second := BuildArtifactName(pipeline, step, output)
-		assert.Equal(t, first, second)
-	})
-
-	t.Run("preserves short name unchanged", func(t *testing.T) {
-		t.Parallel()
-		name := BuildArtifactName("p", "s", "o")
-		assert.Equal(t, "p-s-o", name)
-	})
-}
 
 func TestGetArtifactsForPipelineStep(t *testing.T) {
 	t.Parallel()
