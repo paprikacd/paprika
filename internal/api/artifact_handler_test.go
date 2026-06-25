@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -241,8 +242,10 @@ func TestGetArtifact_ConfigMap_BuildsDownloadURL(t *testing.T) {
 	require.Equal(t, "configmap", resp.Msg.Artifact.Kind)
 	require.Equal(t, "configmap://default/my-cm/my-key", resp.Msg.Artifact.ResolvedReference)
 	require.NotEmpty(t, resp.Msg.DownloadUrl)
-	require.Contains(t, resp.Msg.DownloadUrl, "configmaps/my-cm")
-	require.Contains(t, resp.Msg.DownloadUrl, "key=my-key")
+	require.True(t, strings.HasPrefix(resp.Msg.DownloadUrl, "data:application/json;base64,"))
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(resp.Msg.DownloadUrl, "data:application/json;base64,"))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"my-key":"value"}`, string(decoded))
 }
 
 func TestGetArtifact_ConfigMap_OverLimitOmitsDownloadURL(t *testing.T) {

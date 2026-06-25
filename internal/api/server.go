@@ -3,12 +3,14 @@ package apiserver
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
@@ -943,9 +945,14 @@ func artifactPhaseAndReason(a *pipelinesv1alpha1.Artifact) (phase, reason string
 	return "Pending", ""
 }
 
-// artifactDownloadURL returns a Kubernetes API proxy path for configmap
-// artifacts when the resolved value fits within configMapDownloadLimit. It
-// returns an empty string for oci artifacts or oversized configmap values.
+// artifactDownloadURL returns a base64 JSON data URI for configmap artifacts
+// when the resolved value fits within configMapDownloadLimit. It returns an
+// empty string for oci artifacts or oversized configmap values.
+//
+// The data URI embeds a JSON object mapping the resolved ConfigMap key to its
+// string value, e.g. data:application/json;base64,eyJteS1rZXkiOiJteS12YWx1ZSJ9.
+// For binaryData keys, the raw bytes are re-encoded as a UTF-8 JSON string when
+// valid UTF-8, otherwise as a base64 string.
 func artifactDownloadURL(a *pipelinesv1alpha1.Artifact, cm *corev1.ConfigMap) string {
 	if a.Spec.Type != "configmap" || cm == nil {
 		return ""
@@ -958,22 +965,32 @@ func artifactDownloadURL(a *pipelinesv1alpha1.Artifact, cm *corev1.ConfigMap) st
 	if err != nil {
 		return ""
 	}
-	if len(artifactConfigMapValue(cm, resolvedKey)) > configMapDownloadLimit {
+
+	var jsonValue string
+	var rawLen int
+	if v, ok := cm.Data[resolvedKey]; ok {
+		jsonValue = v
+		rawLen = len(v)
+	} else if raw, ok := cm.BinaryData[resolvedKey]; ok {
+		rawLen = len(raw)
+		if utf8.Valid(raw) {
+			jsonValue = string(raw)
+		} else {
+			jsonValue = base64.StdEncoding.EncodeToString(raw)
+		}
+	} else {
 		return ""
 	}
-	return "/api/v1/namespaces/" + a.Namespace + "/configmaps/" + cm.Name + "?key=" + resolvedKey
-}
 
-// artifactConfigMapValue returns the raw bytes for a configmap key, preferring
-// string Data over BinaryData.
-func artifactConfigMapValue(cm *corev1.ConfigMap, key string) []byte {
-	if v, ok := cm.Data[key]; ok {
-		return []byte(v)
+	if rawLen > configMapDownloadLimit {
+		return ""
 	}
-	if v, ok := cm.BinaryData[key]; ok {
-		return v
+
+	data, err := json.Marshal(map[string]string{resolvedKey: jsonValue})
+	if err != nil {
+		return ""
 	}
-	return nil
+	return "data:application/json;base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
