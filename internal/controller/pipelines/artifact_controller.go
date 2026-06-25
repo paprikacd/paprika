@@ -193,7 +193,7 @@ func (r *ArtifactReconciler) reconcileConfigMap(
 	artifact *pipelinesv1alpha1.Artifact,
 	result *string,
 ) error {
-	name, key, err := parseConfigMapReference(artifact.Spec.Reference)
+	name, key, err := ParseConfigMapReference(artifact.Spec.Reference)
 	if err != nil {
 		return r.setFailed(ctx, artifact, "InvalidReference", err.Error(), result)
 	}
@@ -206,7 +206,7 @@ func (r *ArtifactReconciler) reconcileConfigMap(
 		return fmt.Errorf("getting configmap %s: %w", name, err)
 	}
 
-	resolvedKey, keyErr := resolveConfigMapKey(&cm, key)
+	resolvedKey, keyErr := ResolveConfigMapKey(&cm, key)
 	if keyErr != nil {
 		var e *configMapKeyError
 		if errors.As(keyErr, &e) {

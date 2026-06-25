@@ -50,7 +50,7 @@ func TestParseConfigMapReference(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {
 			t.Parallel()
-			name, key, err := parseConfigMapReference(tc.ref)
+			name, key, err := ParseConfigMapReference(tc.ref)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("ref %q: unexpected error status: %v", tc.ref, err)
 			}
@@ -69,7 +69,7 @@ func TestResolveConfigMapKey(t *testing.T) {
 		cm := &corev1.ConfigMap{
 			Data: map[string]string{"a": "1", "b": "2"},
 		}
-		if _, err := resolveConfigMapKey(cm, ""); err == nil {
+		if _, err := ResolveConfigMapKey(cm, ""); err == nil {
 			t.Fatalf("expected ambiguous error")
 		}
 	})
@@ -77,7 +77,7 @@ func TestResolveConfigMapKey(t *testing.T) {
 	t.Run("returns single key when key is empty", func(t *testing.T) {
 		t.Parallel()
 		single := &corev1.ConfigMap{Data: map[string]string{"only": "x"}}
-		key, err := resolveConfigMapKey(single, "")
+		key, err := ResolveConfigMapKey(single, "")
 		if err != nil || key != "only" {
 			t.Fatalf("expected only key, got %q %v", key, err)
 		}
@@ -86,7 +86,7 @@ func TestResolveConfigMapKey(t *testing.T) {
 	t.Run("returns requested key from Data", func(t *testing.T) {
 		t.Parallel()
 		cm := &corev1.ConfigMap{Data: map[string]string{"a": "1", "b": "2"}}
-		key, err := resolveConfigMapKey(cm, "b")
+		key, err := ResolveConfigMapKey(cm, "b")
 		if err != nil || key != "b" {
 			t.Fatalf("expected key b, got %q %v", key, err)
 		}
@@ -95,7 +95,7 @@ func TestResolveConfigMapKey(t *testing.T) {
 	t.Run("returns error when requested key is missing", func(t *testing.T) {
 		t.Parallel()
 		cm := &corev1.ConfigMap{Data: map[string]string{"a": "1"}}
-		if _, err := resolveConfigMapKey(cm, "missing"); err == nil {
+		if _, err := ResolveConfigMapKey(cm, "missing"); err == nil {
 			t.Fatalf("expected key not found error")
 		}
 	})

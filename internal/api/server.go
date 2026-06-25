@@ -13,6 +13,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -169,20 +171,86 @@ func (s *PaprikaServer) authorizeProject(ctx context.Context, action auth.Action
 
 var _ v1connect.PaprikaServiceHandler = (*PaprikaServer)(nil)
 
-// GetArtifact returns a single artifact by name and namespace.
-func (s *PaprikaServer) GetArtifact(
-	ctx context.Context,
-	req *connect.Request[paprikav1.GetArtifactRequest],
-) (*connect.Response[paprikav1.GetArtifactResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("GetArtifact is not yet implemented"))
-}
-
-// ListArtifacts returns a list of artifacts, optionally filtered by pipeline.
+// ListArtifacts returns a list of artifacts, optionally filtered by the owning
+// pipeline. Artifacts without a project label are skipped, and each artifact is
+// authorized via its project label before being returned.
 func (s *PaprikaServer) ListArtifacts(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListArtifactsRequest],
 ) (*connect.Response[paprikav1.ListArtifactsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ListArtifacts is not yet implemented"))
+	var list pipelinesv1alpha1.ArtifactList
+	if err := s.client.List(ctx, &list, client.InNamespace(req.Msg.Namespace)); err != nil {
+		return nil, fmt.Errorf("listing artifacts: %w", err)
+	}
+	artifacts := make([]*paprikav1.ArtifactRef, 0, len(list.Items))
+	for i := range list.Items {
+		a := &list.Items[i]
+		if req.Msg.PipelineName != nil && *req.Msg.PipelineName != "" {
+			if !hasPipelineOwnerRef(a.OwnerReferences, *req.Msg.PipelineName) {
+				continue
+			}
+		}
+		if a.GetLabels()[projectLabelKey] == "" {
+			continue
+		}
+		if !s.authorizeProjectFromLabels(ctx, a, auth.ResourceArtifacts) {
+			continue
+		}
+		artifacts = append(artifacts, convertArtifactToArtifactRef(a, nil))
+	}
+	return connect.NewResponse(&paprikav1.ListArtifactsResponse{Artifacts: artifacts}), nil
+}
+
+// GetArtifact returns a single artifact by name and namespace. For configmap
+// artifacts it fetches the backing ConfigMap to populate the resolved reference
+// and a download URL (capped at 256 KiB of raw value).
+func (s *PaprikaServer) GetArtifact(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetArtifactRequest],
+) (*connect.Response[paprikav1.GetArtifactResponse], error) {
+	var a pipelinesv1alpha1.Artifact
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &a); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("artifact %s/%s not found", req.Msg.Namespace, req.Msg.Name))
+		}
+		return nil, fmt.Errorf("getting artifact: %w", err)
+	}
+	if a.GetLabels()[projectLabelKey] == "" {
+		return nil, connect.NewError(connect.CodePermissionDenied, fmt.Errorf("artifact %s/%s has no project label", a.Namespace, a.Name))
+	}
+	if !s.authorizeProjectFromLabels(ctx, &a, auth.ResourceArtifacts) {
+		return nil, connect.NewError(connect.CodePermissionDenied, auth.ErrUnauthorized)
+	}
+
+	var cm *corev1.ConfigMap
+	if a.Spec.Type == "configmap" {
+		if name, _, err := pipelines.ParseConfigMapReference(a.Spec.Reference); err == nil {
+			var fetched corev1.ConfigMap
+			if err := s.client.Get(ctx, client.ObjectKey{Namespace: a.Namespace, Name: name}, &fetched); err == nil {
+				cm = &fetched
+			}
+		}
+	}
+
+	resp := &paprikav1.GetArtifactResponse{
+		Artifact: convertArtifactToArtifactRef(&a, cm),
+	}
+	if cm != nil {
+		resp.DownloadUrl = artifactDownloadURL(&a, cm)
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// hasPipelineOwnerRef reports whether refs contains a controlling owner
+// reference to a Pipeline with the given name in the pipelines.paprika.io/v1alpha1 group.
+func hasPipelineOwnerRef(refs []metav1.OwnerReference, name string) bool {
+	for i := range refs {
+		ref := &refs[i]
+		if ref.APIVersion == pipelineAPIVersion && ref.Kind == pipelineKind && ref.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Broker returns the event broker used by the API server.
@@ -785,6 +853,129 @@ func convertRollout(r *rolloutsv1alpha1.Rollout) *paprikav1.Rollout {
 	}
 }
 
+// convertArtifactToArtifactRef maps a pipelines Artifact CR to the protobuf
+// ArtifactRef. When cm is non-nil the configmap resolved key is used to build
+// the resolved reference; otherwise the reference omits the key.
+func convertArtifactToArtifactRef(a *pipelinesv1alpha1.Artifact, cm *corev1.ConfigMap) *paprikav1.ArtifactRef {
+	phase, failedReason := artifactPhaseAndReason(a)
+	return &paprikav1.ArtifactRef{
+		Name:              a.Name,
+		Path:              artifactPath(a),
+		Kind:              a.Spec.Type,
+		Reference:         a.Spec.Reference,
+		ResolvedReference: artifactResolvedReference(a, cm),
+		Digest:            artifactDigest(a),
+		Phase:             phase,
+		ProducingStep:     a.Spec.Provenance.Step,
+		CreatedAt:         a.CreationTimestamp.Unix(),
+		FailedReason:      failedReason,
+	}
+}
+
+// artifactPath reconstructs the declared artifact path as "<type>://<reference>".
+func artifactPath(a *pipelinesv1alpha1.Artifact) string {
+	if a.Spec.Type == "" || a.Spec.Reference == "" {
+		return ""
+	}
+	return a.Spec.Type + "://" + a.Spec.Reference
+}
+
+// artifactResolvedReference builds a best-effort resolved reference per the
+// CRD-to-protobuf mapping: configmap references include the resolved key when a
+// ConfigMap is available; oci references append the resolved digest when present.
+func artifactResolvedReference(a *pipelinesv1alpha1.Artifact, cm *corev1.ConfigMap) string {
+	switch a.Spec.Type {
+	case "configmap":
+		name, key, err := pipelines.ParseConfigMapReference(a.Spec.Reference)
+		if err != nil {
+			return ""
+		}
+		resolvedKey := key
+		if cm != nil {
+			if rk, err := pipelines.ResolveConfigMapKey(cm, key); err == nil {
+				resolvedKey = rk
+			}
+		}
+		ref := "configmap://" + a.Namespace + "/" + name
+		if resolvedKey != "" {
+			ref += "/" + resolvedKey
+		}
+		return ref
+	case "oci":
+		ref := "oci://" + a.Spec.Reference
+		if a.Status.ResolvedDigest != "" {
+			ref += "@" + a.Status.ResolvedDigest
+		}
+		return ref
+	default:
+		return ""
+	}
+}
+
+// artifactDigest prefers the controller-resolved digest and falls back to the
+// digest declared in the artifact spec.
+func artifactDigest(a *pipelinesv1alpha1.Artifact) string {
+	if a.Status.ResolvedDigest != "" {
+		return a.Status.ResolvedDigest
+	}
+	return a.Spec.Digest
+}
+
+// artifactPhaseAndReason derives the lifecycle phase from the Ready condition.
+// When the condition is False the artifact is Failed and the condition Reason
+// is surfaced as the failure reason.
+func artifactPhaseAndReason(a *pipelinesv1alpha1.Artifact) (phase, reason string) {
+	for _, c := range a.Status.Conditions {
+		if c.Type != conditionTypeReady {
+			continue
+		}
+		switch c.Status {
+		case metav1.ConditionTrue:
+			return phaseReady, ""
+		case metav1.ConditionFalse:
+			return "Failed", c.Reason
+		case metav1.ConditionUnknown:
+			return "Pending", ""
+		default:
+			return "Pending", ""
+		}
+	}
+	return "Pending", ""
+}
+
+// artifactDownloadURL returns a Kubernetes API proxy path for configmap
+// artifacts when the resolved value fits within configMapDownloadLimit. It
+// returns an empty string for oci artifacts or oversized configmap values.
+func artifactDownloadURL(a *pipelinesv1alpha1.Artifact, cm *corev1.ConfigMap) string {
+	if a.Spec.Type != "configmap" || cm == nil {
+		return ""
+	}
+	_, key, err := pipelines.ParseConfigMapReference(a.Spec.Reference)
+	if err != nil {
+		return ""
+	}
+	resolvedKey, err := pipelines.ResolveConfigMapKey(cm, key)
+	if err != nil {
+		return ""
+	}
+	if len(artifactConfigMapValue(cm, resolvedKey)) > configMapDownloadLimit {
+		return ""
+	}
+	return "/api/v1/namespaces/" + a.Namespace + "/configmaps/" + cm.Name + "?key=" + resolvedKey
+}
+
+// artifactConfigMapValue returns the raw bytes for a configmap key, preferring
+// string Data over BinaryData.
+func artifactConfigMapValue(cm *corev1.ConfigMap, key string) []byte {
+	if v, ok := cm.Data[key]; ok {
+		return []byte(v)
+	}
+	if v, ok := cm.BinaryData[key]; ok {
+		return v
+	}
+	return nil
+}
+
 func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 	steps := make([]*paprikav1.Step, 0, len(p.Spec.Steps))
 	for _, s := range p.Spec.Steps {
@@ -870,6 +1061,14 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 const (
 	phaseReady         = "Ready"
 	conditionTypeReady = "Ready"
+
+	pipelineAPIVersion = "pipelines.paprika.io/v1alpha1"
+	pipelineKind       = "Pipeline"
+
+	// configMapDownloadLimit bounds the raw ConfigMap value size (256 KiB) for
+	// which GetArtifact populates a download_url. Larger values are served out
+	// of band to avoid bloating API responses.
+	configMapDownloadLimit = 256 * 1024
 )
 
 func convertStage(st *pipelinesv1alpha1.Stage) *paprikav1.Stage {

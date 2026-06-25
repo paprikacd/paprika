@@ -17,7 +17,7 @@ func parseArtifactReference(path string) (kind, reference string, err error) {
 	return "", "", fmt.Errorf("unsupported artifact reference scheme: %s", path)
 }
 
-func parseConfigMapReference(ref string) (name, key string, err error) {
+func ParseConfigMapReference(ref string) (name, key string, err error) {
 	parts := strings.SplitN(ref, "/", 2)
 	if parts[0] == "" {
 		return "", "", fmt.Errorf("invalid configmap reference: %q", ref)
@@ -35,7 +35,7 @@ type configMapKeyError struct {
 
 func (e *configMapKeyError) Error() string { return e.message }
 
-func resolveConfigMapKey(cm *corev1.ConfigMap, key string) (string, error) {
+func ResolveConfigMapKey(cm *corev1.ConfigMap, key string) (string, error) {
 	if key != "" {
 		if _, ok := cm.Data[key]; ok {
 			return key, nil
