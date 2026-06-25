@@ -200,6 +200,7 @@ export default function PipelineDetailPage() {
               logsLoading={logsLoading}
               onRetry={handleRetry}
               onSkip={handleSkip}
+              artifacts={pipeline.artifacts}
             />
           </div>
         </div>

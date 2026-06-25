@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react"
 
-import type { Step, StepStatus } from "@/gen/paprika/v1/api_pb"
+import type { ArtifactRef, Step, StepStatus } from "@/gen/paprika/v1/api_pb"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { ArtifactCard } from "@/components/dashboard/artifact-card"
+import { useStepArtifacts } from "@/lib/use-step-artifacts"
 import { Loader2 } from "lucide-react"
 
 function useElapsedMs(startedAt?: bigint) {
@@ -27,9 +29,21 @@ interface StepDetailPanelProps {
   logsLoading: boolean
   onRetry: () => void
   onSkip: () => void
+  artifacts?: ArtifactRef[]
 }
 
-export function StepDetailPanel({ step, status, logs, logsLoading, onRetry, onSkip }: StepDetailPanelProps) {
+export function StepDetailPanel({
+  step,
+  status,
+  logs,
+  logsLoading,
+  onRetry,
+  onSkip,
+  artifacts,
+}: StepDetailPanelProps) {
+  const stepName = step?.name ?? ""
+  const stepArtifacts = useStepArtifacts(artifacts ?? [], stepName)
+
   if (!step) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
@@ -65,6 +79,17 @@ export function StepDetailPanel({ step, status, logs, logsLoading, onRetry, onSk
           </Button>
         )}
       </div>
+
+      {stepArtifacts.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-medium text-muted-foreground">Artifacts</h4>
+          <div className="grid gap-2">
+            {stepArtifacts.map((a) => (
+              <ArtifactCard key={a.name} artifact={a} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto">
         <h4 className="mb-2 text-xs font-medium text-muted-foreground">Logs</h4>
