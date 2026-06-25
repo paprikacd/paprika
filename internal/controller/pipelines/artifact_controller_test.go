@@ -289,3 +289,124 @@ func TestArtifactReconciler_ConfigMapAmbiguousKeys(t *testing.T) {
 		t.Fatalf("expected Ready=False AmbiguousKeys, got %+v", cond)
 	}
 }
+
+type fakeVerifier struct {
+	digest string
+	err    error
+}
+
+func (f *fakeVerifier) Verify(_ context.Context, _ string) (string, error) {
+	return f.digest, f.err
+}
+
+func TestArtifactReconciler_OCIReady(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "oci-artifact", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "oci",
+			Reference: "registry.io/repo:tag",
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c, Verifier: &fakeVerifier{digest: "sha256:abc123"}}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "oci-artifact", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "oci-artifact", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	if !got.Status.Verified {
+		t.Fatalf("expected artifact verified")
+	}
+	if got.Status.ResolvedDigest != "sha256:abc123" {
+		t.Fatalf("expected resolved digest sha256:abc123, got %s", got.Status.ResolvedDigest)
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != "Verified" {
+		t.Fatalf("expected Ready=True Verified, got %+v", cond)
+	}
+}
+
+func TestArtifactReconciler_OCIDigestMismatch(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "oci-digest-mismatch", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "oci",
+			Reference: "registry.io/repo:tag",
+			Digest:    "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c, Verifier: &fakeVerifier{digest: "sha256:abc123"}}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "oci-digest-mismatch", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "oci-digest-mismatch", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	if got.Status.Verified {
+		t.Fatalf("expected artifact not verified")
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "DigestMismatch" {
+		t.Fatalf("expected Ready=False DigestMismatch, got %+v", cond)
+	}
+}
+
+func TestArtifactReconciler_OCIInvalidReference(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "oci-invalid", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "oci",
+			Reference: "registry.io/repo:tag",
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c, Verifier: &fakeVerifier{err: context.DeadlineExceeded}}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "oci-invalid", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "oci-invalid", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "VerificationFailed" {
+		t.Fatalf("expected Ready=False VerificationFailed, got %+v", cond)
+	}
+}
