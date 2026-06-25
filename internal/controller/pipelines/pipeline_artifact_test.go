@@ -2,8 +2,11 @@ package pipelines
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 )
 
@@ -359,6 +364,89 @@ func TestReconcilePipeline_DeletesStaleArtifacts(t *testing.T) {
 	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "my-pipeline", Namespace: "default"}, &got))
 	require.Len(t, got.Status.ArtifactRefs, 1)
 	assert.Equal(t, "my-pipeline-build-image", got.Status.ArtifactRefs[0].Name)
+}
+
+func TestReconcilePipeline_PublishesArtifactSSE(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "image", Path: "oci://repo:tag"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineSucceeded,
+			LastExecutionID: "run-1",
+			ArtifactRefs: []pipelinesv1alpha1.PipelineArtifactRef{
+				{Name: "my-pipeline-build-image", Kind: "oci", Phase: pipelinesv1alpha1.PipelineArtifactPhasePending, ProducingStep: "build"},
+			},
+		},
+	}
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pipeline-build-image",
+			Namespace: "default",
+			OwnerReferences: []metav1.OwnerReference{
+				{APIVersion: "pipelines.paprika.io/v1alpha1", Kind: "Pipeline", Name: "my-pipeline", UID: "uid-1", Controller: boolPtr(true)},
+			},
+		},
+		Spec: pipelinesv1alpha1.ArtifactSpec{Type: "oci", Reference: "repo:tag", Provenance: pipelinesv1alpha1.ArtifactProvenance{Step: "build"}},
+		Status: pipelinesv1alpha1.ArtifactStatus{
+			Verified:       true,
+			ResolvedDigest: "sha256:abc",
+			Conditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Verified"},
+			},
+		},
+	}
+	broker := events.NewBroker(logr.Discard())
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline, artifact).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}, &pipelinesv1alpha1.Artifact{}).Build()
+	r := &PipelineReconciler{
+		client:         c,
+		Scheme:         scheme,
+		Clock:          clock.Real{},
+		EventBroker:    broker,
+		WorkflowEngine: &mockPipelineRunner{statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}}},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := broker.Subscribe(ctx, events.TopicDashboard)
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	select {
+	case evt := <-ch:
+		require.Equal(t, events.TypePipelineArtifact, evt.Type)
+		var payload PipelineArtifactEventPayload
+		require.NoError(t, json.Unmarshal(evt.Payload, &payload))
+		assert.Equal(t, events.TypePipelineArtifact, payload.ResourceType)
+		assert.Equal(t, "my-pipeline", payload.Pipeline)
+		assert.Equal(t, "default", payload.Namespace)
+		assert.Equal(t, "my-pipeline-build-image", payload.Name)
+		assert.Equal(t, "oci", payload.Kind)
+		assert.Equal(t, "Ready", payload.Phase)
+		assert.Equal(t, "Pending", payload.PreviousPhase)
+		assert.Equal(t, "oci://repo:tag", payload.Reference)
+		assert.Equal(t, "sha256:abc", payload.Digest)
+		assert.Equal(t, "build", payload.ProducingStep)
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected pipeline-artifact SSE event")
+	}
 }
 
 func boolPtr(b bool) *bool {
