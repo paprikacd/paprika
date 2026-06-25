@@ -26,3 +26,8 @@ type AuditPayload struct {
 	Error     string `json:"error,omitempty"`
 	Timestamp string `json:"timestamp"`
 }
+
+const (
+	// TypePipelineArtifact identifies events for pipeline artifact phase changes.
+	TypePipelineArtifact = "pipeline-artifact"
+)

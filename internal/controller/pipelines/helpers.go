@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	PipelineLabelKey = "paprika.io/pipeline"
-	StepLabelKey     = "paprika.io/step"
+	PipelineLabelKey           = "paprika.io/pipeline"
+	StepLabelKey               = "paprika.io/step"
+	OutputLabelKey             = "paprika.io/output"
+	ProducingStepAnnotationKey = "paprika.io/producing-step"
 )
 
 func GetArtifactsForPipelineStep(ctx context.Context, c client.Client, pipeline *pipelinesv1alpha1.Pipeline, stepName string) ([]pipelinesv1alpha1.Artifact, error) {

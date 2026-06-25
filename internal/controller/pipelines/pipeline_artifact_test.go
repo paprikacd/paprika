@@ -1,0 +1,226 @@
+package pipelines
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/controller/pipelines/progress"
+)
+
+type mockPipelineRunner struct {
+	statuses []pipelinesv1alpha1.StepStatus
+	err      error
+}
+
+func (m *mockPipelineRunner) RunPipeline(_ context.Context, _ *pipelinesv1alpha1.Pipeline, _ progress.StepProgressCallback) ([]pipelinesv1alpha1.StepStatus, error) {
+	return m.statuses, m.err
+}
+
+func TestCreateArtifact_SetsLabelsAndOwnerRef(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "image", Path: "oci://repo:tag"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineRunning,
+			LastExecutionID: "run-1",
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).Build()
+	r := &PipelineReconciler{
+		client:         c,
+		Scheme:         scheme,
+		WorkflowEngine: &mockPipelineRunner{statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}}},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	var artifacts pipelinesv1alpha1.ArtifactList
+	require.NoError(t, c.List(context.Background(), &artifacts))
+	require.Len(t, artifacts.Items, 1)
+
+	a := artifacts.Items[0]
+	assert.Equal(t, "my-pipeline-build-image", a.Name)
+	assert.Equal(t, "my-pipeline", a.Labels[PipelineLabelKey])
+	assert.Equal(t, "build", a.Labels[StepLabelKey])
+	assert.Equal(t, "image", a.Labels[OutputLabelKey])
+	assert.Equal(t, "oci", a.Spec.Type)
+	assert.Equal(t, "repo:tag", a.Spec.Reference)
+	assert.Equal(t, "my-pipeline", a.Spec.Provenance.Pipeline)
+	assert.Equal(t, "run-1", a.Spec.Provenance.Build)
+	assert.Equal(t, "build", a.Spec.Provenance.Step)
+	require.Len(t, a.OwnerReferences, 1)
+	assert.Equal(t, "uid-1", string(a.OwnerReferences[0].UID))
+	assert.True(t, *a.OwnerReferences[0].Controller)
+}
+
+func TestCreateArtifact_ConfigMapReference(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "config", Path: "configmap://my-cm/my-key"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineRunning,
+			LastExecutionID: "run-1",
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).Build()
+	r := &PipelineReconciler{
+		client:         c,
+		Scheme:         scheme,
+		WorkflowEngine: &mockPipelineRunner{statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}}},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	var artifacts pipelinesv1alpha1.ArtifactList
+	require.NoError(t, c.List(context.Background(), &artifacts))
+	require.Len(t, artifacts.Items, 1)
+
+	a := artifacts.Items[0]
+	assert.Equal(t, "configmap", a.Spec.Type)
+	assert.Equal(t, "my-cm/my-key", a.Spec.Reference)
+}
+
+func TestCreateArtifact_DeterministicNamesWithCollisionSuffix(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "my-image", Path: "oci://repo:tag1"},
+						{Name: "my_image", Path: "oci://repo:tag2"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineRunning,
+			LastExecutionID: "run-1",
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).Build()
+	r := &PipelineReconciler{
+		client:         c,
+		Scheme:         scheme,
+		WorkflowEngine: &mockPipelineRunner{statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}}},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	var artifacts pipelinesv1alpha1.ArtifactList
+	require.NoError(t, c.List(context.Background(), &artifacts))
+	require.Len(t, artifacts.Items, 2)
+
+	names := make([]string, 2)
+	for i, a := range artifacts.Items {
+		names[i] = a.Name
+	}
+	assert.NotEqual(t, names[0], names[1], "expected disambiguated artifact names")
+	for _, name := range names {
+		assert.True(t, len(name) <= 63, "artifact name %q exceeds 63 chars", name)
+	}
+}
+
+func TestReconcilePipeline_UpsertsArtifactRefs(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "image", Path: "oci://repo:tag"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineRunning,
+			LastExecutionID: "run-1",
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).Build()
+	r := &PipelineReconciler{
+		client:         c,
+		Scheme:         scheme,
+		WorkflowEngine: &mockPipelineRunner{statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}}},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	var got pipelinesv1alpha1.Pipeline
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "my-pipeline", Namespace: "default"}, &got))
+	require.Len(t, got.Status.ArtifactRefs, 1)
+
+	ref := got.Status.ArtifactRefs[0]
+	assert.Equal(t, "my-pipeline-build-image", ref.Name)
+	assert.Equal(t, "oci", ref.Kind)
+	assert.Equal(t, "oci://repo:tag", ref.Reference)
+	assert.Equal(t, pipelinesv1alpha1.PipelineArtifactPhasePending, ref.Phase)
+	assert.Equal(t, "build", ref.ProducingStep)
+	assert.NotZero(t, ref.CreatedAt)
+}
