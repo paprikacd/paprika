@@ -218,7 +218,8 @@ func (r *PipelineReconciler) createArtifact(ctx context.Context, pipeline *pipel
 			GenerateName: pipeline.Name + "-artifact-",
 			Namespace:    pipeline.Namespace,
 			Labels: map[string]string{
-				"paprika.io/pipeline": pipeline.Name,
+				PipelineLabelKey: pipeline.Name,
+				StepLabelKey:     output.Step,
 			},
 		},
 		Spec: pipelinesv1alpha1.ArtifactSpec{
