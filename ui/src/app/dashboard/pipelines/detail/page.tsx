@@ -32,26 +32,42 @@ export default function PipelineDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
 
-  const onPipelineEvent = useCallback((event: PipelineSSEEvent) => {
-    setPipeline((prev) => {
-      if (!prev) return prev
-      const plain = toPlainMessage(prev)
-      plain.stepStatuses = (plain.stepStatuses ?? []).map((st) =>
-        st.name === event.name
-          ? {
-              ...st,
-              phase: event.phase,
-              startedAt: event.startedAt !== undefined ? BigInt(event.startedAt) : st.startedAt,
-              completedAt: event.completedAt !== undefined ? BigInt(event.completedAt) : st.completedAt,
-            }
-          : st
-      )
-      if (event.name === "" && event.phase) {
-        plain.phase = event.phase
+  const fetchPipeline = useCallback(() => {
+    if (!namespace || !name) return
+    client
+      .getPipeline({ namespace, name })
+      .then((res) => setPipeline(res.pipeline ?? null))
+      .catch((err) => setError(err.message ?? "Failed to load pipeline"))
+  }, [namespace, name])
+
+  const onPipelineEvent = useCallback(
+    (event: PipelineSSEEvent) => {
+      if (event.type === "pipeline-artifact") {
+        // Artifact phase change — refetch so the artifact list updates.
+        fetchPipeline()
+        return
       }
-      return new Pipeline(plain)
-    })
-  }, [])
+      setPipeline((prev) => {
+        if (!prev) return prev
+        const plain = toPlainMessage(prev)
+        plain.stepStatuses = (plain.stepStatuses ?? []).map((st) =>
+          st.name === event.name
+            ? {
+                ...st,
+                phase: event.phase,
+                startedAt: event.startedAt !== undefined ? BigInt(event.startedAt) : st.startedAt,
+                completedAt: event.completedAt !== undefined ? BigInt(event.completedAt) : st.completedAt,
+              }
+            : st
+        )
+        if (event.name === "" && event.phase) {
+          plain.phase = event.phase
+        }
+        return new Pipeline(plain)
+      })
+    },
+    [fetchPipeline]
+  )
 
   usePipelineSSE(namespace, name, onPipelineEvent)
 
@@ -59,11 +75,8 @@ export default function PipelineDetailPage() {
     if (!namespace || !name) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null)
-    client
-      .getPipeline({ namespace, name })
-      .then((res) => setPipeline(res.pipeline ?? null))
-      .catch((err) => setError(err.message ?? "Failed to load pipeline"))
-  }, [namespace, name])
+    fetchPipeline()
+  }, [namespace, name, fetchPipeline])
 
   useEffect(() => {
     if (!selectedStep || !namespace || !name) return

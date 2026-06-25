@@ -90,4 +90,36 @@ describe("usePipelineSSE", () => {
       })
     )
   })
+
+  it("forwards pipeline-artifact events to the consumer", () => {
+    const onEvent = vi.fn()
+    renderHook(() => usePipelineSSE("ns", "pipe", onEvent))
+
+    mockEventSource.onmessage?.({
+      data: JSON.stringify({
+        type: "pipeline-artifact",
+        resourceType: "pipeline-artifact",
+        pipeline: "pipe",
+        namespace: "ns",
+        name: "build-image",
+        kind: "oci",
+        phase: "Ready",
+        previousPhase: "Pending",
+        reference: "registry.example.com/app@sha256:abc",
+        digest: "sha256:abc",
+        producingStep: "build",
+        timestamp: "2026-06-25T00:00:00Z",
+      }),
+    })
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "pipeline-artifact",
+        name: "build-image",
+        kind: "oci",
+        phase: "Ready",
+        producingStep: "build",
+      })
+    )
+  })
 })

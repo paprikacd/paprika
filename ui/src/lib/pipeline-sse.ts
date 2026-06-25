@@ -2,8 +2,13 @@
 
 import { useEffect, useRef, useState } from "react"
 
-export interface PipelineSSEEvent {
-  type: string
+/**
+ * PipelineSSEEvent is the union of events delivered over the per-pipeline SSE
+ * topic. The `type` field discriminates between step-status updates and
+ * artifact phase changes.
+ */
+export interface PipelineStepEvent {
+  type: "pipeline"
   resourceType: string
   name: string
   namespace: string
@@ -15,6 +20,23 @@ export interface PipelineSSEEvent {
   startedAt?: number
   completedAt?: number
 }
+
+export interface PipelineArtifactEvent {
+  type: "pipeline-artifact"
+  resourceType: string
+  pipeline: string
+  namespace: string
+  name: string
+  kind?: string
+  phase?: string
+  previousPhase?: string
+  reference?: string
+  digest?: string
+  producingStep?: string
+  timestamp: string
+}
+
+export type PipelineSSEEvent = PipelineStepEvent | PipelineArtifactEvent
 
 export function usePipelineSSE(
   namespace: string,
