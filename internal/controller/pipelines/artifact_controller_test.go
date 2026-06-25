@@ -18,14 +18,18 @@ package pipelines
 
 import (
 	"context"
+	"testing"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/oci"
@@ -121,3 +125,48 @@ var _ = ginkgo.Describe("Artifact Controller", func() {
 		})
 	})
 })
+
+func TestArtifactReconciler_ConfigMapReady(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm-artifact", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "configmap",
+			Reference: "my-cm/my-key",
+		},
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cm", Namespace: "default"},
+		Data:       map[string]string{"my-key": "my-value"},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact, cm).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "cm-artifact", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "cm-artifact", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	if !got.Status.Verified {
+		t.Fatalf("expected artifact verified")
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		t.Fatalf("expected Ready condition true, got %+v", cond)
+	}
+	if cond.Reason != "Verified" {
+		t.Fatalf("expected reason Verified, got %s", cond.Reason)
+	}
+}

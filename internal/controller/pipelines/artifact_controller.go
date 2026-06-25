@@ -21,10 +21,12 @@ import (
 	"errors"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -55,7 +57,7 @@ type ArtifactReconciler struct {
 
 // Reconcile verifies the artifact reference and updates status.
 //
-//nolint:cyclop // status reconciliation has sequential guard branches.
+//nolint:cyclop // artifact reconciliation branches on type.
 func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
@@ -80,71 +82,138 @@ func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	verified, resolvedDigest, err := r.verify(ctx, &artifact)
-
-	artifact.Status.ObservedGeneration = artifact.Generation
-	artifact.Status.Verified = verified
-	artifact.Status.ResolvedDigest = resolvedDigest
-
-	status := metav1.ConditionTrue
-	reason := "Verified"
-	message := fmt.Sprintf("Resolved artifact %q", artifact.Spec.Reference)
-	if err != nil {
-		result = resultError
-		status = metav1.ConditionFalse
-		reason = "VerificationFailed"
-		message = err.Error()
-		log.Info("Artifact verification failed", "artifact", artifact.Name, "error", err)
-	}
-
-	if artifact.Spec.Digest != "" && resolvedDigest != "" && resolvedDigest != artifact.Spec.Digest {
-		status = metav1.ConditionFalse
-		reason = "DigestMismatch"
-		message = fmt.Sprintf("resolved digest %s does not match spec digest %s", resolvedDigest, artifact.Spec.Digest)
-		result = resultError
-		artifact.Status.Verified = false
-		log.Info("Artifact digest mismatch", "artifact", artifact.Name, "resolved", resolvedDigest, "expected", artifact.Spec.Digest)
-	}
-
-	meta.SetStatusCondition(&artifact.Status.Conditions, metav1.Condition{
-		Type:               "Ready",
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		ObservedGeneration: artifact.Generation,
-		LastTransitionTime: metav1.Now(),
-	})
-
-	if updateErr := r.client.Status().Update(ctx, &artifact); updateErr != nil {
-		result = resultError
-		if apierrors.IsConflict(updateErr) {
-			log.Info("Conflict updating Artifact status; will retry", "artifact", artifact.Name)
-			return ctrl.Result{Requeue: true}, nil
+	switch artifact.Spec.Type {
+	case "oci":
+		if err := r.reconcileOCI(ctx, &artifact, &result); err != nil {
+			return r.handleStatusUpdateError(ctx, err, &result, artifact.Name)
 		}
-		return ctrl.Result{}, fmt.Errorf("updating artifact status: %w", updateErr)
+	case "configmap":
+		if err := r.reconcileConfigMap(ctx, &artifact, &result); err != nil {
+			return r.handleStatusUpdateError(ctx, err, &result, artifact.Name)
+		}
+	default:
+		if err := r.setFailed(ctx, &artifact, "VerificationFailed", fmt.Sprintf("unsupported artifact type %q", artifact.Spec.Type), &result); err != nil {
+			return r.handleStatusUpdateError(ctx, err, &result, artifact.Name)
+		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *ArtifactReconciler) verify(ctx context.Context, artifact *pipelinesv1alpha1.Artifact) (verified bool, digest string, err error) {
-	switch artifact.Spec.Type {
-	case "oci":
-		if artifact.Spec.Reference == "" {
-			return false, "", errors.New("oci artifact reference is required")
-		}
-		verifier := r.Verifier
-		if verifier == nil {
-			verifier = oci.NewVerifier()
-		}
-		digest, err = verifier.Verify(ctx, artifact.Spec.Reference)
-		if err != nil {
-			return false, "", fmt.Errorf("verify oci reference: %w", err)
-		}
-		return true, digest, nil
-	default:
-		return false, "", fmt.Errorf("unsupported artifact type %q", artifact.Spec.Type)
+func (r *ArtifactReconciler) handleStatusUpdateError(ctx context.Context, err error, result *string, name string) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	*result = resultError
+	if apierrors.IsConflict(err) {
+		log.Info("Conflict updating Artifact status; will retry", "artifact", name)
+		return ctrl.Result{Requeue: true}, nil
 	}
+	return ctrl.Result{}, err
+}
+
+func (r *ArtifactReconciler) setFailed(
+	ctx context.Context,
+	artifact *pipelinesv1alpha1.Artifact,
+	reason, message string,
+	result *string,
+) error {
+	log := log.FromContext(ctx)
+	log.Info("Artifact verification failed", "artifact", artifact.Name, "reason", reason, "message", message)
+
+	artifact.Status.Verified = false
+	artifact.Status.ObservedGeneration = artifact.Generation
+	meta.SetStatusCondition(&artifact.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: artifact.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	if err := r.client.Status().Update(ctx, artifact); err != nil {
+		return fmt.Errorf("updating artifact status: %w", err)
+	}
+	*result = resultError
+	return nil
+}
+
+func (r *ArtifactReconciler) setReady(
+	ctx context.Context,
+	artifact *pipelinesv1alpha1.Artifact,
+	message string,
+) error {
+	artifact.Status.Verified = true
+	artifact.Status.ObservedGeneration = artifact.Generation
+	meta.SetStatusCondition(&artifact.Status.Conditions, metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Verified",
+		Message:            message,
+		ObservedGeneration: artifact.Generation,
+		LastTransitionTime: metav1.Now(),
+	})
+	if err := r.client.Status().Update(ctx, artifact); err != nil {
+		return fmt.Errorf("updating artifact status: %w", err)
+	}
+	return nil
+}
+
+func (r *ArtifactReconciler) reconcileOCI(
+	ctx context.Context,
+	artifact *pipelinesv1alpha1.Artifact,
+	result *string,
+) error {
+	if artifact.Spec.Reference == "" {
+		return r.setFailed(ctx, artifact, "VerificationFailed", "oci artifact reference is required", result)
+	}
+
+	verifier := r.Verifier
+	if verifier == nil {
+		verifier = oci.NewVerifier()
+	}
+
+	digest, err := verifier.Verify(ctx, artifact.Spec.Reference)
+	if err != nil {
+		return r.setFailed(ctx, artifact, "VerificationFailed", "verify oci reference: "+err.Error(), result)
+	}
+
+	if artifact.Spec.Digest != "" && digest != artifact.Spec.Digest {
+		log := log.FromContext(ctx)
+		log.Info("Artifact digest mismatch", "artifact", artifact.Name, "resolved", digest, "expected", artifact.Spec.Digest)
+		return r.setFailed(ctx, artifact, "DigestMismatch", fmt.Sprintf("resolved digest %s does not match spec digest %s", digest, artifact.Spec.Digest), result)
+	}
+
+	artifact.Status.ResolvedDigest = digest
+	return r.setReady(ctx, artifact, fmt.Sprintf("Resolved artifact %q", artifact.Spec.Reference))
+}
+
+func (r *ArtifactReconciler) reconcileConfigMap(
+	ctx context.Context,
+	artifact *pipelinesv1alpha1.Artifact,
+	result *string,
+) error {
+	name, key, err := parseConfigMapReference(artifact.Spec.Reference)
+	if err != nil {
+		return r.setFailed(ctx, artifact, "InvalidReference", err.Error(), result)
+	}
+
+	var cm corev1.ConfigMap
+	if err := r.client.Get(ctx, types.NamespacedName{Name: name, Namespace: artifact.Namespace}, &cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return r.setFailed(ctx, artifact, "ConfigMapNotFound", fmt.Sprintf("configmap %s not found", name), result)
+		}
+		return fmt.Errorf("getting configmap %s: %w", name, err)
+	}
+
+	resolvedKey, keyErr := resolveConfigMapKey(&cm, key)
+	if keyErr != nil {
+		var e *configMapKeyError
+		if errors.As(keyErr, &e) {
+			return r.setFailed(ctx, artifact, e.reason, e.message, result)
+		}
+		return r.setFailed(ctx, artifact, "VerificationFailed", keyErr.Error(), result)
+	}
+
+	return r.setReady(ctx, artifact, fmt.Sprintf("key %s verified", resolvedKey))
 }
 
 // SetupWithManager sets up the controller with the Manager.
