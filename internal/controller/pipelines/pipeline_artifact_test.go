@@ -293,6 +293,74 @@ func TestReconcilePipeline_SyncsArtifactStatus(t *testing.T) {
 	assert.Equal(t, "repo:tag@sha256:abc", ref.ResolvedReference)
 }
 
+func TestReconcilePipeline_DeletesStaleArtifacts(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+
+	pipeline := &pipelinesv1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "my-pipeline",
+			Namespace:  "default",
+			UID:        "uid-1",
+			Finalizers: []string{pipelineFinalizer},
+		},
+		Spec: pipelinesv1alpha1.PipelineSpec{
+			Steps: []pipelinesv1alpha1.PipelineStep{
+				{
+					Name: "build",
+					Outputs: []pipelinesv1alpha1.PipelineOutput{
+						{Name: "image", Path: "oci://repo:tag"},
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.PipelineStatus{
+			Phase:           pipelinesv1alpha1.PipelineSucceeded,
+			LastExecutionID: "run-1",
+			ArtifactRefs: []pipelinesv1alpha1.PipelineArtifactRef{
+				{Name: "my-pipeline-build-image", Kind: "oci", Phase: pipelinesv1alpha1.PipelineArtifactPhaseReady, ProducingStep: "build"},
+				{Name: "my-pipeline-build-stale", Kind: "oci", Phase: pipelinesv1alpha1.PipelineArtifactPhasePending, ProducingStep: "build"},
+			},
+		},
+	}
+	stale := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pipeline-build-stale",
+			Namespace: "default",
+			Labels: map[string]string{
+				PipelineLabelKey: "my-pipeline",
+				StepLabelKey:     "build",
+				OutputLabelKey:   "stale",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{APIVersion: "pipelines.paprika.io/v1alpha1", Kind: "Pipeline", Name: "my-pipeline", UID: "uid-1", Controller: boolPtr(true)},
+			},
+		},
+		Spec: pipelinesv1alpha1.ArtifactSpec{Type: "oci", Reference: "repo:stale"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pipeline, stale).WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).Build()
+	r := &PipelineReconciler{
+		client: c,
+		Scheme: scheme,
+		WorkflowEngine: &mockPipelineRunner{
+			statuses: []pipelinesv1alpha1.StepStatus{{Name: "build", Phase: pipelinesv1alpha1.StepSucceeded}},
+		},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "my-pipeline", Namespace: "default"}})
+	require.NoError(t, err)
+
+	var artifacts pipelinesv1alpha1.ArtifactList
+	require.NoError(t, c.List(context.Background(), &artifacts))
+	require.Len(t, artifacts.Items, 1)
+	assert.Equal(t, "my-pipeline-build-image", artifacts.Items[0].Name)
+
+	var got pipelinesv1alpha1.Pipeline
+	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Name: "my-pipeline", Namespace: "default"}, &got))
+	require.Len(t, got.Status.ArtifactRefs, 1)
+	assert.Equal(t, "my-pipeline-build-image", got.Status.ArtifactRefs[0].Name)
+}
+
 func boolPtr(b bool) *bool {
 	return &b
 }
