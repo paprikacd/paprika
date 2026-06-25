@@ -170,3 +170,122 @@ func TestArtifactReconciler_ConfigMapReady(t *testing.T) {
 		t.Fatalf("expected reason Verified, got %s", cond.Reason)
 	}
 }
+
+func TestArtifactReconciler_ConfigMapNotFound(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm-not-found", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "configmap",
+			Reference: "missing-cm/key",
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "cm-not-found", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "cm-not-found", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	if got.Status.Verified {
+		t.Fatalf("expected artifact not verified")
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "ConfigMapNotFound" {
+		t.Fatalf("expected Ready=False ConfigMapNotFound, got %+v", cond)
+	}
+}
+
+func TestArtifactReconciler_ConfigMapKeyNotFound(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm-key-not-found", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "configmap",
+			Reference: "my-cm/wrong-key",
+		},
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cm", Namespace: "default"},
+		Data:       map[string]string{"existing-key": "value"},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact, cm).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "cm-key-not-found", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "cm-key-not-found", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "KeyNotFound" {
+		t.Fatalf("expected Ready=False KeyNotFound, got %+v", cond)
+	}
+}
+
+func TestArtifactReconciler_ConfigMapAmbiguousKeys(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	artifact := &pipelinesv1alpha1.Artifact{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm-ambiguous", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ArtifactSpec{
+			Type:      "configmap",
+			Reference: "my-cm",
+		},
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cm", Namespace: "default"},
+		Data: map[string]string{
+			"key-a": "value-a",
+			"key-b": "value-b",
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(artifact, cm).WithStatusSubresource(&pipelinesv1alpha1.Artifact{}).Build()
+	r := &ArtifactReconciler{client: c}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "cm-ambiguous", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+
+	var got pipelinesv1alpha1.Artifact
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "cm-ambiguous", Namespace: "default"}, &got); err != nil {
+		t.Fatalf("get artifact: %v", err)
+	}
+	cond := meta.FindStatusCondition(got.Status.Conditions, "Ready")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "AmbiguousKeys" {
+		t.Fatalf("expected Ready=False AmbiguousKeys, got %+v", cond)
+	}
+}
