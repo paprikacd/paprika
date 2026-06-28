@@ -15,8 +15,6 @@ import (
 	"github.com/benebsworth/paprika/internal/rollout/hash"
 )
 
-const promoteAnnotation = "paprika.io/promote"
-
 // Strategy implements a blue/green rollout.
 type Strategy struct {
 	cfg *rolloutsv1alpha1.BlueGreenStrategy
@@ -39,7 +37,7 @@ func (s *Strategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error
 }
 
 // Sync computes the desired ReplicaSets for a blue/green rollout.
-func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*core.SyncResult, error) {
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, _ core.SyncInputs) (*core.SyncResult, error) {
 	if s.cfg.ActiveService == "" {
 		return nil, errors.New("blueGreen strategy requires activeService")
 	}
@@ -89,7 +87,7 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
-	if _, promoted := ro.Annotations[promoteAnnotation]; promoted {
+	if _, promoted := ro.Annotations[core.PromoteAnnotation]; promoted {
 		return &core.SyncResult{
 			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
 			Action:  core.ActionPromote,

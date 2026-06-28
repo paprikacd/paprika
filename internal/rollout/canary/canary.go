@@ -35,7 +35,7 @@ func (s *Strategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error
 }
 
 // Sync computes the desired ReplicaSets for a canary rollout.
-func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*core.SyncResult, error) {
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, _ core.SyncInputs) (*core.SyncResult, error) {
 	if s.cfg == nil || len(s.cfg.Steps) == 0 {
 		return nil, errors.New("canary strategy requires at least one step")
 	}

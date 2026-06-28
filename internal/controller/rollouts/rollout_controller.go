@@ -43,6 +43,7 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/rollout"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/traffic"
@@ -50,8 +51,6 @@ import (
 
 const (
 	rolloutFinalizer       = "rollouts.paprika.io/finalizer"
-	promoteAnnotation      = "paprika.io/promote"
-	abortAnnotation        = "paprika.io/abort"
 	progressingCondition   = "RolloutProgressing"
 	defaultServicePortName = "http"
 )
@@ -89,6 +88,7 @@ type RolloutReconciler struct {
 	Analyzer      *analysis.CELAnalyzer
 	EventRecorder record.EventRecorder
 	EventBroker   *events.Broker
+	Clock         clock.Clock
 }
 
 // +kubebuilder:rbac:groups=rollouts.paprika.io,resources=rollouts,verbs=get;list;watch;create;update;patch;delete
@@ -176,7 +176,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("creating strategy: %w", err)
 	}
 
-	result, err := strategy.Sync(ctx, &ro, &ro.Status)
+	result, err := strategy.Sync(ctx, &ro, &ro.Status, core.NewSyncInputs(r.Clock))
 	if err != nil {
 		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
 		ro.Status.Message = err.Error()
@@ -701,6 +701,9 @@ func (r *RolloutReconciler) patchStatus(ctx context.Context, ro *rolloutsv1alpha
 // SetupWithManager sets up the controller with the Manager.
 func (r *RolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
+	if r.Clock == nil {
+		r.Clock = clock.Real{}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rolloutsv1alpha1.Rollout{}).
 		Owns(&appsv1.ReplicaSet{}).

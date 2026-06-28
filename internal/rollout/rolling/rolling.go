@@ -36,7 +36,7 @@ func (s *Strategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error
 }
 
 // Sync computes the desired ReplicaSets for a rolling update.
-func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*core.SyncResult, error) {
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, _ core.SyncInputs) (*core.SyncResult, error) {
 	desiredReplicas := int32(1)
 	if ro.Spec.Replicas != nil {
 		desiredReplicas = *ro.Spec.Replicas
