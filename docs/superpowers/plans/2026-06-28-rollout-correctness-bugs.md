@@ -1226,7 +1226,7 @@ var _ = Describe("RolloutReconciler canary", func() {
 		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
 
 		// Reconcile 1: stable exists, canary RS is created. The strategy's
-		// advancement loop is NOT entered this reconcile (the canary-creation
+		// advancement switch is NOT entered this reconcile (the canary-creation
 		// block returns first), so CurrentStepStartedAt is still nil.
 		_, _ = recon.Reconcile(ctx, reqFor(ro))
 		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
@@ -1234,19 +1234,29 @@ var _ = Describe("RolloutReconciler canary", func() {
 		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)))
 		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "step 0 not yet entered on canary-creation reconcile")
 
-		// Reconcile 2: now the strategy enters step 0 and stamps the start time.
+		// Reconcile 2: strategy enters step 0 (Duration=60s) and stamps
+		// CurrentStepStartedAt. Does NOT advance yet.
 		_, _ = recon.Reconcile(ctx, reqFor(ro))
 		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
 		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 0 start should be stamped")
 
 		// Advance clock 61s — step 0 (60s duration) should advance to step 1.
+		// Reconcile 3: stamps step 0 (already stamped, no-op), elapsed >= Duration,
+		// advances index to 1 and CLEARS CurrentStepStartedAt.
 		clk.Add(61 * time.Second)
 		_, _ = recon.Reconcile(ctx, reqFor(ro))
 		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
 		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(1)), "step 0 should have advanced after duration")
+		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "CurrentStepStartedAt cleared on advance")
 
-		// Advance another 61s — step 1 advances to step 2.
+		// Step 1 (Duration=60s) needs a stamp reconcile + an advance reconcile.
+		// Reconcile 4: enters step 1, stamps.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 1 start should be stamped")
+
 		clk.Add(61 * time.Second)
+		// Reconcile 5: advances step 1 → 2.
 		_, _ = recon.Reconcile(ctx, reqFor(ro))
 		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
 		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(2)))
@@ -2193,11 +2203,16 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 	//   - surge > 0: new RS scales up first, old scales down as new becomes ready.
 	//   - surge = 0, unavailable > 0: old scales down first (one pod at a time),
 	//     new scales up to fill the gap. No deadlock.
-	oldReady := status.StableReadyReplicas
+	// Readiness comes from SyncInputs (populated by the controller's
+	// observeReadyReplicas, or by tests via testutil.InputsReady). The status
+	// fields StableReadyReplicas/CanaryReadyReplicas are the cache the
+	// controller writes; the strategy reads through `in` to avoid an extra
+	// status round-trip.
+	oldReady := in.StableReadyReplicas
 	if oldReady > desiredReplicas {
 		oldReady = desiredReplicas
 	}
-	newReady := status.CanaryReadyReplicas
+	newReady := in.CanaryReadyReplicas
 
 	floor := desiredReplicas - unavailable
 	if floor < 0 {
@@ -2607,7 +2622,10 @@ func TestBlueGreenScalesDownAfterDelay(t *testing.T) {
 		PromotedAt:       &promotedAt,
 	}
 
-	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	// The previous active RS is still fully ready (the controller hasn't scaled
+	// it yet). Use InputsReady to express this — the controller observes the
+	// PreviousActiveRS onto CanaryReadyReplicas during drain.
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -2638,7 +2656,7 @@ func TestBlueGreenKeepsOldRSBeforeDelay(t *testing.T) {
 		PromotedAt:       &promotedAt,
 	}
 
-	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
@@ -2663,10 +2681,10 @@ func TestBlueGreenExitsDrainWhenPreviousActiveIsZero(t *testing.T) {
 		PreviousActiveRS: "bg-active-old", // still set, but observed at 0 ready (see below)
 		PromotedAt:       &promotedAt,
 	}
-	// The controller will set PreviousActiveRS read replicas to 0; simulate by
-	// passing zero StableReadyReplicas (the prior active's pods are gone).
-	// The strategy must clear PreviousActiveRS + PromotedAt and return Complete.
-	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	// InputsReady(1, 0): new active has 1 ready (just for the StableRS
+	// observation), previous active has 0 ready (already drained). The
+	// strategy must clear PreviousActiveRS + PromotedAt and return Complete.
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 0))
 	if err != nil {
 		t.Fatalf("sync: %v", err)
 	}
