@@ -10,6 +10,7 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/rollout/hash"
+	"github.com/benebsworth/paprika/internal/rollout/testutil"
 )
 
 func TestRollingStrategyCreatesStable(t *testing.T) {
@@ -17,7 +18,7 @@ func TestRollingStrategyCreatesStable(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v1"))
 	status := rolloutsv1alpha1.RolloutStatus{}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestRollingStrategyCompletesWhenStableMatches(t *testing.T) {
 	ro := makeRollout("r1", tmpl)
 	status := rolloutsv1alpha1.RolloutStatus{StableRS: "r1-" + hash.Template(tmpl)}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestRollingStrategyReplacesOnTemplateChange(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v2"))
 	status := rolloutsv1alpha1.RolloutStatus{StableRS: "r1-" + hash.Template(tmpl1)}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}

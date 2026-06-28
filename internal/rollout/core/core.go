@@ -29,6 +29,8 @@ type Strategy interface {
 // Strategies must not reach back into the cluster; everything they need to
 // make a decision is on the Rollout, the status, or this struct.
 type SyncInputs struct {
+	// Clock is the time source used by strategies for duration/timeout
+	// accounting. Injected by the controller; tests should pass a fake.
 	Clock clock.Clock
 
 	// StableReadyReplicas is the observed .status.readyReplicas of the RS
@@ -77,14 +79,22 @@ type SyncResult struct {
 type Action string
 
 const (
-	ActionNone         Action = ""
+	// ActionNone means no action is required.
+	ActionNone Action = ""
+	// ActionCreateStable creates or recreates the stable ReplicaSet.
 	ActionCreateStable Action = "CreateStable"
-	ActionPromote      Action = "Promote"
-	ActionStep         Action = "Step"
-	ActionPause        Action = "Pause"
-	ActionRollback     Action = "Rollback"
-	ActionComplete     Action = "Complete"
-	ActionAbort        Action = "Abort"
+	// ActionPromote promotes the canary/preview to stable.
+	ActionPromote Action = "Promote"
+	// ActionStep advances to the next canary step.
+	ActionStep Action = "Step"
+	// ActionPause waits for a manual or time-based promotion signal.
+	ActionPause Action = "Pause"
+	// ActionRollback rolls back to the previous stable revision.
+	ActionRollback Action = "Rollback"
+	// ActionComplete marks the rollout as healthy/complete.
+	ActionComplete Action = "Complete"
+	// ActionAbort freezes the rollout and routes all traffic to stable.
+	ActionAbort Action = "Abort"
 )
 
 // ReplicaSetAction describes a ReplicaSet the controller should reconcile.

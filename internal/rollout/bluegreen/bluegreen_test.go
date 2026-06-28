@@ -10,6 +10,7 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/rollout/hash"
+	"github.com/benebsworth/paprika/internal/rollout/testutil"
 )
 
 func TestBlueGreenCreatesActive(t *testing.T) {
@@ -17,7 +18,7 @@ func TestBlueGreenCreatesActive(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v1"))
 	status := rolloutsv1alpha1.RolloutStatus{}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestBlueGreenCreatesPreview(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v2"))
 	status := rolloutsv1alpha1.RolloutStatus{StableRS: "r1-active-" + hash.Template(tmpl1)}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -45,13 +46,13 @@ func TestBlueGreenPromotesOnAnnotation(t *testing.T) {
 	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{ActiveService: "active"})
 	tmpl := EmptyTemplate("v2")
 	ro := makeRollout("r1", tmpl)
-	ro.Annotations = map[string]string{promoteAnnotation: "true"}
+	ro.Annotations = map[string]string{core.PromoteAnnotation: "true"}
 	status := rolloutsv1alpha1.RolloutStatus{
 		StableRS: "r1-active-old",
 		CanaryRS: "r1-preview-" + hash.Template(tmpl),
 	}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}

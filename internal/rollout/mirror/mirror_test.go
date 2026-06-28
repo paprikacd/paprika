@@ -10,12 +10,13 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/rollout/hash"
+	"github.com/benebsworth/paprika/internal/rollout/testutil"
 )
 
 func TestMirrorValidation(t *testing.T) {
 	s := NewStrategy(&rolloutsv1alpha1.MirrorStrategy{MirrorPercent: 0})
 	ro := makeRollout("r1", EmptyTemplate("v1"))
-	if _, err := s.Sync(context.Background(), ro, &rolloutsv1alpha1.RolloutStatus{}); err == nil {
+	if _, err := s.Sync(context.Background(), ro, &rolloutsv1alpha1.RolloutStatus{}, testutil.Inputs()); err == nil {
 		t.Fatal("expected validation error")
 	}
 }
@@ -26,7 +27,7 @@ func TestMirrorCreatesCanary(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v2"))
 	status := rolloutsv1alpha1.RolloutStatus{StableRS: "r1-stable-" + hash.Template(tmpl1)}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -44,7 +45,7 @@ func TestMirrorPausesWhileMirroring(t *testing.T) {
 		CanaryRS: "r1-canary-" + hash.Template(tmpl),
 	}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
