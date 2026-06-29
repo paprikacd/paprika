@@ -40,6 +40,8 @@ const (
 	RolloutPhaseFailed RolloutPhase = "Failed"
 	// RolloutPhaseRolledBack indicates the rollout was rolled back.
 	RolloutPhaseRolledBack RolloutPhase = "RolledBack"
+	// RolloutPhaseAborted indicates the rollout was aborted; stable traffic retained.
+	RolloutPhaseAborted RolloutPhase = "Aborted"
 )
 
 // RolloutTarget defines the workload targeted by a Rollout.
@@ -209,11 +211,38 @@ type RolloutStatus struct {
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 	CurrentStepIndex   int32              `json:"currentStepIndex,omitempty"`
 	CurrentStepWeight  int32              `json:"currentStepWeight,omitempty"`
-	StableRS           string             `json:"stableRs,omitempty"`
-	CanaryRS           string             `json:"canaryRs,omitempty"`
-	ActiveService      string             `json:"activeService,omitempty"`
-	PreviewService     string             `json:"previewService,omitempty"`
-	Message            string             `json:"message,omitempty"`
+	// CurrentStepStartedAt is the baseline for CanaryStep.Duration accounting.
+	// +optional
+	CurrentStepStartedAt *metav1.Time `json:"currentStepStartedAt,omitempty"`
+	StableRS             string       `json:"stableRs,omitempty"`
+	CanaryRS             string       `json:"canaryRs,omitempty"`
+	ActiveService        string       `json:"activeService,omitempty"`
+	PreviewService       string       `json:"previewService,omitempty"`
+	// PromotedAt is set when a BlueGreen rollout promotes preview to active.
+	// +optional
+	PromotedAt *metav1.Time `json:"promotedAt,omitempty"`
+	// PreviewHealthyAt is the time the preview ReplicaSet first became fully ready.
+	// +optional
+	PreviewHealthyAt *metav1.Time `json:"previewHealthyAt,omitempty"`
+	// Abort is set to true when the rollout has been aborted; cleared on resume.
+	// +optional
+	Abort bool `json:"abort,omitempty"`
+	// CurrentPodHash is the hash of the most recently reconciled pod template.
+	// +optional
+	CurrentPodHash string `json:"currentPodHash,omitempty"`
+	// StableReadyReplicas is the observed ready replica count of the stable ReplicaSet.
+	// +optional
+	StableReadyReplicas int32 `json:"stableReadyReplicas,omitempty"`
+	// CanaryReadyReplicas is the observed ready replica count of the canary/preview ReplicaSet.
+	// +optional
+	CanaryReadyReplicas int32 `json:"canaryReadyReplicas,omitempty"`
+	// PreviousActiveRS is set by the BlueGreen strategy after promotion. It
+	// names the ReplicaSet that was active before the current active RS. The
+	// controller uses it to drain (scale to 0) the previous active RS after
+	// ScaleDownDelaySeconds, then clears it.
+	// +optional
+	PreviousActiveRS string `json:"previousActiveRs,omitempty"`
+	Message          string `json:"message,omitempty"`
 }
 
 // +kubebuilder:object:root=true

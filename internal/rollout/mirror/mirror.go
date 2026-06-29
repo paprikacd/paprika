@@ -16,9 +16,6 @@ import (
 	"github.com/benebsworth/paprika/internal/rollout/hash"
 )
 
-const abortAnnotation = "paprika.io/abort"
-const promoteAnnotation = "paprika.io/promote"
-
 // Strategy implements a traffic mirror rollout.
 type Strategy struct {
 	cfg *rolloutsv1alpha1.MirrorStrategy
@@ -41,7 +38,7 @@ func (s *Strategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error
 }
 
 // Sync computes the desired ReplicaSets for a mirror rollout.
-func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*core.SyncResult, error) {
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, _ core.SyncInputs) (*core.SyncResult, error) {
 	if s.cfg == nil {
 		return nil, errors.New("mirror strategy requires configuration")
 	}
@@ -66,6 +63,10 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
 	stableHash := hashFromRSName(status.StableRS)
 	previewReplicas := int32(1)
 	if desiredReplicas > 1 {
@@ -87,18 +88,7 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
-	if _, aborted := ro.Annotations[abortAnnotation]; aborted {
-		return &core.SyncResult{
-			Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
-			Action:  core.ActionComplete,
-			Message: "Mirror aborted; stable ReplicaSet retained",
-			ReplicaSets: []core.ReplicaSetAction{
-				makeStableRS(ro, stableHash, desiredReplicas),
-			},
-		}, nil
-	}
-
-	if _, promoted := ro.Annotations[promoteAnnotation]; promoted {
+	if _, promoted := ro.Annotations[core.PromoteAnnotation]; promoted {
 		return &core.SyncResult{
 			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
 			Action:  core.ActionPromote,

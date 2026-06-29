@@ -78,6 +78,33 @@ var (
 		[]string{"release", "namespace", "check_type", "result"},
 	)
 
+	// RolloutCanaryStepTotal tracks the number of canary step transitions for Rollout resources.
+	RolloutCanaryStepTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "paprika_rollout_canary_step_total",
+			Help: "Number of canary step transitions for Rollout resources",
+		},
+		[]string{"rollout", "namespace"},
+	)
+
+	// RolloutCanaryWeightGauge tracks the current canary traffic weight for a Rollout.
+	RolloutCanaryWeightGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "paprika_rollout_canary_weight_current",
+			Help: "Current canary traffic weight percentage for a Rollout",
+		},
+		[]string{"rollout", "namespace"},
+	)
+
+	// RolloutPhaseTotal tracks the number of Rollout phase transitions.
+	RolloutPhaseTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "paprika_rollout_phase_total",
+			Help: "Number of Rollout phase transitions",
+		},
+		[]string{"rollout", "namespace", "phase"},
+	)
+
 	// ApplicationPhaseTotal tracks the number of application phase transitions.
 	ApplicationPhaseTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -169,6 +196,9 @@ var allCollectors = []prometheus.Collector{
 	CoordinatorReplicas,
 	CoordinatorHeartbeatSeconds,
 	CoordinatorHeartbeatFailuresTotal,
+	RolloutCanaryStepTotal,
+	RolloutCanaryWeightGauge,
+	RolloutPhaseTotal,
 }
 
 // RegisterCollectors registers Paprika collectors with the provided registerer.

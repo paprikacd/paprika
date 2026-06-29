@@ -3,17 +3,68 @@ package core
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+)
+
+// Shared annotation constants. Strategies must read these rather than
+// redeclaring them locally.
+const (
+	AbortAnnotation   = "paprika.io/abort"
+	PromoteAnnotation = "paprika.io/promote"
 )
 
 // Strategy computes the desired next state of a Rollout.
 type Strategy interface {
 	Type() string
-	Sync(ctx context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*SyncResult, error)
+	Sync(ctx context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in SyncInputs) (*SyncResult, error)
 	Cleanup(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error
+}
+
+// SyncInputs carries controller-observed state into a strategy Sync call.
+// Strategies must not reach back into the cluster; everything they need to
+// make a decision is on the Rollout, the status, or this struct.
+type SyncInputs struct {
+	// Clock is the time source used by strategies for duration/timeout
+	// accounting. Injected by the controller; tests should pass a fake.
+	Clock clock.Clock
+
+	// StableReadyReplicas is the observed .status.readyReplicas of the RS
+	// named in status.StableRS. Zero if the RS does not yet exist.
+	StableReadyReplicas int32
+
+	// CanaryReadyReplicas is the observed .status.readyReplicas of the RS
+	// named in status.CanaryRS (or the preview RS for BlueGreen). Zero if absent.
+	CanaryReadyReplicas int32
+}
+
+// NewSyncInputs builds a SyncInputs with a real clock and zero readiness.
+// Pass a non-nil clock from tests for determinism.
+func NewSyncInputs(clk clock.Clock) SyncInputs {
+	if clk == nil {
+		clk = clock.Real{}
+	}
+	return SyncInputs{Clock: clk}
+}
+
+// WithReadyReplicas returns a copy of in with the given readiness counts.
+// Builder-style helper for tests and the controller.
+func (in SyncInputs) WithReadyReplicas(stable, canary int32) SyncInputs {
+	in.StableReadyReplicas = stable
+	in.CanaryReadyReplicas = canary
+	return in
+}
+
+// Now returns the current time from the injected clock.
+func (in SyncInputs) Now() time.Time {
+	if in.Clock == nil {
+		return time.Now()
+	}
+	return in.Clock.Now()
 }
 
 // SyncResult is the output of a strategy Sync call.
@@ -42,6 +93,8 @@ const (
 	ActionRollback Action = "Rollback"
 	// ActionComplete marks the rollout as healthy/complete.
 	ActionComplete Action = "Complete"
+	// ActionAbort freezes the rollout and routes all traffic to stable.
+	ActionAbort Action = "Abort"
 )
 
 // ReplicaSetAction describes a ReplicaSet the controller should reconcile.
@@ -50,4 +103,59 @@ type ReplicaSetAction struct {
 	Replicas int32
 	Template *corev1.PodTemplateSpec
 	Labels   map[string]string
+}
+
+// IsAborted reports whether the Rollout is currently in an aborted state.
+// Aborted by annotation OR by durable status.Abort flag.
+func IsAborted(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) bool {
+	if status != nil && status.Abort {
+		return true
+	}
+	if ro == nil {
+		return false
+	}
+	_, ok := ro.Annotations[AbortAnnotation]
+	return ok
+}
+
+// AbortResult builds a SyncResult that retains the stable RS at desired
+// replicas and scales the canary/preview RS (named by status.CanaryRS) to zero.
+// Use this from any strategy's Sync when IsAborted is true.
+//
+// IMPORTANT: the stable RS action deliberately sets Template to nil. The
+// controller's executeReplicaSetActions must skip the template overwrite when
+// Template is nil (Task 2.2 will update executeReplicaSetActions accordingly)
+// — otherwise the stable RS gets rolled forward to the canary template the
+// user just aborted.
+func AbortResult(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, stableHash string, desiredReplicas int32) *SyncResult {
+	rs := []ReplicaSetAction{
+		{
+			Name:     status.StableRS,
+			Replicas: desiredReplicas,
+			Template: nil, // do NOT overwrite the existing RS template
+			Labels: map[string]string{
+				"rollouts.paprika.io/stable":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		},
+	}
+	if status.CanaryRS != "" {
+		rs = append(rs, ReplicaSetAction{
+			Name:     status.CanaryRS,
+			Replicas: 0,
+			Template: nil, // ditto: scale to 0 without changing the template
+			Labels: map[string]string{
+				"rollouts.paprika.io/canary":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		})
+	}
+	return &SyncResult{
+		Phase:       rolloutsv1alpha1.RolloutPhaseAborted,
+		Action:      ActionAbort,
+		Message:     "Rollout aborted; stable ReplicaSet retained",
+		ReplicaSets: rs,
+	}
 }

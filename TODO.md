@@ -28,6 +28,7 @@ actual codebase on 2026-06-20 — most items previously listed as "planned" are 
 - [x] Advanced rollout strategies (A/B, blue-green, canary, mirroring, header-based routing)
 - [x] Analysis Templates and AnalysisRuns
 - [x] Feature flags (`FeatureFlag` / `FeatureFlagBinding` CRDs + OpenFeature bridge)
+- [x] **Rollout correctness bugs** — canary `CurrentStepIndex` advancement gated on `Duration`; `paprika.io/abort` honored by all five strategies with durable `status.Abort`; `MaxSurge`/`MaxUnavailable` accounting with real surge/unavailable semantics; BlueGreen `AutoPromotionSeconds` + `ScaleDownDelaySeconds` with a `PreviousActiveRS` drain loop; `RevisionHistoryLimit` pruning. (Plan: docs/superpowers/plans/2026-06-28-rollout-correctness-bugs.md)
 
 ### Gates (promotion controls)
 - [x] **Approval Gates** — manual / webhook / Slack gates between stages; `AwaitingApproval` phase; CLI + UI (PR #17)

@@ -300,6 +300,7 @@ func setupRolloutController(mgr ctrl.Manager, k8sClient kubernetes.Interface, _ 
 		Analyzer:      analysis.NewCELAnalyzer(k8sClient, "paprika-system", mgr.GetConfig(), http.DefaultClient),
 		EventRecorder: newLegacyEventRecorder(mgr.GetEventRecorder("rollout-controller")),
 		EventBroker:   broker,
+		Clock:         clock.Real{},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up rollout controller: %w", err)
 	}

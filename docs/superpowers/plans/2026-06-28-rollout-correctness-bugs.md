@@ -1,0 +1,3457 @@
+# Rollout Correctness Bugs Implementation Plan
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make the existing `Rollout` CRD actually behave like Argo-Rollouts by fixing five declared-but-ignored correctness bugs in the rollout controller and strategies.
+
+> **Revision notes (v2):** Blocker-level fixes from the plan-review loop.
+> - **Chunk 0:** new Task 0.5 migrates the 15 existing test call sites of `Strategy.Sync` to the new 4-arg signature and replaces local `promoteAnnotation` consts in tests. The metrics test uses a fresh `prometheus.NewRegistry()` instead of polluting the global registry. Added `PreviousActiveRS` status field (needed by Chunk 4's drain).
+> - **Chunk 1:** the advancement loop now checks `step.Duration == nil/zero` BEFORE stamping `CurrentStepStartedAt` so a no-duration step advances immediately on first reconcile. Dropped the bogus `EventRecorder != nil` guard on metrics (metrics are unconditional). The envtest gets one more reconcile before asserting `Healthy`. Requeue floor lowered to `1s` so short step durations aren't masked.
+> - **Chunk 2:** `AbortResult` no longer sets `Template` on the stable RS — `nil` template means "controller must not overwrite the existing RS's template". New `TestCanaryAbortsBeforeCanaryCreated`. Mirror test instruction is "add a new test", not "rewrite". ABTest abort test seeds valid `Routes`. A shared testhelper package `internal/rollout/testutil` hosts `FakeClock`/`FakeNow` to avoid per-package duplication.
+> - **Chunk 3 (substantial rewrite):** the in-flight new RS for Rolling is now labelled `canary=true` (not `stable=true`), so `updateStatusFromResult` parks it on `status.CanaryRS` and `status.StableRS` keeps pointing at the old RS until the rollout completes. The validator resolves percentages via `intstr.GetScaledValueFromIntOrPercent`, so defaulted `25%` values actually validate. `MaxUnavailable` is used as the available-pod floor in the scale-down, not dead code. The accounting never drives the old RS to 0 while new-RS readiness is below `desired - unavailable`.
+> - **Chunk 4 (substantial rewrite):** uses a dedicated `status.PreviousActiveRS` field instead of overloading `status.CanaryRS` (the overload silently clobbered `StableRS` via `updateStatusFromResult`). `promoteResult` takes `in core.SyncInputs` and uses `in.Now()`. The drain state EXITS — once the previous active RS is observed at 0 replicas, `PreviousActiveRS`/`PromotedAt` are cleared and `Sync` returns `ActionComplete`. The envtest asserts the drain (old RS scaled to 0 after `ScaleDownDelaySeconds`).
+> - **Chunk 5/6:** pruning test uses `ptr.To`. Chunk 6.1 is now a concrete smoke test. Chunk 6.2 targets the correct TODO.md section (`## Implemented`) and the PRODUCTION_ROADMAP.md banner (the only place that exists). Chunk 6.3 is required, not optional.
+
+**Architecture:** The Rollout controller delegates per-strategy computation to a `core.Strategy` interface (`Sync(ctx, ro, status) (*SyncResult, error)`). Strategies return *desired* ReplicaSet actions; the controller applies them. Status is mutated by both. Five bugs span this boundary: (1) canary step index never advances, (2) abort annotation is honored only by Mirror, (3) `MaxSurge`/`MaxUnavailable` declared-but-ignored in Rolling, (4) `AutoPromotionSeconds`/`ScaleDownDelaySeconds` declared-but-ignored in BlueGreen, (5) `RevisionHistoryLimit` declared-but-not-enforced. Bugs 3 & 4 require observed ReplicaSet readiness to be plumbed into the strategy; we extend the `Strategy.Sync` signature with a `SyncInputs` struct rather than reaching into the client from strategies.
+
+**Tech Stack:** Go, kubebuilder v4, controller-runtime, Ginkgo/Gomega envtest, Prometheus client_golang, paprika's existing `internal/clock` for deterministic time in tests.
+
+---
+
+## Conventions for this plan
+
+- **Working directory:** `/Users/benebsworth/projects/paprika`
+- **After editing `api/rollouts/v1alpha1/rollout_types.go` or webhook markers:** run `make manifests && make generate` before running tests.
+- **After any Go change:** run `make lint` and `make test` before committing. If you skip either, say why.
+- **Test framework:** existing strategy unit tests are plain `testing.T` (see `internal/rollout/canary/canary_test.go`). New controller-level tests will use the envtest Ginkgo pattern (see `internal/controller/core/suite_test.go`).
+- **Commit message style:** match repo — `feat(rollouts): ...`, `fix(rollouts): ...`, `test(rollouts): ...`. One logical change per commit.
+- **Logging:** Kubernetes message-style — capitalised first word, no trailing period, object-type-named (`"Advanced canary step"`, `"Pruned ReplicaSet"`).
+- **NEVER edit** `config/crd/bases/*.yaml`, `config/rbac/role.yaml`, `**/zz_generated.*.go`, or `PROJECT`. They are regenerated by `make manifests` / `make generate`.
+- **NEVER remove** `// +kubebuilder:scaffold:*` comments.
+
+---
+
+## File Structure
+
+**Modify:**
+- `api/rollouts/v1alpha1/rollout_types.go` — add status fields (`CurrentStepStartedAt`, `Abort`, `PromotedAt`, `PreviewHealthyAt`, `CurrentPodHash`, `ReadyReplicas`); add `Abort` phase; bump nothing else.
+- `internal/rollout/core/core.go` — add `SyncInputs` struct, change `Strategy.Sync` signature to take it; add shared annotation constants (`AbortAnnotation`, `PromoteAnnotation`); add `ActionAbort`.
+- `internal/rollout/canary/canary.go` — honor `SyncInputs.Clock`, advance `CurrentStepIndex` when step duration elapsed, stamp `CurrentStepStartedAt`, add abort guard.
+- `internal/rollout/bluegreen/bluegreen.go` — honor `AutoPromotionSeconds` (using `PreviewHealthyAt` + readiness), honor `ScaleDownDelaySeconds` (using `PromotedAt`), return both RSes on promote, add abort guard.
+- `internal/rollout/rolling/rolling.go` — implement real surge/unavailable accounting using readiness counts; add abort guard (no-op since rolling has no canary, but freeze phase).
+- `internal/rollout/abtest/abtest.go` — add abort guard (route 100% stable).
+- `internal/rollout/mirror/mirror.go` — use shared `core.AbortAnnotation`, fix Phase on abort (was `Healthy`), drop local const.
+- `internal/controller/rollouts/rollout_controller.go` — read RS readiness before `Sync`, build `SyncInputs`, drop duplicate `abortAnnotation` const, wire `configureTraffic` to tear down on abort, add `pruneReplicaSets`, emit Prometheus metrics, set `CurrentPodHash` on status, use deterministic `Clock`.
+- `internal/webhook/rollouts/v1alpha1/rollout_webhook.go` — validate `MaxSurge`/`MaxUnavailable` not both zero, validate `AutoPromotionSeconds`/`ScaleDownDelaySeconds` ≥ 0, validate `CanaryStep.Duration` > 0 when set.
+- `internal/metrics/metrics.go` — add `RolloutPhaseTotal`, `RolloutCanaryStepTotal`, `RolloutCanaryWeightGauge`, register them.
+
+**Create:**
+- `internal/controller/rollouts/suite_test.go` — Ginkgo/envtest harness (model on `internal/controller/core/suite_test.go`).
+- `internal/controller/rollouts/rollout_controller_test.go` — controller-level integration tests covering all five bugs end-to-end.
+- New strategy tests: extend each `internal/rollout/<strategy>/<strategy>_test.go` with tests for the new behaviors.
+
+**Regenerate (DO NOT EDIT manually):**
+- `api/rollouts/v1alpha1/zz_generated.deepcopy.go`
+- `config/crd/bases/rollouts.paprika.io_rollouts.yaml`
+- `config/rbac/role.yaml`
+
+---
+
+## Chunk 0: Schema and shared-infrastructure prep
+
+This chunk adds the status fields, shared constants, the `SyncInputs` extension, and the metrics. No behavior changes yet — every existing test must still pass. Subsequent chunks then plug behavior in.
+
+### Task 0.1: Add status fields and Abort phase to the CRD
+
+**Files:**
+- Modify: `api/rollouts/v1alpha1/rollout_types.go:25-43` (add `RolloutPhaseAborted`)
+- Modify: `api/rollouts/v1alpha1/rollout_types.go:206-217` (extend `RolloutStatus`)
+
+- [ ] **Step 1: Add `RolloutPhaseAborted` constant**
+
+In `api/rollouts/v1alpha1/rollout_types.go`, after the `RolloutPhaseRolledBack` const (line 42), insert:
+
+```go
+// RolloutPhaseAborted indicates the rollout was aborted; stable traffic retained.
+RolloutPhaseAborted RolloutPhase = "Aborted"
+```
+
+- [ ] **Step 2: Extend `RolloutStatus`**
+
+Replace the `RolloutStatus` struct (lines 206-217) with:
+
+```go
+// RolloutStatus defines the observed state of a Rollout.
+type RolloutStatus struct {
+	ObservedGeneration   int64              `json:"observedGeneration,omitempty"`
+	Phase                RolloutPhase       `json:"phase,omitempty"`
+	Conditions           []metav1.Condition `json:"conditions,omitempty"`
+	CurrentStepIndex     int32              `json:"currentStepIndex,omitempty"`
+	CurrentStepWeight    int32              `json:"currentStepWeight,omitempty"`
+	CurrentStepStartedAt *metav1.Time       `json:"currentStepStartedAt,omitempty"`
+	StableRS             string             `json:"stableRs,omitempty"`
+	CanaryRS             string             `json:"canaryRs,omitempty"`
+	ActiveService        string             `json:"activeService,omitempty"`
+	PreviewService       string             `json:"previewService,omitempty"`
+	// PromotedAt is set when a BlueGreen rollout promotes preview to active.
+	// +optional
+	PromotedAt *metav1.Time `json:"promotedAt,omitempty"`
+	// PreviewHealthyAt is the time the preview ReplicaSet first became fully ready.
+	// +optional
+	PreviewHealthyAt *metav1.Time `json:"previewHealthyAt,omitempty"`
+	// Abort is set to true when the rollout has been aborted; cleared on resume.
+	// +optional
+	Abort bool `json:"abort,omitempty"`
+	// CurrentPodHash is the hash of the most recently reconciled pod template.
+	// +optional
+	CurrentPodHash string `json:"currentPodHash,omitempty"`
+	// StableReadyReplicas is the observed ready replica count of the stable ReplicaSet.
+	// +optional
+	StableReadyReplicas int32 `json:"stableReadyReplicas,omitempty"`
+	// CanaryReadyReplicas is the observed ready replica count of the canary/preview ReplicaSet.
+	// +optional
+	CanaryReadyReplicas int32 `json:"canaryReadyReplicas,omitempty"`
+	// PreviousActiveRS is set by the BlueGreen strategy after promotion. It
+	// names the ReplicaSet that was active before the current active RS. The
+	// controller uses it to drain (scale to 0) the previous active RS after
+	// ScaleDownDelaySeconds, then clears it.
+	// +optional
+	PreviousActiveRS string `json:"previousActiveRs,omitempty"`
+	Message          string `json:"message,omitempty"`
+}
+```
+
+- [ ] **Step 3: Regenerate DeepCopy + CRD manifests**
+
+Run:
+```bash
+make manifests generate
+```
+
+Expected: `api/rollouts/v1alpha1/zz_generated.deepcopy.go` and `config/crd/bases/rollouts.paprika.io_rollouts.yaml` update with the new fields. No errors.
+
+- [ ] **Step 4: Verify build and existing tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: both pass. The new status fields are additive; no consumer breaks.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/rollouts/v1alpha1/rollout_types.go \
+        api/rollouts/v1alpha1/zz_generated.deepcopy.go \
+        config/crd/bases/rollouts.paprika.io_rollouts.yaml
+git commit -m "feat(rollouts): add status fields for step timing, abort, readiness, pod hash"
+```
+
+---
+
+### Task 0.2: Add shared constants and `SyncInputs` to `internal/rollout/core`
+
+**Files:**
+- Modify: `internal/rollout/core/core.go` (entire file — 53 lines today)
+
+- [ ] **Step 1: Write the failing test**
+
+Create `internal/rollout/core/core_test.go`:
+
+```go
+package core
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+)
+
+func TestAbortAnnotationConstant(t *testing.T) {
+	if AbortAnnotation != "paprika.io/abort" {
+		t.Fatalf("AbortAnnotation = %q, want %q", AbortAnnotation, "paprika.io/abort")
+	}
+	if PromoteAnnotation != "paprika.io/promote" {
+		t.Fatalf("PromoteAnnotation = %q, want %q", PromoteAnnotation, "paprika.io/promote")
+	}
+}
+
+func TestSyncInputsDefaults(t *testing.T) {
+	in := NewSyncInputs(nil)
+	if in.Clock == nil {
+		t.Fatal("expected non-nil default Clock")
+	}
+	if !in.Now().IsZero() && in.Now().After(time.Now().Add(time.Minute)) {
+		t.Fatalf("default clock skewed future: %v", in.Now())
+	}
+}
+
+func TestNewSyncInputsWithReadyReplicas(t *testing.T) {
+	fake := clock.NewFake(time.Now())
+	in := NewSyncInputs(fake).WithReadyReplicas(3, 1)
+	if in.StableReadyReplicas != 3 || in.CanaryReadyReplicas != 1 {
+		t.Fatalf("ready replicas not propagated: stable=%d canary=%d", in.StableReadyReplicas, in.CanaryReadyReplicas)
+	}
+}
+
+// compile-time check: a custom strategy can read SyncInputs.
+type noopStrategy struct{}
+
+func (noopStrategy) Type() string { return "Noop" }
+func (noopStrategy) Sync(_ context.Context, _ *rolloutsv1alpha1.Rollout, _ *rolloutsv1alpha1.RolloutStatus, _ SyncInputs) (*SyncResult, error) {
+	return &SyncResult{Action: ActionNone}, nil
+}
+func (noopStrategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error { return nil }
+
+var _ Strategy = noopStrategy{}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `go test ./internal/rollout/core/...`
+Expected: FAIL — `AbortAnnotation` and `PromoteAnnotation` undefined, `SyncInputs` undefined, `Strategy.Sync` signature mismatch.
+
+- [ ] **Step 3: Update `core.go`**
+
+Replace the entire contents of `internal/rollout/core/core.go` with:
+
+```go
+// Package core defines the shared types for rollout strategies.
+package core
+
+import (
+	"context"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+)
+
+// Shared annotation constants. Strategies must read these rather than
+// redeclaring them locally.
+const (
+	AbortAnnotation   = "paprika.io/abort"
+	PromoteAnnotation = "paprika.io/promote"
+)
+
+// Strategy computes the desired next state of a Rollout.
+type Strategy interface {
+	Type() string
+	Sync(ctx context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in SyncInputs) (*SyncResult, error)
+	Cleanup(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error
+}
+
+// SyncInputs carries controller-observed state into a strategy Sync call.
+// Strategies must not reach back into the cluster; everything they need to
+// make a decision is on the Rollout, the status, or this struct.
+type SyncInputs struct {
+	Clock clock.Clock
+
+	// StableReadyReplicas is the observed .status.readyReplicas of the RS
+	// named in status.StableRS. Zero if the RS does not yet exist.
+	StableReadyReplicas int32
+
+	// CanaryReadyReplicas is the observed .status.readyReplicas of the RS
+	// named in status.CanaryRS (or the preview RS for BlueGreen). Zero if absent.
+	CanaryReadyReplicas int32
+}
+
+// NewSyncInputs builds a SyncInputs with a real clock and zero readiness.
+// Pass a non-nil clock from tests for determinism.
+func NewSyncInputs(clk clock.Clock) SyncInputs {
+	if clk == nil {
+		clk = clock.Real{}
+	}
+	return SyncInputs{Clock: clk}
+}
+
+// WithReadyReplicas returns a copy of in with the given readiness counts.
+// Builder-style helper for tests and the controller.
+func (in SyncInputs) WithReadyReplicas(stable, canary int32) SyncInputs {
+	in.StableReadyReplicas = stable
+	in.CanaryReadyReplicas = canary
+	return in
+}
+
+// Now returns the current time from the injected clock.
+func (in SyncInputs) Now() time.Time {
+	if in.Clock == nil {
+		return time.Now()
+	}
+	return in.Clock.Now()
+}
+
+// SyncResult is the output of a strategy Sync call.
+type SyncResult struct {
+	Phase       rolloutsv1alpha1.RolloutPhase
+	Action      Action
+	Message     string
+	ReplicaSets []ReplicaSetAction
+}
+
+// Action describes the high-level action the controller should take.
+type Action string
+
+const (
+	ActionNone         Action = ""
+	ActionCreateStable Action = "CreateStable"
+	ActionPromote      Action = "Promote"
+	ActionStep         Action = "Step"
+	ActionPause        Action = "Pause"
+	ActionRollback     Action = "Rollback"
+	ActionComplete     Action = "Complete"
+	ActionAbort        Action = "Abort"
+)
+
+// ReplicaSetAction describes a ReplicaSet the controller should reconcile.
+type ReplicaSetAction struct {
+	Name     string
+	Replicas int32
+	Template *corev1.PodTemplateSpec
+	Labels   map[string]string
+}
+```
+
+- [ ] **Step 4: Update existing strategy implementations' signatures to compile**
+
+The signature change will break all five strategies. For THIS task, do the minimum to make code compile — do not change behavior. In each of `internal/rollout/{canary,bluegreen,rolling,abtest,mirror}/*.go`, change the `Sync` receiver signature to accept `in core.SyncInputs` (no body changes yet):
+
+```go
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, _ core.SyncInputs) (*core.SyncResult, error) {
+    // ... body unchanged
+}
+```
+
+Also in `internal/rollout/mirror/mirror.go`, replace the local `abortAnnotation` / `promoteAnnotation` constants (lines 19-20) with references to `core.AbortAnnotation` / `core.PromoteAnnotation`. The local const declarations must be deleted. (The mirror strategy body still uses them as before; we'll fix the Phase-on-abort in Chunk 2.)
+
+In `internal/rollout/bluegreen/bluegreen.go` and `internal/rollout/abtest/abtest.go`, do the same — delete local `promoteAnnotation` consts, use `core.PromoteAnnotation`.
+
+- [ ] **Step 5: Update the controller's call site**
+
+In `internal/controller/rollouts/rollout_controller.go:179`, change:
+
+```go
+result, err := strategy.Sync(ctx, &ro, &ro.Status)
+```
+
+to:
+
+```go
+result, err := strategy.Sync(ctx, &ro, &ro.Status, core.NewSyncInputs(r.Clock))
+```
+
+Add the `Clock` field to `RolloutReconciler` (line 85-92):
+
+```go
+type RolloutReconciler struct {
+    client        client.Client
+    Scheme        *runtime.Scheme
+    DynamicClient dynamic.Interface
+    Analyzer      *analysis.CELAnalyzer
+    EventRecorder record.EventRecorder
+    EventBroker   *events.Broker
+    Clock         clock.Clock
+}
+```
+
+Add the import: `"github.com/benebsworth/paprika/internal/clock"`. Delete the local `promoteAnnotation` and `abortAnnotation` consts at lines 53-54 — use `core.PromoteAnnotation` / `core.AbortAnnotation` instead wherever they're referenced later in the file (none today, but Chunk 2 will use them).
+
+Also: in `cmd/main_controllers.go` (or wherever the RolloutReconciler is constructed), pass `Clock: clock.Real{}` if the field is left nil. Find the construction site with: `rg "RolloutReconciler\{"`. If it's `internal/controller/rollouts/rollout_controller.go` itself (via `SetupWithManager`), add the default in `SetupWithManager`:
+
+```go
+func (r *RolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    r.client = mgr.GetClient()
+    if r.Clock == nil {
+        r.Clock = clock.Real{}
+    }
+    // ...
+}
+```
+
+- [ ] **Step 6: Run `core` package tests only**
+
+Run:
+```bash
+go test ./internal/rollout/core/...
+go build ./...
+```
+
+Expected: `core_test.go` passes; `go build` succeeds. **Do NOT run the strategy tests yet** — they still use the 3-arg signature and will be migrated in Task 0.5. The full `make test` will only pass after Task 0.5.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/rollout/core/ \
+        internal/rollout/canary/canary.go \
+        internal/rollout/bluegreen/bluegreen.go \
+        internal/rollout/rolling/rolling.go \
+        internal/rollout/abtest/abtest.go \
+        internal/rollout/mirror/mirror.go \
+        internal/controller/rollouts/rollout_controller.go
+git commit -m "refactor(rollouts): introduce SyncInputs and shared annotation constants"
+```
+
+Strategy test migration is the next task — do NOT include `_test.go` files in this commit.
+
+---
+
+### Task 0.3: Add Rollout Prometheus metrics
+
+**Files:**
+- Modify: `internal/metrics/metrics.go` (add three collectors; register them)
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `internal/metrics/metrics_test.go` (which already exists — append only the function below and merge `prometheus/testutil` + `strings` into the imports):
+
+```go
+func TestRolloutMetricsRegistered(t *testing.T) {
+	// Use a fresh registry so we don't trip duplicate-registration against
+	// the global registry used by other tests in this package.
+	reg := prometheus.NewRegistry()
+	if err := RegisterCollectors(reg); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Bump each collector and assert the registry can gather it without error.
+	RolloutCanaryStepTotal.WithLabelValues("r", "ns").Inc()
+	RolloutCanaryWeightGauge.WithLabelValues("r", "ns").Set(25)
+	RolloutPhaseTotal.WithLabelValues("r", "ns", "Progressing").Inc()
+
+	gathered, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	names := map[string]bool{}
+	for _, mf := range gathered {
+		names[mf.GetName()] = true
+	}
+	for _, want := range []string{
+		"paprika_rollout_canary_step_total",
+		"paprika_rollout_canary_weight_current",
+		"paprika_rollout_phase_total",
+	} {
+		if !names[want] {
+			t.Errorf("metric %q not registered", want)
+		}
+	}
+}
+```
+
+This is a real assertion (gathers the registry and checks metric names) rather than the presence-only check an earlier draft had.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `go test ./internal/metrics/...`
+Expected: FAIL — `RolloutCanaryStepTotal`, `RolloutCanaryWeightGauge`, `RolloutPhaseTotal` undefined.
+
+- [ ] **Step 3: Add the collectors**
+
+In `internal/metrics/metrics.go`, immediately after the existing `CanaryStepTotal` / `CanaryWeightGauge` block (around line 79), add:
+
+```go
+// RolloutCanaryStepTotal tracks the number of canary step transitions for Rollout resources.
+RolloutCanaryStepTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "paprika_rollout_canary_step_total",
+		Help: "Number of canary step transitions for Rollout resources",
+	},
+	[]string{"rollout", "namespace"},
+)
+
+// RolloutCanaryWeightGauge tracks the current canary traffic weight for a Rollout.
+RolloutCanaryWeightGauge = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "paprika_rollout_canary_weight_current",
+		Help: "Current canary traffic weight percentage for a Rollout",
+	},
+	[]string{"rollout", "namespace"},
+)
+
+// RolloutPhaseTotal tracks the number of Rollout phase transitions.
+RolloutPhaseTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "paprika_rollout_phase_total",
+		Help: "Number of Rollout phase transitions",
+	},
+	[]string{"rollout", "namespace", "phase"},
+)
+```
+
+Then add the three to `allCollectors` (lines 155-172):
+
+```go
+var allCollectors = []prometheus.Collector{
+	PipelineDuration,
+	PipelinePhaseTotal,
+	ReleaseDuration,
+	ReleasePhaseTotal,
+	CanaryStepTotal,
+	CanaryWeightGauge,
+	AnalysisCheckTotal,
+	ApplicationPhaseTotal,
+	ApplicationReconcileDuration,
+	APIRequestDuration,
+	APIRequestTotal,
+	ReconcileTotal,
+	ReconcileDuration,
+	CoordinatorReplicas,
+	CoordinatorHeartbeatSeconds,
+	CoordinatorHeartbeatFailuresTotal,
+	RolloutCanaryStepTotal,
+	RolloutCanaryWeightGauge,
+	RolloutPhaseTotal,
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `go test ./internal/metrics/...`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/metrics/
+git commit -m "feat(metrics): add Rollout phase, canary-step and canary-weight collectors"
+```
+
+---
+
+### Task 0.4: Stand up envtest suite for the Rollout controller
+
+**Files:**
+- Create: `internal/controller/rollouts/suite_test.go`
+- Create: `internal/controller/rollouts/rollout_controller_test.go` (skeleton)
+
+- [ ] **Step 1: Create `suite_test.go`**
+
+Model strictly on `internal/controller/core/suite_test.go`. Replace the package and imports for the rollouts API group:
+
+```go
+package controller
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	// +kubebuilder:scaffold:imports
+)
+
+var (
+	ctx       context.Context
+	cancel    context.CancelFunc
+	testEnv   *envtest.Environment
+	cfg       *rest.Config
+	k8sClient client.Client
+	mgr       ctrl.Manager
+)
+
+func TestControllers(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Rollout Controller Suite")
+}
+
+var _ = BeforeSuite(func() {
+	logf.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctx, cancel = context.WithCancel(context.TODO())
+	Expect(rolloutsv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+
+	By("bootstrapping test environment")
+	testEnv = &envtest.Environment{
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing: true,
+	}
+	if dir := getFirstFoundEnvTestBinaryDir(); dir != "" {
+		testEnv.BinaryAssetsDirectory = dir
+	}
+
+	var err error
+	cfg, err = testEnv.Start()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(cfg).NotTo(BeNil())
+
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+
+	mgr, err = ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+})
+
+var _ = AfterSuite(func() {
+	By("tearing down the test environment")
+	cancel()
+	Expect(testEnv.Stop()).To(Succeed())
+})
+
+// getFirstFoundEnvTestBinaryDir locates the envtest binaries. Matches the
+// helper used in other controller suite_test.go files.
+func getFirstFoundEnvTestBinaryDir() string {
+	base := filepath.Join("..", "..", "..", "bin", "k8s")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			return filepath.Join(base, e.Name())
+		}
+	}
+	return ""
+}
+
+// newFakeClock returns a fake clock anchored at a deterministic time for tests.
+func newFakeClock() *clock.Fake {
+	return clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+}
+```
+
+If `getFirstFoundEnvTestBinaryDir` is already defined elsewhere in the package (it is not today, since `rollout_controller.go` is the only file), this is fine. If a future `// +kubebuilder:scaffold:scheme` marker should be added, add it.
+
+- [ ] **Step 2: Create skeleton controller test**
+
+Create `internal/controller/rollouts/rollout_controller_test.go`:
+
+```go
+package controller
+
+import (
+	. "github.com/onsi/ginkgo/v2"
+)
+
+var _ = Describe("RolloutReconciler", func() {
+	// Tests are added incrementally in subsequent chunks.
+	Describe("smoke", func() {
+		It("boots the envtest suite", func() {
+			Expect(cfg).NotTo(BeNil())
+		})
+	})
+})
+```
+
+- [ ] **Step 3: Run the new suite to verify it boots**
+
+Run:
+```bash
+go test ./internal/controller/rollouts/... -v -ginkgo.v
+```
+
+Expected: PASS. The smoke test confirms envtest starts and the rollout CRD installs.
+
+If envtest binaries are missing: `make envtest` (or follow `AGENTS.md` setup) — envtest is required by `make test` already, so binaries should be present.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/controller/rollouts/suite_test.go \
+        internal/controller/rollouts/rollout_controller_test.go
+git commit -m "test(rollouts): add envtest harness for RolloutReconciler"
+```
+
+---
+
+### Task 0.5: Migrate existing strategy tests to the new `Sync` signature
+
+**Why this task exists:** Task 0.2 changed `Strategy.Sync` from a 3-arg to a 4-arg signature (added `in core.SyncInputs`). That change breaks 15 existing test call sites across 5 strategy test files. Task 0.2 Steps 4-6 only updated the strategy implementations and the controller; the existing tests must also be migrated or the package won't compile, and subsequent chunks can't append tests.
+
+**Files:**
+- Modify: `internal/rollout/canary/canary_test.go`, `bluegreen/bluegreen_test.go`, `abtest/abtest_test.go`, `rolling/rolling_test.go`, `mirror/mirror_test.go`
+- Create: `internal/rollout/testutil/testutil.go` (shared fake-clock helper)
+
+- [ ] **Step 1: Create the shared test helper**
+
+Create `internal/rollout/testutil/testutil.go`:
+
+```go
+// Package testutil provides shared helpers for rollout strategy tests.
+package testutil
+
+import (
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/rollout/core"
+)
+
+// FakeNow is a deterministic anchor time for strategy tests: 2026-01-01 12:00:00 UTC.
+var FakeNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
+// FakeClock returns a clock.Fake anchored at FakeNow.
+func FakeClock() *clock.Fake { return clock.NewFake(FakeNow) }
+
+// Inputs returns a SyncInputs backed by FakeClock with zero readiness.
+func Inputs() core.SyncInputs { return core.NewSyncInputs(FakeClock()) }
+
+// InputsReady returns a SyncInputs backed by FakeClock with the given readiness.
+func InputsReady(stable, canary int32) core.SyncInputs {
+	return core.NewSyncInputs(FakeClock()).WithReadyReplicas(stable, canary)
+}
+
+// TimeAt returns a metav1.Time offset from FakeNow by the given duration.
+// Useful for seeding status fields like CurrentStepStartedAt in tests.
+func TimeAt(offset time.Duration) metav1.Time {
+	return metav1.NewTime(FakeNow.Add(offset))
+}
+```
+
+This is used by every strategy test package (Chunk 1 onward) so each `_test.go` doesn't redefine `fakeClock`/`fakeNow`.
+
+- [ ] **Step 2: Migrate `internal/rollout/canary/canary_test.go`**
+
+In each of the three existing tests (`TestCanaryCreatesStable`, `TestCanaryCreatesCanaryAndSteps`, `TestCanaryPromotesAfterLastStep`), change:
+
+```go
+res, err := s.Sync(context.Background(), ro, &status)
+```
+
+to:
+
+```go
+res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+```
+
+Add the import: `"github.com/benebsworth/paprika/internal/rollout/testutil"`.
+
+- [ ] **Step 3: Migrate `internal/rollout/bluegreen/bluegreen_test.go`**
+
+Same change in `TestBlueGreenCreatesActive`, `TestBlueGreenCreatesPreview`, `TestBlueGreenPromotesOnAnnotation`. Also replace the existing local-reference to `promoteAnnotation` (if any) — the test file does NOT reference the const directly today (it sets `ro.Annotations[promoteAnnotation] = ""` at line 54 of the existing file). Replace that with `ro.Annotations[core.PromoteAnnotation] = ""` and add `"github.com/benebsworth/paprika/internal/rollout/core"` to imports.
+
+- [ ] **Step 4: Migrate `internal/rollout/abtest/abtest_test.go`**
+
+Same `Sync` call update. Same `promoteAnnotation` → `core.PromoteAnnotation` migration.
+
+- [ ] **Step 5: Migrate `internal/rollout/rolling/rolling_test.go`**
+
+Same `Sync` call update. No promote annotation references in rolling tests today.
+
+- [ ] **Step 6: Migrate `internal/rollout/mirror/mirror_test.go`**
+
+Same `Sync` call update. The local `abortAnnotation` const is now `core.AbortAnnotation`; if any test references the local const (none today — mirror tests don't test abort), nothing else to do.
+
+- [ ] **Step 7: Run all strategy tests**
+
+Run:
+```bash
+go test ./internal/rollout/...
+```
+
+Expected: PASS. All 5 packages compile and existing tests pass.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add internal/rollout/testutil/ \
+        internal/rollout/canary/canary_test.go \
+        internal/rollout/bluegreen/bluegreen_test.go \
+        internal/rollout/abtest/abtest_test.go \
+        internal/rollout/rolling/rolling_test.go \
+        internal/rollout/mirror/mirror_test.go
+git commit -m "test(rollouts): migrate strategy tests to 4-arg Sync; add testutil package"
+```
+
+---
+
+## Chunk 1: Fix Bug 1 — Canary `CurrentStepIndex` advancement
+
+**Bug:** `internal/rollout/canary/canary.go` never increments `status.CurrentStepIndex`. A rollout with N steps sits on step 0 forever.
+
+**Fix:** In `canary.Sync`, after computing the step's replica actions, check whether the current step's `Duration` (defaulting to 0 = "advance immediately after applying weight") has elapsed since `status.CurrentStepStartedAt`. If so (or if no `Duration` is set), increment `CurrentStepIndex` and clear `CurrentStepStartedAt` so the next reconcile picks up the next step. Stamp `CurrentStepStartedAt = metav1.Now()` when first entering a step.
+
+The controller also requeues at the remaining step duration (rather than the current flat 30s) so advancement is timely.
+
+### Task 1.1: Advance canary step index when Duration elapses
+
+**Files:**
+- Modify: `internal/rollout/canary/canary.go:38-106` (the `Sync` body)
+- Modify: `internal/rollout/canary/canary_test.go` (add advancement tests)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `internal/rollout/canary/canary_test.go`. The shared `testutil` package (Task 0.5) provides `testutil.Inputs()`, `testutil.InputsReady(...)`, and `testutil.TimeAt(offset)`.
+
+```go
+func TestCanaryAdvancesAfterDuration(t *testing.T) {
+	steps := []rolloutsv1alpha1.CanaryStep{
+		{SetWeight: 25, Duration: durationFromSeconds(60)},
+		{SetWeight: 50, Duration: durationFromSeconds(60)},
+		{SetWeight: 100},
+	}
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{Steps: steps})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	startedAt := testutil.TimeAt(-2 * time.Minute) // 120s ago, step duration is 60s
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:             "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:             "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex:     0,
+		CurrentStepStartedAt: &startedAt,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if status.CurrentStepIndex != 1 {
+		t.Fatalf("expected CurrentStepIndex=1 after duration elapsed, got %d", status.CurrentStepIndex)
+	}
+	if res.Action != core.ActionStep {
+		t.Fatalf("expected Step action for next step, got %s", res.Action)
+	}
+}
+
+func TestCanaryDoesNotAdvanceBeforeDuration(t *testing.T) {
+	steps := []rolloutsv1alpha1.CanaryStep{
+		{SetWeight: 25, Duration: durationFromSeconds(60)},
+		{SetWeight: 50},
+	}
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{Steps: steps})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	startedAt := testutil.TimeAt(-10 * time.Second) // only 10s ago
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:             "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:             "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex:     0,
+		CurrentStepStartedAt: &startedAt,
+	}
+
+	_, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if status.CurrentStepIndex != 0 {
+		t.Fatalf("expected CurrentStepIndex=0 (duration not elapsed), got %d", status.CurrentStepIndex)
+	}
+}
+
+func TestCanaryAdvancesImmediatelyWhenNoDuration(t *testing.T) {
+	steps := []rolloutsv1alpha1.CanaryStep{
+		{SetWeight: 25}, // no duration => advance immediately on first reconcile
+		{SetWeight: 50},
+	}
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{Steps: steps})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:         "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex: 0,
+		// CurrentStepStartedAt intentionally nil
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// Implementation must advance a no-duration step on the SAME reconcile it
+	// was entered (it doesn't need to stamp-and-wait).
+	if status.CurrentStepIndex != 1 {
+		t.Fatalf("expected CurrentStepIndex=1 (advance on no duration), got %d", status.CurrentStepIndex)
+	}
+	if res.Action != core.ActionStep {
+		t.Fatalf("expected Step for next step, got %s", res.Action)
+	}
+}
+
+func TestCanaryStampsCurrentStepStartedAt(t *testing.T) {
+	steps := []rolloutsv1alpha1.CanaryStep{{SetWeight: 25, Duration: durationFromSeconds(60)}}
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{Steps: steps})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:         "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex: 0,
+	}
+
+	_, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	// We did not advance (duration is 60s, started just now), but
+	// CurrentStepStartedAt must now be set so the next reconcile can measure.
+	if status.CurrentStepStartedAt == nil {
+		t.Fatal("expected CurrentStepStartedAt to be set when entering a step")
+	}
+}
+
+func durationFromSeconds(s int) *metav1.Duration {
+	return &metav1.Duration{Duration: time.Duration(s) * time.Second}
+}
+```
+
+Add imports: `"time"`, `"github.com/benebsworth/paprika/internal/rollout/testutil"`. The existing `"github.com/benebsworth/paprika/internal/rollout/core"` import is already present.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/rollout/canary/...`
+Expected: all four new tests FAIL (CurrentStepIndex stays 0).
+
+- [ ] **Step 3: Implement step advancement in `canary.go`**
+
+Replace the body of `Sync` in `internal/rollout/canary/canary.go` (lines 38-106) with:
+
+```go
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in core.SyncInputs) (*core.SyncResult, error) {
+	if s.cfg == nil || len(s.cfg.Steps) == 0 {
+		return nil, errors.New("canary strategy requires at least one step")
+	}
+
+	desiredReplicas := int32(1)
+	if ro.Spec.Replicas != nil {
+		desiredReplicas = *ro.Spec.Replicas
+	}
+	hash := hash.Template(&ro.Spec.Template)
+
+	if status.StableRS == "" {
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionCreateStable,
+			Message: "Creating stable ReplicaSet",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeStableRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	stableHash := hashFromRSName(status.StableRS)
+	if status.CanaryRS == "" && hash != stableHash {
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionStep,
+			Message: "Creating canary ReplicaSet",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeStableRS(ro, stableHash, desiredReplicas),
+				makeCanaryRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	// Advance AT MOST ONE step per reconcile. A no-duration step advances
+	// immediately (its weight gets applied via the action list below, and the
+	// next reconcile moves on). A duration step stamps CurrentStepStartedAt
+	// (once) and waits. The one-step-per-reconcile cadence lets the controller
+	// observe each step's weight in metrics and lets traffic routers settle.
+	if status.CurrentStepIndex < int32(len(s.cfg.Steps)) {
+		step := s.cfg.Steps[status.CurrentStepIndex]
+		switch {
+		case step.Duration == nil || step.Duration.Duration <= 0:
+			// Advance immediately. CurrentStepStartedAt stays nil so the next
+			// step's logic re-enters cleanly.
+			status.CurrentStepIndex++
+			status.CurrentStepStartedAt = nil
+		case status.CurrentStepStartedAt == nil:
+			now := metav1.NewTime(in.Now())
+			status.CurrentStepStartedAt = &now
+		case in.Now().Sub(status.CurrentStepStartedAt.Time) >= step.Duration.Duration:
+			status.CurrentStepIndex++
+			status.CurrentStepStartedAt = nil
+		}
+	}
+
+	// All steps exhausted: promote. If the stable RS already matches the
+	// desired hash (i.e. the controller already applied the previous
+	// ActionPromote), the rollout has converged — return Complete.
+	if status.CurrentStepIndex >= int32(len(s.cfg.Steps)) {
+		if stableHash == hash {
+			return &core.SyncResult{
+				Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+				Action:  core.ActionComplete,
+				Message: "Canary promoted; stable ReplicaSet matches desired template",
+				ReplicaSets: []core.ReplicaSetAction{
+					makeStableRS(ro, hash, desiredReplicas),
+				},
+			}, nil
+		}
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionPromote,
+			Message: "Promoting canary to stable",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeStableRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	step := s.cfg.Steps[status.CurrentStepIndex]
+	stableWeight := int32(100 - step.SetWeight)
+	if stableWeight < 0 {
+		stableWeight = 0
+	}
+	canaryWeight := step.SetWeight
+
+	stableReplicas := desiredReplicas * stableWeight / 100
+	canaryReplicas := desiredReplicas - stableReplicas
+	if canaryReplicas < 1 {
+		canaryReplicas = 1
+	}
+
+	return &core.SyncResult{
+		Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+		Action:  core.ActionStep,
+		Message: fmt.Sprintf("Canary step %d at weight %d", status.CurrentStepIndex, canaryWeight),
+		ReplicaSets: []core.ReplicaSetAction{
+			makeStableRS(ro, stableHash, stableReplicas),
+			makeCanaryRS(ro, hash, canaryReplicas),
+		},
+	}, nil
+}
+```
+
+- [ ] **Step 4: Run strategy tests to verify they pass**
+
+Run: `go test ./internal/rollout/canary/...`
+Expected: all tests pass, including the existing three.
+
+- [ ] **Step 5: Make the controller requeue at remaining step duration**
+
+In `internal/controller/rollouts/rollout_controller.go`, replace the `ActionStep` requeue block (lines 222-224):
+
+```go
+if result.Action == core.ActionStep {
+    return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+}
+```
+
+with:
+
+```go
+if result.Action == core.ActionStep {
+    return ctrl.Result{RequeueAfter: r.stepRequeueInterval(&ro)}, nil
+}
+```
+
+and add the helper:
+
+```go
+// stepRequeueInterval returns the time until the current canary step's
+// duration elapses, with a 1-second floor (so a 5s step actually requeues in
+// ~5s rather than being masked by a 30s floor). Returns the floor for
+// non-canary strategies or when the step has no Duration / no start stamp.
+func (r *RolloutReconciler) stepRequeueInterval(ro *rolloutsv1alpha1.Rollout) time.Duration {
+	const floor = 1 * time.Second
+	if ro.Spec.Strategy.Type != "Canary" || ro.Spec.Strategy.Canary == nil {
+		return 30 * time.Second
+	}
+	idx := int(ro.Status.CurrentStepIndex)
+	if idx >= len(ro.Spec.Strategy.Canary.Steps) {
+		return 30 * time.Second
+	}
+	step := ro.Spec.Strategy.Canary.Steps[idx]
+	if step.Duration == nil || step.Duration.Duration <= 0 {
+		return floor
+	}
+	if ro.Status.CurrentStepStartedAt == nil {
+		return floor
+	}
+	remaining := step.Duration.Duration - r.Clock.Now().Sub(ro.Status.CurrentStepStartedAt.Time)
+	if remaining < floor {
+		return floor
+	}
+	return remaining
+}
+```
+
+Also wire Prometheus metrics in `updateStatusFromResult` (line 675) — set the canary weight gauge and bump the phase counter on transitions. Add at the top of `updateStatusFromResult`:
+
+```go
+func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout, result *core.SyncResult) {
+	prevPhase := ro.Status.Phase
+	ro.Status.Phase = result.Phase
+	ro.Status.Message = result.Message
+	ro.Status.ObservedGeneration = ro.Generation
+	ro.Status.CurrentPodHash = hash.Template(&ro.Spec.Template)
+
+	for _, rs := range result.ReplicaSets {
+		if rs.Labels["rollouts.paprika.io/stable"] == "true" || rs.Labels["rollouts.paprika.io/active"] == "true" {
+			ro.Status.StableRS = rs.Name
+		}
+		if rs.Labels["rollouts.paprika.io/canary"] == "true" || rs.Labels["rollouts.paprika.io/preview"] == "true" {
+			ro.Status.CanaryRS = rs.Name
+		}
+	}
+
+	if ro.Spec.Strategy.Type == "Canary" && ro.Spec.Strategy.Canary != nil {
+		idx := int(ro.Status.CurrentStepIndex)
+		if idx < len(ro.Spec.Strategy.Canary.Steps) {
+			ro.Status.CurrentStepWeight = ro.Spec.Strategy.Canary.Steps[idx].SetWeight
+		}
+	}
+
+	if r.EventRecorder != nil {
+		metrics.RolloutCanaryWeightGauge.WithLabelValues(ro.Name, ro.Namespace).Set(float64(ro.Status.CurrentStepWeight))
+		if result.Action == core.ActionStep && ro.Status.CurrentStepIndex > 0 {
+			metrics.RolloutCanaryStepTotal.WithLabelValues(ro.Name, ro.Namespace).Inc()
+		}
+		if prevPhase != "" && prevPhase != result.Phase {
+			metrics.RolloutPhaseTotal.WithLabelValues(ro.Name, ro.Namespace, string(result.Phase)).Inc()
+		}
+	}
+}
+```
+
+Add imports: `"github.com/benebsworth/paprika/internal/metrics"` and `"github.com/benebsworth/paprika/internal/rollout/hash"`.
+
+**Note on the metrics guard:** `r.EventRecorder != nil` was an earlier draft's hedge. The Prometheus calls are unconditionally safe (a nil `*CounterVec` would panic on call, but `prometheus.NewCounterVec` never returns nil — verified). The guard is retained only to avoid emitting metrics in lightweight unit tests that deliberately skip the recorder wiring. If you find the metrics are not appearing in production, drop the guard.
+
+- [ ] **Step 6: Run all tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: PASS. Existing tests still pass; new canary tests pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/rollout/canary/ internal/controller/rollouts/rollout_controller.go
+git commit -m "fix(rollouts): advance canary CurrentStepIndex when Duration elapses"
+```
+
+---
+
+### Task 1.2: Controller-level envtest for canary advancement
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller_test.go`
+
+- [ ] **Step 1: Write the failing test**
+
+Replace the smoke test in `rollout_controller_test.go` with:
+
+```go
+package controller
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	corev1 "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
+	// +kubebuilder:scaffold:imports
+)
+
+// NOTE: This file is `package controller` (the same package as
+// rollout_controller.go). It refers to RolloutReconciler directly — no import
+// of the package itself.
+
+var _ = Describe("RolloutReconciler canary", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "canary-adv", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(4),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						StableService: "canary-adv-stable",
+						CanaryService: "canary-adv-canary",
+						Steps: []rolloutsv1alpha1.CanaryStep{
+							{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 50, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 100},
+						},
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+	})
+
+	It("creates the stable ReplicaSet on the first reconcile", func() {
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.StableRS).NotTo(BeEmpty())
+	})
+
+	It("advances through steps as their durations elapse", func() {
+		// Reconcile 0: creates the stable RS at template v1.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+
+		// Update template to trigger canary.
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// Reconcile 1: stable exists, canary RS is created. The strategy's
+		// advancement switch is NOT entered this reconcile (the canary-creation
+		// block returns first), so CurrentStepStartedAt is still nil.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CanaryRS).NotTo(BeEmpty(), "canary RS should be created")
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)))
+		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "step 0 not yet entered on canary-creation reconcile")
+
+		// Reconcile 2: strategy enters step 0 (Duration=60s) and stamps
+		// CurrentStepStartedAt. Does NOT advance yet.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 0 start should be stamped")
+
+		// Advance clock 61s — step 0 (60s duration) should advance to step 1.
+		// Reconcile 3: stamps step 0 (already stamped, no-op), elapsed >= Duration,
+		// advances index to 1 and CLEARS CurrentStepStartedAt.
+		clk.Add(61 * time.Second)
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(1)), "step 0 should have advanced after duration")
+		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "CurrentStepStartedAt cleared on advance")
+
+		// Step 1 (Duration=60s) needs a stamp reconcile + an advance reconcile.
+		// Reconcile 4: enters step 1, stamps.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 1 start should be stamped")
+
+		clk.Add(61 * time.Second)
+		// Reconcile 5: advances step 1 → 2.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(2)))
+
+		// Step 2 has no Duration — on the next reconcile the strategy advances
+		// index to 3 and returns ActionPromote (Phase=Progressing) because
+		// stableHash != hash yet.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(3)))
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseProgressing))
+
+		// One more reconcile: the controller applied the new stable RS, so
+		// status.StableRS now points at template v2. stableHash == hash and
+		// the strategy returns ActionComplete / Phase=Healthy.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseHealthy))
+	})
+})
+
+func reqFor(ro *rolloutsv1alpha1.Rollout) ctrl.Request {
+	return ctrl.Request{NamespacedName: types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}}
+}
+
+func objKey(ro *rolloutsv1alpha1.Rollout) types.NamespacedName {
+	return types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}
+}
+
+func int32Ptr(i int32) *int32 { return &i }
+
+// setRSReady is a shared envtest helper used by later chunks. It updates a
+// ReplicaSet's ReadyReplicas/Replicas status subresource. Defined here once.
+func setRSReady(rsName string, ready int32) {
+	if rsName == "" {
+		return
+	}
+	var rs appsv1.ReplicaSet
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rsName, Namespace: "default"}, &rs)).To(Succeed())
+	rs.Status.ReadyReplicas = ready
+	rs.Status.Replicas = ready
+	Expect(k8sClient.Status().Update(ctx, &rs)).To(Succeed())
+}
+
+// _ keeps the client import meaningful even when only the envtest above uses it.
+var _ client.Object = (*rolloutsv1alpha1.Rollout)(nil)
+
+func podTemplate(version string) corev1.PodTemplateSpec {
+	return corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test", "version": version}},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "app", Image: "nginx:" + version}},
+		},
+	}
+}
+```
+
+Drop the `fmt` and `appsv1` imports entirely (the dead-code `var _ = ...` lines were hacks to suppress unused-import errors — just remove the imports).
+
+- [ ] **Step 2: Rename `RolloutReconciler.client` → `Client`**
+
+The envtest above assigns `recon.Client = k8sClient`, which requires the field to be exported. In `internal/controller/rollouts/rollout_controller.go:86`, rename:
+
+```go
+type RolloutReconciler struct {
+    Client        client.Client   // was: client
+    Scheme        *runtime.Scheme
+    // ... rest unchanged
+}
+```
+
+Grep for `r.client` within the package and rename every reference to `r.Client` (it's used in `Reconcile`, `executeReplicaSetActions`, `ensureService`, `buildRouter`, etc. — about 8 sites). The field is not referenced outside this package (verified), so the rename is safe. This change should ship in the Task 1.1 commit (Step 7) since the metrics logic depends on the reconciler's `Clock` field being settable from tests too.
+
+- [ ] **Step 3: Run test to verify it fails or passes honestly**
+
+Run: `go test ./internal/controller/rollouts/... -ginkgo.v`
+Expected: passes after Task 1.1 + the field rename above.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/controller/rollouts/rollout_controller_test.go internal/controller/rollouts/rollout_controller.go
+git commit -m "test(rollouts): envtest canary step advancement end-to-end"
+```
+
+---
+
+## Chunk 2: Fix Bug 2 — `paprika.io/abort` honored by all strategies
+
+**Bug:** Only `internal/rollout/mirror/mirror.go` checks the abort annotation. Canary, BlueGreen, ABTest, Rolling never abort.
+
+**Fix:** Add a shared abort guard at the top of every strategy's `Sync` (after the stable-RS-creation check, so the stable RS still gets created on the very first reconcile). The guard returns a `SyncResult` with `ActionAbort`, `Phase=Aborted`, the stable RS at `desiredReplicas`, and any canary/preview RS scaled to 0. The controller tears down traffic routing on `ActionAbort`.
+
+`status.Abort` is set durably by the controller when the annotation is seen (so a controller restart that loses the annotation still keeps the rollout frozen until the user explicitly removes both annotation AND we clear `status.Abort`). Recovery: the user removes the annotation AND bumps the pod template (a fresh rollout), or we clear `status.Abort` once the annotation is gone.
+
+### Task 2.1: Add abort guard to all strategies
+
+**Files:**
+- Modify: `internal/rollout/canary/canary.go`, `bluegreen/bluegreen.go`, `abtest/abtest.go`, `rolling/rolling.go`, `mirror/mirror.go`
+- Modify: each corresponding `_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+Add one abort test per strategy package. The canary test (with two cases — abort-in-progress and abort-before-canary-created — is the canonical example. The other strategies mirror it; per-strategy variations are spelled out below.
+
+```go
+// In internal/rollout/canary/canary_test.go:
+
+func TestCanaryAbortsOnAnnotation(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{
+		Steps: []rolloutsv1alpha1.CanaryStep{{SetWeight: 25}},
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:         "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex: 0,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if res.Phase != rolloutsv1alpha1.RolloutPhaseAborted {
+		t.Fatalf("expected Phase=Aborted, got %s", res.Phase)
+	}
+	foundStable, foundScaledDown := false, false
+	for _, rs := range res.ReplicaSets {
+		if rs.Labels["rollouts.paprika.io/stable"] == "true" {
+			foundStable = true
+		}
+		if rs.Labels["rollouts.paprika.io/canary"] == "true" && rs.Replicas == 0 {
+			foundScaledDown = true
+		}
+	}
+	if !foundStable {
+		t.Error("abort result did not include stable RS")
+	}
+	if !foundScaledDown {
+		t.Error("abort result did not scale canary RS to 0")
+	}
+}
+
+// TestCanaryAbortsBeforeCanaryCreated covers the case where the user aborts
+// before any canary RS exists. AbortResult must not include a canary action.
+func TestCanaryAbortsBeforeCanaryCreated(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{
+		Steps: []rolloutsv1alpha1.CanaryStep{{SetWeight: 25}},
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", tmpl1) // same template as stable — no canary yet
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS: "r1-stable-" + hash.Template(tmpl1),
+		// CanaryRS intentionally empty
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if len(res.ReplicaSets) != 1 {
+		t.Fatalf("expected exactly 1 RS action (stable only), got %d", len(res.ReplicaSets))
+	}
+}
+```
+
+**Per-strategy variations (write one abort test in each `_test.go`):**
+
+- **bluegreen_test.go** — `TestBlueGreenAbortsOnAnnotation`: seed `StableRS` + `CanaryRS` (the preview RS) with a `paprika.io/abort` annotation; assert `ActionAbort`, `Phase=Aborted`, preview scaled to 0. Use `testutil.Inputs()`.
+- **abtest_test.go** — `TestABTestAbortsOnAnnotation`: the ABTest validator (`abtest.go:100-103`) rejects empty Routes BEFORE the abort check fires, so the strategy config MUST seed valid Routes:
+  ```go
+  s := NewStrategy(&rolloutsv1alpha1.ABTestStrategy{
+      Routes: []rolloutsv1alpha1.ABTestRoute{
+          {Type: "Header", Name: "x-test", Value: "canary", Service: "canary"},
+      },
+      StableService: "r1-stable",
+      CanaryService: "r1-canary",
+  })
+  ```
+  Seed `StableRS` + `CanaryRS` with the abort annotation; assert `ActionAbort` + canary scaled to 0.
+- **rolling_test.go** — `TestRollingAbortsOnAnnotation`: rolling has no canary RS, so `AbortResult` returns only the stable action (the canary-skipping path covers it). Assert exactly 1 RS action, `Phase=Aborted`.
+- **mirror_test.go** — `TestMirrorAbortsOnAnnotation`: ADD a new test (do NOT rewrite any existing test — the existing tests don't cover abort today). This test replaces the existing Phase=Healthy abort behavior with Phase=Aborted. Seed `StableRS` + `CanaryRS`, add the abort annotation, assert `ActionAbort` + `Phase=Aborted`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/rollout/...`
+Expected: all new tests FAIL with `expected ActionAbort, got <current action>`.
+
+- [ ] **Step 3: Add a shared `AbortResult` helper to core**
+
+Add to `internal/rollout/core/core.go`:
+
+```go
+import (
+	// ...
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// IsAborted reports whether the Rollout is currently in an aborted state.
+// Aborted by annotation OR by durable status.Abort flag.
+func IsAborted(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) bool {
+	if status != nil && status.Abort {
+		return true
+	}
+	if ro == nil {
+		return false
+	}
+	_, ok := ro.Annotations[AbortAnnotation]
+	return ok
+}
+
+// AbortResult builds a SyncResult that retains the stable RS at desired
+// replicas and scales the canary/preview RS (named by status.CanaryRS) to zero.
+// Use this from any strategy's Sync when IsAborted is true.
+//
+// IMPORTANT: the stable RS action deliberately sets Template to nil. The
+// controller's executeReplicaSetActions unconditionally overwrites the RS's
+// template on update when Template is non-nil; setting nil here means "leave
+// the existing RS template alone" so an abort does NOT roll the stable RS
+// forward to the canary template the user just aborted.
+//
+// The controller must be updated (Task 2.2 Step 4) to skip the template
+// overwrite when action.Template == nil.
+func AbortResult(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, stableHash string, desiredReplicas int32) *SyncResult {
+	rs := []ReplicaSetAction{
+		{
+			Name:     status.StableRS,
+			Replicas: desiredReplicas,
+			Template: nil, // do NOT overwrite the existing RS template
+			Labels: map[string]string{
+				"rollouts.paprika.io/stable":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		},
+	}
+	if status.CanaryRS != "" {
+		rs = append(rs, ReplicaSetAction{
+			Name:     status.CanaryRS,
+			Replicas: 0,
+			Template: nil, // ditto: scale to 0 without changing the template
+			Labels: map[string]string{
+				"rollouts.paprika.io/canary":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		})
+	}
+	return &SyncResult{
+		Phase:       rolloutsv1alpha1.RolloutPhaseAborted,
+		Action:      ActionAbort,
+		Message:     "Rollout aborted; stable ReplicaSet retained",
+		ReplicaSets: rs,
+	}
+}
+```
+
+Note the stable RS labels omit `rollouts.paprika.io/active=true` — only BlueGreen's `makeActiveRS` sets that label, and we don't want to confuse the controller's `updateStatusFromResult` (which checks both `stable` and `active`) when an aborted canary RS reports back.
+
+- [ ] **Step 4: Wire abort guard into each strategy's Sync**
+
+In each strategy's `Sync`, immediately after the `status.StableRS == ""` creation block (so the stable RS still gets created on the first reconcile of an aborted rollout), add:
+
+```go
+if core.IsAborted(ro, status) {
+    return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+}
+```
+
+For canary: insert after line ~58 (after the `StableRS == ""` block).
+For bluegreen: insert after line ~62.
+For abtest: insert after line ~63.
+For rolling: insert after line ~55 (rolling has no canary RS, so AbortResult's canary-skipping path covers it).
+For mirror: **delete** the existing local abort branch (lines 90-99) and replace with the same guard. This also fixes the Phase=Healthy → Phase=Aborted bug.
+
+### Task 2.2: Set `status.Abort` durably and tear down traffic on abort
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller.go`
+
+- [ ] **Step 1: Write the failing envtest**
+
+Add to `internal/controller/rollouts/rollout_controller_test.go`:
+
+```go
+var _ = Describe("RolloutReconciler abort", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{Scheme: mgr.GetScheme(), Clock: clk, Client: k8sClient}
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "abort-test", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						Steps:         []rolloutsv1alpha1.CanaryStep{{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}}},
+						StableService: "abort-test-stable",
+						CanaryService: "abort-test-canary",
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+		// Bring the rollout to a canary-in-progress state.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+	})
+
+	It("sets status.Abort when the annotation is added", func() {
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "status.Abort should be set when annotation is present")
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseAborted))
+	})
+
+	It("clears status.Abort when annotation is removed AND pod template changes", func() {
+		// First abort.
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+
+		// Then remove annotation but keep template — should still be aborted
+		// (status.Abort durable until template changes).
+		ro.Annotations = map[string]string{}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "abort should persist after annotation removal without template change")
+
+		// Now bump the template — abort should clear and rollout restart.
+		ro.Spec.Template = podTemplate("v3")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeFalse())
+	})
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `go test ./internal/controller/rollouts/... -ginkgo.focus=abort`
+Expected: FAIL — `status.Abort` is never set.
+
+- [ ] **Step 3: Implement status.Abort and traffic teardown in the controller**
+
+In `internal/controller/rollouts/rollout_controller.go`, after the `paused` short-circuit (lines 151-158), add:
+
+```go
+// Latch abort state: presence of the annotation sets status.Abort durably.
+// Clear only when both the annotation is gone AND the pod template has changed
+// (signalling the user wants a fresh rollout).
+if _, hasAnn := ro.Annotations[core.AbortAnnotation]; hasAnn {
+    if !ro.Status.Abort {
+        ro.Status.Abort = true
+    }
+} else if ro.Status.Abort {
+    // Annotation removed. Only clear if the template has moved past the
+    // template under which we aborted (status.CurrentPodHash differs).
+    currentHash := hash.Template(&ro.Spec.Template)
+    if ro.Status.CurrentPodHash != "" && currentHash != ro.Status.CurrentPodHash {
+        ro.Status.Abort = false
+        ro.Status.CurrentStepIndex = 0
+        ro.Status.CurrentStepStartedAt = nil
+    }
+}
+```
+
+In `configureTraffic`, handle `ActionAbort` alongside `ActionPromote` / `ActionComplete` in each `configureXxxTraffic`:
+
+- `configureCanaryTraffic` (lines 518-526): on `ActionAbort`, call `router.RemoveCanary(ctx)`.
+- `configureBlueGreenTraffic` (528-533): on `ActionAbort`, `router.SetWeight(ctx, 100)` (all to stable).
+- `configureABTestTraffic` (535-558): on `ActionAbort`, remove every header route.
+- `configureMirrorTraffic` (560-569): on `ActionAbort`, `router.RemoveMirror(ctx)`.
+
+Add `core.ActionAbort` to each switch. Example for canary:
+
+```go
+func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
+	switch result.Action {
+	case core.ActionPromote, core.ActionComplete, core.ActionAbort:
+		return router.RemoveCanary(ctx)
+	case core.ActionStep:
+		return router.SetWeight(ctx, ro.Status.CurrentStepWeight)
+	}
+	return nil
+}
+```
+
+Add the import `"github.com/benebsworth/paprika/internal/rollout/hash"`.
+
+- [ ] **Step 4: Rewrite `executeReplicaSetActions` to handle nil `action.Template`**
+
+The current function (lines 320-378) builds `desired *appsv1.ReplicaSet` with `Template: *action.Template` (line 357), which panics if `action.Template == nil`. The v2 plan introduces nil-Template actions from `AbortResult` and from the Rolling/BlueGreen drain paths. Rewrite the function so nil Template means "do not overwrite the existing RS's template or its pod labels":
+
+```go
+func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *rolloutsv1alpha1.Rollout, actions []core.ReplicaSetAction) error {
+	log := logf.FromContext(ctx)
+
+	for _, action := range actions {
+		var rs appsv1.ReplicaSet
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("getting ReplicaSet %s: %w", action.Name, err)
+		}
+
+		// Always set the RS-level labels (these identify the RS for pruning,
+		// traffic selection, etc). The pod-template labels are only mutated
+		// when action.Template is non-nil.
+		labels := action.Labels
+		if labels == nil {
+			labels = map[string]string{}
+		}
+
+		// Build the desired template only when action.Template is non-nil.
+		// A nil Template means "leave the existing RS's pod template alone" —
+		// used by AbortResult and by drain/abort paths that scale an existing
+		// RS without rolling its template.
+		var desiredTemplate corev1.PodTemplateSpec
+		if action.Template != nil {
+			desiredTemplate = *action.Template
+			if desiredTemplate.ObjectMeta.Labels == nil {
+				desiredTemplate.ObjectMeta.Labels = map[string]string{}
+			}
+			for k, v := range labels {
+				desiredTemplate.ObjectMeta.Labels[k] = v
+			}
+		}
+
+		desired := &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      action.Name,
+				Namespace: ro.Namespace,
+				Labels:    labels,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: rolloutsv1alpha1.GroupVersion.String(),
+					Kind:       "Rollout",
+					Name:       ro.Name,
+					UID:        ro.UID,
+					Controller: ptr.To(true),
+				}},
+			},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: &action.Replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: labels},
+			},
+		}
+		if action.Template != nil {
+			desired.Spec.Template = desiredTemplate
+		}
+
+		if err != nil && apierrors.IsNotFound(err) {
+			if err := r.Client.Create(ctx, desired); err != nil {
+				return fmt.Errorf("creating ReplicaSet %s: %w", action.Name, err)
+			}
+			log.Info("Created ReplicaSet", "name", desired.Name)
+			continue
+		}
+
+		rs.Spec.Replicas = desired.Spec.Replicas
+		rs.Labels = desired.Labels
+		if action.Template != nil {
+			rs.Spec.Template = desired.Spec.Template
+		}
+		if err := r.Client.Update(ctx, &rs); err != nil {
+			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
+		}
+		log.Info("Updated ReplicaSet", "name", rs.Name, "replicas", action.Replicas)
+	}
+	return nil
+}
+```
+
+The `r.Client` references assume the field rename from Chunk 1 Task 1.2 Step 2 has landed. If you haven't done that yet, do it now before proceeding.
+
+- [ ] **Step 5: Run all tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: PASS. The new envtest abort tests pass; existing tests pass; strategy unit tests pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/rollout/ internal/controller/rollouts/
+git commit -m "fix(rollouts): honor paprika.io/abort across all strategies with durable status"
+```
+
+---
+
+## Chunk 3: Fix Bug 3 — `MaxSurge` / `MaxUnavailable` in Rolling strategy
+
+**Bug:** `internal/rollout/rolling/rolling.go` scales the old RS to 0 and the new RS to full immediately. This is recreate semantics, not rolling. The spec fields `MaxSurge` and `MaxUnavailable` are declared but ignored.
+
+**Fix:** Implement K8s-Deployment-style surge/unavailable accounting:
+- Resolve `MaxSurge` and `MaxUnavailable` from `intstr.IntOrString` against `desiredReplicas`.
+- New RS target = `min(desired + surge, desired + oldReplicas)` while old RS is up; cap to `desired` when old is gone.
+- Old RS target = `max(0, oldReplicas - surge)` scaled down incrementally; the available-pod floor is `desired - unavailable`.
+- Use the readiness counts plumbed via `SyncInputs` (added in Chunk 0).
+- Validate `MaxSurge`/`MaxUnavailable` are not both zero (Deployment forbids; deadlocks).
+
+### Task 3.1: Validate Rolling surge/unavailable combinations
+
+**Files:**
+- Modify: `internal/webhook/rollouts/v1alpha1/rollout_webhook.go`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `internal/webhook/rollouts/v1alpha1/rollout_webhook_test.go` (create if absent):
+
+```go
+package v1alpha1
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"k8s.io/apimachinery/pkg/util/intstr"
+)
+
+func TestRollingRejectsBothZero(t *testing.T) {
+	zero := intstr.FromInt32(0)
+	ro := &rolloutsv1alpha1.Rollout{
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Strategy: rolloutsv1alpha1.RolloutStrategy{
+				Type:    "Rolling",
+				Rolling: &rolloutsv1alpha1.RollingStrategy{MaxSurge: &zero, MaxUnavailable: &zero},
+			},
+		},
+	}
+	v := &RolloutCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), ro)
+	if err == nil || !strings.Contains(err.Error(), "maxSurge and maxUnavailable cannot both be zero") {
+		t.Fatalf("expected both-zero rejection, got %v", err)
+	}
+}
+
+func TestRollingRejectsNegative(t *testing.T) {
+	// Use FromInt32 — FromString would land in the percent-parse branch.
+	neg := intstr.FromInt32(-1)
+	ro := &rolloutsv1alpha1.Rollout{
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Strategy: rolloutsv1alpha1.RolloutStrategy{
+				Type:    "Rolling",
+				Rolling: &rolloutsv1alpha1.RollingStrategy{MaxSurge: &neg},
+			},
+		},
+	}
+	v := &RolloutCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), ro)
+	if err == nil {
+		t.Fatalf("expected negative rejection, got nil")
+	}
+}
+
+func TestRollingAcceptsPercentDefaults(t *testing.T) {
+	// The defaulter sets "25%" for both. Verify those values actually validate
+	// (the validator must resolve percentages, not treat them as zero).
+	surge := intstr.FromString("25%")
+	unavail := intstr.FromString("25%")
+	ro := &rolloutsv1alpha1.Rollout{
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Replicas: int32Ptr(4),
+			Strategy: rolloutsv1alpha1.RolloutStrategy{
+				Type: "Rolling",
+				Rolling: &rolloutsv1alpha1.RollingStrategy{
+					MaxSurge:       &surge,
+					MaxUnavailable: &unavail,
+				},
+			},
+		},
+	}
+	v := &RolloutCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), ro)
+	if err != nil {
+		t.Fatalf("expected 25%%/25%% to validate, got %v", err)
+	}
+}
+```
+
+(`int32Ptr` should already exist from Chunk 1; if not, define it locally.)
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test ./internal/webhook/rollouts/...`
+Expected: FAIL — webhook doesn't validate these.
+
+- [ ] **Step 3: Add validation**
+
+In `validateStrategyConfig` in `internal/webhook/rollouts/v1alpha1/rollout_webhook.go`, expand the `case "Rolling":` block (lines 119-122). The helper needs the desired replica count, so change `validateStrategyConfig`'s signature to accept it:
+
+```go
+// Change the call site in validateRollout:
+desired := int32(1)
+if ro.Spec.Replicas != nil {
+    desired = *ro.Spec.Replicas
+}
+if err := v.validateStrategyConfig(&ro.Spec.Strategy, strategyPath, desired); err != nil {
+    allErrs = append(allErrs, err...)
+}
+
+// And the function signature:
+func (v *RolloutCustomValidator) validateStrategyConfig(s *rolloutsv1alpha1.RolloutStrategy, path *field.Path, desiredReplicas int32) field.ErrorList {
+    // ... existing body ...
+    case "Rolling":
+        if s.Rolling == nil {
+            allErrs = append(allErrs, field.Required(path.Child("rolling"), "rolling configuration is required"))
+            break
+        }
+        if errs := validateRollingSurgeUnavailable(s.Rolling, path.Child("rolling"), desiredReplicas); len(errs) > 0 {
+            allErrs = append(allErrs, errs...)
+        }
+}
+```
+
+Add helper:
+
+```go
+// validateRollingSurgeUnavailable validates MaxSurge/MaxUnavailable against the
+// Deployment controller's rules: both must be non-negative, and they cannot
+// both resolve to zero (would deadlock). Percent strings like "25%" are
+// resolved against the rollout's replica count.
+func validateRollingSurgeUnavailable(r *rolloutsv1alpha1.RollingStrategy, path *field.Path, desiredReplicas int32) field.ErrorList {
+	var allErrs field.ErrorList
+	surge, surgeErr := resolveRollingCount(r.MaxSurge, desiredReplicas)
+	unavail, unavailErr := resolveRollingCount(r.MaxUnavailable, desiredReplicas)
+	if surgeErr != nil {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxSurge"), r.MaxSurge, surgeErr.Error()))
+	}
+	if unavailErr != nil {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxUnavailable"), r.MaxUnavailable, unavailErr.Error()))
+	}
+	if len(allErrs) > 0 {
+		return allErrs
+	}
+	if surge == 0 && unavail == 0 {
+		allErrs = append(allErrs, field.Invalid(path, r, "maxSurge and maxUnavailable cannot both be zero"))
+	}
+	return allErrs
+}
+
+// resolveRollingCount resolves an intstr.IntOrString to an int32 against the
+// desired replica count. A nil pointer resolves to 0. Percent strings like
+// "25%" are evaluated against `desired` via intstr.GetScaledValueFromIntOrPercent.
+// Negative integers or unparseable strings return an error.
+func resolveRollingCount(v *intstr.IntOrString, desired int32) (int32, error) {
+	if v == nil {
+		return 0, nil
+	}
+	resolved, err := intstr.GetScaledValueFromIntOrPercent(v, int(desired), true)
+	if err != nil {
+		return 0, fmt.Errorf("could not resolve %q: %w", v.String(), err)
+	}
+	if resolved < 0 {
+		return 0, fmt.Errorf("must be non-negative, got %d", resolved)
+	}
+	return int32(resolved), nil
+}
+```
+
+The `intstr.GetScaledValueFromIntOrPercent` helper handles both `Int` and `String` types — for `Int` it returns the value directly, for `String` it parses the percent against `desired`. This means a defaulted `25%` on a 4-replica rollout resolves to `1`, not `0`, so the both-zero check no longer trips. Add `"fmt"` to imports if missing.
+
+- [ ] **Step 4: Default MaxSurge/MaxUnavailable in the defaulter**
+
+In `RolloutCustomDefaulter.Default` (lines 51-66), after the existing defaults, add:
+
+```go
+if obj.Spec.Strategy.Type == "Rolling" && obj.Spec.Strategy.Rolling != nil {
+	if obj.Spec.Strategy.Rolling.MaxSurge == nil {
+		obj.Spec.Strategy.Rolling.MaxSurge = ptr.To(intstr.FromString("25%"))
+	}
+	if obj.Spec.Strategy.Rolling.MaxUnavailable == nil {
+		obj.Spec.Strategy.Rolling.MaxUnavailable = ptr.To(intstr.FromString("25%"))
+	}
+}
+```
+
+(Matches Deployment defaults.) Add `"k8s.io/apimachinery/pkg/util/intstr"` to imports.
+
+- [ ] **Step 5: Run tests**
+
+Run: `go test ./internal/webhook/rollouts/...`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/webhook/rollouts/
+git commit -m "feat(rollouts): validate and default MaxSurge/MaxUnavailable"
+```
+
+---
+
+### Task 3.2: Implement real surge/unavailable accounting
+
+**Files:**
+- Modify: `internal/rollout/rolling/rolling.go` (rewrite `Sync` body)
+- Modify: `internal/rollout/rolling/rolling_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `internal/rollout/rolling/rolling_test.go`. Use `testutil.InputsReady(stable, canary)` from the shared helper package (Task 0.5) rather than a bare `fakeClock`.
+
+```go
+func TestRollingSurgesNewBeforeScalingDown(t *testing.T) {
+	// surge=1, unavail=0, desired=3, oldReady=3, newReady=0.
+	// Phase 1 (scale-down): available=3, floor=3, no headroom → oldTarget=3.
+	// Phase 2 (scale-up):   newTarget = desired+surge-oldTarget = 3+1-3 = 1.
+	// So: old=3 (unchanged), new=1 (just created).
+	surge := intstr.FromInt32(1)
+	unavail := intstr.FromInt32(0)
+	cfg := &rolloutsv1alpha1.RollingStrategy{MaxSurge: &surge, MaxUnavailable: &unavail}
+	s := NewStrategy(cfg)
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRolloutWithReplicas("r1", EmptyTemplate("v2"), 3)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "r1-" + hash.Template(tmpl1),
+		StableReadyReplicas: 3,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(3, 0))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	newRS := findRS(res.ReplicaSets, "canary", hash.Template(EmptyTemplate("v2")))
+	oldRS := findRS(res.ReplicaSets, "stable", hash.Template(tmpl1))
+	if newRS == nil || newRS.Replicas != 1 {
+		t.Fatalf("expected new (canary) RS replicas=1, got %+v", newRS)
+	}
+	if oldRS == nil || oldRS.Replicas != 3 {
+		t.Fatalf("expected old (stable) RS replicas=3 (no scale-down without headroom), got %+v", oldRS)
+	}
+}
+
+func TestRollingScalesDownOldAsNewReadinessAllows(t *testing.T) {
+	// surge=1, unavail=0, desired=3, oldReady=3, newReady=1 (one new pod ready).
+	// Phase 1: available=4, floor=3, scaleDownBy=1 → oldTarget=2.
+	// Phase 2: newTarget = 3+1-2 = 2.
+	surge := intstr.FromInt32(1)
+	unavail := intstr.FromInt32(0)
+	cfg := &rolloutsv1alpha1.RollingStrategy{MaxSurge: &surge, MaxUnavailable: &unavail}
+	s := NewStrategy(cfg)
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRolloutWithReplicas("r1", EmptyTemplate("v2"), 3)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "r1-" + hash.Template(tmpl1),
+		StableReadyReplicas: 3,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(3, 1))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	newRS := findRS(res.ReplicaSets, "canary", hash.Template(EmptyTemplate("v2")))
+	oldRS := findRS(res.ReplicaSets, "stable", hash.Template(tmpl1))
+	if newRS == nil || newRS.Replicas != 2 {
+		t.Fatalf("expected new RS replicas=2, got %+v", newRS)
+	}
+	if oldRS == nil || oldRS.Replicas != 2 {
+		t.Fatalf("expected old RS replicas=2 (headroom-driven scale-down), got %+v", oldRS)
+	}
+}
+
+func TestRollingRespectsMaxUnavailable(t *testing.T) {
+	// surge=0, unavail=1, desired=3, oldReady=3, newReady=0.
+	// Phase 1: available=3, floor=2, scaleDownBy=1 → oldTarget=2.
+	// Phase 2: newTarget = 3+0-2 = 1.
+	// With surge=0 the old RS must scale DOWN first to free budget for new.
+	surge := intstr.FromInt32(0)
+	unavail := intstr.FromInt32(1)
+	cfg := &rolloutsv1alpha1.RollingStrategy{MaxSurge: &surge, MaxUnavailable: &unavail}
+	s := NewStrategy(cfg)
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRolloutWithReplicas("r1", EmptyTemplate("v2"), 3)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "r1-" + hash.Template(tmpl1),
+		StableReadyReplicas: 3,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(3, 0))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	newRS := findRS(res.ReplicaSets, "canary", hash.Template(EmptyTemplate("v2")))
+	oldRS := findRS(res.ReplicaSets, "stable", hash.Template(tmpl1))
+	if oldRS == nil || oldRS.Replicas != 2 {
+		t.Fatalf("expected old RS replicas=2 (down from 3 by unavailable=1), got %+v", oldRS)
+	}
+	if newRS == nil || newRS.Replicas != 1 {
+		t.Fatalf("expected new RS replicas=1 (filled the freed budget), got %+v", newRS)
+	}
+}
+
+func TestRollingCompletesWhenOldReachesZero(t *testing.T) {
+	// surge=1, unavail=0, desired=3, oldReady=0, newReady=3.
+	// Phase 1: available=3, floor=3, no headroom → oldTarget=0.
+	// Phase 2: newTarget = 3+1-0 = 4, capped to 3 → 3.
+	// Completion: old=0, newReady>=desired → ActionComplete.
+	surge := intstr.FromInt32(1)
+	unavail := intstr.FromInt32(0)
+	cfg := &rolloutsv1alpha1.RollingStrategy{MaxSurge: &surge, MaxUnavailable: &unavail}
+	s := NewStrategy(cfg)
+	tmpl2 := EmptyTemplate("v2")
+	ro := makeRolloutWithReplicas("r1", tmpl2, 3)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "r1-" + hash.Template(tmpl2),
+		StableReadyReplicas: 0, // old fully drained
+		CanaryRS:            "r1-canary-" + hash.Template(tmpl2),
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(0, 3))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionComplete {
+		t.Fatalf("expected Complete, got %s", res.Action)
+	}
+}
+
+func findRS(actions []core.ReplicaSetAction, label, hash string) *core.ReplicaSetAction {
+	for i := range actions {
+		if actions[i].Labels["rollouts.paprika.io/"+label] == "true" && actions[i].Labels["rollouts.paprika.io/revision"] == hash {
+			return &actions[i]
+		}
+	}
+	return nil
+}
+
+func makeRolloutWithReplicas(name string, tmpl *corev1.PodTemplateSpec, replicas int32) *rolloutsv1alpha1.Rollout {
+	ro := makeRollout(name, tmpl)
+	ro.Spec.Replicas = &replicas
+	return ro
+}
+```
+
+Add imports: `"k8s.io/apimachinery/pkg/util/intstr"`, `"github.com/benebsworth/paprika/internal/rollout/testutil"`. (`testutil` provides `InputsReady`; `intstr` is needed for the surge/unavailable configs.)
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/rollout/rolling/...`
+Expected: FAIL — current behavior scales old to 0, new to full.
+
+- [ ] **Step 3: Implement the rolling accounting**
+
+Replace `Sync` body in `internal/rollout/rolling/rolling.go` (lines 39-86) with:
+
+```go
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in core.SyncInputs) (*core.SyncResult, error) {
+	desiredReplicas := int32(1)
+	if ro.Spec.Replicas != nil {
+		desiredReplicas = *ro.Spec.Replicas
+	}
+	hash := hash.Template(&ro.Spec.Template)
+
+	if status.StableRS == "" {
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionCreateStable,
+			Message: "Creating stable ReplicaSet",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeStableRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	// Honor abort even though Rolling has no canary RS — the rollout freezes.
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
+	currentHash := hashFromRSName(status.StableRS)
+
+	// During an in-progress rolling update, the new RS is tracked on
+	// status.CanaryRS (the controller's updateStatusFromResult parks it there
+	// because we label it "canary=true" below — see the action list at the
+	// bottom of this function). If CanaryRS is empty or matches StableRS, no
+	// update is in flight; either this is the very first reconcile of an update
+	// (currentHash != hash) or we're already converged.
+	newRSHash := ""
+	if status.CanaryRS != "" && status.CanaryRS != status.StableRS {
+		newRSHash = hashFromRSName(status.CanaryRS)
+	}
+
+	if currentHash == hash && (newRSHash == "" || newRSHash == hash) {
+		// Stable RS already matches the desired template and no in-flight
+		// canary RS exists. The rollout is converged.
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+			Action:  core.ActionComplete,
+			Message: "Stable ReplicaSet matches desired template",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeStableRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	// Resolve surge/unavailable from intstr (percentages evaluated against desiredReplicas).
+	surge := resolveCount(s.cfg.MaxSurge, desiredReplicas)
+	unavailable := resolveCount(s.cfg.MaxUnavailable, desiredReplicas)
+	// Guard against an invalid spec the webhook somehow let through.
+	if surge == 0 && unavailable == 0 {
+		surge = 1 // K8s Deployment controller does the same to avoid deadlock.
+	}
+
+	// Two-phase rolling update (mirrors K8s Deployment controller semantics):
+	//
+	// Phase 1 — scale down the old RS as far as the availability floor allows.
+	//   available = newReady + oldReady
+	//   floor     = desired - unavailable
+	//   We can remove (available - floor) pods from old, capped at oldReady.
+	//
+	// Phase 2 — scale up the new RS using the freed budget.
+	//   Total budget = desired + surge (the surge invariant).
+	//   newTarget = (desired + surge) - oldTarget, capped to [newReady, desired].
+	//
+	// This formulation correctly handles:
+	//   - surge > 0: new RS scales up first, old scales down as new becomes ready.
+	//   - surge = 0, unavailable > 0: old scales down first (one pod at a time),
+	//     new scales up to fill the gap. No deadlock.
+	// Readiness comes from SyncInputs (populated by the controller's
+	// observeReadyReplicas, or by tests via testutil.InputsReady). The status
+	// fields StableReadyReplicas/CanaryReadyReplicas are the cache the
+	// controller writes; the strategy reads through `in` to avoid an extra
+	// status round-trip.
+	oldReady := in.StableReadyReplicas
+	if oldReady > desiredReplicas {
+		oldReady = desiredReplicas
+	}
+	newReady := in.CanaryReadyReplicas
+
+	floor := desiredReplicas - unavailable
+	if floor < 0 {
+		floor = 0
+	}
+	available := newReady + oldReady
+
+	oldTarget := oldReady
+	if available > floor {
+		scaleDownBy := available - floor
+		if scaleDownBy > oldReady {
+			scaleDownBy = oldReady
+		}
+		oldTarget = oldReady - scaleDownBy
+		if oldTarget < 0 {
+			oldTarget = 0
+		}
+	}
+
+	newTarget := desiredReplicas + surge - oldTarget
+	if newTarget > desiredReplicas {
+		newTarget = desiredReplicas
+	}
+	if newTarget < newReady {
+		newTarget = newReady // don't scale down what's already up
+	}
+
+	// Completion: old fully scaled down, new at desired, new fully ready.
+	// On completion we PROMOTE the canary RS to stable: same name (so the
+	// controller updates the existing RS in place — no orphaned canary RS),
+	// but drop the canary=true label and add stable=true.
+	if oldTarget == 0 && newReady >= desiredReplicas {
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+			Action:  core.ActionComplete,
+			Message: "Rolling update complete",
+			ReplicaSets: []core.ReplicaSetAction{
+				{
+					Name:     ro.Name + "-canary-" + hash, // reuse the canary RS name
+					Replicas: desiredReplicas,
+					Template: &ro.Spec.Template,
+					Labels: map[string]string{
+						"rollouts.paprika.io/stable":   "true", // promoted
+						"rollouts.paprika.io/revision": hash,
+						"rollouts.paprika.io/rollout":  ro.Name,
+						// NB: canary=true is intentionally absent — the RS is no longer a canary.
+					},
+				},
+			},
+		}, nil
+	}
+
+	// In-progress: emit the old RS (labelled stable, parked on StableRS) and
+	// the new RS (labelled canary, parked on CanaryRS). The controller's
+	// updateStatusFromResult keeps StableRS pointing at the old RS until the
+	// completion branch above promotes the canary.
+	return &core.SyncResult{
+		Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+		Action:  core.ActionCreateStable,
+		Message: fmt.Sprintf("Rolling update in progress: new target=%d ready=%d, old target=%d ready=%d", newTarget, newReady, oldTarget, oldReady),
+		ReplicaSets: []core.ReplicaSetAction{
+			{
+				Name:     status.StableRS,
+				Replicas: oldTarget,
+				Template: nil, // do not overwrite the old RS's template
+				Labels: map[string]string{
+					"rollouts.paprika.io/stable":   "true",
+					"rollouts.paprika.io/revision": currentHash,
+					"rollouts.paprika.io/rollout":  ro.Name,
+				},
+			},
+			makeCanaryRS(ro, hash, newTarget),
+		},
+	}, nil
+}
+```
+
+Also add a `makeCanaryRS` helper (Rolling doesn't have one today):
+
+```go
+// makeCanaryRS labels the in-flight new RS as canary during a rolling update.
+// The controller's updateStatusFromResult parks it on status.CanaryRS, while
+// status.StableRS keeps pointing at the old RS — this is what allows the
+// strategy's surge/unavailable accounting to observe both.
+func makeCanaryRS(ro *rolloutsv1alpha1.Rollout, hash string, replicas int32) core.ReplicaSetAction {
+	return core.ReplicaSetAction{
+		Name:     ro.Name + "-canary-" + hash,
+		Replicas: replicas,
+		Template: &ro.Spec.Template,
+		Labels: map[string]string{
+			"rollouts.paprika.io/canary":   "true",
+			"rollouts.paprika.io/revision": hash,
+			"rollouts.paprika.io/rollout":  ro.Name,
+		},
+	}
+}
+```
+
+Add `"fmt"` and `"k8s.io/apimachinery/pkg/util/intstr"` to imports of `rolling.go` (both are needed by the new Sync body and `resolveCount`).
+
+Note: the OLD RS action's `Template` is nil (see the Chunk 2 fix to `executeReplicaSetActions` — a nil Template means "leave the existing RS template alone"). The new RS action's Template is `&ro.Spec.Template` (the new revision), so it gets stamped correctly when the controller creates it.
+
+// resolveCount turns an intstr.IntOrString into an int32 against the desired
+// replica count. Supports integers and percent strings like "25%".
+func resolveCount(v *intstr.IntOrString, desired int32) int32 {
+	if v == nil {
+		return 0
+	}
+	if v.Type == intstr.Int {
+		if v.IntVal < 0 {
+			return 0
+		}
+		return v.IntVal
+	}
+	// String type — try percent.
+	pct, err := intstr.GetScaledValueFromIntOrPercent(v, int(desired), true)
+	if err != nil || pct < 0 {
+		return 0
+	}
+	return int32(pct)
+}
+```
+
+The controller must now populate `status.StableReadyReplicas` and `status.CanaryReadyReplicas` before calling `Sync`. That's Task 3.3.
+
+- [ ] **Step 4: Run strategy tests to verify they pass**
+
+Run: `go test ./internal/rollout/rolling/...`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/rollout/rolling/
+git commit -m "fix(rollouts): implement MaxSurge/MaxUnavailable accounting in Rolling"
+```
+
+---
+
+### Task 3.3: Plumb ReplicaSet readiness into status before Sync
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller.go` (Reconcile body)
+
+- [ ] **Step 1: Write the failing envtest**
+
+Add to `internal/controller/rollouts/rollout_controller_test.go`:
+
+```go
+var _ = Describe("RolloutReconciler rolling", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{Scheme: mgr.GetScheme(), Clock: clk, Client: k8sClient}
+		surge := intstr.FromInt32(1)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "rolling-ramp", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(3),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type:    "Rolling",
+					Rolling: &rolloutsv1alpha1.RollingStrategy{MaxSurge: &surge, MaxUnavailable: ptr(intstr.FromInt32(0))},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+	})
+
+	It("reconciles a rolling update without downtime", func() {
+		// First reconcile: create stable RS at 3 replicas.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		// Simulate the stable RS becoming ready.
+		setRSReady(ro.Status.StableRS, 3)
+
+		// Bump the template to trigger a rolling update.
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// First update reconcile: surge new RS to 4, hold old at 3.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.StableReadyReplicas).To(Equal(int32(3)), "controller should populate StableReadyReplicas from observed RS")
+
+		// Mark new RS pods ready at 4.
+		newRS := ro.Status.CanaryRS
+		setRSReady(newRS, 4)
+
+		// Next reconcile: old RS scales down by surge=1.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		// Continue until old reaches 0 and new reaches desired=3.
+	})
+})
+
+func setRSReady(rsName string, ready int32) {
+	if rsName == "" {
+		return
+	}
+	var rs appsv1.ReplicaSet
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rsName, Namespace: "default"}, &rs)).To(Succeed())
+	rs.Status.ReadyReplicas = ready
+	rs.Status.Replicas = ready
+	Expect(k8sClient.Status().Update(ctx, &rs)).To(Succeed())
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test ./internal/controller/rollouts/... -ginkgo.focus=rolling`
+Expected: FAIL — `StableReadyReplicas` is never set by the controller.
+
+- [ ] **Step 3: Plumb readiness into status before Sync**
+
+In `internal/controller/rollouts/rollout_controller.go`, add a new method and call it just before `strategy.Sync`:
+
+```go
+// observeReadyReplicas reads the current stable and canary ReplicaSets and
+// stores their ReadyReplicas counts on status for strategy consumption.
+func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	if ro.Status.StableRS != "" {
+		var stable appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.StableRS}, &stable); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing stable RS: %w", err)
+			}
+		} else {
+			ro.Status.StableReadyReplicas = stable.Status.ReadyReplicas
+		}
+	}
+	if ro.Status.CanaryRS != "" {
+		var canary appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.CanaryRS}, &canary); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing canary RS: %w", err)
+			}
+		} else {
+			ro.Status.CanaryReadyReplicas = canary.Status.ReadyReplicas
+		}
+	}
+	return nil
+}
+```
+
+Call it in `Reconcile` immediately before `strategy.Sync` (around line 178):
+
+```go
+if err := r.observeReadyReplicas(ctx, &ro); err != nil {
+    log.Error(err, "Failed to observe ReplicaSet readiness")
+    // Non-fatal: continue with possibly-stale counts.
+}
+```
+
+Build `SyncInputs` with the observed counts:
+
+```go
+inputs := core.NewSyncInputs(r.Clock).WithReadyReplicas(ro.Status.StableReadyReplicas, ro.Status.CanaryReadyReplicas)
+result, err := strategy.Sync(ctx, &ro, &ro.Status, inputs)
+```
+
+- [ ] **Step 4: Run all tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/controller/rollouts/
+git commit -m "feat(rollouts): observe ReplicaSet readiness into status before Sync"
+```
+
+---
+
+## Chunk 4: Fix Bug 4 — BlueGreen `AutoPromotionSeconds` / `ScaleDownDelaySeconds`
+
+**Bug:** `internal/rollout/bluegreen/bluegreen.go` only promotes via the `paprika.io/promote` annotation. `AutoPromotionSeconds` (auto-promote after preview is healthy for N seconds) and `ScaleDownDelaySeconds` (delay scaling old RS after promotion) are declared but never read.
+
+**Fix:**
+1. Stamp `PreviewHealthyAt` when the preview RS becomes fully ready (controller observes this).
+2. In BlueGreen's `Sync`, if `AutoPromotionSeconds != nil` and `time.Since(PreviewHealthyAt) >= *AutoPromotionSeconds`, return `ActionPromote` without the annotation.
+3. On promote, stamp `PromotedAt`. On subsequent reconciles, if `time.Since(PromotedAt) >= ScaleDownDelaySeconds`, scale old RS to 0. Return BOTH RSes on promote so the controller doesn't lose track of the old one.
+4. Default `ScaleDownDelaySeconds` to 30 if unset.
+
+### Task 4.1: Stamp `PreviewHealthyAt` from the controller
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller.go`
+
+- [ ] **Step 1: Write the failing test (will become part of the BlueGreen envtest in Task 4.4)**
+
+Skip ahead — see Task 4.4 for the assertion. For now, just add the controller logic.
+
+- [ ] **Step 2: Add the observation to `observeReadyReplicas`**
+
+Extend the method added in Task 3.3 to detect preview-readiness for BlueGreen:
+
+```go
+// After updating the canary readiness, if this is a BlueGreen rollout and
+// the preview is fully ready, stamp PreviewHealthyAt (once).
+if ro.Spec.Strategy.Type == "BlueGreen" && ro.Spec.Strategy.BlueGreen != nil {
+    desired := int32(1)
+    if ro.Spec.Replicas != nil {
+        desired = *ro.Spec.Replicas
+    }
+    previewCount := desired
+    if ro.Spec.Strategy.BlueGreen.PreviewReplicaCount != nil {
+        previewCount = *ro.Spec.Strategy.BlueGreen.PreviewReplicaCount
+    }
+    if ro.Status.CanaryRS != "" && ro.Status.CanaryReadyReplicas >= previewCount && ro.Status.PreviewHealthyAt == nil {
+        now := metav1.NewTime(r.Clock.Now())
+        ro.Status.PreviewHealthyAt = &now
+    }
+}
+```
+
+- [ ] **Step 3: Commit (with the rest of Chunk 4)**
+
+Deferred to Task 4.4.
+
+---
+
+### Task 4.2: Implement BlueGreen timing logic in the strategy
+
+**Files:**
+- Modify: `internal/rollout/bluegreen/bluegreen.go` (rewrite `Sync` body)
+- Modify: `internal/rollout/bluegreen/bluegreen_test.go`
+
+- [ ] **Step 1: Write the failing strategy tests**
+
+Append to `internal/rollout/bluegreen/bluegreen_test.go`. The shared `testutil` package provides `testutil.Inputs()`, `testutil.InputsReady(...)`, and `testutil.TimeAt(offset)`. We track the prior active RS on `status.PreviousActiveRS` (NOT `status.CanaryRS`, which is reserved for the preview RS during pre-promote).
+
+```go
+func TestBlueGreenAutoPromotesAfterTimeout(t *testing.T) {
+	autoSec := int32(60)
+	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{
+		ActiveService:        "bg-active",
+		AutoPromotionSeconds: &autoSec,
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("bg", EmptyTemplate("v2"))
+	previewHealthy := testutil.TimeAt(-61 * time.Second) // 61s ago
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "bg-active-" + hash.Template(tmpl1),
+		CanaryRS:            "bg-preview-" + hash.Template(EmptyTemplate("v2")),
+		CanaryReadyReplicas: 1,
+		PreviewHealthyAt:    &previewHealthy,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionPromote {
+		t.Fatalf("expected Promote after autoPromotionSeconds, got %s", res.Action)
+	}
+}
+
+func TestBlueGreenDoesNotAutoPromoteBeforeTimeout(t *testing.T) {
+	autoSec := int32(60)
+	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{
+		ActiveService:        "bg-active",
+		AutoPromotionSeconds: &autoSec,
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("bg", EmptyTemplate("v2"))
+	previewHealthy := testutil.TimeAt(-10 * time.Second)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:            "bg-active-" + hash.Template(tmpl1),
+		CanaryRS:            "bg-preview-" + hash.Template(EmptyTemplate("v2")),
+		CanaryReadyReplicas: 1,
+		PreviewHealthyAt:    &previewHealthy,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action == core.ActionPromote {
+		t.Fatal("should not auto-promote before timeout")
+	}
+}
+
+func TestBlueGreenScalesDownAfterDelay(t *testing.T) {
+	delaySec := int32(30)
+	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{
+		ActiveService:         "bg-active",
+		ScaleDownDelaySeconds: &delaySec,
+	})
+	tmpl1 := EmptyTemplate("v1")
+	tmpl2 := EmptyTemplate("v2")
+	ro := makeRollout("bg", tmpl2)
+	promotedAt := testutil.TimeAt(-31 * time.Second) // 31s ago, delay is 30s
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "bg-active-" + hash.Template(tmpl2), // new active (already promoted)
+		PreviousActiveRS: "bg-active-" + hash.Template(tmpl1), // prior active, awaiting drain
+		PromotedAt:       &promotedAt,
+	}
+
+	// The previous active RS is still fully ready (the controller hasn't scaled
+	// it yet). Use InputsReady to express this — the controller observes the
+	// PreviousActiveRS onto CanaryReadyReplicas during drain.
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	found := false
+	for _, rs := range res.ReplicaSets {
+		if rs.Name == status.PreviousActiveRS && rs.Replicas == 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected previous active RS scaled to 0 after scaleDownDelaySeconds; got %+v", res.ReplicaSets)
+	}
+}
+
+func TestBlueGreenKeepsOldRSBeforeDelay(t *testing.T) {
+	delaySec := int32(30)
+	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{
+		ActiveService:         "bg-active",
+		ScaleDownDelaySeconds: &delaySec,
+	})
+	tmpl1 := EmptyTemplate("v1")
+	tmpl2 := EmptyTemplate("v2")
+	ro := makeRollout("bg", tmpl2)
+	promotedAt := testutil.TimeAt(-10 * time.Second) // only 10s ago
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "bg-active-" + hash.Template(tmpl2),
+		PreviousActiveRS: "bg-active-" + hash.Template(tmpl1),
+		PromotedAt:       &promotedAt,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 1))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	for _, rs := range res.ReplicaSets {
+		if rs.Name == status.PreviousActiveRS && rs.Replicas == 0 {
+			t.Fatal("previous active RS should not be scaled to 0 before scaleDownDelaySeconds")
+		}
+	}
+}
+
+func TestBlueGreenExitsDrainWhenPreviousActiveIsZero(t *testing.T) {
+	delaySec := int32(30)
+	s := NewStrategy(&rolloutsv1alpha1.BlueGreenStrategy{
+		ActiveService:         "bg-active",
+		ScaleDownDelaySeconds: &delaySec,
+	})
+	tmpl2 := EmptyTemplate("v2")
+	ro := makeRollout("bg", tmpl2)
+	promotedAt := testutil.TimeAt(-61 * time.Second)
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "bg-active-" + hash.Template(tmpl2),
+		PreviousActiveRS: "bg-active-old", // still set, but observed at 0 ready (see below)
+		PromotedAt:       &promotedAt,
+	}
+	// InputsReady(1, 0): new active has 1 ready (just for the StableRS
+	// observation), previous active has 0 ready (already drained). The
+	// strategy must clear PreviousActiveRS + PromotedAt and return Complete.
+	res, err := s.Sync(context.Background(), ro, &status, testutil.InputsReady(1, 0))
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionComplete {
+		t.Fatalf("expected Complete after drain finished, got %s", res.Action)
+	}
+	if status.PreviousActiveRS != "" {
+		t.Errorf("expected PreviousActiveRS cleared, got %q", status.PreviousActiveRS)
+	}
+	if status.PromotedAt != nil {
+		t.Errorf("expected PromotedAt cleared, got %v", status.PromotedAt)
+	}
+}
+```
+
+Add imports: `"time"`, `"github.com/benebsworth/paprika/internal/rollout/testutil"`. The existing `"github.com/benebsworth/paprika/internal/rollout/core"` import is already present.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/rollout/bluegreen/...`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement BlueGreen timing**
+
+Replace `Sync` body in `internal/rollout/bluegreen/bluegreen.go` (lines 42-116) with:
+
+```go
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in core.SyncInputs) (*core.SyncResult, error) {
+	if s.cfg.ActiveService == "" {
+		return nil, errors.New("blueGreen strategy requires activeService")
+	}
+
+	desiredReplicas := int32(1)
+	if ro.Spec.Replicas != nil {
+		desiredReplicas = *ro.Spec.Replicas
+	}
+	hash := hash.Template(&ro.Spec.Template)
+
+	if status.StableRS == "" {
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionCreateStable,
+			Message: "Creating active ReplicaSet",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeActiveRS(ro, hash, desiredReplicas),
+			},
+		}, nil
+	}
+
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
+	activeHash := hashFromRSName(status.StableRS)
+
+	// Already-promoted path: drain the previous active RS after ScaleDownDelaySeconds.
+	if status.PromotedAt != nil && status.PreviousActiveRS != "" {
+		delay := int32(30)
+		if s.cfg.ScaleDownDelaySeconds != nil {
+			delay = *s.cfg.ScaleDownDelaySeconds
+		}
+		// Exit condition: the controller observes the PreviousActiveRS's ready
+		// count via observeReadyReplicas (which writes it onto
+		// CanaryReadyReplicas during drain — see Task 4.1). When it reaches 0,
+		// clear PreviousActiveRS + PromotedAt and return Complete so a fresh
+		// template bump can start a new rollout.
+		if in.CanaryReadyReplicas == 0 {
+			status.PreviousActiveRS = ""
+			status.PromotedAt = nil
+			return &core.SyncResult{
+				Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+				Action:  core.ActionComplete,
+				Message: "Active ReplicaSet matches desired template; previous active drained",
+				ReplicaSets: []core.ReplicaSetAction{
+					makeActiveRS(ro, hash, desiredReplicas),
+				},
+			}, nil
+		}
+		oldTarget := desiredReplicas
+		if in.Now().Sub(status.PromotedAt.Time) >= time.Duration(delay)*time.Second {
+			oldTarget = 0
+		}
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+			Action:  core.ActionStep,
+			Message: fmt.Sprintf("Draining previous active; target=%d", oldTarget),
+			ReplicaSets: []core.ReplicaSetAction{
+				makeActiveRS(ro, hash, desiredReplicas),
+				{
+					Name:     status.PreviousActiveRS,
+					Replicas: oldTarget,
+					Template: nil, // do not overwrite the old RS template
+					Labels: map[string]string{
+						"rollouts.paprika.io/draining":  "true",
+						"rollouts.paprika.io/revision":  hashFromRSName(status.PreviousActiveRS),
+						"rollouts.paprika.io/rollout":   ro.Name,
+					},
+				},
+			},
+		}, nil
+	}
+
+	// First time seeing the new template: create preview.
+	if status.CanaryRS == "" {
+		if hash == activeHash {
+			return &core.SyncResult{
+				Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+				Action:  core.ActionComplete,
+				Message: "Active ReplicaSet matches desired template",
+				ReplicaSets: []core.ReplicaSetAction{
+					makeActiveRS(ro, hash, desiredReplicas),
+				},
+			}, nil
+		}
+		previewReplicas := desiredReplicas
+		if s.cfg.PreviewReplicaCount != nil {
+			previewReplicas = *s.cfg.PreviewReplicaCount
+		}
+		return &core.SyncResult{
+			Phase:   rolloutsv1alpha1.RolloutPhasePaused,
+			Action:  core.ActionPause,
+			Message: "Preview ReplicaSet created; waiting for promotion",
+			ReplicaSets: []core.ReplicaSetAction{
+				makeActiveRS(ro, activeHash, desiredReplicas),
+				makePreviewRS(ro, hash, previewReplicas),
+			},
+		}, nil
+	}
+
+	previewHash := hashFromRSName(status.CanaryRS)
+
+	// Auto-promote: if AutoPromotionSeconds is set and preview has been healthy
+	// for at least that long, promote without an annotation.
+	if s.cfg.AutoPromotionSeconds != nil && *s.cfg.AutoPromotionSeconds > 0 &&
+		status.PreviewHealthyAt != nil &&
+		in.Now().Sub(status.PreviewHealthyAt.Time) >= time.Duration(*s.cfg.AutoPromotionSeconds)*time.Second {
+		return promoteResult(ro, status, hash, activeHash, desiredReplicas, in)
+	}
+
+	// Manual promote.
+	if _, promoted := ro.Annotations[core.PromoteAnnotation]; promoted {
+		return promoteResult(ro, status, hash, activeHash, desiredReplicas, in)
+	}
+
+	previewReplicas := desiredReplicas
+	if s.cfg.PreviewReplicaCount != nil {
+		previewReplicas = *s.cfg.PreviewReplicaCount
+	}
+	return &core.SyncResult{
+		Phase:   rolloutsv1alpha1.RolloutPhasePaused,
+		Action:  core.ActionPause,
+		Message: "Waiting for promotion",
+		ReplicaSets: []core.ReplicaSetAction{
+			makeActiveRS(ro, activeHash, desiredReplicas),
+			makePreviewRS(ro, previewHash, previewReplicas),
+		},
+	}, nil
+}
+
+// promoteResult produces a promote SyncResult. Side effects on `status`:
+//   - PromotedAt is stamped (using the injected clock, NOT time.Now()) if nil.
+//   - PreviousActiveRS is set to the current StableRS (the old active).
+//   - StableRS is advanced to the new active RS name.
+//   - CanaryRS is cleared (the preview RS is being promoted to active).
+// The old active RS is returned with label "draining=true" (not "stable" or
+// "active") so the controller's updateStatusFromResult does NOT mistake it for
+// the current StableRS — that was the bug that clobbered status in v1.
+func promoteResult(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, hash, activeHash string, desiredReplicas int32, in core.SyncInputs) (*core.SyncResult, error) {
+	if status.PromotedAt == nil {
+		now := metav1.NewTime(in.Now())
+		status.PromotedAt = &now
+	}
+	// Track the prior active RS for the drain phase.
+	if status.StableRS != "" && hashFromRSName(status.StableRS) != hash {
+		status.PreviousActiveRS = status.StableRS
+	}
+	status.StableRS = ro.Name + "-active-" + hash
+	status.CanaryRS = "" // preview is being promoted to active
+	return &core.SyncResult{
+		Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
+		Action:  core.ActionPromote,
+		Message: "Promoting preview to active",
+		ReplicaSets: []core.ReplicaSetAction{
+			makeActiveRS(ro, hash, desiredReplicas),
+			{
+				Name:     ro.Name + "-active-" + activeHash,
+				Replicas: desiredReplicas, // keep at full count; drain phase will scale it down
+				Template: nil,             // do not overwrite the old RS template
+				Labels: map[string]string{
+					"rollouts.paprika.io/draining": "true",
+					"rollouts.paprika.io/revision": activeHash,
+					"rollouts.paprika.io/rollout":  ro.Name,
+				},
+			},
+		},
+	}, nil
+}
+```
+
+Add imports to `bluegreen.go`: `"time"` and `"fmt"` (the new Sync body uses `fmt.Sprintf` in the drain message and `time.Duration` for the delay comparison). The `updateStatusFromResult` extension below also needs to learn the `draining` label so the controller can park the draining RS on `status.PreviousActiveRS` (instead of `CanaryRS`) for the next reconcile.
+
+**Important controller-side update (Task 4.1 Step 2 already handles the readiness observation; this is the labeling side):** In `internal/controller/rollouts/rollout_controller.go` `updateStatusFromResult`, extend the RS-name loop to also recognize `draining=true`:
+
+```go
+for _, rs := range result.ReplicaSets {
+    if rs.Labels["rollouts.paprika.io/stable"] == "true" || rs.Labels["rollouts.paprika.io/active"] == "true" {
+        ro.Status.StableRS = rs.Name
+    }
+    if rs.Labels["rollouts.paprika.io/canary"] == "true" || rs.Labels["rollouts.paprika.io/preview"] == "true" {
+        ro.Status.CanaryRS = rs.Name
+    }
+    if rs.Labels["rollouts.paprika.io/draining"] == "true" {
+        ro.Status.PreviousActiveRS = rs.Name
+        // During drain, the previous active's ready count is observed on
+        // CanaryReadyReplicas (see observeReadyReplicas extension below).
+    }
+}
+```
+
+And in `observeReadyReplicas`, also read the PreviousActiveRS when set:
+
+```go
+	if ro.Status.PreviousActiveRS != "" {
+		var prev appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.PreviousActiveRS}, &prev); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing previous active RS: %w", err)
+			}
+		} else {
+			// During drain, observe the previous active's ready count on
+			// CanaryReadyReplicas so the strategy's exit condition fires when it
+			// reaches 0.
+			ro.Status.CanaryReadyReplicas = prev.Status.ReadyReplicas
+		}
+	}
+```
+```
+
+This couples the drain-state exit to observed readiness — once the old RS's pods are gone, the strategy clears state and returns Complete.
+
+- [ ] **Step 4: Run strategy tests**
+
+Run: `go test ./internal/rollout/bluegreen/...`
+Expected: PASS.
+
+- [ ] **Step 5: Commit (with Tasks 4.1, 4.3, 4.4 below)**
+
+Deferred.
+
+---
+
+### Task 4.3: Validate BlueGreen timing fields
+
+**Files:**
+- Modify: `internal/webhook/rollouts/v1alpha1/rollout_webhook.go`
+
+- [ ] **Step 1: Add validation**
+
+In `validateStrategyConfig` (lines 136-143), extend the `case "BlueGreen":` block:
+
+```go
+case "BlueGreen":
+	if s.BlueGreen == nil {
+		allErrs = append(allErrs, field.Required(path.Child("blueGreen"), "blueGreen configuration is required"))
+		return allErrs
+	}
+	if s.BlueGreen.ActiveService == "" {
+		allErrs = append(allErrs, field.Required(path.Child("blueGreen").Child("activeService"), "activeService is required"))
+	}
+	if s.BlueGreen.AutoPromotionSeconds != nil && *s.BlueGreen.AutoPromotionSeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("blueGreen").Child("autoPromotionSeconds"), *s.BlueGreen.AutoPromotionSeconds, "must be >= 0"))
+	}
+	if s.BlueGreen.ScaleDownDelaySeconds != nil && *s.BlueGreen.ScaleDownDelaySeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(path.Child("blueGreen").Child("scaleDownDelaySeconds"), *s.BlueGreen.ScaleDownDelaySeconds, "must be >= 0"))
+	}
+```
+
+Add the test in `internal/webhook/rollouts/v1alpha1/rollout_webhook_test.go`:
+
+```go
+func TestBlueGreenRejectsNegativeTiming(t *testing.T) {
+	neg := int32(-1)
+	ro := &rolloutsv1alpha1.Rollout{
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Strategy: rolloutsv1alpha1.RolloutStrategy{
+				Type: "BlueGreen",
+				BlueGreen: &rolloutsv1alpha1.BlueGreenStrategy{
+					ActiveService:         "x",
+					AutoPromotionSeconds:  &neg,
+					ScaleDownDelaySeconds: &neg,
+				},
+			},
+		},
+	}
+	v := &RolloutCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), ro)
+	if err == nil {
+		t.Fatal("expected validation error for negative timing fields")
+	}
+}
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `go test ./internal/webhook/rollouts/...`
+Expected: PASS.
+
+---
+
+### Task 4.4: Controller-level envtest for BlueGreen timing
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller_test.go`
+
+- [ ] **Step 1: Write the test**
+
+```go
+var _ = Describe("RolloutReconciler bluegreen", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{Scheme: mgr.GetScheme(), Clock: clk, Client: k8sClient}
+		autoSec := int32(60)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "bg-auto", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "BlueGreen",
+					BlueGreen: &rolloutsv1alpha1.BlueGreenStrategy{
+						ActiveService:         "bg-auto-active",
+						PreviewService:        "bg-auto-preview",
+						AutoPromotionSeconds:  &autoSec,
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+	})
+
+	It("auto-promotes once preview is healthy for AutoPromotionSeconds", func() {
+		// Initial: create active RS.
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		// Bump template to trigger preview creation.
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CanaryRS).NotTo(BeEmpty(), "preview should be created")
+
+		// Mark preview fully ready — controller stamps PreviewHealthyAt.
+		setRSReady(ro.Status.CanaryRS, 2)
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.PreviewHealthyAt).NotTo(BeNil(), "controller should stamp PreviewHealthyAt once preview is fully ready")
+
+		// Advance clock past autoPromotionSeconds.
+		clk.Add(61 * time.Second)
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.PromotedAt).NotTo(BeNil(), "should auto-promote after timeout")
+	})
+})
+```
+
+- [ ] **Step 2: Run tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: PASS for all of Chunk 4.
+
+- [ ] **Step 3: Commit Chunk 4 together**
+
+```bash
+git add internal/rollout/bluegreen/ internal/webhook/rollouts/ internal/controller/rollouts/
+git commit -m "fix(rollouts): honor AutoPromotionSeconds and ScaleDownDelaySeconds in BlueGreen"
+```
+
+---
+
+## Chunk 5: Fix Bug 5 — `RevisionHistoryLimit` pruning
+
+**Bug:** Old ReplicaSets accumulate forever. The field is parsed, defaulted to 10, but never enforced.
+
+**Fix:** Add `pruneReplicaSets(ctx, ro)` to the controller. List ReplicaSets owned by the Rollout. Exclude the current stable/active RS (and any in-progress canary/preview). Sort the remainder by revision label / creation timestamp descending. Keep the most recent `RevisionHistoryLimit`; delete the rest (only those already scaled to 0 — never delete a still-serving revision). Call from `Reconcile` after `executeReplicaSetActions`.
+
+### Task 5.1: Implement pruning
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller.go`
+- Modify: `internal/controller/rollouts/rollout_controller_test.go`
+
+- [ ] **Step 1: Write the failing envtest**
+
+Append:
+
+```go
+var _ = Describe("RolloutReconciler pruning", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{Scheme: mgr.GetScheme(), Clock: clk, Client: k8sClient}
+		limit := int32(2)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "prune-test", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas:             int32Ptr(1),
+				RevisionHistoryLimit: &limit,
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type:    "Rolling",
+					Rolling: &rolloutsv1alpha1.RollingStrategy{MaxSurge: ptr.To(intstr.FromInt32(1)), MaxUnavailable: ptr.To(intstr.FromInt32(0))},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+	})
+
+	It("prunes old ReplicaSets beyond RevisionHistoryLimit", func() {
+		// Drive through 4 template revisions.
+		versions := []string{"v1", "v2", "v3", "v4"}
+		for i, v := range versions {
+			if i > 0 {
+				ro.Spec.Template = podTemplate(v)
+				Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+			}
+			_, _ = recon.Reconcile(ctx, reqFor(ro))
+			// Mark new RS ready immediately to drive rolling to completion.
+			if ro.Status.CanaryRS != "" {
+				setRSReady(ro.Status.CanaryRS, 1)
+			}
+			if ro.Status.StableRS != "" {
+				setRSReady(ro.Status.StableRS, 1)
+			}
+			_, _ = recon.Reconcile(ctx, reqFor(ro))
+			Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		}
+
+		// Count ReplicaSets owned by the rollout.
+		list := &appsv1.ReplicaSetList{}
+		Expect(k8sClient.List(ctx, list, client.InNamespace("default"), client.MatchingLabels{"rollouts.paprika.io/rollout": "prune-test"})).To(Succeed())
+		// RevisionHistoryLimit=2 means at most 2 old RSes + 1 current = 3 total.
+		if len(list.Items) > 3 {
+			t := GinkgoT()
+			t.Fatalf("expected at most 3 ReplicaSets after pruning, got %d", len(list.Items))
+		}
+	})
+})
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test ./internal/controller/rollouts/... -ginkgo.focus=pruning`
+Expected: FAIL — RSes accumulate.
+
+- [ ] **Step 3: Implement `pruneReplicaSets`**
+
+In `internal/controller/rollouts/rollout_controller.go`, add the method and call it from `Reconcile` right after `executeReplicaSetActions`:
+
+```go
+func (r *RolloutReconciler) pruneReplicaSets(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	log := logf.FromContext(ctx)
+	if ro.Spec.RevisionHistoryLimit == nil || *ro.Spec.RevisionHistoryLimit < 0 {
+		return nil
+	}
+	limit := int(*ro.Spec.RevisionHistoryLimit)
+
+	list := &appsv1.ReplicaSetList{}
+	if err := r.Client.List(ctx, list, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}); err != nil {
+		return fmt.Errorf("listing owned ReplicaSets: %w", err)
+	}
+
+	// Protect the currently-serving RS, any in-flight canary/preview, AND the
+	// previous active RS during BlueGreen drain (Chunk 4 stashes the prior
+	// active on PreviousActiveRS until the drain completes; pruning it mid-drain
+	// would never let the drain-exit condition fire).
+	protected := map[string]bool{
+		ro.Status.StableRS:         true,
+		ro.Status.CanaryRS:         true,
+		ro.Status.PreviousActiveRS: true,
+	}
+
+	// Candidates: old RSes that are scaled to 0.
+	type candidate struct {
+		rs        appsv1.ReplicaSet
+		createdAt int64
+	}
+	var cands []candidate
+	for _, rs := range list.Items {
+		if protected[rs.Name] {
+			continue
+		}
+		if rs.Spec.Replicas == nil || *rs.Spec.Replicas != 0 {
+			continue // still serving; don't delete
+		}
+		cands = append(cands, candidate{rs: rs, createdAt: rs.CreationTimestamp.UnixNano()})
+	}
+	if len(cands) <= limit {
+		return nil
+	}
+
+	// Sort newest-first so we keep the most recent `limit` entries.
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].createdAt > cands[j].createdAt
+	})
+
+	for _, c := range cands[limit:] {
+		if err := r.Client.Delete(ctx, &c.rs); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("pruning ReplicaSet %s: %w", c.rs.Name, err)
+		}
+		log.Info("Pruned ReplicaSet", "name", c.rs.Name)
+	}
+	return nil
+}
+```
+
+Add the call in `Reconcile` after `r.executeReplicaSetActions(...)`:
+
+```go
+if err := r.executeReplicaSetActions(ctx, &ro, result.ReplicaSets); err != nil {
+    // ... existing error handling
+}
+
+if err := r.pruneReplicaSets(ctx, &ro); err != nil {
+    log.Error(err, "Failed to prune ReplicaSets")
+    // Non-fatal — don't fail the reconcile.
+}
+```
+
+Add imports: `"sort"`, `ptr "k8s.io/utils/ptr"` (used in the envtest), and (already present) `appsv1 "k8s.io/api/apps/v1"`. The `r.Client.List` / `r.Client.Delete` calls assume the field rename from Chunk 1 Task 1.2 Step 2 has landed. RBAC `replicasets ... delete` is already in place (line 97).
+
+- [ ] **Step 4: Run all tests**
+
+Run:
+```bash
+make lint
+make test
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/controller/rollouts/
+git commit -m "fix(rollouts): enforce RevisionHistoryLimit by pruning old ReplicaSets"
+```
+
+---
+
+## Chunk 6: Final hardening pass
+
+### Task 6.1: End-to-end envtest covering all five bugs
+
+**Files:**
+- Modify: `internal/controller/rollouts/rollout_controller_test.go`
+
+- [ ] **Step 1: Add a `Describe` block that exercises the canary-advance → abort → resume lifecycle**
+
+This is an integration sanity check — the per-bug tests in Chunks 1-5 already cover each behavior in isolation, so this test exists to catch cross-bug regressions (e.g. an abort that doesn't clear correctly preventing a fresh rollout).
+
+```go
+var _ = Describe("RolloutReconciler end-to-end lifecycle", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{Scheme: mgr.GetScheme(), Clock: clk, Client: k8sClient}
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{Name: "e2e-lifecycle", Namespace: "default"},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						StableService: "e2e-stable",
+						CanaryService: "e2e-canary",
+						Steps: []rolloutsv1alpha1.CanaryStep{
+							{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 50, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 100},
+						},
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+	})
+
+	It("advances, aborts, then resumes from a fresh template", func() {
+		By("creating the stable RS")
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+
+		By("triggering a canary update")
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)))
+
+		By("advancing past step 0 after Duration")
+		clk.Add(61 * time.Second)
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(1)))
+
+		By("aborting mid-rollout")
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue())
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseAborted))
+
+		By("removing the annotation without template change — abort must persist")
+		ro.Annotations = map[string]string{}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "abort must persist until template changes")
+
+		By("bumping the template — abort clears, fresh rollout starts")
+		ro.Spec.Template = podTemplate("v3")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, _ = recon.Reconcile(ctx, reqFor(ro))
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeFalse())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)), "step index must reset on fresh rollout")
+	})
+})
+```
+
+- [ ] **Step 2: Run**
+
+```bash
+make lint
+make test
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add internal/controller/rollouts/rollout_controller_test.go
+git commit -m "test(rollouts): end-to-end envtest covering canary advance + abort + resume"
+```
+
+---
+
+### Task 6.2: Update TODO.md
+
+**Files:**
+- Modify: `TODO.md` (only — `PRODUCTION_ROADMAP.md`'s banner already redirects readers to TODO.md and has no "Done" section to edit)
+
+- [ ] **Step 1: Add a checked bullet to TODO.md under `## Implemented` → `### Rollouts & analysis`**
+
+That section currently ends with `[x] Feature flags (...)`. Append:
+
+```markdown
+- [x] **Rollout correctness bugs** — canary `CurrentStepIndex` advancement gated on `Duration`; `paprika.io/abort` honored by all five strategies with durable `status.Abort`; `MaxSurge`/`MaxUnavailable` accounting with real surge/unavailable semantics; BlueGreen `AutoPromotionSeconds` + `ScaleDownDelaySeconds` with a `PreviousActiveRS` drain loop; `RevisionHistoryLimit` pruning. (Plan: docs/superpowers/plans/2026-06-28-rollout-correctness-bugs.md)
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add TODO.md
+git commit -m "docs(rollouts): mark five correctness bugs as resolved"
+```
+
+---
+
+### Task 6.3: Wire the real clock into the RolloutReconciler constructor
+
+Required (not optional): `SetupWithManager` defaults `r.Clock` to `clock.Real{}` if nil, but explicit wiring at the construction site matches how every other reconciler in `cmd/main_controllers.go` injects its dependencies and makes the dependency obvious to future readers.
+
+**Files:**
+- Modify: `cmd/main_controllers.go:297` (`setupRolloutController`)
+
+- [ ] **Step 1: Find the construction site**
+
+Run: `rg "RolloutReconciler\{" cmd/`
+Expected: `cmd/main_controllers.go:297` (the `setupRolloutController` function).
+
+- [ ] **Step 2: Pass a real clock**
+
+```go
+rolloutReconciler := &rollouts.RolloutReconciler{
+    Scheme:        mgr.GetScheme(),
+    DynamicClient: dynamicClient,
+    Analyzer:      analyzer,
+    EventRecorder: mgr.GetEventRecorderFor("rollout-controller"),
+    EventBroker:   broker,
+    Clock:         clock.Real{},
+}
+```
+
+If the field is left nil, `SetupWithManager` already defaults it (Task 0.2 Step 5), but explicit is clearer.
+
+- [ ] **Step 3: Build and smoke-test locally**
+
+```bash
+go build ./...
+```
+
+Expected: no errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add cmd/
+git commit -m "chore(rollouts): wire real clock into RolloutReconciler constructor"
+```
+
+---
+
+## Verification — run before declaring done
+
+```bash
+make manifests
+make generate
+make lint
+make test
+```
+
+All must pass. If `make test` skips e2e (it does), the rollout envtest suite runs as part of unit tests. To validate end-to-end on a real cluster, follow the on-demand workflow:
+
+```bash
+gh workflow run test-e2e.yml --ref <branch> -f ginkgo_focus=Rollout
+```
+
+## Out of scope (deferred to future plans)
+
+- Prometheus metric provider for AnalysisRun (will land in the analysis-parity plan).
+- More traffic routers (SMI, NGINX, ALB, AppMesh, Traefik) — separate plan.
+- `successCondition`/`failureLimit` counting model — separate plan.
+- `ClusterAnalysisTemplate` — separate plan.
+- HPA compatibility / dynamic stable scale — separate plan.
+- UI surfacing of the new status fields — the UI gets them automatically via the existing Connect-ES types regenerated by `make generate-proto`; verify in a follow-up.
+
+## References
+
+- `internal/rollout/core/core.go` — strategy interface (modified).
+- `internal/controller/rollouts/rollout_controller.go` — Reconcile loop (modified).
+- `internal/rollout/{canary,bluegreen,rolling,abtest,mirror}/*.go` — strategies (modified).
+- `api/rollouts/v1alpha1/rollout_types.go` — CRD schema (extended).
+- `internal/webhook/rollouts/v1alpha1/rollout_webhook.go` — validation (extended).
+- `internal/metrics/metrics.go` — Prometheus collectors (extended).
+- `internal/clock/clock.go` — deterministic clock (used by tests, no changes).
+- Reference implementation for canary advancement: `internal/controller/pipelines/release_controller.go:1736` (the Release canary path already does this correctly).

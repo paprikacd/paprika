@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -43,15 +44,16 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/rollout"
 	"github.com/benebsworth/paprika/internal/rollout/core"
+	"github.com/benebsworth/paprika/internal/rollout/hash"
 	"github.com/benebsworth/paprika/internal/traffic"
 )
 
 const (
 	rolloutFinalizer       = "rollouts.paprika.io/finalizer"
-	promoteAnnotation      = "paprika.io/promote"
-	abortAnnotation        = "paprika.io/abort"
 	progressingCondition   = "RolloutProgressing"
 	defaultServicePortName = "http"
 )
@@ -83,12 +85,13 @@ type mirrorRouter interface {
 
 // RolloutReconciler reconciles Rollout resources.
 type RolloutReconciler struct {
-	client        client.Client
+	Client        client.Client
 	Scheme        *runtime.Scheme
 	DynamicClient dynamic.Interface
 	Analyzer      *analysis.CELAnalyzer
 	EventRecorder record.EventRecorder
 	EventBroker   *events.Broker
+	Clock         clock.Clock
 }
 
 // +kubebuilder:rbac:groups=rollouts.paprika.io,resources=rollouts,verbs=get;list;watch;create;update;patch;delete
@@ -105,6 +108,12 @@ func (r *RolloutReconciler) patchStatusOrLog(ctx context.Context, ro *rolloutsv1
 	if err := r.patchStatus(ctx, ro); err != nil {
 		log.Error(err, "Failed to patch rollout status")
 	}
+}
+
+func (r *RolloutReconciler) failRollout(ctx context.Context, ro *rolloutsv1alpha1.Rollout, err error, log logr.Logger) {
+	ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
+	ro.Status.Message = err.Error()
+	r.patchStatusOrLog(ctx, ro, log)
 }
 
 func (r *RolloutReconciler) publishRolloutEvent(ctx context.Context, ro *rolloutsv1alpha1.Rollout) {
@@ -132,13 +141,13 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := logf.FromContext(ctx)
 
 	var ro rolloutsv1alpha1.Rollout
-	if err := r.client.Get(ctx, req.NamespacedName, &ro); err != nil {
+	if err := r.Client.Get(ctx, req.NamespacedName, &ro); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
 	if !controllerutil.ContainsFinalizer(&ro, rolloutFinalizer) {
 		controllerutil.AddFinalizer(&ro, rolloutFinalizer)
-		if err := r.client.Update(ctx, &ro); err != nil {
+		if err := r.Client.Update(ctx, &ro); err != nil {
 			return ctrl.Result{}, fmt.Errorf("adding rollout finalizer: %w", err)
 		}
 		return ctrl.Result{Requeue: true}, nil
@@ -157,44 +166,50 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	// Latch abort state durably from the annotation; clear only when the
+	// annotation is removed AND the pod template has changed.
+	r.latchAbort(&ro)
+
 	if err := r.applyDefaults(&ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("applying defaults: %w", err)
 	}
 
 	if err := r.resolveTarget(ctx, &ro); err != nil {
-		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
-		ro.Status.Message = err.Error()
-		r.patchStatusOrLog(ctx, &ro, log)
+		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("resolving target: %w", err)
 	}
 
 	strategy, err := rollout.NewStrategy(&ro.Spec.Strategy)
 	if err != nil {
-		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
-		ro.Status.Message = err.Error()
-		r.patchStatusOrLog(ctx, &ro, log)
+		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("creating strategy: %w", err)
 	}
 
-	result, err := strategy.Sync(ctx, &ro, &ro.Status)
+	prevStepIdx := ro.Status.CurrentStepIndex
+
+	if observeErr := r.observeReadyReplicas(ctx, &ro); observeErr != nil {
+		log.Error(observeErr, "Failed to observe ReplicaSet readiness")
+		// Non-fatal: continue with possibly-stale counts.
+	}
+	inputs := core.NewSyncInputs(r.Clock).WithReadyReplicas(ro.Status.StableReadyReplicas, ro.Status.CanaryReadyReplicas)
+	result, err := strategy.Sync(ctx, &ro, &ro.Status, inputs)
 	if err != nil {
-		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
-		ro.Status.Message = err.Error()
-		r.patchStatusOrLog(ctx, &ro, log)
+		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("strategy sync: %w", err)
 	}
 
 	if err := r.executeReplicaSetActions(ctx, &ro, result.ReplicaSets); err != nil {
-		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
-		ro.Status.Message = err.Error()
-		r.patchStatusOrLog(ctx, &ro, log)
+		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("executing replica set actions: %w", err)
 	}
 
+	if err := r.pruneReplicaSets(ctx, &ro); err != nil {
+		log.Error(err, "Failed to prune ReplicaSets")
+		// Non-fatal — don't fail the reconcile.
+	}
+
 	if err := r.ensureServices(ctx, &ro, result); err != nil {
-		ro.Status.Phase = rolloutsv1alpha1.RolloutPhaseFailed
-		ro.Status.Message = err.Error()
-		r.patchStatusOrLog(ctx, &ro, log)
+		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("ensuring services: %w", err)
 	}
 
@@ -209,7 +224,7 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		log.Error(err, "Analysis failed")
 	}
 
-	r.updateStatusFromResult(&ro, result)
+	r.updateStatusFromResult(&ro, result, prevStepIdx)
 
 	if err := r.patchStatus(ctx, &ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patching rollout status: %w", err)
@@ -220,9 +235,37 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if result.Action == core.ActionStep {
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: r.stepRequeueInterval(&ro)}, nil
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+// latchAbort durably records abort state from the annotation onto status, and
+// clears it only when both the annotation is gone AND the pod template has
+// moved past the template under which we aborted (status.CurrentPodHash
+// differs). This lets operators drop the annotation without immediately
+// resuming, while still allowing a template bump to explicitly restart.
+func (r *RolloutReconciler) latchAbort(ro *rolloutsv1alpha1.Rollout) {
+	if _, hasAnn := ro.Annotations[core.AbortAnnotation]; hasAnn {
+		ro.Status.Abort = true
+		return
+	}
+	if !ro.Status.Abort {
+		return
+	}
+	// TODO(perf): CurrentPodHash is advanced by updateStatusFromResult on every
+	// reconcile, including aborts. If the operator bumps the template while the
+	// abort annotation is still present, the anchor drifts forward and removing
+	// the annotation alone won't clear the abort. The documented flow (remove
+	// annotation + bump template) works; this note exists so a future reader
+	// doesn't trip on the edge case.
+	currentHash := hash.Template(&ro.Spec.Template)
+	// Don't clear before the first reconcile has stamped a hash.
+	if ro.Status.CurrentPodHash != "" && currentHash != ro.Status.CurrentPodHash {
+		ro.Status.Abort = false
+		ro.Status.CurrentStepIndex = 0
+		ro.Status.CurrentStepStartedAt = nil
+	}
 }
 
 func (r *RolloutReconciler) handleDeletion(ctx context.Context, ro *rolloutsv1alpha1.Rollout) (ctrl.Result, error) {
@@ -237,7 +280,7 @@ func (r *RolloutReconciler) handleDeletion(ctx context.Context, ro *rolloutsv1al
 		}
 	}
 	controllerutil.RemoveFinalizer(ro, rolloutFinalizer)
-	if err := r.client.Update(ctx, ro); err != nil {
+	if err := r.Client.Update(ctx, ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("removing rollout finalizer: %w", err)
 	}
 	return ctrl.Result{}, nil
@@ -257,6 +300,33 @@ func (r *RolloutReconciler) applyDefaults(ro *rolloutsv1alpha1.Rollout) error {
 		ro.Spec.Target.Kind = "Deployment"
 	}
 	return nil
+}
+
+// stepRequeueInterval returns the time until the current canary step's
+// duration elapses, with a 1-second floor (so a 5s step actually requeues in
+// ~5s rather than being masked by a 30s floor). Returns 30s for non-canary
+// strategies or when the step has no Duration / no start stamp.
+func (r *RolloutReconciler) stepRequeueInterval(ro *rolloutsv1alpha1.Rollout) time.Duration {
+	const floor = 1 * time.Second
+	if ro.Spec.Strategy.Type != "Canary" || ro.Spec.Strategy.Canary == nil {
+		return 30 * time.Second
+	}
+	idx := int(ro.Status.CurrentStepIndex)
+	if idx >= len(ro.Spec.Strategy.Canary.Steps) {
+		return 30 * time.Second
+	}
+	step := ro.Spec.Strategy.Canary.Steps[idx]
+	if step.Duration == nil || step.Duration.Duration <= 0 {
+		return floor
+	}
+	if ro.Status.CurrentStepStartedAt == nil {
+		return floor
+	}
+	remaining := step.Duration.Duration - r.Clock.Now().Sub(ro.Status.CurrentStepStartedAt.Time)
+	if remaining < floor {
+		return floor
+	}
+	return remaining
 }
 
 func setServiceDefaults(s *rolloutsv1alpha1.RolloutStrategy, name string) {
@@ -305,7 +375,7 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 		return nil
 	}
 	var deploy appsv1.Deployment
-	if err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Spec.Target.Name}, &deploy); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
 		}
@@ -317,25 +387,100 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 	return nil
 }
 
+// observeReadyReplicas reads the current stable and canary ReplicaSets and
+// stores their ReadyReplicas counts on status for strategy consumption.
+func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	if ro.Status.StableRS != "" {
+		var stable appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.StableRS}, &stable); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing stable RS: %w", err)
+			}
+			ro.Status.StableReadyReplicas = 0
+		} else {
+			ro.Status.StableReadyReplicas = stable.Status.ReadyReplicas
+		}
+	}
+	if ro.Status.CanaryRS != "" {
+		var canary appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.CanaryRS}, &canary); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing canary RS: %w", err)
+			}
+			ro.Status.CanaryReadyReplicas = 0
+		} else {
+			ro.Status.CanaryReadyReplicas = canary.Status.ReadyReplicas
+		}
+	}
+
+	// BlueGreen-specific: stamp PreviewHealthyAt once when the preview RS becomes
+	// fully ready, so the strategy's AutoPromotionSeconds timeout has an anchor.
+	if ro.Spec.Strategy.Type == "BlueGreen" && ro.Spec.Strategy.BlueGreen != nil {
+		desired := int32(1)
+		if ro.Spec.Replicas != nil {
+			desired = *ro.Spec.Replicas
+		}
+		previewCount := desired
+		if ro.Spec.Strategy.BlueGreen.PreviewReplicaCount != nil {
+			previewCount = *ro.Spec.Strategy.BlueGreen.PreviewReplicaCount
+		}
+		if ro.Status.CanaryRS != "" && ro.Status.CanaryReadyReplicas >= previewCount && ro.Status.PreviewHealthyAt == nil {
+			now := metav1.NewTime(r.Clock.Now())
+			ro.Status.PreviewHealthyAt = &now
+		}
+	}
+
+	// BlueGreen drain: observe PreviousActiveRS's readiness onto
+	// CanaryReadyReplicas so the strategy's drain-exit condition
+	// (in.CanaryReadyReplicas == 0) fires. This only runs during drain
+	// (PreviousActiveRS != ""); otherwise it would clobber the preview RS's
+	// readiness observation recorded above.
+	if ro.Status.PreviousActiveRS != "" {
+		var prev appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.PreviousActiveRS}, &prev); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing previous active RS: %w", err)
+			}
+			ro.Status.CanaryReadyReplicas = 0
+		} else {
+			ro.Status.CanaryReadyReplicas = prev.Status.ReadyReplicas
+		}
+	}
+
+	return nil
+}
+
 func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *rolloutsv1alpha1.Rollout, actions []core.ReplicaSetAction) error {
 	log := logf.FromContext(ctx)
 
 	for _, action := range actions {
 		var rs appsv1.ReplicaSet
-		err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
+		err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: action.Name}, &rs)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("getting ReplicaSet %s: %w", action.Name, err)
 		}
 
+		// Always set the RS-level labels (these identify the RS for pruning,
+		// traffic selection, etc). The pod-template labels are only mutated
+		// when action.Template is non-nil.
 		labels := action.Labels
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		if action.Template.ObjectMeta.Labels == nil {
-			action.Template.ObjectMeta.Labels = map[string]string{}
-		}
-		for k, v := range labels {
-			action.Template.ObjectMeta.Labels[k] = v
+
+		// Build the desired template only when action.Template is non-nil.
+		// A nil Template means "leave the existing RS's pod template alone" —
+		// used by AbortResult and by drain/abort paths that scale an existing
+		// RS without rolling its template.
+		var desiredTemplate corev1.PodTemplateSpec
+		if action.Template != nil {
+			desiredTemplate = *action.Template
+			if desiredTemplate.ObjectMeta.Labels == nil {
+				desiredTemplate.ObjectMeta.Labels = map[string]string{}
+			}
+			for k, v := range labels {
+				desiredTemplate.ObjectMeta.Labels[k] = v
+			}
 		}
 
 		desired := &appsv1.ReplicaSet{
@@ -354,12 +499,14 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 			Spec: appsv1.ReplicaSetSpec{
 				Replicas: &action.Replicas,
 				Selector: &metav1.LabelSelector{MatchLabels: labels},
-				Template: *action.Template,
 			},
+		}
+		if action.Template != nil {
+			desired.Spec.Template = desiredTemplate
 		}
 
 		if err != nil && apierrors.IsNotFound(err) {
-			if err := r.client.Create(ctx, desired); err != nil {
+			if err := r.Client.Create(ctx, desired); err != nil {
 				return fmt.Errorf("creating ReplicaSet %s: %w", action.Name, err)
 			}
 			log.Info("Created ReplicaSet", "name", desired.Name)
@@ -367,12 +514,74 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		}
 
 		rs.Spec.Replicas = desired.Spec.Replicas
-		rs.Spec.Template = desired.Spec.Template
 		rs.Labels = desired.Labels
-		if err := r.client.Update(ctx, &rs); err != nil {
+		if action.Template != nil {
+			rs.Spec.Template = desired.Spec.Template
+		}
+		if err := r.Client.Update(ctx, &rs); err != nil {
 			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
 		}
 		log.Info("Updated ReplicaSet", "name", rs.Name, "replicas", action.Replicas)
+	}
+	return nil
+}
+
+// pruneReplicaSets deletes old ReplicaSets owned by the Rollout beyond
+// Spec.RevisionHistoryLimit. Only RSes already scaled to 0 are pruned (a
+// still-serving revision is never deleted). The currently-serving RSes
+// (StableRS, CanaryRS, PreviousActiveRS) are always protected.
+func (r *RolloutReconciler) pruneReplicaSets(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	log := logf.FromContext(ctx)
+	if ro.Spec.RevisionHistoryLimit == nil || *ro.Spec.RevisionHistoryLimit < 0 {
+		return nil
+	}
+	limit := int(*ro.Spec.RevisionHistoryLimit)
+
+	list := &appsv1.ReplicaSetList{}
+	if err := r.Client.List(ctx, list, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}); err != nil {
+		return fmt.Errorf("listing owned ReplicaSets: %w", err)
+	}
+
+	// Protect the currently-serving RS, any in-flight canary/preview, AND the
+	// previous active RS during BlueGreen drain (Chunk 4 stashes the prior
+	// active on PreviousActiveRS until the drain completes; pruning it mid-drain
+	// would never let the drain-exit condition fire).
+	protected := map[string]bool{
+		ro.Status.StableRS:         true,
+		ro.Status.CanaryRS:         true,
+		ro.Status.PreviousActiveRS: true,
+	}
+
+	// Candidates: old RSes that are scaled to 0.
+	type candidate struct {
+		rs        appsv1.ReplicaSet
+		createdAt int64
+	}
+	var cands []candidate
+	for i := range list.Items {
+		rs := &list.Items[i]
+		if protected[rs.Name] {
+			continue
+		}
+		if rs.Spec.Replicas == nil || *rs.Spec.Replicas != 0 {
+			continue // still serving; don't delete
+		}
+		cands = append(cands, candidate{rs: *rs, createdAt: rs.CreationTimestamp.UnixNano()})
+	}
+	if len(cands) <= limit {
+		return nil
+	}
+
+	// Sort newest-first so we keep the most recent `limit` entries.
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].createdAt > cands[j].createdAt
+	})
+
+	for _, c := range cands[limit:] {
+		if err := r.Client.Delete(ctx, &c.rs); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("pruning ReplicaSet %s: %w", c.rs.Name, err)
+		}
+		log.Info("Pruned ReplicaSet", "name", c.rs.Name)
 	}
 	return nil
 }
@@ -432,7 +641,7 @@ func (r *RolloutReconciler) serviceNames(ro *rolloutsv1alpha1.Rollout) map[strin
 
 func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alpha1.Rollout, name, role string) error {
 	var svc corev1.Service
-	err := r.client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: name}, &svc)
 	if err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("getting service %s: %w", name, err)
 	}
@@ -468,12 +677,12 @@ func (r *RolloutReconciler) ensureService(ctx context.Context, ro *rolloutsv1alp
 	}
 
 	if err != nil && apierrors.IsNotFound(err) {
-		return r.client.Create(ctx, desired)
+		return r.Client.Create(ctx, desired)
 	}
 	svc.Spec.Selector = selector
 	svc.Spec.Ports = desired.Spec.Ports
 	svc.OwnerReferences = desired.OwnerReferences
-	return r.client.Update(ctx, &svc)
+	return r.Client.Update(ctx, &svc)
 }
 
 func intstrFromInt(i int32) intstr.IntOrString {
@@ -517,7 +726,7 @@ func (r *RolloutReconciler) configureTraffic(ctx context.Context, ro *rolloutsv1
 
 func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
 	switch result.Action {
-	case core.ActionPromote, core.ActionComplete:
+	case core.ActionPromote, core.ActionComplete, core.ActionAbort:
 		return router.RemoveCanary(ctx)
 	case core.ActionStep:
 		return router.SetWeight(ctx, ro.Status.CurrentStepWeight)
@@ -526,7 +735,7 @@ func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *roll
 }
 
 func (r *RolloutReconciler) configureBlueGreenTraffic(ctx context.Context, _ *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionAbort {
 		return router.SetWeight(ctx, 100)
 	}
 	return nil
@@ -537,7 +746,7 @@ func (r *RolloutReconciler) configureABTestTraffic(ctx context.Context, ro *roll
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support header routing")
 		return nil
 	}
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionAbort {
 		for _, route := range ro.Spec.Strategy.ABTest.Routes {
 			if err := router.RemoveHeaderRoute(ctx, route.Name); err != nil {
 				logf.FromContext(ctx).Error(err, "Failed to remove header route", "route", route.Name)
@@ -562,7 +771,7 @@ func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *roll
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support traffic mirroring")
 		return nil
 	}
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionStep {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionStep || result.Action == core.ActionAbort {
 		return router.RemoveMirror(ctx)
 	}
 	return router.SetMirror(ctx, ro.Spec.Strategy.Mirror.MirrorPercent)
@@ -672,10 +881,12 @@ func (r *RolloutReconciler) analysisForResult(ro *rolloutsv1alpha1.Rollout, resu
 	return analysis
 }
 
-func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout, result *core.SyncResult) {
+func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, prevStepIdx int32) {
+	prevPhase := ro.Status.Phase
 	ro.Status.Phase = result.Phase
 	ro.Status.Message = result.Message
 	ro.Status.ObservedGeneration = ro.Generation
+	ro.Status.CurrentPodHash = hash.Template(&ro.Spec.Template)
 
 	for _, rs := range result.ReplicaSets {
 		if rs.Labels["rollouts.paprika.io/stable"] == "true" || rs.Labels["rollouts.paprika.io/active"] == "true" {
@@ -683,6 +894,9 @@ func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout,
 		}
 		if rs.Labels["rollouts.paprika.io/canary"] == "true" || rs.Labels["rollouts.paprika.io/preview"] == "true" {
 			ro.Status.CanaryRS = rs.Name
+		}
+		if rs.Labels["rollouts.paprika.io/draining"] == "true" {
+			ro.Status.PreviousActiveRS = rs.Name
 		}
 	}
 
@@ -692,15 +906,32 @@ func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout,
 			ro.Status.CurrentStepWeight = ro.Spec.Strategy.Canary.Steps[idx].SetWeight
 		}
 	}
+
+	if r.EventRecorder != nil {
+		if ro.Spec.Strategy.Type == "Canary" && ro.Spec.Strategy.Canary != nil {
+			metrics.RolloutCanaryWeightGauge.WithLabelValues(ro.Name, ro.Namespace).Set(float64(ro.Status.CurrentStepWeight))
+		}
+		// Only count actual step transitions (forward progress), not re-reconciles
+		// while waiting on a step's Duration.
+		if result.Action == core.ActionStep && ro.Status.CurrentStepIndex > prevStepIdx {
+			metrics.RolloutCanaryStepTotal.WithLabelValues(ro.Name, ro.Namespace).Inc()
+		}
+		if prevPhase != "" && prevPhase != result.Phase {
+			metrics.RolloutPhaseTotal.WithLabelValues(ro.Name, ro.Namespace, string(result.Phase)).Inc()
+		}
+	}
 }
 
 func (r *RolloutReconciler) patchStatus(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
-	return r.client.Status().Update(ctx, ro)
+	return r.Client.Status().Update(ctx, ro)
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RolloutReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.client = mgr.GetClient()
+	r.Client = mgr.GetClient()
+	if r.Clock == nil {
+		r.Clock = clock.Real{}
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rolloutsv1alpha1.Rollout{}).
 		Owns(&appsv1.ReplicaSet{}).

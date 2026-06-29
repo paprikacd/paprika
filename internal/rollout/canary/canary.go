@@ -35,7 +35,7 @@ func (s *Strategy) Cleanup(_ context.Context, _ *rolloutsv1alpha1.Rollout) error
 }
 
 // Sync computes the desired ReplicaSets for a canary rollout.
-func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) (*core.SyncResult, error) {
+func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, in core.SyncInputs) (*core.SyncResult, error) {
 	if s.cfg == nil || len(s.cfg.Steps) == 0 {
 		return nil, errors.New("canary strategy requires at least one step")
 	}
@@ -57,6 +57,10 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
 	stableHash := hashFromRSName(status.StableRS)
 	if status.CanaryRS == "" && hash != stableHash {
 		return &core.SyncResult{
@@ -70,7 +74,42 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
+	// Advance AT MOST ONE step per reconcile. A no-duration step advances
+	// immediately (its weight gets applied via the action list below, and the
+	// next reconcile moves on). A duration step stamps CurrentStepStartedAt
+	// (once) and waits. The one-step-per-reconcile cadence lets the controller
+	// observe each step's weight in metrics and lets traffic routers settle.
+	if status.CurrentStepIndex < int32(len(s.cfg.Steps)) {
+		step := s.cfg.Steps[status.CurrentStepIndex]
+		switch {
+		case step.Duration == nil || step.Duration.Duration <= 0:
+			// Advance immediately. CurrentStepStartedAt stays nil so the next
+			// step's logic re-enters cleanly.
+			status.CurrentStepIndex++
+			status.CurrentStepStartedAt = nil
+		case status.CurrentStepStartedAt == nil:
+			now := metav1.NewTime(in.Now())
+			status.CurrentStepStartedAt = &now
+		case in.Now().Sub(status.CurrentStepStartedAt.Time) >= step.Duration.Duration:
+			status.CurrentStepIndex++
+			status.CurrentStepStartedAt = nil
+		}
+	}
+
+	// All steps exhausted: promote. If the stable RS already matches the
+	// desired hash (i.e. the controller already applied the previous
+	// ActionPromote), the rollout has converged — return Complete.
 	if status.CurrentStepIndex >= int32(len(s.cfg.Steps)) {
+		if stableHash == hash {
+			return &core.SyncResult{
+				Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
+				Action:  core.ActionComplete,
+				Message: "Canary promoted; stable ReplicaSet matches desired template",
+				ReplicaSets: []core.ReplicaSetAction{
+					makeStableRS(ro, hash, desiredReplicas),
+				},
+			}, nil
+		}
 		return &core.SyncResult{
 			Phase:   rolloutsv1alpha1.RolloutPhaseProgressing,
 			Action:  core.ActionPromote,

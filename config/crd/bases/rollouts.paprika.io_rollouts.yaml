@@ -9022,8 +9022,17 @@ spec:
           status:
             description: RolloutStatus defines the observed state of a Rollout.
             properties:
+              abort:
+                description: Abort is set to true when the rollout has been aborted;
+                  cleared on resume.
+                type: boolean
               activeService:
                 type: string
+              canaryReadyReplicas:
+                description: CanaryReadyReplicas is the observed ready replica count
+                  of the canary/preview ReplicaSet.
+                format: int32
+                type: integer
               canaryRs:
                 type: string
               conditions:
@@ -9082,9 +9091,18 @@ spec:
                   - type
                   type: object
                 type: array
+              currentPodHash:
+                description: CurrentPodHash is the hash of the most recently reconciled
+                  pod template.
+                type: string
               currentStepIndex:
                 format: int32
                 type: integer
+              currentStepStartedAt:
+                description: CurrentStepStartedAt is the baseline for CanaryStep.Duration
+                  accounting.
+                format: date-time
+                type: string
               currentStepWeight:
                 format: int32
                 type: integer
@@ -9096,8 +9114,30 @@ spec:
               phase:
                 description: RolloutPhase represents the phase of a Rollout.
                 type: string
+              previewHealthyAt:
+                description: PreviewHealthyAt is the time the preview ReplicaSet first
+                  became fully ready.
+                format: date-time
+                type: string
               previewService:
                 type: string
+              previousActiveRs:
+                description: |-
+                  PreviousActiveRS is set by the BlueGreen strategy after promotion. It
+                  names the ReplicaSet that was active before the current active RS. The
+                  controller uses it to drain (scale to 0) the previous active RS after
+                  ScaleDownDelaySeconds, then clears it.
+                type: string
+              promotedAt:
+                description: PromotedAt is set when a BlueGreen rollout promotes preview
+                  to active.
+                format: date-time
+                type: string
+              stableReadyReplicas:
+                description: StableReadyReplicas is the observed ready replica count
+                  of the stable ReplicaSet.
+                format: int32
+                type: integer
               stableRs:
                 type: string
             type: object

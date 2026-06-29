@@ -10,12 +10,13 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/rollout/hash"
+	"github.com/benebsworth/paprika/internal/rollout/testutil"
 )
 
 func TestMirrorValidation(t *testing.T) {
 	s := NewStrategy(&rolloutsv1alpha1.MirrorStrategy{MirrorPercent: 0})
 	ro := makeRollout("r1", EmptyTemplate("v1"))
-	if _, err := s.Sync(context.Background(), ro, &rolloutsv1alpha1.RolloutStatus{}); err == nil {
+	if _, err := s.Sync(context.Background(), ro, &rolloutsv1alpha1.RolloutStatus{}, testutil.Inputs()); err == nil {
 		t.Fatal("expected validation error")
 	}
 }
@@ -26,7 +27,7 @@ func TestMirrorCreatesCanary(t *testing.T) {
 	ro := makeRollout("r1", EmptyTemplate("v2"))
 	status := rolloutsv1alpha1.RolloutStatus{StableRS: "r1-stable-" + hash.Template(tmpl1)}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
@@ -44,12 +45,49 @@ func TestMirrorPausesWhileMirroring(t *testing.T) {
 		CanaryRS: "r1-canary-" + hash.Template(tmpl),
 	}
 
-	res, err := s.Sync(context.Background(), ro, &status)
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
 	if err != nil {
 		t.Fatalf("sync failed: %v", err)
 	}
 	if res.Action != core.ActionPause {
 		t.Fatalf("expected Pause, got %s", res.Action)
+	}
+}
+
+func TestMirrorAbortsOnAnnotation(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.MirrorStrategy{MirrorPercent: 25})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS: "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS: "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if res.Phase != rolloutsv1alpha1.RolloutPhaseAborted {
+		t.Fatalf("expected Phase=Aborted, got %s", res.Phase)
+	}
+	foundStable, foundScaledDown := false, false
+	for _, rs := range res.ReplicaSets {
+		if rs.Labels["rollouts.paprika.io/stable"] == "true" {
+			foundStable = true
+		}
+		if rs.Labels["rollouts.paprika.io/canary"] == "true" && rs.Replicas == 0 {
+			foundScaledDown = true
+		}
+	}
+	if !foundStable {
+		t.Error("abort result did not include stable RS")
+	}
+	if !foundScaledDown {
+		t.Error("abort result did not scale canary RS to 0")
 	}
 }
 
