@@ -80,6 +80,7 @@ var _ = Describe("RolloutReconciler canary", func() {
 		// Tests invoke Reconcile by hand; there is no background controller to
 		// finalize deletion. Strip the finalizer and delete the Rollout plus
 		// any RSes/Services it created (envtest GC is not guaranteed to run).
+		//nolint:dupl // envtest cleanup mirrored across the canary/abort Describes (no GC controller).
 		DeferCleanup(func() {
 			labelOpt := client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}
 			nsOpt := client.InNamespace(ro.Namespace)
@@ -176,6 +177,118 @@ var _ = Describe("RolloutReconciler canary", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
 		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseHealthy))
+	})
+})
+
+var _ = Describe("RolloutReconciler abort", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "abort-test",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer}, // pre-set to skip finalizer-add reconcile
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						Steps:         []rolloutsv1alpha1.CanaryStep{{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}}},
+						StableService: "abort-test-stable",
+						CanaryService: "abort-test-canary",
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+		// Bring the rollout to a canary-in-progress state.
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// Strip the finalizer so the Rollout can be deleted; envtest doesn't
+		// run a background controller to finalize. Also clean up RSes/Services
+		// (ownerRef GC doesn't fire without kube-controller-manager).
+		//nolint:dupl // envtest cleanup mirrored across the canary/abort Describes (no GC controller).
+		DeferCleanup(func() {
+			labelOpt := client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}
+			nsOpt := client.InNamespace(ro.Namespace)
+
+			if err := k8sClient.Get(ctx, objKey(ro), ro); err == nil {
+				ro.Finalizers = nil
+				_ = k8sClient.Update(ctx, ro)
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, ro))
+			}
+			var rsList appsv1.ReplicaSetList
+			_ = k8sClient.List(ctx, &rsList, nsOpt, labelOpt)
+			for i := range rsList.Items {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &rsList.Items[i]))
+			}
+			var svcList corev1.ServiceList
+			_ = k8sClient.List(ctx, &svcList, nsOpt, labelOpt)
+			for i := range svcList.Items {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &svcList.Items[i]))
+			}
+		})
+	})
+
+	It("sets status.Abort when the annotation is added", func() {
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "status.Abort should be set when annotation is present")
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseAborted))
+	})
+
+	It("clears status.Abort when annotation is removed AND pod template changes", func() {
+		// First abort.
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Then remove annotation but keep template — should still be aborted
+		// (status.Abort durable until template changes).
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Annotations = map[string]string{}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "abort should persist after annotation removal without template change")
+
+		// Now bump the template — abort should clear and rollout restart.
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v3")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeFalse())
 	})
 })
 

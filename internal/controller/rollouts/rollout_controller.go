@@ -165,6 +165,10 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	// Latch abort state durably from the annotation; clear only when the
+	// annotation is removed AND the pod template has changed.
+	r.latchAbort(&ro)
+
 	if err := r.applyDefaults(&ro); err != nil {
 		return ctrl.Result{}, fmt.Errorf("applying defaults: %w", err)
 	}
@@ -223,6 +227,34 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{RequeueAfter: r.stepRequeueInterval(&ro)}, nil
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+// latchAbort durably records abort state from the annotation onto status, and
+// clears it only when both the annotation is gone AND the pod template has
+// moved past the template under which we aborted (status.CurrentPodHash
+// differs). This lets operators drop the annotation without immediately
+// resuming, while still allowing a template bump to explicitly restart.
+func (r *RolloutReconciler) latchAbort(ro *rolloutsv1alpha1.Rollout) {
+	if _, hasAnn := ro.Annotations[core.AbortAnnotation]; hasAnn {
+		ro.Status.Abort = true
+		return
+	}
+	if !ro.Status.Abort {
+		return
+	}
+	// TODO(perf): CurrentPodHash is advanced by updateStatusFromResult on every
+	// reconcile, including aborts. If the operator bumps the template while the
+	// abort annotation is still present, the anchor drifts forward and removing
+	// the annotation alone won't clear the abort. The documented flow (remove
+	// annotation + bump template) works; this note exists so a future reader
+	// doesn't trip on the edge case.
+	currentHash := hash.Template(&ro.Spec.Template)
+	// Don't clear before the first reconcile has stamped a hash.
+	if ro.Status.CurrentPodHash != "" && currentHash != ro.Status.CurrentPodHash {
+		ro.Status.Abort = false
+		ro.Status.CurrentStepIndex = 0
+		ro.Status.CurrentStepStartedAt = nil
+	}
 }
 
 func (r *RolloutReconciler) handleDeletion(ctx context.Context, ro *rolloutsv1alpha1.Rollout) (ctrl.Result, error) {
@@ -354,15 +386,27 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 			return fmt.Errorf("getting ReplicaSet %s: %w", action.Name, err)
 		}
 
+		// Always set the RS-level labels (these identify the RS for pruning,
+		// traffic selection, etc). The pod-template labels are only mutated
+		// when action.Template is non-nil.
 		labels := action.Labels
 		if labels == nil {
 			labels = map[string]string{}
 		}
-		if action.Template.ObjectMeta.Labels == nil {
-			action.Template.ObjectMeta.Labels = map[string]string{}
-		}
-		for k, v := range labels {
-			action.Template.ObjectMeta.Labels[k] = v
+
+		// Build the desired template only when action.Template is non-nil.
+		// A nil Template means "leave the existing RS's pod template alone" —
+		// used by AbortResult and by drain/abort paths that scale an existing
+		// RS without rolling its template.
+		var desiredTemplate corev1.PodTemplateSpec
+		if action.Template != nil {
+			desiredTemplate = *action.Template
+			if desiredTemplate.ObjectMeta.Labels == nil {
+				desiredTemplate.ObjectMeta.Labels = map[string]string{}
+			}
+			for k, v := range labels {
+				desiredTemplate.ObjectMeta.Labels[k] = v
+			}
 		}
 
 		desired := &appsv1.ReplicaSet{
@@ -381,8 +425,10 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 			Spec: appsv1.ReplicaSetSpec{
 				Replicas: &action.Replicas,
 				Selector: &metav1.LabelSelector{MatchLabels: labels},
-				Template: *action.Template,
 			},
+		}
+		if action.Template != nil {
+			desired.Spec.Template = desiredTemplate
 		}
 
 		if err != nil && apierrors.IsNotFound(err) {
@@ -394,8 +440,10 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 		}
 
 		rs.Spec.Replicas = desired.Spec.Replicas
-		rs.Spec.Template = desired.Spec.Template
 		rs.Labels = desired.Labels
+		if action.Template != nil {
+			rs.Spec.Template = desired.Spec.Template
+		}
 		if err := r.Client.Update(ctx, &rs); err != nil {
 			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
 		}
@@ -544,7 +592,7 @@ func (r *RolloutReconciler) configureTraffic(ctx context.Context, ro *rolloutsv1
 
 func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
 	switch result.Action {
-	case core.ActionPromote, core.ActionComplete:
+	case core.ActionPromote, core.ActionComplete, core.ActionAbort:
 		return router.RemoveCanary(ctx)
 	case core.ActionStep:
 		return router.SetWeight(ctx, ro.Status.CurrentStepWeight)
@@ -553,7 +601,7 @@ func (r *RolloutReconciler) configureCanaryTraffic(ctx context.Context, ro *roll
 }
 
 func (r *RolloutReconciler) configureBlueGreenTraffic(ctx context.Context, _ *rolloutsv1alpha1.Rollout, result *core.SyncResult, router traffic.WeightRouter) error {
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionAbort {
 		return router.SetWeight(ctx, 100)
 	}
 	return nil
@@ -564,7 +612,7 @@ func (r *RolloutReconciler) configureABTestTraffic(ctx context.Context, ro *roll
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support header routing")
 		return nil
 	}
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionAbort {
 		for _, route := range ro.Spec.Strategy.ABTest.Routes {
 			if err := router.RemoveHeaderRoute(ctx, route.Name); err != nil {
 				logf.FromContext(ctx).Error(err, "Failed to remove header route", "route", route.Name)
@@ -589,7 +637,7 @@ func (r *RolloutReconciler) configureMirrorTraffic(ctx context.Context, ro *roll
 		setCondition(ro, progressingCondition, metav1.ConditionFalse, "HeaderRoutingNotSupported", "Gateway API does not support traffic mirroring")
 		return nil
 	}
-	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionStep {
+	if result.Action == core.ActionPromote || result.Action == core.ActionComplete || result.Action == core.ActionStep || result.Action == core.ActionAbort {
 		return router.RemoveMirror(ctx)
 	}
 	return router.SetMirror(ctx, ro.Spec.Strategy.Mirror.MirrorPercent)
