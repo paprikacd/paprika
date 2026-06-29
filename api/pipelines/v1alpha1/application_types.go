@@ -564,6 +564,12 @@ type ApplicationStatus struct {
 	// +optional
 	Resources []ResourceSync `json:"resources,omitempty"`
 
+	// HookStatuses mirrors the active Release's HookStatuses for UI/API
+	// consumption. Populated by the Application controller from the active
+	// Release at each reconcile; cleared when no active Release exists.
+	// +optional
+	HookStatuses []HookStatus `json:"hookStatuses,omitempty"`
+
 	// ResourceHealth tracks the health status of each deployed resource
 	// +optional
 	ResourceHealth []ResourceHealth `json:"resourceHealth,omitempty"`

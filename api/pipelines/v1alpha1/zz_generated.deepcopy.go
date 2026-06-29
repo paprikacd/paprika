@@ -843,6 +843,13 @@ func (in *ApplicationStatus) DeepCopyInto(out *ApplicationStatus) {
 		*out = make([]ResourceSync, len(*in))
 		copy(*out, *in)
 	}
+	if in.HookStatuses != nil {
+		in, out := &in.HookStatuses, &out.HookStatuses
+		*out = make([]HookStatus, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.ResourceHealth != nil {
 		in, out := &in.ResourceHealth, &out.ResourceHealth
 		*out = make([]ResourceHealth, len(*in))
