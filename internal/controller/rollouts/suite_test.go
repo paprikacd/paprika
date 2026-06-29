@@ -110,8 +110,6 @@ func getFirstFoundEnvTestBinaryDir() string {
 }
 
 // newFakeClock returns a fake clock anchored at a deterministic time for tests.
-//
-//nolint:unused // will be consumed by controller tests in Chunks 1-6.
 func newFakeClock() *clock.Fake {
 	return clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 }

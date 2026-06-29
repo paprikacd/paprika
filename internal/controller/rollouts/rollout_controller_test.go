@@ -17,15 +17,198 @@ limitations under the License.
 package controller
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clock"
 )
 
-var _ = Describe("RolloutReconciler", func() {
-	// Tests are added incrementally in subsequent chunks.
-	Describe("smoke", func() {
-		It("boots the envtest suite", func() {
-			Expect(cfg).NotTo(BeNil())
+// NOTE: This file is `package controller` (the same package as
+// rollout_controller.go). It refers to RolloutReconciler directly — no import
+// of the package itself.
+
+var _ = Describe("RolloutReconciler canary", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "canary-adv",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer},
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(4),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						StableService: "canary-adv-stable",
+						CanaryService: "canary-adv-canary",
+						Steps: []rolloutsv1alpha1.CanaryStep{
+							{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 50, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 100},
+						},
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+
+		// Tests invoke Reconcile by hand; there is no background controller to
+		// finalize deletion. Strip the finalizer and delete the Rollout plus
+		// any RSes/Services it created (envtest GC is not guaranteed to run).
+		DeferCleanup(func() {
+			labelOpt := client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}
+			nsOpt := client.InNamespace(ro.Namespace)
+
+			if err := k8sClient.Get(ctx, objKey(ro), ro); err == nil {
+				ro.Finalizers = nil
+				_ = k8sClient.Update(ctx, ro)
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, ro))
+			}
+			var rsList appsv1.ReplicaSetList
+			_ = k8sClient.List(ctx, &rsList, nsOpt, labelOpt)
+			for i := range rsList.Items {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &rsList.Items[i]))
+			}
+			var svcList corev1.ServiceList
+			_ = k8sClient.List(ctx, &svcList, nsOpt, labelOpt)
+			for i := range svcList.Items {
+				_ = client.IgnoreNotFound(k8sClient.Delete(ctx, &svcList.Items[i]))
+			}
 		})
 	})
+
+	It("creates the stable ReplicaSet on the first reconcile", func() {
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.StableRS).NotTo(BeEmpty())
+	})
+
+	It("advances through steps as their durations elapse", func() {
+		var err error
+		// Reconcile 0: creates the stable RS at template v1.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// Update template to trigger canary.
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// Reconcile 1: stable exists, canary RS is created. The strategy's
+		// advancement switch is NOT entered this reconcile (the canary-creation
+		// block returns first), so CurrentStepStartedAt is still nil.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CanaryRS).NotTo(BeEmpty(), "canary RS should be created")
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)))
+		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "step 0 not yet entered on canary-creation reconcile")
+
+		// Reconcile 2: strategy enters step 0 (Duration=60s) and stamps
+		// CurrentStepStartedAt. Does NOT advance yet.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 0 start should be stamped")
+
+		// Advance clock 61s — step 0 (60s duration) should advance to step 1.
+		// Reconcile 3: elapsed >= Duration, advances index to 1 and CLEARS CurrentStepStartedAt.
+		clk.Add(61 * time.Second)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(1)), "step 0 should have advanced after duration")
+		Expect(ro.Status.CurrentStepStartedAt).To(BeNil(), "CurrentStepStartedAt cleared on advance")
+
+		// Step 1 (Duration=60s) needs a stamp reconcile + an advance reconcile.
+		// Reconcile 4: enters step 1, stamps.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepStartedAt).NotTo(BeNil(), "step 1 start should be stamped")
+
+		clk.Add(61 * time.Second)
+		// Reconcile 5: advances step 1 → 2.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(2)))
+
+		// Step 2 has no Duration — on the next reconcile the strategy advances
+		// index to 3 and returns ActionPromote (Phase=Progressing) because
+		// stableHash != hash yet.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(3)))
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseProgressing))
+
+		// One more reconcile: the controller applied the new stable RS, so
+		// status.StableRS now points at template v2. stableHash == hash and
+		// the strategy returns ActionComplete / Phase=Healthy.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseHealthy))
+	})
 })
+
+func reqFor(ro *rolloutsv1alpha1.Rollout) ctrl.Request {
+	return ctrl.Request{NamespacedName: types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}}
+}
+
+func objKey(ro *rolloutsv1alpha1.Rollout) types.NamespacedName {
+	return types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}
+}
+
+func int32Ptr(i int32) *int32 { return &i }
+
+// setRSReady is a shared envtest helper used by later chunks. It updates a
+// ReplicaSet's ReadyReplicas/Replicas status subresource. Defined here once.
+//
+//nolint:unused // consumed by controller tests in Chunks 3-5.
+func setRSReady(rsName string, ready int32) {
+	if rsName == "" {
+		return
+	}
+	var rs appsv1.ReplicaSet
+	Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rsName, Namespace: "default"}, &rs)).To(Succeed())
+	rs.Status.ReadyReplicas = ready
+	rs.Status.Replicas = ready
+	Expect(k8sClient.Status().Update(ctx, &rs)).To(Succeed())
+}
+
+func podTemplate(version string) corev1.PodTemplateSpec {
+	return corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test", "version": version}},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "app", Image: "nginx:" + version}},
+		},
+	}
+}
