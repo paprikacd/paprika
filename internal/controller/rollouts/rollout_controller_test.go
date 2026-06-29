@@ -381,6 +381,147 @@ var _ = Describe("RolloutReconciler rolling", func() {
 	})
 })
 
+var _ = Describe("RolloutReconciler bluegreen", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+		autoSec := int32(60)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "bg-auto",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer},
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "BlueGreen",
+					BlueGreen: &rolloutsv1alpha1.BlueGreenStrategy{
+						ActiveService:        "bg-auto-active",
+						PreviewService:       "bg-auto-preview",
+						AutoPromotionSeconds: &autoSec,
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+
+		DeferCleanup(func() {
+			Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+			ro.Finalizers = nil
+			Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ro)).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Service{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+		})
+	})
+
+	It("auto-promotes once preview is healthy for AutoPromotionSeconds", func() {
+		// Reconcile 0: create active RS for v1.
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.StableRS).NotTo(BeEmpty(), "active RS should be created")
+
+		// Bump template to trigger preview creation.
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// Reconcile 1: create preview RS.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CanaryRS).NotTo(BeEmpty(), "preview RS should be created")
+
+		// Mark preview fully ready (replicas=2). Controller should stamp PreviewHealthyAt.
+		setRSReady(ro.Status.CanaryRS, 2)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.PreviewHealthyAt).NotTo(BeNil(), "controller should stamp PreviewHealthyAt once preview is fully ready")
+
+		// Advance clock past AutoPromotionSeconds (60s).
+		clk.Add(61 * time.Second)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.PromotedAt).NotTo(BeNil(), "should auto-promote after timeout")
+		Expect(ro.Status.PreviousActiveRS).NotTo(BeEmpty(), "previous active should be tracked for drain")
+	})
+
+	It("drains the previous active RS after ScaleDownDelaySeconds", func() {
+		// Reuse the auto-promote path to get into the drain state.
+		autoSec := int32(1)
+		delaySec := int32(30)
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Strategy.BlueGreen.AutoPromotionSeconds = &autoSec
+		ro.Spec.Strategy.BlueGreen.ScaleDownDelaySeconds = &delaySec
+		ro.Spec.Template = podTemplate("v1")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// Reconcile to create active.
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// Mark the active RS fully ready so the drain phase observes a non-zero
+		// CanaryReadyReplicas (sourced from PreviousActiveRS) and stays in the
+		// delay-gated scaling path instead of completing immediately.
+		setRSReady(ro.Status.StableRS, 2)
+
+		// Bump template, create preview.
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// Mark preview ready, stamp PreviewHealthyAt.
+		setRSReady(ro.Status.CanaryRS, 2)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		// Auto-promote after 1s.
+		clk.Add(2 * time.Second)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.PromotedAt).NotTo(BeNil())
+		priorActive := ro.Status.PreviousActiveRS
+		Expect(priorActive).NotTo(BeEmpty())
+
+		// Before ScaleDownDelaySeconds elapses, prior active stays at desiredReplicas.
+		clk.Add(10 * time.Second)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		var prior appsv1.ReplicaSet
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: priorActive, Namespace: "default"}, &prior)).To(Succeed())
+		Expect(*prior.Spec.Replicas).To(Equal(int32(2)), "prior active should stay at 2 before ScaleDownDelaySeconds elapses")
+
+		// After ScaleDownDelaySeconds, prior active scaled to 0.
+		clk.Add(25 * time.Second) // total 35s > 30s delay
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: priorActive, Namespace: "default"}, &prior)).To(Succeed())
+		Expect(*prior.Spec.Replicas).To(Equal(int32(0)), "prior active should be scaled to 0 after ScaleDownDelaySeconds")
+	})
+})
+
 func reqFor(ro *rolloutsv1alpha1.Rollout) ctrl.Request {
 	return ctrl.Request{NamespacedName: types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}}
 }
