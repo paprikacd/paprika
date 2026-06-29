@@ -12,6 +12,7 @@ Paprika's release apply path is a flat, single-phase loop. Real-world Helm chart
 - **Hook weights** (`argocd.argoproj.io/hook-weight`) — deferred. YAML declaration order is used within a phase.
 - **Custom hook completion checkers** beyond Job and Pod (Argo Workflow, CronTab, etc.) — extension point left open via a registry; not implemented in MVP.
 - **Prune-on-sync** — orthogonal; the diff engine already computes the `Deleted` set but paprika does not call Delete. Hooks are excluded from the diff entirely (not "managed"), so they do not interact with prune either way.
+- **Widening strict error propagation to the Sync-phase apply path.** MVP scopes SyncFail to PreSync/PostSync hook failures + Sync-phase parse/mapping errors. Sync-phase apply errors continue to be swallowed (existing behavior). Widening is a follow-up — it's a separate concern (correctness of `applyDocument`'s error contract) that affects every release, not just hook-using ones.
 
 ## Architecture
 
@@ -119,13 +120,19 @@ type Bucket struct {
     SyncFail []Resource
 }
 
-// Classify parses a multi-doc YAML bundle and partitions resources into
-// phase buckets. Resources without the hook annotation land in Sync. Hook
-// resources are removed from Sync. Hook resources appear ONLY in their
-// declared phase(s) — a hook annotated "PreSync,PostSync" appears in both.
-func Classify(docs []byte) (*Bucket, error)
+// Classify partitions parsed manifests into phase buckets. See the
+// "Controller orchestration" section for the signature rationale (no
+// re-serialization; original bytes preserved via offset tracking).
+func Classify(objs []*unstructured.Unstructured, rawDocs []byte) (*Bucket, error)
+
+// SyncDocs returns the original raw bytes for the Sync-phase (non-hook)
+// documents, preserving formatting. See Classify for the byte-offset
+// tracking mechanism.
+func (b *Bucket) SyncDocs() []byte
 
 // HasHooks reports whether any phase bucket (other than Sync) is non-empty.
+// Used in tests; in production the controller uses bytes.Contains on the
+// raw bundle as a fast pre-check before calling Classify.
 func (b *Bucket) HasHooks() bool
 ```
 
@@ -196,19 +203,33 @@ HookTimeoutSeconds int32 `json:"hookTimeoutSeconds,omitempty"`
 
 ### Controller orchestration (`release_controller.go`)
 
-New method on `ReleaseReconciler`:
+#### Re-entrancy contract (load-bearing — read carefully)
+
+Hooks are executed across multiple reconciles. The controller may requeue while a Job hook is still `Running`, or while waiting on a timeout. Each reconcile of `executeHooks(phase)` reads the existing `release.Status.HookStatuses` for that phase and applies the following transition table per hook (matched by `Kind/Name/Namespace/Phase`):
+
+| Existing status | Action this reconcile |
+|---|---|
+| `Succeeded` | Skip. Move to next hook. |
+| `Failed` | Abort. Stop processing this phase; trigger SyncFail. Do NOT re-run. |
+| `Terminated` (timed out) | Abort. Stop processing this phase; trigger SyncFail. Do NOT re-run. |
+| `Running` | Poll the live resource via the completion checker. Transition to `Succeeded`/`Failed`/`Terminated` (if `time.Since(StartedAt) > HookTimeoutSeconds`). Do NOT re-apply. Do NOT delete (skip BeforeHookCreation for this reconcile). |
+| (no entry) | First sighting. Apply BeforeHookCreation: delete any existing live resource with same kind/name/namespace, then SSA-apply the manifest. Stamp `StartedAt=now, Status=Running`. Poll the completion checker once on this reconcile. |
+
+Hooks within a phase are processed in YAML-declaration order. A phase is "done" when every hook has reached `Succeeded` (in which case the next phase runs) or any hook has reached `Failed`/`Terminated` (in which case SyncFail runs and the release is marked Failed).
+
+The phase bucket is re-built by `Classify` on every reconcile from the rendered manifests — the rendered output is deterministic, so the bucket identity is stable. The `HookStatuses` slice is the durable state; `Classify` does NOT read or depend on it.
+
+#### New method on `ReleaseReconciler`
 
 ```go
-// executeHooks runs one phase's hooks in YAML-declaration order. Each hook:
-//   - if DeletePolicy=BeforeHookCreation (default), delete any existing
-//     resource with the same kind/name/namespace before applying
-//   - apply via SSA (existing applyDocument path)
-//   - if a CompletionFunc is registered for the GVK, wait for done (with
-//     timeout from SyncOptions.HookTimeoutSeconds). Otherwise, fire-and-forget.
+// executeHooks runs one phase's hooks in YAML-declaration order, honoring the
+// re-entrancy contract above. Reads release.Status.HookStatuses for prior
+// state. Mutates release.Status.HookStatuses in place (caller persists).
 //
-// Returns the first error encountered (which triggers SyncFail in the caller).
-// Successful hook outcomes are stamped into release.Status.HookStatuses
-// as the method runs.
+// Returns nil when the phase is fully Succeeded; returns an error when any
+// hook has Failed/Terminated (triggers SyncFail in the caller). Returns
+// errHookPhasePending (sentinel) when one or more hooks are still Running
+// and the caller should requeue.
 func (r *ReleaseReconciler) executeHooks(
     ctx context.Context,
     release *paprikav1.Release,
@@ -218,51 +239,115 @@ func (r *ReleaseReconciler) executeHooks(
 ) error
 ```
 
-`promote()` calls it before/after the existing `applyPromotedManifests`:
+`promote()` calls it before/after the existing `applyPromotedManifests`. Critically, **the existing `applyPromotedManifests` call is unchanged when there are no hooks** (fast path below), and uses the **original rendered bytes** (not re-serialized) when there are.
+
+#### Fast path for hook-free releases
 
 ```go
-// after rendering + governance + snapshot:
-bucket, err := hooks.Classify(manifests)
-if err != nil { return ... }
-
-if bucket.HasHooks() {
-    if err := r.executeHooks(ctx, release, dynClient, bucket.PreSync, hooks.PhasePreSync); err != nil {
-        r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail) // best-effort
-        return fmt.Errorf("pre-sync hooks: %w", err)
-    }
+// In promote(), after rendering + governance + snapshot:
+if !bytes.Contains(manifests, []byte(paprikav1.HookAnnotation)) {
+    // No hooks present in the bundle. Apply exactly as before; no classify
+    // overhead, no re-serialization. Identical behavior to pre-hook paprika.
+    return r.applyPromotedManifests(ctx, release, stage, manifests)
 }
 
-if err := r.applyPromotedManifests(ctx, release, stage, bucket.SyncDocs()); err != nil {
-    if bucket.HasHooks() {
-        r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail) // best-effort
+// Otherwise: classify, partition, execute phases.
+```
+
+`HookAnnotation = "argocd.argoproj.io/hook"` is a stable substring; absence in the rendered bundle guarantees no resources are hooks. `bytes.Contains` is a single-pass scan over the byte slice that's already in memory.
+
+#### Hook path (when `bytes.Contains` is true)
+
+```go
+// Parse the bundle into []*unstructured.Unstructured ONCE. The promote()
+// path already does this for governance gates (parseManifests, line 752);
+// reuse that result rather than re-parsing.
+objs := r.parsedManifests // from parseManifests() earlier in promote()
+
+bucket, err := hooks.Classify(objs, manifests) // see "Classify signature" below
+if err != nil { return ... }
+
+if err := r.executeHooks(ctx, release, dynClient, bucket.PreSync, hooks.PhasePreSync); err != nil {
+    if !errors.Is(err, errHookPhasePending) {
+        _ = r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail) // best-effort, log errors
+        return fmt.Errorf("pre-sync hooks: %w", err)
     }
+    // Pending: persist status, requeue. Do not proceed to Sync yet.
+    return r.requeueForHookWait(release)
+}
+
+// Sync phase: pass the ORIGINAL manifests, filtered to exclude hook docs.
+// No re-serialization — see "Classify signature" below.
+if err := r.applyPromotedManifests(ctx, release, stage, bucket.SyncDocs()); err != nil {
+    _ = r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail)
     return fmt.Errorf("apply promoted manifests: %w", err)
 }
 
-if bucket.HasHooks() {
-    if err := r.executeHooks(ctx, release, dynClient, bucket.PostSync, hooks.PhasePostSync); err != nil {
-        r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail) // best-effort
+if err := r.executeHooks(ctx, release, dynClient, bucket.PostSync, hooks.PhasePostSync); err != nil {
+    if !errors.Is(err, errHookPhasePending) {
+        _ = r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail)
         return fmt.Errorf("post-sync hooks: %w", err)
     }
+    return r.requeueForHookWait(release)
 }
 ```
 
-`Bucket.SyncDocs()` returns the Sync-phase manifests as `[]byte` (re-serialized) so `applyPromotedManifests` continues to work with its existing signature.
+`requeueForHookWait` sets a requeue after `min(remaining-timeout, 10s)` — constant 10s interval for predictable test behavior; timeout is computed from `StartedAt + HookTimeoutSeconds - now`.
+
+#### Classify signature (avoiding re-serialization)
+
+```go
+// Classify partitions parsed manifests into phase buckets. The original
+// rendered bytes are passed so SyncDocs() can return the same byte slice
+// (filtered to exclude hook documents) rather than re-serializing parsed
+// objects. This preserves YAML comments, key order, and scalar formatting
+// through the existing apply path.
+//
+// Classify iterates objs; for each non-hook object, it locates the
+// corresponding document in rawDocs via byte-offset tracking (the parser
+// in promote() already records offsets; Classify reuses that). The Sync
+// byte slice is built once by concatenating the relevant raw docs.
+func Classify(objs []*unstructured.Unstructured, rawDocs []byte) (*Bucket, error)
+
+// SyncDocs returns the original raw bytes for the Sync-phase (non-hook)
+// documents, preserving formatting. Implements the same multi-doc YAML
+// contract as the original bundle.
+func (b *Bucket) SyncDocs() []byte
+```
+
+The implementation tracks byte ranges: `parseManifests` already uses `yaml.NewYAMLOrAMLDecoder` over the bundle; we extend it to record each object's start/end offset, then `SyncDocs` slices and concatenates the non-hook ranges with `---` separators. This is a small change localized to the parser.
+
+#### SyncFail idempotency
+
+SyncFail hooks also follow the re-entrancy contract — they're stamped into `HookStatuses` with `Phase=SyncFail`. If a reconcile requeues after SyncFail has run, the next reconcile sees the existing SyncFail entries and skips them (`Succeeded`) or aborts (`Failed`). The controller must NOT re-trigger SyncFail on a release whose `Status.Phase == Failed` — gate the entire `executeHooks` entry on `release.Status.Phase` being in a non-terminal state.
 
 ### Agent parity (`internal/agent/server/server.go`)
 
 The agent's `Apply(ctx, req)` RPC currently applies a manifest bundle in a flat loop. Changes:
 
 1. Import `internal/engine/hooks`.
-2. In `Apply`, call `hooks.Classify(req.Manifests)`.
+2. In `Apply`, call `hooks.Classify(objs, req.Manifests)` after parsing (reuse the agent's existing `splitYAMLDocuments`).
 3. If `bucket.HasHooks()`:
    - Run PreSync hooks via a new `s.executeHooks(...)` helper (mirror of the controller-side method).
-   - Apply Sync docs (existing path).
+   - Apply Sync docs (existing path — note: the agent's `applyDocument` at `server.go:134` already returns errors rather than swallowing them, so SyncFail triggers correctly for Sync-phase apply errors in agent mode).
    - Run PostSync hooks.
    - On any failure, run SyncFail hooks and return error.
-4. Add `HookStatuses []HookStatus` to the `ApplyResponse` so the controller can fold them into the Release status.
 
-The agent already has the K8s client + RESTMapper needed for completion waits.
+**RPC version-skew policy:** the controller-to-agent `ApplyRequest` and `ApplyResponse` are NOT enriched with hook-specific fields. The existing `ApplyRequest.Manifests []byte` field already carries the full bundle — the agent re-runs `Classify` itself. The new `ApplyResponse.HookStatuses` field is OPTIONAL: old agents that don't populate it leave the slice empty; the controller treats an empty slice from agent mode as "hooks not observed remotely, trust the controller-side classify" and stamps `HookStatuses` from its own classification (controller mode is the source of truth for status). New agents populate it; controller trusts agent-reported statuses in that case.
+
+This means **agent and controller must be on versions that both understand hooks, but the controller can deploy safely to old agents** — old agents simply apply the bundle as a flat list (which is the existing buggy-but-not-worse behavior). New agents do proper phase execution.
+
+### Conftest / governance gates see hook resources (intentional)
+
+`promote()` parses manifests ONCE for governance (parseManifests at line 752) BEFORE Classify runs. This means conftest policy + governance validation runs against the full bundle including hook resources. **This is the intended behavior** — policies like "deny privileged containers" should apply to hook Jobs too. The classify step uses the same parsed slice. A future reader should not "fix" this by excluding hooks from governance.
+
+### Type-name collision (intentional decoupling)
+
+Two types are named `HookStatus`:
+- `paprikav1.HookStatus` (in `api/pipelines/v1alpha1/release_types.go`) — the CRD status field.
+- `hooks.HookStatus` (in `internal/engine/hooks/`) — the engine-level execution-state constants (`Running`/`Succeeded`/`Failed`/`Terminated`).
+
+These are deliberately separate to keep the API package decoupled from the engine package. The controller has an explicit conversion boundary in `executeHooks`: the engine returns `hooks.HookStatus` constants; the controller maps them to `paprikav1.HookStatus` strings when stamping `release.Status.HookStatuses`. The mapping is trivial (string identity — the values match). Tests should pin both ends of the conversion.
 
 ### Diff/engine integration
 
@@ -278,13 +363,18 @@ Existing `cleanupManagedResources` (release_controller.go line 1575) lists resou
 
 ## Error semantics
 
-Critical change: today `applyDocument` returns `(false, nil)` on apply errors — the loop continues. **For hooks this is wrong.** The new `executeHooks` propagates the first error to the caller, which triggers SyncFail and marks the release Failed.
+**Two paths, two contracts:**
 
-The existing `applyAllDocuments` (Sync phase) keeps its current best-effort contract. Only hooks get strict error propagation.
+- **`applyDocument` (controller, Sync-phase)** at `release_controller.go:1179` returns `(false, nil)` on apply errors. The loop continues, the Release still reaches Complete. MVP **does not change this** — it's a pre-existing footgun that affects every release, not just hook-using ones, and fixing it is in the non-goals list above (deferred).
+- **`applyHookDocument` / `executeHooks`** (new) propagates the first error encountered. This is what triggers SyncFail.
+
+**Note:** the agent's `applyDocument` (`server.go:134`) already returns errors rather than swallowing them, and accumulates them in `resp.Errors` (`:87-90`). So SyncFail correctly fires on Sync-phase apply errors when running through agent mode. The asymmetry is documented and intentional.
+
+**`hook=Sync` annotation in MVP:** ArgoCD treats `argocd.argoproj.io/hook=Sync` as a real hook phase (a hook applied during sync WITH completion-wait). MVP does NOT — `Classify` treats an explicit `hook=Sync` annotation the same as no annotation: the resource lands in `PhaseSync` and is applied via the existing `applyPromotedManifests` path with no completion wait. This is a documented divergence from ArgoCD. If a chart uses `hook=Sync` AND needs completion-wait, MVP won't honor it (the resource is applied as a normal Sync doc). Deferred to a follow-up.
 
 ## Status reporting
 
-`HookStatuses` is written to `Release.Status` as the phase runs. Each hook's entry is stamped `Running` when applied, then updated to `Succeeded`/`Failed`/`Terminated` when the completion checker returns done. The Application controller propagates `HookStatuses` to `Application.Status` via the existing reconcile path (small change in `application_controller.go` to copy the field when it observes the active Release).
+`HookStatuses` is written to `Release.Status` as the phase runs. Each hook's entry is stamped `Running` when applied, then updated to `Succeeded`/`Failed`/`Terminated` when the completion checker returns done. The Application controller propagates `HookStatuses` to `Application.Status` at `application_controller.go:1111-1113` (in the `evaluateDiff` / status-patch block) by copying from the active Release when one is set (`release.Status.HookStatuses` → `app.Status.HookStatuses`). The copy is unconditional when an active Release exists; on no active Release, the field is left empty.
 
 UI surfacing is out of scope for MVP — the data is available via the existing Connect-ES types (regenerated automatically).
 
