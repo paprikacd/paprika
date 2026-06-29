@@ -19,9 +19,11 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"math"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -59,6 +61,15 @@ func (d *RolloutCustomDefaulter) Default(_ context.Context, obj *rolloutsv1alpha
 	}
 	if obj.Spec.Target.Kind == "" {
 		obj.Spec.Target.Kind = "Deployment"
+	}
+
+	if obj.Spec.Strategy.Type == "Rolling" && obj.Spec.Strategy.Rolling != nil {
+		if obj.Spec.Strategy.Rolling.MaxSurge == nil {
+			obj.Spec.Strategy.Rolling.MaxSurge = ptr.To(intstr.FromString("25%"))
+		}
+		if obj.Spec.Strategy.Rolling.MaxUnavailable == nil {
+			obj.Spec.Strategy.Rolling.MaxUnavailable = ptr.To(intstr.FromString("25%"))
+		}
 	}
 
 	setServiceDefaults(&obj.Spec.Strategy, obj.Name)
@@ -101,7 +112,11 @@ func (v *RolloutCustomValidator) validateRollout(ro *rolloutsv1alpha1.Rollout) f
 		allErrs = append(allErrs, field.NotSupported(strategyPath.Child("type"), ro.Spec.Strategy.Type, []string{"Rolling", "Canary", "BlueGreen", "ABTest", "Mirror"}))
 	}
 
-	if err := v.validateStrategyConfig(&ro.Spec.Strategy, strategyPath); err != nil {
+	desired := int32(1)
+	if ro.Spec.Replicas != nil {
+		desired = *ro.Spec.Replicas
+	}
+	if err := v.validateStrategyConfig(&ro.Spec.Strategy, strategyPath, desired); err != nil {
 		allErrs = append(allErrs, err...)
 	}
 
@@ -112,13 +127,17 @@ func (v *RolloutCustomValidator) validateRollout(ro *rolloutsv1alpha1.Rollout) f
 	return allErrs
 }
 
-func (v *RolloutCustomValidator) validateStrategyConfig(s *rolloutsv1alpha1.RolloutStrategy, path *field.Path) field.ErrorList {
+func (v *RolloutCustomValidator) validateStrategyConfig(s *rolloutsv1alpha1.RolloutStrategy, path *field.Path, desiredReplicas int32) field.ErrorList {
 	var allErrs field.ErrorList
 
 	switch s.Type {
 	case "Rolling":
 		if s.Rolling == nil {
 			allErrs = append(allErrs, field.Required(path.Child("rolling"), "rolling configuration is required"))
+			break
+		}
+		if errs := validateRollingSurgeUnavailable(s.Rolling, path.Child("rolling"), desiredReplicas); len(errs) > 0 {
+			allErrs = append(allErrs, errs...)
 		}
 	case "Canary":
 		if s.Canary == nil {
@@ -186,6 +205,50 @@ func (v *RolloutCustomValidator) validateStrategyConfig(s *rolloutsv1alpha1.Roll
 	}
 
 	return allErrs
+}
+
+// validateRollingSurgeUnavailable validates MaxSurge/MaxUnavailable against the
+// Deployment controller's rules: both must be non-negative, and they cannot
+// both resolve to zero (would deadlock). Percent strings like "25%" are
+// resolved against the rollout's replica count.
+func validateRollingSurgeUnavailable(r *rolloutsv1alpha1.RollingStrategy, path *field.Path, desiredReplicas int32) field.ErrorList {
+	var allErrs field.ErrorList
+	surge, surgeErr := resolveRollingCount(r.MaxSurge, desiredReplicas)
+	unavail, unavailErr := resolveRollingCount(r.MaxUnavailable, desiredReplicas)
+	if surgeErr != nil {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxSurge"), r.MaxSurge, surgeErr.Error()))
+	}
+	if unavailErr != nil {
+		allErrs = append(allErrs, field.Invalid(path.Child("maxUnavailable"), r.MaxUnavailable, unavailErr.Error()))
+	}
+	if len(allErrs) > 0 {
+		return allErrs
+	}
+	if desiredReplicas > 0 && surge == 0 && unavail == 0 {
+		allErrs = append(allErrs, field.Invalid(path, r, "maxSurge and maxUnavailable cannot both be zero"))
+	}
+	return allErrs
+}
+
+// resolveRollingCount resolves an intstr.IntOrString to an int32 against the
+// desired replica count. A nil pointer resolves to 0. Percent strings like
+// "25%" are evaluated against `desired` via intstr.GetScaledValueFromIntOrPercent.
+// Negative integers or unparseable strings return an error.
+func resolveRollingCount(v *intstr.IntOrString, desired int32) (int32, error) {
+	if v == nil {
+		return 0, nil
+	}
+	resolved, err := intstr.GetScaledValueFromIntOrPercent(v, int(desired), true)
+	if err != nil {
+		return 0, fmt.Errorf("could not resolve %q: %w", v.String(), err)
+	}
+	if resolved < 0 {
+		return 0, fmt.Errorf("must be non-negative, got %d", resolved)
+	}
+	if resolved > math.MaxInt32 {
+		return 0, fmt.Errorf("must fit in int32, got %d", resolved)
+	}
+	return int32(resolved), nil
 }
 
 func setServiceDefaults(s *rolloutsv1alpha1.RolloutStrategy, name string) {
