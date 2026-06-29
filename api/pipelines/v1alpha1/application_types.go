@@ -72,6 +72,11 @@ type SyncOptions struct {
 	// matches the desired manifest.
 	// +optional
 	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
+	// HookTimeoutSeconds is the max time to wait for any single hook to reach
+	// a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
+	// (skip the per-hook poll entirely).
+	// +optional
+	HookTimeoutSeconds int32 `json:"hookTimeoutSeconds,omitempty"`
 }
 
 // AnalysisTemplateRef references an AnalysisTemplate and supplies arguments.
@@ -628,6 +633,24 @@ func (s *ApplicationSource) EffectiveOCI() *OCISourceSpec {
 	}
 	return s.OCI
 }
+
+// Shared annotation constants for ArgoCD-compatible resource hooks.
+// Recognized on individual manifest documents during the Sync apply path.
+const (
+	// HookAnnotation identifies a resource as a hook. Value is a
+	// comma-separated list of phases, e.g. "PreSync,PostSync".
+	// Resources without this annotation (or with an empty value) are
+	// treated as normal Sync-phase managed resources.
+	HookAnnotation = "argocd.argoproj.io/hook"
+	// HookDeletePolicyAnnotation controls when a hook resource is deleted.
+	// MVP honors only "BeforeHookCreation" (the default when the annotation
+	// is absent). Other values ("HookSucceeded", "HookFailed") are accepted
+	// but treated as no-ops until prune-on-sync lands.
+	HookDeletePolicyAnnotation = "argocd.argoproj.io/hook-delete-policy"
+	// HookWeightAnnotation is parsed for forward-compat but ignored in MVP.
+	// YAML declaration order is used within a phase.
+	HookWeightAnnotation = "argocd.argoproj.io/hook-weight"
+)
 
 func init() {
 	SchemeBuilder.Register(&Application{}, &ApplicationList{})
