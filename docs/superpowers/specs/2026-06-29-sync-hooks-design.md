@@ -38,7 +38,7 @@ ReleaseReconciler.promote(ctx, release)
  ├─ render manifests → []byte
  ├─ governance + conftest gates (unchanged)
  ├─ store manifest snapshot (unchanged)
- ├─ [NEW] hooks.Classify(manifests) → *hooks.Bucket
+ ├─ [NEW] hooks.Classify(objs, rawDocs) → *hooks.Bucket
  │     buckets: PreSync, Sync, PostSync, SyncFail
  │     (hooks identified by `argocd.argoproj.io/hook` annotation,
  │      comma-separated values supported)
@@ -50,7 +50,7 @@ ReleaseReconciler.promote(ctx, release)
         └─ patch release status (Phase=Failed)
 ```
 
-The agent (`internal/agent/server/server.go`) has a duplicated apply path. It gets the **same** `internal/engine/hooks` package (shared code) and a parallel hook-execution path triggered by a new `ApplyRequest.Hooks` field on the existing `Apply` RPC.
+The agent (`internal/agent/server/server.go`) has a duplicated apply path. It gets the **same** `internal/engine/hooks` package (shared code) and a parallel hook-execution path. The controller-to-agent `ApplyRequest`/`ApplyResponse` are NOT enriched with hook-specific fields — see "Agent parity" below for the version-skew policy.
 
 ## Components
 
@@ -58,7 +58,7 @@ The agent (`internal/agent/server/server.go`) has a duplicated apply path. It ge
 
 ```
 hooks/
-  classify.go      - Classify(docs []byte) (*Bucket, error)
+  classify.go      - Classify(objs []*unstructured.Unstructured, rawDocs []byte) (*Bucket, error)
   classify_test.go
   completion.go    - CompletionFunc registry + Job/Pod checkers
   completion_test.go
@@ -213,7 +213,7 @@ Hooks are executed across multiple reconciles. The controller may requeue while 
 | `Failed` | Abort. Stop processing this phase; trigger SyncFail. Do NOT re-run. |
 | `Terminated` (timed out) | Abort. Stop processing this phase; trigger SyncFail. Do NOT re-run. |
 | `Running` | Poll the live resource via the completion checker. Transition to `Succeeded`/`Failed`/`Terminated` (if `time.Since(StartedAt) > HookTimeoutSeconds`). Do NOT re-apply. Do NOT delete (skip BeforeHookCreation for this reconcile). |
-| (no entry) | First sighting. Apply BeforeHookCreation: delete any existing live resource with same kind/name/namespace, then SSA-apply the manifest. Stamp `StartedAt=now, Status=Running`. Poll the completion checker once on this reconcile. |
+| (no entry) | First sighting. Apply BeforeHookCreation: delete any existing live resource with same kind/name/namespace, then SSA-apply the manifest. Stamp `StartedAt=now, Status=Running`. **If `HookTimeoutSeconds == 0`, immediately mark `Succeeded` (fire-and-forget) and skip the poll.** Otherwise poll the completion checker once on this reconcile. |
 
 Hooks within a phase are processed in YAML-declaration order. A phase is "done" when every hook has reached `Succeeded` (in which case the next phase runs) or any hook has reached `Failed`/`Terminated` (in which case SyncFail runs and the release is marked Failed).
 
@@ -303,19 +303,21 @@ if err := r.executeHooks(ctx, release, dynClient, bucket.PostSync, hooks.PhasePo
 // objects. This preserves YAML comments, key order, and scalar formatting
 // through the existing apply path.
 //
-// Classify iterates objs; for each non-hook object, it locates the
-// corresponding document in rawDocs via byte-offset tracking (the parser
-// in promote() already records offsets; Classify reuses that). The Sync
-// byte slice is built once by concatenating the relevant raw docs.
+// Implementation: promote() already calls engine.SplitYAMLDocuments(manifests)
+// (helm_sdk_renderer.go:419) which returns [][]byte where each element is the
+// raw (trimmed) document body sliced from the original bundle. Classify pairs
+// each parsed object with its source []byte; SyncDocs concatenates the
+// non-hook byte slices with "\n---\n" separators. No offset tracking or
+// re-serialization — SplitYAMLDocuments already did the work.
 func Classify(objs []*unstructured.Unstructured, rawDocs []byte) (*Bucket, error)
 
 // SyncDocs returns the original raw bytes for the Sync-phase (non-hook)
-// documents, preserving formatting. Implements the same multi-doc YAML
-// contract as the original bundle.
+// documents, preserving formatting. Built by concatenating the per-doc
+// byte slices captured by Classify (via SplitYAMLDocuments).
 func (b *Bucket) SyncDocs() []byte
 ```
 
-The implementation tracks byte ranges: `parseManifests` already uses `yaml.NewYAMLOrAMLDecoder` over the bundle; we extend it to record each object's start/end offset, then `SyncDocs` slices and concatenates the non-hook ranges with `---` separators. This is a small change localized to the parser.
+The controller's existing `parseManifests` (release_controller.go:805) and the byte-splitting `engine.SplitYAMLDocuments` (helm_sdk_renderer.go:419) already produce everything Classify needs. `Classify` is a thin partitioning layer over those two existing primitives; no parser changes required.
 
 #### SyncFail idempotency
 
@@ -389,6 +391,7 @@ UI surfacing is out of scope for MVP — the data is available via the existing 
   - Unknown phase value (e.g. `argocd.argoproj.io/hook=Garbage`) → in Sync (treated as non-hook).
   - Empty `argocd.argoproj.io/hook` value → in Sync (treated as non-hook).
   - SyncFail-only hooks → in SyncFail only.
+  - `argocd.argoproj.io/hook=Sync` (explicit) → in Sync only (NOT a real hook phase in MVP — divergence from ArgoCD, pinned by test).
   - Mixed bundle (real ArgoCD chart fixture) → bucketed correctly.
 
 - Completion checkers:
@@ -432,7 +435,7 @@ UI surfacing is out of scope for MVP — the data is available via the existing 
 | Risk | Mitigation |
 |---|---|
 | Agent/controller drift (duplicated apply paths) | Shared `internal/engine/hooks` package keeps classification logic single-sourced. Hook execution still has to be written twice (controller and agent) but both call into the same primitives. |
-| Existing Helm charts without hooks silently regress | `bucket.HasHooks()` short-circuit: if no hook annotations are present, the new code path is skipped entirely and `applyPromotedManifests` works exactly as before. |
+| Existing Helm charts without hooks silently regress | `bytes.Contains(manifests, []byte(HookAnnotation))` fast pre-check: if the substring is absent (the common case), the new code path is skipped entirely and `applyPromotedManifests` receives the original bytes — byte-identical to pre-hook paprika. False positives (substring appears in a ConfigMap data value, comment, or CRD description) take the slow path; `Classify` correctly determines there are no real hooks, all docs land in Sync, and `SyncDocs()` returns the reconstituted bytes (semantically identical to the original, separated by normalized `---` separators). |
 | Completion-wait blocks the reconcile loop | Timeouts via `HookTimeoutSeconds`. The reconcile returns and requeues; on requeue, the controller re-enters `executeHooks` and observes existing HookStatuses to resume waiting (state machine pattern). |
 | Status field inflation on Release | `HookStatuses` is bounded by the number of hooks in a chart (typically <10). No pagination needed for MVP. |
 | Hook Job hangs forever | `HookTimeoutSeconds` (default 300s) terminates the wait; the hook is marked `Terminated` and the release goes Failed. |
