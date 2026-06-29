@@ -643,6 +643,112 @@ var _ = Describe("RolloutReconciler pruning", func() {
 	})
 })
 
+var _ = Describe("RolloutReconciler end-to-end lifecycle", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "e2e-lifecycle",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer},
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(2),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Canary",
+					Canary: &rolloutsv1alpha1.CanaryStrategy{
+						StableService: "e2e-stable",
+						CanaryService: "e2e-canary",
+						Steps: []rolloutsv1alpha1.CanaryStep{
+							{SetWeight: 25, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 50, Duration: &metav1.Duration{Duration: time.Minute}},
+							{SetWeight: 100},
+						},
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+
+		DeferCleanup(func() {
+			Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+			ro.Finalizers = nil
+			Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ro)).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Service{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+		})
+	})
+
+	It("advances, aborts, then resumes from a fresh template", func() {
+		By("creating the stable RS")
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		By("triggering a canary update")
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)))
+
+		// Stamp step 0.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		By("advancing past step 0 after Duration")
+		clk.Add(61 * time.Second)
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(1)))
+
+		By("aborting mid-rollout")
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Annotations = map[string]string{"paprika.io/abort": ""}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue())
+		Expect(ro.Status.Phase).To(Equal(rolloutsv1alpha1.RolloutPhaseAborted))
+
+		By("removing the annotation without template change — abort must persist")
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Annotations = map[string]string{}
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeTrue(), "abort must persist until template changes")
+
+		By("bumping the template — abort clears, fresh rollout starts")
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v3")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.Abort).To(BeFalse())
+		Expect(ro.Status.CurrentStepIndex).To(Equal(int32(0)), "step index must reset on fresh rollout")
+	})
+})
+
 func rsNames(list *appsv1.ReplicaSetList) []string {
 	out := make([]string, len(list.Items))
 	for i, rs := range list.Items {
