@@ -98,3 +98,24 @@ func TestRollingAcceptsPercentDefaults(t *testing.T) {
 		t.Fatalf("expected 25%%/25%% to validate, got %v", err)
 	}
 }
+
+func TestBlueGreenRejectsNegativeTiming(t *testing.T) {
+	neg := int32(-1)
+	ro := &rolloutsv1alpha1.Rollout{
+		Spec: rolloutsv1alpha1.RolloutSpec{
+			Strategy: rolloutsv1alpha1.RolloutStrategy{
+				Type: "BlueGreen",
+				BlueGreen: &rolloutsv1alpha1.BlueGreenStrategy{
+					ActiveService:         "x",
+					AutoPromotionSeconds:  &neg,
+					ScaleDownDelaySeconds: &neg,
+				},
+			},
+		},
+	}
+	v := &RolloutCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), ro)
+	if err == nil {
+		t.Fatal("expected validation error for negative timing fields")
+	}
+}

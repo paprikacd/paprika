@@ -160,6 +160,12 @@ func (v *RolloutCustomValidator) validateStrategyConfig(s *rolloutsv1alpha1.Roll
 		if s.BlueGreen.ActiveService == "" {
 			allErrs = append(allErrs, field.Required(path.Child("blueGreen").Child("activeService"), "activeService is required"))
 		}
+		if s.BlueGreen.AutoPromotionSeconds != nil && *s.BlueGreen.AutoPromotionSeconds < 0 {
+			allErrs = append(allErrs, field.Invalid(path.Child("blueGreen").Child("autoPromotionSeconds"), *s.BlueGreen.AutoPromotionSeconds, "must be >= 0"))
+		}
+		if s.BlueGreen.ScaleDownDelaySeconds != nil && *s.BlueGreen.ScaleDownDelaySeconds < 0 {
+			allErrs = append(allErrs, field.Invalid(path.Child("blueGreen").Child("scaleDownDelaySeconds"), *s.BlueGreen.ScaleDownDelaySeconds, "must be >= 0"))
+		}
 	case "ABTest":
 		if s.ABTest == nil {
 			allErrs = append(allErrs, field.Required(path.Child("abTest"), "abTest configuration is required"))
