@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -292,6 +293,94 @@ var _ = Describe("RolloutReconciler abort", func() {
 	})
 })
 
+var _ = Describe("RolloutReconciler rolling", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+		surge := intstr.FromInt32(1)
+		unavail := intstr.FromInt32(0)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "rolling-ramp",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer},
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas: int32Ptr(3),
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type: "Rolling",
+					Rolling: &rolloutsv1alpha1.RollingStrategy{
+						MaxSurge:       &surge,
+						MaxUnavailable: &unavail,
+					},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+
+		DeferCleanup(func() {
+			Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+			ro.Finalizers = nil
+			Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ro)).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Service{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+		})
+	})
+
+	It("observes ReplicaSet readiness and populates SyncInputs for the strategy", func() {
+		// Reconcile 0: create stable RS at v1.
+		var err error
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		stableName := ro.Status.StableRS
+		Expect(stableName).NotTo(BeEmpty())
+
+		// Mark stable RS fully ready (3 replicas).
+		setRSReady(stableName, 3)
+
+		// Bump template to trigger rolling update.
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		ro.Spec.Template = podTemplate("v2")
+		Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+
+		// Reconcile 1: surge new RS to 1, hold old at 3.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.CanaryRS).NotTo(BeEmpty(), "canary RS should be created")
+
+		// Mark the new (canary) RS as having 1 ready pod.
+		setRSReady(ro.Status.CanaryRS, 1)
+
+		// Reconcile 2: the controller must observe both readiness counts and
+		// feed them into SyncInputs. With surge=1, unavail=0, desired=3,
+		// oldReady=3, newReady=1, the strategy should compute:
+		//   phase 1: available=4 > floor=3, scaleDownBy=1 → oldTarget=2
+		//   phase 2: newTarget = 3+1-2 = 2
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// Verify the old RS was scaled down to 2 (proves readiness observation worked).
+		var oldRS appsv1.ReplicaSet
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: stableName, Namespace: "default"}, &oldRS)).To(Succeed())
+		Expect(*oldRS.Spec.Replicas).To(Equal(int32(2)), "old RS should be scaled to 2 when new RS has 1 ready pod")
+	})
+})
+
 func reqFor(ro *rolloutsv1alpha1.Rollout) ctrl.Request {
 	return ctrl.Request{NamespacedName: types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}}
 }
@@ -302,10 +391,8 @@ func objKey(ro *rolloutsv1alpha1.Rollout) types.NamespacedName {
 
 func int32Ptr(i int32) *int32 { return &i }
 
-// setRSReady is a shared envtest helper used by later chunks. It updates a
-// ReplicaSet's ReadyReplicas/Replicas status subresource. Defined here once.
-//
-//nolint:unused // consumed by controller tests in Chunks 3-5.
+// setRSReady is a shared envtest helper. It updates a ReplicaSet's
+// ReadyReplicas/Replicas status subresource.
 func setRSReady(rsName string, ready int32) {
 	if rsName == "" {
 		return

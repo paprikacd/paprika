@@ -186,7 +186,12 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	prevStepIdx := ro.Status.CurrentStepIndex
 
-	result, err := strategy.Sync(ctx, &ro, &ro.Status, core.NewSyncInputs(r.Clock))
+	if observeErr := r.observeReadyReplicas(ctx, &ro); observeErr != nil {
+		log.Error(observeErr, "Failed to observe ReplicaSet readiness")
+		// Non-fatal: continue with possibly-stale counts.
+	}
+	inputs := core.NewSyncInputs(r.Clock).WithReadyReplicas(ro.Status.StableReadyReplicas, ro.Status.CanaryReadyReplicas)
+	result, err := strategy.Sync(ctx, &ro, &ro.Status, inputs)
 	if err != nil {
 		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("strategy sync: %w", err)
@@ -372,6 +377,34 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 	}
 	if ro.Spec.Template.ObjectMeta.Labels == nil && len(deploy.Spec.Template.ObjectMeta.Labels) > 0 {
 		ro.Spec.Template = deploy.Spec.Template
+	}
+	return nil
+}
+
+// observeReadyReplicas reads the current stable and canary ReplicaSets and
+// stores their ReadyReplicas counts on status for strategy consumption.
+func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	if ro.Status.StableRS != "" {
+		var stable appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.StableRS}, &stable); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing stable RS: %w", err)
+			}
+			ro.Status.StableReadyReplicas = 0
+		} else {
+			ro.Status.StableReadyReplicas = stable.Status.ReadyReplicas
+		}
+	}
+	if ro.Status.CanaryRS != "" {
+		var canary appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.CanaryRS}, &canary); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing canary RS: %w", err)
+			}
+			ro.Status.CanaryReadyReplicas = 0
+		} else {
+			ro.Status.CanaryReadyReplicas = canary.Status.ReadyReplicas
+		}
 	}
 	return nil
 }
