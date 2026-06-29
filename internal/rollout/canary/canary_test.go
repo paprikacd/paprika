@@ -180,6 +180,72 @@ func TestCanaryStampsCurrentStepStartedAt(t *testing.T) {
 	}
 }
 
+func TestCanaryAbortsOnAnnotation(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{
+		Steps: []rolloutsv1alpha1.CanaryStep{{SetWeight: 25}},
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS:         "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS:         "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+		CurrentStepIndex: 0,
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if res.Phase != rolloutsv1alpha1.RolloutPhaseAborted {
+		t.Fatalf("expected Phase=Aborted, got %s", res.Phase)
+	}
+	foundStable, foundScaledDown := false, false
+	for _, rs := range res.ReplicaSets {
+		if rs.Labels["rollouts.paprika.io/stable"] == "true" {
+			foundStable = true
+		}
+		if rs.Labels["rollouts.paprika.io/canary"] == "true" && rs.Replicas == 0 {
+			foundScaledDown = true
+		}
+	}
+	if !foundStable {
+		t.Error("abort result did not include stable RS")
+	}
+	if !foundScaledDown {
+		t.Error("abort result did not scale canary RS to 0")
+	}
+}
+
+// TestCanaryAbortsBeforeCanaryCreated covers the case where the user aborts
+// before any canary RS exists. AbortResult must not include a canary action.
+func TestCanaryAbortsBeforeCanaryCreated(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.CanaryStrategy{
+		Steps: []rolloutsv1alpha1.CanaryStep{{SetWeight: 25}},
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", tmpl1) // same template as stable — no canary yet
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS: "r1-stable-" + hash.Template(tmpl1),
+		// CanaryRS intentionally empty
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if len(res.ReplicaSets) != 1 {
+		t.Fatalf("expected exactly 1 RS action (stable only), got %d", len(res.ReplicaSets))
+	}
+}
+
 func durationFromSeconds(s int) *metav1.Duration {
 	return &metav1.Duration{Duration: time.Duration(s) * time.Second}
 }

@@ -59,6 +59,49 @@ func TestABTestPromotesOnAnnotation(t *testing.T) {
 	}
 }
 
+func TestABTestAbortsOnAnnotation(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.ABTestStrategy{
+		Routes: []rolloutsv1alpha1.ABTestRoute{
+			{Type: "Header", Name: "x-test", Value: "canary", Service: "canary"},
+		},
+		StableService: "r1-stable",
+		CanaryService: "r1-canary",
+	})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS: "r1-stable-" + hash.Template(tmpl1),
+		CanaryRS: "r1-canary-" + hash.Template(EmptyTemplate("v2")),
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if res.Phase != rolloutsv1alpha1.RolloutPhaseAborted {
+		t.Fatalf("expected Phase=Aborted, got %s", res.Phase)
+	}
+	foundStable, foundScaledDown := false, false
+	for _, rs := range res.ReplicaSets {
+		if rs.Labels["rollouts.paprika.io/stable"] == "true" {
+			foundStable = true
+		}
+		if rs.Labels["rollouts.paprika.io/canary"] == "true" && rs.Replicas == 0 {
+			foundScaledDown = true
+		}
+	}
+	if !foundStable {
+		t.Error("abort result did not include stable RS")
+	}
+	if !foundScaledDown {
+		t.Error("abort result did not scale canary RS to 0")
+	}
+}
+
 func makeRollout(name string, tmpl *corev1.PodTemplateSpec) *rolloutsv1alpha1.Rollout {
 	return &rolloutsv1alpha1.Rollout{
 		ObjectMeta: metav1.ObjectMeta{Name: name},

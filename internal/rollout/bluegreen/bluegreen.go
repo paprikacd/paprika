@@ -59,6 +59,10 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
 	activeHash := hashFromRSName(status.StableRS)
 	if hash == activeHash && status.CanaryRS == "" {
 		return &core.SyncResult{

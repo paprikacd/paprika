@@ -63,6 +63,10 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 		}, nil
 	}
 
+	if core.IsAborted(ro, status) {
+		return core.AbortResult(ro, status, hashFromRSName(status.StableRS), desiredReplicas), nil
+	}
+
 	stableHash := hashFromRSName(status.StableRS)
 	previewReplicas := int32(1)
 	if desiredReplicas > 1 {
@@ -80,17 +84,6 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 			ReplicaSets: []core.ReplicaSetAction{
 				makeStableRS(ro, stableHash, desiredReplicas),
 				makeCanaryRS(ro, hash, previewReplicas),
-			},
-		}, nil
-	}
-
-	if _, aborted := ro.Annotations[core.AbortAnnotation]; aborted {
-		return &core.SyncResult{
-			Phase:   rolloutsv1alpha1.RolloutPhaseHealthy,
-			Action:  core.ActionComplete,
-			Message: "Mirror aborted; stable ReplicaSet retained",
-			ReplicaSets: []core.ReplicaSetAction{
-				makeStableRS(ro, stableHash, desiredReplicas),
 			},
 		}, nil
 	}

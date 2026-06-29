@@ -63,6 +63,34 @@ func TestRollingStrategyReplacesOnTemplateChange(t *testing.T) {
 	}
 }
 
+func TestRollingAbortsOnAnnotation(t *testing.T) {
+	s := NewStrategy(&rolloutsv1alpha1.RollingStrategy{})
+	tmpl1 := EmptyTemplate("v1")
+	ro := makeRollout("r1", EmptyTemplate("v2"))
+	ro.Annotations = map[string]string{core.AbortAnnotation: ""}
+	status := rolloutsv1alpha1.RolloutStatus{
+		StableRS: "r1-" + hash.Template(tmpl1),
+		// Rolling has no canary RS during normal operation.
+	}
+
+	res, err := s.Sync(context.Background(), ro, &status, testutil.Inputs())
+	if err != nil {
+		t.Fatalf("sync: %v", err)
+	}
+	if res.Action != core.ActionAbort {
+		t.Fatalf("expected ActionAbort, got %s", res.Action)
+	}
+	if res.Phase != rolloutsv1alpha1.RolloutPhaseAborted {
+		t.Fatalf("expected Phase=Aborted, got %s", res.Phase)
+	}
+	if len(res.ReplicaSets) != 1 {
+		t.Fatalf("expected exactly 1 RS action (stable only), got %d", len(res.ReplicaSets))
+	}
+	if res.ReplicaSets[0].Labels["rollouts.paprika.io/stable"] != "true" {
+		t.Error("abort result did not include stable RS")
+	}
+}
+
 func makeRollout(name string, tmpl *corev1.PodTemplateSpec) *rolloutsv1alpha1.Rollout {
 	return &rolloutsv1alpha1.Rollout{
 		ObjectMeta: metav1.ObjectMeta{Name: name},

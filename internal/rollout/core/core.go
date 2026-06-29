@@ -104,3 +104,58 @@ type ReplicaSetAction struct {
 	Template *corev1.PodTemplateSpec
 	Labels   map[string]string
 }
+
+// IsAborted reports whether the Rollout is currently in an aborted state.
+// Aborted by annotation OR by durable status.Abort flag.
+func IsAborted(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus) bool {
+	if status != nil && status.Abort {
+		return true
+	}
+	if ro == nil {
+		return false
+	}
+	_, ok := ro.Annotations[AbortAnnotation]
+	return ok
+}
+
+// AbortResult builds a SyncResult that retains the stable RS at desired
+// replicas and scales the canary/preview RS (named by status.CanaryRS) to zero.
+// Use this from any strategy's Sync when IsAborted is true.
+//
+// IMPORTANT: the stable RS action deliberately sets Template to nil. The
+// controller's executeReplicaSetActions must skip the template overwrite when
+// Template is nil (Task 2.2 will update executeReplicaSetActions accordingly)
+// — otherwise the stable RS gets rolled forward to the canary template the
+// user just aborted.
+func AbortResult(ro *rolloutsv1alpha1.Rollout, status *rolloutsv1alpha1.RolloutStatus, stableHash string, desiredReplicas int32) *SyncResult {
+	rs := []ReplicaSetAction{
+		{
+			Name:     status.StableRS,
+			Replicas: desiredReplicas,
+			Template: nil, // do NOT overwrite the existing RS template
+			Labels: map[string]string{
+				"rollouts.paprika.io/stable":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		},
+	}
+	if status.CanaryRS != "" {
+		rs = append(rs, ReplicaSetAction{
+			Name:     status.CanaryRS,
+			Replicas: 0,
+			Template: nil, // ditto: scale to 0 without changing the template
+			Labels: map[string]string{
+				"rollouts.paprika.io/canary":   "true",
+				"rollouts.paprika.io/revision": stableHash,
+				"rollouts.paprika.io/rollout":  ro.Name,
+			},
+		})
+	}
+	return &SyncResult{
+		Phase:       rolloutsv1alpha1.RolloutPhaseAborted,
+		Action:      ActionAbort,
+		Message:     "Rollout aborted; stable ReplicaSet retained",
+		ReplicaSets: rs,
+	}
+}
