@@ -406,6 +406,41 @@ func (r *RolloutReconciler) observeReadyReplicas(ctx context.Context, ro *rollou
 			ro.Status.CanaryReadyReplicas = canary.Status.ReadyReplicas
 		}
 	}
+
+	// BlueGreen-specific: stamp PreviewHealthyAt once when the preview RS becomes
+	// fully ready, so the strategy's AutoPromotionSeconds timeout has an anchor.
+	if ro.Spec.Strategy.Type == "BlueGreen" && ro.Spec.Strategy.BlueGreen != nil {
+		desired := int32(1)
+		if ro.Spec.Replicas != nil {
+			desired = *ro.Spec.Replicas
+		}
+		previewCount := desired
+		if ro.Spec.Strategy.BlueGreen.PreviewReplicaCount != nil {
+			previewCount = *ro.Spec.Strategy.BlueGreen.PreviewReplicaCount
+		}
+		if ro.Status.CanaryRS != "" && ro.Status.CanaryReadyReplicas >= previewCount && ro.Status.PreviewHealthyAt == nil {
+			now := metav1.NewTime(r.Clock.Now())
+			ro.Status.PreviewHealthyAt = &now
+		}
+	}
+
+	// BlueGreen drain: observe PreviousActiveRS's readiness onto
+	// CanaryReadyReplicas so the strategy's drain-exit condition
+	// (in.CanaryReadyReplicas == 0) fires. This only runs during drain
+	// (PreviousActiveRS != ""); otherwise it would clobber the preview RS's
+	// readiness observation recorded above.
+	if ro.Status.PreviousActiveRS != "" {
+		var prev appsv1.ReplicaSet
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: ro.Namespace, Name: ro.Status.PreviousActiveRS}, &prev); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("observing previous active RS: %w", err)
+			}
+			ro.Status.CanaryReadyReplicas = 0
+		} else {
+			ro.Status.CanaryReadyReplicas = prev.Status.ReadyReplicas
+		}
+	}
+
 	return nil
 }
 
@@ -793,6 +828,9 @@ func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout,
 		}
 		if rs.Labels["rollouts.paprika.io/canary"] == "true" || rs.Labels["rollouts.paprika.io/preview"] == "true" {
 			ro.Status.CanaryRS = rs.Name
+		}
+		if rs.Labels["rollouts.paprika.io/draining"] == "true" {
+			ro.Status.PreviousActiveRS = rs.Name
 		}
 	}
 
