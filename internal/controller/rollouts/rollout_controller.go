@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -200,6 +201,11 @@ func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if err := r.executeReplicaSetActions(ctx, &ro, result.ReplicaSets); err != nil {
 		r.failRollout(ctx, &ro, err, log)
 		return ctrl.Result{}, fmt.Errorf("executing replica set actions: %w", err)
+	}
+
+	if err := r.pruneReplicaSets(ctx, &ro); err != nil {
+		log.Error(err, "Failed to prune ReplicaSets")
+		// Non-fatal — don't fail the reconcile.
 	}
 
 	if err := r.ensureServices(ctx, &ro, result); err != nil {
@@ -516,6 +522,66 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 			return fmt.Errorf("updating ReplicaSet %s: %w", action.Name, err)
 		}
 		log.Info("Updated ReplicaSet", "name", rs.Name, "replicas", action.Replicas)
+	}
+	return nil
+}
+
+// pruneReplicaSets deletes old ReplicaSets owned by the Rollout beyond
+// Spec.RevisionHistoryLimit. Only RSes already scaled to 0 are pruned (a
+// still-serving revision is never deleted). The currently-serving RSes
+// (StableRS, CanaryRS, PreviousActiveRS) are always protected.
+func (r *RolloutReconciler) pruneReplicaSets(ctx context.Context, ro *rolloutsv1alpha1.Rollout) error {
+	log := logf.FromContext(ctx)
+	if ro.Spec.RevisionHistoryLimit == nil || *ro.Spec.RevisionHistoryLimit < 0 {
+		return nil
+	}
+	limit := int(*ro.Spec.RevisionHistoryLimit)
+
+	list := &appsv1.ReplicaSetList{}
+	if err := r.Client.List(ctx, list, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name}); err != nil {
+		return fmt.Errorf("listing owned ReplicaSets: %w", err)
+	}
+
+	// Protect the currently-serving RS, any in-flight canary/preview, AND the
+	// previous active RS during BlueGreen drain (Chunk 4 stashes the prior
+	// active on PreviousActiveRS until the drain completes; pruning it mid-drain
+	// would never let the drain-exit condition fire).
+	protected := map[string]bool{
+		ro.Status.StableRS:         true,
+		ro.Status.CanaryRS:         true,
+		ro.Status.PreviousActiveRS: true,
+	}
+
+	// Candidates: old RSes that are scaled to 0.
+	type candidate struct {
+		rs        appsv1.ReplicaSet
+		createdAt int64
+	}
+	var cands []candidate
+	for i := range list.Items {
+		rs := &list.Items[i]
+		if protected[rs.Name] {
+			continue
+		}
+		if rs.Spec.Replicas == nil || *rs.Spec.Replicas != 0 {
+			continue // still serving; don't delete
+		}
+		cands = append(cands, candidate{rs: *rs, createdAt: rs.CreationTimestamp.UnixNano()})
+	}
+	if len(cands) <= limit {
+		return nil
+	}
+
+	// Sort newest-first so we keep the most recent `limit` entries.
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].createdAt > cands[j].createdAt
+	})
+
+	for _, c := range cands[limit:] {
+		if err := r.Client.Delete(ctx, &c.rs); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("pruning ReplicaSet %s: %w", c.rs.Name, err)
+		}
+		log.Info("Pruned ReplicaSet", "name", c.rs.Name)
 	}
 	return nil
 }

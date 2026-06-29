@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -521,6 +523,133 @@ var _ = Describe("RolloutReconciler bluegreen", func() {
 		Expect(*prior.Spec.Replicas).To(Equal(int32(0)), "prior active should be scaled to 0 after ScaleDownDelaySeconds")
 	})
 })
+
+var _ = Describe("RolloutReconciler pruning", func() {
+	var (
+		ro    *rolloutsv1alpha1.Rollout
+		clk   *clock.Fake
+		recon *RolloutReconciler
+	)
+
+	// createStaleRS creates a ReplicaSet owned by the rollout at the given
+	// replica count, simulating accumulated revision history. It carries the
+	// rollout selector label that pruneReplicaSets lists by.
+	createStaleRS := func(name string, replicas int32) {
+		labels := map[string]string{
+			"rollouts.paprika.io/rollout":  ro.Name,
+			"rollouts.paprika.io/revision": name,
+		}
+		rs := &appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: ro.Namespace,
+				Labels:    labels,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: rolloutsv1alpha1.GroupVersion.String(),
+					Kind:       "Rollout",
+					Name:       ro.Name,
+					UID:        ro.UID,
+					Controller: ptr.To(true),
+				}},
+			},
+			Spec: appsv1.ReplicaSetSpec{
+				Replicas: ptr.To(replicas),
+				Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: labels},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "nginx"}}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, rs)).To(Succeed())
+	}
+
+	BeforeEach(func() {
+		clk = newFakeClock()
+		recon = &RolloutReconciler{
+			Scheme: mgr.GetScheme(),
+			Clock:  clk,
+			Client: k8sClient,
+		}
+		limit := int32(2)
+		ro = &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "prune-test",
+				Namespace:  "default",
+				Finalizers: []string{rolloutFinalizer},
+			},
+			Spec: rolloutsv1alpha1.RolloutSpec{
+				Replicas:             int32Ptr(1),
+				RevisionHistoryLimit: &limit,
+				Strategy: rolloutsv1alpha1.RolloutStrategy{
+					Type:    "Rolling",
+					Rolling: &rolloutsv1alpha1.RollingStrategy{},
+				},
+				Template: podTemplate("v1"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, ro)).To(Succeed())
+
+		DeferCleanup(func() {
+			Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+			ro.Finalizers = nil
+			Expect(k8sClient.Update(ctx, ro)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, ro)).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &appsv1.ReplicaSet{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+			Expect(k8sClient.DeleteAllOf(ctx, &corev1.Service{}, client.InNamespace(ro.Namespace), client.MatchingLabels{"rollouts.paprika.io/rollout": ro.Name})).To(Succeed())
+		})
+	})
+
+	It("prunes old scaled-to-zero ReplicaSets beyond RevisionHistoryLimit", func() {
+		// Establish the current stable RS via the first reconcile.
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+		Expect(ro.Status.StableRS).NotTo(BeEmpty())
+
+		// Simulate 4 accumulated old revisions, all scaled to 0 (the only
+		// state pruneReplicaSets will touch). Beyond RevisionHistoryLimit=2.
+		for i := 0; i < 4; i++ {
+			createStaleRS(fmt.Sprintf("prune-test-old-%d", i), 0)
+		}
+
+		// Reconcile — pruning runs after executeReplicaSetActions.
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		list := &appsv1.ReplicaSetList{}
+		Expect(k8sClient.List(ctx, list, client.InNamespace("default"), client.MatchingLabels{"rollouts.paprika.io/rollout": "prune-test"})).To(Succeed())
+		// RevisionHistoryLimit=2 → 1 current stable + 2 retained = 3.
+		Expect(list.Items).To(HaveLen(3), "expected RevisionHistoryLimit to prune old RSes down to limit+1")
+
+		// The current stable RS must always survive.
+		names := rsNames(list)
+		Expect(names).To(ContainElement(ro.Status.StableRS))
+	})
+
+	It("does not prune ReplicaSets that are still serving", func() {
+		_, err := recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, objKey(ro), ro)).To(Succeed())
+
+		// An old RS still scaled to 1 (still serving pods) must be left alone.
+		createStaleRS("prune-test-serving", 1)
+
+		_, err = recon.Reconcile(ctx, reqFor(ro))
+		Expect(err).NotTo(HaveOccurred())
+
+		var rs appsv1.ReplicaSet
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "prune-test-serving", Namespace: "default"}, &rs)).To(Succeed())
+	})
+})
+
+func rsNames(list *appsv1.ReplicaSetList) []string {
+	out := make([]string, len(list.Items))
+	for i, rs := range list.Items {
+		out[i] = rs.Name
+	}
+	return out
+}
 
 func reqFor(ro *rolloutsv1alpha1.Rollout) ctrl.Request {
 	return ctrl.Request{NamespacedName: types.NamespacedName{Name: ro.Name, Namespace: ro.Namespace}}
