@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types/ref"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
@@ -26,7 +27,10 @@ type CELEvaluator struct {
 // NewCELEvaluator creates a new CEL health evaluator.
 func NewCELEvaluator() *CELEvaluator {
 	return &CELEvaluator{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   10 * time.Second,
+		},
 	}
 }
 
@@ -69,7 +73,10 @@ func (e *CELEvaluator) doHTTPProbe(ctx context.Context, probe *paprikav1.HTTPPro
 		timeout = 5 * time.Second
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   timeout,
+	}
 	method := strings.ToUpper(probe.Method)
 	if method == "" {
 		method = http.MethodGet

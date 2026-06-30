@@ -31,8 +31,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -367,12 +369,18 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
+	wrappedHandler := otelhttp.NewHandler(mux, "paprika-http")
 	healthMux := buildHealthMux(setupLog)
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
@@ -382,7 +390,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		}
 	}()
 
-	return startAPIServer(apiCtx, mux, cfg.uiAddr, setupLog)
+	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
 }
 
 func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, setupLog logr.Logger) *cache.Invalidator {
@@ -616,10 +624,10 @@ func buildHealthProbeServer(healthMux *http.ServeMux, probeAddr string) *http.Se
 	}
 }
 
-func startAPIServer(ctx context.Context, mux *http.ServeMux, uiAddr string, log logr.Logger) error {
+func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, log logr.Logger) error {
 	server := &http.Server{
 		Addr:              uiAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
 	return runHTTPServer(ctx, server, "API server", log, nil, true)

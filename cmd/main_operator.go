@@ -26,8 +26,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -409,7 +411,13 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 	}
 	opts = append(opts, apiserver.WithK8sClient(k8sClient))
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
+
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return nil, fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
 
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
@@ -422,7 +430,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 
 	return &http.Server{
 		Addr:              uiAddr,
-		Handler:           uiMux,
+		Handler:           otelhttp.NewHandler(uiMux, "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}, nil
 }
