@@ -58,7 +58,6 @@ import (
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
-	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -95,7 +94,6 @@ type cliConfig struct {
 	cacheRedisDB                                                  int
 	shardID, shardTotal                                           int
 	shardIDSource                                                 string
-	otelEndpoint, otelServiceName, version                        string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
 	authEnabled, authAllowUnauth, enableWebhooks                  bool
@@ -168,14 +166,6 @@ func (cfg *cliConfig) cacheConfig() cache.Config {
 		RedisAddr:     addr,
 		RedisPassword: cfg.cacheRedisPassword,
 		RedisDB:       cfg.cacheRedisDB,
-	}
-}
-
-func (cfg *cliConfig) telemetryConfig() observability.TelemetryConfig {
-	return observability.TelemetryConfig{
-		OTLPEndpoint:   cfg.otelEndpoint,
-		ServiceName:    cfg.otelServiceName,
-		ServiceVersion: cfg.version,
 	}
 }
 
@@ -299,9 +289,6 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		}
 	}
 
-	cfg.otelEndpoint = getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	cfg.otelServiceName = getenv("OTEL_SERVICE_NAME")
-	cfg.version = getenv("PAPRIKA_VERSION")
 	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 
 	cfg.zapOptions = zap.Options{Development: true}

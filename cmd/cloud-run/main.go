@@ -132,24 +132,15 @@ func run(setupLog logr.Logger) error {
 		}
 	}
 
-	telemetry, err := observability.NewTelemetry(ctx, observability.TelemetryConfig{
-		OTLPEndpoint:   os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		ServiceName:    os.Getenv("OTEL_SERVICE_NAME"),
-		ServiceVersion: os.Getenv("PAPRIKA_VERSION"),
-	})
-	if err != nil {
-		setupLog.Error(err, "Failed to initialize tracing")
-		telemetry = nil
-	} else if telemetry.IsTracingEnabled() {
+	telemetry := observability.NewTelemetry(ctx, observability.ConfigFromEnv())
+	if telemetry.IsTracingEnabled() {
 		setupLog.Info("OpenTelemetry tracing enabled")
 	}
-	if telemetry != nil {
-		defer func() {
-			if shutdownErr := telemetry.Shutdown(ctx); shutdownErr != nil {
-				setupLog.Error(shutdownErr, "Failed to shutdown tracing")
-			}
-		}()
-	}
+	defer func() {
+		if shutdownErr := telemetry.Shutdown(ctx); shutdownErr != nil {
+			setupLog.Error(shutdownErr, "Failed to shutdown tracing")
+		}
+	}()
 
 	k8sConfig, err := buildK8sConfig(*kubeconfig)
 	if err != nil {

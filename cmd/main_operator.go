@@ -77,11 +77,8 @@ func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog log
 		return nil, fmt.Errorf("create cache: %w", err)
 	}
 
-	telemetry, err := observability.NewTelemetry(ctx, cfg.telemetryConfig())
-	if err != nil {
-		setupLog.Error(err, "Failed to initialize tracing")
-		telemetry = nil
-	} else if telemetry.IsTracingEnabled() {
+	telemetry := observability.NewTelemetry(ctx, observability.ConfigFromEnv())
+	if telemetry.IsTracingEnabled() {
 		setupLog.Info("OpenTelemetry tracing enabled")
 	}
 
