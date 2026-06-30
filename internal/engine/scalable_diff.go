@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/dynamic"
+
+	"github.com/benebsworth/paprika/internal/engine/hooks"
 )
 
 // ManagedByLabelKey is the label key used to identify Paprika-managed resources.
@@ -75,6 +77,8 @@ func (d *ScalableDiffEngine) Stop() {
 // It only queries the GVRs present in the desired set, avoiding namespace-wide scans.
 func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
+
+	desired = hooks.FilterHooks(desired)
 
 	desiredMap := make(map[string]unstructured.Unstructured)
 	gvrSet := make(map[schema.GroupVersionResource]struct{})
@@ -164,6 +168,9 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts DiffOp
 		}
 		for i := range list.Items {
 			item := &list.Items[i]
+			if hooks.IsHook(item) {
+				continue
+			}
 			key := resourceKey(item)
 			result[key] = *item
 		}
