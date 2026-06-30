@@ -1111,6 +1111,20 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
 	app.Status.OutOfSync = result.OutOfSyncCount()
 	app.Status.PrunedResources = len(result.Deleted)
+
+	if app.Status.ReleaseRef == "" {
+		app.Status.HookStatuses = nil
+	} else {
+		var activeRelease paprikav1.Release
+		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &activeRelease); err == nil {
+			app.Status.HookStatuses = activeRelease.Status.HookStatuses
+		} else if apierrors.IsNotFound(err) {
+			app.Status.HookStatuses = nil
+		} else {
+			log.Error(err, "Failed to fetch active Release for hook status propagation")
+			app.Status.HookStatuses = nil
+		}
+	}
 }
 
 func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *paprikav1.Application) ([]byte, error) {

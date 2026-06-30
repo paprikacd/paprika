@@ -9,6 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+
+	"github.com/benebsworth/paprika/internal/engine/hooks"
 )
 
 // DiffResult contains the result of a diff between desired and live resources.
@@ -55,6 +57,8 @@ func NewDiffEngine(dynClient *dynamic.DynamicClient, discovery discovery.Discove
 // ComputeDiff computes the diff between desired and live resources in the given namespace.
 func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
+
+	desired = hooks.FilterHooks(desired)
 
 	desiredMap := make(map[string]unstructured.Unstructured)
 	for _, obj := range desired {
@@ -140,9 +144,13 @@ func (d *DiffEngine) fetchLiveResources(ctx context.Context, namespace string) (
 			if err != nil {
 				continue
 			}
-			for _, item := range list.Items {
-				key := resourceKey(&item)
-				result[key] = item
+			for i := range list.Items {
+				item := &list.Items[i]
+				if hooks.IsHook(item) {
+					continue
+				}
+				key := resourceKey(item)
+				result[key] = *item
 			}
 		}
 	}

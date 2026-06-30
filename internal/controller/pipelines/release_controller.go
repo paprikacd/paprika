@@ -1,6 +1,7 @@
 package pipelines
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/engine/hooks"
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
@@ -58,6 +60,25 @@ const (
 	rollbackAnnotation = "paprika.io/rollback-requested"
 	resyncAnnotation   = "paprika.io/resync"
 )
+
+// Hook execution lifecycle states mirrored on Release.Status.HookStatuses.
+const (
+	hookStatusRunning    = "Running"
+	hookStatusSucceeded  = "Succeeded"
+	hookStatusFailed     = "Failed"
+	hookStatusTerminated = "Terminated"
+)
+
+const (
+	defaultHookTimeout     = 5 * time.Minute
+	hookPhaseRequeue       = 10 * time.Second
+	hookDeletePolicyBefore = "BeforeHookCreation"
+)
+
+// errHookPhasePending is returned by executeHooks when at least one hook is
+// still Running. Callers must persist status and requeue without advancing
+// the release phase.
+var errHookPhasePending = errors.New("hook phase still in progress")
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
@@ -416,6 +437,25 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 	return ctrl.Result{Requeue: true}, nil
 }
 
+// requeueForHooks persists the in-memory HookStatuses (so progress survives
+// the next reconcile's re-fetch) and returns a requeue Result. The release
+// phase is NOT advanced: the caller leaves it in Promoting so the next
+// reconcile re-enters executeHooks and resumes the re-entrancy state machine.
+func (r *ReleaseReconciler) requeueForHooks(
+	ctx context.Context,
+	release *paprikav1.Release,
+	oldPhase paprikav1.ReleasePhase,
+	result *string,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	log.Info("Promotion waiting on hooks; requeuing", "release", release.Name)
+	if patchErr := r.patchReleaseStatus(ctx, release, oldPhase); patchErr != nil {
+		*result = resultError
+		return ctrl.Result{}, fmt.Errorf("failed to patch release status during hook wait: %w", patchErr)
+	}
+	return ctrl.Result{RequeueAfter: hookPhaseRequeue}, nil
+}
+
 func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	oldPhase := release.Status.Phase
@@ -445,6 +485,9 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	}
 
 	if err := r.promote(ctx, release); err != nil {
+		if errors.Is(err, errHookPhasePending) {
+			return r.requeueForHooks(ctx, release, oldPhase, result)
+		}
 		if errors.Is(err, errConftestBlocked) {
 			// Conftest gate blocked promotion (fail-closed). The gate has already recorded the
 			// ConftestPassed=False condition and patched status; leave the release non-terminal
@@ -772,13 +815,92 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 	}
 	release.Status.RenderedManifestSnapshot = snapshotName
 
-	if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
-		return fmt.Errorf("apply promoted manifests: %w", err)
+	// Fast path: no hook annotation substring → identical to pre-hook behavior.
+	// Hook path: classify, partition, execute phases in order (PreSync → Sync → PostSync),
+	// with SyncFail invoked on failure of any phase.
+	if !bytes.Contains(manifests, []byte(paprikav1.HookAnnotation)) {
+		if err := r.applyPromotedManifests(ctx, release, stage, manifests); err != nil {
+			return fmt.Errorf("apply promoted manifests: %w", err)
+		}
+		log.Info("Applied rendered manifests to cluster", "stage", stage.Name, "bytes", len(manifests))
+	} else {
+		if err := r.executeHookPhases(ctx, release, stage, manifests, manifestObjects, log); err != nil {
+			return err
+		}
 	}
-	log.Info("Applied rendered manifests to cluster", "stage", stage.Name, "bytes", len(manifests))
 
 	log.Info("Promotion rendered manifests", "stage", stage.Name, "bytes", len(manifests))
 	return nil
+}
+
+// executeHookPhases runs the PreSync → Sync → PostSync phase sequence for a
+// release whose manifests contain hook annotations. On any phase failure
+// (other than errHookPhasePending) the SyncFail hooks are invoked best-effort
+// before the wrapped error is returned. The Sync-phase docs are filtered out
+// of the original manifest set (hooks excluded) before being applied.
+func (r *ReleaseReconciler) executeHookPhases(
+	ctx context.Context,
+	release *paprikav1.Release,
+	stage *paprikav1.Stage,
+	manifests []byte,
+	manifestObjects []*unstructured.Unstructured,
+	log logr.Logger,
+) error {
+	paired, err := hooks.PairWithBytes(manifestObjects, manifests)
+	if err != nil {
+		return fmt.Errorf("pair hook manifests: %w", err)
+	}
+	bucket, err := hooks.ClassifyPaired(paired)
+	if err != nil {
+		return fmt.Errorf("classify hook manifests: %w", err)
+	}
+
+	dynClient, err := r.dynClientForRelease(ctx, release)
+	if err != nil {
+		return fmt.Errorf("resolve dynamic client for hooks: %w", err)
+	}
+
+	if err := r.executeHooks(ctx, release, dynClient, bucket.PreSync, hooks.PhasePreSync); err != nil {
+		if errors.Is(err, errHookPhasePending) {
+			return err
+		}
+		r.runSyncFailHooks(ctx, release, dynClient, bucket)
+		return fmt.Errorf("pre-sync hooks: %w", err)
+	}
+
+	syncDocs := bucket.SyncDocs()
+	if err := r.applyPromotedManifests(ctx, release, stage, syncDocs); err != nil {
+		r.runSyncFailHooks(ctx, release, dynClient, bucket)
+		return fmt.Errorf("apply promoted manifests: %w", err)
+	}
+	log.Info("Applied sync-phase manifests", "stage", stage.Name, "bytes", len(syncDocs))
+
+	if err := r.executeHooks(ctx, release, dynClient, bucket.PostSync, hooks.PhasePostSync); err != nil {
+		if errors.Is(err, errHookPhasePending) {
+			return err
+		}
+		r.runSyncFailHooks(ctx, release, dynClient, bucket)
+		return fmt.Errorf("post-sync hooks: %w", err)
+	}
+	return nil
+}
+
+// runSyncFailHooks invokes SyncFail-phase hooks best-effort. Errors are logged
+// but never propagated: SyncFail is itself the error-handling phase, so a
+// failure here must not mask the original cause.
+func (r *ReleaseReconciler) runSyncFailHooks(
+	ctx context.Context,
+	release *paprikav1.Release,
+	dynClient dynamic.Interface,
+	bucket *hooks.Bucket,
+) {
+	if len(bucket.SyncFail) == 0 {
+		return
+	}
+	log := logf.FromContext(ctx)
+	if err := r.executeHooks(ctx, release, dynClient, bucket.SyncFail, hooks.PhaseSyncFail); err != nil && !errors.Is(err, errHookPhasePending) {
+		log.Error(err, "SyncFail hooks failed", "release", release.Name)
+	}
 }
 
 func (r *ReleaseReconciler) renderManifests(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage) (manifests []byte, snapshotName string, err error) {
@@ -1315,6 +1437,296 @@ func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.Gro
 
 	resourceName := strings.ToLower(kind) + "s"
 	return schema.GroupVersionResource{Group: group, Version: version, Resource: resourceName}, nil
+}
+
+// dynClientForRelease resolves the dynamic client used to apply hook resources
+// for the release's target cluster. MVP is in-cluster only; future work will
+// route through the same ClusterRef resolution as applyManifestsForCluster.
+func (r *ReleaseReconciler) dynClientForRelease(_ context.Context, _ *paprikav1.Release) (dynamic.Interface, error) {
+	return r.DynamicClient, nil
+}
+
+// executeHooks runs the given phase's hook resources in YAML declaration
+// order, honoring the re-entrancy contract:
+//
+//	Existing HookStatus | Action
+//	-------------------+-----------------------------------------------
+//	Succeeded          | Skip
+//	Failed/Terminated  | Abort phase (caller runs SyncFail)
+//	Running            | Poll. Done→Succeeded/Failed. Timeout→Terminated.
+//	                   | Still running→errHookPhasePending. No re-apply/delete.
+//	(no entry)         | BeforeHookCreation delete (if policy), apply, stamp
+//	                   | Running. Fire-and-forget when timeout==0 or no checker.
+//	                   | Otherwise poll once.
+//
+// Returns nil when all hooks in the phase have reached Succeeded.
+// Returns errHookPhasePending (sentinel) when at least one hook is still
+// Running and needs another reconcile.
+// Returns a wrapped error when any hook has Failed/Terminated or apply/poll
+// fails — the caller should run SyncFail.
+func (r *ReleaseReconciler) executeHooks(
+	ctx context.Context,
+	release *paprikav1.Release,
+	dynClient dynamic.Interface,
+	resources []hooks.Resource,
+	phase hooks.Phase,
+) error {
+	timeout := r.hookTimeout(release)
+	for _, res := range resources {
+		obj := res.Obj
+		idx, hs := findHookStatus(release, obj, phase)
+
+		switch {
+		case hs == nil:
+			if err := r.applyNewHook(ctx, dynClient, release, idx, res, phase, timeout); err != nil {
+				return err
+			}
+		case hs.Status == hookStatusSucceeded:
+			continue
+		case hs.Status == hookStatusFailed || hs.Status == hookStatusTerminated:
+			return fmt.Errorf("hook %s/%s phase %s previously %s: %s",
+				obj.GetKind(), obj.GetName(), phase, hs.Status, hs.Message)
+		case hs.Status == hookStatusRunning:
+			if err := r.pollRunningHook(ctx, dynClient, release, idx, hs, obj, phase, timeout); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("hook %s/%s phase %s in unknown status %q",
+				obj.GetKind(), obj.GetName(), phase, hs.Status)
+		}
+	}
+	return nil
+}
+
+// applyNewHook handles first-sighting apply + initial poll. Returns nil on
+// success (terminal Succeeded), errHookPhasePending when still Running, or a
+// wrapped error on failure.
+func (r *ReleaseReconciler) applyNewHook(
+	ctx context.Context,
+	dynClient dynamic.Interface,
+	release *paprikav1.Release,
+	idx int,
+	res hooks.Resource,
+	phase hooks.Phase,
+	timeout time.Duration,
+) error {
+	log := logf.FromContext(ctx)
+	obj := res.Obj
+
+	if res.DeletePolicy == "" || res.DeletePolicy == hookDeletePolicyBefore {
+		if err := r.deleteExistingHook(ctx, dynClient, obj); err != nil {
+			return fmt.Errorf("before-hook-creation delete %s/%s: %w",
+				obj.GetKind(), obj.GetName(), err)
+		}
+	}
+	if err := r.applyHookObject(ctx, dynClient, obj, release); err != nil {
+		return fmt.Errorf("apply hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	}
+
+	checker := hooks.CompletionFor(obj.GroupVersionKind().String())
+	if timeout == 0 || checker == nil {
+		setHookStatus(release, idx, obj, phase, hookStatusSucceeded,
+			"applied (fire-and-forget)", r.Clock.Now())
+		log.Info("Hook applied (fire-and-forget)", "kind", obj.GetKind(),
+			"name", obj.GetName(), "phase", phase)
+		return nil
+	}
+
+	idx = setHookStatus(release, idx, obj, phase, hookStatusRunning, "", r.Clock.Now())
+	done, succeeded, msg, err := r.pollHook(ctx, dynClient, obj)
+	if err != nil {
+		return fmt.Errorf("poll hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	}
+	if !done {
+		return errHookPhasePending
+	}
+	status := hookStatusSucceeded
+	if !succeeded {
+		status = hookStatusFailed
+	}
+	setHookStatus(release, idx, obj, phase, status, msg, r.Clock.Now())
+	if status != hookStatusSucceeded {
+		return fmt.Errorf("hook %s/%s failed: %s", obj.GetKind(), obj.GetName(), msg)
+	}
+	log.Info("Hook completed", "kind", obj.GetKind(), "name", obj.GetName(), "phase", phase)
+	return nil
+}
+
+// pollRunningHook polls an already-Running hook without re-applying or
+// deleting. Returns nil on success (terminal Succeeded), errHookPhasePending
+// when still running, or a wrapped error on failure/timeout. The status is
+// stamped before returning on any terminal transition.
+func (r *ReleaseReconciler) pollRunningHook(
+	ctx context.Context,
+	dynClient dynamic.Interface,
+	release *paprikav1.Release,
+	idx int,
+	hs *paprikav1.HookStatus,
+	obj *unstructured.Unstructured,
+	phase hooks.Phase,
+	timeout time.Duration,
+) error {
+	log := logf.FromContext(ctx)
+	done, succeeded, msg, err := r.pollHook(ctx, dynClient, obj)
+	if err != nil {
+		return fmt.Errorf("poll hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	}
+	if !done {
+		if hs.StartedAt != nil && r.Clock.Now().Sub(hs.StartedAt.Time) > timeout {
+			setHookStatus(release, idx, obj, phase, hookStatusTerminated, "hook timed out", r.Clock.Now())
+			log.Info("Hook timed out", "kind", obj.GetKind(), "name", obj.GetName(),
+				"phase", phase, "timeout", timeout)
+			return fmt.Errorf("hook %s/%s timed out after %s", obj.GetKind(), obj.GetName(), timeout)
+		}
+		return errHookPhasePending
+	}
+	status := hookStatusSucceeded
+	if !succeeded {
+		status = hookStatusFailed
+	}
+	setHookStatus(release, idx, obj, phase, status, msg, r.Clock.Now())
+	if status != hookStatusSucceeded {
+		return fmt.Errorf("hook %s/%s failed: %s", obj.GetKind(), obj.GetName(), msg)
+	}
+	log.Info("Hook completed", "kind", obj.GetKind(), "name", obj.GetName(), "phase", phase)
+	return nil
+}
+
+// findHookStatus returns the index and pointer to the existing HookStatus for
+// the given object+phase, or (-1, nil) if none. Matching is by Kind/Name/
+// Namespace/Phase.
+func findHookStatus(release *paprikav1.Release, obj *unstructured.Unstructured, phase hooks.Phase) (int, *paprikav1.HookStatus) {
+	for i := range release.Status.HookStatuses {
+		hs := &release.Status.HookStatuses[i]
+		if hs.Kind == obj.GetKind() &&
+			hs.Name == obj.GetName() &&
+			hs.Namespace == obj.GetNamespace() &&
+			hs.Phase == string(phase) {
+			return i, hs
+		}
+	}
+	return -1, nil
+}
+
+// setHookStatus upserts the HookStatus for obj+phase. When idx==-1 the entry
+// is appended (with StartedAt stamped). When idx>=0 the existing entry is
+// updated. CompletedAt is stamped only for terminal statuses
+// (Succeeded/Failed/Terminated). Returns the resulting index.
+func setHookStatus(
+	release *paprikav1.Release,
+	idx int,
+	obj *unstructured.Unstructured,
+	phase hooks.Phase,
+	status, msg string,
+	now time.Time,
+) int {
+	metaNow := metav1.Time{Time: now}
+	if idx == -1 {
+		hs := paprikav1.HookStatus{
+			Kind:      obj.GetKind(),
+			Name:      obj.GetName(),
+			Namespace: obj.GetNamespace(),
+			Phase:     string(phase),
+			Status:    status,
+			StartedAt: &metaNow,
+			Message:   msg,
+		}
+		if isTerminalHookStatus(status) {
+			hs.CompletedAt = &metaNow
+		}
+		release.Status.HookStatuses = append(release.Status.HookStatuses, hs)
+		return len(release.Status.HookStatuses) - 1
+	}
+	hs := &release.Status.HookStatuses[idx]
+	hs.Status = status
+	hs.Message = msg
+	if isTerminalHookStatus(status) {
+		hs.CompletedAt = &metaNow
+	}
+	return idx
+}
+
+func isTerminalHookStatus(s string) bool {
+	return s == hookStatusSucceeded || s == hookStatusFailed || s == hookStatusTerminated
+}
+
+// pollHook consults the registered completion checker for obj's GVK. When no
+// checker is registered, the hook is treated as immediately Succeeded
+// (fire-and-forget).
+func (r *ReleaseReconciler) pollHook(
+	ctx context.Context,
+	dynClient dynamic.Interface,
+	obj *unstructured.Unstructured,
+) (done, succeeded bool, msg string, err error) {
+	checker := hooks.CompletionFor(obj.GroupVersionKind().String())
+	if checker == nil {
+		return true, true, "no completion checker registered; treated as succeeded", nil
+	}
+	return checker(ctx, dynClient, obj.GetNamespace(), obj.GetName())
+}
+
+// deleteExistingHook best-effort deletes an existing hook resource so the
+// subsequent apply creates it fresh. IsNotFound is OK.
+func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dynamic.Interface, obj *unstructured.Unstructured) error {
+	group, version := parseAPIVersion(obj.GetAPIVersion())
+	gvr, err := r.gvrFromKind(obj.GetKind(), group, version)
+	if err != nil {
+		return fmt.Errorf("resolve GVR: %w", err)
+	}
+	policy := metav1.DeletePropagationBackground
+	err = dynClient.Resource(gvr).Namespace(obj.GetNamespace()).Delete(ctx, obj.GetName(), metav1.DeleteOptions{
+		PropagationPolicy: &policy,
+	})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return fmt.Errorf("delete hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+}
+
+// applyHookObject stamps paprika labels on the hook metadata and applies it
+// via server-side apply so it is tracked for cleanup-on-release-delete.
+func (r *ReleaseReconciler) applyHookObject(
+	ctx context.Context,
+	dynClient dynamic.Interface,
+	obj *unstructured.Unstructured,
+	release *paprikav1.Release,
+) error {
+	appName := release.Labels[engine.ApplicationNameLabelKey]
+	metadata, ok := obj.Object["metadata"].(map[string]interface{})
+	if !ok || metadata == nil {
+		return errors.New("hook metadata is not an object")
+	}
+	setPaprikaLabels(metadata, appName)
+
+	if obj.GetNamespace() == "" {
+		obj.SetNamespace(release.Namespace)
+	}
+
+	group, version := parseAPIVersion(obj.GetAPIVersion())
+	gvr, err := r.gvrFromKind(obj.GetKind(), group, version)
+	if err != nil {
+		return fmt.Errorf("resolve GVR: %w", err)
+	}
+
+	ri := dynClient.Resource(gvr).Namespace(obj.GetNamespace())
+	if _, err := ri.Apply(ctx, obj.GetName(), obj, metav1.ApplyOptions{FieldManager: "paprika"}); err != nil {
+		return fmt.Errorf("server-side apply: %w", err)
+	}
+	return nil
+}
+
+// hookTimeout reads HookTimeoutSeconds from the release spec, defaulting to
+// defaultHookTimeout (300s). Returns 0 only when explicitly set to 0
+// (fire-and-forget).
+func (r *ReleaseReconciler) hookTimeout(release *paprikav1.Release) time.Duration {
+	if release.Spec.SyncOptions != nil && release.Spec.SyncOptions.HookTimeoutSeconds > 0 {
+		return time.Duration(release.Spec.SyncOptions.HookTimeoutSeconds) * time.Second
+	}
+	if release.Spec.SyncOptions != nil && release.Spec.SyncOptions.HookTimeoutSeconds == 0 {
+		// Explicit fire-and-forget.
+		return 0
+	}
+	return defaultHookTimeout
 }
 
 func (r *ReleaseReconciler) storeManifestSnapshot(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, name, project string, manifests []byte) error {

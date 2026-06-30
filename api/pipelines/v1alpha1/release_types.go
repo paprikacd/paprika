@@ -77,6 +77,22 @@ type ReleaseSpec struct {
 	SyncOptions *SyncOptions `json:"syncOptions,omitempty"`
 }
 
+// HookStatus is the observed state of a single hook resource.
+type HookStatus struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	// Phase is the hook phase: PreSync, Sync, PostSync, or SyncFail.
+	// +kubebuilder:validation:Enum=PreSync;Sync;PostSync;SyncFail
+	Phase string `json:"phase"`
+	// Status is the execution state: Running, Succeeded, Failed, or Terminated.
+	// +kubebuilder:validation:Enum=Running;Succeeded;Failed;Terminated
+	Status      string       `json:"status"`
+	StartedAt   *metav1.Time `json:"startedAt,omitempty"`
+	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+	Message     string       `json:"message,omitempty"`
+}
+
 // ReleaseStatus represents the status of a release.
 type ReleaseStatus struct {
 	// ObservedGeneration is the last observed generation of the spec.
@@ -105,6 +121,10 @@ type ReleaseStatus struct {
 	// RolloutRef references the Rollout child when the stage uses an advanced strategy.
 	// +optional
 	RolloutRef string `json:"rolloutRef,omitempty"`
+	// HookStatuses tracks per-hook execution state across the four phases.
+	// Cleared at the start of each promote. Populated as hooks run.
+	// +optional
+	HookStatuses []HookStatus `json:"hookStatuses,omitempty"`
 }
 
 // +kubebuilder:object:root=true

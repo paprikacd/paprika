@@ -1191,6 +1191,13 @@ spec:
                   force:
                     description: Force enables force-conflicts for server-side apply.
                     type: boolean
+                  hookTimeoutSeconds:
+                    description: |-
+                      HookTimeoutSeconds is the max time to wait for any single hook to reach
+                      a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
+                      (skip the per-hook poll entirely).
+                    format: int32
+                    type: integer
                   prunePropagationPolicy:
                     description: |-
                       PrunePropagationPolicy selects the deletion propagation policy used when
@@ -1402,6 +1409,53 @@ spec:
                       type: string
                   required:
                   - name
+                  - status
+                  type: object
+                type: array
+              hookStatuses:
+                description: |-
+                  HookStatuses mirrors the active Release's HookStatuses for UI/API
+                  consumption. Populated by the Application controller from the active
+                  Release at each reconcile; cleared when no active Release exists.
+                items:
+                  description: HookStatus is the observed state of a single hook resource.
+                  properties:
+                    completedAt:
+                      format: date-time
+                      type: string
+                    kind:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    phase:
+                      description: 'Phase is the hook phase: PreSync, Sync, PostSync,
+                        or SyncFail.'
+                      enum:
+                      - PreSync
+                      - Sync
+                      - PostSync
+                      - SyncFail
+                      type: string
+                    startedAt:
+                      format: date-time
+                      type: string
+                    status:
+                      description: 'Status is the execution state: Running, Succeeded,
+                        Failed, or Terminated.'
+                      enum:
+                      - Running
+                      - Succeeded
+                      - Failed
+                      - Terminated
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - phase
                   - status
                   type: object
                 type: array

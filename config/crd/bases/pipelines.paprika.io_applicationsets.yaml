@@ -1494,6 +1494,13 @@ spec:
                         description: Force enables force-conflicts for server-side
                           apply.
                         type: boolean
+                      hookTimeoutSeconds:
+                        description: |-
+                          HookTimeoutSeconds is the max time to wait for any single hook to reach
+                          a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
+                          (skip the per-hook poll entirely).
+                        format: int32
+                        type: integer
                       prunePropagationPolicy:
                         description: |-
                           PrunePropagationPolicy selects the deletion propagation policy used when
