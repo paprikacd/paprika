@@ -31,6 +31,7 @@ import (
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
 
@@ -53,7 +54,10 @@ type ApplicationSetReconciler struct {
 // Reconcile handles ApplicationSet reconciliation.
 //
 //nolint:cyclop // create/update/delete flow is inherent to the reconcile loop.
-func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "ApplicationSet", req)
+	defer func() { endSpan(spanErr) }()
+
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {

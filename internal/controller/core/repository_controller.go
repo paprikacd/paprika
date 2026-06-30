@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 const (
@@ -53,7 +54,10 @@ type RepositoryReconciler struct {
 // +kubebuilder:rbac:groups=core.paprika.io,resources=repositories/status,verbs=get;update;patch
 
 // Reconcile tests the connection state of the Repository and updates its status.
-func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *RepositoryReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Repository", req)
+	defer func() { endSpan(spanErr) }()
+
 	var repo corev1alpha1.Repository
 	if err := r.client.Get(ctx, req.NamespacedName, &repo); err != nil {
 		if apierrors.IsNotFound(err) {

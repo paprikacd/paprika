@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 // AppProjectReconciler reconciles a AppProject object.
@@ -28,7 +29,10 @@ type AppProjectReconciler struct {
 // +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects/finalizers,verbs=update
 
 // Reconcile validates the project spec and records readiness.
-func (r *AppProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AppProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "AppProject", req)
+	defer func() { endSpan(spanErr) }()
+
 	log := log.FromContext(ctx)
 
 	var project corev1alpha1.AppProject

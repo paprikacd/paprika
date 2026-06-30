@@ -18,6 +18,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 // AnalysisRunReconciler reconciles AnalysisRun resources.
@@ -34,7 +35,10 @@ type AnalysisRunReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=analysistemplates,verbs=get;list;watch
 
 // Reconcile handles AnalysisRun reconciliation.
-func (r *AnalysisRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *AnalysisRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "AnalysisRun", req)
+	defer func() { endSpan(spanErr) }()
+
 	log := log.FromContext(ctx)
 	log.Info("Reconciling AnalysisRun", "namespace", req.Namespace, "name", req.Name)
 

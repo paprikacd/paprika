@@ -36,6 +36,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 // ClusterReconciler reconciles a Cluster object.
@@ -51,7 +52,10 @@ type ClusterReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 
 // Reconcile performs a health/connectivity check for the Cluster.
-func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Cluster", req)
+	defer func() { endSpan(spanErr) }()
+
 	log := logf.FromContext(ctx)
 
 	var cluster clustersv1alpha1.Cluster

@@ -32,6 +32,7 @@ import (
 	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 // FeatureFlagBindingReconciler reconciles FeatureFlagBinding resources.
@@ -47,7 +48,10 @@ type FeatureFlagBindingReconciler struct {
 // +kubebuilder:rbac:groups=featureflags.paprika.io,resources=featureflags,verbs=get;list;watch
 
 // Reconcile validates the referenced feature flag and records readiness.
-func (r *FeatureFlagBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *FeatureFlagBindingReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "FeatureFlagBinding", req)
+	defer func() { endSpan(spanErr) }()
+
 	start := metrics.Timer(r.Clock)
 	defer func() {
 		metrics.ReconcileDuration.WithLabelValues("featureflagbinding").Observe(metrics.Since(r.Clock, start))

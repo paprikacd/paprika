@@ -109,10 +109,6 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-// noopTelemetry is the default telemetry instance used by the deprecated
-// package-level helpers. It is immutable and safe for concurrent use.
-var noopTelemetry = &Telemetry{}
-
 // NewTelemetry creates and registers a fully configured OpenTelemetry
 // Telemetry instance from cfg. ctx bounds exporter setup and is not retained.
 // It returns a disabled Telemetry (rather than an error) when the OTLP endpoint
@@ -318,27 +314,6 @@ func envBoolOrDefault(key string, def bool) bool {
 		return def
 	}
 	return b
-}
-
-// StartSpan starts a new OpenTelemetry span from context.
-//
-// Deprecated: use Telemetry.StartSpan on an instance returned by NewTelemetry.
-func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	return noopTelemetry.StartSpan(ctx, name, attrs...)
-}
-
-// SpanFromContext returns the current span from context.
-//
-// Deprecated: use Telemetry.SpanFromContext.
-func SpanFromContext(ctx context.Context) trace.Span {
-	return noopTelemetry.SpanFromContext(ctx)
-}
-
-// IsTracingEnabled returns whether tracing is active.
-//
-// Deprecated: use Telemetry.IsTracingEnabled.
-func IsTracingEnabled() bool {
-	return noopTelemetry.IsTracingEnabled()
 }
 
 // EventRecorder records Kubernetes events for resources.

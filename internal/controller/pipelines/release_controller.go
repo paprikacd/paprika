@@ -11,8 +11,6 @@ import (
 	"time"
 
 	logr "github.com/go-logr/logr"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -130,7 +128,6 @@ type ReleaseReconciler struct {
 	PolicyEvaluator       *governance.PolicyEvaluator
 	ConftestEvaluator     ConftestEvaluator
 	EventBroker           *events.Broker
-	Telemetry             *observability.Telemetry
 	Clock                 clock.Clock
 }
 
@@ -139,14 +136,6 @@ type ReleaseReconciler struct {
 // SetupWithManager.
 func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 	return &ReleaseReconciler{client: c}
-}
-
-func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	if r.Telemetry != nil {
-		return r.Telemetry.StartSpan(ctx, name, attrs...)
-	}
-	//nolint:staticcheck // fallback when Telemetry is not initialized
-	return observability.StartSpan(ctx, name, attrs...)
 }
 
 // +kubebuilder:rbac:groups=clusters.paprika.io,resources=clusters,verbs=get;list;watch
@@ -169,12 +158,9 @@ func (r *ReleaseReconciler) startSpan(ctx context.Context, name string, attrs ..
 // Reconcile handles Release reconciliation.
 //
 //nolint:cyclop // release lifecycle branches are intentional.
-func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx, span := r.startSpan(ctx, "ReleaseReconcile",
-		attribute.String("namespace", req.Namespace),
-		attribute.String("name", req.Name),
-	)
-	defer span.End()
+func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Release", req)
+	defer func() { endSpan(spanErr) }()
 
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)

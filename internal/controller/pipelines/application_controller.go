@@ -10,8 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -89,7 +87,6 @@ type ApplicationReconciler struct {
 	ProjectValidator    *governance.ProjectValidator
 	EventBroker         *events.Broker
 	SyncWindowEvaluator syncwindow.Evaluator
-	Telemetry           *observability.Telemetry
 	Clock               clock.Clock
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
@@ -100,14 +97,6 @@ type ApplicationReconciler struct {
 // calling SetupWithManager.
 func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
 	return &ApplicationReconciler{client: c}
-}
-
-func (r *ApplicationReconciler) startSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	if r.Telemetry != nil {
-		return r.Telemetry.StartSpan(ctx, name, attrs...)
-	}
-	//nolint:staticcheck // fallback when Telemetry is not initialized
-	return observability.StartSpan(ctx, name, attrs...)
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -125,12 +114,9 @@ func (r *ApplicationReconciler) startSpan(ctx context.Context, name string, attr
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
 // Reconcile handles Application reconciliation.
-func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	ctx, span := r.startSpan(ctx, "ApplicationReconcile",
-		attribute.String("namespace", req.Namespace),
-		attribute.String("name", req.Name),
-	)
-	defer span.End()
+func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Application", req)
+	defer func() { endSpan(spanErr) }()
 
 	var app paprikav1.Application
 	result := resultSuccess

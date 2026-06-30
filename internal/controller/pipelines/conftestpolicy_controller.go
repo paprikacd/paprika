@@ -30,6 +30,7 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/conftest"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 // ConftestPolicyReconciler compiles a ConftestPolicy and writes an informational Ready
@@ -43,7 +44,10 @@ type ConftestPolicyReconciler struct {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=conftestpolicies/status,verbs=get;update;patch
 
-func (r *ConftestPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ConftestPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "ConftestPolicy", req)
+	defer func() { endSpan(spanErr) }()
+
 	log := log.FromContext(ctx)
 
 	var policy paprikav1.ConftestPolicy
