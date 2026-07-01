@@ -3,9 +3,11 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,34 +17,80 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/benebsworth/paprika/internal/clock"
 )
 
 const tracerName = "github.com/benebsworth/paprika"
 
-// TelemetryConfig holds externally-provided OpenTelemetry settings.
-type TelemetryConfig struct {
-	OTLPEndpoint   string
-	ServiceName    string
-	ServiceVersion string
+// Config holds all OpenTelemetry SDK configuration, populated from standard
+// OTEL_* environment variables.
+type Config struct {
+	OTLPEndpoint    string
+	Protocol        string // "grpc" (default) or "http"
+	Insecure        bool
+	CertificatePath string
+	Headers         map[string]string
+	Sampler         string
+	SamplerArg      string
+	Propagators     string
+	ServiceName     string
+	ServiceVersion  string
+	BatchTimeout    time.Duration
+	MaxQueueSize    int
+	ResourceAttrs   map[string]string
 }
 
-// Telemetry holds OpenTelemetry state for the process. It replaces the
-// package-level mutable globals used by earlier versions of this package.
+// ConfigFromEnv reads the standard OTEL_* environment variables and returns a
+// fully populated Config with specification-compliant defaults.
+func ConfigFromEnv() Config {
+	return Config{
+		OTLPEndpoint:    os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+		Protocol:        envOrDefault("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+		Insecure:        envBoolOrDefault("OTEL_EXPORTER_OTLP_INSECURE", true),
+		CertificatePath: os.Getenv("OTEL_EXPORTER_OTLP_CERTIFICATE"),
+		Sampler:         envOrDefault("OTEL_TRACES_SAMPLER", "always_on"),
+		SamplerArg:      os.Getenv("OTEL_TRACES_SAMPLER_ARG"),
+		Propagators:     envOrDefault("OTEL_PROPAGATORS", "tracecontext,baggage"),
+		ServiceName:     envOrDefault("OTEL_SERVICE_NAME", "paprika"),
+		ServiceVersion:  envOrDefault("PAPRIKA_VERSION", "dev"),
+		BatchTimeout:    5 * time.Second,
+		MaxQueueSize:    2048,
+		Headers:         parseHeaders(os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")),
+		ResourceAttrs:   parseResourceAttrs(os.Getenv("OTEL_RESOURCE_ATTRIBUTES")),
+	}
+}
+
+// Telemetry holds OpenTelemetry state for the process.
 type Telemetry struct {
-	tracer   trace.Tracer
-	provider *sdktrace.TracerProvider
-	enabled  bool
+	tracer         trace.Tracer
+	provider       *sdktrace.TracerProvider
+	meterProvider  *metric.MeterProvider
+	loggerProvider *sdklog.LoggerProvider
+	enabled        bool
 }
 
-// StartSpan starts a new OpenTelemetry span from context.
+// StartSpan starts a new OpenTelemetry span from context. When tracing is
+// disabled it returns a no-op span derived from the context.
 func (t *Telemetry) StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	if t == nil || !t.enabled || t.tracer == nil {
 		return ctx, trace.SpanFromContext(ctx)
@@ -60,114 +108,366 @@ func (t *Telemetry) IsTracingEnabled() bool {
 	return t != nil && t.enabled
 }
 
-// Shutdown gracefully shuts down the tracer provider.
-func (t *Telemetry) Shutdown(ctx context.Context) error {
-	if t == nil || t.provider == nil {
+// LoggerProvider returns the OpenTelemetry LoggerProvider backing the zap log
+// bridge (otelzap). It returns nil when tracing is disabled so callers can skip
+// log bridging without an extra flag check.
+func (t *Telemetry) LoggerProvider() otellog.LoggerProvider {
+	if t == nil {
 		return nil
 	}
-	if err := t.provider.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown tracer provider: %w", err)
-	}
-	return nil
+	return t.loggerProvider
 }
 
-// noopTelemetry is the default telemetry instance used by the deprecated
-// package-level helpers. It is immutable and safe for concurrent use.
-var noopTelemetry = &Telemetry{}
+// Shutdown gracefully shuts down the tracer, meter, and logger providers,
+// flushing any buffered spans, metrics, and logs to their exporters.
+func (t *Telemetry) Shutdown(ctx context.Context) error {
+	if t == nil {
+		return nil
+	}
+	var errs []error
+	if t.loggerProvider != nil {
+		if err := t.loggerProvider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown logger provider: %w", err))
+		}
+	}
+	if t.meterProvider != nil {
+		if err := t.meterProvider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
+		}
+	}
+	if t.provider != nil {
+		if err := t.provider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown tracer provider: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
 
-// NewTelemetry initializes OpenTelemetry tracing from explicit configuration.
-func NewTelemetry(ctx context.Context, cfg TelemetryConfig) (*Telemetry, error) {
+// NewTelemetry creates and registers a fully configured OpenTelemetry
+// Telemetry instance from cfg. ctx bounds exporter setup and is not retained.
+// It returns a disabled Telemetry (rather than an error) when the OTLP endpoint
+// is empty or the exporter cannot be built, so callers always get a usable value.
+//
+//nolint:gocritic // cfg is a one-time startup config; copying is negligible.
+func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 	if cfg.OTLPEndpoint == "" {
-		return &Telemetry{}, nil
-	}
-	if cfg.ServiceName == "" {
-		cfg.ServiceName = "paprika"
+		return &Telemetry{}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client := otlptracegrpc.NewClient(
-		otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint),
-		otlptracegrpc.WithInsecure(),
-	)
-	exporter, err := otlptrace.New(ctx, client)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP trace exporter: %w", err)
-	}
+	res := buildResource(ctx, &cfg)
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(cfg.ServiceName),
-			semconv.ServiceVersionKey.String(cfg.ServiceVersion),
-		),
-	)
+	exporter, err := buildTraceExporter(ctx, &cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create trace resource: %w", err)
+		log.Printf("otel: failed to create trace exporter, tracing disabled: %v", err)
+		return &Telemetry{}
 	}
 
 	provider := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSampler(buildSampler(&cfg)),
 		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithBatcher(exporter,
+			sdktrace.WithBatchTimeout(cfg.BatchTimeout),
+			sdktrace.WithMaxQueueSize(cfg.MaxQueueSize),
+		),
 	)
 
 	otel.SetTracerProvider(provider)
+	setPropagator(cfg.Propagators)
 
-	return &Telemetry{
+	t := &Telemetry{
 		provider: provider,
 		tracer:   provider.Tracer(tracerName),
 		enabled:  true,
-	}, nil
-}
-
-// InitTracing initializes OpenTelemetry tracing with OTLP gRPC exporter from
-// environment variables.
-//
-// Deprecated: read OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME and
-// PAPRIKA_VERSION in cmd/main and pass a TelemetryConfig to NewTelemetry.
-func InitTracing(ctx context.Context) (*Telemetry, error) {
-	return NewTelemetry(ctx, TelemetryConfig{
-		OTLPEndpoint:   os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		ServiceName:    os.Getenv("OTEL_SERVICE_NAME"),
-		ServiceVersion: version(),
-	})
-}
-
-// InitTracingLegacy initializes tracing using a background context.
-//
-// Deprecated: use InitTracing(ctx) and the returned *Telemetry instead.
-func InitTracingLegacy() (func(), error) {
-	telemetry, err := InitTracing(context.Background())
-	if err != nil {
-		return nil, err
 	}
-	return func() {
-		if shutdownErr := telemetry.Shutdown(context.Background()); shutdownErr != nil {
-			log.Printf("Failed to shutdown tracing: %v", shutdownErr)
+
+	metricExporter, err := buildMetricExporter(ctx, &cfg)
+	if err != nil {
+		log.Printf("otel: failed to create metric exporter, metrics disabled: %v", err)
+		return t
+	}
+	meterProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter, metric.WithInterval(60*time.Second))),
+		metric.WithResource(res),
+	)
+	otel.SetMeterProvider(meterProvider)
+	t.meterProvider = meterProvider
+
+	// Logs signal: build a LoggerProvider so the otelzap bridge can forward zap
+	// records to the same OTLP backend as traces and metrics. A failure here
+	// leaves logs unbridged (stdout JSON is unaffected) so it is non-fatal.
+	logExporter, err := buildLogExporter(ctx, &cfg)
+	if err != nil {
+		log.Printf("otel: failed to create log exporter, log bridging disabled: %v", err)
+		return t
+	}
+	loggerProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter,
+			sdklog.WithMaxQueueSize(cfg.MaxQueueSize),
+			sdklog.WithExportInterval(cfg.BatchTimeout),
+		)),
+	)
+	global.SetLoggerProvider(loggerProvider)
+	t.loggerProvider = loggerProvider
+	return t
+}
+
+// buildResource creates an OTel Resource with service identity, host/process
+// detectors, Kubernetes attributes (from env), and user-provided attributes.
+func buildResource(ctx context.Context, cfg *Config) *resource.Resource {
+	opts := []resource.Option{
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(
+			semconv.ServiceName(cfg.ServiceName),
+			semconv.ServiceVersion(cfg.ServiceVersion),
+		),
+		resource.WithHost(),
+		resource.WithProcess(),
+	}
+
+	// Kubernetes attributes surfaced via the downward API or Helm.
+	var k8sAttrs []attribute.KeyValue
+	if ns := os.Getenv("PAPRIKA_NAMESPACE"); ns != "" {
+		k8sAttrs = append(k8sAttrs, semconv.K8SNamespaceName(ns))
+	}
+	if pod := os.Getenv("PAPRIKA_POD_NAME"); pod != "" {
+		k8sAttrs = append(k8sAttrs, semconv.K8SPodName(pod))
+	}
+	if len(k8sAttrs) > 0 {
+		opts = append(opts, resource.WithAttributes(k8sAttrs...))
+	}
+
+	// User-provided resource attributes from OTEL_RESOURCE_ATTRIBUTES.
+	for k, v := range cfg.ResourceAttrs {
+		opts = append(opts, resource.WithAttributes(attribute.String(k, v)))
+	}
+
+	res, err := resource.New(ctx, opts...)
+	if err != nil {
+		log.Printf("otel: failed to build resource, using partial: %v", err)
+	}
+	return res
+}
+
+// buildTraceExporter creates an OTLP trace exporter for the configured protocol.
+func buildTraceExporter(ctx context.Context, cfg *Config) (*otlptrace.Exporter, error) {
+	if cfg.Protocol == "http" {
+		var httpOpts []otlptracehttp.Option
+		httpOpts = append(httpOpts, otlptracehttp.WithEndpoint(cfg.OTLPEndpoint))
+		if cfg.Insecure {
+			httpOpts = append(httpOpts, otlptracehttp.WithInsecure())
 		}
-	}, nil
+		if len(cfg.Headers) > 0 {
+			httpOpts = append(httpOpts, otlptracehttp.WithHeaders(cfg.Headers))
+		}
+		exp, err := otlptrace.New(ctx, otlptracehttp.NewClient(httpOpts...))
+		if err != nil {
+			return nil, fmt.Errorf("create otlp http trace exporter: %w", err)
+		}
+		return exp, nil
+	}
+
+	// Default: gRPC.
+	var opts []otlptracegrpc.Option
+	opts = append(opts, otlptracegrpc.WithEndpoint(cfg.OTLPEndpoint))
+	switch {
+	case cfg.Insecure:
+		opts = append(opts, otlptracegrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	case cfg.CertificatePath != "":
+		creds, err := credentials.NewClientTLSFromFile(cfg.CertificatePath, "")
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		opts = append(opts, otlptracegrpc.WithDialOption(grpc.WithTransportCredentials(creds)))
+	}
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, otlptracegrpc.WithHeaders(cfg.Headers))
+	}
+	exp, err := otlptrace.New(ctx, otlptracegrpc.NewClient(opts...))
+	if err != nil {
+		return nil, fmt.Errorf("create otlp grpc trace exporter: %w", err)
+	}
+	return exp, nil
 }
 
-// StartSpan starts a new OpenTelemetry span from context.
+// buildMetricExporter creates an OTLP metric exporter for the configured
+// protocol. It mirrors buildTraceExporter: same endpoint, TLS, and headers.
 //
-// Deprecated: use Telemetry.StartSpan on an instance returned by InitTracing.
-func StartSpan(ctx context.Context, name string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
-	return noopTelemetry.StartSpan(ctx, name, attrs...)
+//nolint:dupl // intentionally mirrors build{Trace,Log}Exporter; option types differ per signal.
+func buildMetricExporter(ctx context.Context, cfg *Config) (metric.Exporter, error) {
+	if cfg.Protocol == "http" {
+		var httpOpts []otlpmetrichttp.Option
+		httpOpts = append(httpOpts, otlpmetrichttp.WithEndpoint(cfg.OTLPEndpoint))
+		if cfg.Insecure {
+			httpOpts = append(httpOpts, otlpmetrichttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			httpOpts = append(httpOpts, otlpmetrichttp.WithHeaders(cfg.Headers))
+		}
+		exp, err := otlpmetrichttp.New(ctx, httpOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create otlp http metric exporter: %w", err)
+		}
+		return exp, nil
+	}
+
+	// Default: gRPC.
+	var opts []otlpmetricgrpc.Option
+	opts = append(opts, otlpmetricgrpc.WithEndpoint(cfg.OTLPEndpoint))
+	switch {
+	case cfg.Insecure:
+		opts = append(opts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	case cfg.CertificatePath != "":
+		creds, err := credentials.NewClientTLSFromFile(cfg.CertificatePath, "")
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		opts = append(opts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(creds)))
+	}
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, otlpmetricgrpc.WithHeaders(cfg.Headers))
+	}
+	exp, err := otlpmetricgrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp grpc metric exporter: %w", err)
+	}
+	return exp, nil
 }
 
-// SpanFromContext returns the current span from context.
+// buildLogExporter creates an OTLP log exporter for the configured protocol.
+// It mirrors buildTraceExporter and buildMetricExporter so all three signals
+// share one endpoint, TLS, and header configuration.
 //
-// Deprecated: use Telemetry.SpanFromContext.
-func SpanFromContext(ctx context.Context) trace.Span {
-	return noopTelemetry.SpanFromContext(ctx)
+//nolint:dupl // intentionally mirrors build{Trace,Metric}Exporter; option types differ per signal.
+func buildLogExporter(ctx context.Context, cfg *Config) (sdklog.Exporter, error) {
+	if cfg.Protocol == "http" {
+		var httpOpts []otlploghttp.Option
+		httpOpts = append(httpOpts, otlploghttp.WithEndpoint(cfg.OTLPEndpoint))
+		if cfg.Insecure {
+			httpOpts = append(httpOpts, otlploghttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			httpOpts = append(httpOpts, otlploghttp.WithHeaders(cfg.Headers))
+		}
+		exp, err := otlploghttp.New(ctx, httpOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create otlp http log exporter: %w", err)
+		}
+		return exp, nil
+	}
+
+	// Default: gRPC.
+	var opts []otlploggrpc.Option
+	opts = append(opts, otlploggrpc.WithEndpoint(cfg.OTLPEndpoint))
+	switch {
+	case cfg.Insecure:
+		opts = append(opts, otlploggrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	case cfg.CertificatePath != "":
+		creds, err := credentials.NewClientTLSFromFile(cfg.CertificatePath, "")
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		opts = append(opts, otlploggrpc.WithDialOption(grpc.WithTransportCredentials(creds)))
+	}
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, otlploggrpc.WithHeaders(cfg.Headers))
+	}
+	exp, err := otlploggrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp grpc log exporter: %w", err)
+	}
+	return exp, nil
 }
 
-// IsTracingEnabled returns whether tracing is active.
-//
-// Deprecated: use Telemetry.IsTracingEnabled.
-func IsTracingEnabled() bool {
-	return noopTelemetry.IsTracingEnabled()
+// buildSampler maps the configured sampler name to an sdktrace.Sampler.
+func buildSampler(cfg *Config) sdktrace.Sampler {
+	ratio := 1.0
+	if cfg.SamplerArg != "" {
+		if r, err := strconv.ParseFloat(cfg.SamplerArg, 64); err == nil {
+			ratio = r
+		}
+	}
+	switch cfg.Sampler {
+	case "always_off":
+		return sdktrace.NeverSample()
+	case "traceidratio":
+		return sdktrace.TraceIDRatioBased(ratio)
+	case "parentbased_always_on":
+		return sdktrace.ParentBased(sdktrace.AlwaysSample())
+	case "parentbased_traceidratio":
+		return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
+	default: // "always_on"
+		return sdktrace.AlwaysSample()
+	}
+}
+
+// setPropagator configures the global composite text map propagator.
+func setPropagator(propagators string) {
+	var props []propagation.TextMapPropagator
+	for _, p := range strings.Split(propagators, ",") {
+		switch strings.TrimSpace(p) {
+		case "tracecontext":
+			props = append(props, propagation.TraceContext{})
+		case "baggage":
+			props = append(props, propagation.Baggage{})
+		}
+	}
+	if len(props) > 0 {
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(props...))
+	}
+}
+
+// parseHeaders parses a "key1=val1,key2=val2" list into a map. Malformed
+// entries are skipped. Returns nil for an empty input.
+func parseHeaders(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	out := make(map[string]string)
+	for _, pair := range strings.Split(s, ",") {
+		kv := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+		if k == "" {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// parseResourceAttrs parses OTEL_RESOURCE_ATTRIBUTES using the same format as
+// parseHeaders.
+func parseResourceAttrs(s string) map[string]string {
+	return parseHeaders(s)
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func envBoolOrDefault(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 // EventRecorder records Kubernetes events for resources.
@@ -241,11 +541,4 @@ func CorrelationID(ctx context.Context) string {
 		return id
 	}
 	return ""
-}
-
-func version() string {
-	if v := os.Getenv("PAPRIKA_VERSION"); v != "" {
-		return v
-	}
-	return "dev"
 }

@@ -544,6 +544,29 @@ grafana:
     labelSelectors:
       grafana_dashboard: "1"
 
+## OpenTelemetry configuration
+## Ref: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+otel:
+  enabled: false
+  # OTLP endpoint (e.g., "otel-collector.observability.svc:4317" for gRPC, ":4318" for HTTP)
+  endpoint: ""
+  # Exporter protocol: "grpc" or "http"
+  protocol: "grpc"
+  # Disable TLS (use plaintext)
+  insecure: true
+  # Path to CA certificate for TLS verification
+  certificatePath: ""
+  # Additional headers (e.g., for auth)
+  headers: {}
+  # Sampler: always_on, always_off, traceidratio, parentbased_traceidratio
+  sampler: "always_on"
+  # Sampler argument (ratio for traceidratio/parentbased, 0.0-1.0)
+  samplerArg: ""
+  # Propagators (comma-separated): tracecontext,baggage
+  propagators: "tracecontext,baggage"
+  # Resource attributes (key-value pairs)
+  resourceAttributes: {}
+
 ## Redis cache configuration.
 ## When enabled, components use Redis for rendered manifest and source caching.
 ##

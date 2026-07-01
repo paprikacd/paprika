@@ -48,7 +48,6 @@ import (
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/health"
-	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -136,7 +135,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		{"stage", func() error { return setupStageController(mgr, deps.shardFilter) }},
 		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {
-			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.telemetry, deps.repoServerAddr)
+			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr)
 		}},
 		{"rollout", func() error {
 			return setupRolloutController(mgr, k8sClient, operatorNamespace, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker)
@@ -145,7 +144,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		{"applicationset", func() error { return setupApplicationSetController(mgr, deps.shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, deps.shardFilter) }},
 		{"application", func() error {
-			return setupApplicationController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, deps.broker, deps.telemetry, deps.repoServerAddr)
+			return setupApplicationController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, deps.broker, deps.repoServerAddr)
 		}},
 	}
 
@@ -253,7 +252,7 @@ func clientsetFromInterface(k8sClient kubernetes.Interface) (*kubernetes.Clients
 	return cs, nil
 }
 
-func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, telemetry *observability.Telemetry, repoServerAddr string) error {
+func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, repoServerAddr string) error {
 	dynamicClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for release controller: %w", err)
@@ -281,7 +280,6 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	releaseRec.PolicyEvaluator = policyEvaluator
 	releaseRec.ConftestEvaluator = conftest.NewEvaluator(mgr.GetClient())
 	releaseRec.EventBroker = broker
-	releaseRec.Telemetry = telemetry
 	if err := releaseRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -351,7 +349,7 @@ func setupAnalysisRunController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 	return nil
 }
 
-func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker, telemetry *observability.Telemetry, repoServerAddr string) error {
+func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker, repoServerAddr string) error {
 	dynClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for application controller: %w", err)
@@ -388,7 +386,6 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	appRec.ProjectValidator = projectValidator
 	appRec.EventBroker = broker
 	appRec.SyncWindowEvaluator = syncwindow.NewEvaluator()
-	appRec.Telemetry = telemetry
 	appRec.Clock = clock.Real{}
 	if err := appRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)

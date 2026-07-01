@@ -16,6 +16,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
 
@@ -40,7 +41,10 @@ func (r *TemplateReconciler) now() time.Time {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;update;patch
 
 // Reconcile handles Template reconciliation.
-func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Template", req)
+	defer func() { endSpan(spanErr) }()
+
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {

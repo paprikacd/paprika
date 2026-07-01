@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestLogAuditorWritesValidJSONWithExpectedFields(t *testing.T) {
@@ -123,4 +125,71 @@ func TestLogAuditorFillsMissingTimestamp(t *testing.T) {
 	if got.Timestamp == "" {
 		t.Error("Timestamp: LogAuditor should populate a missing timestamp")
 	}
+}
+
+// TestLogAuditorEnrichesTraceContext verifies that Record extracts the active
+// span's TraceID and SpanID from ctx and writes them into the audit event, so a
+// JSON audit line can be correlated with the distributed trace that produced it.
+func TestLogAuditorEnrichesTraceContext(t *testing.T) {
+	var buf bytes.Buffer
+	a := newLogAuditor(&buf)
+
+	const (
+		wantTraceID = "0af7651916cd43dd8448eb211c80319c"
+		wantSpanID  = "b7ad6b7169203331"
+	)
+	ctx := trace.ContextWithSpanContext(context.Background(), mustSpanContext(t, wantTraceID, wantSpanID))
+
+	a.Record(ctx, Event{Action: "apply", Resource: "Application", Success: true})
+
+	var got Event
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v (output=%q)", err, buf.String())
+	}
+	if got.TraceID != wantTraceID {
+		t.Errorf("TraceID: got %q, want %q", got.TraceID, wantTraceID)
+	}
+	if got.SpanID != wantSpanID {
+		t.Errorf("SpanID: got %q, want %q", got.SpanID, wantSpanID)
+	}
+}
+
+// TestLogAuditorOmitsTraceContextWhenAbsent verifies that when no span is active
+// the TraceID/SpanID fields are empty and omitted from the JSON output.
+func TestLogAuditorOmitsTraceContextWhenAbsent(t *testing.T) {
+	var buf bytes.Buffer
+	a := newLogAuditor(&buf)
+
+	a.Record(context.Background(), Event{Action: "approve", Success: true})
+
+	// The JSON line must not contain traceId/spanId keys when no span is active.
+	if strings.Contains(buf.String(), "traceId") || strings.Contains(buf.String(), "spanId") {
+		t.Errorf("audit line unexpectedly contains trace fields: %q", buf.String())
+	}
+	var got Event
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if got.TraceID != "" || got.SpanID != "" {
+		t.Errorf("trace fields should be empty, got TraceID=%q SpanID=%q", got.TraceID, got.SpanID)
+	}
+}
+
+// mustSpanContext builds a valid (sampled) SpanContext from hex IDs for testing.
+func mustSpanContext(t *testing.T, traceIDHex, spanIDHex string) trace.SpanContext {
+	t.Helper()
+	tid, err := trace.TraceIDFromHex(traceIDHex)
+	if err != nil {
+		t.Fatalf("parse TraceID: %v", err)
+	}
+	sid, err := trace.SpanIDFromHex(spanIDHex)
+	if err != nil {
+		t.Fatalf("parse SpanID: %v", err)
+	}
+	return trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    tid,
+		SpanID:     sid,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
 }

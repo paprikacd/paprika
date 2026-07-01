@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Event records a single auditable action.
@@ -25,6 +27,10 @@ type Event struct {
 	Success   bool              `json:"success"`
 	Error     string            `json:"error,omitempty"` // empty on success
 	Extra     map[string]string `json:"extra,omitempty"` // optional extra fields
+	// TraceID/SpanID correlate this audit event with the distributed trace active
+	// in ctx at Record time. Empty when no span is active (tracing disabled).
+	TraceID string `json:"traceId,omitempty"`
+	SpanID  string `json:"spanId,omitempty"`
 }
 
 // Auditor records audit events. Implementations must be safe for concurrent use.
@@ -54,7 +60,10 @@ func newLogAuditor(w io.Writer) *LogAuditor {
 //
 //nolint:gocritic // hugeParam: Event is passed by value per the Auditor contract.
 func (l *LogAuditor) Record(ctx context.Context, event Event) {
-	_ = ctx // reserved for future tracing/correlation
+	if sc := trace.SpanFromContext(ctx).SpanContext(); sc.IsValid() {
+		event.TraceID = sc.TraceID().String()
+		event.SpanID = sc.SpanID().String()
+	}
 	if event.Timestamp == "" {
 		event.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	}

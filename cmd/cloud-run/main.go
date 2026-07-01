@@ -18,7 +18,12 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"go.opentelemetry.io/contrib/bridges/otelzap"
+	gozap "go.uber.org/zap"
+	gozapcore "go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -132,24 +137,20 @@ func run(setupLog logr.Logger) error {
 		}
 	}
 
-	telemetry, err := observability.NewTelemetry(ctx, observability.TelemetryConfig{
-		OTLPEndpoint:   os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		ServiceName:    os.Getenv("OTEL_SERVICE_NAME"),
-		ServiceVersion: os.Getenv("PAPRIKA_VERSION"),
-	})
-	if err != nil {
-		setupLog.Error(err, "Failed to initialize tracing")
-		telemetry = nil
-	} else if telemetry.IsTracingEnabled() {
+	telemetry := observability.NewTelemetry(ctx, observability.ConfigFromEnv())
+	if telemetry.IsTracingEnabled() {
 		setupLog.Info("OpenTelemetry tracing enabled")
+		// Bridge zap logs to the OTel Logs signal (otelzap) so every record is
+		// forwarded to the configured OTLP backend alongside traces/metrics.
+		raw := zap.NewRaw(zap.UseDevMode(true))
+		ctrl.SetLogger(zapr.NewLogger(bridgeZapWithOTel(raw, telemetry)))
+		setupLog = ctrl.Log.WithName("setup")
 	}
-	if telemetry != nil {
-		defer func() {
-			if shutdownErr := telemetry.Shutdown(ctx); shutdownErr != nil {
-				setupLog.Error(shutdownErr, "Failed to shutdown tracing")
-			}
-		}()
-	}
+	defer func() {
+		if shutdownErr := telemetry.Shutdown(ctx); shutdownErr != nil {
+			setupLog.Error(shutdownErr, "Failed to shutdown tracing")
+		}
+	}()
 
 	k8sConfig, err := buildK8sConfig(*kubeconfig)
 	if err != nil {
@@ -186,9 +187,9 @@ func run(setupLog logr.Logger) error {
 		return fmt.Errorf("build auth interceptor: %w", err)
 	}
 	if authCfg.Enabled {
-		authz, err := auth.BuildAuthorizer(authCfg, k8sClient)
-		if err != nil {
-			return fmt.Errorf("build authorizer: %w", err)
+		authz, authzErr := auth.BuildAuthorizer(authCfg, k8sClient)
+		if authzErr != nil {
+			return fmt.Errorf("build authorizer: %w", authzErr)
 		}
 		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
@@ -199,7 +200,12 @@ func run(setupLog logr.Logger) error {
 
 	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
 
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
@@ -247,6 +253,24 @@ func run(setupLog logr.Logger) error {
 
 	setupLog.Info("Server exited")
 	return nil
+}
+
+// bridgeZapWithOTel tees raw's zap core with an otelzap core that forwards
+// records to the OTel Logs signal via telemetry's LoggerProvider. When telemetry
+// is disabled (or has no LoggerProvider) it returns raw unchanged so there is no
+// bridging overhead.
+func bridgeZapWithOTel(raw *gozap.Logger, telemetry *observability.Telemetry) *gozap.Logger {
+	if telemetry == nil || !telemetry.IsTracingEnabled() {
+		return raw
+	}
+	lp := telemetry.LoggerProvider()
+	if lp == nil {
+		return raw
+	}
+	return gozap.New(gozapcore.NewTee(
+		raw.Core(),
+		otelzap.NewCore("paprika", otelzap.WithLoggerProvider(lp)),
+	))
 }
 
 func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {

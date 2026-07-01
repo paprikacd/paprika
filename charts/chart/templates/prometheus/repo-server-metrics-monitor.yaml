@@ -1,0 +1,29 @@
+{{- if and .Values.repoServer.enabled .Values.prometheus.enable }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: repo-server
+  name: {{ include "paprika.resourceName" (dict "suffix" "repo-server-metrics-monitor" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpoints:
+  - {{- if .Values.metrics.secure }}
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    {{- end }}
+    path: /metrics
+    port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+    scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
+    {{- if .Values.metrics.secure }}
+    tlsConfig:
+      insecureSkipVerify: true
+    {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: repo-server
+{{- end }}

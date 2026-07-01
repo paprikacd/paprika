@@ -14,5 +14,5 @@ metadata:
     {{- end }}
 data:
   paprika-overview.json: |
-{{ .Files.Get "grafana/overview.json" | nindent 4 }}
+{{ .Files.Get "files/overview.json" | nindent 4 }}
 {{- end }}

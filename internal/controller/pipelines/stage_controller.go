@@ -18,6 +18,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
 
@@ -38,7 +39,10 @@ type StageReconciler struct {
 // Reconcile handles Stage reconciliation.
 //
 //nolint:cyclop,nestif // stage reconciliation has sequential validation branches.
-func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *StageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Stage", req)
+	defer func() { endSpan(spanErr) }()
+
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {

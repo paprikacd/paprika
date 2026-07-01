@@ -31,8 +31,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -58,7 +60,6 @@ import (
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
-	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -95,7 +96,6 @@ type cliConfig struct {
 	cacheRedisDB                                                  int
 	shardID, shardTotal                                           int
 	shardIDSource                                                 string
-	otelEndpoint, otelServiceName, version                        string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
 	authEnabled, authAllowUnauth, enableWebhooks                  bool
@@ -168,14 +168,6 @@ func (cfg *cliConfig) cacheConfig() cache.Config {
 		RedisAddr:     addr,
 		RedisPassword: cfg.cacheRedisPassword,
 		RedisDB:       cfg.cacheRedisDB,
-	}
-}
-
-func (cfg *cliConfig) telemetryConfig() observability.TelemetryConfig {
-	return observability.TelemetryConfig{
-		OTLPEndpoint:   cfg.otelEndpoint,
-		ServiceName:    cfg.otelServiceName,
-		ServiceVersion: cfg.version,
 	}
 }
 
@@ -299,9 +291,6 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		}
 	}
 
-	cfg.otelEndpoint = getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	cfg.otelServiceName = getenv("OTEL_SERVICE_NAME")
-	cfg.version = getenv("PAPRIKA_VERSION")
 	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 
 	cfg.zapOptions = zap.Options{Development: true}
@@ -380,12 +369,18 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(authInterceptor, paprikaServer.AuditInterceptor()))
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
+	wrappedHandler := otelhttp.NewHandler(apiserver.MetricsMiddleware(mux), "paprika-http")
 	healthMux := buildHealthMux(setupLog)
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
@@ -395,7 +390,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		}
 	}()
 
-	return startAPIServer(apiCtx, mux, cfg.uiAddr, setupLog)
+	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
 }
 
 func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, setupLog logr.Logger) *cache.Invalidator {
@@ -629,10 +624,10 @@ func buildHealthProbeServer(healthMux *http.ServeMux, probeAddr string) *http.Se
 	}
 }
 
-func startAPIServer(ctx context.Context, mux *http.ServeMux, uiAddr string, log logr.Logger) error {
+func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, log logr.Logger) error {
 	server := &http.Server{
 		Addr:              uiAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
 	return runHTTPServer(ctx, server, "API server", log, nil, true)

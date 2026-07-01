@@ -84,7 +84,6 @@ spec:
             mountPath: /etc/paprika/tls
             readOnly: true
           {{- end }}
-        {{- if or .Values.audit.enabled .Values.redis.enabled (and .Values.auth.enabled (gt (len .Values.auth.rbac) 0)) .Values.mtls.enabled }}
         env:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
@@ -103,7 +102,8 @@ spec:
         - name: PAPRIKA_TLS_KEY
           value: /etc/paprika/tls/tls.key
         {{- end }}
-        {{- end }}
+        {{- include "paprika.otelEnv" . | nindent 8 }}
+        {{- include "paprika.downwardEnv" . | nindent 8 }}
       securityContext:
         {{- if .Values.apiServer.podSecurityContext }}
         {{- toYaml .Values.apiServer.podSecurityContext | nindent 8 }}

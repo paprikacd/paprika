@@ -46,6 +46,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/rollout"
 	"github.com/benebsworth/paprika/internal/rollout/core"
 	"github.com/benebsworth/paprika/internal/rollout/hash"
@@ -137,7 +138,10 @@ func (r *RolloutReconciler) publishRolloutEvent(ctx context.Context, ro *rollout
 }
 
 // Reconcile handles Rollout reconciliation.
-func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *RolloutReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Rollout", req)
+	defer func() { endSpan(spanErr) }()
+
 	log := logf.FromContext(ctx)
 
 	var ro rolloutsv1alpha1.Rollout

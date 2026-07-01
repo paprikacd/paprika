@@ -13,6 +13,7 @@ import (
 	"text/template"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -23,6 +24,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/clock"
+	"github.com/benebsworth/paprika/internal/observability"
 )
 
 const defaultHTTPTimeout = 10 * time.Second
@@ -35,7 +37,10 @@ type NotificationSender struct {
 // NewNotificationSender creates a sender with a sensible default timeout.
 func NewNotificationSender() *NotificationSender {
 	return &NotificationSender{
-		HTTPClient: &http.Client{Timeout: defaultHTTPTimeout},
+		HTTPClient: &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout:   defaultHTTPTimeout,
+		},
 	}
 }
 
@@ -86,9 +91,10 @@ func NewNotificationConfigReconciler(c client.Client, broker *events.Broker, sen
 }
 
 // Reconcile is intentionally a no-op; the controller does its work in Start.
-func (r *NotificationConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = ctx
-	_ = req
+func (r *NotificationConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	_, endSpan := observability.ReconcileSpan(ctx, "NotificationConfig", req)
+	defer func() { endSpan(spanErr) }()
+
 	return ctrl.Result{}, nil
 }
 

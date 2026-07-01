@@ -35,6 +35,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/oci"
 	"github.com/benebsworth/paprika/internal/sharding"
 )
@@ -60,7 +61,10 @@ type ArtifactReconciler struct {
 // Reconcile verifies the artifact reference and updates status.
 //
 //nolint:cyclop // artifact reconciliation branches on type.
-func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ArtifactReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Artifact", req)
+	defer func() { endSpan(spanErr) }()
+
 	result := resultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {

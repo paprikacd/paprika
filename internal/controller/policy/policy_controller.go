@@ -31,6 +31,7 @@ import (
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/policy"
 )
 
@@ -51,7 +52,10 @@ type PolicyReconciler struct {
 // +kubebuilder:rbac:groups=policy.paprika.io,resources=policies/finalizers,verbs=update
 
 // Reconcile compiles the policy expression and records the outcome in status.
-func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *PolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, spanErr error) {
+	ctx, endSpan := observability.ReconcileSpan(ctx, "Policy", req)
+	defer func() { endSpan(spanErr) }()
+
 	result := policyResultSuccess
 	start := metrics.Timer(r.Clock)
 	defer func() {
