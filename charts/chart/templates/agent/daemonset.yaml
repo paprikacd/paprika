@@ -45,6 +45,8 @@ spec:
             {{- include "paprika.cacheEnv" . | nindent 12 }}
             - name: PAPRIKA_AGENT_CLUSTER_ID
               value: {{ .Values.agent.clusterID | default .Release.Name | quote }}
+            {{- include "paprika.otelEnv" . | nindent 12 }}
+            {{- include "paprika.downwardEnv" . | nindent 12 }}
           ports:
             - name: http
               containerPort: 8083

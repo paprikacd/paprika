@@ -91,6 +91,8 @@ spec:
         - name: PAPRIKA_TLS_KEY
           value: /etc/paprika/tls/tls.key
         {{- end }}
+        {{- include "paprika.otelEnv" . | nindent 8 }}
+        {{- include "paprika.downwardEnv" . | nindent 8 }}
       securityContext:
         {{- if .Values.repoServer.podSecurityContext }}
         {{- toYaml .Values.repoServer.podSecurityContext | nindent 8 }}

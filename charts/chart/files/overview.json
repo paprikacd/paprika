@@ -1,0 +1,83 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Reconcile Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(controller_runtime_reconcile_total[5m])) by (controller)",
+          "legendFormat": "{{ controller }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "title": "Reconcile Error Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(controller_runtime_reconcile_errors_total[5m])) by (controller)",
+          "legendFormat": "{{ controller }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "title": "P95 Reconcile Latency",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(controller_runtime_reconcile_time_seconds_bucket[5m])) by (le, controller))",
+          "legendFormat": "{{ controller }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+    },
+    {
+      "title": "Application Phases",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(paprika_application_phase_total) by (phase)",
+          "legendFormat": "{{ phase }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+    },
+    {
+      "title": "Release Phases",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(paprika_release_phase_total) by (phase)",
+          "legendFormat": "{{ phase }}"
+        }
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+    }
+  ],
+  "schemaVersion": 36,
+  "style": "dark",
+  "tags": ["paprika"],
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "query": "label_values(paprika_application_phase_total, namespace)",
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "utc",
+  "title": "Paprika Overview",
+  "uid": "paprika-overview",
+  "version": 1
+}

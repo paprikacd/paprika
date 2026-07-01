@@ -92,6 +92,67 @@ records structured JSON audit events for mutating operations to stdout.
 {{- end }}
 
 {{/*
+Downward API environment variables for resource identification. Always emitted
+on every component so traces/metrics/logs can attribute back to the running Pod
+without extra configuration.
+*/}}
+{{- define "paprika.downwardEnv" -}}
+- name: PAPRIKA_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+- name: PAPRIKA_POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+{{- end }}
+
+{{/*
+OpenTelemetry environment variables. Emitted only when otel.enabled is true.
+Ref: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+*/}}
+{{- define "paprika.otelEnv" -}}
+{{- if .Values.otel.enabled }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ .Values.otel.endpoint | quote }}
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: {{ .Values.otel.protocol | quote }}
+- name: OTEL_EXPORTER_OTLP_INSECURE
+  value: {{ .Values.otel.insecure | quote }}
+{{- if .Values.otel.certificatePath }}
+- name: OTEL_EXPORTER_OTLP_CERTIFICATE
+  value: {{ .Values.otel.certificatePath | quote }}
+{{- end }}
+{{- if .Values.otel.sampler }}
+- name: OTEL_TRACES_SAMPLER
+  value: {{ .Values.otel.sampler | quote }}
+{{- end }}
+{{- if .Values.otel.samplerArg }}
+- name: OTEL_TRACES_SAMPLER_ARG
+  value: {{ .Values.otel.samplerArg | quote }}
+{{- end }}
+- name: OTEL_PROPAGATORS
+  value: {{ .Values.otel.propagators | quote }}
+{{- $attrs := list -}}
+{{- range $k, $v := .Values.otel.resourceAttributes }}
+{{- $attrs = append $attrs (printf "%s=%v" $k $v) }}
+{{- end }}
+{{- if $attrs }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ join "," $attrs | quote }}
+{{- end }}
+{{- $hdrs := list -}}
+{{- range $k, $v := .Values.otel.headers }}
+{{- $hdrs = append $hdrs (printf "%s=%v" $k $v) }}
+{{- end }}
+{{- if $hdrs }}
+- name: OTEL_EXPORTER_OTLP_HEADERS
+  value: {{ join "," $hdrs | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}

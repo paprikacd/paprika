@@ -72,6 +72,8 @@ spec:
               name: {{ include "paprika.resourceName" (dict "suffix" "auth-rbac" "context" .) }}
               key: rbac.json
         {{- end }}
+        {{- include "paprika.otelEnv" . | nindent 8 }}
+        {{- include "paprika.downwardEnv" . | nindent 8 }}
         image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
