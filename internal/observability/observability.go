@@ -3,6 +3,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -16,10 +17,13 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -73,9 +77,10 @@ func ConfigFromEnv() Config {
 
 // Telemetry holds OpenTelemetry state for the process.
 type Telemetry struct {
-	tracer   trace.Tracer
-	provider *sdktrace.TracerProvider
-	enabled  bool
+	tracer        trace.Tracer
+	provider      *sdktrace.TracerProvider
+	meterProvider *metric.MeterProvider
+	enabled       bool
 }
 
 // StartSpan starts a new OpenTelemetry span from context. When tracing is
@@ -97,16 +102,24 @@ func (t *Telemetry) IsTracingEnabled() bool {
 	return t != nil && t.enabled
 }
 
-// Shutdown gracefully shuts down the tracer provider, flushing any buffered
-// spans to the exporter.
+// Shutdown gracefully shuts down the tracer and meter providers, flushing any
+// buffered spans and metrics to their exporters.
 func (t *Telemetry) Shutdown(ctx context.Context) error {
-	if t == nil || t.provider == nil {
+	if t == nil {
 		return nil
 	}
-	if err := t.provider.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown tracer provider: %w", err)
+	var errs []error
+	if t.meterProvider != nil {
+		if err := t.meterProvider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
+		}
 	}
-	return nil
+	if t.provider != nil {
+		if err := t.provider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown tracer provider: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // NewTelemetry creates and registers a fully configured OpenTelemetry
@@ -143,11 +156,25 @@ func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 	otel.SetTracerProvider(provider)
 	setPropagator(cfg.Propagators)
 
-	return &Telemetry{
+	t := &Telemetry{
 		provider: provider,
 		tracer:   provider.Tracer(tracerName),
 		enabled:  true,
 	}
+
+	metricExporter, err := buildMetricExporter(ctx, &cfg)
+	if err != nil {
+		log.Printf("otel: failed to create metric exporter, metrics disabled: %v", err)
+		return t
+	}
+	meterProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter, metric.WithInterval(60*time.Second))),
+		metric.WithResource(res),
+	)
+	otel.SetMeterProvider(meterProvider)
+	t.meterProvider = meterProvider
+
+	return t
 }
 
 // buildResource creates an OTel Resource with service identity, host/process
@@ -224,6 +251,48 @@ func buildTraceExporter(ctx context.Context, cfg *Config) (*otlptrace.Exporter, 
 	exp, err := otlptrace.New(ctx, otlptracegrpc.NewClient(opts...))
 	if err != nil {
 		return nil, fmt.Errorf("create otlp grpc trace exporter: %w", err)
+	}
+	return exp, nil
+}
+
+// buildMetricExporter creates an OTLP metric exporter for the configured
+// protocol. It mirrors buildTraceExporter: same endpoint, TLS, and headers.
+func buildMetricExporter(ctx context.Context, cfg *Config) (metric.Exporter, error) {
+	if cfg.Protocol == "http" {
+		var httpOpts []otlpmetrichttp.Option
+		httpOpts = append(httpOpts, otlpmetrichttp.WithEndpoint(cfg.OTLPEndpoint))
+		if cfg.Insecure {
+			httpOpts = append(httpOpts, otlpmetrichttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			httpOpts = append(httpOpts, otlpmetrichttp.WithHeaders(cfg.Headers))
+		}
+		exp, err := otlpmetrichttp.New(ctx, httpOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create otlp http metric exporter: %w", err)
+		}
+		return exp, nil
+	}
+
+	// Default: gRPC.
+	var opts []otlpmetricgrpc.Option
+	opts = append(opts, otlpmetricgrpc.WithEndpoint(cfg.OTLPEndpoint))
+	switch {
+	case cfg.Insecure:
+		opts = append(opts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	case cfg.CertificatePath != "":
+		creds, err := credentials.NewClientTLSFromFile(cfg.CertificatePath, "")
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		opts = append(opts, otlpmetricgrpc.WithDialOption(grpc.WithTransportCredentials(creds)))
+	}
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, otlpmetricgrpc.WithHeaders(cfg.Headers))
+	}
+	exp, err := otlpmetricgrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp grpc metric exporter: %w", err)
 	}
 	return exp, nil
 }

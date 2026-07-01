@@ -380,7 +380,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
-	wrappedHandler := otelhttp.NewHandler(mux, "paprika-http")
+	wrappedHandler := otelhttp.NewHandler(apiserver.MetricsMiddleware(mux), "paprika-http")
 	healthMux := buildHealthMux(setupLog)
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)

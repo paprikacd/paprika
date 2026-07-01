@@ -430,7 +430,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 
 	return &http.Server{
 		Addr:              uiAddr,
-		Handler:           otelhttp.NewHandler(uiMux, "paprika-http"),
+		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}, nil
 }
