@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/engine/hooks"
 )
 
@@ -38,6 +39,8 @@ type DiffOptions struct {
 	LabelSelector   string
 	FieldSelector   string
 	ApplicationName string
+	// IgnoreDifferences lists JSON pointer paths to exclude from diff computation.
+	IgnoreDifferences []pipelinesv1alpha1.IgnoreDiff
 }
 
 // DiffEngine computes diffs between desired and live Kubernetes resources.
@@ -55,7 +58,7 @@ func NewDiffEngine(dynClient *dynamic.DynamicClient, discovery discovery.Discove
 }
 
 // ComputeDiff computes the diff between desired and live resources in the given namespace.
-func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error) {
+func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts *DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
 
 	desired = hooks.FilterHooks(desired)
@@ -69,6 +72,10 @@ func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Uns
 	liveMap, err := d.fetchLiveResources(ctx, opts.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("fetch live resources: %w", err)
+	}
+
+	if len(opts.IgnoreDifferences) > 0 {
+		ApplyIgnoreDifferences(desiredMap, liveMap, opts.IgnoreDifferences)
 	}
 
 	for key, desiredObj := range desiredMap {

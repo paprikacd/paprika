@@ -33,6 +33,7 @@ spec:
         {{- end }}
       containers:
       - args:
+        - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- range .Values.repoServer.args }}
         - {{ . }}
         {{- end }}
@@ -55,6 +56,9 @@ spec:
           protocol: TCP
         - containerPort: 8082
           name: repo
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
           protocol: TCP
         readinessProbe:
           httpGet:

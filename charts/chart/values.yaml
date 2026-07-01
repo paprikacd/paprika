@@ -520,6 +520,13 @@ metrics:
   # Enable secure metrics: HTTPS with certs/auth (true) or HTTP (false).
   # Note: Metrics authn/authz needs ClusterRole access.
   secure: true
+  # Metrics bind address for split-plane deployments.
+  # Set to ":8080" to enable on HTTP, or ":0" to disable.
+  bindAddress: ":0"
+  # Prometheus ServiceMonitor configuration
+  serviceMonitor:
+    enabled: false
+    labels: {}
 
 ## Cert-manager integration for TLS certificates.
 ## Required for webhook certificates and metrics endpoint certificates.

@@ -16,6 +16,10 @@ spec:
     port: {{ .Values.repoServer.service.port }}
     protocol: TCP
     targetPort: 8082
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/component: repo-server

@@ -51,7 +51,7 @@ func TestEnsureManagedLabels(t *testing.T) {
 				"metadata":   metadata,
 			}}
 
-			require.NoError(t, ensureManagedLabels(obj, DiffOptions{ApplicationName: "my-app"}))
+			require.NoError(t, ensureManagedLabels(obj, &DiffOptions{ApplicationName: "my-app"}))
 
 			labels := obj.GetLabels()
 			assert.Equal(t, ManagedByLabelValue, labels[ManagedByLabelKey])
@@ -83,7 +83,7 @@ func TestComputeDiff_AddsManagedLabels(t *testing.T) {
 	dynClient := fake.NewSimpleDynamicClient(scheme)
 	eng := NewScalableDiffEngine(dynClient)
 
-	_, err := eng.ComputeDiff(context.Background(), desired, DiffOptions{
+	_, err := eng.ComputeDiff(context.Background(), desired, &DiffOptions{
 		Namespace:       "default",
 		ApplicationName: app.Name,
 	})

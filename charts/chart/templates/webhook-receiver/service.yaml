@@ -21,6 +21,10 @@ spec:
     port: 8081
     targetPort: 8081
     protocol: TCP
+  - name: metrics
+    port: 8082
+    targetPort: 8082
+    protocol: TCP
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/component: webhook-receiver

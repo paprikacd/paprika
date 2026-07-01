@@ -502,7 +502,7 @@ func (r *RolloutReconciler) executeReplicaSetActions(ctx context.Context, ro *ro
 			},
 			Spec: appsv1.ReplicaSetSpec{
 				Replicas: &action.Replicas,
-				Selector: &metav1.LabelSelector{MatchLabels: labels},
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"rollouts.paprika.io/rollout": ro.Name}},
 			},
 		}
 		if action.Template != nil {

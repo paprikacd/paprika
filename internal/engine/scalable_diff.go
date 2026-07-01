@@ -75,7 +75,7 @@ func (d *ScalableDiffEngine) Stop() {
 
 // ComputeDiff computes the diff between desired and live resources using label selectors.
 // It only queries the GVRs present in the desired set, avoiding namespace-wide scans.
-func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts DiffOptions) (*DiffResult, error) {
+func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts *DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
 
 	desired = hooks.FilterHooks(desired)
@@ -99,6 +99,17 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		return nil, fmt.Errorf("fetch live resources: %w", err)
 	}
 
+	if len(opts.IgnoreDifferences) > 0 {
+		ApplyIgnoreDifferences(desiredMap, liveMap, opts.IgnoreDifferences)
+	}
+
+	result = classifyDiffs(result, desiredMap, liveMap)
+
+	result.Summary = fmt.Sprintf("+%d ~%d -%d", len(result.Added), len(result.Modified), len(result.Deleted))
+	return result, nil
+}
+
+func classifyDiffs(result *DiffResult, desiredMap, liveMap map[string]unstructured.Unstructured) *DiffResult {
 	for key, desiredObj := range desiredMap {
 		liveObj, exists := liveMap[key]
 		if !exists {
@@ -136,11 +147,10 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		}
 	}
 
-	result.Summary = fmt.Sprintf("+%d ~%d -%d", len(result.Added), len(result.Modified), len(result.Deleted))
-	return result, nil
+	return result
 }
 
-func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}) (map[string]unstructured.Unstructured, error) {
+func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
 	selector, err := labels.Parse(opts.LabelSelector)
 	if err != nil {
@@ -196,7 +206,7 @@ func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, 
 	return schema.GroupVersionResource{Group: group, Version: version, Resource: resourceName}, nil
 }
 
-func ensureManagedLabels(obj *unstructured.Unstructured, opts DiffOptions) error {
+func ensureManagedLabels(obj *unstructured.Unstructured, opts *DiffOptions) error {
 	labels := obj.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string)

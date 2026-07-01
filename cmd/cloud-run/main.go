@@ -21,6 +21,7 @@ import (
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	gozap "go.uber.org/zap"
 	gozapcore "go.uber.org/zap/zapcore"
@@ -94,6 +95,7 @@ func run(setupLog logr.Logger) error {
 		port                                                        = os.Getenv("PORT")
 		kubeconfig                                                  = flag.String("kubeconfig", "", "Path to kubeconfig. Uses default loading rules (KUBECONFIG env, ~/.kube/config) when empty.")
 		probeAddr                                                   = flag.String("health-probe-bind-address", ":8081", "Health probe bind address.")
+		metricsAddr                                                 = flag.String("metrics-bind-address", ":0", "The address the metrics endpoint binds to. Use :8080 for HTTP or :0 to disable.")
 		workDir                                                     = flag.String("work-dir", "/tmp/paprika-cloudrun", "Working directory for template sources.")
 		webhookSecret                                               = os.Getenv("PAPRIKA_WEBHOOK_SECRET")
 		authEnabled                                                 bool
@@ -238,6 +240,8 @@ func run(setupLog logr.Logger) error {
 
 	healthSrv := startHealthProbe(setupLog, *probeAddr)
 
+	startMetricsServer(ctx, *metricsAddr, setupLog)
+
 	<-ctx.Done()
 	setupLog.Info("Shutting down...")
 
@@ -342,6 +346,33 @@ func startHealthProbe(setupLog logr.Logger, addr string) *http.Server {
 		}
 	}()
 	return server
+}
+
+func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) {
+	if addr == "0" || addr == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+	}
+	go func() {
+		setupLog.Info("Starting metrics server", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			setupLog.Error(err, "Metrics server exited with error")
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), serverShutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			setupLog.Error(err, "Failed to shutdown metrics server")
+		}
+	}()
 }
 
 func healthzHandler(setupLog logr.Logger) http.HandlerFunc {

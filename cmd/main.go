@@ -33,6 +33,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -142,9 +143,9 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 
 	switch cfg.mode {
 	case "agent":
-		return runAgentMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.agentClusterID, setupLog)
+		return runAgentMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.agentClusterID, cfg.metricsAddr, setupLog)
 	case "repo-server":
-		return runRepoServerMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.repoWorkDir, scheme, setupLog, cfg.cacheConfig(), nil, nil)
+		return runRepoServerMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.repoWorkDir, cfg.metricsAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
 	case "api":
 		return runAPIMode(ctx, cfg, scheme, setupLog, nil)
 	case "webhook":
@@ -390,6 +391,8 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		}
 	}()
 
+	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
+
 	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
 }
 
@@ -449,6 +452,8 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		}
 	}()
 
+	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
+
 	server := &http.Server{
 		Addr:              webhookAddr,
 		Handler:           mux,
@@ -457,7 +462,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true)
 }
 
-func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
+func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAddr string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
 	if workDir == "" {
 		workDir = "/tmp/paprika-repo"
 	}
@@ -496,13 +501,15 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir string, sch
 		}
 	}()
 
+	startMetricsServer(ctx, metricsAddr, setupLog)
+
 	if err := srv.Run(rsCtx, addr); err != nil {
 		return fmt.Errorf("repo server run: %w", err)
 	}
 	return nil
 }
 
-func runAgentMode(ctx context.Context, addr, probeAddr, clusterID string, setupLog logr.Logger) error {
+func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr string, setupLog logr.Logger) error {
 	if clusterID == "" {
 		clusterID = "default"
 	}
@@ -527,6 +534,8 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID string, setupL
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
+
+	startMetricsServer(ctx, metricsAddr, setupLog)
 
 	if err := srv.Run(agentCtx, addr); err != nil {
 		return fmt.Errorf("agent server run: %w", err)
@@ -622,6 +631,33 @@ func buildHealthProbeServer(healthMux *http.ServeMux, probeAddr string) *http.Se
 		Handler:           healthMux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
+}
+
+func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) {
+	if addr == "0" || addr == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+	}
+	go func() {
+		setupLog.Info("Starting metrics server", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			setupLog.Error(err, "Metrics server exited with error")
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), serverShutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			setupLog.Error(err, "Failed to shutdown metrics server")
+		}
+	}()
 }
 
 func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, log logr.Logger) error {

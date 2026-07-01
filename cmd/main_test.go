@@ -83,7 +83,7 @@ func TestRepoServerHealthEndpoint(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- runRepoServerMode(ctx, ":0", ":0", t.TempDir(), newScheme(), logr.Discard(), cache.Config{Backend: "memory"}, probeAddrCh, k8sClient)
+		errCh <- runRepoServerMode(ctx, ":0", ":0", t.TempDir(), ":0", newScheme(), logr.Discard(), cache.Config{Backend: "memory"}, probeAddrCh, k8sClient)
 	}()
 
 	var probeAddr string

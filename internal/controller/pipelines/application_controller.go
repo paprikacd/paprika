@@ -1084,7 +1084,7 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	}
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
-	result, err := r.DiffEngine.ComputeDiff(ctx, desired, engine.DiffOptions{
+	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
 		Namespace:       app.Namespace,
 		LabelSelector:   labelSelector,
 		ApplicationName: app.Name,

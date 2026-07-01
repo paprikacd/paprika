@@ -36,6 +36,7 @@ spec:
         - --mode=webhook
         - --health-probe-bind-address=:8081
         - --webhook-bind-address=:8080
+        - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         command:
         - /manager
         image: "{{ .Values.webhookReceiver.image.repository }}{{- if not (contains "@" .Values.webhookReceiver.image.repository) }}:{{ .Values.webhookReceiver.image.tag | default .Chart.AppVersion }}{{- end }}"
@@ -55,6 +56,9 @@ spec:
           protocol: TCP
         - containerPort: 8080
           name: webhook
+          protocol: TCP
+        - containerPort: 8082
+          name: metrics
           protocol: TCP
         readinessProbe:
           httpGet:
