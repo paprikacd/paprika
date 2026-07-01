@@ -17,12 +17,17 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -77,10 +82,11 @@ func ConfigFromEnv() Config {
 
 // Telemetry holds OpenTelemetry state for the process.
 type Telemetry struct {
-	tracer        trace.Tracer
-	provider      *sdktrace.TracerProvider
-	meterProvider *metric.MeterProvider
-	enabled       bool
+	tracer         trace.Tracer
+	provider       *sdktrace.TracerProvider
+	meterProvider  *metric.MeterProvider
+	loggerProvider *sdklog.LoggerProvider
+	enabled        bool
 }
 
 // StartSpan starts a new OpenTelemetry span from context. When tracing is
@@ -102,13 +108,28 @@ func (t *Telemetry) IsTracingEnabled() bool {
 	return t != nil && t.enabled
 }
 
-// Shutdown gracefully shuts down the tracer and meter providers, flushing any
-// buffered spans and metrics to their exporters.
+// LoggerProvider returns the OpenTelemetry LoggerProvider backing the zap log
+// bridge (otelzap). It returns nil when tracing is disabled so callers can skip
+// log bridging without an extra flag check.
+func (t *Telemetry) LoggerProvider() otellog.LoggerProvider {
+	if t == nil {
+		return nil
+	}
+	return t.loggerProvider
+}
+
+// Shutdown gracefully shuts down the tracer, meter, and logger providers,
+// flushing any buffered spans, metrics, and logs to their exporters.
 func (t *Telemetry) Shutdown(ctx context.Context) error {
 	if t == nil {
 		return nil
 	}
 	var errs []error
+	if t.loggerProvider != nil {
+		if err := t.loggerProvider.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("shutdown logger provider: %w", err))
+		}
+	}
 	if t.meterProvider != nil {
 		if err := t.meterProvider.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown meter provider: %w", err))
@@ -174,6 +195,23 @@ func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 	otel.SetMeterProvider(meterProvider)
 	t.meterProvider = meterProvider
 
+	// Logs signal: build a LoggerProvider so the otelzap bridge can forward zap
+	// records to the same OTLP backend as traces and metrics. A failure here
+	// leaves logs unbridged (stdout JSON is unaffected) so it is non-fatal.
+	logExporter, err := buildLogExporter(ctx, &cfg)
+	if err != nil {
+		log.Printf("otel: failed to create log exporter, log bridging disabled: %v", err)
+		return t
+	}
+	loggerProvider := sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExporter,
+			sdklog.WithMaxQueueSize(cfg.MaxQueueSize),
+			sdklog.WithExportInterval(cfg.BatchTimeout),
+		)),
+	)
+	global.SetLoggerProvider(loggerProvider)
+	t.loggerProvider = loggerProvider
 	return t
 }
 
@@ -257,6 +295,8 @@ func buildTraceExporter(ctx context.Context, cfg *Config) (*otlptrace.Exporter, 
 
 // buildMetricExporter creates an OTLP metric exporter for the configured
 // protocol. It mirrors buildTraceExporter: same endpoint, TLS, and headers.
+//
+//nolint:dupl // intentionally mirrors build{Trace,Log}Exporter; option types differ per signal.
 func buildMetricExporter(ctx context.Context, cfg *Config) (metric.Exporter, error) {
 	if cfg.Protocol == "http" {
 		var httpOpts []otlpmetrichttp.Option
@@ -293,6 +333,51 @@ func buildMetricExporter(ctx context.Context, cfg *Config) (metric.Exporter, err
 	exp, err := otlpmetricgrpc.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create otlp grpc metric exporter: %w", err)
+	}
+	return exp, nil
+}
+
+// buildLogExporter creates an OTLP log exporter for the configured protocol.
+// It mirrors buildTraceExporter and buildMetricExporter so all three signals
+// share one endpoint, TLS, and header configuration.
+//
+//nolint:dupl // intentionally mirrors build{Trace,Metric}Exporter; option types differ per signal.
+func buildLogExporter(ctx context.Context, cfg *Config) (sdklog.Exporter, error) {
+	if cfg.Protocol == "http" {
+		var httpOpts []otlploghttp.Option
+		httpOpts = append(httpOpts, otlploghttp.WithEndpoint(cfg.OTLPEndpoint))
+		if cfg.Insecure {
+			httpOpts = append(httpOpts, otlploghttp.WithInsecure())
+		}
+		if len(cfg.Headers) > 0 {
+			httpOpts = append(httpOpts, otlploghttp.WithHeaders(cfg.Headers))
+		}
+		exp, err := otlploghttp.New(ctx, httpOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create otlp http log exporter: %w", err)
+		}
+		return exp, nil
+	}
+
+	// Default: gRPC.
+	var opts []otlploggrpc.Option
+	opts = append(opts, otlploggrpc.WithEndpoint(cfg.OTLPEndpoint))
+	switch {
+	case cfg.Insecure:
+		opts = append(opts, otlploggrpc.WithDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())))
+	case cfg.CertificatePath != "":
+		creds, err := credentials.NewClientTLSFromFile(cfg.CertificatePath, "")
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		opts = append(opts, otlploggrpc.WithDialOption(grpc.WithTransportCredentials(creds)))
+	}
+	if len(cfg.Headers) > 0 {
+		opts = append(opts, otlploggrpc.WithHeaders(cfg.Headers))
+	}
+	exp, err := otlploggrpc.New(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create otlp grpc log exporter: %w", err)
 	}
 	return exp, nil
 }

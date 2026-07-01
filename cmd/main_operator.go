@@ -28,13 +28,18 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/bridges/otelzap"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	gozap "go.uber.org/zap"
+	gozapcore "go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -73,6 +78,25 @@ type operatorDependencies struct {
 	coordinator    *coordinator.Coordinator
 }
 
+// bridgeZapWithOTel tees raw's zap core with an otelzap core that forwards
+// records to the OTel Logs signal via telemetry's LoggerProvider. When telemetry
+// is disabled (or has no LoggerProvider) it returns raw unchanged so there is no
+// bridging overhead. The returned logger is functionally identical to the input —
+// only an additional OTel-Logs-bridged core is appended via zapcore.NewTee.
+func bridgeZapWithOTel(raw *gozap.Logger, telemetry *observability.Telemetry) *gozap.Logger {
+	if telemetry == nil || !telemetry.IsTracingEnabled() {
+		return raw
+	}
+	lp := telemetry.LoggerProvider()
+	if lp == nil {
+		return raw
+	}
+	return gozap.New(gozapcore.NewTee(
+		raw.Core(),
+		otelzap.NewCore("paprika", otelzap.WithLoggerProvider(lp)),
+	))
+}
+
 func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog logr.Logger) (*operatorDependencies, error) {
 	c, err := newCacheFromConfig(ctx, cfg.cacheConfig(), setupLog)
 	if err != nil {
@@ -82,6 +106,12 @@ func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog log
 	telemetry := observability.NewTelemetry(ctx, observability.ConfigFromEnv())
 	if telemetry.IsTracingEnabled() {
 		setupLog.Info("OpenTelemetry tracing enabled")
+		// Bridge zap logs to the OTel Logs signal (otelzap) so every record is
+		// forwarded to the configured OTLP backend alongside traces/metrics.
+		// The bridge is only wired when tracing is enabled; otherwise the global
+		// LoggerProvider is a no-op and bridging would add overhead for nothing.
+		raw := crzap.NewRaw(crzap.UseFlagOptions(&cfg.zapOptions))
+		ctrl.SetLogger(zapr.NewLogger(bridgeZapWithOTel(raw, telemetry)))
 	}
 
 	shardFilter := cfg.shardFilter()
