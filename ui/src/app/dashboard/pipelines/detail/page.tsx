@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Loader2 } from "lucide-react"
 
@@ -22,6 +22,14 @@ const transport = createConnectTransport({ baseUrl: "" })
 const client = createPromiseClient(PaprikaService, transport)
 
 export default function PipelineDetailPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-6 py-8"><div className="h-96 animate-pulse rounded bg-muted" /></div>}>
+      <PipelineDetail />
+    </Suspense>
+  )
+}
+
+function PipelineDetail() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const namespace = searchParams.get("namespace") ?? ""

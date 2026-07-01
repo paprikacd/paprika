@@ -130,6 +130,15 @@ const (
 	SyncWindowBlock SyncWindowKind = "Block"
 )
 
+// IgnoreDiff specifies JSON pointer paths to ignore during diff computation,
+// analogous to ArgoCD's ignoreDifferences.
+type IgnoreDiff struct {
+	// JSONPointers lists JSON paths to ignore during diff computation.
+	// Each path follows RFC 6901 JSON Pointer format (e.g., "/spec/replicas").
+	// +optional
+	JSONPointers []string `json:"jsonPointers,omitempty"`
+}
+
 // SyncWindow defines a cron-based time window that controls automatic sync.
 type SyncWindow struct {
 	// Kind is whether this window allows or blocks sync.
@@ -482,6 +491,10 @@ type ApplicationSpec struct {
 	// SyncWindows restrict when automatic sync may run.
 	// +optional
 	SyncWindows []SyncWindow `json:"syncWindows,omitempty"`
+
+	// IgnoreDifferences lists JSON pointer paths to exclude from diff computation.
+	// +optional
+	IgnoreDifferences []IgnoreDiff `json:"ignoreDifferences,omitempty"`
 
 	// AnalysisTemplates references reusable analysis templates that run continuously
 	// in the background after the application is healthy.

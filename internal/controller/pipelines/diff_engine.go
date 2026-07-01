@@ -13,5 +13,5 @@ import (
 
 // DiffEngine computes differences between desired and actual cluster state.
 type DiffEngine interface {
-	ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts engine.DiffOptions) (*engine.DiffResult, error)
+	ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts *engine.DiffOptions) (*engine.DiffResult, error)
 }

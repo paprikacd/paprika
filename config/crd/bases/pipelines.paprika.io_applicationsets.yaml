@@ -668,6 +668,23 @@ spec:
                       - name
                       type: object
                     type: array
+                  ignoreDifferences:
+                    description: IgnoreDifferences lists JSON pointer paths to exclude
+                      from diff computation.
+                    items:
+                      description: |-
+                        IgnoreDiff specifies JSON pointer paths to ignore during diff computation,
+                        analogous to ArgoCD's ignoreDifferences.
+                      properties:
+                        jsonPointers:
+                          description: |-
+                            JSONPointers lists JSON paths to ignore during diff computation.
+                            Each path follows RFC 6901 JSON Pointer format (e.g., "/spec/replicas").
+                          items:
+                            type: string
+                          type: array
+                      type: object
+                    type: array
                   onFailure:
                     description: OnFailure defines the action when a promotion fails.
                     properties:

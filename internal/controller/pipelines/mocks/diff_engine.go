@@ -43,7 +43,7 @@ func (m *MockDiffEngine) EXPECT() *MockDiffEngineMockRecorder {
 }
 
 // ComputeDiff mocks base method.
-func (m *MockDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts engine.DiffOptions) (*engine.DiffResult, error) {
+func (m *MockDiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts *engine.DiffOptions) (*engine.DiffResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ComputeDiff", ctx, desired, opts)
 	ret0, _ := ret[0].(*engine.DiffResult)
@@ -70,13 +70,13 @@ func (c *MockDiffEngineComputeDiffCall) Return(arg0 *engine.DiffResult, arg1 err
 }
 
 // Do rewrite *gomock.Call.Do
-func (c *MockDiffEngineComputeDiffCall) Do(f func(context.Context, []unstructured.Unstructured, engine.DiffOptions) (*engine.DiffResult, error)) *MockDiffEngineComputeDiffCall {
+func (c *MockDiffEngineComputeDiffCall) Do(f func(context.Context, []unstructured.Unstructured, *engine.DiffOptions) (*engine.DiffResult, error)) *MockDiffEngineComputeDiffCall {
 	c.Call = c.Call.Do(f)
 	return c
 }
 
 // DoAndReturn rewrite *gomock.Call.DoAndReturn
-func (c *MockDiffEngineComputeDiffCall) DoAndReturn(f func(context.Context, []unstructured.Unstructured, engine.DiffOptions) (*engine.DiffResult, error)) *MockDiffEngineComputeDiffCall {
+func (c *MockDiffEngineComputeDiffCall) DoAndReturn(f func(context.Context, []unstructured.Unstructured, *engine.DiffOptions) (*engine.DiffResult, error)) *MockDiffEngineComputeDiffCall {
 	c.Call = c.Call.DoAndReturn(f)
 	return c
 }
