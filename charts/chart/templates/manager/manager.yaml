@@ -62,7 +62,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ .Values.manager.automountServiceAccountToken | default false }}
       {{- with .Values.manager.topologySpreadConstraints }}
       topologySpreadConstraints: {{ toYaml . | nindent 10 }}
       {{- end }}

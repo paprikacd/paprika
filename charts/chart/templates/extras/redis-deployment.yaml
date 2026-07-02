@@ -36,7 +36,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ $.Values.redis.automountServiceAccountToken | default false }}
       {{- with $.Values.redis.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ . }}
       {{- end }}

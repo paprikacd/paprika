@@ -42,14 +42,12 @@ grafana:
 manager:
   enabled: true
   replicas: 2
+  automountServiceAccountToken: true
 
   image:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"
     pullPolicy: Always
-
-  imagePullSecrets:
-    - name: ghcr-pull
 
   podSecurityContext:
     runAsNonRoot: true
@@ -94,14 +92,12 @@ manager:
 # ── API server (split-mode) ───────────────────────────────────────────────────
 apiServer:
   replicas: 2
+  automountServiceAccountToken: true
 
   image:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"
     pullPolicy: Always
-
-  imagePullSecrets:
-    - name: ghcr-pull
 
   resources:
     limits:
@@ -129,14 +125,12 @@ apiServer:
 webhookReceiver:
   enabled: true
   replicas: 2
+  automountServiceAccountToken: true
 
   image:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"
     pullPolicy: Always
-
-  imagePullSecrets:
-    - name: ghcr-pull
 
   resources:
     limits:
@@ -154,14 +148,12 @@ webhookReceiver:
 repoServer:
   enabled: true
   replicas: 1
+  automountServiceAccountToken: true
 
   image:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"
     pullPolicy: Always
-
-  imagePullSecrets:
-    - name: ghcr-pull
 
   resources:
     limits:

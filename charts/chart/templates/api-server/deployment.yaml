@@ -34,7 +34,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ .Values.apiServer.automountServiceAccountToken | default false }}
       {{- with .Values.apiServer.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

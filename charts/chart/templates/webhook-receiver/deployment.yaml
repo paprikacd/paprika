@@ -34,7 +34,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ .Values.webhookReceiver.automountServiceAccountToken | default false }}
       {{- with .Values.webhookReceiver.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
