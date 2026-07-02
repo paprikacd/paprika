@@ -157,6 +157,11 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+          {{- if .Values.certManager.enable }}
+          - name: webhook-cert
+            mountPath: /tmp/k8s-webhook-server/serving-certs
+            readOnly: true
+          {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
@@ -165,4 +170,9 @@ spec:
         {{- end }}
       volumes:
         {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- if .Values.certManager.enable }}
+        - name: webhook-cert
+          secret:
+            secretName: webhook-server-cert
+        {{- end }}
 {{- end }}

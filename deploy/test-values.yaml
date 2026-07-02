@@ -187,9 +187,9 @@ otel:
 redis:
   enabled: false
 
-# ── TLS (disabled for e2e; cert-manager adds provisioning time) ───────────────
+# ── TLS (cert-manager required for controller-manager webhook TLS) ────────────
 certManager:
-  enable: false
+  enable: true
 
 mtls:
   enabled: false
