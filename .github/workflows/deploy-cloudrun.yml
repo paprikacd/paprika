@@ -46,7 +46,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy paprika-api-dev \
-            --image=ghcr.io/benebsworth/paprika:sha-${{ github.sha }} \
+            --image=ghcr.io/paprikacd/paprika:sha-${{ github.sha }} \
             --args="--mode=api,--k8s-api-server=${{ steps.gke-info.outputs.endpoint }}" \
             --region=${{ vars.CLOUDRUN_REGION }} \
             --service-account=${{ vars.CLOUDRUN_SA }} \

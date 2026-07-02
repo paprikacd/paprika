@@ -52,7 +52,7 @@ jobs:
       - name: Deploy via Helm
         run: |
           helm upgrade --install paprika-dev ./charts/chart \
-            --set image.repository=ghcr.io/benebsworth/paprika \
+            --set image.repository=ghcr.io/paprikacd/paprika \
             --set image.tag=sha-${{ github.sha }} \
             --set mode=operator \
             --wait \

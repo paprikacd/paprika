@@ -27,4 +27,5 @@
 bin/*
 Dockerfile.cross
 go.work
+.kubeconfig-e2e
 kubeconfig-e2e

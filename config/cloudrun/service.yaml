@@ -10,7 +10,7 @@ spec:
         autoscaling.knative.dev/minScale: "0"
     spec:
       containers:
-        - image: ghcr.io/benebsworth/paprika:latest
+        - image: ghcr.io/paprikacd/paprika:latest
           args:
             - --mode=api
           ports:

@@ -40,6 +40,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/benebsworth/paprika:latest
-            ghcr.io/benebsworth/paprika:sha-${{ github.sha }}
+            tags: |
+            ghcr.io/paprikacd/paprika:latest
+            ghcr.io/paprikacd/paprika:sha-${{ github.sha }}
