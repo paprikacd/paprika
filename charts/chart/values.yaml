@@ -921,8 +921,8 @@ hooks:
   preDeleteCleanup:
     enabled: false
     image:
-      repository: bitnami/kubectl
-      tag: "1.32"
+      repository: registry.k8s.io/kubectl
+      tag: "v1.32.0"
       pullPolicy: IfNotPresent
     # priorityClassName: ""
 
@@ -931,8 +931,8 @@ hooks:
     ## before the operator is upgraded. Requires ClusterRole permissions.
     enabled: true
     image:
-      repository: bitnami/kubectl
-      tag: "1.32"
+      repository: registry.k8s.io/kubectl
+      tag: "v1.32.0"
       pullPolicy: IfNotPresent
     ## Priority class for the hook pod (defaults to .priorityClassName)
     # priorityClassName: ""
