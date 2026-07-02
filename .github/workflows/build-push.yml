@@ -49,5 +49,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sleep 10
-          gh api -X PATCH "/orgs/paprikacd/packages/container/paprika" \
-            -f visibility=public
+          # Try org-scoped first, then repo-scoped, then user-scoped
+          for endpoint in \
+            "/orgs/paprikacd/packages/container/paprika" \
+            "/repos/paprikacd/paprika/packages/container/paprika"; do
+            echo "Trying: $endpoint"
+            response=$(gh api -X PATCH "$endpoint" -f visibility=public 2>&1) && {
+              echo "SUCCESS: $response"
+              exit 0
+            } || {
+              echo "FAILED: $response"
+            }
+          done
+          echo "All endpoints failed"
