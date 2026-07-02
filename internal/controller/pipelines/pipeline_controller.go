@@ -235,7 +235,7 @@ func isTerminalPipelinePhase(phase pipelinesv1alpha1.PipelinePhase) bool {
 
 func hashTuple(pipeline, step, output string) string {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(pipeline + "\x00" + step + "\x00" + output))
+	_, _ = h.Write([]byte(pipeline + "\x00" + step + "\x00" + output)) // hash.Hash.Write never returns an error
 	s := strconv.FormatUint(uint64(h.Sum32()), 36)
 	for len(s) < 4 {
 		s = "0" + s

@@ -6,6 +6,20 @@
 ##
 # fullnameOverride: ""
 
+## Common labels added to all resources. Useful for cost-centre, environment, team, etc.
+##
+# commonLabels:
+#   environment: production
+#   team: platform
+
+## Number of old ReplicaSets to retain. Defaults to 10 if unset.
+##
+# revisionHistoryLimit: 5
+
+## Pod priority class name for all components. Override per-component below.
+##
+# priorityClassName: production-high
+
 ## NetworkPolicy configuration.
 ##
 networkPolicy:
@@ -15,7 +29,11 @@ networkPolicy:
 ##
 webhook:
   enabled: true
-  port: 9443
+  port: 8080
+  service:
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    annotations: {}
 
 ## Configure the controller manager deployment
 ##
@@ -47,6 +65,9 @@ manager:
   ##
   podSecurityContext:
     runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
 
@@ -89,13 +110,22 @@ manager:
   #     maxSurge: 25%
   #     maxUnavailable: 25%
 
-  ## Priority class name
+  ## Priority class name (overrides global .priorityClassName)
   ##
   # priorityClassName: ""
 
   ## Topology spread constraints
   ##
   # topologySpreadConstraints: []
+
+  ## Service configuration (used for monolith / api-mode API service)
+  ##
+  service:
+    type: ClusterIP
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
   ## Termination grace period seconds
   ##
@@ -114,6 +144,20 @@ manager:
   # pod:
   #   labels: {}
   #   annotations: {}
+
+  ## Extra environment variables (value literals)
+  ##
+  # extraEnv:
+  #   - name: MY_VAR
+  #     value: my-value
+
+  ## Extra environment variables (from ConfigMap/Secret refs)
+  ##
+  # extraEnvFrom:
+  #   - configMapRef:
+  #       name: my-config
+  #   - secretRef:
+  #       name: my-secret
 
   ## Extra volumes and volume mounts
   ##
@@ -146,6 +190,17 @@ manager:
   pdb:
     enabled: false
     minAvailable: 1
+
+## Namespace configuration. Use with caution — the namespace is kept on uninstall
+## to avoid data loss. Set Pod Security Admission labels via .labels.
+##
+namespace:
+  create: false
+  labels:
+    # pod-security.kubernetes.io/enforce: restricted
+    # pod-security.kubernetes.io/audit: restricted
+    # pod-security.kubernetes.io/warn: restricted
+  annotations: {}
 
 # -- Deployment architecture: "monolith" (single pod with everything)
 # or "split" (separate controller-manager, api-server, webhook-receiver pods)
@@ -192,6 +247,12 @@ apiServer:
       cpu: 100m
       memory: 128Mi
 
+  extraEnv: []
+
+  extraEnvFrom: []
+
+  # priorityClassName: ""
+
   extraVolumes:
     - emptyDir: {}
       name: tmp
@@ -200,9 +261,61 @@ apiServer:
     - mountPath: /tmp
       name: tmp
 
+  ## Image pull secrets
+  ##
+  # imagePullSecrets:
+  #   - name: myregistrykey
+
+  ## Node selector (pins pods to specific node pools)
+  ##
+  nodeSelector: {}
+
+  ## Pod affinity / anti-affinity (recommended for HA)
+  ##
+  affinity: {}
+
+  ## Pod tolerations (tolerate spot/preemptible nodes)
+  ##
+  tolerations: []
+
+  ## Topology spread constraints (spread across zones)
+  ##
+  # topologySpreadConstraints: []
+
+  ## Termination grace period (seconds). Defaults to 30 if unset.
+  ##
+  # terminationGracePeriodSeconds: 20
+
+  ## Startup probe configures the kubelet startup check.
+  ## Disabled by default — configure if startup takes > 15s.
+  # startupProbe:
+  #   initialDelaySeconds: 10
+  #   periodSeconds: 10
+  #   failureThreshold: 6
+
   service:
     type: ClusterIP
     port: 3000
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+  ## Ingress for the API server (external access to UI + API).
+  ##
+  ingress:
+    enabled: false
+    # className: nginx
+    # hosts:
+    #   - host: paprika.example.com
+    #     paths:
+    #       - path: /
+    #         pathType: Prefix
+    # tls:
+    #   - hosts:
+    #       - paprika.example.com
+    #     secretName: paprika-tls
+    # annotations: {}
 
   hpa:
     enabled: false
@@ -232,8 +345,20 @@ webhookReceiver:
     # tag: ""
     pullPolicy: IfNotPresent
 
+  ## Image pull secrets
+  ##
+  # imagePullSecrets:
+  #   - name: myregistrykey
+
+  ## Configurable args (overrides)
+  ##
+  # args: []
+
   podSecurityContext:
     runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
 
@@ -252,6 +377,46 @@ webhookReceiver:
       cpu: 50m
       memory: 64Mi
 
+  extraEnv: []
+
+  extraEnvFrom: []
+
+  # priorityClassName: ""
+
+  ## Init containers (run before the main container)
+  ##
+  # initContainers:
+  #   - name: init-deps
+  #     image: busybox:1.36
+  #     command: ['sh', '-c', 'until nc -z redis 6379; do sleep 1; done']
+
+  ## Node selector (pins pods to specific node pools)
+  ##
+  nodeSelector: {}
+
+  ## Pod affinity / anti-affinity (recommended for HA)
+  ##
+  affinity: {}
+
+  ## Pod tolerations (tolerate spot/preemptible nodes)
+  ##
+  tolerations: []
+
+  ## Topology spread constraints (spread across zones)
+  ##
+  # topologySpreadConstraints: []
+
+  ## Termination grace period (seconds). Defaults to 30 if unset.
+  ##
+  # terminationGracePeriodSeconds: 20
+
+  ## Startup probe configures the kubelet startup check.
+  ## Disabled by default — configure if startup takes > 15s.
+  # startupProbe:
+  #   initialDelaySeconds: 10
+  #   periodSeconds: 10
+  #   failureThreshold: 6
+
   extraVolumes:
     - emptyDir: {}
       name: tmp
@@ -263,6 +428,10 @@ webhookReceiver:
   service:
     type: ClusterIP
     port: 8080
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
   hpa:
     enabled: false
@@ -305,6 +474,11 @@ repoServer:
     # tag: ""
     pullPolicy: IfNotPresent
 
+  ## Image pull secrets
+  ##
+  # imagePullSecrets:
+  #   - name: myregistrykey
+
   args:
     - --mode=repo-server
     - --ui-bind-address=:8082
@@ -312,6 +486,9 @@ repoServer:
 
   podSecurityContext:
     runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
 
@@ -330,6 +507,46 @@ repoServer:
       cpu: 250m
       memory: 512Mi
 
+  extraEnv: []
+
+  extraEnvFrom: []
+
+  # priorityClassName: ""
+
+  ## Init containers (run before the main container)
+  ##
+  # initContainers:
+  #   - name: init-deps
+  #     image: busybox:1.36
+  #     command: ['sh', '-c', 'until nc -z redis 6379; do sleep 1; done']
+
+  ## Node selector (pins pods to specific node pools)
+  ##
+  nodeSelector: {}
+
+  ## Pod affinity / anti-affinity (recommended for HA)
+  ##
+  affinity: {}
+
+  ## Pod tolerations (tolerate spot/preemptible nodes)
+  ##
+  tolerations: []
+
+  ## Topology spread constraints (spread across zones)
+  ##
+  # topologySpreadConstraints: []
+
+  ## Termination grace period (seconds). Defaults to 30 if unset.
+  ##
+  # terminationGracePeriodSeconds: 20
+
+  ## Startup probe configures the kubelet startup check.
+  ## Disabled by default — configure if startup takes > 15s.
+  # startupProbe:
+  #   initialDelaySeconds: 10
+  #   periodSeconds: 10
+  #   failureThreshold: 6
+
   extraVolumes:
     - emptyDir: {}
       name: tmp
@@ -341,6 +558,10 @@ repoServer:
   service:
     type: ClusterIP
     port: 8082
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
   hpa:
     enabled: false
@@ -375,6 +596,11 @@ agent:
     # tag: ""
     pullPolicy: IfNotPresent
 
+  ## Image pull secrets
+  ##
+  # imagePullSecrets:
+  #   - name: myregistrykey
+
   args:
     - --mode=agent
     - --ui-bind-address=:8083
@@ -382,8 +608,22 @@ agent:
 
   clusterID: ""
 
+  ## Termination grace period (seconds). Defaults to 30 if unset.
+  ##
+  # terminationGracePeriodSeconds: 20
+
+  ## Startup probe configures the kubelet startup check.
+  ## Disabled by default — configure if startup takes > 15s.
+  # startupProbe:
+  #   initialDelaySeconds: 10
+  #   periodSeconds: 10
+  #   failureThreshold: 6
+
   podSecurityContext:
     runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
     seccompProfile:
       type: RuntimeDefault
 
@@ -402,6 +642,19 @@ agent:
       cpu: 50m
       memory: 64Mi
 
+  extraEnv: []
+
+  extraEnvFrom: []
+
+  # priorityClassName: ""
+
+  ## Init containers (run before the main container)
+  ##
+  # initContainers:
+  #   - name: init-deps
+  #     image: busybox:1.36
+  #     command: ['sh', '-c', 'until nc -z redis 6379; do sleep 1; done']
+
   extraVolumes:
     - emptyDir: {}
       name: tmp
@@ -412,13 +665,19 @@ agent:
 
   service:
     type: ClusterIP
-    port: 8083
+    port: 3000
+    ## Service annotations (e.g., for AWS NLB, service mesh)
+    ##
+    # annotations:
+    #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
   nodeSelector: {}
 
   tolerations: []
 
   affinity: {}
+
+  topologySpreadConstraints: []
 
   vpa:
     enabled: false
@@ -430,16 +689,11 @@ auth:
   # -- Enable authentication and authorization for the API server
   enabled: false
 
-  # -- Allow unauthenticated requests when no credentials are provided
-  allowUnauthenticated: false
-
   ## HTTP Basic authentication
   ##
   basic:
     enabled: false
     username: ""
-    # -- Plain-text password (not recommended for production)
-    password: ""
     # -- SHA-256 hash of the password, hex-encoded
     passwordHash: ""
 
@@ -450,6 +704,10 @@ auth:
     issuerURL: ""
     clientID: ""
     clientSecret: ""
+    # -- Pull OIDC client secret from a Kubernetes Secret (e.g. managed by external-secrets).
+    # If set, takes precedence over .clientSecret.
+    # existingSecretName: ""
+    # existingSecretKey: "client-secret"
 
   ## RBAC authorization rules
   ## Subjects may be user names or "group:<group-name>".
@@ -527,6 +785,10 @@ metrics:
   serviceMonitor:
     enabled: false
     labels: {}
+    # Scrape interval (e.g. "30s")
+    interval: ""
+    # Scrape timeout (e.g. "10s")
+    scrapeTimeout: ""
 
 ## Cert-manager integration for TLS certificates.
 ## Required for webhook certificates and metrics endpoint certificates.
@@ -550,6 +812,10 @@ grafana:
     ##
     labelSelectors:
       grafana_dashboard: "1"
+    ## Key prefix for ConfigMap data keys (sidecar-specific). Some sidecars
+    ## require a specific prefix (e.g. "test-" or "data/") to detect JSON content.
+    ##
+    # configMapKeyPrefix: ""
 
 ## OpenTelemetry configuration
 ## Ref: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
@@ -607,6 +873,69 @@ velero:
   ## The Paprika release namespace is always included, and cluster-scoped CRDs are backed up
   ## so the custom resource definitions are restored before their instances.
   includeNamespaces: []
+
+## External secrets management.
+## Integrates with external-secrets operator (https://external-secrets.io) to
+## pull secrets from external providers (AWS Secrets Manager, GCP Secret Manager,
+## HashiCorp Vault, Azure Key Vault, etc.) instead of storing them in the cluster.
+## Requires the external-secrets operator to be installed.
+##
+externalSecrets:
+  enabled: false
+
+  ## Refresh interval for the ExternalSecret.
+  refreshInterval: "1h"
+
+  ## SecretStore to use. Either a ClusterSecretStore name or a namespaced SecretStore.
+  ## If storeRef.kind is not set, defaults to ClusterSecretStore.
+  storeRef:
+    name: ""
+    # kind: ClusterSecretStore
+
+  ## Secrets to manage via external-secrets. Each entry creates an ExternalSecret.
+  ## The resulting Secret is referenced by the component's existingSecretName fields.
+  ##
+  secrets:
+    ## Webhook secret pulled from external provider.
+    ## The resulting secret name is referenced via webhookReceiver.secret.existingSecretName.
+    ##
+    # - name: paprika-webhook-secret
+    #   remoteRef:
+    #     key: paprika/prod/webhook-secret
+    #     property: secret
+    #   targetKey: secret
+
+    ## OIDC client secret pulled from external provider.
+    ## The resulting secret name is referenced via auth.oidc.clientSecret.existingSecretName.
+    ##
+    # - name: paprika-oidc-secret
+    #   remoteRef:
+    #     key: paprika/prod/oidc-client-secret
+    #     property: client-secret
+
+## Helm lifecycle hooks. Hooks run as Jobs before/after install, upgrade, or delete.
+##
+hooks:
+  ## Pre-delete hook that cleans up all CRD instances before uninstall.
+  ## Prevents finalizer blocks and orphaned resources when the operator is removed.
+  preDeleteCleanup:
+    enabled: false
+    image:
+      repository: bitnami/kubectl
+      tag: "1.32"
+      pullPolicy: IfNotPresent
+    # priorityClassName: ""
+
+  crdCheck:
+    ## Pre-upgrade hook that validates CRD storage versions and existing resources
+    ## before the operator is upgraded. Requires ClusterRole permissions.
+    enabled: true
+    image:
+      repository: bitnami/kubectl
+      tag: "1.32"
+      pullPolicy: IfNotPresent
+    ## Priority class for the hook pod (defaults to .priorityClassName)
+    # priorityClassName: ""
 
 ## Mutual TLS for inter-service communication (split-plane mode).
 ## When enabled, renders cert-manager Certificates for each component's

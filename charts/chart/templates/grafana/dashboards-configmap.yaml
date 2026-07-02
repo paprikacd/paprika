@@ -1,0 +1,23 @@
+{{- if .Values.grafana.dashboards.enabled }}
+{{- range $path, $content := .Files.Glob "files/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" (printf "grafana-%s" ($path | base | trimSuffix ".json")) "context" $) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" $ }}
+    helm.sh/chart: {{ $.Chart.Name }}-{{ $.Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    {{- with $.Values.grafana.dashboards.labelSelectors }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  {{- $name := $path | base }}
+  {{- $prefix := $.Values.grafana.dashboards.configMapKeyPrefix | default "" }}
+  {{ $prefix }}{{ $name }}: |-
+{{ $content | toString | indent 4 }}
+{{- end }}
+{{- end }}

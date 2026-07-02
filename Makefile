@@ -370,6 +370,24 @@ helm-history: ## Show Helm release history.
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
+##@ E2E Testing
+
+.PHONY: e2e-up
+e2e-up: ## Provision VKE cluster and deploy Paprika chart
+	./hack/e2e-vultr.sh up
+
+.PHONY: e2e-test
+e2e-test: ## Run health checks against running cluster
+	./hack/e2e-vultr.sh test
+
+.PHONY: e2e-down
+e2e-down: ## Tear down cluster and chart
+	./hack/e2e-vultr.sh down
+
+.PHONY: e2e-ci
+e2e-ci: ## Full E2E pipeline: up -> test -> down
+	./hack/e2e-vultr.sh ci
+
 ##@ Kind Split-Plane
 
 KIND_CLUSTER_SPLIT ?= paprika-split

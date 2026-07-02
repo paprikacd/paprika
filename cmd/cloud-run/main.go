@@ -7,6 +7,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -73,7 +75,7 @@ func newScheme() *runtime.Scheme {
 }
 
 func main() {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseDevMode(false)))
 	setupLog := ctrl.Log.WithName("setup")
 
 	if err := metrics.RegisterCollectors(crmetrics.Registry); err != nil {
@@ -101,17 +103,15 @@ func run(setupLog logr.Logger) error {
 		authEnabled                                                 bool
 		authBasicUsername, authBasicPassword, authBasicPasswordHash string
 		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret   string
-		authAllowUnauth                                             bool
 	)
 
 	flag.BoolVar(&authEnabled, "auth-enabled", false, "Enable authentication.")
 	flag.StringVar(&authBasicUsername, "auth-basic-username", "", "Basic auth username.")
-	flag.StringVar(&authBasicPassword, "auth-basic-password", "", "Basic auth password.")
+	flag.StringVar(&authBasicPassword, "auth-basic-password", "", "Basic auth password (deprecated: use --auth-basic-password-hash instead).")
 	flag.StringVar(&authBasicPasswordHash, "auth-basic-password-hash", "", "Basic auth SHA-256 hash.")
 	flag.StringVar(&authOIDCIssuerURL, "auth-oidc-issuer-url", "", "OIDC issuer URL.")
 	flag.StringVar(&authOIDCClientID, "auth-oidc-client-id", "", "OIDC client ID.")
-	flag.StringVar(&authOIDCClientSecret, "auth-oidc-client-secret", "", "OIDC client secret.")
-	flag.BoolVar(&authAllowUnauth, "auth-allow-unauthenticated", false, "Allow unauthenticated requests.")
+	flag.StringVar(&authOIDCClientSecret, "auth-oidc-client-secret", "", "OIDC client secret. Prefer setting via env var to avoid process-list exposure.")
 	flag.Parse()
 
 	if port == "" {
@@ -144,7 +144,7 @@ func run(setupLog logr.Logger) error {
 		setupLog.Info("OpenTelemetry tracing enabled")
 		// Bridge zap logs to the OTel Logs signal (otelzap) so every record is
 		// forwarded to the configured OTLP backend alongside traces/metrics.
-		raw := zap.NewRaw(zap.UseDevMode(true))
+		raw := zap.NewRaw(zap.UseDevMode(false))
 		ctrl.SetLogger(zapr.NewLogger(bridgeZapWithOTel(raw, telemetry)))
 		setupLog = ctrl.Log.WithName("setup")
 	}
@@ -183,7 +183,7 @@ func run(setupLog logr.Logger) error {
 	}
 
 	authCfg := buildAuthConfig(authEnabled, authBasicUsername, authBasicPassword, authBasicPasswordHash,
-		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret, authAllowUnauth)
+		authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret)
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, k8sClient)
 	if err != nil {
 		return fmt.Errorf("build auth interceptor: %w", err)
@@ -207,7 +207,11 @@ func run(setupLog logr.Logger) error {
 		return fmt.Errorf("otelconnect interceptor: %w", err)
 	}
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
+	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
+		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithReadMaxBytes(maxMsgBytes),
+	)
 
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
@@ -384,19 +388,23 @@ func healthzHandler(setupLog logr.Logger) http.HandlerFunc {
 	}
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, allowUnauth bool) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string) auth.Config {
 	cfg := auth.Config{
-		Enabled:     enabled,
-		AllowUnauth: allowUnauth,
+		Enabled: enabled,
 	}
 	if !enabled {
 		return cfg
 	}
 	if basicUsername != "" {
+		// If a plain-text password is provided (deprecated), hash it at startup.
+		passHash := basicPasswordHash
+		if passHash == "" && basicPassword != "" {
+			h := sha256.Sum256([]byte(basicPassword))
+			passHash = hex.EncodeToString(h[:])
+		}
 		cfg.BasicAuth = &auth.BasicAuthConfig{
 			Username:     basicUsername,
-			Password:     basicPassword,
-			PasswordHash: basicPasswordHash,
+			PasswordHash: passHash,
 		}
 	}
 	if oidcIssuerURL != "" {

@@ -9,9 +9,15 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: paprika
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "redis" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- with $.Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   replicas: 1
   selector:
     matchLabels:
@@ -26,15 +32,37 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
         app.kubernetes.io/part-of: paprika
+        {{- range $k, $v := $.Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.redis.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
+      {{- $pc := $.Values.redis.priorityClassName | default $.Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
         seccompProfile:
           type: RuntimeDefault
+      {{- with $.Values.redis.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
         - /usr/local/etc/redis/redis.conf
         image: redis:7-alpine
+        {{- with $.Values.redis.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         livenessProbe:
           initialDelaySeconds: 10
           periodSeconds: 10

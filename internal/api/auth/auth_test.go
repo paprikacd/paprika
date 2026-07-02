@@ -75,7 +75,7 @@ func TestBasicAuthenticator(t *testing.T) {
 
 func TestBasicAuthenticator_MissingUsername(t *testing.T) {
 	t.Parallel()
-	_, err := NewBasicAuthenticator(BasicAuthConfig{Password: "x"})
+	_, err := NewBasicAuthenticator(BasicAuthConfig{PasswordHash: "x"})
 	assert.Error(t, err)
 }
 
@@ -151,6 +151,12 @@ func TestAllowAllAuthorizer(t *testing.T) {
 	assert.NoError(t, authz.Authorize(context.Background(), &Principal{}, ActionAdmin, ResourceApplications, "*", ""))
 }
 
+func TestDenyAllAuthorizer(t *testing.T) {
+	t.Parallel()
+	authz := &DenyAllAuthorizer{}
+	assert.Error(t, authz.Authorize(context.Background(), &Principal{}, ActionRead, ResourceApplications, "", ""))
+}
+
 func TestClassify(t *testing.T) {
 	t.Parallel()
 	action, resource := classify("/paprika.v1.PaprikaService/ListApplications")
@@ -195,6 +201,9 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 			Username:     testUsername,
 			PasswordHash: hex.EncodeToString(h[:]),
 		},
+		RBACRules: []RBACRule{
+			{Subjects: []string{"*"}, Actions: []string{"*"}, Resources: []string{"*"}, Namespaces: []string{"*"}},
+		},
 	}, nil)
 	require.NoError(t, err)
 
@@ -216,11 +225,13 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 
 func TestInterceptor_Unauthenticated(t *testing.T) {
 	t.Parallel()
+	h := sha256.Sum256([]byte(testPassword))
+	ph := hex.EncodeToString(h[:])
 	interceptor, err := Interceptor(context.Background(), Config{
 		Enabled: true,
 		BasicAuth: &BasicAuthConfig{
-			Username: testUsername,
-			Password: testPassword,
+			Username:     testUsername,
+			PasswordHash: ph,
 		},
 	}, nil)
 	require.NoError(t, err)

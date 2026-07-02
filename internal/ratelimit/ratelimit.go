@@ -214,6 +214,7 @@ func (g *GlobalLimiter) Allow() bool {
 
 // Backoff provides exponential backoff with jitter for retries.
 type Backoff struct {
+	mu          sync.Mutex
 	minDelay    time.Duration
 	maxDelay    time.Duration
 	multiplier  float64
@@ -235,6 +236,8 @@ func NewBackoff(minDelay, maxDelay time.Duration, maxAttempts int) *Backoff {
 
 // Next returns the next backoff duration and whether max attempts reached.
 func (b *Backoff) Next() (time.Duration, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if b.attempt >= b.maxAttempts {
 		return b.maxDelay, true
 	}
@@ -264,11 +267,15 @@ func cryptoFloat64() float64 {
 
 // Reset resets the backoff to initial state.
 func (b *Backoff) Reset() {
+	b.mu.Lock()
 	b.attempt = 0
+	b.mu.Unlock()
 }
 
 // Attempt returns the current attempt number.
 func (b *Backoff) Attempt() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return b.attempt
 }
 

@@ -3,6 +3,7 @@ package hooks
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,14 +14,17 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
+var (
+	completionMu    sync.RWMutex
+	completionRegistry = map[string]CompletionFunc{}
+)
+
 // CompletionFunc reports whether a hook resource has reached a terminal
 // state. Returns (done, succeeded, message, err). When done is false, the
 // controller should re-check on the next reconcile. When done is true,
 // succeeded indicates whether the hook succeeded; message is human-readable
 // status text.
 type CompletionFunc func(ctx context.Context, client dynamic.Interface, ns, name string) (done, succeeded bool, message string, err error)
-
-var completionRegistry = map[string]CompletionFunc{}
 
 func init() {
 	RegisterCompletionChecker("batch/v1, Kind=Job", jobCompletion)
@@ -30,13 +34,18 @@ func init() {
 // RegisterCompletionChecker registers a completion checker for a GVK string
 // formatted as "group/version, Kind=kind" (the format GVK.String() produces).
 func RegisterCompletionChecker(gvk string, fn CompletionFunc) {
+	completionMu.Lock()
 	completionRegistry[gvk] = fn
+	completionMu.Unlock()
 }
 
 // CompletionFor returns the registered checker for the given GVK, or nil
 // (meaning "fire-and-forget" — creation is considered completion).
 func CompletionFor(gvk string) CompletionFunc {
-	return completionRegistry[gvk]
+	completionMu.RLock()
+	fn := completionRegistry[gvk]
+	completionMu.RUnlock()
+	return fn
 }
 
 // jobCompletion fetches a Job and checks its status.conditions / succeeded/failed counts.

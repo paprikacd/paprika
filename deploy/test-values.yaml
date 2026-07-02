@@ -1,0 +1,213 @@
+# =============================================================================
+# Paprika — E2E test values for Vultr Kubernetes Engine (VKE)
+# =============================================================================
+# Used by hack/e2e-vultr.sh. Enables a representative subset of features
+# to validate chart correctness, health probes, and the UI.
+# =============================================================================
+
+# ── Global ────────────────────────────────────────────────────────────────────
+commonLabels:
+  environment: e2e
+  test-suite: paprika-e2e
+
+revisionHistoryLimit: 2
+
+deploymentMode: "split"
+mode: "operator"
+
+# ── Metrics / Prometheus ──────────────────────────────────────────────────────
+metrics:
+  enable: true
+  port: 8443
+  secure: false
+  bindAddress: ":8080"
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+prometheus:
+  enable: true
+  rules:
+    enabled: true
+
+grafana:
+  dashboards:
+    enabled: true
+    labelSelectors:
+      grafana_dashboard: "1"
+    configMapKeyPrefix: "data/"
+
+# ── Controller manager ────────────────────────────────────────────────────────
+manager:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: ghcr.io/benebsworth/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  # imagePullSecrets:
+  #   - name: ghcr-pull
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  terminationGracePeriodSeconds: 30
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Spread pods across nodes
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: controller-manager
+
+# ── API server (split-mode) ───────────────────────────────────────────────────
+apiServer:
+  replicas: 2
+
+  image:
+    repository: ghcr.io/benebsworth/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  terminationGracePeriodSeconds: 20
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Expose via LoadBalancer so the test harness can reach the UI
+  service:
+    type: LoadBalancer
+    port: 3000
+
+  ingress:
+    enabled: false
+
+# ── Webhook receiver (split-mode) ─────────────────────────────────────────────
+webhookReceiver:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: ghcr.io/benebsworth/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# ── Repo server ───────────────────────────────────────────────────────────────
+repoServer:
+  enabled: true
+  replicas: 1
+
+  image:
+    repository: ghcr.io/benebsworth/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# ── Agent (disabled for e2e; needs remote cluster) ────────────────────────────
+agent:
+  enabled: false
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+auth:
+  enabled: false
+
+rbac:
+  helpers:
+    enable: false
+
+# ── Audit ─────────────────────────────────────────────────────────────────────
+audit:
+  enabled: true
+
+# ── OpenTelemetry ─────────────────────────────────────────────────────────────
+otel:
+  enabled: false
+
+# ── Cache (Redis disabled; uses in-memory cache for e2e) ──────────────────────
+redis:
+  enabled: false
+
+# ── TLS (disabled for e2e; cert-manager adds provisioning time) ───────────────
+certManager:
+  enable: false
+
+mtls:
+  enabled: false
+
+# ── Network policies ──────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: false
+
+# ── PSA ───────────────────────────────────────────────────────────────────────
+namespace:
+  create: false
+
+# ── Velero backup (disabled for e2e) ──────────────────────────────────────────
+velero:
+  enabled: false
+
+# ── Hooks ─────────────────────────────────────────────────────────────────────
+hooks:
+  crdCheck:
+    enabled: true
+  preDeleteCleanup:
+    enabled: false

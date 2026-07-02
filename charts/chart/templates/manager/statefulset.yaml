@@ -8,9 +8,15 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     control-plane: controller-manager
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- with .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   serviceName: {{ .Values.manager.sharding.serviceName }}
   replicas: {{ .Values.manager.sharding.replicas }}
   selector:
@@ -27,8 +33,39 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
         control-plane: controller-manager
+        {{- range $k, $v := $.Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: false
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      {{- $pc := .Values.manager.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
+      {{- with .Values.manager.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
         {{- if .Values.metrics.enable }}
@@ -74,9 +111,20 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- with $.Values.manager.extraEnv }}
+        {{- include "paprika.extraEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with $.Values.manager.extraEnvFrom }}
+        envFrom:
+        {{- include "paprika.extraEnvFrom" . | nindent 8 }}
+        {{- end }}
         image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with $.Values.manager.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         livenessProbe:
           httpGet:

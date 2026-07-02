@@ -2,14 +2,49 @@ Thank you for installing {{ .Chart.Name }}.
 
 Your release is named {{ .Release.Name }}.
 
-The controller and CRDs have been installed in namespace {{ .Release.Namespace }}.
+The controller and CRDs have been installed in namespace {{ .Release.Namespace }}{{ if .Values.velero.enabled }}.
+Velero backup schedule created: {{ .Values.velero.schedule }}{{ end }}.
 
-To verify the installation:
+== Verify ==
 
   kubectl get pods -n {{ .Release.Namespace }}
-  kubectl get customresourcedefinitions
+  kubectl get paprika applications -A
+  helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
 
-To learn more about the release, try:
+== Upgrade ==
 
-  $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
-  $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}
+  helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }} \
+    --values my-values.yaml
+
+CRDs are upgraded automatically with the chart. On schema changes, existing
+resources are converted by the CRD storage version migration (handled by
+the API server — no manual intervention needed).{{ if .Values.velero.enabled }}
+
+== Backup ==
+
+Velero backup schedule is active. To trigger an immediate backup:
+
+  velero backup create --from-schedule {{ include "paprika.resourceName" (dict "suffix" "backup" "context" $) }} -n {{ .Values.velero.namespace }}
+
+To restore:
+
+  velero restore create --from-backup <backup-name> --namespace-mappings {{ .Release.Namespace }}:<new-ns>
+
+See https://velero.io/docs/ for detailed restore options.{{ end }}
+
+== Debug ==
+
+  # Controller logs
+  kubectl logs -n {{ .Release.Namespace }} deployment/{{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }} -c manager
+
+  # API server logs (split mode)
+  kubectl logs -n {{ .Release.Namespace }} deployment/{{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }} -c api-server
+
+  # Webhook logs (split mode)
+  kubectl logs -n {{ .Release.Namespace }} deployment/{{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }} -c webhook-receiver
+
+  # Describe a release
+  kubectl describe release -n <namespace> <release-name>
+
+  # Get all Paprika resources
+  kubectl get applications,releases,pipelines,stages -A

@@ -811,7 +811,7 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 		log.Info("Applied rendered manifests to cluster", "stage", stage.Name, "bytes", len(manifests))
 	} else {
 		if err := r.executeHookPhases(ctx, release, stage, manifests, manifestObjects, log); err != nil {
-			return err
+			return fmt.Errorf("execute hook phases: %w", err)
 		}
 	}
 
@@ -1465,7 +1465,7 @@ func (r *ReleaseReconciler) executeHooks(
 		switch {
 		case hs == nil:
 			if err := r.applyNewHook(ctx, dynClient, release, idx, res, phase, timeout); err != nil {
-				return err
+				return fmt.Errorf("apply new hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
 			}
 		case hs.Status == hookStatusSucceeded:
 			continue
@@ -1474,7 +1474,7 @@ func (r *ReleaseReconciler) executeHooks(
 				obj.GetKind(), obj.GetName(), phase, hs.Status, hs.Message)
 		case hs.Status == hookStatusRunning:
 			if err := r.pollRunningHook(ctx, dynClient, release, idx, hs, obj, phase, timeout); err != nil {
-				return err
+				return fmt.Errorf("poll running hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
 			}
 		default:
 			return fmt.Errorf("hook %s/%s phase %s in unknown status %q",

@@ -34,7 +34,12 @@ func (h *SSEHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// Set CORS to request origin (not wildcard) to avoid exposing SSE events
+	// to any cross-origin site. Falls back to same-origin if header is empty.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+	w.Header().Set("Vary", "Origin")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

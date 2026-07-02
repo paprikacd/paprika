@@ -8,9 +8,15 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: api-server
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "api-server" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- with .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   replicas: {{ .Values.apiServer.replicas }}
   selector:
     matchLabels:
@@ -24,13 +30,40 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
         app.kubernetes.io/component: api-server
+        {{- range $k, $v := .Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: false
+      {{- with .Values.apiServer.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiServer.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.apiServer.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.apiServer.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.apiServer.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.apiServer.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       securityContext:
         {{- if .Values.apiServer.podSecurityContext }}
         {{- toYaml .Values.apiServer.podSecurityContext | nindent 8 }}
         {{- else }}
         {}
         {{- end }}
+      {{- with .Values.apiServer.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
         - --mode=api
@@ -45,6 +78,10 @@ spec:
         image: "{{ .Values.apiServer.image.repository }}{{- if not (contains "@" .Values.apiServer.image.repository) }}:{{ .Values.apiServer.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.apiServer.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with .Values.apiServer.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         livenessProbe:
           httpGet:
@@ -108,6 +145,13 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- with .Values.apiServer.extraEnv }}
+        {{- include "paprika.extraEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.apiServer.extraEnvFrom }}
+        envFrom:
+        {{- include "paprika.extraEnvFrom" . | nindent 8 }}
+        {{- end }}
       securityContext:
         {{- if .Values.apiServer.podSecurityContext }}
         {{- toYaml .Values.apiServer.podSecurityContext | nindent 8 }}
@@ -115,6 +159,10 @@ spec:
         {}
         {{- end }}
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      {{- $pc := .Values.apiServer.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
       volumes:
         {{- toYaml .Values.apiServer.extraVolumes | nindent 8 }}
         {{- if .Values.mtls.enabled }}

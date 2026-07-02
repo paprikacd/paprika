@@ -1,20 +1,22 @@
+{{- if .Values.namespace.create }}
 apiVersion: v1
-data:
-  redis.conf: |
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
-    save ""
-kind: ConfigMap
+kind: Namespace
 metadata:
+  name: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/resource-policy": keep
+    {{- with .Values.namespace.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   labels:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: cache
-    app.kubernetes.io/part-of: paprika
     {{- range $k, $v := .Values.commonLabels }}
     {{ $k }}: {{ $v | quote }}
     {{- end }}
-  name: {{ include "paprika.resourceName" (dict "suffix" "redis-config" "context" $) }}
-  namespace: {{ .Release.Namespace }}
+    {{- with .Values.namespace.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

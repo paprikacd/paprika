@@ -46,8 +46,10 @@ func NewBroker(log logr.Logger) *Broker {
 }
 
 // NewRedisBroker creates a broker backed by Redis pub/sub for cross-instance fan-out.
-// The broker runs until Close is called. To tie the broker lifecycle to a parent
-// context, use NewRedisBrokerWithContext.
+// The broker runs until Close is called.
+//
+// Deprecated: use NewRedisBrokerWithContext so the receive loop stops when the
+// parent context is cancelled.
 func NewRedisBroker(client redis.UniversalClient, log logr.Logger) (*Broker, error) {
 	return NewRedisBrokerWithContext(context.Background(), client, log)
 }
@@ -158,10 +160,12 @@ func (b *Broker) Publish(ctx context.Context, topic string, event *Event) {
 	b.publishLocal(topic, event)
 	if b.redis != nil {
 		data, err := json.Marshal(event)
-		if err == nil {
-			if err := b.redis.Publish(ctx, topic, data).Err(); err != nil {
-				b.log.Error(err, "Failed to publish event to Redis", "topic", topic)
-			}
+		if err != nil {
+			b.log.Error(err, "Failed to marshal event for Redis publish", "topic", topic)
+			return
+		}
+		if err := b.redis.Publish(ctx, topic, data).Err(); err != nil {
+			b.log.Error(err, "Failed to publish event to Redis", "topic", topic)
 		}
 	}
 }
@@ -208,25 +212,34 @@ func (b *Broker) receiveLoop(ctx context.Context) {
 // Close closes all subscriber channels and Redis connections.
 func (b *Broker) Close() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	if b.closed {
+		b.mu.Unlock()
 		return
 	}
 	b.closed = true
-	if b.cancel != nil {
-		b.cancel()
+	// Capture cancel and pubsub under the lock but release before calling them
+	// to avoid a potential deadlock with receiveLoop (which acquires RLock).
+	cancel := b.cancel
+	b.cancel = nil
+	pubsub := b.pubsub
+	b.pubsub = nil
+	subs := b.subscribers
+	b.subscribers = make(map[string][]chan *Event)
+	b.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
-	if b.pubsub != nil {
-		if err := b.pubsub.Close(); err != nil {
+	if pubsub != nil {
+		if err := pubsub.Close(); err != nil {
 			b.log.Error(err, "Failed to close Redis pubsub")
 		}
 	}
-	for _, subs := range b.subscribers {
-		for _, ch := range subs {
+	for _, chans := range subs {
+		for _, ch := range chans {
 			close(ch)
 		}
 	}
-	b.subscribers = make(map[string][]chan *Event)
 }
 
 // Topics returns the list of active topics.

@@ -13,11 +13,10 @@ import (
 
 // Config combines authentication and authorization configuration.
 type Config struct {
-	Enabled     bool
-	BasicAuth   *BasicAuthConfig
-	OIDC        *OIDCConfig
-	RBACRules   []RBACRule
-	AllowUnauth bool
+	Enabled   bool
+	BasicAuth *BasicAuthConfig
+	OIDC      *OIDCConfig
+	RBACRules []RBACRule
 }
 
 // Interceptor creates a connect.UnaryInterceptorFunc from auth config.
@@ -40,13 +39,10 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 				ctx = context.WithValue(ctx, requestContextKey{}, httpReq)
 			}
 
-			principal, err := authn.Authenticate(ctx)
-			if err != nil {
-				if cfg.AllowUnauth {
-					return next(ctx, req)
-				}
-				return nil, connect.NewError(connect.CodeUnauthenticated, err)
-			}
+		principal, err := authn.Authenticate(ctx)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeUnauthenticated, err)
+		}
 
 			ctx = WithPrincipal(ctx, principal)
 
@@ -104,7 +100,11 @@ func BuildAuthorizer(cfg Config, reader client.Reader) (Authorizer, error) {
 		authorizers = append(authorizers, NewProjectAuthorizer(reader))
 	}
 	if len(authorizers) == 0 {
-		return &AllowAllAuthorizer{}, nil
+		// This should never happen when auth is enabled — the caller should
+		// have configured at least RBAC rules or a project-scoped authorizer.
+		// Fall back to a DenyAll authorizer so that silence does not mean
+		// "allow".
+		return &DenyAllAuthorizer{}, nil
 	}
 	return &multiAuthorizer{authorizers: authorizers}, nil
 }

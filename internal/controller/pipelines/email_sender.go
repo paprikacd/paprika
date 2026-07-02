@@ -3,6 +3,7 @@ package pipelines
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -75,6 +76,9 @@ func (s *EmailSender) Send(ctx context.Context, to, subject, body string) error 
 		if err := client.StartTLS(s.tlsConfig(host)); err != nil {
 			return fmt.Errorf("starttls: %w", err)
 		}
+	} else if s.Auth != nil {
+		closeSMTPConn(ctx, client, "SMTP client (cleartext-refused)")
+		return errors.New("smtp server does not support STARTTLS; refusing to send credentials in cleartext")
 	}
 	return sendWithClient(ctx, client, s.Auth, s.SMTP.From, []string{to}, msg)
 }

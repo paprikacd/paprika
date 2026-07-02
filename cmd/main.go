@@ -19,6 +19,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -99,7 +101,7 @@ type cliConfig struct {
 	shardIDSource                                                 string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
-	authEnabled, authAllowUnauth, enableWebhooks                  bool
+	authEnabled, enableWebhooks                                    bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
 	coordinatorMode                                               bool
@@ -252,7 +254,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.authBasicUsername, "auth-basic-username", "",
 		"Basic auth username. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authBasicPassword, "auth-basic-password", "",
-		"Basic auth plain-text password. Only used when --auth-enabled=true and --auth-basic-password-hash is empty.")
+		"Basic auth plain-text password (deprecated: use --auth-basic-password-hash instead).")
 	fs.StringVar(&cfg.authBasicPasswordHash, "auth-basic-password-hash", "",
 		"Basic auth SHA-256 password hash (hex). Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCIssuerURL, "auth-oidc-issuer-url", "",
@@ -260,9 +262,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.authOIDCClientID, "auth-oidc-client-id", "",
 		"OIDC client ID. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
-		"OIDC client secret. Only used when --auth-enabled=true.")
-	fs.BoolVar(&cfg.authAllowUnauth, "auth-allow-unauthenticated", false,
-		"Allow unauthenticated requests through when no credentials are provided. Only used when --auth-enabled=true.")
+		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
 
 	cfg.webhookSecret = getenv("PAPRIKA_WEBHOOK_SECRET")
 	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
@@ -294,7 +294,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 
 	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 
-	cfg.zapOptions = zap.Options{Development: true}
+	cfg.zapOptions = zap.Options{Development: false}
 	cfg.zapOptions.BindFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
@@ -348,7 +348,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authRBACRules, setupLog)
 	authInterceptor, err := auth.Interceptor(apiCtx, authCfg, apiClient)
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -375,7 +375,11 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return fmt.Errorf("otelconnect interceptor: %w", err)
 	}
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
+	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
+		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithReadMaxBytes(maxMsgBytes),
+	)
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
 	if muxErr != nil {
@@ -409,11 +413,8 @@ func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, se
 		}
 		return nil
 	}
-	defer func() {
-		if closeErr := cacheClient.Close(); closeErr != nil {
-			setupLog.Error(closeErr, "Failed to close webhook cache client")
-		}
-	}()
+	// Intentionally NOT deferring cacheClient.Close() here — the returned
+	// Invalidator wraps the client and its lifetime is managed by the caller.
 	return cache.NewInvalidator(cacheClient)
 }
 
@@ -753,19 +754,24 @@ func newCacheFromConfig(ctx context.Context, cacheCfg cache.Config, setupLog log
 	return c, nil
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, allowUnauth bool, rbacRules string, log logr.Logger) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, rbacRules string, log logr.Logger) auth.Config {
 	cfg := auth.Config{
-		Enabled:     enabled,
-		AllowUnauth: allowUnauth,
+		Enabled: enabled,
 	}
 	if !enabled {
 		return cfg
 	}
 	if basicUsername != "" {
+		// If a plain-text password is provided (deprecated), hash it at startup.
+		// This is not ideal — prefer pre-computing the hash.
+		passHash := basicPasswordHash
+		if passHash == "" && basicPassword != "" {
+			h := sha256.Sum256([]byte(basicPassword))
+			passHash = hex.EncodeToString(h[:])
+		}
 		cfg.BasicAuth = &auth.BasicAuthConfig{
 			Username:     basicUsername,
-			Password:     basicPassword,
-			PasswordHash: basicPasswordHash,
+			PasswordHash: passHash,
 		}
 	}
 	if oidcIssuerURL != "" {

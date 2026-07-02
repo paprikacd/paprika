@@ -260,7 +260,7 @@ func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setup
 
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authRBACRules, setupLog)
 
 	resolver := governance.NewProjectResolver(mgr.GetClient())
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
@@ -447,7 +447,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 		return nil, fmt.Errorf("otelconnect interceptor: %w", err)
 	}
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
+	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
+		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithReadMaxBytes(maxMsgBytes),
+	)
 
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
