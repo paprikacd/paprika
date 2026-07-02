@@ -43,3 +43,11 @@ jobs:
           tags: |
             ghcr.io/paprikacd/paprika:latest
             ghcr.io/paprikacd/paprika:sha-${{ github.sha }}
+
+      - name: Make package public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sleep 10
+          gh api -X PATCH "/orgs/paprikacd/packages/container/paprika" \
+            -f visibility=public

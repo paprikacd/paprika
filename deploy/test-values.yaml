@@ -36,7 +36,7 @@ grafana:
     enabled: true
     labelSelectors:
       grafana_dashboard: "1"
-    configMapKeyPrefix: "data/"
+    configMapKeyPrefix: "data-"
 
 # ── Controller manager ────────────────────────────────────────────────────────
 manager:
@@ -48,8 +48,8 @@ manager:
     tag: "latest"
     pullPolicy: Always
 
-  # imagePullSecrets:
-  #   - name: ghcr-pull
+  imagePullSecrets:
+    - name: ghcr-pull
 
   podSecurityContext:
     runAsNonRoot: true
@@ -100,6 +100,9 @@ apiServer:
     tag: "latest"
     pullPolicy: Always
 
+  imagePullSecrets:
+    - name: ghcr-pull
+
   resources:
     limits:
       cpu: 500m
@@ -132,6 +135,9 @@ webhookReceiver:
     tag: "latest"
     pullPolicy: Always
 
+  imagePullSecrets:
+    - name: ghcr-pull
+
   resources:
     limits:
       cpu: 200m
@@ -153,6 +159,9 @@ repoServer:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"
     pullPolicy: Always
+
+  imagePullSecrets:
+    - name: ghcr-pull
 
   resources:
     limits:
