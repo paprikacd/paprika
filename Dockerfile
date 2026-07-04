@@ -1,8 +1,15 @@
 # Build the UI static export
 FROM node:26-alpine AS ui-builder
 WORKDIR /ui
+
+# Install deps first (layer cached unless package.json changes)
+COPY ui/package*.json ui/tsconfig*.json ./
+COPY ui/next.config.* ./
+RUN npm ci
+
+# Build the UI
 COPY ui/ .
-RUN npm ci && npm run build
+RUN npm run build
 
 # Build the manager binary
 FROM golang:1.26 AS builder

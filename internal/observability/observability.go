@@ -485,7 +485,7 @@ func (e *EventRecorder) Normal(obj runtime.Object, reason, message string) {
 	if e.recorder == nil {
 		return
 	}
-	e.recorder.Eventf(obj, corev1.EventTypeNormal, reason, message)
+	e.recorder.Event(obj, corev1.EventTypeNormal, reason, message)
 }
 
 // Warning records a warning event.
@@ -493,7 +493,7 @@ func (e *EventRecorder) Warning(obj runtime.Object, reason, message string) {
 	if e.recorder == nil {
 		return
 	}
-	e.recorder.Eventf(obj, corev1.EventTypeWarning, reason, message)
+	e.recorder.Event(obj, corev1.EventTypeWarning, reason, message)
 }
 
 // AuditLogger records audit events to stdout.

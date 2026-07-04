@@ -1,0 +1,83 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: paprika
+
+build:
+  artifacts:
+    - image: ghcr.io/paprikacd/paprika
+      docker:
+        dockerfile: Dockerfile
+      hooks:
+        before:
+          - command:
+              - sh
+              - -c
+              - "cd ui && npm ci 2>/dev/null && npm run build"
+            os: [darwin, linux]
+  local:
+    push: false
+    useDockerCLI: true
+    concurrency: 1
+
+deploy:
+  helm:
+    releases:
+      - name: paprika-dev
+        chartPath: charts/chart
+        namespace: paprika-system
+        createNamespace: true
+        wait: true
+        timeout: 5m
+        artifactOverrides:
+          image.repository: ghcr.io/paprikacd/paprika
+          image.tag: latest
+        setValues:
+          mode: operator
+        setValueTemplates:
+          manager.image.repository: "{{ .IMAGE_REPO ghcr.io/paprikacd/paprika }}"
+          manager.image.tag: "{{ .DIGEST_HEX }}"
+
+portForward:
+  - resourceType: service
+    resourceName: paprika-dev-paprika-api-server
+    namespace: paprika-system
+    port: 3000
+    localPort: 3000
+
+profiles:
+  - name: kind
+    build:
+      artifacts:
+        - image: paprika-split-manager
+          docker:
+            dockerfile: Dockerfile
+      local:
+        push: false
+    deploy:
+      helm:
+        releases:
+          - name: paprika-split
+            chartPath: charts/chart
+            namespace: paprika-system
+            createNamespace: true
+            setValues:
+              mode: operator
+            setValueTemplates:
+              manager.image.repository: "{{ .IMAGE_REPO paprika-split-manager }}"
+              manager.image.tag: "{{ .DIGEST_HEX }}"
+
+  - name: vke
+    build:
+      local:
+        push: true
+    deploy:
+      helm:
+        releases:
+          - name: paprika-e2e
+            chartPath: charts/chart
+            namespace: paprika-e2e
+            valuesFiles:
+              - deploy/test-values.yaml
+            setValueTemplates:
+              image.tag: "{{ .DIGEST_HEX }}"

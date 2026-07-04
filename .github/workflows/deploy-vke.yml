@@ -1,0 +1,186 @@
+name: Deploy VKE
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Image tag or ref to deploy (default: latest)'
+        required: false
+        default: 'latest'
+      retain_cluster:
+        description: 'Keep VKE cluster running after validation'
+        required: false
+        default: 'true'
+  workflow_run:
+    workflows: [Build & Push]
+    types: [completed]
+    branches: [master]
+
+concurrency: deploy-vke
+
+permissions:
+  contents: read
+
+env:
+  VKE_NAMESPACE: paprika-e2e
+  HELM_RELEASE: paprika-e2e
+  HELM_CHART: charts/chart
+  TEST_VALUES: deploy/test-values.yaml
+
+jobs:
+  deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master')
+    name: Deploy and validate on VKE
+    runs-on: ubuntu-latest
+    environment: vke-production
+    env:
+      IMAGE_TAG: >-
+        ${{
+          github.event_name == 'workflow_dispatch'
+          && inputs.ref
+          || format('sha-{0}', github.event.workflow_run.head_sha)
+        }}
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+        with:
+          version: latest
+
+      - name: Setup kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.VKE_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Deploy Paprika chart
+        run: |
+          helm upgrade --install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART }}" \
+            --namespace "${{ env.VKE_NAMESPACE }}" \
+            --values "${{ env.TEST_VALUES }}" \
+            --set image.tag="${{ env.IMAGE_TAG }}" \
+            --set auth.oidc.clientID="${{ secrets.VKE_OIDC_CLIENT_ID }}" \
+            --set auth.oidc.clientSecret="${{ secrets.VKE_OIDC_CLIENT_SECRET }}" \
+            --set auth.tokenSecret="${{ secrets.VKE_AUTH_TOKEN_SECRET }}" \
+            --set auth.basic.passwordHash="${{ secrets.VKE_BASIC_PASSWORD_HASH }}" \
+            --wait \
+            --timeout 5m \
+            --create-namespace
+
+      - name: Verify Helm release
+        run: |
+          helm status "${{ env.HELM_RELEASE }}" --namespace "${{ env.VKE_NAMESPACE }}"
+
+      - name: Wait for all pods ready
+        run: |
+          echo "Waiting for all Paprika pods to be ready..."
+          kubectl wait --for=condition=Ready pods \
+            --all \
+            -n "${{ env.VKE_NAMESPACE }}" \
+            --timeout=180s
+
+      - name: Show pod status
+        run: |
+          kubectl get pods -n "${{ env.VKE_NAMESPACE }}" -o wide
+
+      - name: Check pod conditions
+        run: |
+          PASS=0
+          FAIL=0
+          for component in controller-manager api-server webhook-receiver repo-server; do
+            count=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
+              -l "app.kubernetes.io/component=${component}" \
+              -o json | jq '[.items[] | select(.status.phase == "Running")] | length')
+            expected=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
+              -l "app.kubernetes.io/component=${component}" \
+              -o json | jq '.items | length')
+            if [ "$count" -gt 0 ] && [ "$count" -eq "$expected" ]; then
+              echo "  PASS  ${component}: ${count}/${expected} pods Running"
+              ((PASS++))
+            else
+              echo "  FAIL  ${component}: ${count}/${expected} pods Running"
+              ((FAIL++))
+            fi
+          done
+          if [ "$FAIL" -gt 0 ]; then
+            echo "::error::$FAIL component(s) have unhealthy pods"
+            exit 1
+          fi
+          echo "All components healthy ($PASS passed)"
+
+      - name: Health check via port-forward
+        run: |
+          kubectl port-forward -n "${{ env.VKE_NAMESPACE }}" \
+            svc/${{ env.HELM_RELEASE }}-paprika-api-server 3000:3000 &
+          PF_PID=$!
+          trap "kill $PF_PID 2>/dev/null || true" EXIT
+          sleep 5
+
+          PASS=0
+          FAIL=0
+
+          check() {
+            local desc="$1" url="$2" expected="${3:-200}"
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || echo "FAIL")
+            if [ "$code" = "$expected" ]; then
+              echo "  PASS  $desc ($url → $expected)"
+              ((PASS++))
+            else
+              echo "  FAIL  $desc ($url → $code, expected $expected)"
+              ((FAIL++))
+            fi
+          }
+
+          check "Health endpoint" "http://localhost:3000/healthz" 200
+          check "Readiness endpoint" "http://localhost:3000/readyz" 200
+
+          UI_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://localhost:3000/" 2>/dev/null || echo "FAIL")
+          if [ "$UI_CODE" = "200" ]; then
+            CTYPE=$(curl -s -o /dev/null -w "%{content_type}" --max-time 5 "http://localhost:3000/" 2>/dev/null || echo "")
+            if echo "$CTYPE" | grep -qi "html"; then
+              echo "  PASS  UI serves HTML at /"
+              ((PASS++))
+            else
+              echo "  FAIL  UI at / returned non-HTML content-type: $CTYPE"
+              ((FAIL++))
+            fi
+          else
+            echo "  FAIL  UI at / (HTTP $UI_CODE)"
+            ((FAIL++))
+          fi
+
+          check "Metrics endpoint" "http://localhost:3000/metrics" 200
+
+          kill "$PF_PID" 2>/dev/null || true
+          trap - EXIT
+
+          echo ""
+          echo "Health check results: $PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "## VKE Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release**: ${{ env.HELM_RELEASE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace**: ${{ env.VKE_NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ghcr.io/paprikacd/paprika:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ✅ Deployed and healthy" >> $GITHUB_STEP_SUMMARY
