@@ -3,6 +3,7 @@ package syncwindow
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -45,7 +46,7 @@ func (e *CronEvaluator) IsSyncAllowed(windows []paprikav1.SyncWindow, stage stri
 	var parsed []parsedWindow
 	for i := range windows {
 		w := &windows[i]
-		if len(w.Stages) > 0 && !contains(w.Stages, stage) {
+		if len(w.Stages) > 0 && !slices.Contains(w.Stages, stage) {
 			continue
 		}
 		pw, err := e.parse(w)
@@ -173,13 +174,4 @@ func (w parsedWindow) activeAt(now time.Time) (active bool, start, end time.Time
 
 	nextStart := w.schedule.Next(t)
 	return false, nextStart, nextStart.Add(w.duration)
-}
-
-func contains(items []string, v string) bool {
-	for _, item := range items {
-		if item == v {
-			return true
-		}
-	}
-	return false
 }

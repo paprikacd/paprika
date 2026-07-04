@@ -160,19 +160,33 @@ linters:
           - cyclop
           - exhaustive
           - nolintlint
+      # Intentionally disabled G204 (subprocess launched with variable) for
+      # specific exec.Command calls in the engine, source resolvers, and
+      # rollout packages — the command arguments are constructed from trusted
+      # CRD fields, never from user-supplied values.
+      # Targeted suppressions are placed at each call site.
+      # - text: G204
+      #   linters:
+      #     - gosec
+      # Intentionally disabled G304 (file path provided as taint input) for
+      # source resolution and template rendering — paths come from CRD specs
+      # (cluster-scoped, RBAC-controlled) not untrusted user input.
+      # Targeted suppressions at each call site.
+      # - text: G304
+      #   linters:
+      #     - gosec
+      # Intentionally disabled G306 (writeable file permissions) for temp files
+      # written during template rendering — the 0644 permissions are deliberate
+      # for Helm/Kustomize output that must be readable by other processes.
+      # - text: G306
+      #   linters:
+      #     - gosec
+      # The following are kept disabled pending audit — we acknowledge these
+      # are risks that need per-site review:
       - text: weak cryptographic primitive
         linters:
           - gosec
       - text: G114
-        linters:
-          - gosec
-      - text: G204
-        linters:
-          - gosec
-      - text: G306
-        linters:
-          - gosec
-      - text: G304
         linters:
           - gosec
       - text: type name will be used as

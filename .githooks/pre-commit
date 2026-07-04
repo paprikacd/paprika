@@ -1,27 +1,41 @@
 #!/usr/bin/env bash
+# Pre-commit hook: lint staged Go changes + check formatting.
+# Install with: git config core.hooksPath .githooks
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-
 cd "${REPO_ROOT}"
 
 STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
 
-if [ -n "${STAGED_GO_FILES}" ]; then
-  echo "Running Go linting on staged changes..."
-
-  GOLANGCI_LINT="${REPO_ROOT}/bin/golangci-lint"
-  if [ ! -x "${GOLANGCI_LINT}" ]; then
-    GOLANGCI_LINT="$(command -v golangci-lint || true)"
-  fi
-
-  if [ -z "${GOLANGCI_LINT}" ]; then
-    echo "golangci-lint not found. Install with: make golangci-lint"
-    exit 1
-  fi
-
-  PACKAGES=$(echo "${STAGED_GO_FILES}" | xargs -n1 dirname | sort -u | sed 's|$|/...|' | tr '\n' ' ')
-  # shellcheck disable=SC2086
-  "${GOLANGCI_LINT}" run --timeout=5m ${PACKAGES}
-  echo "Go linting passed"
+if [ -z "${STAGED_GO_FILES}" ]; then
+  exit 0
 fi
+
+echo "Running Go linting on staged changes..."
+
+GOLANGCI_LINT="${REPO_ROOT}/bin/golangci-lint"
+if [ ! -x "${GOLANGCI_LINT}" ]; then
+  GOLANGCI_LINT="$(command -v golangci-lint || true)"
+fi
+
+if [ -z "${GOLANGCI_LINT}" ]; then
+  echo "golangci-lint not found. Install with: make golangci-lint"
+  exit 1
+fi
+
+# Check formatting with gofmt.
+UNFORMATTED=$(echo "${STAGED_GO_FILES}" | xargs gofmt -l 2>/dev/null || true)
+if [ -n "${UNFORMATTED}" ]; then
+  echo "Unformatted Go files:"
+  echo "${UNFORMATTED}"
+  echo "Run: gofmt -w ${UNFORMATTED}"
+  exit 1
+fi
+
+# Run golangci-lint on the packages touched by staged changes.
+PACKAGES=$(echo "${STAGED_GO_FILES}" | xargs -n1 dirname | sort -u | sed 's|^$|.|; s|$|/...|' | tr '\n' ' ')
+# shellcheck disable=SC2086
+"${GOLANGCI_LINT}" run --timeout=10m ${PACKAGES}
+
+echo "Go linting passed"

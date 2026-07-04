@@ -116,6 +116,11 @@ func (r *NotificationConfigReconciler) Start(ctx context.Context) error {
 	defer r.EventBroker.Unsubscribe(ctx, events.TopicDashboard, ch)
 
 	log.FromContext(ctx).Info("Notification controller started")
+
+	// Periodic cleanup of stale rate-limit entries to prevent unbounded growth.
+	cleanupTicker := time.NewTicker(5 * time.Minute)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -125,6 +130,8 @@ func (r *NotificationConfigReconciler) Start(ctx context.Context) error {
 				return nil
 			}
 			r.handleEvent(ctx, evt)
+		case <-cleanupTicker.C:
+			r.evictStaleRateLimits()
 		}
 	}
 }
@@ -397,6 +404,19 @@ func (s *NotificationSender) sendSlack(ctx context.Context, url, message string,
 		return fmt.Errorf("slack returned status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// evictStaleRateLimits removes rate-limit entries older than 1 hour to prevent
+// unbounded memory growth.
+func (r *NotificationConfigReconciler) evictStaleRateLimits() {
+	r.rateMu.Lock()
+	defer r.rateMu.Unlock()
+	cutoff := r.now().Add(-1 * time.Hour)
+	for key, last := range r.rateLimits {
+		if last.Before(cutoff) {
+			delete(r.rateLimits, key)
+		}
+	}
 }
 
 // SetupWithManager registers the notification controller as a runnable.

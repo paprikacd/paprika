@@ -9,10 +9,25 @@ metadata:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
 spec:
   groups:
     - name: paprika
       rules:
+        - alert: PaprikaComponentDown
+          expr: |
+            up{job=~".*{{ include "paprika.resourceName" (dict "suffix" "" "context" $) }}.*"} == 0
+            or
+            absent(up{job=~".*{{ include "paprika.resourceName" (dict "suffix" "" "context" $) }}.*"})
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Paprika component is down
+            description: A Paprika component ({{ "{{ $labels.job }}" }}) has been unreachable for 5m.
+
         - alert: PaprikaReconcileErrors
           expr: rate(controller_runtime_reconcile_errors_total{service="{{ include "paprika.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}"}[5m]) > 0.1
           for: 5m
@@ -57,4 +72,49 @@ spec:
           annotations:
             summary: Paprika registered cluster is unhealthy
             description: Cluster {{ "{{ $labels.cluster }}" }} in namespace {{ "{{ $labels.namespace }}" }} is unhealthy.
+
+        - alert: PaprikaOOMKilled
+          expr: rate(container_memory_failures_total{container=~".*paprika.*", failure_type="oom"}[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: Paprika container OOM killed
+            description: Container {{ "{{ $labels.container }}" }} in pod {{ "{{ $labels.pod }}" }} was OOM killed.
+
+        - alert: PaprikaCacheUnreachable
+          expr: paprika_cache_errors_total > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika cache error rate is high
+            description: Cache errors exceeded 100. Redis may be unreachable.
+
+        - alert: PaprikaWebhookErrors
+          expr: rate(paprika_webhook_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika webhook processing errors
+            description: Webhook error rate is elevated ({{ "{{ $value | humanizePercentage }}" }}).
+
+        - alert: PaprikaRateLimitExceeded
+          expr: rate(paprika_ratelimit_denials_total[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika rate limit denials
+            description: Rate limit denials exceeded 10 req/s.
+
+        - alert: PaprikaApiServerHighRequestLatency
+          expr: histogram_quantile(0.95, rate(paprika_api_request_duration_seconds_bucket[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Paprika API server high request latency
+            description: API server 95th percentile request latency exceeds 5s.
 {{- end }}

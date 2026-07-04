@@ -2,7 +2,7 @@ import { useState } from "react"
 import Link from "next/link"
 import type { Application, PolicyResult, Release } from "@/gen/paprika/v1/api_pb"
 import { createPromiseClient } from "@connectrpc/connect"
-import { createConnectTransport } from "@connectrpc/connect-web"
+import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -13,7 +13,7 @@ import {
   Clock, Activity, ArrowRight, Target, AlertTriangle, Container,
 } from "lucide-react"
 
-const transport = createConnectTransport({ baseUrl: "" })
+const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
 function PhaseTimeline({ phase }: { phase: string }) {

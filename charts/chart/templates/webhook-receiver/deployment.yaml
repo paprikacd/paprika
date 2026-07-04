@@ -8,9 +8,15 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: webhook-receiver
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- with .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
+  {{- end }}
   replicas: {{ .Values.webhookReceiver.replicas }}
   selector:
     matchLabels:
@@ -24,24 +30,61 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
         app.kubernetes.io/component: webhook-receiver
+        {{- range $k, $v := .Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: {{ .Values.webhookReceiver.automountServiceAccountToken | default false }}
+      {{- with .Values.webhookReceiver.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.webhookReceiver.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.webhookReceiver.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.webhookReceiver.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.webhookReceiver.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.webhookReceiver.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       securityContext:
         {{- if .Values.webhookReceiver.podSecurityContext }}
         {{- toYaml .Values.webhookReceiver.podSecurityContext | nindent 8 }}
         {{- else }}
         {}
         {{- end }}
+      {{- with .Values.webhookReceiver.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - args:
+        {{- if .Values.webhookReceiver.args }}
+        {{- range .Values.webhookReceiver.args }}
+        - {{ . }}
+        {{- end }}
+        {{- else }}
         - --mode=webhook
         - --health-probe-bind-address=:8081
         - --webhook-bind-address=:8080
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+        {{- end }}
         command:
         - /manager
         image: "{{ .Values.webhookReceiver.image.repository }}{{- if not (contains "@" .Values.webhookReceiver.image.repository) }}:{{ .Values.webhookReceiver.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.webhookReceiver.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with .Values.webhookReceiver.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         livenessProbe:
           httpGet:
@@ -101,6 +144,13 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- with .Values.webhookReceiver.extraEnv }}
+        {{- include "paprika.extraEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.webhookReceiver.extraEnvFrom }}
+        envFrom:
+        {{- include "paprika.extraEnvFrom" . | nindent 8 }}
+        {{- end }}
         volumeMounts:
           {{- toYaml .Values.webhookReceiver.extraVolumeMounts | nindent 10 }}
           {{- if .Values.mtls.enabled }}
@@ -115,6 +165,10 @@ spec:
         {}
         {{- end }}
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      {{- $pc := .Values.webhookReceiver.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
       volumes:
         {{- toYaml .Values.webhookReceiver.extraVolumes | nindent 8 }}
         {{- if .Values.mtls.enabled }}

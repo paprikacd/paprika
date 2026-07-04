@@ -213,6 +213,7 @@ func copyKustomizeBase(src, dst string) error {
 }
 
 func copyFile(src, dst string) error {
+	//nolint:gosec // src/dst come from Kustomize build output paths
 	in, openErr := os.Open(src)
 	if openErr != nil {
 		return fmt.Errorf("open %s: %w", src, openErr)
@@ -222,6 +223,7 @@ func copyFile(src, dst string) error {
 	if mkdirErr := os.MkdirAll(filepath.Dir(dst), 0o750); mkdirErr != nil {
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(dst), mkdirErr)
 	}
+	//nolint:gosec // src/dst come from Kustomize build output paths
 	out, createErr := os.Create(dst)
 	if createErr != nil {
 		return fmt.Errorf("create %s: %w", dst, createErr)

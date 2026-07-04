@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Paprika CD — One Operator to Replace ArgoCD, Rollouts &amp; Workflows</title>
+  <meta name="description" content="Paprika consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single Kubernetes operator." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --font-sans: 'Instrument Sans', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --bg: #0c0b0a;
+      --bg-card: #161412;
+      --bg-secondary: #1c1a17;
+      --fg: #f0edea;
+      --fg-muted: #9c968e;
+      --border: #2b2824;
+      --primary: oklch(0.63 0.19 35);
+      --primary-fg: #0c0b0a;
+      --primary-glow: oklch(0.63 0.19 35 / 0.06);
+      --success: oklch(0.62 0.16 145);
+      --destructive: oklch(0.58 0.22 25);
+      --radius: 0.75rem;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    a { color: inherit; text-decoration: none; }
+    img, svg { display: block; max-width: 100%; }
+
+    /* Layout */
+    .max-w-7xl { max-width: 80rem; margin: 0 auto; padding: 0 1.5rem; }
+    .max-w-5xl { max-width: 64rem; margin: 0 auto; padding: 0 1.5rem; }
+    .max-w-3xl { max-width: 48rem; margin: 0 auto; }
+    .max-w-2xl { max-width: 42rem; margin: 0 auto; }
+    .text-center { text-align: center; }
+
+    /* Nav */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--bg) 80%, transparent);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 3rem;
+      max-width: 80rem;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .nav-logo-mark {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: 0.375rem;
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .nav-links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.625rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--fg-muted);
+      transition: color 0.15s;
+    }
+    .nav-links a:hover { color: var(--fg); }
+    .nav-links svg { width: 0.875rem; height: 0.875rem; }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      height: 2.5rem;
+      padding: 0 1.25rem;
+      border-radius: var(--radius);
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.97); }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      height: 2.5rem;
+      padding: 0 1.25rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--fg);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn-secondary:hover { background: var(--bg-secondary); }
+    .btn-secondary:active { transform: scale(0.97); }
+
+    /* Sections */
+    section { border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+    .py-24 { padding-top: 6rem; padding-bottom: 6rem; }
+    .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
+
+    /* Animations */
+    .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity 0.6s, transform 0.6s; transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1); }
+    .reveal.show { opacity: 1; transform: translateY(0); }
+    .reveal-left { opacity: 0; transform: translateX(-1.25rem); transition: opacity 0.5s, transform 0.5s; transition-timing-function: cubic-bezier(0.25, 1, 0.5, 1); }
+    .reveal-left.show { opacity: 1; transform: translateX(0); }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 6rem 0 8rem;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, var(--primary-glow), transparent);
+    }
+    .hero-glow {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      transform: translateX(-50%);
+      width: 48rem;
+      height: 48rem;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--primary) 3%, transparent);
+      filter: blur(4rem);
+      pointer-events: none;
+    }
+    .hero-content { position: relative; }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 1rem;
+      border-radius: 9999px;
+      border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
+      background: color-mix(in srgb, var(--primary) 6%, transparent);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--primary);
+      margin-bottom: 1.5rem;
+    }
+    .hero-badge-dot {
+      position: relative;
+      width: 0.375rem;
+      height: 0.375rem;
+    }
+    .hero-badge-dot::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: var(--primary);
+      animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .hero-badge-dot::after {
+      content: '';
+      position: relative;
+      display: block;
+      width: 0.375rem;
+      height: 0.375rem;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+    @keyframes ping {
+      75%, 100% { transform: scale(2); opacity: 0; }
+    }
+    .hero h1 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+    .hero h1 span { color: var(--primary); }
+    .hero p {
+      margin-top: 1.25rem;
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--fg-muted);
+      max-width: 36rem;
+    }
+    .hero-actions { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+    .hero-viz { margin-top: 4rem; }
+
+    .viz-card {
+      border-radius: var(--radius);
+      border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+      background: color-mix(in srgb, var(--bg-card) 30%, transparent);
+      padding: 0.75rem;
+      box-shadow: 0 4px 24px color-mix(in srgb, black 5%, transparent);
+      backdrop-filter: blur(4px);
+    }
+
+    /* Feature grid */
+    .feature-grid { display: grid; gap: 1rem; margin-top: 3rem; }
+    .feature-card {
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      padding: 1.5rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .feature-card:hover { border-color: color-mix(in srgb, var(--primary) 25%, transparent); box-shadow: 0 1px 3px color-mix(in srgb, black 5%, transparent); }
+    .feature-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+    .feature-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+      flex-shrink: 0;
+    }
+    .feature-icon svg { width: 1.25rem; height: 1.25rem; color: var(--primary); }
+    .feature-tag {
+      border-radius: 0.375rem;
+      background: color-mix(in srgb, var(--primary) 6%, transparent);
+      padding: 0.125rem 0.5rem;
+      font-size: 0.6875rem;
+      font-weight: 500;
+      color: color-mix(in srgb, var(--primary) 80%, transparent);
+      flex-shrink: 0;
+    }
+    .feature-card h3 { margin-top: 1rem; font-size: 0.875rem; font-weight: 600; }
+    .feature-card p { margin-top: 0.5rem; font-size: 0.75rem; line-height: 1.6; color: var(--fg-muted); }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .section-title span { color: var(--primary); }
+    .section-desc {
+      margin-top: 0.75rem;
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+    }
+
+    /* How it works */
+    .steps { margin-top: 3rem; display: flex; flex-direction: column; gap: 4rem; }
+    .step { display: flex; flex-direction: column; gap: 1.5rem; }
+    .step-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 2.5rem;
+      height: 2.5rem;
+      border-radius: var(--radius);
+      border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+      background: color-mix(in srgb, var(--primary) 6%, transparent);
+      flex-shrink: 0;
+    }
+    .step-icon svg { width: 1rem; height: 1rem; color: var(--primary); }
+    .step-content { min-width: 0; flex: 1; }
+    .step-number {
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: color-mix(in srgb, var(--primary) 70%, transparent);
+    }
+    .step-content h3 { font-size: 1rem; font-weight: 600; }
+    .step-content p { margin-top: 0.5rem; font-size: 0.875rem; line-height: 1.6; color: var(--fg-muted); }
+    .step-code {
+      width: 100%;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      padding: 1rem;
+      overflow-x: auto;
+    }
+    .step-code pre {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      line-height: 1.6;
+      color: color-mix(in srgb, var(--fg) 80%, transparent);
+      white-space: pre;
+    }
+    @media (min-width: 768px) {
+      .step { flex-direction: row; align-items: flex-start; }
+      .step-code { width: 20rem; flex-shrink: 0; }
+    }
+
+    /* Comparison table */
+    .comparison-table {
+      margin-top: 2.5rem;
+      overflow: hidden;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .comparison-table table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .comparison-table th {
+      padding: 0.875rem 1.25rem;
+      text-align: left;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--fg-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .comparison-table th:nth-child(2) { text-align: center; width: 7rem; color: var(--primary); }
+    .comparison-table th:nth-child(3) { text-align: center; width: 10rem; }
+    .comparison-table td {
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 20%, transparent);
+      font-size: 0.8125rem;
+    }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .comparison-table td:nth-child(2),
+    .comparison-table td:nth-child(3) { text-align: center; }
+    .check { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: color-mix(in srgb, var(--success) 10%, transparent); }
+    .check svg { width: 0.875rem; height: 0.875rem; color: var(--success); }
+    .cross { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: color-mix(in srgb, var(--destructive) 10%, transparent); }
+    .cross svg { width: 0.875rem; height: 0.875rem; color: var(--destructive); }
+    .comparison-muted { font-size: 0.75rem; font-style: italic; color: color-mix(in srgb, var(--fg-muted) 60%, transparent); }
+
+    /* CTA */
+    .cta-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 1rem;
+      border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, transparent), color-mix(in srgb, var(--primary) 3%, transparent), transparent);
+      padding: 4rem 2rem;
+      text-align: center;
+    }
+    .cta-glow {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      transform: translateX(-50%);
+      width: 32rem;
+      height: 32rem;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--primary) 4%, transparent);
+      filter: blur(4rem);
+      pointer-events: none;
+    }
+    .cta-content { position: relative; }
+    .cta-content h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+    .cta-content h2 span { color: var(--primary); }
+    .cta-content p { margin: 1rem auto 0; max-width: 32rem; font-size: 0.875rem; line-height: 1.6; color: var(--fg-muted); }
+    .cta-actions { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+    .cta-footer { margin-top: 1.5rem; font-size: 0.75rem; color: var(--fg-muted); text-align: center; }
+
+    /* Footer */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 1.5rem 0;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 80rem;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+    .footer-inner span { font-size: 0.75rem; color: var(--fg-muted); }
+
+    /* Responsive */
+    @media (min-width: 640px) {
+      .hero h1 { font-size: 3rem; }
+      .feature-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 1024px) {
+      .hero h1 { font-size: 3.75rem; }
+      .hero { padding: 8rem 0 10rem; }
+      .feature-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Nav -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <span class="nav-logo-mark">P</span>
+        <span>Paprika</span>
+      </a>
+      <div class="nav-links">
+        <a href="https://paprika.benebsworth.com/login">Dashboard</a>
+        <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-bg"></div>
+      <div class="hero-glow"></div>
+      <div class="hero-content max-w-7xl text-center">
+        <div class="reveal show">
+          <span class="hero-badge">
+            <span class="hero-badge-dot"></span>
+            v0.1.0 — First release
+          </span>
+        </div>
+        <h1 class="reveal show" style="transition-delay: 0.1s">
+          One Operator to <br class="sm-only" /><span>Replace ArgoCD,<br />Rollouts &amp; Workflows</span>
+        </h1>
+        <p class="reveal show" style="transition-delay: 0.2s">
+          Paprika consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single Kubernetes operator. One resource model. One API. One dashboard.
+        </p>
+        <div class="hero-actions reveal show" style="transition-delay: 0.3s">
+          <a href="https://paprika.benebsworth.com/login" class="btn-primary">
+            Get Started
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+          <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="btn-secondary">
+            Star on GitHub
+          </a>
+        </div>
+        <div class="hero-viz reveal show" style="transition-delay: 0.4s">
+          <div class="viz-card">
+            <!-- Pipeline SVG -->
+            <svg viewBox="0 0 660 170" style="width:100%;height:auto;max-height:200px" aria-label="Pipeline flow visualization">
+              <defs>
+                <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                  <circle cx="2" cy="2" r="1" fill="var(--border)"/>
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#dots)" opacity="0.3"/>
+              <!-- Edges -->
+              <g><path d="M80 60 Q170 13 260 -10" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="260" cy="-10" r="2.5" fill="var(--primary)"/></g>
+              <g><path d="M80 60 Q170 83 260 130" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="260" cy="130" r="2.5" fill="var(--primary)"/></g>
+              <g><path d="M260 -10 Q350 13 440 60" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="386" cy="29" r="2.5" fill="var(--primary)"/></g>
+              <g><path d="M260 130 Q350 83 440 60" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="386" cy="71" r="2.5" fill="var(--primary)"/></g>
+              <g><path d="M440 60 Q530 13 620 -10" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="512" cy="21" r="2.5" fill="var(--primary)"/></g>
+              <g><path d="M440 60 Q530 83 620 130" fill="none" stroke="var(--border)" stroke-width="1.5"/><circle cx="476" cy="67" r="2.5" fill="var(--primary)"/></g>
+              <!-- Nodes -->
+              <g><rect x="50" y="49" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="80" y="64" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Source</text></g>
+              <g><rect x="230" y="-21" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="260" y="-6" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Build</text></g>
+              <g><rect x="230" y="119" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="260" y="134" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Test</text></g>
+              <g><rect x="410" y="49" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="440" y="64" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Staging</text></g>
+              <g><rect x="590" y="-21" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="-6" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Canary</text></g>
+              <g><rect x="590" y="119" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="134" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Production</text></g>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="py-24">
+      <div class="max-w-7xl text-center">
+        <div class="reveal"><p class="section-label">Why Paprika</p></div>
+        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">Everything You Need for <span>Application Delivery</span></h2></div>
+        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">Paprika consolidates the tools your team needs into a single operator — no more stitching together Argo projects with different UIs and upgrade cycles.</p></div>
+        <div class="feature-grid">
+          <div class="feature-card reveal" style="transition-delay:0s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>
+              </div>
+              <span class="feature-tag">3 tools → 1 CRD</span>
+            </div>
+            <h3>Unified Resource Model</h3>
+            <p>Replace ArgoCD, Rollouts, and Workflows with a single Application CRD. One operator, one resource model, one consistent API. No more stitching together three projects with different conventions.</p>
+          </div>
+          <div class="feature-card reveal" style="transition-delay:0.05s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
+              </div>
+              <span class="feature-tag">Automated rollbacks</span>
+            </div>
+            <h3>Progressive Delivery</h3>
+            <p>Canary and blue-green deployments with configurable step weights. Traffic shifts gradually with health verification at every step. Roll back automatically if error rates spike.</p>
+          </div>
+          <div class="feature-card reveal" style="transition-delay:0.1s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
+              </div>
+              <span class="feature-tag">Istio + Gateway API</span>
+            </div>
+            <h3>Pluggable Traffic Routing</h3>
+            <p>Built-in support for Istio VirtualServices and Gateway API HTTPRoutes. Per-stage traffic router configuration gives you fine-grained control over how traffic reaches your canaries.</p>
+          </div>
+          <div class="feature-card reveal" style="transition-delay:0.15s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+              </div>
+              <span class="feature-tag">Any cluster, per stage</span>
+            </div>
+            <h3>Multi-Cluster by Default</h3>
+            <p>Stage-level cluster references let you deploy to different clusters per environment. No pre-configured cluster secrets required. Each stage can target a different Kubernetes cluster.</p>
+          </div>
+          <div class="feature-card reveal" style="transition-delay:0.2s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+              </div>
+              <span class="feature-tag">Verify before promote</span>
+            </div>
+            <h3>CEL Health Verification</h3>
+            <p>Health checks evaluate every resource at every stage using Common Expression Language. Built-in resource health rules, approval gates, and automated rollback on failure.</p>
+          </div>
+          <div class="feature-card reveal" style="transition-delay:0.25s">
+            <div class="feature-header">
+              <div class="feature-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+              </div>
+              <span class="feature-tag">Live via SSE</span>
+            </div>
+            <h3>Real-time Dashboard</h3>
+            <p>Live visibility into pipelines, releases, stages, and applications. Connect-RPC API for programmatic access. Server-sent events push updates so you never miss a state change.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="py-24">
+      <div class="max-w-7xl text-center">
+        <div class="reveal"><p class="section-label">How It Works</p></div>
+        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">From Source to Production in Three Steps</h2></div>
+        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">Define, promote, verify — Paprika handles rendering, traffic routing, and health checking so you don't have to.</p></div>
+      </div>
+      <div class="max-w-7xl steps">
+        <div class="step reveal-left">
+          <div class="step-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.15V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2h-3.35"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="m5 16-3 3 3 3"/><path d="m9 22 3-3-3-3"/></svg>
+          </div>
+          <div class="step-content">
+            <div style="display:flex;align-items:center;gap:0.75rem">
+              <span class="step-number">Step 1</span>
+              <h3>Define Your Application</h3>
+            </div>
+            <p>Create a single Application resource that references your Helm chart, Git repo, or S3 bucket. Specify build steps, stages, and deployment strategy in one manifest. Paprika handles the rest.</p>
+          </div>
+          <div class="step-code">
+            <pre>apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app
+spec:
+  source:
+    git:
+      url: https://github.com/example/app
+      revision: main
+  strategy: Canary</pre>
+          </div>
+        </div>
+
+        <div class="step reveal-left">
+          <div class="step-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09"/><path d="M9 12a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 .05 5 .05"/></svg>
+          </div>
+          <div class="step-content">
+            <div style="display:flex;align-items:center;gap:0.75rem">
+              <span class="step-number">Step 2</span>
+              <h3>Promote Through Stages</h3>
+            </div>
+            <p>Paprika renders manifests using the Helm SDK, runs pipeline steps as Kubernetes Jobs, and promotes releases through stages. Each stage supports its own canary config, traffic routing, and cluster target.</p>
+          </div>
+          <div class="step-code">
+            <pre>  stages:
+    - name: staging
+      canary:
+        steps:
+          - weight: 10
+          - weight: 50
+          - weight: 100
+    - name: production
+      gates:
+        - name: approve
+          type: ManualApproval</pre>
+          </div>
+        </div>
+
+        <div class="step reveal-left">
+          <div class="step-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <div class="step-content">
+            <div style="display:flex;align-items:center;gap:0.75rem">
+              <span class="step-number">Step 3</span>
+              <h3>Verify and Release</h3>
+            </div>
+            <p>Health checks evaluate every resource at each stage. Traffic routing shifts weights gradually. Approval gates pause for manual verification. If checks fail, Paprika rolls back automatically.</p>
+          </div>
+          <div class="step-code">
+            <pre>  stages:
+    - name: production
+      trafficRouter:
+        istio:
+          virtualService: my-app
+          host: app.example.com</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Comparison -->
+    <section class="py-24">
+      <div class="max-w-5xl text-center">
+        <div class="reveal"><p class="section-label">The Comparison</p></div>
+        <div class="reveal" style="transition-delay:0.05s"><h2 class="section-title">One Platform vs <span style="color:var(--fg-muted)">Three Separate Tools</span></h2></div>
+        <div class="reveal" style="transition-delay:0.1s"><p class="section-desc">ArgoCD, Argo Rollouts, and Argo Workflows each have their own CRDs, controllers, UIs, and upgrade cycles. Paprika replaces all three with one cohesive operator.</p></div>
+      </div>
+      <div class="max-w-5xl">
+        <div class="comparison-table reveal" style="transition-delay:0.15s">
+          <table>
+            <thead>
+              <tr>
+                <th>Feature</th>
+                <th>Paprika</th>
+                <th>ArgoCD + Rollouts + Workflows</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Unified resource model</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
+              <tr><td>Single operator binary</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
+              <tr><td>Built-in CI/CD pipelines</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Workflows only</span></td></tr>
+              <tr><td>Canary deployments</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Rollouts only</span></td></tr>
+              <tr><td>Traffic routing (Istio/Gateway API)</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Rollouts only</span></td></tr>
+              <tr><td>Multi-cluster stages</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Via ArgoCD only</span></td></tr>
+              <tr><td>CEL health checks</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
+              <tr><td>Approval gates</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Workflows only</span></td></tr>
+              <tr><td>Real-time dashboard</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="comparison-muted">Per-project</span></td></tr>
+              <tr><td>SSE live updates</td><td><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="cross"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="reveal" style="transition-delay:0.3s;margin-top:2rem;text-align:center">
+          <a href="https://paprika.benebsworth.com/login" class="btn-primary">
+            Try Paprika
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section style="border-bottom:none" class="py-24">
+      <div class="max-w-7xl">
+        <div class="cta-card reveal">
+          <div class="cta-glow"></div>
+          <div class="cta-content">
+            <h2>Ready to Simplify Your <span>Application Delivery</span>?</h2>
+            <p>Paprika is early-stage and looking for early adopters. Deploy the operator on your cluster, open an issue on GitHub, or just star the repo to follow along.</p>
+            <div class="cta-actions">
+              <a href="https://paprika.benebsworth.com/login" class="btn-primary">
+                Get Started
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </a>
+              <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="btn-secondary">Star on GitHub</a>
+            </div>
+          </div>
+        </div>
+        <div class="cta-footer reveal" style="transition-delay:0.3s">
+          Apache 2.0 License. No telemetry. No vendor lock-in.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>&copy; 2026 Paprika CD</span>
+      <span>Apache 2.0 License</span>
+    </div>
+  </footer>
+
+  <script>
+    // Intersection Observer for scroll reveals
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('show');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+    document.querySelectorAll('.reveal, .reveal-left').forEach(el => {
+      observer.observe(el);
+    });
+  </script>
+</body>
+</html>

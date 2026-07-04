@@ -3,6 +3,8 @@ package source
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,7 +29,6 @@ type OCISource struct {
 	Client    client.Client
 }
 
-// clientOptions returns registry client options including authentication.
 func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption, error) {
 	opts := []registry.ClientOption{registry.ClientOptEnableCache(true)}
 	if o.Insecure {
@@ -42,17 +43,8 @@ func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption,
 		return nil, fmt.Errorf("get OCI secret %s/%s: %w", o.Namespace, o.SecretRef, err)
 	}
 
-	if dockerCfg := secret.Data[".dockerconfigjson"]; len(dockerCfg) > 0 {
-		cfgDir := filepath.Join(o.WorkDir, "oci-docker-config", SanitizeName(o.URL))
-		if err := os.MkdirAll(cfgDir, 0o750); err != nil {
-			return nil, fmt.Errorf("create docker config dir: %w", err)
-		}
-		cfgPath := filepath.Join(cfgDir, "config.json")
-		if err := os.WriteFile(cfgPath, dockerCfg, 0o600); err != nil {
-			return nil, fmt.Errorf("write docker config: %w", err)
-		}
-		opts = append(opts, registry.ClientOptCredentialsFile(cfgPath))
-		return opts, nil
+	if dockerOpts, err := o.dockerConfigOptions(&secret, opts); err != nil || dockerOpts != nil {
+		return dockerOpts, err
 	}
 
 	username := string(secret.Data["username"])
@@ -62,6 +54,29 @@ func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption,
 		return opts, nil
 	}
 
+	return opts, nil
+}
+
+func (o *OCISource) dockerConfigOptions(secret *corev1.Secret, opts []registry.ClientOption) ([]registry.ClientOption, error) {
+	dockerCfg := secret.Data[".dockerconfigjson"]
+	if len(dockerCfg) == 0 {
+		return nil, nil
+	}
+
+	if creds, err := parseDockerConfigCredentials(dockerCfg, o.URL); err == nil {
+		opts = append(opts, registry.ClientOptBasicAuth(creds.username, creds.password))
+		return opts, nil
+	}
+
+	cfgDir := filepath.Join(o.WorkDir, "oci-docker-config", SanitizeName(o.URL))
+	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create docker config dir: %w", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.json")
+	if err := os.WriteFile(cfgPath, dockerCfg, 0o600); err != nil {
+		return nil, fmt.Errorf("write docker config: %w", err)
+	}
+	opts = append(opts, registry.ClientOptCredentialsFile(cfgPath))
 	return opts, nil
 }
 
@@ -164,6 +179,50 @@ func writeChart(chartSummary *registry.DescriptorPullSummaryWithMeta, destDir st
 		return "", fmt.Errorf("remove temporary chart tarball %q: %w", tmpFile, err)
 	}
 	return chartDir, nil
+}
+
+// dockerCredentials holds parsed registry credentials.
+type dockerCredentials struct {
+	username string
+	password string
+}
+
+// dockerConfigFile represents the structure of a .dockerconfigjson file.
+type dockerConfigFile struct {
+	Auths map[string]struct {
+		Auth string `json:"auth"`
+	} `json:"auths"`
+}
+
+// parseDockerConfigCredentials extracts credentials for the given registry URL
+// from a .dockerconfigjson blob, avoiding a write to disk.
+func parseDockerConfigCredentials(data []byte, registryURL string) (*dockerCredentials, error) {
+	var cfg dockerConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse docker config: %w", err)
+	}
+	// Try the exact URL first, then common variants
+	for _, host := range []string{registryURL, stripScheme(registryURL)} {
+		if entry, ok := cfg.Auths[host]; ok && entry.Auth != "" {
+			decoded, err := base64.StdEncoding.DecodeString(entry.Auth)
+			if err != nil {
+				return nil, fmt.Errorf("decode auth for %s: %w", host, err)
+			}
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) == 2 {
+				return &dockerCredentials{username: parts[0], password: parts[1]}, nil
+			}
+		}
+	}
+	return nil, errors.New("no matching registry credentials found")
+}
+
+// stripScheme removes the protocol scheme from a URL for docker config lookup.
+func stripScheme(url string) string {
+	if idx := strings.Index(url, "://"); idx >= 0 {
+		return url[idx+3:]
+	}
+	return url
 }
 
 // extractChartFiles extracts a chart tarball into the given directory.

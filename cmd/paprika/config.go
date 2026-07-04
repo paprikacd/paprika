@@ -46,6 +46,7 @@ func defaultConfigPath() string {
 }
 
 func loadConfig(path string) (*Config, error) {
+	//nolint:gosec // path comes from defaultConfigPath or user config flag
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -16,8 +16,8 @@ type Config struct {
 	Enabled     bool
 	BasicAuth   *BasicAuthConfig
 	OIDC        *OIDCConfig
+	TokenSecret []byte
 	RBACRules   []RBACRule
-	AllowUnauth bool
 }
 
 // Interceptor creates a connect.UnaryInterceptorFunc from auth config.
@@ -42,9 +42,6 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 
 			principal, err := authn.Authenticate(ctx)
 			if err != nil {
-				if cfg.AllowUnauth {
-					return next(ctx, req)
-				}
 				return nil, connect.NewError(connect.CodeUnauthenticated, err)
 			}
 
@@ -82,6 +79,10 @@ func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Aut
 		authenticators = append(authenticators, oidcAuth)
 	}
 
+	if len(cfg.TokenSecret) > 0 {
+		authenticators = append(authenticators, NewSelfSignedAuthenticator(cfg.TokenSecret))
+	}
+
 	if len(authenticators) == 0 {
 		return nil, nil, errors.New("auth enabled but no authenticators configured")
 	}
@@ -104,7 +105,11 @@ func BuildAuthorizer(cfg Config, reader client.Reader) (Authorizer, error) {
 		authorizers = append(authorizers, NewProjectAuthorizer(reader))
 	}
 	if len(authorizers) == 0 {
-		return &AllowAllAuthorizer{}, nil
+		// This should never happen when auth is enabled — the caller should
+		// have configured at least RBAC rules or a project-scoped authorizer.
+		// Fall back to a DenyAll authorizer so that silence does not mean
+		// "allow".
+		return &DenyAllAuthorizer{}, nil
 	}
 	return &multiAuthorizer{authorizers: authorizers}, nil
 }

@@ -153,6 +153,45 @@ Ref: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-vari
 {{- end }}
 
 {{/*
+Common labels applied to all resources.
+Emits only .Values.commonLabels entries, excluding the standard Helm labels
+since each resource template adds those individually.
+*/}}
+{{- define "paprika.commonLabels" -}}
+{{- with .Values.commonLabels }}
+{{- toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Extra environment variables (value literals) for a component.
+Takes the component's .extraEnv list.
+*/}}
+{{- define "paprika.extraEnv" -}}
+{{- range . }}
+{{- if and .name (or (hasKey . "value") (hasKey . "valueFrom")) }}
+- name: {{ .name }}
+  {{- if hasKey . "value" }}
+  value: {{ .value | quote }}
+  {{- else }}
+  valueFrom:
+    {{- toYaml .valueFrom | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Extra environment variable sources (ConfigMapRef/SecretRef) for a component.
+Takes the component's .extraEnvFrom list.
+*/}}
+{{- define "paprika.extraEnvFrom" -}}
+{{- range . }}
+{{- toYaml . | nindent 0 }}
+{{- end }}
+{{- end }}
+
+{{/*
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}
@@ -160,11 +199,7 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 - --auth-enabled=true
 {{- if .Values.auth.basic.enabled }}
 - --auth-basic-username={{ .Values.auth.basic.username }}
-{{- if .Values.auth.basic.passwordHash }}
 - --auth-basic-password-hash={{ .Values.auth.basic.passwordHash }}
-{{- else if .Values.auth.basic.password }}
-- --auth-basic-password={{ .Values.auth.basic.password }}
-{{- end }}
 {{- end }}
 {{- if .Values.auth.oidc.enabled }}
 - --auth-oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
@@ -172,9 +207,6 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 {{- if .Values.auth.oidc.clientSecret }}
 - --auth-oidc-client-secret={{ .Values.auth.oidc.clientSecret }}
 {{- end }}
-{{- end }}
-{{- if .Values.auth.allowUnauthenticated }}
-- --auth-allow-unauthenticated=true
 {{- end }}
 {{- end }}
 {{- end }}

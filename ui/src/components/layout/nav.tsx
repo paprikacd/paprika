@@ -1,64 +1,62 @@
 "use client"
 
 import Link from "next/link"
-import { Cpu } from "lucide-react"
-import { useConnection } from "@/lib/connection-context"
-import { NotificationCenter } from "@/components/notifications/notification-center"
-
-const navItems = [
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Rollouts", href: "/dashboard/rollouts" },
-  { label: "Docs", href: "/docs" },
-  { label: "Blog", href: "/blog" },
-  { label: "API", href: "/docs/api" },
-]
+import { usePathname, useRouter } from "next/navigation"
+import { LogOut, User, LayoutDashboard } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 
 export function Nav() {
-  const { connected } = useConnection()
-  return (
-    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
-        <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Cpu className="size-4" aria-hidden="true" />
-            </span>
-            <span className="text-base font-semibold tracking-tight">Paprika</span>
-          </Link>
-          <nav className="hidden items-center gap-1 sm:flex">
-            {navItems.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
+  const pathname = usePathname()
+  const router = useRouter()
+  const { user, isLoading, logout } = useAuth()
 
-        <div className="flex items-center gap-3">
-          <NotificationCenter />
-          <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 ${
-            connected
-              ? "border-success/20 bg-success/10"
-              : "border-border/50 bg-muted/50"
-          }`}>
-            <span className="relative flex size-2">
-              {connected && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/40" />
-              )}
-              <span className={`relative inline-flex size-2 rounded-full ${
-                connected ? "bg-success" : "bg-muted-foreground/50"
-              }`} />
-            </span>
-            <span className={`text-xs font-medium ${
-              connected ? "text-success" : "text-muted-foreground"
-            }`}>
-              {connected ? "Connected" : "Disconnected"}
-            </span>
-          </div>
+  const isAuthPage = pathname === "/login" || pathname.startsWith("/auth/")
+
+  return (
+    <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-backdrop-blur:bg-background/60">
+      <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-6">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold">
+            P
+          </span>
+          <span className="text-sm font-semibold tracking-tight">Paprika</span>
+        </Link>
+
+        {user && !isAuthPage && (
+          <nav className="flex items-center gap-1">
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
+            >
+              <LayoutDashboard className="size-3.5" />
+              Dashboard
+            </Link>
+          </nav>
+        )}
+
+        <div className="flex items-center gap-2">
+          {isLoading ? null : user ? (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {user.picture ? (
+                  <img src={user.picture} alt="" className="size-5 rounded-full" />
+                ) : (
+                  <User className="size-3.5" />
+                )}
+                <span className="hidden sm:inline text-xs">{user.name}</span>
+              </Link>
+              <button
+                onClick={logout}
+                className="rounded-md p-1.5 text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
+                title="Sign out"
+              >
+                <LogOut className="size-3.5" />
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </header>

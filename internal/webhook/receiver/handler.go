@@ -113,13 +113,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case githubPushEvent:
 		if err := h.handleGitHubPush(ctx, r, body); err != nil {
 			log.Error(err, "Handle GitHub push")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to process webhook", http.StatusInternalServerError)
 			return
 		}
 	case gitlabPushEvent:
 		if err := h.handleGitLabPush(ctx, r, body); err != nil {
 			log.Error(err, "Handle GitLab push")
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to process webhook", http.StatusInternalServerError)
 			return
 		}
 	case githubPingEvent, gitlabPingEvent:
@@ -142,13 +142,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleGitHubPush(ctx context.Context, r *http.Request, body []byte) error {
 	if h.secret != "" {
 		if err := verifyGitHubSignature(r.Header.Get(githubSignature), h.secret, body); err != nil {
-			return fmt.Errorf("signature verification: %w", err)
+			return fmt.Errorf("invalid signature: %w", err)
 		}
 	}
 
 	var payload githubPushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return fmt.Errorf("parse payload: %w", err)
+		return fmt.Errorf("invalid payload: %w", err)
 	}
 
 	if payload.Repository.CloneURL == "" {
@@ -162,13 +162,13 @@ func (h *Handler) handleGitHubPush(ctx context.Context, r *http.Request, body []
 func (h *Handler) handleGitLabPush(ctx context.Context, r *http.Request, body []byte) error {
 	if h.secret != "" {
 		if r.Header.Get(gitlabTokenHeader) != h.secret {
-			return errors.New("invalid GitLab token")
+			return errors.New("invalid token")
 		}
 	}
 
 	var payload gitlabPushPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
-		return fmt.Errorf("parse payload: %w", err)
+		return fmt.Errorf("invalid payload: %w", err)
 	}
 
 	if payload.Project.GitHTTPURL == "" {

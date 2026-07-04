@@ -46,8 +46,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	"golang.org/x/crypto/bcrypt"
+
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
@@ -78,6 +81,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(pipelinesv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(featureflagsv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
@@ -99,9 +103,11 @@ type cliConfig struct {
 	shardIDSource                                                 string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
-	authEnabled, authAllowUnauth, enableWebhooks                  bool
+	cacheSyncTimeout                                              time.Duration
+	authEnabled, enableWebhooks                                   bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
+	authTokenSecret                                               string
 	coordinatorMode                                               bool
 	coordinatorHeartbeat, coordinatorTTL                          time.Duration
 	zapOptions                                                    zap.Options
@@ -217,6 +223,10 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	fs.DurationVar(&cfg.cacheSyncTimeout, "cache-sync-timeout", 2*time.Minute,
+		"Maximum time to wait for caches to sync on startup before exiting. "+
+			"Default 2m; raise this for large clusters or many CRDs (e.g. 5m) to avoid "+
+			"CrashLoopBackOff due to slow initial list calls on small API servers.")
 	registerCoordinatorFlags(fs, &cfg)
 	fs.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
@@ -252,7 +262,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.authBasicUsername, "auth-basic-username", "",
 		"Basic auth username. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authBasicPassword, "auth-basic-password", "",
-		"Basic auth plain-text password. Only used when --auth-enabled=true and --auth-basic-password-hash is empty.")
+		"Basic auth plain-text password (deprecated: use --auth-basic-password-hash instead).")
 	fs.StringVar(&cfg.authBasicPasswordHash, "auth-basic-password-hash", "",
 		"Basic auth SHA-256 password hash (hex). Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCIssuerURL, "auth-oidc-issuer-url", "",
@@ -260,12 +270,14 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.authOIDCClientID, "auth-oidc-client-id", "",
 		"OIDC client ID. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
-		"OIDC client secret. Only used when --auth-enabled=true.")
-	fs.BoolVar(&cfg.authAllowUnauth, "auth-allow-unauthenticated", false,
-		"Allow unauthenticated requests through when no credentials are provided. Only used when --auth-enabled=true.")
+		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
+	fs.StringVar(&cfg.authTokenSecret, "auth-token-secret", "",
+		"Secret key for signing self-issued auth tokens. Required for basic auth login flow. "+
+			"Prefer setting via PAPRIKA_AUTH_TOKEN_SECRET env var.")
 
 	cfg.webhookSecret = getenv("PAPRIKA_WEBHOOK_SECRET")
 	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
+	cfg.authTokenSecret = getenv("PAPRIKA_AUTH_TOKEN_SECRET")
 	cfg.enableWebhooks = getenv("ENABLE_WEBHOOKS") != "false"
 
 	cfg.cacheBackend = getenv("PAPRIKA_CACHE_BACKEND")
@@ -294,7 +306,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 
 	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
 
-	cfg.zapOptions = zap.Options{Development: true}
+	cfg.zapOptions = zap.Options{Development: false}
 	cfg.zapOptions.BindFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
@@ -332,26 +344,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
-	if err != nil {
-		return fmt.Errorf("build API config: %w", err)
-	}
-
-	apiClient, err := createAPIClient(config, scheme)
-	if err != nil {
-		return fmt.Errorf("create API client: %w", err)
-	}
-
-	k8sClient, err := createK8sClient(config)
+	apiClient, k8sClient, authCfg, authInterceptor, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
 	if err != nil {
 		return err
-	}
-
-	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authAllowUnauth, cfg.authRBACRules, setupLog)
-	authInterceptor, err := auth.Interceptor(apiCtx, authCfg, apiClient)
-	if err != nil {
-		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
 	broker, err := newBrokerFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
@@ -360,24 +355,17 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	resolver := governance.NewProjectResolver(apiClient)
-	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
-	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
-
-	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	paprikaServer, connectHandler, err := buildConnectHandler(apiClient, k8sClient, broker, authCfg, authInterceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
-	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
-	otelInterceptor, err := otelconnect.NewInterceptor()
+	extraMuxHandlers, err := buildAuthHandlers(apiCtx, authCfg)
 	if err != nil {
-		return fmt.Errorf("otelconnect interceptor: %w", err)
+		return err
 	}
 
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer, connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()))
-
-	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
+	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, extraMuxHandlers...)
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
@@ -396,6 +384,81 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
 }
 
+func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (client.Client, kubernetes.Interface, auth.Config, connect.Interceptor, error) {
+	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("build API config: %w", err)
+	}
+
+	apiClient, err := createAPIClient(config, scheme)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("create API client: %w", err)
+	}
+
+	k8sClient, err := createK8sClient(config)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, err
+	}
+
+	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, apiClient)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("failed to build auth interceptor: %w", err)
+	}
+
+	return apiClient, k8sClient, authCfg, authInterceptor, nil
+}
+
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, broker *events.Broker, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+	resolver := governance.NewProjectResolver(apiClient)
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
+	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
+
+	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	if err != nil {
+		return nil, nil, err
+	}
+	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
+
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return nil, nil, fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
+		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithReadMaxBytes(maxMsgBytes),
+	)
+	return paprikaServer, connectHandler, nil
+}
+
+func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.ServeMux), error) {
+	var handlers []func(*http.ServeMux)
+
+	if authCfg.OIDC != nil {
+		oidcAuth, err := auth.NewOIDCAuthenticator(ctx, authCfg.OIDC)
+		if err != nil {
+			return nil, fmt.Errorf("create OIDC authenticator: %w", err)
+		}
+		handlers = append(handlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/login", oidcAuth.LoginHandler())
+			mux.HandleFunc("/auth/token", oidcAuth.TokenHandler())
+		})
+	}
+
+	if authCfg.BasicAuth != nil && authCfg.Enabled && len(authCfg.TokenSecret) > 0 {
+		secret := authCfg.TokenSecret
+		basicCfg := *authCfg.BasicAuth
+		handlers = append(handlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/basic-login", auth.BasicLoginHandler(basicCfg, secret))
+		})
+	}
+
+	return handlers, nil
+}
+
 func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, setupLog logr.Logger) *cache.Invalidator {
 	cacheClient, err := cache.New(ctx, cacheCfg)
 	if err != nil {
@@ -409,11 +472,8 @@ func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, se
 		}
 		return nil
 	}
-	defer func() {
-		if closeErr := cacheClient.Close(); closeErr != nil {
-			setupLog.Error(closeErr, "Failed to close webhook cache client")
-		}
-	}()
+	// Intentionally NOT deferring cacheClient.Close() here — the returned
+	// Invalidator wraps the client and its lifetime is managed by the caller.
 	return cache.NewInvalidator(cacheClient)
 }
 
@@ -596,11 +656,15 @@ func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
 	return k8sClient, nil
 }
 
-func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger) (*http.ServeMux, error) {
+func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger, extraHandlers ...func(*http.ServeMux)) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	mux.Handle("/events", apiserver.NewSSEHandler(broker))
 	mux.Handle("/healthz", healthzHandler(log))
+	// Register extra handlers before the / catch-all so specific routes win.
+	for _, h := range extraHandlers {
+		h(mux)
+	}
 	uiHandler, err := apiserver.UIHandler()
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
@@ -753,19 +817,28 @@ func newCacheFromConfig(ctx context.Context, cacheCfg cache.Config, setupLog log
 	return c, nil
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, allowUnauth bool, rbacRules string, log logr.Logger) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, tokenSecret, rbacRules string, log logr.Logger) auth.Config {
 	cfg := auth.Config{
-		Enabled:     enabled,
-		AllowUnauth: allowUnauth,
+		Enabled: enabled,
 	}
 	if !enabled {
 		return cfg
 	}
+	if tokenSecret != "" {
+		cfg.TokenSecret = []byte(tokenSecret)
+	}
 	if basicUsername != "" {
+		passHash := basicPasswordHash
+		if passHash == "" && basicPassword != "" {
+			h, err := bcrypt.GenerateFromPassword([]byte(basicPassword), bcrypt.DefaultCost)
+			if err != nil {
+				panic(err)
+			}
+			passHash = string(h)
+		}
 		cfg.BasicAuth = &auth.BasicAuthConfig{
 			Username:     basicUsername,
-			Password:     basicPassword,
-			PasswordHash: basicPasswordHash,
+			PasswordHash: passHash,
 		}
 	}
 	if oidcIssuerURL != "" {
@@ -773,6 +846,7 @@ func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHa
 			IssuerURL:    oidcIssuerURL,
 			ClientID:     oidcClientID,
 			ClientSecret: oidcClientSecret,
+			Scopes:       []string{"openid", "profile", "email"},
 		}
 	}
 	if rbacRules != "" {

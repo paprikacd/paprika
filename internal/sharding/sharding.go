@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -24,6 +25,7 @@ type Matcher interface {
 
 // Filter determines whether a resource belongs to this controller shard.
 type Filter struct {
+	mu          sync.RWMutex
 	shardID     int
 	totalShards int
 	enabled     bool
@@ -86,7 +88,9 @@ func NewFilter(shardID, totalShards int) *Filter {
 
 // SetMatcher installs an optional matching strategy, overriding hash-based sharding.
 func (f *Filter) SetMatcher(m Matcher) {
+	f.mu.Lock()
 	f.matcher = m
+	f.mu.Unlock()
 }
 
 // Matches returns true if the given namespace belongs to this shard.
@@ -94,8 +98,11 @@ func (f *Filter) Matches(namespace string) bool {
 	if !f.enabled {
 		return true
 	}
-	if f.matcher != nil {
-		return f.matcher.Matches(namespace)
+	f.mu.RLock()
+	matcher := f.matcher
+	f.mu.RUnlock()
+	if matcher != nil {
+		return matcher.Matches(namespace)
 	}
 	return hashNamespace(namespace)%f.totalShards == f.shardID
 }

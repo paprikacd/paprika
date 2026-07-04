@@ -15,6 +15,12 @@ spec:
   - {{- if .Values.metrics.secure }}
     bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
     {{- end }}
+    {{- with .Values.metrics.serviceMonitor.interval }}
+    interval: {{ . }}
+    {{- end }}
+    {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
+    scrapeTimeout: {{ . }}
+    {{- end }}
     path: /metrics
     port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
     scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}

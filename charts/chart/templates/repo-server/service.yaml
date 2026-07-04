@@ -8,10 +8,21 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: repo-server
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" $) }}
   namespace: {{ .Release.Namespace }}
+  {{- with .Values.repoServer.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   ports:
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
   - name: repo
     port: {{ .Values.repoServer.service.port }}
     protocol: TCP

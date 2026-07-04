@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-app
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app
+  namespace: demo-app
+spec:
+  source:
+    type: helm
+    chart:
+      path: /charts/demo-app
+  stages:
+    - name: dev
+      ring: 1
+      autoPromote: true
+      parameters:
+        replicaCount: "1"
+        version: "1.0.0"
+    - name: staging
+      ring: 2
+      parameters:
+        replicaCount: "2"
+        version: "1.0.0"
+    - name: prod
+      ring: 3
+      canary:
+        steps: [10, 50, 100]
+        intervalSeconds: 30
+        analysis:
+          checks:
+            - type: http
+              url: http://demo-app-staging:8080/health
+              successThreshold: "99"
+              requestCount: 5
+              timeoutSeconds: 5
+          rollbackOnFail: true
+      gates:
+        - type: smoke-test
+          endpoint: http://demo-app-staging:8080/health
+          timeout: 30
+      parameters:
+        replicaCount: "3"
+        version: "1.0.0"
+  strategy: Canary
+  syncPolicy: Auto
+  parameters:
+    image.tag: latest
+  onFailure:
+    action: rollback
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: demo-build
+  namespace: demo-app
+spec:
+  maxParallel: 2
+  sources:
+    - type: git
+      url: https://github.com/paprikacd/demo-app
+  steps:
+    - name: build
+      image: golang:1.26-alpine
+      script: |
+        go build -o /out/demo-app -ldflags "-X main.version=${VERSION}" .
+      timeout: 120
+    - name: test
+      image: golang:1.26-alpine
+      script: |
+        go test ./...
+      depends:
+        - build
+      timeout: 60

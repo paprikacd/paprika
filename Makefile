@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/benebsworth/paprika:latest
+IMG ?= ghcr.io/paprikacd/paprika:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -31,6 +31,12 @@ SHELL = /usr/bin/env bash -o pipefail
 all: build
 
 ##@ General
+
+.PHONY: hooks
+hooks: ## Install git pre-commit hooks for local validation.
+	git config core.hooksPath .githooks
+	@chmod +x .githooks/pre-commit
+	@echo "Hooks installed."
 
 # The help target prints out all targets with their descriptions organized
 # beneath their categories. The categories are represented by '##@' and the
@@ -369,6 +375,24 @@ helm-history: ## Show Helm release history.
 .PHONY: helm-rollback
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+##@ E2E Testing
+
+.PHONY: e2e-up
+e2e-up: ## Provision VKE cluster and deploy Paprika chart
+	./hack/e2e-vultr.sh up
+
+.PHONY: e2e-test
+e2e-test: ## Run health checks against running cluster
+	./hack/e2e-vultr.sh test
+
+.PHONY: e2e-down
+e2e-down: ## Tear down cluster and chart
+	./hack/e2e-vultr.sh down
+
+.PHONY: e2e-ci
+e2e-ci: ## Full E2E pipeline: up -> test -> down
+	./hack/e2e-vultr.sh ci
 
 ##@ Kind Split-Plane
 

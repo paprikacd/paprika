@@ -1,14 +1,24 @@
 apiVersion: v2
 name: paprika
-description: A Helm chart to distribute paprika
+description: A Kubernetes operator for progressive delivery and application lifecycle management
 type: application
-
 version: 0.1.0
 appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+
+home: https://opencode.ai
+sources:
+  - https://github.com/anomalyco/paprika
+
+maintainers:
+  - name: Ben Ebsworth
+    email: ben.ebsworth@gmail.com
 
 keywords:
   - kubernetes
   - operator
+  - progressive-delivery
+  - gitops
 
 annotations:
   kubebuilder.io/generated-by: kubebuilder

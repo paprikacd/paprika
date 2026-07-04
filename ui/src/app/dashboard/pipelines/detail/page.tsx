@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Loader2 } from "lucide-react"
 
 import { createPromiseClient } from "@connectrpc/connect"
-import { createConnectTransport } from "@connectrpc/connect-web"
+import { createTransport } from "@/lib/transport"
 import { toPlainMessage } from "@bufbuild/protobuf"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import { Pipeline } from "@/gen/paprika/v1/api_pb"
@@ -18,7 +18,7 @@ import { StepDetailPanel } from "@/components/dashboard/step-detail-panel"
 import { usePipelineSSE, type PipelineSSEEvent } from "@/lib/pipeline-sse"
 import { useStepArtifacts } from "@/lib/use-step-artifacts"
 
-const transport = createConnectTransport({ baseUrl: "" })
+const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
 export default function PipelineDetailPage() {

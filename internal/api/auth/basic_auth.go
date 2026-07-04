@@ -2,24 +2,21 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // BasicAuthConfig configures HTTP Basic authentication.
 type BasicAuthConfig struct {
 	// Username is the allowed username.
 	Username string
-	// PasswordHash is the SHA-256 hash of the allowed password, hex-encoded.
+	// PasswordHash is the bcrypt hash of the allowed password.
 	PasswordHash string
-	// Password is the plain-text password. Use only for development/testing.
-	// If PasswordHash is set, it takes precedence.
-	Password string
 }
 
 // BasicAuthenticator implements HTTP Basic authentication.
@@ -33,15 +30,11 @@ func NewBasicAuthenticator(cfg BasicAuthConfig) (*BasicAuthenticator, error) {
 	if cfg.Username == "" {
 		return nil, errors.New("basic auth username is required")
 	}
-	if cfg.PasswordHash == "" && cfg.Password == "" {
-		return nil, errors.New("basic auth password or passwordHash is required")
+	if cfg.PasswordHash == "" {
+		return nil, errors.New("basic auth passwordHash is required")
 	}
 
 	hash := cfg.PasswordHash
-	if hash == "" {
-		h := sha256.Sum256([]byte(cfg.Password))
-		hash = hex.EncodeToString(h[:])
-	}
 
 	return &BasicAuthenticator{
 		username: cfg.Username,
@@ -83,9 +76,7 @@ func (b *BasicAuthenticator) Authenticate(ctx context.Context) (*Principal, erro
 		return nil, ErrUnauthenticated
 	}
 
-	h := sha256.Sum256([]byte(password))
-	hash := hex.EncodeToString(h[:])
-	if subtle.ConstantTimeCompare([]byte(hash), []byte(b.hash)) != 1 {
+	if err := bcrypt.CompareHashAndPassword([]byte(b.hash), []byte(password)); err != nil {
 		return nil, ErrUnauthenticated
 	}
 

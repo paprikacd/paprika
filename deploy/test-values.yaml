@@ -1,0 +1,250 @@
+# =============================================================================
+# Paprika — E2E test values for Vultr Kubernetes Engine (VKE)
+# =============================================================================
+# Used by hack/e2e-vultr.sh. Enables a representative subset of features
+# to validate chart correctness, health probes, and the UI.
+# =============================================================================
+
+# ── Global ────────────────────────────────────────────────────────────────────
+commonLabels:
+  environment: e2e
+  test-suite: paprika-e2e
+
+revisionHistoryLimit: 2
+
+deploymentMode: "split"
+mode: "operator"
+
+# ── Metrics / Prometheus ──────────────────────────────────────────────────────
+metrics:
+  enable: true
+  port: 8443
+  secure: false
+  bindAddress: ":8080"
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+prometheus:
+  enable: true
+  rules:
+    enabled: true
+
+grafana:
+  dashboards:
+    enabled: true
+    labelSelectors:
+      grafana_dashboard: "1"
+    configMapKeyPrefix: "data-"
+
+# ── Controller manager ────────────────────────────────────────────────────────
+manager:
+  enabled: true
+  replicas: 2
+  automountServiceAccountToken: true
+
+  image:
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 512Mi
+
+  args: []
+
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
+
+  terminationGracePeriodSeconds: 30
+
+  hpa:
+    enabled: false
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Spread pods across nodes
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: controller-manager
+
+# ── API server (split-mode) ───────────────────────────────────────────────────
+apiServer:
+  replicas: 2
+  automountServiceAccountToken: true
+
+  image:
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  terminationGracePeriodSeconds: 20
+
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  # Expose via ClusterIP (Envoy Gateway handles external access)
+  service:
+    type: ClusterIP
+    port: 3000
+
+  # Ingress / Gateway API for hostname-based access through the cluster's
+  # Envoy Gateway. The Gateway (paprika) lives in envoy-gateway-system and
+  # provisions a Vultr LoadBalancer via the CCM. Point DNS at the LB IP.
+  ingress:
+    enabled: true
+    type: gateway-api
+    gateway:
+      gatewayRef:
+        name: paprika
+        namespace: envoy-gateway-system
+      hostname: paprika.benebsworth.com
+
+# ── Webhook receiver (split-mode) ─────────────────────────────────────────────
+webhookReceiver:
+  enabled: true
+  replicas: 2
+  automountServiceAccountToken: true
+
+  image:
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# ── Repo server ───────────────────────────────────────────────────────────────
+repoServer:
+  enabled: true
+  replicas: 1
+  automountServiceAccountToken: true
+
+  image:
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# ── Agent (disabled for e2e; needs remote cluster) ────────────────────────────
+agent:
+  enabled: false
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+auth:
+  enabled: true
+  basic:
+    enabled: true
+    username: "admin"
+    # bcrypt hash of "admin123". Pre-compute your own with `auth.HashPassword`.
+    passwordHash: "$2a$10$gokrR1H67p0nl/1Q2k1qk.i9u4iJNm8Iy1PUBR9ScjdhlznxnAKq6"
+  oidc:
+    enabled: true
+    issuerURL: "https://accounts.google.com"
+    clientID: "REPLACE_WITH_GOOGLE_CLIENT_ID"
+    # FIXME: Pass via extraEnv + secretRef instead of CLI arg to avoid
+    # process-list exposure. For now, set via --auth-oidc-client-secret flag.
+    clientSecret: "REPLACE_WITH_GOOGLE_CLIENT_SECRET"
+  rbac:
+    - subjects: ["group:users"]
+      actions: ["*"]
+      resources: ["*"]
+      namespaces: ["*"]
+
+rbac:
+  helpers:
+    enable: false
+
+# ── Audit ─────────────────────────────────────────────────────────────────────
+audit:
+  enabled: true
+
+# ── OpenTelemetry ─────────────────────────────────────────────────────────────
+otel:
+  enabled: false
+
+# ── Cache (Redis disabled; uses in-memory cache for e2e) ──────────────────────
+redis:
+  enabled: false
+
+# ── TLS (cert-manager required for controller-manager webhook TLS) ────────────
+certManager:
+  enable: true
+
+mtls:
+  enabled: false
+
+# ── Network policies ──────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: false
+
+# ── PSA ───────────────────────────────────────────────────────────────────────
+namespace:
+  create: false
+
+# ── Velero backup (disabled for e2e) ──────────────────────────────────────────
+velero:
+  enabled: false
+
+# ── Hooks ─────────────────────────────────────────────────────────────────────
+hooks:
+  crdCheck:
+    enabled: true
+  preDeleteCleanup:
+    enabled: false

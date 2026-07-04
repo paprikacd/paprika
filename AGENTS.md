@@ -1,328 +1,103 @@
-# paprika - AI Agent Guide
-
-## Project Structure
-
-**Single-group layout (default):**
-```
-cmd/main.go                    Manager entry (registers controllers/webhooks)
-api/<version>/*_types.go       CRD schemas (+kubebuilder markers)
-api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
-internal/controller/*          Reconciliation logic
-internal/webhook/*             Validation/defaulting (if present)
-config/crd/bases/*             Generated CRDs (DO NOT EDIT)
-config/rbac/role.yaml          Generated RBAC (DO NOT EDIT)
-config/samples/*               Example CRs (edit these)
-Makefile                       Build/test/deploy commands
-PROJECT                        Kubebuilder metadata Auto-generated (DO NOT EDIT)
-```
-
-**Multi-group layout** (for projects with multiple API groups):
-```
-api/<group>/<version>/*_types.go       CRD schemas by group
-internal/controller/<group>/*          Controllers by group
-internal/webhook/<group>/<version>/*   Webhooks by group and version (if present)
-```
-
-Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check the `PROJECT` file for `multigroup: true`.
-
-**To convert to multi-group layout:**
-1. Run: `kubebuilder edit --multigroup=true`
-2. Move APIs: `mkdir -p api/<group> && mv api/<version> api/<group>/`
-3. Move controllers: `mkdir -p internal/controller/<group> && mv internal/controller/*.go internal/controller/<group>/`
-4. Move webhooks (if present): `mkdir -p internal/webhook/<group> && mv internal/webhook/<version> internal/webhook/<group>/`
-5. Update import paths in all files
-6. Fix `path` in `PROJECT` file for each resource
-7. Update test suite CRD paths (add one more `..` to relative paths)
-
-## Critical Rules
-
-### Never Edit These (Auto-Generated)
-- `config/crd/bases/*.yaml` - from `make manifests`
-- `config/rbac/role.yaml` - from `make manifests`
-- `config/webhook/manifests.yaml` - from `make manifests`
-- `**/zz_generated.*.go` - from `make generate`
-- `PROJECT` - from `kubebuilder [OPTIONS]`
-
-### Never Remove Scaffold Markers
-Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these markers.
-
-### Keep Project Structure
-Do not move files around. The CLI expects files in specific locations.
-
-### Always Use CLI Commands
-Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold. Do NOT create files manually.
-
-### E2E Tests Require an Isolated Kind Cluster
-The e2e tests are designed to validate the solution in an isolated environment (similar to GitHub Actions CI).
-Ensure you run them against a dedicated [Kind](https://kind.sigs.k8s.io/) cluster (not your “real” dev/prod cluster).
-
-## After Making Changes
-
-**After editing `*_types.go` or markers:**
-```
-make manifests      # Regenerate CRDs/RBAC from markers
-make generate-proto # Regenerate protobuf Go and TypeScript clients
-make generate       # Regenerate DeepCopy methods (also runs generate-proto)
-```
-
-**After editing `*.go` files:**
-```
-make lint       # Run golangci-lint (v2, uses bin/golangci-lint run)
-make lint-fix   # Auto-fix lint issues (bin/golangci-lint run --fix)
-make lint-config# Validate golangci-lint v2 config (bin/golangci-lint config verify)
-make test       # Run unit tests (skips e2e, uses envtest)
-```
-
-**For e2e tests (on isolated Kind cluster):**
-```
-make test-e2e   # Setup kind + run e2e + cleanup
-```
-
-## CLI Commands Cheat Sheet
-
-### Create API (your own types)
-```bash
-kubebuilder create api --group <group> --version <version> --kind <Kind>
-```
-
-### Deploy Image Plugin (scaffold to deploy/manage ANY container image)
-
-Generate a controller that deploys and manages a container image (nginx, redis, memcached, your app, etc.):
-
-```bash
-# Example: deploying memcached
-kubebuilder create api --group example.com --version v1alpha1 --kind Memcached \
-  --image=memcached:alpine \
-  --plugins=deploy-image.go.kubebuilder.io/v1-alpha
-```
-
-Scaffolds good-practice code: reconciliation logic, status conditions, finalizers, RBAC. Use as a reference implementation.
-
-
-### Create Webhooks
-```bash
-# Validation + defaulting
-kubebuilder create webhook --group <group> --version <version> --kind <Kind> \
-  --defaulting --programmatic-validation
-
-# Conversion webhook (for multi-version APIs)
-kubebuilder create webhook --group <group> --version v1 --kind <Kind> \
-  --conversion --spoke v2
-```
-
-### Controller for Core Kubernetes Types
-```bash
-# Watch Pods
-kubebuilder create api --group core --version v1 --kind Pod \
-  --controller=true --resource=false
-
-# Watch Deployments
-kubebuilder create api --group apps --version v1 --kind Deployment \
-  --controller=true --resource=false
-```
-
-### Controller for External Types (e.g., from other operators)
-
-Watch resources from external APIs (cert-manager, Argo CD, Istio, etc.):
-
-```bash
-# Example: watching cert-manager Certificate resources
-kubebuilder create api \
-  --group cert-manager --version v1 --kind Certificate \
-  --controller=true --resource=false \
-  --external-api-path=github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1 \
-  --external-api-domain=io \
-  --external-api-module=github.com/cert-manager/cert-manager
-```
-
-**Note:** Use `--external-api-module=<module>@<version>` only if you need a specific version. Otherwise, omit `@<version>` to use what's in go.mod.
-
-### Webhook for External Types
-
-```bash
-# Example: validating external resources
-kubebuilder create webhook \
-  --group cert-manager --version v1 --kind Issuer \
-  --defaulting \
-  --external-api-path=github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1 \
-  --external-api-domain=io \
-  --external-api-module=github.com/cert-manager/cert-manager
-```
-
-## Testing & Development
-
-```bash
-make test              # Run unit tests (uses envtest: real K8s API + etcd)
-make run               # Run locally (uses current kubeconfig context)
-```
-
-Tests use **Ginkgo + Gomega** (BDD style). Check `suite_test.go` for setup.
-
-## Deployment Workflow
-
-```bash
-# 1. Regenerate manifests
-make manifests generate
-
-# 2. Build & deploy
-export IMG=<registry>/<project>:tag
-make docker-build docker-push IMG=$IMG  # Or: kind load docker-image $IMG --name <cluster>
-make deploy IMG=$IMG
-
-# 3. Test
-kubectl apply -k config/samples/
-
-# 4. Debug
-kubectl logs -n <project>-system deployment/<project>-controller-manager -c manager -f
-```
-
-### API Design
-
-**Key markers for** `api/<version>/*_types.go`:
-
-```go
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Namespaced
-// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
-
-// On fields:
-// +kubebuilder:validation:Required
-// +kubebuilder:validation:Minimum=1
-// +kubebuilder:validation:MaxLength=100
-// +kubebuilder:validation:Pattern="^[a-z]+$"
-// +kubebuilder:default="value"
-```
-
-- **Use** `metav1.Condition` for status (not custom string fields)
-- **Use predefined types**: `metav1.Time` instead of `string` for dates
-- **Follow K8s API conventions**: Standard field names (`spec`, `status`, `metadata`)
-
-### Controller Design
-
-**RBAC markers in** `internal/controller/*_controller.go`:
-
-```go
-// +kubebuilder:rbac:groups=mygroup.example.com,resources=mykinds,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=mygroup.example.com,resources=mykinds/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=mygroup.example.com,resources=mykinds/finalizers,verbs=update
-// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-```
-
-**Implementation rules:**
-- **Idempotent reconciliation**: Safe to run multiple times
-- **Re-fetch before updates**: `r.Get(ctx, req.NamespacedName, obj)` before `r.Update` to avoid conflicts
-- **Structured logging**: `log := log.FromContext(ctx); log.Info("msg", "key", val)`
-- **Owner references**: Enable automatic garbage collection (`SetControllerReference`)
-- **Watch secondary resources**: Use `.Owns()` or `.Watches()`, not just `RequeueAfter`
-- **Finalizers**: Clean up external resources (buckets, VMs, DNS entries)
-
-### Logging
-
-**Follow Kubernetes logging message style guidelines:**
-
-- Start from a capital letter
-- Do not end the message with a period
-- Active voice: subject present (`"Deployment could not create Pod"`) or omitted (`"Could not create Pod"`)
-- Past tense: `"Could not delete Pod"` not `"Cannot delete Pod"`
-- Specify object type: `"Deleted Pod"` not `"Deleted"`
-- Balanced key-value pairs
-
-```go
-log.Info("Starting reconciliation")
-log.Info("Created Deployment", "name", deploy.Name)
-log.Error(err, "Failed to create Pod", "name", name)
-```
-
-**Reference:** https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md#message-style-guidelines
-
-### Webhooks
-- **Create all types together**: `--defaulting --programmatic-validation --conversion`
-- **When`--force`is used**: Backup custom logic first, then restore after scaffolding
-- **For multi-version APIs**: Use hub-and-spoke pattern (`--conversion --spoke v2`)
-  - Hub version: Usually oldest stable version (v1)
-  - Spoke versions: Newer versions that convert to/from hub (v2, v3)
-  - Example: `--group crew --version v1 --kind Captain --conversion --spoke v2` (v1 is hub, v2 is spoke)
-
-### Learning from Examples
-
-The **deploy-image plugin** scaffolds a complete controller following good practices. Use it as a reference implementation:
-
-```bash
-kubebuilder create api --group example --version v1alpha1 --kind MyApp \
-  --image=<your-image> --plugins=deploy-image.go.kubebuilder.io/v1-alpha
-```
-
-Generated code includes: status conditions (`metav1.Condition`), finalizers, owner references, events, idempotent reconciliation.
-
-## Distribution Options
-
-### Option 1: YAML Bundle (Kustomize)
-
-```bash
-# Generate dist/install.yaml from Kustomize manifests
-make build-installer IMG=<registry>/<project>:tag
-```
-
-**Key points:**
-- The `dist/install.yaml` is generated from Kustomize manifests (CRDs, RBAC, Deployment)
-- Commit this file to your repository for easy distribution
-- Users only need `kubectl` to install (no additional tools required)
-
-**Example:** Users install with a single command:
-```bash
-kubectl apply -f https://raw.githubusercontent.com/<org>/<repo>/<tag>/dist/install.yaml
-```
-
-### Option 2: Helm Chart
-
-```bash
-kubebuilder edit --plugins=helm/v2-alpha                      # Generates dist/chart/ (default)
-kubebuilder edit --plugins=helm/v2-alpha --output-dir=charts  # Generates charts/chart/
-```
-
-**For development:**
-```bash
-make helm-deploy IMG=<registry>/<project>:<tag>          # Deploy manager via Helm
-make helm-deploy IMG=$IMG HELM_EXTRA_ARGS="--set ..."    # Deploy with custom values
-make helm-status                                         # Show release status
-make helm-uninstall                                      # Remove release
-make helm-history                                        # View release history
-make helm-rollback                                       # Rollback to previous version
-```
-
-**For end users/production:**
-```bash
-helm install my-release ./<output-dir>/chart/ --namespace <ns> --create-namespace
-```
-
-**Important:** If you add webhooks or modify manifests after initial chart generation:
-1. Backup any customizations in `<output-dir>/chart/values.yaml` and `<output-dir>/chart/manager/manager.yaml`
-2. Re-run: `kubebuilder edit --plugins=helm/v2-alpha --force` (use same `--output-dir` if customized)
-3. Manually restore your custom values from the backup
-
-### Publish Container Image
-
-```bash
-export IMG=<registry>/<project>:<version>
-make docker-build docker-push IMG=$IMG
-```
-
-## References
-
-### Essential Reading
-- **Kubebuilder Book**: https://book.kubebuilder.io (comprehensive guide)
-- **controller-runtime FAQ**: https://github.com/kubernetes-sigs/controller-runtime/blob/main/FAQ.md (common patterns and questions)
-- **Good Practices**: https://book.kubebuilder.io/reference/good-practices.html (why reconciliation is idempotent, status conditions, etc.)
-- **Logging Conventions**: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md#message-style-guidelines (message style, verbosity levels)
-
-### API Design & Implementation
-- **API Conventions**: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md
-- **Operator Pattern**: https://kubernetes.io/docs/concepts/extend-kubernetes/operator/
-- **Markers Reference**: https://book.kubebuilder.io/reference/markers.html
-
-### Tools & Libraries
-- **controller-runtime**: https://github.com/kubernetes-sigs/controller-runtime
-- **controller-tools**: https://github.com/kubernetes-sigs/controller-tools
-- **Kubebuilder Repo**: https://github.com/kubernetes-sigs/kubebuilder
+## Goal
+- Track P0–P2 code audit fixes across Go codebase (gosec, data races, security, goroutine leaks).
+- Build production-grade Helm chart: observability, security hardening, CRD lifecycle, Gateway API support.
+
+## Constraints & Preferences
+- TDD; frequent git commits; favor smaller focused files.
+- Keep monolith deployment mode unless split is proven necessary.
+- CRDs must survive `helm uninstall`; namespace lifecycle must be opt-in.
+- Gateway API (Envoy Gateway) replaces ingress-nginx for production ingress.
+- Chart supports both `ingress` and `gateway-api` ingress types. Mode selected by `apiServer.ingress.type`.
+
+## Progress
+### Done
+- **Code audit (P0-P2)**
+  - P0: use-after-close (cache), data race (Filter), wildcard CORS, AllowUnauth bypass, plaintext password
+  - P1: completionRegistry/Backoff races, TOCTOU cluster_pool, Broker deadlock, CachedTemplateRenderer, dev mode, appset authz filter, bare return err, WithReadMaxBytes(10MB), SMTP cleartext refusal, sanitized HTTP errors
+  - P2: OCI docker config, RedisBroker deprecation, RBAC wildcard subjects, hash.Write comments, Go skill rules
+
+- **Helm chart**
+  - Stale auth args removal
+  - Production polish: commonLabels, extraEnv/extraEnvFrom, revisionHistoryLimit, helpers
+  - Ingress for API server
+  - Observability: Grafana dashboard sidecar, 11 PrometheusRules, ServiceMonitor tuning
+  - Security: PSA namespace (opt-in), network policies, priorityClassName, runAsUser/runAsGroup/fsGroup: 1001
+  - Day-2: Enhanced NOTES.txt with backup/restore/upgrade/debug commands
+  - Pre-upgrade CRD check hook, pre-delete CRD cleanup hook
+  - 19 CRDs shipped: all API groups including analysisruns, analysistemplates, rollouts, featureflags, featureflagbindings
+  - Chart metadata: kubeVersion, maintainers, home, sources
+  - CRD lifecycle: 5 CRDs added (analysisruns, analysistemplates, rollouts, featureflags, featureflagbindings)
+
+- **E2E deployment (VKE)**
+  - All 7 components deployed and running (2× api-server, 2× controller-manager, 1× repo-server, 2× webhook-receiver)
+  - API health endpoint returns 200
+  - Frontend SPA served at LoadBalancer IP
+  - Controller-manager crash fixed: missing CRDs installed + memory boosted from 256Mi → 1Gi limit
+  - E2E harness: deploy/test-values.yaml, hack/e2e-vultr.sh
+- **Ingress (VKE)**: ingress-nginx controller installed in `ingress-nginx` ns, Vultr LB auto-provisioned by CCM. Chart's `apiServer.ingress` enabled with cert-manager selfsigned-issuer TLS. Verified end-to-end via `paprika.<lb-ip>.nip.io`.
+
+- **Go skill**: 3 Dos/Don'ts, 5 linting rules (11.1–11.5), 8 takeaways (#18–25)
+- **golangci.yml**: Re-enabled G204/G304/G306 with justifications
+- **CI/CD**: Build+push to ghcr.io/paprikacd/paprika
+- **Gateway API support**: Chart supports both `ingress` and `gateway-api` ingress types via `apiServer.ingress.type`. `deploy/test-values.yaml` switched to `gateway-api`. Envoy Gateway is the production ingress controller. Ingress-nginx removed; api-server LoadBalancer changed to ClusterIP. Only 1 LB remaining (Envoy Gateway at `45.77.238.224`, saves ~$10/mo).
+- **Envoy data plane resource limits**: Capped proxy pod to 50m/128Mi requests, 200m/256Mi limits (was unlimited 100m/512Mi). Total ingress footprint: ~100m CPU + 384Mi memory.
+
+### Remaining
+- Consolidate `contains()` → shared util or `slices.Contains`
+- SHA-256 → bcrypt/argon2
+- `ClusterConnectionPool` caller audit for context lifecycle
+- Run `make test`, `make lint`, `helm lint` across whole codebase
+- Push new image with `--cache-sync-timeout` flag + slices.Contains refactor (BLOCKED: no `paprikacd` org token)
+- Production TLS cert (replace selfsigned-issuer with Let's Encrypt DNS-01 via CF API scoped token - blocked by cert-manager v1.16 cloudflare lib bug)
+- Automate Envoy Gateway install + Gateway + xDS service alias in `hack/e2e-vultr.sh`
+
+## Key Decisions
+- `DenyAllAuthorizer` (deny-all fallback) not `AllowAllAuthorizer` — silence = denial
+- `sync.Mutex` on `Filter.matcher` (Matcher is interface; atomic.Value can't hold interfaces)
+- Inline SHA-256 as transitional fix; long-term bcrypt/argon2
+- OCI credentials parsed in-memory from `.dockerconfigjson` — no temp file
+- SMTP refuses cleartext auth when STARTTLS unavailable
+- Monolith mode kept as default; split only when profiling proves need
+- Chart extraEnv/extraEnvFrom uses inline range loops to avoid YAML indentation bugs
+- Hook RBAC resources are regular templates (not hooks)
+- PSA labels on namespace opt-in with helm.sh/resource-policy: keep
+- Controller-manager needs 512Mi memory limit minimum with 5+ CRD informers
+- All 19 CRDs shipped in chart; analysisruns/analysistemplates critical for controller-manager startup
+- In split mode, manager.args should be empty (--ui-bind-address handled by api-server)
+- Vultr CCM auto-provisions LBs for `Service type: LoadBalancer`; service deletion is gated by `service.kubernetes.io/load-balancer-cleanup` finalizer. After LB deletion, the service stays in `Terminating` until the LB is actually torn down in Vultr (~30s).
+- The chart's `apiServer.ingress` only renders in split mode. For testing without a real domain, use `nip.io` (e.g. `paprika.<lb-ip>.nip.io`) which auto-resolves to the LB IP. TLS works with a self-signed issuer.
+- Chart's `apiServer.service.type` changed to `ClusterIP` in test-values since Envoy Gateway handles external access now.
+- HTTPRoute targets Gateway `paprika` in `envoy-gateway-system` namespace. GatewayClass `eg` and Gateway must be pre-installed.
+- Envoy Gateway's xDS config references `envoy-gateway` service but bitnami chart creates `eg-envoy-gateway`. Fixed with a Service (ClusterIP None) + EndpointSlice alias. Proxy cert SANs must include `envoy-gateway` for mTLS.
+- EnvoyProxy CRD resource limits may not be reconciled by EG v1.4.0. Apply limits directly via `kubectl patch deployment` on the proxy deployment as fallback.
+- Resource limits cap total ingress footprint to ~100m CPU + 384Mi memory (control plane 50m/128Mi requests + 500m/256Mi limits, data plane 50m/128Mi requests + 200m/256Mi limits).
+
+## Relevant Files
+- `cmd/main.go`, `cmd/cloud-run/main.go`, `cmd/main_operator.go`
+- `internal/sharding/sharding.go`, `internal/api/sse.go`, `internal/api/auth/*`
+- `internal/controller/pipelines/cluster_pool.go`, `notification_controller.go`, `release_controller.go`, `email_sender.go`
+- `internal/api/events/broker.go`, `internal/ratelimit/ratelimit.go`, `internal/engine/hooks/completion.go`, `internal/engine/cached_renderer.go`
+- `internal/webhook/receiver/handler.go`, `internal/source/oci.go`, `internal/api/server.go`
+- `charts/chart/values.yaml`, `charts/chart/templates/_helpers.tpl`
+- `charts/chart/templates/api-server/deployment.yaml`, `charts/chart/templates/api-server/ingress.yaml`, `charts/chart/templates/api-server/httproute.yaml`
+- `charts/chart/templates/manager/manager.yaml`, `charts/chart/templates/manager/statefulset.yaml`
+- `charts/chart/templates/webhook-receiver/deployment.yaml`, `charts/chart/templates/repo-server/deployment.yaml`
+- `charts/chart/templates/agent/daemonset.yaml`, `charts/chart/templates/namespace.yaml`
+- `charts/chart/templates/crd/*.yaml` (19 CRD templates)
+- `charts/chart/templates/hooks/pre-upgrade-crd-check.yaml`, `charts/chart/templates/hooks/pre-delete-crd-cleanup.yaml`
+- `charts/chart/templates/grafana/dashboards-configmap.yaml`, `charts/chart/templates/prometheus/*`
+- `charts/chart/templates/networkpolicy/*.yaml`, `charts/chart/templates/extras/*.yaml`
+- `charts/chart/templates/NOTES.txt`
+- `deploy/test-values.yaml`, `deploy/envoy-proxy.yaml`, `deploy/envoy-gateway-svc-alias.yaml`, `hack/e2e-vultr.sh`
+- `go-best-practices/SKILL.md`, `.golangci.yml`
+
+## Commands
+- `make test`, `make lint`, `just build/lint/test`
+- `helm lint charts/chart/`
+- `helm template test-release charts/chart/ --values deploy/test-values.yaml`
+- `helm upgrade paprika-e2e charts/chart/ --namespace paprika-e2e --values deploy/test-values.yaml --wait --timeout 5m`
+- `KUBECONFIG=.kubeconfig-e2e kubectl get pods -n paprika-e2e`
+- `KUBECONFIG=.kubeconfig-e2e kubectl get pods -n envoy-gateway-system`
+- `KUBECONFIG=.kubeconfig-e2e kubectl apply -f deploy/envoy-proxy.yaml`
+- `KUBECONFIG=.kubeconfig-e2e kubectl apply -f deploy/envoy-gateway-svc-alias.yaml`
+- `KUBECONFIG=.kubeconfig-e2e kubectl patch deployment/envoy-envoy-gateway-system-paprika-05f44800 -n envoy-gateway-system --type=strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"envoy","resources":{"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"200m","memory":"256Mi"}}}]}}}}'`

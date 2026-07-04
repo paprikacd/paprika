@@ -8,16 +8,31 @@ metadata:
     helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     app.kubernetes.io/instance: {{ .Release.Name }}
     control-plane: controller-manager
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "manager-api-service" "context" $) }}
   namespace: {{ .Release.Namespace }}
+  {{- with .Values.manager.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   ports:
+  - name: health
+    port: 8081
+    protocol: TCP
+    targetPort: 8081
   - name: api
     port: 3000
     protocol: TCP
     targetPort: 3000
+  - name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     control-plane: controller-manager
-  type: ClusterIP
+  type: {{ .Values.manager.service.type | default "ClusterIP" }}
 {{- end }}

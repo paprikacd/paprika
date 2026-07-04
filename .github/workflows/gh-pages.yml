@@ -1,10 +1,10 @@
-name: Deploy Docs to GitHub Pages
+name: Deploy Landing to GitHub Pages
 
 on:
   push:
     branches: [master]
     paths:
-      - "ui/**"
+      - "landing/**"
       - ".github/workflows/gh-pages.yml"
   workflow_dispatch:
 
@@ -14,25 +14,12 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
     steps:
       - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - run: npm ci
-
-      - run: npm run build:gh-pages
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ui/out
+          publish_dir: landing
           publish_branch: gh-pages
-          full_commit_message: "docs: rebuild for GitHub Pages [skip ci]"
+          full_commit_message: "landing: rebuild for GitHub Pages [skip ci]"

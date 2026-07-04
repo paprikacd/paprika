@@ -105,7 +105,7 @@ func (s *Server) Render(ctx context.Context, req *connect.Request[paprikav1.Rend
 // Handler returns an HTTP handler for the repo server.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	_, handler := v1connect.NewPaprikaServiceHandler(s)
+	_, handler := v1connect.NewPaprikaServiceHandler(s, connect.WithReadMaxBytes(10*1024*1024))
 	mux.Handle("/paprika.v1.PaprikaService/", handler)
 	mux.HandleFunc("/invalidate", s.handleInvalidate)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

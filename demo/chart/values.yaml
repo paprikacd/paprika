@@ -1,0 +1,20 @@
+replicaCount: 1
+version: "1.0.0"
+healthStatus: 200
+healthBody: '{"status":"ok"}'
+service:
+  port: 8080
+image:
+  repository: ghcr.io/paprikacd/paprika-demo
+  tag: latest
+  pullPolicy: IfNotPresent
+ingress:
+  enabled: false
+  host: ""
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi

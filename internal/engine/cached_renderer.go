@@ -64,11 +64,16 @@ func (r *CachedTemplateRenderer) Render(ctx context.Context, tmpl *paprika.Templ
 	return rendered, nil
 }
 
-// RenderAll checks the cache for each template and renders misses.
+// RenderAll renders each template and concatenates the results, using the cache
+// for individual template renders when possible.
 func (r *CachedTemplateRenderer) RenderAll(ctx context.Context, templates []paprika.Template, params map[string]string) ([]byte, error) {
-	result, err := r.inner.RenderAll(ctx, templates, params)
-	if err != nil {
-		return nil, fmt.Errorf("render all templates: %w", err)
+	var result []byte
+	for i := range templates {
+		rendered, err := r.Render(ctx, &templates[i], params)
+		if err != nil {
+			return nil, fmt.Errorf("render all templates: %w", err)
+		}
+		result = append(result, rendered...)
 	}
 	return result, nil
 }

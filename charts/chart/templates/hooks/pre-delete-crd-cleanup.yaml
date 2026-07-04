@@ -1,0 +1,117 @@
+{{- if .Values.hooks.preDeleteCleanup.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "pre-delete-crd-cleanup" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-delete
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: pre-delete-cleanup
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/name: {{ include "paprika.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: pre-delete-cleanup
+        {{- range $k, $v := .Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "paprika.resourceName" (dict "suffix" "pre-delete-crd-cleanup" "context" $) }}
+      {{- $pc := .Values.hooks.preDeleteCleanup.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubectl
+          image: "{{ .Values.hooks.preDeleteCleanup.image.repository }}:{{ .Values.hooks.preDeleteCleanup.image.tag }}"
+          imagePullPolicy: {{ .Values.hooks.preDeleteCleanup.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "=== Paprika CRD instance cleanup (pre-delete) ==="
+
+              CRDS=$(kubectl get crd -l app.kubernetes.io/instance={{ .Release.Name }} -o name 2>/dev/null || true)
+              if [ -z "$CRDS" ]; then
+                echo "No Paprika CRDs found with instance label. Skipping cleanup."
+                exit 0
+              fi
+
+              for crd in $CRDS; do
+                group=$(kubectl get "$crd" -o jsonpath='{.spec.group}')
+                plural=$(kubectl get "$crd" -o jsonpath='{.spec.names.plural}')
+
+                instances=$(kubectl get "${plural}.${group}" -A -o name 2>/dev/null || true)
+                if [ -z "$instances" ]; then
+                  echo "  No instances for ${plural}.${group}"
+                  continue
+                fi
+
+                echo "  Deleting ${plural}.${group} instances..."
+                for inst in $instances; do
+                  ns=$(echo "$inst" | cut -d/ -f1)
+                  name=$(echo "$inst" | cut -d/ -f2)
+                  if [ "$ns" = "$inst" ]; then
+                    kubectl delete "$inst" --ignore-not-found --wait=true &
+                  else
+                    kubectl delete "$inst" --ignore-not-found --wait=true &
+                  fi
+                done
+                wait
+                echo "  Done: ${plural}.${group}"
+              done
+
+              echo "=== Cleanup complete ==="
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 50m
+              memory: 32Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "pre-delete-crd-cleanup" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: pre-delete-cleanup
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+{{- end }}

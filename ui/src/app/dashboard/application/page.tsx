@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
-import { createConnectTransport } from "@connectrpc/connect-web";
+import { createTransport } from "@/lib/transport";
 import {
   Activity,
   ArrowLeft,
@@ -42,7 +42,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, Release } from "@/gen/paprika/v1/api_pb";
 
-const transport = createConnectTransport({ baseUrl: "" });
+const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
 
 function SkeletonCard() {

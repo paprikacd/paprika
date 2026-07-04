@@ -13,6 +13,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
     {{- end }}
+    {{- range $k, $v := $.Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "controller-manager" "context" $) }}
   namespace: {{ .Release.Namespace }}
   {{- if .Values.manager.annotations }}
@@ -22,6 +25,9 @@ metadata:
 spec:
   {{- with .Values.manager.strategy }}
   strategy: {{ toYaml . | nindent 6 }}
+  {{- end }}
+  {{- with .Values.revisionHistoryLimit }}
+  revisionHistoryLimit: {{ . }}
   {{- end }}
   replicas: {{ .Values.manager.replicas }}
   selector:
@@ -52,12 +58,17 @@ spec:
         {{- end }}
         {{- end }}
         {{- end }}
+        {{- range $k, $v := $.Values.commonLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
     spec:
+      automountServiceAccountToken: {{ .Values.manager.automountServiceAccountToken | default false }}
       {{- with .Values.manager.topologySpreadConstraints }}
       topologySpreadConstraints: {{ toYaml . | nindent 10 }}
       {{- end }}
-      {{- with .Values.manager.priorityClassName }}
-      priorityClassName: {{ . | quote }}
+      {{- $pc := .Values.manager.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
       {{- end }}
       {{- with .Values.manager.tolerations }}
       tolerations: {{ toYaml . | nindent 10 }}
@@ -70,6 +81,10 @@ spec:
       {{- end }}
       {{- with .Values.manager.imagePullSecrets }}
       imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.initContainers }}
+      initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
@@ -107,6 +122,10 @@ spec:
         image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
         {{- with .Values.manager.image.pullPolicy }}
         imagePullPolicy: {{ . }}
+        {{- end }}
+        {{- with .Values.manager.startupProbe }}
+        startupProbe:
+          {{- toYaml . | nindent 10 }}
         {{- end }}
         livenessProbe:
           httpGet:
@@ -147,6 +166,11 @@ spec:
           {{- end }}
         volumeMounts:
           {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+          {{- if .Values.certManager.enable }}
+          - name: webhook-cert
+            mountPath: /tmp/k8s-webhook-server/serving-certs
+            readOnly: true
+          {{- end }}
           {{- if .Values.mtls.enabled }}
           - name: mtls-cert
             mountPath: /etc/paprika/tls
@@ -176,6 +200,13 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- with .Values.manager.extraEnv }}
+        {{- include "paprika.extraEnv" . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.manager.extraEnvFrom }}
+        envFrom:
+        {{- include "paprika.extraEnvFrom" . | nindent 8 }}
+        {{- end }}
       securityContext:
         {{- if .Values.manager.podSecurityContext }}
         {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
@@ -188,6 +219,11 @@ spec:
       {{- end }}
       volumes:
         {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- if .Values.certManager.enable }}
+        - name: webhook-cert
+          secret:
+            secretName: webhook-server-cert
+        {{- end }}
         {{- if .Values.mtls.enabled }}
         - name: mtls-cert
           secret:

@@ -1,15 +1,18 @@
-import { Hero } from "@/components/landing/hero"
-import { Features } from "@/components/landing/features"
-import { HowItWorks } from "@/components/landing/how-it-works"
-import { CTA } from "@/components/landing/cta"
+"use client"
 
-export default function LandingPage() {
-  return (
-    <>
-      <Hero />
-      <Features />
-      <HowItWorks />
-      <CTA />
-    </>
-  )
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/lib/auth-context"
+
+export default function HomePage() {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!isLoading) {
+      router.replace(user ? "/dashboard" : "/login")
+    }
+  }, [isLoading, user, router])
+
+  return null
 }

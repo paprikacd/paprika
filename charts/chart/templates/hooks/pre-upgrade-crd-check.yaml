@@ -1,0 +1,82 @@
+{{- if .Values.hooks.crdCheck.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "pre-upgrade-crd-check" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    {{- include "paprika.commonLabels" . | nindent 4 }}
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "paprika.commonLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "paprika.resourceName" (dict "suffix" "pre-upgrade-crd-check" "context" $) }}
+      {{- $pc := .Values.hooks.crdCheck.priorityClassName | default .Values.priorityClassName }}
+      {{- if $pc }}
+      priorityClassName: {{ $pc | quote }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubectl
+          image: "{{ .Values.hooks.crdCheck.image.repository }}:{{ .Values.hooks.crdCheck.image.tag }}"
+          imagePullPolicy: {{ .Values.hooks.crdCheck.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "=== Paprika CRD pre-upgrade check ==="
+
+              CRDS=$(kubectl get crd -l app.kubernetes.io/instance={{ .Release.Name }} -o name 2>/dev/null || true)
+              if [ -z "$CRDS" ]; then
+                echo "No Paprika CRDs found with instance label. Skipping check."
+                exit 0
+              fi
+
+              echo "Found CRDs:"
+              echo "$CRDS"
+
+              for crd in $CRDS; do
+                name=$(echo "$crd" | sed 's|.*/||')
+
+                storage=$(kubectl get "$crd" -o jsonpath='{.status.storedVersions[0]}' 2>/dev/null || echo "")
+                if [ -z "$storage" ]; then
+                  echo "WARNING: CRD $name has no stored versions."
+                  continue
+                fi
+                echo "OK: $name (storage version: $storage)"
+
+                group=$(kubectl get "$crd" -o jsonpath='{.spec.group}')
+                plural=$(kubectl get "$crd" -o jsonpath='{.spec.names.plural}')
+                count=$(kubectl get "${plural}.${group}" -A --no-headers 2>/dev/null | wc -l || echo "0")
+                echo "     $plural: $count instances"
+              done
+
+              echo "=== CRD check passed ==="
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 50m
+              memory: 32Mi
+{{- end }}

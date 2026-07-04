@@ -71,7 +71,11 @@ func NewClusterConnectionPoolWithContext(ctx context.Context, c client.Client, d
 	return pool
 }
 
-// NewClusterConnectionPool creates a new ClusterConnectionPool.
+// NewClusterConnectionPool creates a new ClusterConnectionPool with a lifecycle
+// tied to the provided context. Prefer NewClusterConnectionPoolWithContext so
+// the health-check loop stops when the parent context is cancelled.
+//
+// Deprecated: use NewClusterConnectionPoolWithContext.
 func NewClusterConnectionPool(c client.Client, defaultConfig *rest.Config) *ClusterConnectionPool {
 	return NewClusterConnectionPoolWithContext(context.Background(), c, defaultConfig)
 }
@@ -121,8 +125,13 @@ func (p *ClusterConnectionPool) GetRestConfig(ctx context.Context, kubeconfigSec
 	pc, exists := p.clients[hash]
 	p.mu.RUnlock()
 
-	if exists && p.isValid(pc) {
-		return pc.restConfig, nil
+	if exists {
+		p.mu.RLock()
+		valid := p.isValidLocked(pc)
+		p.mu.RUnlock()
+		if valid {
+			return pc.restConfig, nil
+		}
 	}
 
 	restConfig, err := p.buildRestConfig(ctx, kubeconfigSecret, namespace)
@@ -136,9 +145,10 @@ func (p *ClusterConnectionPool) getDefaultClient() (dynamic.Interface, error) {
 	key := "default"
 	p.mu.RLock()
 	pc, exists := p.clients[key]
+	valid := exists && p.isValidLocked(pc)
 	p.mu.RUnlock()
 
-	if exists && p.isValid(pc) {
+	if valid {
 		p.mu.Lock()
 		if pc.circuitOpen {
 			pc.circuitOpen = false
@@ -233,6 +243,13 @@ func (p *ClusterConnectionPool) buildRestConfig(ctx context.Context, kubeconfigS
 }
 
 func (p *ClusterConnectionPool) isValid(pc *pooledClient) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.isValidLocked(pc)
+}
+
+// isValidLocked checks client validity with the lock already held.
+func (p *ClusterConnectionPool) isValidLocked(pc *pooledClient) bool {
 	if pc == nil {
 		return false
 	}

@@ -68,6 +68,15 @@ func (a *AllowAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action
 	return nil
 }
 
+// DenyAllAuthorizer denies all requests. Used as a safe default fallback when
+// no authorizer is configured, so that silence does not mean "allow".
+type DenyAllAuthorizer struct{}
+
+// Authorize always returns ErrUnauthorized.
+func (a *DenyAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action, _ Resource, _, _ string) error {
+	return ErrUnauthorized
+}
+
 // Authorize checks if the principal can perform the action.
 func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Action, resource Resource, namespace, project string) error {
 	for i := range r.rules {
@@ -97,7 +106,7 @@ func (r *RBACAuthorizer) matchesSubjects(rule *RBACRule, p *Principal) bool {
 		return true
 	}
 	for _, sub := range rule.Subjects {
-		if sub == p.Subject {
+		if sub == "*" || sub == p.Subject {
 			return true
 		}
 		if strings.HasPrefix(sub, "group:") {

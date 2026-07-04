@@ -446,7 +446,14 @@ func (s *PaprikaServer) ListApplicationSets(
 	}
 	sets := make([]*paprikav1.ApplicationSet, 0, len(list.Items))
 	for i := range list.Items {
-		sets = append(sets, convertApplicationSet(&list.Items[i]))
+		a := &list.Items[i]
+		if a.GetLabels()[projectLabelKey] == "" {
+			continue
+		}
+		if !s.authorizeProjectFromLabels(ctx, a, auth.ResourceApplications) {
+			continue
+		}
+		sets = append(sets, convertApplicationSet(a))
 	}
 	return connect.NewResponse(&paprikav1.ListApplicationSetsResponse{Applicationsets: sets}), nil
 }

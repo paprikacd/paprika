@@ -283,7 +283,7 @@ func (s *Server) runOneHook(
 	}
 
 	if err := s.prepareAndApplyHook(ctx, resp, dynClient, obj, res.DeletePolicy, phase, appName); err != nil {
-		return err
+		return fmt.Errorf("prepare and apply hook: %w", err)
 	}
 
 	checker := hooks.CompletionFor(obj.GroupVersionKind().String())
@@ -535,7 +535,7 @@ func (s *Server) Health(ctx context.Context) (*HealthResponse, error) {
 // Handler returns the HTTP handler for the agent.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	_, handler := v1connect.NewPaprikaServiceHandler(s)
+	_, handler := v1connect.NewPaprikaServiceHandler(s, connect.WithReadMaxBytes(10*1024*1024))
 	mux.Handle("/paprika.v1.PaprikaService/", handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

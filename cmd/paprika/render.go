@@ -74,6 +74,7 @@ func readValues(path string) ([]byte, error) {
 	if path == "" {
 		return nil, nil
 	}
+	//nolint:gosec // path comes from user-provided CLI flag
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read values file: %w", err)

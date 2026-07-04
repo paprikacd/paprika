@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/dynamic"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/engine/hooks"
 )
@@ -160,8 +161,10 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 	for gvr := range gvrSet {
 		var list *unstructured.UnstructuredList
 		var err error
+		var cacheErr error
 		if d.liveCache != nil {
-			items, cacheErr := d.liveCache.Get(ctx, gvr, opts.Namespace, selector)
+			var items []unstructured.Unstructured
+			items, cacheErr = d.liveCache.Get(ctx, gvr, opts.Namespace, selector)
 			if cacheErr == nil {
 				list = &unstructured.UnstructuredList{Items: items}
 			}
@@ -173,6 +176,10 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 			}
 			list, err = d.DynClient.Resource(gvr).Namespace(opts.Namespace).List(ctx, listOpts)
 			if err != nil {
+				if cacheErr != nil {
+					log.FromContext(ctx).V(1).Info("Live cache and API both failed for GVR",
+						"gvr", gvr, "cacheErr", cacheErr, "apiErr", err)
+				}
 				continue
 			}
 		}
