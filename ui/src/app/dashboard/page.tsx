@@ -26,6 +26,8 @@ import {
   AlertTriangle,
   Shield,
   FolderTree,
+  ArrowUpRight,
+  Circle,
 } from "lucide-react"
 
 const transport = createConnectTransport({ baseUrl: "" })
@@ -43,53 +45,55 @@ const StatCard = memo(function StatCard({
   loading?: boolean
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 pt-4">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="size-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground">{label}</p>
-          {loading ? (
-            <div className="mt-1 h-6 w-12 rounded bg-muted animate-pulse" />
-          ) : (
-            <p className="text-xl font-semibold tracking-tight tabular-nums">{value}</p>
-          )}
+    <div className="rounded-xl border border-border/40 bg-card p-4 transition-all hover:border-border/60">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/8 text-primary">
+            <Icon className="size-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+              {label}
+            </p>
+            {loading ? (
+              <div className="mt-1 h-6 w-14 rounded bg-muted animate-pulse" />
+            ) : (
+              <p className="text-xl font-semibold tracking-tight tabular-nums">{value}</p>
+            )}
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 })
 
 function SkeletonCard() {
   return (
-    <Card>
-      <CardContent className="space-y-3 pt-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <div className="h-4 w-32 rounded bg-muted animate-pulse" />
-            <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+    <div className="rounded-xl border border-border/40 bg-card p-5 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-2 min-w-0 flex-1">
+          <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+          <div className="h-3 w-20 rounded bg-muted animate-pulse" />
+        </div>
+        <div className="h-5 w-16 shrink-0 rounded-full bg-muted animate-pulse" />
+      </div>
+      <div className="h-1.5 rounded-full bg-muted animate-pulse" />
+      <div className="space-y-2">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex items-center gap-2">
+            <div className="size-3 rounded-full bg-muted animate-pulse" />
+            <div className="h-3 flex-1 rounded bg-muted animate-pulse" />
           </div>
-          <div className="h-5 w-20 rounded-full bg-muted animate-pulse" />
-        </div>
-        <div className="h-1.5 rounded-full bg-muted animate-pulse" />
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className="size-3.5 rounded-full bg-muted animate-pulse" />
-              <div className="h-3 flex-1 rounded bg-muted animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+        ))}
+      </div>
+    </div>
   )
 }
 
 const SectionError = memo(function SectionError({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
-      <AlertTriangle className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+      <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
       <p className="flex-1 text-xs text-destructive">{message}</p>
       {onRetry && (
         <button
@@ -284,239 +288,207 @@ export default function DashboardPage() {
 
   return (
     <ErrorBoundary>
-      <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pipeline operator overview
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        <StatCard
-          icon={GitBranch}
-          label="Total Pipelines"
-          value={pipelines.length}
-          loading={loading}
-        />
-        <StatCard
-          icon={ListChecks}
-          label="Running"
-          value={runningCount}
-          loading={loading}
-        />
-        <StatCard
-          icon={Layers}
-          label="Succeeded"
-          value={succeededCount}
-          loading={loading}
-        />
-        <StatCard
-          icon={Activity}
-          label="Failed"
-          value={failedCount}
-          loading={loading}
-        />
-        <StatCard
-          icon={Rocket}
-          label="Applications"
-          value={appCount}
-          loading={loading}
-        />
-        <StatCard
-          icon={FolderTree}
-          label="Application Sets"
-          value={applicationSets.length}
-          loading={loading}
-        />
-      </div>
-
-      <section id="pipelines">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Pipelines</h2>
-            <p className="text-xs text-muted-foreground">
-              {pipelines.length} pipeline{pipelines.length !== 1 ? "s" : ""} configured
-            </p>
-          </div>
+      <div className="mx-auto max-w-7xl space-y-10 px-6 py-8">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight">Dashboard</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Pipeline operator overview
+          </p>
         </div>
-        {errors.pipelines && <SectionError message={errors.pipelines} onRetry={fetchData} />}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {loading
-            ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
-            : pipelines.map((p) => <PipelineCard key={p.name} pipeline={p} />)}
-          {!loading && pipelines.length === 0 && !errors.pipelines && (
-            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <GitBranch className="size-5 text-muted-foreground" aria-hidden="true" />
-              </div>
-              <p className="text-sm font-medium text-foreground">No pipelines yet</p>
-              <p className="text-xs text-muted-foreground">
-                Create a Pipeline resource in any namespace to get started
-              </p>
+
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <StatCard icon={GitBranch} label="Pipelines" value={pipelines.length} loading={loading} />
+          <StatCard icon={ListChecks} label="Running" value={runningCount} loading={loading} />
+          <StatCard icon={Layers} label="Succeeded" value={succeededCount} loading={loading} />
+          <StatCard icon={Activity} label="Failed" value={failedCount} loading={loading} />
+          <StatCard icon={Rocket} label="Applications" value={appCount} loading={loading} />
+          <StatCard icon={FolderTree} label="App Sets" value={applicationSets.length} loading={loading} />
+        </div>
+
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-semibold">Pipelines</h2>
+              <span className="text-xs text-muted-foreground">
+                {pipelines.length} total
+              </span>
             </div>
-          )}
-        </div>
-      </section>
-
-      <section id="applications">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Applications</h2>
-            <p className="text-xs text-muted-foreground">
-              {applications.length} application{applications.length !== 1 ? "s" : ""}
-            </p>
           </div>
-        </div>
-        {errors.applications && <SectionError message={errors.applications} onRetry={fetchData} />}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {loading
-            ? [1, 2].map((i) => <SkeletonCard key={i} />)
-            : applications.map((a) => {
-                const release = a.releaseRef ? releaseByName.get(a.releaseRef) : undefined
-                return <ApplicationCard key={a.name} application={a} release={release} onSynced={fetchData} />
-              })}
-          {!loading && applications.length === 0 && !errors.applications && (
-            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <Rocket className="size-5 text-muted-foreground" aria-hidden="true" />
+          {errors.pipelines && <SectionError message={errors.pipelines} onRetry={fetchData} />}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {loading
+              ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
+              : pipelines.map((p) => <PipelineCard key={p.name} pipeline={p} />)}
+            {!loading && pipelines.length === 0 && !errors.pipelines && (
+              <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+                  <GitBranch className="size-4 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">No pipelines yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                    Create a Pipeline resource in any namespace to get started
+                  </p>
+                </div>
               </div>
-              <p className="text-sm font-medium text-foreground">No applications yet</p>
-              <p className="text-xs text-muted-foreground">
-                Create an Application resource to deploy workloads across stages
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section id="application-sets">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Application Sets</h2>
-            <p className="text-xs text-muted-foreground">
-              {applicationSets.length} application set{applicationSets.length !== 1 ? "s" : ""} configured
-            </p>
+            )}
           </div>
-          <Link
-            href="/dashboard/applicationsets"
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            View all
-          </Link>
-        </div>
-        {errors.applicationSets && <SectionError message={errors.applicationSets} onRetry={fetchData} />}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {loading
-            ? [1, 2].map((i) => <SkeletonCard key={i} />)
-            : applicationSets.map((set) => {
-                const detailHref = `/dashboard/applicationsets/detail?namespace=${encodeURIComponent(set.namespace)}&name=${encodeURIComponent(set.name)}`
-                return (
-                  <Card key={`${set.namespace}/${set.name}`}>
-                    <CardContent className="space-y-3 pt-4">
+        </section>
+
+        <section>
+          <div className="mb-4 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold">Applications</h2>
+            <span className="text-xs text-muted-foreground">
+              {applications.length} total
+            </span>
+          </div>
+          {errors.applications && <SectionError message={errors.applications} onRetry={fetchData} />}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {loading
+              ? [1, 2].map((i) => <SkeletonCard key={i} />)
+              : applications.map((a) => {
+                  const release = a.releaseRef ? releaseByName.get(a.releaseRef) : undefined
+                  return <ApplicationCard key={a.name} application={a} release={release} onSynced={fetchData} />
+                })}
+            {!loading && applications.length === 0 && !errors.applications && (
+              <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+                  <Rocket className="size-4 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">No applications yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                    Create an Application resource to deploy workloads across stages
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-sm font-semibold">Application Sets</h2>
+              <span className="text-xs text-muted-foreground">
+                {applicationSets.length} total
+              </span>
+            </div>
+            {applicationSets.length > 0 && (
+              <Link
+                href="/dashboard/applicationsets"
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                View all <ArrowUpRight className="size-3" />
+              </Link>
+            )}
+          </div>
+          {errors.applicationSets && <SectionError message={errors.applicationSets} onRetry={fetchData} />}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {loading
+              ? [1, 2].map((i) => <SkeletonCard key={i} />)
+              : applicationSets.map((set) => {
+                  const detailHref = `/dashboard/applicationsets/detail?namespace=${encodeURIComponent(set.namespace)}&name=${encodeURIComponent(set.name)}`
+                  return (
+                    <div key={`${set.namespace}/${set.name}`} className="rounded-xl border border-border/40 bg-card p-4 transition-all hover:border-border/60">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <Link href={detailHref} className="font-mono text-sm font-medium hover:text-primary">
                             {set.name}
                           </Link>
-                          <p className="text-xs text-muted-foreground">ns/{set.namespace}</p>
+                          <p className="text-xs text-muted-foreground/70 mt-0.5">ns/{set.namespace}</p>
                         </div>
                         <StatusBadge status={set.phase} />
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Rocket className="size-3.5" />
+                      <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Rocket className="size-3.5" aria-hidden="true" />
                         {set.applications} application{set.applications === 1 ? "" : "s"}
                       </div>
-                    </CardContent>
-                  </Card>
-                )
-              })}
-          {!loading && applicationSets.length === 0 && !errors.applicationSets && (
-            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <FolderTree className="size-5 text-muted-foreground" aria-hidden="true" />
+                    </div>
+                  )
+                })}
+            {!loading && applicationSets.length === 0 && !errors.applicationSets && (
+              <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+                  <FolderTree className="size-4 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">No application sets yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                    Create an ApplicationSet resource to generate Applications from templates
+                  </p>
+                </div>
               </div>
-              <p className="text-sm font-medium text-foreground">No application sets yet</p>
-              <p className="text-xs text-muted-foreground">
-                Create an ApplicationSet resource to generate Applications from templates
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section id="releases">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Releases</h2>
-            <p className="text-xs text-muted-foreground">
-              {releases.length} release{releases.length !== 1 ? "s" : ""}
-            </p>
+            )}
           </div>
-        </div>
-        {errors.releases && <SectionError message={errors.releases} onRetry={fetchData} />}
-        {loading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[1, 2].map((i) => (
-              <Card key={i}>
-                <CardContent className="space-y-3 pt-4">
-                  <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+        </section>
+
+        <section>
+          <div className="mb-4 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold">Releases</h2>
+            <span className="text-xs text-muted-foreground">
+              {releases.length} total
+            </span>
+          </div>
+          {errors.releases && <SectionError message={errors.releases} onRetry={fetchData} />}
+          {loading ? (
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="rounded-xl border border-border/40 bg-card p-4 space-y-3">
+                  <div className="h-4 w-24 rounded bg-muted animate-pulse" />
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="h-12 rounded-lg bg-muted animate-pulse" />
-                    <div className="h-12 rounded-lg bg-muted animate-pulse" />
+                    <div className="h-10 rounded-lg bg-muted animate-pulse" />
+                    <div className="h-10 rounded-lg bg-muted animate-pulse" />
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <ReleaseGrid releases={releases} />
-        )}
-      </section>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <ReleaseGrid releases={releases} />
+          )}
+        </section>
 
-      <section id="policies">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Policies</h2>
-            <p className="text-xs text-muted-foreground">
-              {policies.length} policy{policies.length !== 1 ? "ies" : "y"} configured
-            </p>
+        <section>
+          <div className="mb-4 flex items-baseline gap-2">
+            <h2 className="text-sm font-semibold">Policies</h2>
+            <span className="text-xs text-muted-foreground">
+              {policies.length} total
+            </span>
           </div>
-        </div>
-        {errors.policies && <SectionError message={errors.policies} onRetry={fetchData} />}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {loading
-            ? [1, 2].map((i) => <SkeletonCard key={i} />)
-            : policies.map((p) => (
-                <Card key={p.name}>
-                  <CardContent className="space-y-2 pt-4">
-                    <div className="flex items-center gap-2">
+          {errors.policies && <SectionError message={errors.policies} onRetry={fetchData} />}
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {loading
+              ? [1, 2].map((i) => <SkeletonCard key={i} />)
+              : policies.map((p) => (
+                  <div key={p.name} className="rounded-xl border border-border/40 bg-card p-4 transition-all hover:border-border/60">
+                    <div className="flex items-center gap-2.5">
                       <Shield className="size-4 text-primary" aria-hidden="true" />
                       <span className="font-mono text-sm font-medium">{p.name}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">{p.description || "No description"}</p>
-                    <div className="flex items-center gap-2 text-[11px]">
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{p.severity}</span>
-                      <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{p.defaultAction || "enforce"}</span>
+                    <p className="mt-2 text-xs text-muted-foreground">{p.description || "No description"}</p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{p.severity}</span>
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{p.defaultAction || "enforce"}</span>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-          {!loading && policies.length === 0 && !errors.policies && (
-            <div className="col-span-full flex flex-col items-center gap-2 py-12 text-center">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <Shield className="size-5 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                ))}
+            {!loading && policies.length === 0 && !errors.policies && (
+              <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
+                <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+                  <Shield className="size-4 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">No policies yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+                    Create a Policy resource to guard applies with CEL rules
+                  </p>
+                </div>
               </div>
-              <p className="text-sm font-medium text-foreground">No policies yet</p>
-              <p className="text-xs text-muted-foreground">
-                Create a Policy resource to guard applies with CEL rules
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
-    <ToastStack />
+            )}
+          </div>
+        </section>
+      </div>
+      <ToastStack />
     </ErrorBoundary>
   )
 }
