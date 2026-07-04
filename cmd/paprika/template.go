@@ -26,6 +26,7 @@ import (
 )
 
 func readTemplateSpec(path string) (specJSON []byte, sourceType string, err error) {
+	//nolint:gosec // path comes from user-provided CLI flag
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
 		return nil, "", fmt.Errorf("read template file: %w", readErr)

@@ -16,6 +16,7 @@ import (
 
 func writeKustomizeBase(t *testing.T, dir string) {
 	t.Helper()
+	//nolint:gosec // test writes temp files for Kustomize build
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "deployment.yaml"), []byte(`
 apiVersion: apps/v1
 kind: Deployment
@@ -24,6 +25,7 @@ metadata:
 spec:
   replicas: 1
 `), 0o640))
+	//nolint:gosec // test writes temp files for Kustomize build
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "kustomization.yaml"), []byte(`
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -96,11 +98,13 @@ func TestRenderAll_LayeredHelmToKustomize(t *testing.T) {
 	workDir := t.TempDir()
 	chartDir := filepath.Join(workDir, "chart")
 	require.NoError(t, os.MkdirAll(filepath.Join(chartDir, "templates"), 0o750))
+	//nolint:gosec // test writes temp files for Helm/Kustomize build
 	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "Chart.yaml"), []byte(`
 apiVersion: v2
 name: test-chart
 version: 0.1.0
 `), 0o640))
+	//nolint:gosec // test writes temp files for Helm/Kustomize build
 	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "templates", "configmap.yaml"), []byte(`
 apiVersion: v1
 kind: ConfigMap
@@ -109,6 +113,7 @@ metadata:
 data:
   key: value
 `), 0o640))
+	//nolint:gosec // test writes temp files for Helm/Kustomize build
 	require.NoError(t, os.WriteFile(filepath.Join(chartDir, "templates", "_helpers.tpl"), []byte(`
 {{- define "test-chart.fullname" -}}
 {{ .Release.Name }}-test-chart

@@ -74,12 +74,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`/auth/login?redirect_uri=${encodeURIComponent(redirectURI)}`)
       if (!res.ok) throw new Error("login init failed")
       const body = await res.json()
-      const { url, code_verifier, state } = body as {
+      const { url, codeVerifier, state } = body as {
         url: string
-        code_verifier: string
+        codeVerifier: string
         state: string
       }
-      sessionStorage.setItem("paprika_code_verifier", code_verifier)
+      sessionStorage.setItem("paprika_code_verifier", codeVerifier)
       sessionStorage.setItem("paprika_expected_state", state)
       sessionStorage.setItem("paprika_redirect_uri", redirectURI)
       window.location.href = url

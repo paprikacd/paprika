@@ -38,7 +38,7 @@ export default function LoginPage() {
       }
       const data = await res.json()
       const { persistAuth } = await import("@/lib/auth-context")
-      persistAuth(data.id_token)
+      persistAuth(data.idToken)
       router.replace("/dashboard")
     } catch {
       setError("Network error")

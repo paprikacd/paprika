@@ -32,6 +32,12 @@ all: build
 
 ##@ General
 
+.PHONY: hooks
+hooks: ## Install git pre-commit hooks for local validation.
+	git config core.hooksPath .githooks
+	@chmod +x .githooks/pre-commit
+	@echo "Hooks installed."
+
 # The help target prints out all targets with their descriptions organized
 # beneath their categories. The categories are represented by '##@' and the
 # target descriptions by '##'. The awk command is responsible for reading the

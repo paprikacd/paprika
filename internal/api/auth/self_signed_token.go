@@ -87,7 +87,7 @@ func IssueToken(subject, email, name string, secret []byte) (string, error) {
 
 	payload, err := json.Marshal(claims)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("marshal claims: %w", err)
 	}
 
 	payloadEnc := base64.RawURLEncoding.EncodeToString(payload)

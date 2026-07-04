@@ -46,6 +46,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	"golang.org/x/crypto/bcrypt"
+
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
@@ -66,7 +68,6 @@ import (
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -343,26 +344,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
-	if err != nil {
-		return fmt.Errorf("build API config: %w", err)
-	}
-
-	apiClient, err := createAPIClient(config, scheme)
-	if err != nil {
-		return fmt.Errorf("create API client: %w", err)
-	}
-
-	k8sClient, err := createK8sClient(config)
+	apiClient, k8sClient, authCfg, authInterceptor, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
 	if err != nil {
 		return err
-	}
-
-	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
-	authInterceptor, err := auth.Interceptor(apiCtx, authCfg, apiClient)
-	if err != nil {
-		return fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
 	broker, err := newBrokerFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
@@ -371,48 +355,14 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	resolver := governance.NewProjectResolver(apiClient)
-	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
-	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
-
-	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	paprikaServer, connectHandler, err := buildConnectHandler(apiClient, k8sClient, broker, authCfg, authInterceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
-	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
-	otelInterceptor, err := otelconnect.NewInterceptor()
+	extraMuxHandlers, err := buildAuthHandlers(apiCtx, authCfg)
 	if err != nil {
-		return fmt.Errorf("otelconnect interceptor: %w", err)
-	}
-
-	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
-	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
-		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
-		connect.WithReadMaxBytes(maxMsgBytes),
-	)
-
-	var extraMuxHandlers []func(*http.ServeMux)
-
-	// OIDC login/token endpoints.
-	if authCfg.OIDC != nil {
-		oidcAuth, err := auth.NewOIDCAuthenticator(apiCtx, authCfg.OIDC)
-		if err != nil {
-			return fmt.Errorf("create OIDC authenticator: %w", err)
-		}
-		extraMuxHandlers = append(extraMuxHandlers, func(mux *http.ServeMux) {
-			mux.HandleFunc("/auth/login", oidcAuth.LoginHandler())
-			mux.HandleFunc("/auth/token", oidcAuth.TokenHandler())
-		})
-	}
-
-	// Basic auth login endpoint (static username/password for dev/testing).
-	if authCfg.BasicAuth != nil && authCfg.Enabled && len(authCfg.TokenSecret) > 0 {
-		secret := authCfg.TokenSecret
-		basicCfg := *authCfg.BasicAuth
-		extraMuxHandlers = append(extraMuxHandlers, func(mux *http.ServeMux) {
-			mux.HandleFunc("/auth/basic-login", auth.BasicLoginHandler(basicCfg, secret))
-		})
+		return err
 	}
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, extraMuxHandlers...)
@@ -432,6 +382,81 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
 
 	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
+}
+
+func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (client.Client, kubernetes.Interface, auth.Config, connect.Interceptor, error) {
+	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("build API config: %w", err)
+	}
+
+	apiClient, err := createAPIClient(config, scheme)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("create API client: %w", err)
+	}
+
+	k8sClient, err := createK8sClient(config)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, err
+	}
+
+	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, apiClient)
+	if err != nil {
+		return nil, nil, auth.Config{}, nil, fmt.Errorf("failed to build auth interceptor: %w", err)
+	}
+
+	return apiClient, k8sClient, authCfg, authInterceptor, nil
+}
+
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, broker *events.Broker, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+	resolver := governance.NewProjectResolver(apiClient)
+	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
+	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
+
+	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	if err != nil {
+		return nil, nil, err
+	}
+	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
+
+	otelInterceptor, err := otelconnect.NewInterceptor()
+	if err != nil {
+		return nil, nil, fmt.Errorf("otelconnect interceptor: %w", err)
+	}
+
+	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
+	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
+		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
+		connect.WithReadMaxBytes(maxMsgBytes),
+	)
+	return paprikaServer, connectHandler, nil
+}
+
+func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.ServeMux), error) {
+	var handlers []func(*http.ServeMux)
+
+	if authCfg.OIDC != nil {
+		oidcAuth, err := auth.NewOIDCAuthenticator(ctx, authCfg.OIDC)
+		if err != nil {
+			return nil, fmt.Errorf("create OIDC authenticator: %w", err)
+		}
+		handlers = append(handlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/login", oidcAuth.LoginHandler())
+			mux.HandleFunc("/auth/token", oidcAuth.TokenHandler())
+		})
+	}
+
+	if authCfg.BasicAuth != nil && authCfg.Enabled && len(authCfg.TokenSecret) > 0 {
+		secret := authCfg.TokenSecret
+		basicCfg := *authCfg.BasicAuth
+		handlers = append(handlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/basic-login", auth.BasicLoginHandler(basicCfg, secret))
+		})
+	}
+
+	return handlers, nil
 }
 
 func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, setupLog logr.Logger) *cache.Invalidator {
@@ -792,7 +817,7 @@ func newCacheFromConfig(ctx context.Context, cacheCfg cache.Config, setupLog log
 	return c, nil
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, tokenSecret string, rbacRules string, log logr.Logger) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, tokenSecret, rbacRules string, log logr.Logger) auth.Config {
 	cfg := auth.Config{
 		Enabled: enabled,
 	}

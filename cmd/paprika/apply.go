@@ -152,6 +152,7 @@ func loadPath(p string) (docs []string, suggestedName string, err error) {
 		return nil, "", fmt.Errorf("stat path: %w", err)
 	}
 	if !info.IsDir() {
+		//nolint:gosec // path comes from CLI arg, user's own files
 		data, readErr := os.ReadFile(p)
 		if readErr != nil {
 			return nil, "", fmt.Errorf("read file: %w", readErr)
@@ -167,6 +168,7 @@ func loadPath(p string) (docs []string, suggestedName string, err error) {
 
 	docs = make([]string, 0, len(files))
 	for _, f := range files {
+		//nolint:gosec // paths come from os.ReadDir, user's own files
 		data, readErr := os.ReadFile(f)
 		if readErr != nil {
 			return nil, "", fmt.Errorf("read file %q: %w", f, readErr)

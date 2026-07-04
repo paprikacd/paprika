@@ -69,7 +69,7 @@ func Run(cmd *exec.Cmd) (string, error) {
 // UninstallCertManager uninstalls the cert manager
 func UninstallCertManager() {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	//nolint:noctx // test utility executing kubectl commands
+	//nolint:gosec,noctx // test utility executing kubectl commands
 	cmd := exec.Command("kubectl", "delete", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		warnError(err)
@@ -81,7 +81,7 @@ func UninstallCertManager() {
 		"cert-manager-controller",
 	}
 	for _, lease := range kubeSystemLeases {
-		//nolint:noctx // test utility executing kubectl commands
+		//nolint:gosec,noctx // test utility executing kubectl commands
 		cmd = exec.Command("kubectl", "delete", "lease", lease,
 			"-n", "kube-system", "--ignore-not-found", "--force", "--grace-period=0")
 		if _, err := Run(cmd); err != nil {
@@ -93,7 +93,7 @@ func UninstallCertManager() {
 // InstallCertManager installs the cert manager bundle.
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
-	//nolint:noctx // test utility executing kubectl commands
+	//nolint:gosec,noctx // test utility executing kubectl commands
 	cmd := exec.Command("kubectl", "apply", "-f", url)
 	if _, err := Run(cmd); err != nil {
 		return err
@@ -154,7 +154,7 @@ func LoadImageToKindClusterWithName(name, cluster string) error {
 		kindBinary = v
 	}
 
-	//nolint:noctx // test utility executing kind commands
+	//nolint:gosec,noctx // test utility executing kind commands
 	cmd := exec.Command(kindBinary, "load", "docker-image", name, "--name", cluster)
 	if _, err := Run(cmd); err == nil {
 		return nil
@@ -171,13 +171,13 @@ func LoadImageToKindClusterWithName(name, cluster string) error {
 	//nolint:errcheck // best-effort temporary file cleanup
 	defer func() { _ = os.Remove(tarPath) }()
 
-	//nolint:noctx // test utility executing docker commands
+	//nolint:gosec,noctx // test utility executing docker commands
 	saveCmd := exec.Command("docker", "save", "-o", tarPath, name)
 	if _, saveErr := Run(saveCmd); saveErr != nil {
 		return fmt.Errorf("save docker image %q to tar: %w", name, saveErr)
 	}
 
-	//nolint:noctx // test utility executing kind commands
+	//nolint:gosec,noctx // test utility executing kind commands
 	cmd = exec.Command(kindBinary, "load", "image-archive", tarPath, "--name", cluster)
 	_, err = Run(cmd)
 	return err

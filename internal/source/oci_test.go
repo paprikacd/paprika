@@ -96,6 +96,7 @@ func TestOCISource_clientOptions(t *testing.T) {
 		assert.Len(t, opts, 2)
 
 		cfgPath := filepath.Join(workDir, "oci-docker-config", SanitizeName(o.URL), "config.json")
+		//nolint:gosec // test reads a file it just wrote
 		data, err := os.ReadFile(cfgPath)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"auths":{}}`, string(data))

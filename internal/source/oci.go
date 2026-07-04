@@ -29,7 +29,6 @@ type OCISource struct {
 	Client    client.Client
 }
 
-// clientOptions returns registry client options including authentication.
 func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption, error) {
 	opts := []registry.ClientOption{registry.ClientOptEnableCache(true)}
 	if o.Insecure {
@@ -44,24 +43,8 @@ func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption,
 		return nil, fmt.Errorf("get OCI secret %s/%s: %w", o.Namespace, o.SecretRef, err)
 	}
 
-	if dockerCfg := secret.Data[".dockerconfigjson"]; len(dockerCfg) > 0 {
-		// Prefer in-memory credentials over writing to disk. Parse the
-		// docker config and extract basic auth for the target registry.
-		if creds, err := parseDockerConfigCredentials(dockerCfg, o.URL); err == nil {
-			opts = append(opts, registry.ClientOptBasicAuth(creds.username, creds.password))
-			return opts, nil
-		}
-		// Fallback: write to disk only if parsing fails (unusual format).
-		cfgDir := filepath.Join(o.WorkDir, "oci-docker-config", SanitizeName(o.URL))
-		if err := os.MkdirAll(cfgDir, 0o750); err != nil {
-			return nil, fmt.Errorf("create docker config dir: %w", err)
-		}
-		cfgPath := filepath.Join(cfgDir, "config.json")
-		if err := os.WriteFile(cfgPath, dockerCfg, 0o600); err != nil {
-			return nil, fmt.Errorf("write docker config: %w", err)
-		}
-		opts = append(opts, registry.ClientOptCredentialsFile(cfgPath))
-		return opts, nil
+	if dockerOpts, err := o.dockerConfigOptions(&secret, opts); err != nil || dockerOpts != nil {
+		return dockerOpts, err
 	}
 
 	username := string(secret.Data["username"])
@@ -71,6 +54,29 @@ func (o *OCISource) clientOptions(ctx context.Context) ([]registry.ClientOption,
 		return opts, nil
 	}
 
+	return opts, nil
+}
+
+func (o *OCISource) dockerConfigOptions(secret *corev1.Secret, opts []registry.ClientOption) ([]registry.ClientOption, error) {
+	dockerCfg := secret.Data[".dockerconfigjson"]
+	if len(dockerCfg) == 0 {
+		return nil, nil
+	}
+
+	if creds, err := parseDockerConfigCredentials(dockerCfg, o.URL); err == nil {
+		opts = append(opts, registry.ClientOptBasicAuth(creds.username, creds.password))
+		return opts, nil
+	}
+
+	cfgDir := filepath.Join(o.WorkDir, "oci-docker-config", SanitizeName(o.URL))
+	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+		return nil, fmt.Errorf("create docker config dir: %w", err)
+	}
+	cfgPath := filepath.Join(cfgDir, "config.json")
+	if err := os.WriteFile(cfgPath, dockerCfg, 0o600); err != nil {
+		return nil, fmt.Errorf("write docker config: %w", err)
+	}
+	opts = append(opts, registry.ClientOptCredentialsFile(cfgPath))
 	return opts, nil
 }
 

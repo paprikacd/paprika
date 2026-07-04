@@ -23,6 +23,7 @@ func TestLoadPath(t *testing.T) {
 			setup: func(t *testing.T) (string, string) {
 				dir := t.TempDir()
 				path := filepath.Join(dir, "deploy.yaml")
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(path, []byte("apiVersion: v1\nkind: ConfigMap"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
@@ -34,9 +35,11 @@ func TestLoadPath(t *testing.T) {
 			name: "directory with yaml files",
 			setup: func(t *testing.T) (string, string) {
 				dir := t.TempDir()
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("a: 1"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte("b: 2"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
@@ -109,6 +112,7 @@ func TestLoadManifestBundle(t *testing.T) {
 			setup: func(t *testing.T) ([]string, string) {
 				dir := t.TempDir()
 				path := filepath.Join(dir, "deploy.yaml")
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(path, []byte("apiVersion: v1\nkind: ConfigMap"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
@@ -120,9 +124,11 @@ func TestLoadManifestBundle(t *testing.T) {
 			name: "directory",
 			setup: func(t *testing.T) ([]string, string) {
 				dir := t.TempDir()
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("a: 1"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte("b: 2"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
@@ -136,9 +142,11 @@ func TestLoadManifestBundle(t *testing.T) {
 				dir := t.TempDir()
 				f1 := filepath.Join(dir, "x.yaml")
 				f2 := filepath.Join(dir, "y.yaml")
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(f1, []byte("x: 1"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}
+				//nolint:gosec // test needs 0644 for YAML files read by path glob
 				if err := os.WriteFile(f2, []byte("y: 2"), 0o644); err != nil {
 					t.Fatalf("write file: %v", err)
 				}

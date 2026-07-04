@@ -40,14 +40,14 @@ function CallbackHandler() {
     fetch("/auth/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, code_verifier: codeVerifier, redirect_uri: redirectURI }),
+      body: JSON.stringify({ code, codeVerifier, redirectUri: redirectURI }),
     })
       .then((res) => {
         if (!res.ok) throw new Error("token exchange failed")
         return res.json()
       })
-      .then((data: { id_token: string }) => {
-        persistAuth(data.id_token)
+      .then((data: { idToken: string }) => {
+        persistAuth(data.idToken)
         router.replace("/dashboard")
       })
       .catch((err: Error) => {

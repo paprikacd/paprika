@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,26 +11,29 @@ import (
 	"strings"
 )
 
-// TokenRequest is the request body for the token exchange endpoint.
 type TokenRequest struct {
 	Code         string `json:"code"`
-	CodeVerifier string `json:"code_verifier"`
-	RedirectURI  string `json:"redirect_uri"`
+	CodeVerifier string `json:"codeVerifier"`
+	RedirectURI  string `json:"redirectUri"`
 }
 
-// TokenResponse is returned by the token exchange endpoint.
 type TokenResponse struct {
-	IDToken      string `json:"id_token"`
-	AccessToken  string `json:"access_token,omitempty"`
-	ExpiresIn    int    `json:"expires_in"`
-	TokenType    string `json:"token_type,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
+	IDToken      string `json:"idToken"`
+	AccessToken  string `json:"accessToken,omitempty"`
+	ExpiresIn    int    `json:"expiresIn"`
+	TokenType    string `json:"tokenType,omitempty"`
+	RefreshToken string `json:"refreshToken,omitempty"`
 }
 
-// TokenHandler returns an http.Handler that exchanges an OIDC authorization code
-// for tokens via the provider's token endpoint (backchannel exchange using the
-// client secret). This keeps the client secret server-side.
-// POST /auth/token
+//nolint:tagliatelle // standard OAuth2 snake_case fields per RFC 6749
+type oauth2Token struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in"`
+	IDToken      string `json:"id_token"`
+}
+
 func (o *OIDCAuthenticator) TokenHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -44,43 +48,53 @@ func (o *OIDCAuthenticator) TokenHandler() http.HandlerFunc {
 		}
 
 		if req.Code == "" || req.CodeVerifier == "" {
-			http.Error(w, "code and code_verifier are required", http.StatusBadRequest)
+			http.Error(w, "code and codeVerifier are required", http.StatusBadRequest)
 			return
 		}
 
-		redirectURI := req.RedirectURI
-		if redirectURI == "" {
-			redirectURI = o.oauth2Config.RedirectURL
-		}
-
-		token, err := exchangeCode(r.Context(), o, req.Code, req.CodeVerifier, redirectURI)
+		rawIDToken, tokenResp, err := o.exchangeAndValidate(r.Context(), &req)
 		if err != nil {
-			http.Error(w, "token exchange failed: "+err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		rawIDToken, ok := token.Extra("id_token").(string)
-		if !ok || rawIDToken == "" {
-			http.Error(w, "no id_token in response", http.StatusUnauthorized)
-			return
-		}
-
-		if err := o.validateIDToken(r.Context(), rawIDToken); err != nil {
-			http.Error(w, "id_token validation failed: "+err.Error(), http.StatusUnauthorized)
+			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
 
 		resp := TokenResponse{
 			IDToken:     rawIDToken,
-			AccessToken: token.AccessToken,
-			TokenType:   token.TokenType,
-			ExpiresIn:   token.ExpiresIn,
+			AccessToken: tokenResp.AccessToken,
+			TokenType:   tokenResp.TokenType,
+			ExpiresIn:   tokenResp.ExpiresIn,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		//nolint:gosec // AccessToken is a session token, not a secret
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, fmt.Sprintf("encode response: %v", err), http.StatusInternalServerError)
+		}
 	}
+}
+
+func (o *OIDCAuthenticator) exchangeAndValidate(ctx context.Context, req *TokenRequest) (string, *oauth2Token, error) {
+	redirectURI := req.RedirectURI
+	if redirectURI == "" {
+		redirectURI = o.oauth2Config.RedirectURL
+	}
+
+	token, err := exchangeCode(ctx, o, req.Code, req.CodeVerifier, redirectURI)
+	if err != nil {
+		return "", nil, fmt.Errorf("token exchange failed: %w", err)
+	}
+
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		return "", nil, errors.New("no id_token in response")
+	}
+
+	if err := o.validateIDToken(ctx, rawIDToken); err != nil {
+		return "", nil, fmt.Errorf("id_token validation failed: %w", err)
+	}
+
+	return rawIDToken, token, nil
 }
 
 func exchangeCode(ctx context.Context, o *OIDCAuthenticator, code, codeVerifier, redirectURI string) (*oauth2Token, error) {
@@ -95,28 +109,33 @@ func exchangeCode(ctx context.Context, o *OIDCAuthenticator, code, codeVerifier,
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.tokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("token request: %w", err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close token response body: %w", cerr)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read token response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var token oauth2Token
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse token response: %w", err)
 	}
 
 	return &token, nil
@@ -128,16 +147,10 @@ func (o *OIDCAuthenticator) tokenEndpoint() string {
 
 func (o *OIDCAuthenticator) validateIDToken(ctx context.Context, rawIDToken string) error {
 	_, err := o.verifier.Verify(ctx, rawIDToken)
-	return err
-}
-
-// oauth2Token mirrors the OAuth2 token response for raw JSON parsing.
-type oauth2Token struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresIn    int    `json:"expires_in"`
-	IDToken      string `json:"id_token"`
+	if err != nil {
+		return fmt.Errorf("verify id_token: %w", err)
+	}
+	return nil
 }
 
 func (t *oauth2Token) Extra(key string) interface{} {
@@ -147,8 +160,4 @@ func (t *oauth2Token) Extra(key string) interface{} {
 	default:
 		return nil
 	}
-}
-
-func errorf(format string, args ...interface{}) error {
-	return fmt.Errorf(format, args...)
 }

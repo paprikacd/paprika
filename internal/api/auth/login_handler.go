@@ -6,20 +6,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"golang.org/x/oauth2"
 )
 
-// LoginResponse is returned by the login endpoint.
 type LoginResponse struct {
 	URL          string `json:"url"`
-	CodeVerifier string `json:"code_verifier"`
+	CodeVerifier string `json:"codeVerifier"`
 	State        string `json:"state"`
 }
 
-// LoginHandler returns an http.Handler that initiates the OIDC PKCE login flow.
-// GET /auth/login?redirect_uri=<callback URL>
 func (o *OIDCAuthenticator) LoginHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -60,7 +58,9 @@ func (o *OIDCAuthenticator) LoginHandler() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, fmt.Sprintf("encode response: %v", err), http.StatusInternalServerError)
+		}
 	}
 }
 

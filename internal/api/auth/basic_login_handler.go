@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"golang.org/x/crypto/bcrypt"
@@ -60,7 +61,10 @@ func BasicLoginHandler(cfg BasicAuthConfig, tokenSecret []byte) http.HandlerFunc
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
+		//nolint:gosec // AccessToken is a session token, not a secret
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			http.Error(w, fmt.Sprintf("encode response: %v", err), http.StatusInternalServerError)
+		}
 	}
 }
 
