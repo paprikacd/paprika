@@ -10,6 +10,7 @@ import (
 var SchemeGroupVersion = schema.GroupVersion{Group: "featureflags.paprika.io", Version: "v1alpha1"}
 
 var (
+	//nolint:staticcheck // SA1019: kubebuilder scaffold pattern; replace with runtime.SchemeBuilder upstream.
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 	AddToScheme   = SchemeBuilder.AddToScheme
 )

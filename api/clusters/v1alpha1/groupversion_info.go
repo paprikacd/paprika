@@ -33,6 +33,7 @@ var (
 	GroupVersion = SchemeGroupVersion
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
+	//nolint:staticcheck // SA1019: scheme.Builder is deprecated but is the standard Kubebuilder scaffold pattern.
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 
 	// AddToScheme adds the types in this group-version to the given scheme.
