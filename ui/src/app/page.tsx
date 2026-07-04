@@ -1,4 +1,3 @@
-import { Nav } from "@/components/layout/nav"
 import { Hero } from "@/components/landing/hero"
 import { Features } from "@/components/landing/features"
 import { HowItWorks } from "@/components/landing/how-it-works"
@@ -8,14 +7,11 @@ import { CTA } from "@/components/landing/cta"
 export default function HomePage() {
   return (
     <>
-      <Nav />
-      <main>
-        <Hero />
-        <Features />
-        <HowItWorks />
-        <Comparison />
-        <CTA />
-      </main>
+      <Hero />
+      <Features />
+      <HowItWorks />
+      <Comparison />
+      <CTA />
       <footer className="border-t border-border/40 py-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6">
           <span className="text-xs text-muted-foreground">
