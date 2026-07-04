@@ -2,7 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useState } from "react"
-import { persistAuth } from "@/lib/auth-context"
+import { persistAuth, consumeReturnTo } from "@/lib/auth-context"
 
 function CallbackHandler() {
   const router = useRouter()
@@ -32,7 +32,6 @@ function CallbackHandler() {
       return
     }
 
-    // Clean up session storage.
     sessionStorage.removeItem("paprika_expected_state")
     sessionStorage.removeItem("paprika_code_verifier")
     sessionStorage.removeItem("paprika_redirect_uri")
@@ -48,7 +47,8 @@ function CallbackHandler() {
       })
       .then((data: { idToken: string }) => {
         persistAuth(data.idToken)
-        router.replace("/dashboard")
+        const returnTo = consumeReturnTo()
+        router.replace(returnTo && returnTo !== "/login" ? returnTo : "/dashboard")
       })
       .catch((err: Error) => {
         setError(err.message || "Token exchange failed")

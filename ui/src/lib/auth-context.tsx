@@ -48,6 +48,7 @@ function parseJWT(token: string): Record<string, unknown> | null {
 
 const AUTH_TOKEN_KEY = "paprika_id_token"
 const AUTH_USER_KEY = "paprika_auth_user"
+const AUTH_RETURN_TO_KEY = "paprika_return_to"
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [idToken, setIdToken] = useState<string | null>(null)
@@ -59,9 +60,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (restored.current) return
     restored.current = true
-    const stored = sessionStorage.getItem(AUTH_TOKEN_KEY)
-    const storedUser = sessionStorage.getItem(AUTH_USER_KEY)
+
+    const stored = localStorage.getItem(AUTH_TOKEN_KEY)
+    const storedUser = localStorage.getItem(AUTH_USER_KEY)
     if (stored && storedUser) {
+      const payload = parseJWT(stored)
+      if (payload && payload.exp) {
+        const expMs = (payload.exp as number) * 1000
+        if (Date.now() >= expMs) {
+          localStorage.removeItem(AUTH_TOKEN_KEY)
+          localStorage.removeItem(AUTH_USER_KEY)
+          setIsLoading(false)
+          return
+        }
+      }
       setIdToken(stored)
       setUser(JSON.parse(storedUser))
     }
@@ -82,6 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem("paprika_code_verifier", codeVerifier)
       sessionStorage.setItem("paprika_expected_state", state)
       sessionStorage.setItem("paprika_redirect_uri", redirectURI)
+      // Save where to return after login
+      localStorage.setItem(AUTH_RETURN_TO_KEY, window.location.pathname)
       window.location.href = url
     } catch (err) {
       console.error("Login failed:", err)
@@ -91,9 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     setIdToken(null)
     setUser(null)
-    sessionStorage.removeItem(AUTH_TOKEN_KEY)
-    sessionStorage.removeItem(AUTH_USER_KEY)
-    router.push("/")
+    localStorage.removeItem(AUTH_TOKEN_KEY)
+    localStorage.removeItem(AUTH_USER_KEY)
+    localStorage.removeItem(AUTH_RETURN_TO_KEY)
+    router.push("/login")
   }, [router])
 
   const value = useMemo(
@@ -108,7 +123,6 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-// Call this from the callback page after a successful token exchange.
 export function persistAuth(idToken: string) {
   const payload = parseJWT(idToken)
   if (!payload) return
@@ -118,6 +132,12 @@ export function persistAuth(idToken: string) {
     name: (payload.name as string) || "",
     picture: payload.picture as string | undefined,
   }
-  sessionStorage.setItem(AUTH_TOKEN_KEY, idToken)
-  sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
+  localStorage.setItem(AUTH_TOKEN_KEY, idToken)
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
+}
+
+export function consumeReturnTo(): string | null {
+  const path = localStorage.getItem(AUTH_RETURN_TO_KEY)
+  localStorage.removeItem(AUTH_RETURN_TO_KEY)
+  return path
 }

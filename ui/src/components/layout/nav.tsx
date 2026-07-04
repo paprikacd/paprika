@@ -1,15 +1,15 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { LogOut, User, LayoutDashboard, BookOpen, GitBranch } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { LogOut, User, LayoutDashboard } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 
 export function Nav() {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, isLoading, logout } = useAuth()
 
-  const isLanding = pathname === "/"
   const isAuthPage = pathname === "/login" || pathname.startsWith("/auth/")
 
   return (
@@ -22,8 +22,8 @@ export function Nav() {
           <span className="text-sm font-semibold tracking-tight">Paprika</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 sm:flex">
-          {user ? (
+        {user && !isAuthPage && (
+          <nav className="flex items-center gap-1">
             <Link
               href="/dashboard"
               className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
@@ -31,27 +31,8 @@ export function Nav() {
               <LayoutDashboard className="size-3.5" />
               Dashboard
             </Link>
-          ) : isLanding ? (
-            <>
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
-              >
-                <LayoutDashboard className="size-3.5" />
-                Dashboard
-              </Link>
-              <a
-                href="https://github.com/paprikacd/paprika"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
-              >
-                <GitBranch className="size-3.5" />
-                GitHub
-              </a>
-            </>
-          ) : null}
-        </nav>
+          </nav>
+        )}
 
         <div className="flex items-center gap-2">
           {isLoading ? null : user ? (
@@ -75,16 +56,7 @@ export function Nav() {
                 <LogOut className="size-3.5" />
               </button>
             </div>
-          ) : (
-            !isAuthPage && (
-              <Link
-                href="/login"
-                className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.96]"
-              >
-                Sign in
-              </Link>
-            )
-          )}
+          ) : null}
         </div>
       </div>
     </header>
