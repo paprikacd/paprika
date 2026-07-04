@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	completionMu    sync.RWMutex
+	completionMu       sync.RWMutex
 	completionRegistry = map[string]CompletionFunc{}
 )
 

@@ -1,4 +1,4 @@
-{{- if and (eq .Values.deploymentMode "split") .Values.apiServer.ingress.enabled }}
+{{- if and (eq .Values.deploymentMode "split") .Values.apiServer.ingress.enabled (ne (toString .Values.apiServer.ingress.type) "gateway-api") }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

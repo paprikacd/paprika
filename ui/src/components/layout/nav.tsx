@@ -1,9 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { Cpu } from "lucide-react"
+import { Cpu, LogOut, User } from "lucide-react"
 import { useConnection } from "@/lib/connection-context"
+import { useAuth } from "@/lib/auth-context"
 import { NotificationCenter } from "@/components/notifications/notification-center"
+import { Button } from "@/components/ui/button"
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard" },
@@ -15,6 +17,8 @@ const navItems = [
 
 export function Nav() {
   const { connected } = useConnection()
+  const { user, isLoading, login, logout } = useAuth()
+
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
@@ -30,7 +34,7 @@ export function Nav() {
               <Link
                 key={item.label}
                 href={item.href}
-                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
               >
                 {item.label}
               </Link>
@@ -59,6 +63,40 @@ export function Nav() {
               {connected ? "Connected" : "Disconnected"}
             </span>
           </div>
+
+          {isLoading ? null : user ? (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {user.picture ? (
+                  <img
+                    src={user.picture}
+                    alt=""
+                    className="size-5 rounded-full"
+                  />
+                ) : (
+                  <User className="size-4" aria-hidden="true" />
+                )}
+                <span className="hidden sm:inline">{user.name}</span>
+              </Link>
+              <button
+                onClick={logout}
+                className="rounded-md p-1.5 text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
+                title="Sign out"
+              >
+                <LogOut className="size-4" />
+              </button>
+            </div>
+          ) : (
+            <Link
+              href="/login"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.96]"
+            >
+              Sign in
+            </Link>
+          )}
         </div>
       </div>
     </header>

@@ -65,11 +65,17 @@ manager:
 
   resources:
     limits:
-      cpu: 500m
-      memory: 256Mi
+      cpu: 1000m
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 200m
+      memory: 512Mi
+
+  args: []
+
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
 
   terminationGracePeriodSeconds: 30
 
@@ -109,17 +115,30 @@ apiServer:
 
   terminationGracePeriodSeconds: 20
 
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
+
   pdb:
     enabled: true
     minAvailable: 1
 
-  # Expose via LoadBalancer so the test harness can reach the UI
+  # Expose via ClusterIP (Envoy Gateway handles external access)
   service:
-    type: LoadBalancer
+    type: ClusterIP
     port: 3000
 
+  # Ingress / Gateway API for hostname-based access through the cluster's
+  # Envoy Gateway. The Gateway (paprika) lives in envoy-gateway-system and
+  # provisions a Vultr LoadBalancer via the CCM. Point DNS at the LB IP.
   ingress:
-    enabled: false
+    enabled: true
+    type: gateway-api
+    gateway:
+      gatewayRef:
+        name: paprika
+        namespace: envoy-gateway-system
+      hostname: paprika.benebsworth.com
 
 # ── Webhook receiver (split-mode) ─────────────────────────────────────────────
 webhookReceiver:
@@ -169,7 +188,24 @@ agent:
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 auth:
-  enabled: false
+  enabled: true
+  basic:
+    enabled: true
+    username: "admin"
+    # bcrypt hash of "admin123". Pre-compute your own with `auth.HashPassword`.
+    passwordHash: "$2a$10$gokrR1H67p0nl/1Q2k1qk.i9u4iJNm8Iy1PUBR9ScjdhlznxnAKq6"
+  oidc:
+    enabled: true
+    issuerURL: "https://accounts.google.com"
+    clientID: "REPLACE_WITH_GOOGLE_CLIENT_ID"
+    # FIXME: Pass via extraEnv + secretRef instead of CLI arg to avoid
+    # process-list exposure. For now, set via --auth-oidc-client-secret flag.
+    clientSecret: "REPLACE_WITH_GOOGLE_CLIENT_SECRET"
+  rbac:
+    - subjects: ["group:users"]
+      actions: ["*"]
+      resources: ["*"]
+      namespaces: ["*"]
 
 rbac:
   helpers:

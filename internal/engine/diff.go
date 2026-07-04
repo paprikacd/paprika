@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -139,7 +140,7 @@ func (d *DiffEngine) fetchLiveResources(ctx context.Context, namespace string) (
 
 		for i := range apiResourceList.APIResources {
 			r := apiResourceList.APIResources[i]
-			if !contains(r.Verbs, "list") {
+			if !slices.Contains(r.Verbs, "list") {
 				continue
 			}
 			gvr := schema.GroupVersionResource{
@@ -213,15 +214,6 @@ func mapEqual(a, b map[string]interface{}) bool {
 		}
 	}
 	return true
-}
-
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
 }
 
 // ResourceSyncs converts the diff result into a flat list of resource sync statuses.

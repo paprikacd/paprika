@@ -72,10 +72,10 @@ export function HowItWorks() {
     <section className="border-b border-border/50 py-20">
       <div className="mx-auto max-w-7xl px-6">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl text-balance">
             How It Works
           </h2>
-          <p className="mt-3 text-muted-foreground">
+          <p className="mt-3 text-muted-foreground text-pretty">
             From source code to production — in three steps.
           </p>
         </div>

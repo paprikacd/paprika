@@ -59,14 +59,14 @@ export function Hero() {
           >
             <Link
               href="/docs/getting-started"
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.96]"
             >
               Get Started
               <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
             <Link
               href="/docs"
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-secondary px-5 py-2.5 text-sm font-medium transition-all hover:bg-secondary/80"
+              className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-5 py-2.5 text-sm font-medium shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-all hover:bg-secondary/80 active:scale-[0.96]"
             >
               <BookOpen className="size-4" aria-hidden="true" />
               Documentation
@@ -75,7 +75,7 @@ export function Hero() {
               href="https://github.com/paprikacd/paprika"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-medium transition-all hover:bg-secondary/80"
+              className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-5 py-2.5 text-sm font-medium shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-all hover:bg-secondary/80 active:scale-[0.96]"
             >
               <GitBranch className="size-4" aria-hidden="true" />
               GitHub
@@ -89,7 +89,7 @@ export function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.4 }}
         >
-          <div className="rounded-xl border border-border/50 bg-card/50 p-4 backdrop-blur-sm">
+          <div className="rounded-2xl border bg-card/50 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-sm">
             <PipelineVisualization />
           </div>
         </motion.div>

@@ -37,8 +37,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -260,7 +263,7 @@ func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setup
 
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
 
 	resolver := governance.NewProjectResolver(mgr.GetClient())
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
@@ -306,6 +309,12 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		HealthProbeBindAddress: cfg.probeAddr,
 		LeaderElection:         leaderElect,
 		LeaderElectionID:       "paprika-operator.paprika.io",
+		Cache: crcache.Options{
+			SyncPeriod: ptr.To(time.Hour),
+		},
+		Controller: config.Controller{
+			CacheSyncTimeout: cfg.cacheSyncTimeout,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start manager: %w", err)

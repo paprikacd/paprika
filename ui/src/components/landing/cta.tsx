@@ -31,7 +31,7 @@ export function CTA() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
               <Link
                 href="/docs/getting-started"
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90"
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.96]"
               >
                 Get Started
                 <ArrowRight className="size-4" aria-hidden="true" />
@@ -40,7 +40,7 @@ export function CTA() {
                 href="https://github.com/paprikacd/paprika"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-2.5 text-sm font-medium transition-all hover:bg-secondary/80"
+                className="inline-flex items-center gap-2 rounded-lg border bg-secondary px-5 py-2.5 text-sm font-medium shadow-[0_0_0_1px_rgba(255,255,255,0.08)] transition-all hover:bg-secondary/80 active:scale-[0.96]"
               >
                 <Star className="size-4" aria-hidden="true" />
                 Star on GitHub

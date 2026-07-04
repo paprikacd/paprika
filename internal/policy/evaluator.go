@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/cel-go/cel"
@@ -78,15 +79,6 @@ func resolveAction(pol *policyv1alpha1.Policy, overrides map[string]Action) poli
 	return defaultAction(pol.Spec.Severity)
 }
 
-func contains(list []string, val string) bool {
-	for _, v := range list {
-		if v == val {
-			return true
-		}
-	}
-	return false
-}
-
 func matchAPIGroups(groups []string, apiVersion string) bool {
 	if len(groups) == 0 {
 		return true
@@ -95,18 +87,18 @@ func matchAPIGroups(groups []string, apiVersion string) bool {
 	if i := strings.Index(apiVersion, "/"); i >= 0 {
 		group = apiVersion[:i]
 	}
-	return contains(groups, group)
+	return slices.Contains(groups, group)
 }
 
 func match(m *policyv1alpha1.PolicyMatch, obj *unstructured.Unstructured, namespace string) bool {
 	if !matchAPIGroups(m.APIGroups, obj.GetAPIVersion()) {
 		return false
 	}
-	if len(m.Kinds) > 0 && !contains(m.Kinds, obj.GetKind()) {
+	if len(m.Kinds) > 0 && !slices.Contains(m.Kinds, obj.GetKind()) {
 		return false
 	}
 	// match.namespaces filters by the resource's own namespace.
-	if len(m.Namespaces) > 0 && !contains(m.Namespaces, obj.GetNamespace()) {
+	if len(m.Namespaces) > 0 && !slices.Contains(m.Namespaces, obj.GetNamespace()) {
 		return false
 	}
 	if m.LabelSelector != nil {

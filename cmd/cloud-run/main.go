@@ -7,8 +7,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +25,7 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelzap"
 	gozap "go.uber.org/zap"
 	gozapcore "go.uber.org/zap/zapcore"
+	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -396,11 +395,13 @@ func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHa
 		return cfg
 	}
 	if basicUsername != "" {
-		// If a plain-text password is provided (deprecated), hash it at startup.
 		passHash := basicPasswordHash
 		if passHash == "" && basicPassword != "" {
-			h := sha256.Sum256([]byte(basicPassword))
-			passHash = hex.EncodeToString(h[:])
+			h, err := bcrypt.GenerateFromPassword([]byte(basicPassword), bcrypt.DefaultCost)
+			if err != nil {
+				panic(err)
+			}
+			passHash = string(h)
 		}
 		cfg.BasicAuth = &auth.BasicAuthConfig{
 			Username:     basicUsername,

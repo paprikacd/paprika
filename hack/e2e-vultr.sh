@@ -139,11 +139,31 @@ chart_deploy() {
     info "Creating namespace '$NAMESPACE'..."
     kubectl --kubeconfig "$KUBECONFIG" create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl --kubeconfig "$KUBECONFIG" apply -f -
 
+    # Load OIDC credentials from .env if present (NEVER commit these to git)
+    local set_args=()
+    if [ -f "$REPO_DIR/.env" ]; then
+        info "Loading credentials from .env..."
+        set -a; source "$REPO_DIR/.env"; set +a
+        if [ -n "${PAPRIKA_OIDC_CLIENT_ID:-}" ]; then
+            set_args+=(--set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID")
+        fi
+        if [ -n "${PAPRIKA_OIDC_CLIENT_SECRET:-}" ]; then
+            set_args+=(--set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET")
+        fi
+        if [ -n "${PAPRIKA_AUTH_TOKEN_SECRET:-}" ]; then
+            set_args+=(--set "auth.tokenSecret=$PAPRIKA_AUTH_TOKEN_SECRET")
+        fi
+        if [ -n "${PAPRIKA_BASIC_PASSWORD_HASH:-}" ]; then
+            set_args+=(--set "auth.basic.passwordHash=$PAPRIKA_BASIC_PASSWORD_HASH")
+        fi
+    fi
+
     info "Installing/upgrading Paprika chart..."
     helm upgrade --install "$RELEASE_NAME" "$CHART" \
         --kubeconfig "$KUBECONFIG" \
         --namespace "$NAMESPACE" \
         --values "$TEST_VALUES" \
+        "${set_args[@]}" \
         --wait \
         --timeout "${HEALTH_TIMEOUT}s" \
         --create-namespace \

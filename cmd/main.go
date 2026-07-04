@@ -19,8 +19,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -68,6 +66,7 @@ import (
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -103,9 +102,11 @@ type cliConfig struct {
 	shardIDSource                                                 string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
-	authEnabled, enableWebhooks                                    bool
+	cacheSyncTimeout                                              time.Duration
+	authEnabled, enableWebhooks                                   bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
+	authTokenSecret                                               string
 	coordinatorMode                                               bool
 	coordinatorHeartbeat, coordinatorTTL                          time.Duration
 	zapOptions                                                    zap.Options
@@ -221,6 +222,10 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	fs.DurationVar(&cfg.cacheSyncTimeout, "cache-sync-timeout", 2*time.Minute,
+		"Maximum time to wait for caches to sync on startup before exiting. "+
+			"Default 2m; raise this for large clusters or many CRDs (e.g. 5m) to avoid "+
+			"CrashLoopBackOff due to slow initial list calls on small API servers.")
 	registerCoordinatorFlags(fs, &cfg)
 	fs.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
@@ -265,9 +270,13 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"OIDC client ID. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
 		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
+	fs.StringVar(&cfg.authTokenSecret, "auth-token-secret", "",
+		"Secret key for signing self-issued auth tokens. Required for basic auth login flow. "+
+			"Prefer setting via PAPRIKA_AUTH_TOKEN_SECRET env var.")
 
 	cfg.webhookSecret = getenv("PAPRIKA_WEBHOOK_SECRET")
 	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
+	cfg.authTokenSecret = getenv("PAPRIKA_AUTH_TOKEN_SECRET")
 	cfg.enableWebhooks = getenv("ENABLE_WEBHOOKS") != "false"
 
 	cfg.cacheBackend = getenv("PAPRIKA_CACHE_BACKEND")
@@ -350,7 +359,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
 	authInterceptor, err := auth.Interceptor(apiCtx, authCfg, apiClient)
 	if err != nil {
 		return fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -383,7 +392,30 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 
-	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog)
+	var extraMuxHandlers []func(*http.ServeMux)
+
+	// OIDC login/token endpoints.
+	if authCfg.OIDC != nil {
+		oidcAuth, err := auth.NewOIDCAuthenticator(apiCtx, authCfg.OIDC)
+		if err != nil {
+			return fmt.Errorf("create OIDC authenticator: %w", err)
+		}
+		extraMuxHandlers = append(extraMuxHandlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/login", oidcAuth.LoginHandler())
+			mux.HandleFunc("/auth/token", oidcAuth.TokenHandler())
+		})
+	}
+
+	// Basic auth login endpoint (static username/password for dev/testing).
+	if authCfg.BasicAuth != nil && authCfg.Enabled && len(authCfg.TokenSecret) > 0 {
+		secret := authCfg.TokenSecret
+		basicCfg := *authCfg.BasicAuth
+		extraMuxHandlers = append(extraMuxHandlers, func(mux *http.ServeMux) {
+			mux.HandleFunc("/auth/basic-login", auth.BasicLoginHandler(basicCfg, secret))
+		})
+	}
+
+	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, extraMuxHandlers...)
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
@@ -599,11 +631,15 @@ func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
 	return k8sClient, nil
 }
 
-func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger) (*http.ServeMux, error) {
+func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger, extraHandlers ...func(*http.ServeMux)) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	mux.Handle("/events", apiserver.NewSSEHandler(broker))
 	mux.Handle("/healthz", healthzHandler(log))
+	// Register extra handlers before the / catch-all so specific routes win.
+	for _, h := range extraHandlers {
+		h(mux)
+	}
 	uiHandler, err := apiserver.UIHandler()
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
@@ -756,20 +792,24 @@ func newCacheFromConfig(ctx context.Context, cacheCfg cache.Config, setupLog log
 	return c, nil
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret string, rbacRules string, log logr.Logger) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, tokenSecret string, rbacRules string, log logr.Logger) auth.Config {
 	cfg := auth.Config{
 		Enabled: enabled,
 	}
 	if !enabled {
 		return cfg
 	}
+	if tokenSecret != "" {
+		cfg.TokenSecret = []byte(tokenSecret)
+	}
 	if basicUsername != "" {
-		// If a plain-text password is provided (deprecated), hash it at startup.
-		// This is not ideal — prefer pre-computing the hash.
 		passHash := basicPasswordHash
 		if passHash == "" && basicPassword != "" {
-			h := sha256.Sum256([]byte(basicPassword))
-			passHash = hex.EncodeToString(h[:])
+			h, err := bcrypt.GenerateFromPassword([]byte(basicPassword), bcrypt.DefaultCost)
+			if err != nil {
+				panic(err)
+			}
+			passHash = string(h)
 		}
 		cfg.BasicAuth = &auth.BasicAuthConfig{
 			Username:     basicUsername,
@@ -781,6 +821,7 @@ func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHa
 			IssuerURL:    oidcIssuerURL,
 			ClientID:     oidcClientID,
 			ClientSecret: oidcClientSecret,
+			Scopes:       []string{"openid", "profile", "email"},
 		}
 	}
 	if rbacRules != "" {

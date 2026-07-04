@@ -2,14 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
@@ -50,10 +49,11 @@ func TestPrincipalContext(t *testing.T) {
 
 func TestBasicAuthenticator(t *testing.T) {
 	t.Parallel()
-	h := sha256.Sum256([]byte(testPassword))
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
 	authn, err := NewBasicAuthenticator(BasicAuthConfig{
 		Username:     testUsername,
-		PasswordHash: hex.EncodeToString(h[:]),
+		PasswordHash: string(ph),
 	})
 	require.NoError(t, err)
 
@@ -81,10 +81,11 @@ func TestBasicAuthenticator_MissingUsername(t *testing.T) {
 
 func TestMultiAuthenticator(t *testing.T) {
 	t.Parallel()
-	h := sha256.Sum256([]byte(testPassword))
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
 	basic, _ := NewBasicAuthenticator(BasicAuthConfig{
 		Username:     testUsername,
-		PasswordHash: hex.EncodeToString(h[:]),
+		PasswordHash: string(ph),
 	})
 
 	multi := NewMultiAuthenticator(basic)
@@ -194,12 +195,13 @@ func TestInterceptor_Disabled(t *testing.T) {
 
 func TestInterceptor_BasicAuth(t *testing.T) {
 	t.Parallel()
-	h := sha256.Sum256([]byte(testPassword))
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
 	interceptor, err := Interceptor(context.Background(), Config{
 		Enabled: true,
 		BasicAuth: &BasicAuthConfig{
 			Username:     testUsername,
-			PasswordHash: hex.EncodeToString(h[:]),
+			PasswordHash: string(ph),
 		},
 		RBACRules: []RBACRule{
 			{Subjects: []string{"*"}, Actions: []string{"*"}, Resources: []string{"*"}, Namespaces: []string{"*"}},
@@ -225,13 +227,13 @@ func TestInterceptor_BasicAuth(t *testing.T) {
 
 func TestInterceptor_Unauthenticated(t *testing.T) {
 	t.Parallel()
-	h := sha256.Sum256([]byte(testPassword))
-	ph := hex.EncodeToString(h[:])
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
 	interceptor, err := Interceptor(context.Background(), Config{
 		Enabled: true,
 		BasicAuth: &BasicAuthConfig{
 			Username:     testUsername,
-			PasswordHash: ph,
+			PasswordHash: string(ph),
 		},
 	}, nil)
 	require.NoError(t, err)

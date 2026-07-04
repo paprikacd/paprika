@@ -13,10 +13,11 @@ import (
 
 // Config combines authentication and authorization configuration.
 type Config struct {
-	Enabled   bool
-	BasicAuth *BasicAuthConfig
-	OIDC      *OIDCConfig
-	RBACRules []RBACRule
+	Enabled     bool
+	BasicAuth   *BasicAuthConfig
+	OIDC        *OIDCConfig
+	TokenSecret []byte
+	RBACRules   []RBACRule
 }
 
 // Interceptor creates a connect.UnaryInterceptorFunc from auth config.
@@ -39,10 +40,10 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 				ctx = context.WithValue(ctx, requestContextKey{}, httpReq)
 			}
 
-		principal, err := authn.Authenticate(ctx)
-		if err != nil {
-			return nil, connect.NewError(connect.CodeUnauthenticated, err)
-		}
+			principal, err := authn.Authenticate(ctx)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeUnauthenticated, err)
+			}
 
 			ctx = WithPrincipal(ctx, principal)
 
@@ -76,6 +77,10 @@ func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Aut
 			return nil, nil, fmt.Errorf("oidc auth: %w", err)
 		}
 		authenticators = append(authenticators, oidcAuth)
+	}
+
+	if len(cfg.TokenSecret) > 0 {
+		authenticators = append(authenticators, NewSelfSignedAuthenticator(cfg.TokenSecret))
 	}
 
 	if len(authenticators) == 0 {

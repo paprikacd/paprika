@@ -10,6 +10,60 @@ Velero backup schedule created: {{ .Values.velero.schedule }}{{ end }}.
   kubectl get pods -n {{ .Release.Namespace }}
   kubectl get paprika applications -A
   helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if and (eq .Values.deploymentMode "split") .Values.apiServer.ingress.enabled }}
+
+{{- if ne (toString .Values.apiServer.ingress.type) "gateway-api" }}
+
+== Ingress ==
+
+  Ingress is enabled (type: ingress). The chart provisions an Ingress resource
+  for the API server at:
+{{- range .Values.apiServer.ingress.hosts }}
+    - https://{{ .host }}{{ range .paths }}{{ .path }}{{ end }}
+{{- end }}
+{{- if .Values.apiServer.ingress.tls }}
+
+  TLS is configured. cert-manager will issue a certificate for the host(s)
+  above via the issuer referenced in the ingress annotations
+  (cert-manager.io/issuer). If the certificate is not ready, check:
+
+    kubectl describe certificate -n {{ .Release.Namespace }}
+    kubectl describe certificaterequest -n {{ .Release.Namespace }}
+{{- end }}
+
+  The ingress controller (e.g. ingress-nginx) must be installed in the cluster:
+
+    helm install ingress-nginx ingress-nginx/ingress-nginx
+
+  Quick test with a wildcard DNS (no real domain needed):
+    # 1. Get the ingress controller LB IP
+    kubectl get svc -n ingress-nginx ingress-nginx-controller \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    # 2. Use nip.io to resolve a hostname to that IP
+    curl -k https://paprika.<LB_IP>.nip.io/healthz
+{{- else }}
+
+== Gateway API ==
+
+  Gateway API is enabled (type: gateway-api). The chart provisions an HTTPRoute
+  for the API server at:
+
+{{- with .Values.apiServer.ingress.gateway }}
+    - https://{{ .hostname }}/
+{{- end }}
+
+  The HTTPRoute targets Gateway {{ .Values.apiServer.ingress.gateway.gatewayRef.name }}
+  in namespace {{ .Values.apiServer.ingress.gateway.gatewayRef.namespace }}.
+
+  The Gateway and GatewayClass must be pre-installed (e.g. Envoy Gateway):
+
+    helm install eg bitnami/envoy-gateway --namespace envoy-gateway-system
+
+  Verify the HTTPRoute is accepted:
+
+    kubectl describe httproute -n {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
 
 == Upgrade ==
 

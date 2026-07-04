@@ -139,7 +139,23 @@
     @apply bg-background text-foreground;
   }
   html {
-    @apply font-sans;
+    @apply font-sans antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    text-wrap: balance;
+  }
+  p, li, figcaption {
+    text-wrap: pretty;
+  }
+  img {
+    outline: 1px solid rgba(0, 0, 0, 0.1);
+    outline-offset: -1px;
+  }
+  :where(.dark) img {
+    outline: 1px solid rgba(255, 255, 255, 0.1);
+    outline-offset: -1px;
   }
 }
 

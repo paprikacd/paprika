@@ -80,15 +80,17 @@ manager:
       - ALL
     readOnlyRootFilesystem: true
 
-  ## Resource limits and requests
+  ## Resource limits and requests. The controller-manager runs ~15 informers
+  ## (CRDs + core Pods/ReplicaSets) so it needs at least 512Mi memory and a
+  ## generous CPU share. On large or slow clusters raise memory to 1Gi.
   ##
   resources:
     limits:
       cpu: 1000m
-      memory: 512Mi
+      memory: 1Gi
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 200m
+      memory: 512Mi
 
   ## Manager pod's affinity
   ##
@@ -301,10 +303,16 @@ apiServer:
     # annotations:
     #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
-  ## Ingress for the API server (external access to UI + API).
+  ## Ingress / Gateway API for the API server (external access to UI + API).
+  ## Supports two modes:
+  ##   "ingress"    - standard networking.k8s.io/v1 Ingress (works with nginx, contour, etc.)
+  ##   "gateway-api" - Gateway API HTTPRoute (works with Envoy Gateway, Istio, etc.)
   ##
   ingress:
     enabled: false
+    ## Type of ingress resource: "ingress" or "gateway-api"
+    ##
+    # type: ingress
     # className: nginx
     # hosts:
     #   - host: paprika.example.com
@@ -316,6 +324,16 @@ apiServer:
     #       - paprika.example.com
     #     secretName: paprika-tls
     # annotations: {}
+
+    ## Gateway API configuration (used when type is "gateway-api").
+    ## The GatewayClass and Gateway are expected to exist already (infra-level resources).
+    ## This chart only creates the application-level HTTPRoute.
+    ##
+    # gateway:
+    #   gatewayRef:
+    #     name: paprika
+    #     namespace: envoy-gateway-system
+    #   hostname: paprika.example.com
 
   hpa:
     enabled: false
@@ -694,7 +712,7 @@ auth:
   basic:
     enabled: false
     username: ""
-    # -- SHA-256 hash of the password, hex-encoded
+    # -- bcrypt hash of the password
     passwordHash: ""
 
   ## OpenID Connect authentication
@@ -708,6 +726,11 @@ auth:
     # If set, takes precedence over .clientSecret.
     # existingSecretName: ""
     # existingSecretKey: "client-secret"
+
+  # -- Secret key for signing self-issued auth tokens (HMAC-SHA256).
+  # Required for the basic auth login flow. Set via env var PAPRIKA_AUTH_TOKEN_SECRET
+  # using apiServer.extraEnv (avoid putting secrets in values.yaml).
+  # tokenSecret: ""
 
   ## RBAC authorization rules
   ## Subjects may be user names or "group:<group-name>".

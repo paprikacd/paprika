@@ -70,11 +70,11 @@ export function Features() {
     <section className="border-b border-border/50 py-20">
       <div className="mx-auto max-w-7xl px-6">
         <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl text-balance">
             Everything You Need for{" "}
             <span className="text-primary">Application Delivery</span>
           </h2>
-          <p className="mt-3 text-muted-foreground">
+          <p className="mt-3 text-muted-foreground text-pretty">
             Paprika consolidates the tools your team needs into a single
             operator — no more stitching together Argo projects.
           </p>
