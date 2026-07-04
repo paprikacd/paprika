@@ -3,7 +3,7 @@
 import { useState, useEffect, memo, Component, type ReactNode, useCallback, useRef } from "react"
 import Link from "next/link"
 import { createPromiseClient } from "@connectrpc/connect"
-import { createConnectTransport } from "@connectrpc/connect-web"
+import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
@@ -30,7 +30,7 @@ import {
   Circle,
 } from "lucide-react"
 
-const transport = createConnectTransport({ baseUrl: "" })
+const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
 const StatCard = memo(function StatCard({
