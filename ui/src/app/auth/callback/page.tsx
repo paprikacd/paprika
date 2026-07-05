@@ -51,7 +51,10 @@ function CallbackHandler() {
       .then((data: { idToken: string }) => {
         persistAuth(data.idToken)
         const returnTo = consumeReturnTo()
-        const dest = returnTo && returnTo !== "/login" ? returnTo : "/dashboard/"
+        let dest = "/dashboard/"
+        if (returnTo && !returnTo.startsWith("/login")) {
+          dest = returnTo.endsWith("/") ? returnTo : returnTo + "/"
+        }
         window.location.href = dest
       })
       .catch((err: Error) => {

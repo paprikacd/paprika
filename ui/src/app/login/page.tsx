@@ -1,7 +1,7 @@
 "use client"
 
 import { useAuth } from "@/lib/auth-context"
-import { FormEvent, useEffect, useRef, useState } from "react"
+import { FormEvent, useEffect, useState } from "react"
 import { LogIn } from "lucide-react"
 
 export default function LoginPage() {
@@ -10,12 +10,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
-  const directed = useRef(false)
 
   useEffect(() => {
-    if (!isLoading && user && !directed.current) {
-      directed.current = true
-      window.location.href = "/dashboard/"
+    if (!isLoading && user) {
+      const current = window.location.pathname.replace(/\/+$/, "")
+      if (current !== "/dashboard") window.location.href = "/dashboard/"
     }
   }, [isLoading, user])
 

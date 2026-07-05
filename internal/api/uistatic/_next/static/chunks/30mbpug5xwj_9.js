@@ -1,1 +1,0 @@
-(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,52683,e=>{"use strict";var t=e.i(71645),u=e.i(94690);e.s(["default",0,function(){let{user:e,isLoading:o}=(0,u.useAuth)(),r=(0,t.useRef)(!1);return(0,t.useEffect)(()=>{o||r.current||(r.current=!0,window.location.href=e?"/dashboard/":"/login/")},[o,e]),null}])}]);

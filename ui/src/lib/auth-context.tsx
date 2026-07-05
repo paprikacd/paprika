@@ -5,7 +5,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react"
@@ -33,6 +32,10 @@ const AuthContext = createContext<AuthContextValue>({
   logout: () => {},
 })
 
+export const AUTH_TOKEN_KEY = "paprika_id_token"
+export const AUTH_USER_KEY = "paprika_auth_user"
+const AUTH_RETURN_TO_KEY = "paprika_return_to"
+
 function parseJWT(token: string): Record<string, unknown> | null {
   try {
     const parts = token.split(".")
@@ -45,9 +48,18 @@ function parseJWT(token: string): Record<string, unknown> | null {
   }
 }
 
-const AUTH_TOKEN_KEY = "paprika_id_token"
-const AUTH_USER_KEY = "paprika_auth_user"
-const AUTH_RETURN_TO_KEY = "paprika_return_to"
+function isTokenExpired(token: string): boolean {
+  const payload = parseJWT(token)
+  if (!payload || !payload.exp) return true
+  return Date.now() >= (payload.exp as number) * 1000
+}
+
+function safeRedirect(target: string) {
+  const current = window.location.pathname.replace(/\/+$/, "")
+  const dest = target.replace(/\/+$/, "")
+  if (current === dest) return
+  window.location.href = target
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [idToken, setIdToken] = useState<string | null>(null)
@@ -61,19 +73,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const stored = localStorage.getItem(AUTH_TOKEN_KEY)
     const storedUser = localStorage.getItem(AUTH_USER_KEY)
+
     if (stored && storedUser) {
-      const payload = parseJWT(stored)
-      if (payload && payload.exp) {
-        const expMs = (payload.exp as number) * 1000
-        if (Date.now() >= expMs) {
+      if (isTokenExpired(stored)) {
+        localStorage.removeItem(AUTH_TOKEN_KEY)
+        localStorage.removeItem(AUTH_USER_KEY)
+      } else {
+        setIdToken(stored)
+        try {
+          setUser(JSON.parse(storedUser))
+        } catch {
           localStorage.removeItem(AUTH_TOKEN_KEY)
           localStorage.removeItem(AUTH_USER_KEY)
-          setIsLoading(false)
-          return
         }
       }
-      setIdToken(stored)
-      setUser(JSON.parse(storedUser))
     }
     setIsLoading(false)
   }, [])
@@ -92,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem("paprika_code_verifier", codeVerifier)
       sessionStorage.setItem("paprika_expected_state", state)
       sessionStorage.setItem("paprika_redirect_uri", redirectURI)
-      // Save where to return after login
       localStorage.setItem(AUTH_RETURN_TO_KEY, window.location.pathname)
       window.location.href = url
     } catch (err) {
@@ -106,15 +118,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
     localStorage.removeItem(AUTH_RETURN_TO_KEY)
-    window.location.href = "/login/"
+    safeRedirect("/login/")
   }, [])
 
-  const value = useMemo(
-    () => ({ user, idToken, isLoading, login, logout }),
-    [user, idToken, isLoading, login, logout],
+  return (
+    <AuthContext.Provider value={{ user, idToken, isLoading, login, logout }}>
+      {children}
+    </AuthContext.Provider>
   )
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

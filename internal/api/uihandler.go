@@ -14,6 +14,7 @@ import (
 
 func cleanUIPath(p string) string {
 	p = strings.TrimPrefix(p, "/")
+	p = strings.TrimSuffix(p, "/")
 	if p == "" {
 		p = "."
 	}
