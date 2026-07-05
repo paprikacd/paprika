@@ -5,10 +5,13 @@ import { createConnectTransport } from "@connectrpc/connect-web"
 const AUTH_TOKEN_KEY = "paprika_id_token"
 const AUTH_USER_KEY = "paprika_auth_user"
 
+let clearingAuth = false
+
 function clearStaleAuth() {
   localStorage.removeItem(AUTH_TOKEN_KEY)
   localStorage.removeItem(AUTH_USER_KEY)
-  if (window.location.pathname !== "/login/") {
+  if (!clearingAuth && window.location.pathname !== "/login/") {
+    clearingAuth = true
     window.location.href = "/login/"
   }
 }
