@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -82,15 +81,19 @@ func (a *DenyAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action,
 func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Action, resource Resource, namespace, project string) error {
 	for i := range r.rules {
 		rule := &r.rules[i]
-		s := r.matchesSubjects(rule, p)
-		a := r.matchesActions(rule, action)
-		res := r.matchesResources(rule, resource)
-		ns := r.matchesNamespaces(rule, namespace)
-		proj := r.matchesProjects(rule, project)
-		log.Printf("RBAC rule %d: subjects=%v actions=%v resources=%v ns=%v proj=%v | match: subj=%v act=%v res=%v ns=%v proj=%v principal=%s",
-			i, rule.Subjects, rule.Actions, rule.Resources, rule.Namespaces, rule.Projects,
-			s, a, res, ns, proj, p.Subject)
-		if !s || !a || !res || !ns || !proj {
+		if !r.matchesSubjects(rule, p) {
+			continue
+		}
+		if !r.matchesActions(rule, action) {
+			continue
+		}
+		if !r.matchesResources(rule, resource) {
+			continue
+		}
+		if !r.matchesNamespaces(rule, namespace) {
+			continue
+		}
+		if !r.matchesProjects(rule, project) {
 			continue
 		}
 		return nil
