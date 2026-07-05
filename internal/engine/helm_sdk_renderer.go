@@ -147,7 +147,7 @@ func (r *HelmSDKRenderer) resolveS3Source(ctx context.Context, tmpl *paprika.Tem
 // Render renders a single template and returns the resulting YAML manifests.
 func (r *HelmSDKRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
 	switch tmpl.Spec.Type {
-	case sourceTypeHelm:
+	case sourceTypeHelm, sourceTypeGit, sourceTypeOCI, sourceTypeS3:
 		return r.renderHelm(ctx, tmpl, params)
 	case sourceTypeKustomize:
 		return r.renderKustomize(ctx, tmpl, nil)
@@ -221,7 +221,11 @@ func (r *HelmSDKRenderer) resolveChartPath(ctx context.Context, tmpl *paprika.Te
 	if result == nil {
 		return "", fmt.Errorf("source resolution returned nil for type=%s", tmpl.Spec.Type)
 	}
-	return result.LocalPath, nil
+	chartPath := result.LocalPath
+	if tmpl.Spec.Git != nil && tmpl.Spec.Git.Path != "" {
+		chartPath = filepath.Join(result.LocalPath, tmpl.Spec.Git.Path)
+	}
+	return chartPath, nil
 }
 
 func (r *HelmSDKRenderer) downloadChart(ctx context.Context, chartRef paprika.ChartRef) (string, error) {
@@ -384,7 +388,7 @@ func (r *HelmSDKRenderer) RenderAll(ctx context.Context, templates []paprika.Tem
 		var err error
 
 		switch tmpl.Spec.Type {
-		case sourceTypeHelm:
+		case sourceTypeHelm, sourceTypeGit, sourceTypeOCI, sourceTypeS3:
 			rendered, err = r.renderHelm(ctx, tmpl, params)
 		case sourceTypeKustomize:
 			rendered, err = r.renderKustomize(ctx, tmpl, previous)
