@@ -1,16 +1,15 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { LogOut, User, LayoutDashboard } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
 
 export function Nav() {
   const pathname = usePathname()
-  const router = useRouter()
   const { user, isLoading, logout } = useAuth()
 
-  const isAuthPage = pathname === "/login" || pathname.startsWith("/auth/")
+  const isAuthPage = pathname === "/login" || pathname === "/login/" || pathname.startsWith("/auth/")
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/40 bg-background/80 backdrop-blur-xl supports-backdrop-blur:bg-background/60">

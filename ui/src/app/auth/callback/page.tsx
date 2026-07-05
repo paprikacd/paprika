@@ -1,14 +1,18 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { persistAuth, consumeReturnTo } from "@/lib/auth-context"
 
 function CallbackHandler() {
   const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
+  const processed = useRef(false)
 
   useEffect(() => {
+    if (processed.current) return
+    processed.current = true
+
     const code = searchParams.get("code")
     const returnedState = searchParams.get("state")
 
@@ -47,13 +51,13 @@ function CallbackHandler() {
       .then((data: { idToken: string }) => {
         persistAuth(data.idToken)
         const returnTo = consumeReturnTo()
-        const dest = returnTo && returnTo !== "/login" ? returnTo : "/dashboard"
+        const dest = returnTo && returnTo !== "/login" ? returnTo : "/dashboard/"
         window.location.href = dest
       })
       .catch((err: Error) => {
         setError(err.message || "Token exchange failed")
       })
-  }, [searchParams])
+  }, [])
 
   if (error) {
     return (

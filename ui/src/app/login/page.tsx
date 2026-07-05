@@ -1,23 +1,23 @@
 "use client"
 
 import { useAuth } from "@/lib/auth-context"
-import { useRouter } from "next/navigation"
-import { FormEvent, useEffect, useState } from "react"
+import { FormEvent, useEffect, useRef, useState } from "react"
 import { LogIn } from "lucide-react"
 
 export default function LoginPage() {
   const { user, isLoading, login } = useAuth()
-  const router = useRouter()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const directed = useRef(false)
 
   useEffect(() => {
-    if (!isLoading && user) {
-      router.replace("/dashboard")
+    if (!isLoading && user && !directed.current) {
+      directed.current = true
+      window.location.href = "/dashboard/"
     }
-  }, [isLoading, user, router])
+  }, [isLoading, user])
 
   if (isLoading) return null
   if (user) return null
@@ -40,7 +40,7 @@ export default function LoginPage() {
       const data = await res.json()
       const { persistAuth } = await import("@/lib/auth-context")
       persistAuth(data.idToken)
-      router.replace("/dashboard")
+      window.location.href = "/dashboard/"
     } catch {
       setError("Network error")
     } finally {

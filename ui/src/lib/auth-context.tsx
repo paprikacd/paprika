@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
 } from "react"
-import { useRouter } from "next/navigation"
 
 export interface AuthUser {
   sub: string
@@ -54,7 +53,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [idToken, setIdToken] = useState<string | null>(null)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const router = useRouter()
   const restored = useRef(false)
 
   useEffect(() => {
@@ -108,8 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
     localStorage.removeItem(AUTH_RETURN_TO_KEY)
-    router.push("/login")
-  }, [router])
+    window.location.href = "/login/"
+  }, [])
 
   const value = useMemo(
     () => ({ user, idToken, isLoading, login, logout }),
