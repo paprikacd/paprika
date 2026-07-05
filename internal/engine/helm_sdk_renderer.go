@@ -221,11 +221,7 @@ func (r *HelmSDKRenderer) resolveChartPath(ctx context.Context, tmpl *paprika.Te
 	if result == nil {
 		return "", fmt.Errorf("source resolution returned nil for type=%s", tmpl.Spec.Type)
 	}
-	chartPath := result.LocalPath
-	if tmpl.Spec.Git != nil && tmpl.Spec.Git.Path != "" {
-		chartPath = filepath.Join(result.LocalPath, tmpl.Spec.Git.Path)
-	}
-	return chartPath, nil
+	return result.LocalPath, nil
 }
 
 func (r *HelmSDKRenderer) downloadChart(ctx context.Context, chartRef paprika.ChartRef) (string, error) {
