@@ -202,7 +202,7 @@ auth:
     # process-list exposure. For now, set via --auth-oidc-client-secret flag.
     clientSecret: "REPLACE_WITH_GOOGLE_CLIENT_SECRET"
   rbac:
-    - subjects: ["group:users"]
+    - subjects: ["*"]
       actions: ["*"]
       resources: ["*"]
       namespaces: ["*"]
