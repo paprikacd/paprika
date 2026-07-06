@@ -1128,7 +1128,24 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 	if renderer == nil {
 		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
 	}
-	manifests, err := renderer.Render(ctx, &tmpl, app.Spec.Parameters)
+
+	// The renderer needs release-name in params so the Helm chart's
+	// {{ .Release.Name }} resolves to the actual release name. Without it
+	// the renderer falls back to "paprika-release", producing resource names
+	// that don't match the deployed resources (causing false Missing/Pruned).
+	params := make(map[string]string, len(app.Spec.Parameters)+1)
+	for k, v := range app.Spec.Parameters {
+		params[k] = v
+	}
+	if _, ok := params["release-name"]; !ok {
+		releaseName := app.Name + "-release"
+		if app.Status.ReleaseRef != "" {
+			releaseName = app.Status.ReleaseRef
+		}
+		params["release-name"] = releaseName
+	}
+
+	manifests, err := renderer.Render(ctx, &tmpl, params)
 	if err != nil {
 		return nil, fmt.Errorf("render template for diff: %w", err)
 	}
