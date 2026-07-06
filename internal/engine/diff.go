@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -174,42 +175,108 @@ func resourceKey(obj *unstructured.Unstructured) string {
 	return fmt.Sprintf("%s/%s/%s", obj.GetKind(), ns, obj.GetName())
 }
 
-func resourceEqual(a, b unstructured.Unstructured) bool {
-	// Compare by generating a simplified hash of spec and metadata
-	aSpec, _, err := unstructured.NestedMap(a.Object, "spec")
-	if err != nil {
-		return false
-	}
-	bSpec, _, err := unstructured.NestedMap(b.Object, "spec")
-	if err != nil {
-		return false
-	}
-	aMeta, _, err := unstructured.NestedMap(a.Object, "metadata")
-	if err != nil {
-		return false
-	}
-	bMeta, _, err := unstructured.NestedMap(b.Object, "metadata")
-	if err != nil {
-		return false
-	}
-
-	if !mapEqual(aSpec, bSpec) {
-		return false
-	}
-	return mapEqual(aMeta, bMeta)
+// serverManagedAnnotationPrefixes lists annotation key prefixes that are
+// injected by Kubernetes controllers and should not trigger drift.
+var serverManagedAnnotationPrefixes = []string{
+	"deployment.kubernetes.io/",
+	"kubectl.kubernetes.io/",
+	"pv.kubernetes.io/",
+	"service.kubernetes.io/",
+	"volume.kubernetes.io/",
+	"node.kubernetes.io/",
+	"volumealpha.kubernetes.io/",
 }
 
-func mapEqual(a, b map[string]interface{}) bool {
+// resourceEqual compares two unstructured objects for semantic equality.
+// Server-managed metadata fields, controller-injected annotations, and
+// Kubernetes-defaulted spec keys (present in live but absent in desired) are
+// ignored so that only user-declared configuration drives drift detection.
+func resourceEqual(desired, live unstructured.Unstructured) bool {
+	if !metaEqual(desired, live) {
+		return false
+	}
+	return specContains(desired.Object["spec"], live.Object["spec"])
+}
+
+// metaEqual compares name, namespace, labels, and annotations after stripping
+// server-managed fields and controller-injected annotations.
+func metaEqual(desired, live unstructured.Unstructured) bool {
+	if desired.GetName() != live.GetName() {
+		return false
+	}
+	if desired.GetNamespace() != live.GetNamespace() {
+		return false
+	}
+	if !labelsEqual(desired.GetLabels(), live.GetLabels()) {
+		return false
+	}
+	return annotationsEqual(desired.GetAnnotations(), live.GetAnnotations())
+}
+
+func labelsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for k, v := range a {
-		bv, ok := b[k]
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+func annotationsEqual(desired, live map[string]string) bool {
+	desired = stripServerAnnotations(desired)
+	live = stripServerAnnotations(live)
+	if len(desired) != len(live) {
+		return false
+	}
+	for k, v := range desired {
+		if bv, ok := live[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+func stripServerAnnotations(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if isServerManagedAnnotation(k) {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func isServerManagedAnnotation(key string) bool {
+	for _, prefix := range serverManagedAnnotationPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// specContains performs a desired-centric comparison: every key-value pair in
+// desired must be present and equal in live. Extra keys in live (Kubernetes
+// defaults such as progressDeadlineSeconds, strategy, clusterIP) are allowed.
+func specContains(desired, live interface{}) bool {
+	dMap, dOK := desired.(map[string]interface{})
+	lMap, lOK := live.(map[string]interface{})
+	if !dOK || !lOK {
+		return fmt.Sprintf("%v", desired) == fmt.Sprintf("%v", live)
+	}
+	for k, dv := range dMap {
+		lv, ok := lMap[k]
 		if !ok {
 			return false
 		}
-		// Simple comparison for now
-		if fmt.Sprintf("%v", v) != fmt.Sprintf("%v", bv) {
+		if !specContains(dv, lv) {
 			return false
 		}
 	}
