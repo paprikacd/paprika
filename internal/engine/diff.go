@@ -265,18 +265,49 @@ func isServerManagedAnnotation(key string) bool {
 // specContains performs a desired-centric comparison: every key-value pair in
 // desired must be present and equal in live. Extra keys in live (Kubernetes
 // defaults such as progressDeadlineSeconds, strategy, clusterIP) are allowed.
+// Lists are compared element-by-element: each desired element must match at
+// least one live element (by name if available, allowing live to carry extra
+// defaulted fields on list items like containers and ports).
 func specContains(desired, live interface{}) bool {
 	dMap, dOK := desired.(map[string]interface{})
 	lMap, lOK := live.(map[string]interface{})
-	if !dOK || !lOK {
-		return fmt.Sprintf("%v", desired) == fmt.Sprintf("%v", live)
+	if dOK && lOK {
+		return mapContains(dMap, lMap)
 	}
+	dSlice, dOK := desired.([]interface{})
+	lSlice, lOK := live.([]interface{})
+	if dOK && lOK {
+		return sliceContains(dSlice, lSlice)
+	}
+	return fmt.Sprintf("%v", desired) == fmt.Sprintf("%v", live)
+}
+
+func mapContains(dMap, lMap map[string]interface{}) bool {
 	for k, dv := range dMap {
 		lv, ok := lMap[k]
 		if !ok {
 			return false
 		}
 		if !specContains(dv, lv) {
+			return false
+		}
+	}
+	return true
+}
+
+func sliceContains(dSlice, lSlice []interface{}) bool {
+	if len(dSlice) > len(lSlice) {
+		return false
+	}
+	for _, dv := range dSlice {
+		matched := false
+		for _, lv := range lSlice {
+			if specContains(dv, lv) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
