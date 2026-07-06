@@ -1137,19 +1137,24 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
 	}
 
-	// The renderer needs release-name in params so the Helm chart's
-	// {{ .Release.Name }} resolves to the actual release name. Without it
-	// the renderer falls back to "paprika-release", producing resource names
-	// that don't match the deployed resources (causing false Missing/Pruned).
+	// Use the active Release's parameters (which merge app-level and
+	// stage-level params) so the rendered diff matches what was actually
+	// deployed. Fall back to app-level params if no Release exists yet.
 	params := make(map[string]string, len(app.Spec.Parameters)+1)
 	for k, v := range app.Spec.Parameters {
 		params[k] = v
 	}
-	if _, ok := params["release-name"]; !ok {
-		releaseName := app.Name + "-release"
-		if app.Status.ReleaseRef != "" {
-			releaseName = app.Status.ReleaseRef
+	releaseName := app.Name + "-release"
+	if app.Status.ReleaseRef != "" {
+		releaseName = app.Status.ReleaseRef
+		var activeRelease paprikav1.Release
+		if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: app.Namespace}, &activeRelease); err == nil {
+			for k, v := range activeRelease.Spec.Parameters {
+				params[k] = v
+			}
 		}
+	}
+	if _, ok := params["release-name"]; !ok {
 		params["release-name"] = releaseName
 	}
 
