@@ -1069,19 +1069,7 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		return
 	}
 
-	docs := engine.SplitYAMLDocuments(manifests)
-	var desired []unstructured.Unstructured
-	for _, doc := range docs {
-		var obj map[string]interface{}
-		if uErr := yaml.Unmarshal(doc, &obj); uErr != nil {
-			continue
-		}
-		if obj == nil {
-			continue
-		}
-		u := unstructured.Unstructured{Object: obj}
-		desired = append(desired, u)
-	}
+	desired := parseDesiredManifests(manifests, app.Namespace)
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
 	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
@@ -1111,6 +1099,26 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 			app.Status.HookStatuses = nil
 		}
 	}
+}
+
+// parseDesiredManifests splits rendered YAML manifests into unstructured objects,
+// defaulting any empty namespace to the application's namespace so that diff
+// keys match the live (namespaced) resources.
+func parseDesiredManifests(manifests []byte, namespace string) []unstructured.Unstructured {
+	docs := engine.SplitYAMLDocuments(manifests)
+	desired := make([]unstructured.Unstructured, 0, len(docs))
+	for _, doc := range docs {
+		var obj map[string]interface{}
+		if err := yaml.Unmarshal(doc, &obj); err != nil || obj == nil {
+			continue
+		}
+		u := unstructured.Unstructured{Object: obj}
+		if u.GetNamespace() == "" {
+			u.SetNamespace(namespace)
+		}
+		desired = append(desired, u)
+	}
+	return desired
 }
 
 func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *paprikav1.Application) ([]byte, error) {
