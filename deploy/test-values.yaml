@@ -45,8 +45,8 @@ manager:
   automountServiceAccountToken: true
 
   image:
-    repository: ttl.sh/paprika-amd64
-    tag: "4h"
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
     pullPolicy: Always
 
   podSecurityContext:
@@ -100,8 +100,8 @@ apiServer:
   automountServiceAccountToken: true
 
   image:
-    repository: ttl.sh/paprika-amd64
-    tag: "4h"
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
     pullPolicy: Always
 
   resources:
@@ -145,8 +145,8 @@ webhookReceiver:
   automountServiceAccountToken: true
 
   image:
-    repository: ttl.sh/paprika-amd64
-    tag: "4h"
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
     pullPolicy: Always
 
   resources:
@@ -167,8 +167,8 @@ repoServer:
   automountServiceAccountToken: true
 
   image:
-    repository: ttl.sh/paprika-amd64
-    tag: "4h"
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
     pullPolicy: Always
 
   resources:
