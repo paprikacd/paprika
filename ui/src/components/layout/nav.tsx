@@ -25,7 +25,7 @@ export function Nav() {
           <nav className="flex items-center gap-1">
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
             >
               <LayoutDashboard className="size-3.5" />
               Dashboard
@@ -49,7 +49,7 @@ export function Nav() {
               </Link>
               <button
                 onClick={logout}
-                className="rounded-md p-1.5 text-muted-foreground transition-all hover:text-foreground active:scale-[0.96]"
+                className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
                 title="Sign out"
               >
                 <LogOut className="size-3.5" />

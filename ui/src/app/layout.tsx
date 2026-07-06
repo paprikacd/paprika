@@ -3,6 +3,7 @@ import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { Nav } from "@/components/layout/nav"
 import { AuthProvider } from "@/lib/auth-context"
+import { ConnectionProvider } from "@/lib/connection-context"
 
 const instrumentSans = Instrument_Sans({
   variable: "--font-sans",
@@ -38,10 +39,12 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <Nav />
-          <main className="flex-1">
-            {children}
-          </main>
+          <ConnectionProvider>
+            <Nav />
+            <main className="flex-1">
+              {children}
+            </main>
+          </ConnectionProvider>
         </AuthProvider>
       </body>
     </html>

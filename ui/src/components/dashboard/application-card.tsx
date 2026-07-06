@@ -253,7 +253,7 @@ function ResourceSyncList({ resources }: { resources: Application["resources"] }
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-medium text-muted-foreground">Resources</span>
-        <span className="text-[10px] text-muted-foreground">{resources.length} total</span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">{resources.length} total</span>
       </div>
       {resources.map((r) => {
         const Icon = statusIcon[r.status] ?? AlertCircle
@@ -293,7 +293,7 @@ function ResourceHealthList({ healths }: { healths: Application["resourceHealth"
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-medium text-muted-foreground">Resource Health</span>
-        <span className="text-[10px] text-muted-foreground">{healths.length} resources</span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">{healths.length} resources</span>
       </div>
       {healths.map((h) => {
         const Icon = healthIcon[h.health] ?? AlertCircle
@@ -335,7 +335,7 @@ function SyncButton({ application, onSynced }: { application: Application; onSyn
       <button
         onClick={handleSync}
         disabled={syncing}
-        className="flex items-center gap-1.5 rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-md border border-border/50 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-[background-color,box-shadow] hover:bg-accent hover:text-accent-foreground active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
       >
         {syncing ? (
           <Loader2 className="size-3 animate-spin" />
@@ -400,7 +400,7 @@ function ApprovalGateButton({ application, onApproved }: { application: Applicat
           <button
             onClick={() => handleApprove(gate.name)}
             disabled={approving}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-[background-color,box-shadow] hover:bg-primary/90 active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50"
           >
             {approving ? <Loader2 className="size-3 animate-spin" /> : <CheckCircle2 className="size-3" />}
             {approving ? "Approving..." : `Approve ${gate.name}`}
