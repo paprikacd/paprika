@@ -24,11 +24,12 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	"go.opentelemetry.io/otel/sdk/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	"github.com/benebsworth/paprika/internal/clock"
 )
@@ -84,7 +86,7 @@ func ConfigFromEnv() Config {
 type Telemetry struct {
 	tracer         trace.Tracer
 	provider       *sdktrace.TracerProvider
-	meterProvider  *metric.MeterProvider
+	meterProvider  *sdkmetric.MeterProvider
 	loggerProvider *sdklog.LoggerProvider
 	enabled        bool
 }
@@ -150,8 +152,30 @@ func (t *Telemetry) Shutdown(ctx context.Context) error {
 //
 //nolint:gocritic // cfg is a one-time startup config; copying is negligible.
 func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
+	t := &Telemetry{}
+
+	// Prometheus exporter: OTel metrics pulled via /metrics endpoint,
+	// registered on controller-runtime's shared registry so they appear
+	// alongside the standard controller metrics. Always enabled.
+	promExporter, err := promexporter.New(
+		promexporter.WithRegisterer(ctrlmetrics.Registry),
+	)
+	if err != nil {
+		log.Printf("otel: failed to create prometheus exporter: %v", err)
+	}
+
+	readerOpts := []sdkmetric.Option{}
+	if promExporter != nil {
+		readerOpts = append(readerOpts, sdkmetric.WithReader(promExporter))
+	}
+
 	if cfg.OTLPEndpoint == "" {
-		return &Telemetry{}
+		if len(readerOpts) > 0 {
+			meterProvider := sdkmetric.NewMeterProvider(readerOpts...)
+			otel.SetMeterProvider(meterProvider)
+			t.meterProvider = meterProvider
+		}
+		return t
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -162,7 +186,7 @@ func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 	exporter, err := buildTraceExporter(ctx, &cfg)
 	if err != nil {
 		log.Printf("otel: failed to create trace exporter, tracing disabled: %v", err)
-		return &Telemetry{}
+		return t
 	}
 
 	provider := sdktrace.NewTracerProvider(
@@ -177,30 +201,31 @@ func NewTelemetry(ctx context.Context, cfg Config) *Telemetry {
 	otel.SetTracerProvider(provider)
 	setPropagator(cfg.Propagators)
 
-	t := &Telemetry{
-		provider: provider,
-		tracer:   provider.Tracer(tracerName),
-		enabled:  true,
+	t.provider = provider
+	t.tracer = provider.Tracer(tracerName)
+	t.enabled = true
+
+	readerOpts = append(readerOpts, sdkmetric.WithResource(res))
+
+	metricExporter, merr := buildMetricExporter(ctx, &cfg)
+	if merr != nil {
+		log.Printf("otel: failed to create OTLP metric exporter, only prometheus /metrics will be served: %v", merr)
+	} else {
+		readerOpts = append(readerOpts, sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(metricExporter, sdkmetric.WithInterval(60*time.Second)),
+		))
 	}
 
-	metricExporter, err := buildMetricExporter(ctx, &cfg)
-	if err != nil {
-		log.Printf("otel: failed to create metric exporter, metrics disabled: %v", err)
-		return t
-	}
-	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExporter, metric.WithInterval(60*time.Second))),
-		metric.WithResource(res),
-	)
+	meterProvider := sdkmetric.NewMeterProvider(readerOpts...)
 	otel.SetMeterProvider(meterProvider)
 	t.meterProvider = meterProvider
 
 	// Logs signal: build a LoggerProvider so the otelzap bridge can forward zap
 	// records to the same OTLP backend as traces and metrics. A failure here
 	// leaves logs unbridged (stdout JSON is unaffected) so it is non-fatal.
-	logExporter, err := buildLogExporter(ctx, &cfg)
-	if err != nil {
-		log.Printf("otel: failed to create log exporter, log bridging disabled: %v", err)
+	logExporter, lerr := buildLogExporter(ctx, &cfg)
+	if lerr != nil {
+		log.Printf("otel: failed to create log exporter, log bridging disabled: %v", lerr)
 		return t
 	}
 	loggerProvider := sdklog.NewLoggerProvider(
@@ -297,7 +322,7 @@ func buildTraceExporter(ctx context.Context, cfg *Config) (*otlptrace.Exporter, 
 // protocol. It mirrors buildTraceExporter: same endpoint, TLS, and headers.
 //
 //nolint:dupl // intentionally mirrors build{Trace,Log}Exporter; option types differ per signal.
-func buildMetricExporter(ctx context.Context, cfg *Config) (metric.Exporter, error) {
+func buildMetricExporter(ctx context.Context, cfg *Config) (sdkmetric.Exporter, error) {
 	if cfg.Protocol == "http" {
 		var httpOpts []otlpmetrichttp.Option
 		httpOpts = append(httpOpts, otlpmetrichttp.WithEndpoint(cfg.OTLPEndpoint))

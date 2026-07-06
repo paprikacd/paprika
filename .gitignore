@@ -30,3 +30,12 @@ go.work
 .kubeconfig-e2e
 kubeconfig-e2e
 .env
+terraform/client-secret.json
+terraform/terraform.tfvars
+terraform/.kube-cache/
+
+# Generated UI static assets (populated by build-ui target)
+internal/api/uistatic/*
+
+# Test output
+test-results/

@@ -33,6 +33,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
@@ -685,6 +688,14 @@ func (r *ReleaseReconciler) patchReleaseStatus(ctx context.Context, release *pap
 	}); err != nil {
 		return fmt.Errorf("patching release status: %w", err)
 	}
+
+	if release.Status.Phase != oldPhase {
+		metrics.ReleaseTransitions.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("from", string(oldPhase)),
+			attribute.String("to", string(release.Status.Phase)),
+		))
+	}
+
 	r.publishReleaseEvent(ctx, release, oldPhase)
 	return nil
 }
@@ -1109,17 +1120,28 @@ func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release 
 }
 
 func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName string, manifests []byte, opts *paprikav1.SyncOptions) error {
+	start := time.Now()
+	var err error
+
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
-		return r.applyViaAgent(ctx, cluster, namespace, appName, manifests)
+		err = r.applyViaAgent(ctx, cluster, namespace, appName, manifests)
+	} else {
+		kubeconfigSecret := ""
+		if cluster.KubeconfigSecret != "" {
+			kubeconfigSecret = cluster.KubeconfigSecret
+		}
+		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, opts)
 	}
-	kubeconfigSecret := ""
-	if cluster.KubeconfigSecret != "" {
-		kubeconfigSecret = cluster.KubeconfigSecret
+
+	elapsed := time.Since(start).Milliseconds()
+	metrics.SyncDuration.Record(ctx, elapsed, metric.WithAttributes(
+		attribute.String("app", appName),
+	))
+	if err != nil {
+		metrics.SyncErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("app", appName)))
 	}
-	if err := r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, opts); err != nil {
-		return fmt.Errorf("failed to apply manifests: %w", err)
-	}
-	return nil
+
+	return err
 }
 
 func (r *ReleaseReconciler) applyViaAgent(ctx context.Context, cluster *paprikav1.ClusterRef, namespace, appName string, manifests []byte) error {

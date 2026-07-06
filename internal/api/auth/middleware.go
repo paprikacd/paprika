@@ -8,7 +8,11 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 // Config combines authentication and authorization configuration.
@@ -40,20 +44,29 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 				ctx = context.WithValue(ctx, requestContextKey{}, httpReq)
 			}
 
+			proc := req.Spec().Procedure
+
 			principal, err := authn.Authenticate(ctx)
 			if err != nil {
+				metrics.AuthFailures.Add(ctx, 1, metric.WithAttributes(attribute.String("method", "unknown")))
 				return nil, connect.NewError(connect.CodeUnauthenticated, err)
 			}
+			metrics.AuthAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("subject", principal.Subject)))
 
 			ctx = WithPrincipal(ctx, principal)
 
-			action, resource := classify(req.Spec().Procedure)
+			action, resource := classify(proc)
 			namespace := namespaceFromRequest(req)
 			project := projectFromRequest(req)
 
 			if err := authz.Authorize(ctx, principal, action, resource, namespace, project); err != nil {
+				metrics.AuthzDenials.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("action", string(action)),
+					attribute.String("resource", string(resource)),
+				))
 				return nil, connect.NewError(connect.CodePermissionDenied, err)
 			}
+			metrics.AuthzDecisions.Add(ctx, 1, metric.WithAttributes(attribute.String("decision", "allow")))
 
 			return next(ctx, req)
 		}

@@ -173,6 +173,37 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
+# ko settings — fast native Go cross-compilation (no QEMU emulation)
+KO ?= ko
+KO_PLATFORM ?= linux/amd64
+KO_REPO ?= ttl.sh/paprika-amd64
+
+.PHONY: ko-build-ui
+ko-build-ui: build-ui ## Pre-build UI then compile Go binary with ko (native cross-compile).
+	$(KO) build --platform=$(KO_PLATFORM) \
+	  --base-import-paths \
+	  --image-repo=$(KO_REPO) \
+	  --tags=ko-$(shell git rev-parse --short HEAD) \
+	  --local \
+	  ./cmd
+
+.PHONY: ko-push
+ko-push: build-ui ## Build Go binary with ko and push directly to registry.
+	$(KO) build --platform=$(KO_PLATFORM) \
+	  --base-import-paths \
+	  --image-repo=$(KO_REPO) \
+	  --tags=ko-$(shell git rev-parse --short HEAD),ko-latest \
+	  ./cmd
+
+.PHONY: ko-build-full
+ko-build-full: build-ui ## Build full image with helm+charts using ko for the Go binary.
+	$(KO) build --platform=$(KO_PLATFORM) \
+	  --base-import-paths \
+	  --image-repo=$(KO_REPO) \
+	  --tags=ko-$(shell git rev-parse --short HEAD),ko-latest \
+	  --dockerfile=Dockerfile.ko \
+	  ./cmd
+
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -375,6 +406,56 @@ helm-history: ## Show Helm release history.
 .PHONY: helm-rollback
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+##@ Omega Cluster (Vultr VKE with OIDC)
+
+OMEGA_TERRAFORM_DIR ?= terraform
+OMEGA_KUBECONFIG ?= $(OMEGA_TERRAFORM_DIR)/omega.kubeconfig
+OMEGA_OIDC_KUBECONFIG ?= $(OMEGA_TERRAFORM_DIR)/omega-oidc.kubeconfig
+
+.PHONY: omega-apply
+omega-apply: ## Provision or update the omega VKE cluster via Terraform.
+	@echo "Running Terraform apply for omega cluster..."
+	@source .env 2>/dev/null; \
+	 TF_VAR_github_token=$${GH_TOKEN:-$$(gh auth token)} \
+	 terraform -chdir=$(OMEGA_TERRAFORM_DIR) apply -auto-approve
+
+.PHONY: omega-plan
+omega-plan: ## Show Terraform plan for the omega cluster.
+	@source .env 2>/dev/null; \
+	 TF_VAR_github_token=$${GH_TOKEN:-$$(gh auth token)} \
+	 terraform -chdir=$(OMEGA_TERRAFORM_DIR) plan
+
+.PHONY: omega-nodes
+omega-nodes: ## List cluster nodes (admin kubeconfig, no auth required).
+	KUBECONFIG=$(OMEGA_KUBECONFIG) kubectl get nodes -o wide
+
+.PHONY: omega-oidc
+omega-oidc: ## Run kubectl via OIDC (opens browser on first use).
+	KUBECONFIG=$(OMEGA_OIDC_KUBECONFIG) kubectl get nodes
+
+.PHONY: omega-refresh
+omega-refresh: ## Force refresh the OIDC token (Google ID tokens expire after 1h).
+	@source .env 2>/dev/null || true; \
+	kubectl oidc-login get-token \
+	  --oidc-issuer-url=https://accounts.google.com \
+	  --oidc-client-id="$${OMEGA_OIDC_CLIENT_ID}" \
+	  --oidc-client-secret="$${OMEGA_OIDC_CLIENT_SECRET}" \
+	  --grant-type=authcode \
+	  --force-refresh
+
+.PHONY: omega-install
+omega-install: ## Merge omega-oidc into ~/.kube/config and switch to it (seamless kubectl).
+	hack/omega-install.sh
+
+.PHONY: omega-use
+omega-use: ## Print KUBECONFIG merge command for .zshrc (non-destructive).
+	@echo "Add to ~/.zshrc for seamless access:"
+	@echo "  export KUBECONFIG=\"\$$HOME/.kube/config:$(abspath $(OMEGA_OIDC_KUBECONFIG))\""
+	@echo ""
+	@echo "Then switch contexts with:"
+	@echo "  kubectl config use-context omega-oidc"
+	@echo "  kubectl config use-context <old-context>  # to switch back"
 
 ##@ E2E Testing
 

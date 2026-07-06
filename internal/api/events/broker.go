@@ -12,8 +12,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/benebsworth/paprika/internal/clock"
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 const (
@@ -120,6 +123,8 @@ func NewBrokerFromEnvLegacy() (*Broker, error) {
 
 // Subscribe creates a channel that receives events for the given topic.
 func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan *Event {
+	paprikametrics.SSEConnections.Add(ctx, 1)
+
 	ch := make(chan *Event, 16)
 
 	b.mu.Lock()
@@ -142,7 +147,9 @@ func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan *Event {
 }
 
 // Unsubscribe removes a subscriber channel from the given topic.
-func (b *Broker) Unsubscribe(_ context.Context, topic string, ch <-chan *Event) {
+func (b *Broker) Unsubscribe(ctx context.Context, topic string, ch <-chan *Event) {
+	paprikametrics.SSEConnections.Add(ctx, -1)
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	subs := b.subscribers[topic]
@@ -157,6 +164,7 @@ func (b *Broker) Unsubscribe(_ context.Context, topic string, ch <-chan *Event) 
 
 // Publish sends an event to all subscribers of the given topic.
 func (b *Broker) Publish(ctx context.Context, topic string, event *Event) {
+	paprikametrics.EventsPublished.Add(ctx, 1, metric.WithAttributes(attribute.String("topic", topic)))
 	b.publishLocal(topic, event)
 	if b.redis != nil {
 		data, err := json.Marshal(event)

@@ -64,6 +64,7 @@ import (
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
+	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -344,6 +345,9 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	telemetry := observability.NewTelemetry(apiCtx, observability.ConfigFromEnv())
+	defer func() { _ = telemetry.Shutdown(apiCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
+
 	apiClient, k8sClient, authCfg, authInterceptor, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
 	if err != nil {
 		return err
@@ -481,6 +485,9 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	whCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	telemetry := observability.NewTelemetry(whCtx, observability.ConfigFromEnv())
+	defer func() { _ = telemetry.Shutdown(whCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
+
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		config = ctrl.GetConfigOrDie()
@@ -553,6 +560,9 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 	rsCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	telemetry := observability.NewTelemetry(rsCtx, observability.ConfigFromEnv())
+	defer func() { _ = telemetry.Shutdown(rsCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
+
 	healthMux := buildHealthMux(setupLog)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
@@ -586,6 +596,9 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr s
 
 	agentCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	telemetry := observability.NewTelemetry(agentCtx, observability.ConfigFromEnv())
+	defer func() { _ = telemetry.Shutdown(agentCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 
 	healthMux := buildHealthMux(setupLog)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)

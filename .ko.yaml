@@ -1,0 +1,12 @@
+defaultBaseImage: gcr.io/distroless/static:nonroot
+builds:
+- id: paprika
+  main: ./cmd
+  env:
+  - CGO_ENABLED=0
+  flags:
+  - -tags=osusergo,netgo
+  ldflags:
+  - -buildid=
+  - -w
+  - -s

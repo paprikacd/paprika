@@ -7,9 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 // GitSource represents a git repository source.
@@ -23,6 +28,23 @@ type GitSource struct {
 
 // Resolve clones or updates the git repository and returns the local path.
 func (g *GitSource) Resolve(ctx context.Context) (*ResolveResult, error) {
+	start := time.Now()
+	result, err := g.resolve(ctx)
+	elapsed := time.Since(start).Milliseconds()
+
+	op := "fetch"
+	if result == nil || result.LocalPath == "" {
+		op = "clone"
+	}
+	paprikametrics.GitOperations.Add(ctx, 1, metric.WithAttributes(attribute.String("operation", op)))
+	if err != nil {
+		paprikametrics.GitErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("operation", op)))
+	}
+	paprikametrics.GitDuration.Record(ctx, elapsed, metric.WithAttributes(attribute.String("operation", op)))
+	return result, err
+}
+
+func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	cloneDir := filepath.Join(g.WorkDir, "git-clones", SanitizeName(g.RepoURL))
 	// #nosec G301 -- git clone requires world-readable directories
 	if err := os.MkdirAll(filepath.Dir(cloneDir), 0o755); err != nil {

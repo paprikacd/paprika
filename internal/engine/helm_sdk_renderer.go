@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
@@ -17,10 +18,13 @@ import (
 	helmg "helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/source"
 )
 
@@ -146,6 +150,20 @@ func (r *HelmSDKRenderer) resolveS3Source(ctx context.Context, tmpl *paprika.Tem
 
 // Render renders a single template and returns the resulting YAML manifests.
 func (r *HelmSDKRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
+	start := time.Now()
+	result, err := r.render(ctx, tmpl, params)
+	elapsed := time.Since(start).Milliseconds()
+
+	metrics.RenderTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
+	if err != nil {
+		metrics.RenderErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
+	} else {
+		metrics.RenderDuration.Record(ctx, elapsed, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
+	}
+	return result, err
+}
+
+func (r *HelmSDKRenderer) render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
 	switch tmpl.Spec.Type {
 	case sourceTypeHelm, sourceTypeGit, sourceTypeOCI, sourceTypeS3:
 		return r.renderHelm(ctx, tmpl, params)

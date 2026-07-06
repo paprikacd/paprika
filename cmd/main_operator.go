@@ -58,6 +58,7 @@ import (
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
 	"github.com/benebsworth/paprika/internal/coordinator"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -200,11 +201,19 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("start inline webhook server: %w", err)
 	}
 
+	registerGauges(setupLog, mgr.GetClient())
+
 	setupLog.Info("Starting manager")
 	if err := mgr.Start(opCtx); err != nil {
 		return fmt.Errorf("failed to run manager: %w", err)
 	}
 	return nil
+}
+
+func registerGauges(setupLog logr.Logger, c client.Client) {
+	if err := metrics.RegisterKubernetesGaugeCallbacks(c); err != nil {
+		setupLog.Error(err, "Failed to register kubernetes gauge callbacks")
+	}
 }
 
 func startCoordinatorIfMode(ctx context.Context, cfg *cliConfig, deps *operatorDependencies, mgr ctrl.Manager, setupLog logr.Logger) error {
