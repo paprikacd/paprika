@@ -41,7 +41,7 @@ grafana:
 # ── Controller manager ────────────────────────────────────────────────────────
 manager:
   enabled: true
-  replicas: 2
+  replicas: 1
   automountServiceAccountToken: true
 
   image:
@@ -65,11 +65,11 @@ manager:
 
   resources:
     limits:
-      cpu: 1000m
-      memory: 1Gi
-    requests:
       cpu: 200m
-      memory: 512Mi
+      memory: 256Mi
+    requests:
+      cpu: 25m
+      memory: 64Mi
 
   args: []
 
@@ -83,8 +83,7 @@ manager:
     enabled: false
 
   pdb:
-    enabled: true
-    minAvailable: 1
+    enabled: false
 
   # Spread pods across nodes
   topologySpreadConstraints:
@@ -97,7 +96,7 @@ manager:
 
 # ── API server (split-mode) ───────────────────────────────────────────────────
 apiServer:
-  replicas: 2
+  replicas: 1
   automountServiceAccountToken: true
 
   image:
@@ -107,11 +106,11 @@ apiServer:
 
   resources:
     limits:
-      cpu: 500m
-      memory: 256Mi
-    requests:
       cpu: 100m
-      memory: 128Mi
+      memory: 96Mi
+    requests:
+      cpu: 10m
+      memory: 32Mi
 
   terminationGracePeriodSeconds: 20
 
@@ -120,8 +119,7 @@ apiServer:
       value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
 
   pdb:
-    enabled: true
-    minAvailable: 1
+    enabled: false
 
   # Expose via ClusterIP (Envoy Gateway handles external access)
   service:
@@ -143,7 +141,7 @@ apiServer:
 # ── Webhook receiver (split-mode) ─────────────────────────────────────────────
 webhookReceiver:
   enabled: true
-  replicas: 2
+  replicas: 1
   automountServiceAccountToken: true
 
   image:
@@ -153,15 +151,14 @@ webhookReceiver:
 
   resources:
     limits:
-      cpu: 200m
-      memory: 128Mi
-    requests:
       cpu: 50m
-      memory: 64Mi
+      memory: 48Mi
+    requests:
+      cpu: 5m
+      memory: 16Mi
 
   pdb:
-    enabled: true
-    minAvailable: 1
+    enabled: false
 
 # ── Repo server ───────────────────────────────────────────────────────────────
 repoServer:
@@ -176,11 +173,11 @@ repoServer:
 
   resources:
     limits:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 150m
+      memory: 96Mi
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 25m
+      memory: 48Mi
 
 # ── Agent (disabled for e2e; needs remote cluster) ────────────────────────────
 agent:
