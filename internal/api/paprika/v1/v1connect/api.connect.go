@@ -115,6 +115,9 @@ const (
 	// PaprikaServiceGetStepLogsProcedure is the fully-qualified name of the PaprikaService's
 	// GetStepLogs RPC.
 	PaprikaServiceGetStepLogsProcedure = "/paprika.v1.PaprikaService/GetStepLogs"
+	// PaprikaServiceGetResourceProcedure is the fully-qualified name of the PaprikaService's
+	// GetResource RPC.
+	PaprikaServiceGetResourceProcedure = "/paprika.v1.PaprikaService/GetResource"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -147,6 +150,7 @@ type PaprikaServiceClient interface {
 	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
 	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
 	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
+	GetResource(context.Context, *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -328,6 +332,12 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("GetStepLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		getResource: connect.NewClient[v1.GetResourceRequest, v1.GetResourceResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetResourceProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetResource")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -361,6 +371,7 @@ type paprikaServiceClient struct {
 	skipStep                *connect.Client[v1.SkipStepRequest, v1.SkipStepResponse]
 	cancelPipeline          *connect.Client[v1.CancelPipelineRequest, v1.CancelPipelineResponse]
 	getStepLogs             *connect.Client[v1.GetStepLogsRequest, v1.GetStepLogsResponse]
+	getResource             *connect.Client[v1.GetResourceRequest, v1.GetResourceResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -503,6 +514,11 @@ func (c *paprikaServiceClient) GetStepLogs(ctx context.Context, req *connect.Req
 	return c.getStepLogs.CallUnary(ctx, req)
 }
 
+// GetResource calls paprika.v1.PaprikaService.GetResource.
+func (c *paprikaServiceClient) GetResource(ctx context.Context, req *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error) {
+	return c.getResource.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -533,6 +549,7 @@ type PaprikaServiceHandler interface {
 	SkipStep(context.Context, *connect.Request[v1.SkipStepRequest]) (*connect.Response[v1.SkipStepResponse], error)
 	CancelPipeline(context.Context, *connect.Request[v1.CancelPipelineRequest]) (*connect.Response[v1.CancelPipelineResponse], error)
 	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
+	GetResource(context.Context, *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -710,6 +727,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("GetStepLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetResourceHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetResourceProcedure,
+		svc.GetResource,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetResource")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -768,6 +791,8 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceCancelPipelineHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetStepLogsProcedure:
 			paprikaServiceGetStepLogsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetResourceProcedure:
+			paprikaServiceGetResourceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -887,4 +912,8 @@ func (UnimplementedPaprikaServiceHandler) CancelPipeline(context.Context, *conne
 
 func (UnimplementedPaprikaServiceHandler) GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetStepLogs is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetResource(context.Context, *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetResource is not implemented"))
 }

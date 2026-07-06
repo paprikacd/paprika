@@ -36,6 +36,7 @@ import (
 	gozapcore "go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -458,6 +459,9 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
 	opts = append(opts, apiserver.WithK8sClient(k8sClient))
+	if dc, dErr := dynamic.NewForConfig(mgr.GetConfig()); dErr == nil {
+		opts = append(opts, apiserver.WithDynamicClient(dc))
+	}
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()

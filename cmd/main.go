@@ -38,6 +38,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -322,6 +323,7 @@ func buildAPIServerOptions(
 	auditLogEnabled bool,
 	projectValidator *governance.ProjectValidator,
 	policyEvaluator *governance.PolicyEvaluator,
+	restConfig *rest.Config,
 ) ([]apiserver.ServerOption, error) {
 	opts := []apiserver.ServerOption{
 		apiserver.WithGovernanceValidator(projectValidator),
@@ -338,6 +340,11 @@ func buildAPIServerOptions(
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
 	opts = append(opts, apiserver.WithK8sClient(k8sClient))
+	if restConfig != nil {
+		if dc, err := dynamic.NewForConfig(restConfig); err == nil {
+			opts = append(opts, apiserver.WithDynamicClient(dc))
+		}
+	}
 	return opts, nil
 }
 
@@ -348,7 +355,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	telemetry := observability.NewTelemetry(apiCtx, observability.ConfigFromEnv())
 	defer func() { _ = telemetry.Shutdown(apiCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 
-	apiClient, k8sClient, authCfg, authInterceptor, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
+	clients, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
 	if err != nil {
 		return err
 	}
@@ -359,12 +366,12 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	paprikaServer, connectHandler, err := buildConnectHandler(apiClient, k8sClient, broker, authCfg, authInterceptor, cfg, setupLog)
+	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.authCfg, clients.interceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
 
-	extraMuxHandlers, err := buildAuthHandlers(apiCtx, authCfg)
+	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
 	if err != nil {
 		return err
 	}
@@ -388,38 +395,52 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
 }
 
-func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (client.Client, kubernetes.Interface, auth.Config, connect.Interceptor, error) {
+type apiClients struct {
+	client      client.Client
+	k8sClient   kubernetes.Interface
+	restConfig  *rest.Config
+	authCfg     auth.Config
+	interceptor connect.Interceptor
+}
+
+func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (*apiClients, error) {
 	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
 	if err != nil {
-		return nil, nil, auth.Config{}, nil, fmt.Errorf("build API config: %w", err)
+		return nil, fmt.Errorf("build API config: %w", err)
 	}
 
 	apiClient, err := createAPIClient(config, scheme)
 	if err != nil {
-		return nil, nil, auth.Config{}, nil, fmt.Errorf("create API client: %w", err)
+		return nil, fmt.Errorf("create API client: %w", err)
 	}
 
 	k8sClient, err := createK8sClient(config)
 	if err != nil {
-		return nil, nil, auth.Config{}, nil, err
+		return nil, err
 	}
 
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
 		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, apiClient)
 	if err != nil {
-		return nil, nil, auth.Config{}, nil, fmt.Errorf("failed to build auth interceptor: %w", err)
+		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
-	return apiClient, k8sClient, authCfg, authInterceptor, nil
+	return &apiClients{
+		client:      apiClient,
+		k8sClient:   k8sClient,
+		restConfig:  config,
+		authCfg:     authCfg,
+		interceptor: authInterceptor,
+	}, nil
 }
 
-func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, broker *events.Broker, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
 	resolver := governance.NewProjectResolver(apiClient)
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
 
-	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator)
+	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
 	if err != nil {
 		return nil, nil, err
 	}

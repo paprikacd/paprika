@@ -579,6 +579,37 @@ message GetStepLogsRequest {
 }
 message GetStepLogsResponse { string logs = 1; }
 
+message GetResourceRequest {
+  string application_namespace = 1;
+  string application_name = 2;
+  string resource_kind = 3;
+  string resource_name = 4;
+  string resource_namespace = 5;
+}
+
+message KubernetesEvent {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  string last_timestamp = 4;
+  int32 count = 5;
+  string involved_object_kind = 6;
+  string involved_object_name = 7;
+}
+
+message GetResourceResponse {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string sync_status = 4;
+  string health_status = 5;
+  string health_message = 6;
+  string live_manifest = 7;
+  string desired_manifest = 8;
+  string diff = 9;
+  repeated KubernetesEvent events = 10;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -608,4 +639,5 @@ service PaprikaService {
   rpc SkipStep(SkipStepRequest) returns (SkipStepResponse);
   rpc CancelPipeline(CancelPipelineRequest) returns (CancelPipelineResponse);
   rpc GetStepLogs(GetStepLogsRequest) returns (GetStepLogsResponse);
+  rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
 }

@@ -3275,3 +3275,170 @@ export declare class GetStepLogsResponse extends Message<GetStepLogsResponse> {
   static equals(a: GetStepLogsResponse | PlainMessage<GetStepLogsResponse> | undefined, b: GetStepLogsResponse | PlainMessage<GetStepLogsResponse> | undefined): boolean;
 }
 
+/**
+ * @generated from message paprika.v1.GetResourceRequest
+ */
+export declare class GetResourceRequest extends Message<GetResourceRequest> {
+  /**
+   * @generated from field: string application_namespace = 1;
+   */
+  applicationNamespace: string;
+
+  /**
+   * @generated from field: string application_name = 2;
+   */
+  applicationName: string;
+
+  /**
+   * @generated from field: string resource_kind = 3;
+   */
+  resourceKind: string;
+
+  /**
+   * @generated from field: string resource_name = 4;
+   */
+  resourceName: string;
+
+  /**
+   * @generated from field: string resource_namespace = 5;
+   */
+  resourceNamespace: string;
+
+  constructor(data?: PartialMessage<GetResourceRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetResourceRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetResourceRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetResourceRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetResourceRequest;
+
+  static equals(a: GetResourceRequest | PlainMessage<GetResourceRequest> | undefined, b: GetResourceRequest | PlainMessage<GetResourceRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.KubernetesEvent
+ */
+export declare class KubernetesEvent extends Message<KubernetesEvent> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string reason = 2;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+
+  /**
+   * @generated from field: string last_timestamp = 4;
+   */
+  lastTimestamp: string;
+
+  /**
+   * @generated from field: int32 count = 5;
+   */
+  count: number;
+
+  /**
+   * @generated from field: string involved_object_kind = 6;
+   */
+  involvedObjectKind: string;
+
+  /**
+   * @generated from field: string involved_object_name = 7;
+   */
+  involvedObjectName: string;
+
+  constructor(data?: PartialMessage<KubernetesEvent>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.KubernetesEvent";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): KubernetesEvent;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): KubernetesEvent;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): KubernetesEvent;
+
+  static equals(a: KubernetesEvent | PlainMessage<KubernetesEvent> | undefined, b: KubernetesEvent | PlainMessage<KubernetesEvent> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetResourceResponse
+ */
+export declare class GetResourceResponse extends Message<GetResourceResponse> {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 3;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string sync_status = 4;
+   */
+  syncStatus: string;
+
+  /**
+   * @generated from field: string health_status = 5;
+   */
+  healthStatus: string;
+
+  /**
+   * @generated from field: string health_message = 6;
+   */
+  healthMessage: string;
+
+  /**
+   * @generated from field: string live_manifest = 7;
+   */
+  liveManifest: string;
+
+  /**
+   * @generated from field: string desired_manifest = 8;
+   */
+  desiredManifest: string;
+
+  /**
+   * @generated from field: string diff = 9;
+   */
+  diff: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.KubernetesEvent events = 10;
+   */
+  events: KubernetesEvent[];
+
+  constructor(data?: PartialMessage<GetResourceResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetResourceResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetResourceResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetResourceResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetResourceResponse;
+
+  static equals(a: GetResourceResponse | PlainMessage<GetResourceResponse> | undefined, b: GetResourceResponse | PlainMessage<GetResourceResponse> | undefined): boolean;
+}
+

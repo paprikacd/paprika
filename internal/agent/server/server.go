@@ -745,6 +745,12 @@ func (s *Server) GetStepLogs(ctx context.Context, _ *connect.Request[paprikav1.G
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getStepLogs is not implemented on the agent"))
 }
 
+// GetResource is not implemented by the agent.
+func (s *Server) GetResource(ctx context.Context, _ *connect.Request[paprikav1.GetResourceRequest]) (*connect.Response[paprikav1.GetResourceResponse], error) {
+	log.FromContext(ctx).Info("GetResource not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getResource is not implemented on the agent"))
+}
+
 // GetArtifact is not implemented by the agent.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on agent")

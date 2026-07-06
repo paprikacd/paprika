@@ -1117,3 +1117,52 @@ export const GetStepLogsResponse = /*@__PURE__*/ proto3.makeMessageType(
   ],
 );
 
+/**
+ * @generated from message paprika.v1.GetResourceRequest
+ */
+export const GetResourceRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceRequest",
+  () => [
+    { no: 1, name: "application_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "resource_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.KubernetesEvent
+ */
+export const KubernetesEvent = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.KubernetesEvent",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "last_timestamp", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 6, name: "involved_object_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "involved_object_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetResourceResponse
+ */
+export const GetResourceResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceResponse",
+  () => [
+    { no: 1, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "sync_status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "health_status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "health_message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "live_manifest", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "desired_manifest", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "diff", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "events", kind: "message", T: KubernetesEvent, repeated: true },
+  ],
+);
+

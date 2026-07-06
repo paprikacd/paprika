@@ -28,6 +28,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -198,6 +199,9 @@ func run(setupLog logr.Logger) error {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
 	}
 	opts = append(opts, apiserver.WithK8sClient(k8sClientset))
+	if dc, dErr := dynamic.NewForConfig(k8sConfig); dErr == nil {
+		opts = append(opts, apiserver.WithDynamicClient(dc))
+	}
 
 	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)
 

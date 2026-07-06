@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -60,6 +61,12 @@ func WithK8sClient(c kubernetes.Interface) ServerOption {
 	return func(s *PaprikaServer) { s.k8sClient = c }
 }
 
+// WithDynamicClient sets the dynamic Kubernetes client used for reading live
+// resource manifests of arbitrary GVK in GetResource.
+func WithDynamicClient(c dynamic.Interface) ServerOption {
+	return func(s *PaprikaServer) { s.dynamicClient = c }
+}
+
 // WithAuditor sets the audit logger used to record mutating API operations.
 // If not set, auditing is disabled (NoopAuditor).
 func WithAuditor(a audit.Auditor) ServerOption {
@@ -70,6 +77,7 @@ func WithAuditor(a audit.Auditor) ServerOption {
 type PaprikaServer struct {
 	client                    client.Client
 	k8sClient                 kubernetes.Interface
+	dynamicClient             dynamic.Interface
 	broker                    *events.Broker
 	renderer                  pipelines.SourceResolvingRenderer
 	evaluator                 Evaluator

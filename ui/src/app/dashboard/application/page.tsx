@@ -17,6 +17,10 @@ import {
   ShieldAlert,
   ShieldCheck,
   XCircle,
+  Boxes,
+  Stethoscope,
+  GitBranch as GitBranchIcon,
+  Layers,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -38,6 +42,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/status-badge";
+import {
+  ResourceTable,
+  mergeResources,
+  type MergedResource,
+} from "@/components/dashboard/resource-table";
+import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, Release } from "@/gen/paprika/v1/api_pb";
@@ -80,6 +90,17 @@ function PolicySeverityBadge({ severity }: { severity: string }) {
   return <Badge variant={variant}>{severity}</Badge>;
 }
 
+function HealthCheckBadge({ status }: { status: string }) {
+  const config: Record<string, { variant: "default" | "destructive" | "secondary"; color: string }> = {
+    Healthy: { variant: "default", color: "text-emerald-500" },
+    Degraded: { variant: "destructive", color: "text-destructive" },
+    Progressing: { variant: "secondary", color: "text-amber-500" },
+    Unknown: { variant: "secondary", color: "text-muted-foreground" },
+  }
+  const c = config[status] ?? config.Unknown
+  return <Badge variant={c.variant}>{status}</Badge>
+}
+
 function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex justify-between py-2 text-sm">
@@ -105,6 +126,7 @@ function ApplicationDetail() {
   const [error, setError] = useState<string | null>(null);
   const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [actingGate, setActingGate] = useState<string | null>(null);
+  const [selectedResource, setSelectedResource] = useState<MergedResource | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!namespace || !name) return;
@@ -128,6 +150,20 @@ function ApplicationDetail() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
+  }, [fetchData]);
+
+  // SSE: live-refresh on application/release events (debounced)
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const es = new EventSource("/events?topic=dashboard");
+    es.onmessage = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(fetchData, 500);
+    };
+    return () => {
+      es.close();
+      if (debounce) clearTimeout(debounce);
+    };
   }, [fetchData]);
 
   const filteredReleases = useMemo(
@@ -293,6 +329,108 @@ function ApplicationDetail() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Managed Resources */}
+          {application.resources && application.resources.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Boxes className="h-5 w-5" />
+                  Managed Resources
+                </CardTitle>
+                <CardDescription>
+                  {application.resources.length} resource{application.resources.length === 1 ? "" : "s"} ·{" "}
+                  <span className="tabular-nums">{application.outOfSync}</span> out of sync ·{" "}
+                  <span className="tabular-nums">{application.prunedResources}</span> pruned
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResourceTable
+                  resources={mergeResources(application)}
+                  onSelect={setSelectedResource}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Health Checks */}
+          {application.healthChecks && application.healthChecks.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Stethoscope className="h-5 w-5" />
+                  Health Checks
+                </CardTitle>
+                <CardDescription>CEL-based health check results.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>HTTP</TableHead>
+                      <TableHead>Message</TableHead>
+                      <TableHead>Checked</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {application.healthChecks.map((check) => (
+                      <TableRow key={check.name}>
+                        <TableCell className="font-mono text-xs font-medium">{check.name}</TableCell>
+                        <TableCell>
+                          <HealthCheckBadge status={check.status} />
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {check.httpStatusCode > 0 ? check.httpStatusCode : "—"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{check.message || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground tabular-nums">
+                          {formatDate(check.checkedAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Stages */}
+          {application.stages && application.stages.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Layers className="h-5 w-5" />
+                  Promotion Stages
+                </CardTitle>
+                <CardDescription>Per-stage ring, release, and phase breakdown.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {application.stages.map((stage) => (
+                    <div
+                      key={stage.name}
+                      className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 ring-1 ring-foreground/5"
+                    >
+                      <span className="flex size-5 items-center justify-center rounded-full bg-background text-[10px] font-bold ring-1 ring-border tabular-nums">
+                        {stage.ring}
+                      </span>
+                      <div>
+                        <span className="font-mono text-xs font-medium">{stage.name}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <StatusBadge status={stage.phase} />
+                          {stage.release && (
+                            <span className="text-[10px] text-muted-foreground">{stage.release}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {application.gates && application.gates.length > 0 && (
             <Card>
@@ -548,6 +686,15 @@ function ApplicationDetail() {
 
           <AnalysisResultsCard results={application.analysisResults} />
         </>
+      )}
+
+      {selectedResource && application && (
+        <ResourceDetailPanel
+          applicationNamespace={application.namespace}
+          applicationName={application.name}
+          resource={selectedResource}
+          onClose={() => setSelectedResource(null)}
+        />
       )}
     </div>
   );
