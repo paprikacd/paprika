@@ -5,7 +5,8 @@ import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { GetResourceResponse, KubernetesEvent, LogChunk } from "@/gen/paprika/v1/api_pb"
-import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw, Pause, Play, Search, Wifi, WifiOff } from "lucide-react"
+import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw, Pause, Play, Search, Wifi, WifiOff, Sparkles } from "lucide-react"
+import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
@@ -39,6 +40,7 @@ export function ResourceDetailPanel({
   const [data, setData] = useState<GetResourceResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [investigationOpen, setInvestigationOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -97,12 +99,23 @@ export function ResourceDetailPanel({
               <p className="mt-1 text-xs text-muted-foreground">{resource.healthMessage}</p>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
-          >
-            <X className="size-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setInvestigationOpen(true)}
+              aria-label="Investigate"
+              data-testid="open-investigation"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground/80 transition-[color,background-color] hover:bg-muted/40"
+            >
+              <Sparkles className="size-3.5" />
+              Investigate
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -150,11 +163,19 @@ export function ResourceDetailPanel({
             <ManifestView manifest={data.desiredManifest} label="Desired Manifest" />
           ) : tab === "diff" ? (
             <DiffView diff={data.diff} />
-          ) : (
+           ) : (
             <EventsView events={data.events} />
           )}
         </div>
       </aside>
+      {investigationOpen && (
+        <InvestigationPanel
+          applicationNamespace={applicationNamespace}
+          applicationName={applicationName}
+          resource={resource}
+          onClose={() => setInvestigationOpen(false)}
+        />
+      )}
     </>
   )
 }

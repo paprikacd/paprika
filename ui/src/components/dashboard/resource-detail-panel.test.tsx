@@ -10,6 +10,8 @@ const mockClient = vi.hoisted(() => ({
   getResourceLogs: vi.fn(),
   getResourceTreeDetailed: vi.fn(),
   streamResourceLogs: vi.fn(),
+  investigate: vi.fn(),
+  listInvestigatorPlugins: vi.fn(),
 }))
 
 vi.mock("@connectrpc/connect-web", () => ({ createConnectTransport: vi.fn(() => ({})) }))
@@ -33,6 +35,7 @@ vi.mock("lucide-react", () => {
     Search: Icon,
     Wifi: Icon,
     WifiOff: Icon,
+    Sparkles: Icon,
   }
 })
 
@@ -87,6 +90,8 @@ function emptyIter(): AsyncIterable<never> {
 describe("ResourceDetailPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockClient.investigate.mockResolvedValue({ summary: "All clear", narrator: "deterministic", findings: [] })
+    mockClient.listInvestigatorPlugins.mockResolvedValue({ plugins: [] })
   })
 
   it("shows loading state while fetching", () => {
