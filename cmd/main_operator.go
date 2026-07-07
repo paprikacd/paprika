@@ -271,13 +271,7 @@ func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setup
 	return buildOperatorManager(cfg, scheme, &metricsServerOptions, webhookServer)
 }
 
-// negotiateProtobuf configures the client-go rest.Config to prefer protobuf over JSON
-// for built-in K8s kinds. CRDs and Watch payloads without protobuf schemas fall back
-// to JSON automatically because AcceptContentTypes lists both.
-func negotiateProtobuf(cfg *rest.Config) {
-	cfg.ContentConfig.ContentType = runtime.ContentTypeProtobuf
-	cfg.ContentConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
-}
+// negotiateProtobuf is defined in cmd/protobuf.go (shared across modes).
 
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
@@ -292,9 +286,9 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 		return operatorGovernance{}, fmt.Errorf("build operator authorizer: %w", err)
 	}
 
-	cfg := mgr.GetConfig()
-	negotiateProtobuf(cfg)
-	k8sClient, err := kubernetes.NewForConfig(cfg)
+	mgrCfg := mgr.GetConfig()
+	negotiateProtobuf(mgrCfg)
+	k8sClient, err := kubernetes.NewForConfig(mgrCfg)
 	if err != nil {
 		return operatorGovernance{}, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
