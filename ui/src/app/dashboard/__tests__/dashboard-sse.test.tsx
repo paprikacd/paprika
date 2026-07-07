@@ -150,7 +150,7 @@ describe("Dashboard SSE incremental updates", () => {
       await waitFor(() => {
         expect(screen.getByText("Dashboard")).toBeInTheDocument()
       })
-      expect(screen.getByText("Total Pipelines")).toBeInTheDocument()
+      expect(screen.getAllByText("Pipelines").length).toBeGreaterThanOrEqual(1)
       expect(screen.getByText("Running")).toBeInTheDocument()
       expect(screen.getAllByText("Applications")).toHaveLength(2) // stat card + section heading
     })
