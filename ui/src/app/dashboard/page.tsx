@@ -15,6 +15,7 @@ import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
 import { ReleaseGrid } from "@/components/dashboard/release-table"
 import { ApplicationCard } from "@/components/dashboard/application-card"
+import { DashboardCommandCenter } from "@/components/dashboard/dashboard-command-center"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
 import { ToastStack } from "@/components/notifications/toast-stack"
@@ -318,6 +319,22 @@ export default function DashboardPage() {
           <p className="mt-0.5 text-sm text-muted-foreground">
             Pipeline operator overview
           </p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.04, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <DashboardCommandCenter
+            applications={applications}
+            pipelines={pipelines}
+            releases={releases}
+            rollouts={rollouts}
+            applicationSets={applicationSets}
+            policies={policies}
+            loading={loading}
+          />
         </motion.div>
 
         <motion.div

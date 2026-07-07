@@ -70,6 +70,16 @@ vi.mock("lucide-react", () => {
     AlertTriangle: Icon,
     Shield: Icon,
     FolderTree: Icon,
+    AlertCircle: Icon,
+    ArrowUpRight: Icon,
+    Boxes: Icon,
+    CheckCircle2: Icon,
+    CircleDot: Icon,
+    Clock3: Icon,
+    History: Icon,
+    Search: Icon,
+    Sparkles: Icon,
+    Workflow: Icon,
   }
 })
 
