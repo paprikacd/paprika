@@ -194,10 +194,12 @@ auth:
   oidc:
     enabled: true
     issuerURL: "https://accounts.google.com"
-    clientID: "REPLACE_WITH_GOOGLE_CLIENT_ID"
-    # FIXME: Pass via extraEnv + secretRef instead of CLI arg to avoid
-    # process-list exposure. For now, set via --auth-oidc-client-secret flag.
-    clientSecret: "REPLACE_WITH_GOOGLE_CLIENT_SECRET"
+    # WARNING: These must be overridden via --set or extraEnv. Deployment with
+    # placeholder values will cause "invalid_client" OAuth errors. Source .env
+    # before upgrade:
+    #   source .env && helm upgrade ... --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET"
+    clientID: ""
+    clientSecret: ""
   rbac:
     - subjects: ["*"]
       actions: ["*"]

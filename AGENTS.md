@@ -73,7 +73,7 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 ## Commands
 - `make test`, `make lint`, `just build/lint/test`
 - `helm lint charts/chart/`
-- `helm upgrade paprika-e2e charts/chart/ --namespace paprika-e2e --values deploy/test-values.yaml --wait --timeout 5m`
+- `source .env && helm upgrade paprika-e2e charts/chart/ --namespace paprika-e2e --values deploy/test-values.yaml --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" --wait --timeout 5m`
 - `docker build --platform linux/amd64 -t ttl.sh/paprika-amd64:<tag> . && docker push ttl.sh/paprika-amd64:<tag>`
 - `kubectl port-forward -n paprika-e2e svc/paprika-e2e-controller-manager-metrics-service <local_port>:8443`
 - `kubectl port-forward -n paprika-e2e pods/<api-server-pod> <local_port>:8080` (metrics) or `:3000` (UI)

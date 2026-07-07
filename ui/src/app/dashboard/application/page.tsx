@@ -177,7 +177,9 @@ function ApplicationDetail() {
     client.getResourceTree({ namespace, name }).then((res) => {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setTreeNodes(res.nodes as unknown as ResourceGraphNode[])
-    }).catch(() => {})
+    }).catch(() => {
+      console.warn("getResourceTree failed — resource graph will fall back to flat list")
+    })
   }, [namespace, name, application?.phase, application?.outOfSync]);
 
   const filteredReleases = useMemo(
@@ -345,21 +347,20 @@ function ApplicationDetail() {
           </div>
 
           {/* Managed Resources */}
-          {application.resources && application.resources.length > 0 && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Boxes className="h-5 w-5" />
-                      Managed Resources
-                    </CardTitle>
-                    <CardDescription>
-                      {application.resources.length} resource{application.resources.length === 1 ? "" : "s"} ·{" "}
-                      <span className="tabular-nums">{application.outOfSync}</span> out of sync ·{" "}
-                      <span className="tabular-nums">{application.prunedResources}</span> pruned
-                    </CardDescription>
-                  </div>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Boxes className="h-5 w-5" />
+                    Managed Resources
+                  </CardTitle>
+                  <CardDescription>
+                    {(application.resources?.length ?? 0)} resource{application.resources?.length === 1 ? "" : "s"} ·{" "}
+                    <span className="tabular-nums">{application.outOfSync}</span> out of sync ·{" "}
+                    <span className="tabular-nums">{application.prunedResources}</span> pruned
+                  </CardDescription>
+                </div>
                   <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5 ring-1 ring-foreground/5">
                     <button
                       onClick={() => setViewMode("graph")}
@@ -420,7 +421,6 @@ function ApplicationDetail() {
                 )}
               </CardContent>
             </Card>
-          )}
 
           {/* Health Checks */}
           {application.healthChecks && application.healthChecks.length > 0 && (
