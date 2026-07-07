@@ -1280,3 +1280,32 @@ export const GetResourceTreeDetailedResponse = /*@__PURE__*/ proto3.makeMessageT
   ],
 );
 
+/**
+ * @generated from message paprika.v1.StreamResourceLogsRequest
+ */
+export const StreamResourceLogsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.StreamResourceLogsRequest",
+  () => [
+    { no: 1, name: "application_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "resource_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "container_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "follow", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.LogChunk
+ */
+export const LogChunk = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.LogChunk",
+  () => [
+    { no: 1, name: "pod_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "container_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "line", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "timestamp_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+

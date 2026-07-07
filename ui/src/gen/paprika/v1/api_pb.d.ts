@@ -3804,3 +3804,96 @@ export declare class GetResourceTreeDetailedResponse extends Message<GetResource
   static equals(a: GetResourceTreeDetailedResponse | PlainMessage<GetResourceTreeDetailedResponse> | undefined, b: GetResourceTreeDetailedResponse | PlainMessage<GetResourceTreeDetailedResponse> | undefined): boolean;
 }
 
+/**
+ * @generated from message paprika.v1.StreamResourceLogsRequest
+ */
+export declare class StreamResourceLogsRequest extends Message<StreamResourceLogsRequest> {
+  /**
+   * @generated from field: string application_namespace = 1;
+   */
+  applicationNamespace: string;
+
+  /**
+   * @generated from field: string application_name = 2;
+   */
+  applicationName: string;
+
+  /**
+   * @generated from field: string resource_kind = 3;
+   */
+  resourceKind: string;
+
+  /**
+   * @generated from field: string resource_name = 4;
+   */
+  resourceName: string;
+
+  /**
+   * @generated from field: string resource_namespace = 5;
+   */
+  resourceNamespace: string;
+
+  /**
+   * @generated from field: string container_name = 6;
+   */
+  containerName: string;
+
+  /**
+   * @generated from field: bool follow = 7;
+   */
+  follow: boolean;
+
+  constructor(data?: PartialMessage<StreamResourceLogsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.StreamResourceLogsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StreamResourceLogsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StreamResourceLogsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StreamResourceLogsRequest;
+
+  static equals(a: StreamResourceLogsRequest | PlainMessage<StreamResourceLogsRequest> | undefined, b: StreamResourceLogsRequest | PlainMessage<StreamResourceLogsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.LogChunk
+ */
+export declare class LogChunk extends Message<LogChunk> {
+  /**
+   * @generated from field: string pod_name = 1;
+   */
+  podName: string;
+
+  /**
+   * @generated from field: string container_name = 2;
+   */
+  containerName: string;
+
+  /**
+   * @generated from field: string line = 3;
+   */
+  line: string;
+
+  /**
+   * @generated from field: int64 timestamp_ms = 4;
+   */
+  timestampMs: bigint;
+
+  constructor(data?: PartialMessage<LogChunk>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.LogChunk";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): LogChunk;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): LogChunk;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LogChunk;
+
+  static equals(a: LogChunk | PlainMessage<LogChunk> | undefined, b: LogChunk | PlainMessage<LogChunk> | undefined): boolean;
+}
+

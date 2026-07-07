@@ -6623,6 +6623,166 @@ func (x *GetResourceTreeDetailedResponse) GetNodes() []*ResourceTreeNode {
 	return nil
 }
 
+type StreamResourceLogsRequest struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ApplicationNamespace string                 `protobuf:"bytes,1,opt,name=application_namespace,json=applicationNamespace,proto3" json:"application_namespace,omitempty"`
+	ApplicationName      string                 `protobuf:"bytes,2,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	ResourceKind         string                 `protobuf:"bytes,3,opt,name=resource_kind,json=resourceKind,proto3" json:"resource_kind,omitempty"`
+	ResourceName         string                 `protobuf:"bytes,4,opt,name=resource_name,json=resourceName,proto3" json:"resource_name,omitempty"`
+	ResourceNamespace    string                 `protobuf:"bytes,5,opt,name=resource_namespace,json=resourceNamespace,proto3" json:"resource_namespace,omitempty"`
+	ContainerName        string                 `protobuf:"bytes,6,opt,name=container_name,json=containerName,proto3" json:"container_name,omitempty"`
+	Follow               bool                   `protobuf:"varint,7,opt,name=follow,proto3" json:"follow,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *StreamResourceLogsRequest) Reset() {
+	*x = StreamResourceLogsRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamResourceLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamResourceLogsRequest) ProtoMessage() {}
+
+func (x *StreamResourceLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamResourceLogsRequest.ProtoReflect.Descriptor instead.
+func (*StreamResourceLogsRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *StreamResourceLogsRequest) GetApplicationNamespace() string {
+	if x != nil {
+		return x.ApplicationNamespace
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetApplicationName() string {
+	if x != nil {
+		return x.ApplicationName
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetResourceKind() string {
+	if x != nil {
+		return x.ResourceKind
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetResourceName() string {
+	if x != nil {
+		return x.ResourceName
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetResourceNamespace() string {
+	if x != nil {
+		return x.ResourceNamespace
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetContainerName() string {
+	if x != nil {
+		return x.ContainerName
+	}
+	return ""
+}
+
+func (x *StreamResourceLogsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+type LogChunk struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PodName       string                 `protobuf:"bytes,1,opt,name=pod_name,json=podName,proto3" json:"pod_name,omitempty"`
+	ContainerName string                 `protobuf:"bytes,2,opt,name=container_name,json=containerName,proto3" json:"container_name,omitempty"`
+	Line          string                 `protobuf:"bytes,3,opt,name=line,proto3" json:"line,omitempty"`
+	TimestampMs   int64                  `protobuf:"varint,4,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogChunk) Reset() {
+	*x = LogChunk{}
+	mi := &file_paprika_v1_api_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogChunk) ProtoMessage() {}
+
+func (x *LogChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
+func (*LogChunk) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *LogChunk) GetPodName() string {
+	if x != nil {
+		return x.PodName
+	}
+	return ""
+}
+
+func (x *LogChunk) GetContainerName() string {
+	if x != nil {
+		return x.ContainerName
+	}
+	return ""
+}
+
+func (x *LogChunk) GetLine() string {
+	if x != nil {
+		return x.Line
+	}
+	return ""
+}
+
+func (x *LogChunk) GetTimestampMs() int64 {
+	if x != nil {
+		return x.TimestampMs
+	}
+	return 0
+}
+
 var File_paprika_v1_api_proto protoreflect.FileDescriptor
 
 const file_paprika_v1_api_proto_rawDesc = "" +
@@ -7187,7 +7347,20 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"containers\x18\x0f \x03(\tR\n" +
 	"containers\"U\n" +
 	"\x1fGetResourceTreeDetailedResponse\x122\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x1c.paprika.v1.ResourceTreeNodeR\x05nodes2\xdc\x15\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1c.paprika.v1.ResourceTreeNodeR\x05nodes\"\xb3\x02\n" +
+	"\x19StreamResourceLogsRequest\x123\n" +
+	"\x15application_namespace\x18\x01 \x01(\tR\x14applicationNamespace\x12)\n" +
+	"\x10application_name\x18\x02 \x01(\tR\x0fapplicationName\x12#\n" +
+	"\rresource_kind\x18\x03 \x01(\tR\fresourceKind\x12#\n" +
+	"\rresource_name\x18\x04 \x01(\tR\fresourceName\x12-\n" +
+	"\x12resource_namespace\x18\x05 \x01(\tR\x11resourceNamespace\x12%\n" +
+	"\x0econtainer_name\x18\x06 \x01(\tR\rcontainerName\x12\x16\n" +
+	"\x06follow\x18\a \x01(\bR\x06follow\"\x83\x01\n" +
+	"\bLogChunk\x12\x19\n" +
+	"\bpod_name\x18\x01 \x01(\tR\apodName\x12%\n" +
+	"\x0econtainer_name\x18\x02 \x01(\tR\rcontainerName\x12\x12\n" +
+	"\x04line\x18\x03 \x01(\tR\x04line\x12!\n" +
+	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs2\xb1\x16\n" +
 	"\x0ePaprikaService\x12T\n" +
 	"\rListPipelines\x12 .paprika.v1.ListPipelinesRequest\x1a!.paprika.v1.ListPipelinesResponse\x12Q\n" +
 	"\fListReleases\x12\x1f.paprika.v1.ListReleasesRequest\x1a .paprika.v1.ListReleasesResponse\x12K\n" +
@@ -7223,7 +7396,8 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\vGetResource\x12\x1e.paprika.v1.GetResourceRequest\x1a\x1f.paprika.v1.GetResourceResponse\x12Z\n" +
 	"\x0fGetResourceTree\x12\".paprika.v1.GetResourceTreeRequest\x1a#.paprika.v1.GetResourceTreeResponse\x12Z\n" +
 	"\x0fGetResourceLogs\x12\".paprika.v1.GetResourceLogsRequest\x1a#.paprika.v1.GetResourceLogsResponse\x12r\n" +
-	"\x17GetResourceTreeDetailed\x12*.paprika.v1.GetResourceTreeDetailedRequest\x1a+.paprika.v1.GetResourceTreeDetailedResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
+	"\x17GetResourceTreeDetailed\x12*.paprika.v1.GetResourceTreeDetailedRequest\x1a+.paprika.v1.GetResourceTreeDetailedResponse\x12S\n" +
+	"\x12StreamResourceLogs\x12%.paprika.v1.StreamResourceLogsRequest\x1a\x14.paprika.v1.LogChunk0\x01B8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
 
 var (
 	file_paprika_v1_api_proto_rawDescOnce sync.Once
@@ -7237,7 +7411,7 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 	return file_paprika_v1_api_proto_rawDescData
 }
 
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 105)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 107)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(*Step)(nil),                            // 0: paprika.v1.Step
 	(*StepStatus)(nil),                      // 1: paprika.v1.StepStatus
@@ -7340,20 +7514,22 @@ var file_paprika_v1_api_proto_goTypes = []any{
 	(*GetResourceTreeDetailedRequest)(nil),  // 98: paprika.v1.GetResourceTreeDetailedRequest
 	(*ResourceTreeNode)(nil),                // 99: paprika.v1.ResourceTreeNode
 	(*GetResourceTreeDetailedResponse)(nil), // 100: paprika.v1.GetResourceTreeDetailedResponse
-	nil,                                     // 101: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                                     // 102: paprika.v1.Application.ParametersEntry
-	nil,                                     // 103: paprika.v1.NotificationDestination.HeadersEntry
-	nil,                                     // 104: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	(*StreamResourceLogsRequest)(nil),       // 101: paprika.v1.StreamResourceLogsRequest
+	(*LogChunk)(nil),                        // 102: paprika.v1.LogChunk
+	nil,                                     // 103: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                                     // 104: paprika.v1.Application.ParametersEntry
+	nil,                                     // 105: paprika.v1.NotificationDestination.HeadersEntry
+	nil,                                     // 106: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
 	3,   // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
 	4,   // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
 	5,   // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
-	101, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	103, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
 	8,   // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
 	7,   // 5: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
 	6,   // 6: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	102, // 7: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	104, // 7: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
 	10,  // 8: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
 	11,  // 9: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
 	12,  // 10: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
@@ -7377,7 +7553,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	39,  // 28: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
 	39,  // 29: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
 	16,  // 30: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	103, // 31: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
+	105, // 31: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
 	46,  // 32: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
 	47,  // 33: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
 	48,  // 34: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
@@ -7386,7 +7562,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	16,  // 37: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
 	13,  // 38: paprika.v1.ListGateStatusResponse.gates:type_name -> paprika.v1.GateStatus
 	16,  // 39: paprika.v1.RejectGateResponse.application:type_name -> paprika.v1.Application
-	104, // 40: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	106, // 40: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 	16,  // 41: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
 	20,  // 42: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
 	19,  // 43: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
@@ -7434,40 +7610,42 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	93,  // 85: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
 	96,  // 86: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
 	98,  // 87: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
-	27,  // 88: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	29,  // 89: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	31,  // 90: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	33,  // 91: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	35,  // 92: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	41,  // 93: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	43,  // 94: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	52,  // 95: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	38,  // 96: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	45,  // 97: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	54,  // 98: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	56,  // 99: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
-	58,  // 100: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
-	60,  // 101: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	62,  // 102: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	64,  // 103: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	66,  // 104: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	69,  // 105: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
-	71,  // 106: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
-	73,  // 107: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
-	75,  // 108: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
-	77,  // 109: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
-	79,  // 110: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
-	81,  // 111: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
-	83,  // 112: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
-	85,  // 113: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
-	87,  // 114: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
-	89,  // 115: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
-	92,  // 116: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
-	95,  // 117: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
-	97,  // 118: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
-	100, // 119: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
-	88,  // [88:120] is the sub-list for method output_type
-	56,  // [56:88] is the sub-list for method input_type
+	101, // 88: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
+	27,  // 89: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	29,  // 90: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	31,  // 91: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	33,  // 92: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	35,  // 93: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	41,  // 94: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	43,  // 95: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	52,  // 96: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	38,  // 97: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	45,  // 98: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	54,  // 99: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	56,  // 100: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
+	58,  // 101: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
+	60,  // 102: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	62,  // 103: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	64,  // 104: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	66,  // 105: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	69,  // 106: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	71,  // 107: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	73,  // 108: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	75,  // 109: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	77,  // 110: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
+	79,  // 111: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
+	81,  // 112: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
+	83,  // 113: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
+	85,  // 114: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
+	87,  // 115: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
+	89,  // 116: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
+	92,  // 117: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
+	95,  // 118: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
+	97,  // 119: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
+	100, // 120: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
+	102, // 121: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
+	89,  // [89:122] is the sub-list for method output_type
+	56,  // [56:89] is the sub-list for method input_type
 	56,  // [56:56] is the sub-list for extension type_name
 	56,  // [56:56] is the sub-list for extension extendee
 	0,   // [0:56] is the sub-list for field type_name
@@ -7495,7 +7673,7 @@ func file_paprika_v1_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   105,
+			NumMessages:   107,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

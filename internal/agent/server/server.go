@@ -769,6 +769,12 @@ func (s *Server) GetResourceTreeDetailed(ctx context.Context, _ *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getResourceTreeDetailed is not implemented on the agent"))
 }
 
+// StreamResourceLogs is not implemented by the agent.
+func (s *Server) StreamResourceLogs(ctx context.Context, _ *connect.Request[paprikav1.StreamResourceLogsRequest], _ *connect.ServerStream[paprikav1.LogChunk]) error {
+	log.FromContext(ctx).Info("StreamResourceLogs not implemented on agent")
+	return connect.NewError(connect.CodeUnimplemented, errors.New("streamResourceLogs is not implemented on the agent"))
+}
+
 // GetArtifact is not implemented by the agent.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on agent")

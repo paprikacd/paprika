@@ -345,6 +345,12 @@ func (s *Server) GetResourceTreeDetailed(ctx context.Context, _ *connect.Request
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetResourceTreeDetailed"))
 }
 
+// StreamResourceLogs is not implemented by the repo server.
+func (s *Server) StreamResourceLogs(ctx context.Context, _ *connect.Request[paprikav1.StreamResourceLogsRequest], _ *connect.ServerStream[paprikav1.LogChunk]) error {
+	log.FromContext(ctx).Info("StreamResourceLogs not implemented on repo server")
+	return connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement StreamResourceLogs"))
+}
+
 // GetArtifact is not implemented by the repo server.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on repo server")
