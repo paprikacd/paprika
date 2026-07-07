@@ -775,6 +775,18 @@ func (s *Server) StreamResourceLogs(ctx context.Context, _ *connect.Request[papr
 	return connect.NewError(connect.CodeUnimplemented, errors.New("streamResourceLogs is not implemented on the agent"))
 }
 
+// Investigate is not implemented by the agent.
+func (s *Server) Investigate(ctx context.Context, _ *connect.Request[paprikav1.InvestigateRequest]) (*connect.Response[paprikav1.InvestigateResponse], error) {
+	log.FromContext(ctx).Info("Investigate not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("investigate is not implemented on the agent"))
+}
+
+// ListInvestigatorPlugins is not implemented by the agent.
+func (s *Server) ListInvestigatorPlugins(ctx context.Context, _ *connect.Request[paprikav1.ListInvestigatorPluginsRequest]) (*connect.Response[paprikav1.ListInvestigatorPluginsResponse], error) {
+	log.FromContext(ctx).Info("ListInvestigatorPlugins not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("listInvestigatorPlugins is not implemented on the agent"))
+}
+
 // GetArtifact is not implemented by the agent.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on agent")

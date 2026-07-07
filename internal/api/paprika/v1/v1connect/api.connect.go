@@ -130,6 +130,12 @@ const (
 	// PaprikaServiceStreamResourceLogsProcedure is the fully-qualified name of the PaprikaService's
 	// StreamResourceLogs RPC.
 	PaprikaServiceStreamResourceLogsProcedure = "/paprika.v1.PaprikaService/StreamResourceLogs"
+	// PaprikaServiceInvestigateProcedure is the fully-qualified name of the PaprikaService's
+	// Investigate RPC.
+	PaprikaServiceInvestigateProcedure = "/paprika.v1.PaprikaService/Investigate"
+	// PaprikaServiceListInvestigatorPluginsProcedure is the fully-qualified name of the
+	// PaprikaService's ListInvestigatorPlugins RPC.
+	PaprikaServiceListInvestigatorPluginsProcedure = "/paprika.v1.PaprikaService/ListInvestigatorPlugins"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -167,6 +173,8 @@ type PaprikaServiceClient interface {
 	GetResourceLogs(context.Context, *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error)
 	GetResourceTreeDetailed(context.Context, *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error)
 	StreamResourceLogs(context.Context, *connect.Request[v1.StreamResourceLogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error)
+	Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error)
+	ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -378,6 +386,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("StreamResourceLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		investigate: connect.NewClient[v1.InvestigateRequest, v1.InvestigateResponse](
+			httpClient,
+			baseURL+PaprikaServiceInvestigateProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("Investigate")),
+			connect.WithClientOptions(opts...),
+		),
+		listInvestigatorPlugins: connect.NewClient[v1.ListInvestigatorPluginsRequest, v1.ListInvestigatorPluginsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListInvestigatorPluginsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListInvestigatorPlugins")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -416,6 +436,8 @@ type paprikaServiceClient struct {
 	getResourceLogs         *connect.Client[v1.GetResourceLogsRequest, v1.GetResourceLogsResponse]
 	getResourceTreeDetailed *connect.Client[v1.GetResourceTreeDetailedRequest, v1.GetResourceTreeDetailedResponse]
 	streamResourceLogs      *connect.Client[v1.StreamResourceLogsRequest, v1.LogChunk]
+	investigate             *connect.Client[v1.InvestigateRequest, v1.InvestigateResponse]
+	listInvestigatorPlugins *connect.Client[v1.ListInvestigatorPluginsRequest, v1.ListInvestigatorPluginsResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -583,6 +605,16 @@ func (c *paprikaServiceClient) StreamResourceLogs(ctx context.Context, req *conn
 	return c.streamResourceLogs.CallServerStream(ctx, req)
 }
 
+// Investigate calls paprika.v1.PaprikaService.Investigate.
+func (c *paprikaServiceClient) Investigate(ctx context.Context, req *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error) {
+	return c.investigate.CallUnary(ctx, req)
+}
+
+// ListInvestigatorPlugins calls paprika.v1.PaprikaService.ListInvestigatorPlugins.
+func (c *paprikaServiceClient) ListInvestigatorPlugins(ctx context.Context, req *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error) {
+	return c.listInvestigatorPlugins.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -618,6 +650,8 @@ type PaprikaServiceHandler interface {
 	GetResourceLogs(context.Context, *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error)
 	GetResourceTreeDetailed(context.Context, *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error)
 	StreamResourceLogs(context.Context, *connect.Request[v1.StreamResourceLogsRequest], *connect.ServerStream[v1.LogChunk]) error
+	Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error)
+	ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -825,6 +859,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("StreamResourceLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceInvestigateHandler := connect.NewUnaryHandler(
+		PaprikaServiceInvestigateProcedure,
+		svc.Investigate,
+		connect.WithSchema(paprikaServiceMethods.ByName("Investigate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListInvestigatorPluginsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListInvestigatorPluginsProcedure,
+		svc.ListInvestigatorPlugins,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListInvestigatorPlugins")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -893,6 +939,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceGetResourceTreeDetailedHandler.ServeHTTP(w, r)
 		case PaprikaServiceStreamResourceLogsProcedure:
 			paprikaServiceStreamResourceLogsHandler.ServeHTTP(w, r)
+		case PaprikaServiceInvestigateProcedure:
+			paprikaServiceInvestigateHandler.ServeHTTP(w, r)
+		case PaprikaServiceListInvestigatorPluginsProcedure:
+			paprikaServiceListInvestigatorPluginsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1032,4 +1082,12 @@ func (UnimplementedPaprikaServiceHandler) GetResourceTreeDetailed(context.Contex
 
 func (UnimplementedPaprikaServiceHandler) StreamResourceLogs(context.Context, *connect.Request[v1.StreamResourceLogsRequest], *connect.ServerStream[v1.LogChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.StreamResourceLogs is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.Investigate is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListInvestigatorPlugins is not implemented"))
 }

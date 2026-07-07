@@ -7,6 +7,31 @@ import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialM
 import { Message, proto3 } from "@bufbuild/protobuf";
 
 /**
+ * @generated from enum paprika.v1.Severity
+ */
+export declare enum Severity {
+  /**
+   * @generated from enum value: SEVERITY_UNSPECIFIED = 0;
+   */
+  SEVERITY_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CRITICAL = 1;
+   */
+  CRITICAL = 1,
+
+  /**
+   * @generated from enum value: WARNING = 2;
+   */
+  WARNING = 2,
+
+  /**
+   * @generated from enum value: INFO = 3;
+   */
+  INFO = 3,
+}
+
+/**
  * @generated from message paprika.v1.Step
  */
 export declare class Step extends Message<Step> {
@@ -3802,6 +3827,249 @@ export declare class GetResourceTreeDetailedResponse extends Message<GetResource
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetResourceTreeDetailedResponse;
 
   static equals(a: GetResourceTreeDetailedResponse | PlainMessage<GetResourceTreeDetailedResponse> | undefined, b: GetResourceTreeDetailedResponse | PlainMessage<GetResourceTreeDetailedResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.InvestigateRequest
+ */
+export declare class InvestigateRequest extends Message<InvestigateRequest> {
+  /**
+   * @generated from field: string application_namespace = 1;
+   */
+  applicationNamespace: string;
+
+  /**
+   * @generated from field: string application_name = 2;
+   */
+  applicationName: string;
+
+  /**
+   * @generated from field: string resource_kind = 3;
+   */
+  resourceKind: string;
+
+  /**
+   * @generated from field: string resource_name = 4;
+   */
+  resourceName: string;
+
+  /**
+   * @generated from field: string resource_namespace = 5;
+   */
+  resourceNamespace: string;
+
+  constructor(data?: PartialMessage<InvestigateRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.InvestigateRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): InvestigateRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): InvestigateRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): InvestigateRequest;
+
+  static equals(a: InvestigateRequest | PlainMessage<InvestigateRequest> | undefined, b: InvestigateRequest | PlainMessage<InvestigateRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FindingEvidence
+ */
+export declare class FindingEvidence extends Message<FindingEvidence> {
+  /**
+   * @generated from field: string source = 1;
+   */
+  source: string;
+
+  /**
+   * @generated from field: string timestamp = 2;
+   */
+  timestamp: string;
+
+  /**
+   * @generated from field: string summary = 3;
+   */
+  summary: string;
+
+  constructor(data?: PartialMessage<FindingEvidence>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FindingEvidence";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FindingEvidence;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FindingEvidence;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FindingEvidence;
+
+  static equals(a: FindingEvidence | PlainMessage<FindingEvidence> | undefined, b: FindingEvidence | PlainMessage<FindingEvidence> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.InvestigationFinding
+ */
+export declare class InvestigationFinding extends Message<InvestigationFinding> {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: paprika.v1.Severity severity = 2;
+   */
+  severity: Severity;
+
+  /**
+   * @generated from field: string title = 3;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string description = 4;
+   */
+  description: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.FindingEvidence evidence = 5;
+   */
+  evidence: FindingEvidence[];
+
+  /**
+   * @generated from field: repeated string playbook = 6;
+   */
+  playbook: string[];
+
+  /**
+   * @generated from field: string narrator = 7;
+   */
+  narrator: string;
+
+  constructor(data?: PartialMessage<InvestigationFinding>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.InvestigationFinding";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): InvestigationFinding;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): InvestigationFinding;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): InvestigationFinding;
+
+  static equals(a: InvestigationFinding | PlainMessage<InvestigationFinding> | undefined, b: InvestigationFinding | PlainMessage<InvestigationFinding> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.InvestigateResponse
+ */
+export declare class InvestigateResponse extends Message<InvestigateResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.InvestigationFinding findings = 1;
+   */
+  findings: InvestigationFinding[];
+
+  /**
+   * @generated from field: string summary = 2;
+   */
+  summary: string;
+
+  /**
+   * @generated from field: string narrator = 3;
+   */
+  narrator: string;
+
+  /**
+   * @generated from field: uint64 generated_at_ms = 4;
+   */
+  generatedAtMs: bigint;
+
+  constructor(data?: PartialMessage<InvestigateResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.InvestigateResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): InvestigateResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): InvestigateResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): InvestigateResponse;
+
+  static equals(a: InvestigateResponse | PlainMessage<InvestigateResponse> | undefined, b: InvestigateResponse | PlainMessage<InvestigateResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListInvestigatorPluginsRequest
+ */
+export declare class ListInvestigatorPluginsRequest extends Message<ListInvestigatorPluginsRequest> {
+  constructor(data?: PartialMessage<ListInvestigatorPluginsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListInvestigatorPluginsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListInvestigatorPluginsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListInvestigatorPluginsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListInvestigatorPluginsRequest;
+
+  static equals(a: ListInvestigatorPluginsRequest | PlainMessage<ListInvestigatorPluginsRequest> | undefined, b: ListInvestigatorPluginsRequest | PlainMessage<ListInvestigatorPluginsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PluginInfo
+ */
+export declare class PluginInfo extends Message<PluginInfo> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  constructor(data?: PartialMessage<PluginInfo>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PluginInfo";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PluginInfo;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PluginInfo;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PluginInfo;
+
+  static equals(a: PluginInfo | PlainMessage<PluginInfo> | undefined, b: PluginInfo | PlainMessage<PluginInfo> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListInvestigatorPluginsResponse
+ */
+export declare class ListInvestigatorPluginsResponse extends Message<ListInvestigatorPluginsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.PluginInfo plugins = 1;
+   */
+  plugins: PluginInfo[];
+
+  constructor(data?: PartialMessage<ListInvestigatorPluginsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListInvestigatorPluginsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListInvestigatorPluginsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListInvestigatorPluginsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListInvestigatorPluginsResponse;
+
+  static equals(a: ListInvestigatorPluginsResponse | PlainMessage<ListInvestigatorPluginsResponse> | undefined, b: ListInvestigatorPluginsResponse | PlainMessage<ListInvestigatorPluginsResponse> | undefined): boolean;
 }
 
 /**

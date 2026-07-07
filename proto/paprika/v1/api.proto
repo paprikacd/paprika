@@ -673,6 +673,49 @@ message GetResourceTreeDetailedResponse {
   repeated ResourceTreeNode nodes = 1;
 }
 
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  CRITICAL = 1;
+  WARNING = 2;
+  INFO = 3;
+}
+
+message InvestigateRequest {
+  string application_namespace = 1;
+  string application_name = 2;
+  string resource_kind = 3;
+  string resource_name = 4;
+  string resource_namespace = 5;
+}
+message FindingEvidence {
+  string source = 1;
+  string timestamp = 2;
+  string summary = 3;
+}
+message InvestigationFinding {
+  string id = 1;
+  Severity severity = 2;
+  string title = 3;
+  string description = 4;
+  repeated FindingEvidence evidence = 5;
+  repeated string playbook = 6;
+  string narrator = 7;
+}
+message InvestigateResponse {
+  repeated InvestigationFinding findings = 1;
+  string summary = 2;
+  string narrator = 3;
+  uint64 generated_at_ms = 4;
+}
+message ListInvestigatorPluginsRequest {}
+message PluginInfo {
+  string name = 1;
+  string type = 2;
+}
+message ListInvestigatorPluginsResponse {
+  repeated PluginInfo plugins = 1;
+}
+
 message StreamResourceLogsRequest {
   string application_namespace = 1;
   string application_name = 2;
@@ -723,4 +766,6 @@ service PaprikaService {
   rpc GetResourceLogs(GetResourceLogsRequest) returns (GetResourceLogsResponse);
   rpc GetResourceTreeDetailed(GetResourceTreeDetailedRequest) returns (GetResourceTreeDetailedResponse);
   rpc StreamResourceLogs(StreamResourceLogsRequest) returns (stream LogChunk);
+  rpc Investigate(InvestigateRequest) returns (InvestigateResponse);
+  rpc ListInvestigatorPlugins(ListInvestigatorPluginsRequest) returns (ListInvestigatorPluginsResponse);
 }

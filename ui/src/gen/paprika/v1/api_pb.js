@@ -6,6 +6,19 @@
 import { proto3 } from "@bufbuild/protobuf";
 
 /**
+ * @generated from enum paprika.v1.Severity
+ */
+export const Severity = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.Severity",
+  [
+    {no: 0, name: "SEVERITY_UNSPECIFIED"},
+    {no: 1, name: "CRITICAL"},
+    {no: 2, name: "WARNING"},
+    {no: 3, name: "INFO"},
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Step
  */
 export const Step = /*@__PURE__*/ proto3.makeMessageType(
@@ -1277,6 +1290,90 @@ export const GetResourceTreeDetailedResponse = /*@__PURE__*/ proto3.makeMessageT
   "paprika.v1.GetResourceTreeDetailedResponse",
   () => [
     { no: 1, name: "nodes", kind: "message", T: ResourceTreeNode, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.InvestigateRequest
+ */
+export const InvestigateRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.InvestigateRequest",
+  () => [
+    { no: 1, name: "application_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "resource_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FindingEvidence
+ */
+export const FindingEvidence = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FindingEvidence",
+  () => [
+    { no: 1, name: "source", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "timestamp", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.InvestigationFinding
+ */
+export const InvestigationFinding = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.InvestigationFinding",
+  () => [
+    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "severity", kind: "enum", T: proto3.getEnumType(Severity) },
+    { no: 3, name: "title", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "evidence", kind: "message", T: FindingEvidence, repeated: true },
+    { no: 6, name: "playbook", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 7, name: "narrator", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.InvestigateResponse
+ */
+export const InvestigateResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.InvestigateResponse",
+  () => [
+    { no: 1, name: "findings", kind: "message", T: InvestigationFinding, repeated: true },
+    { no: 2, name: "summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "narrator", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "generated_at_ms", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListInvestigatorPluginsRequest
+ */
+export const ListInvestigatorPluginsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListInvestigatorPluginsRequest",
+  [],
+);
+
+/**
+ * @generated from message paprika.v1.PluginInfo
+ */
+export const PluginInfo = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PluginInfo",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListInvestigatorPluginsResponse
+ */
+export const ListInvestigatorPluginsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListInvestigatorPluginsResponse",
+  () => [
+    { no: 1, name: "plugins", kind: "message", T: PluginInfo, repeated: true },
   ],
 );
 

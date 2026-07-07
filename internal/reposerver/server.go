@@ -351,6 +351,18 @@ func (s *Server) StreamResourceLogs(ctx context.Context, _ *connect.Request[papr
 	return connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement StreamResourceLogs"))
 }
 
+// Investigate is not implemented by the repo server.
+func (s *Server) Investigate(ctx context.Context, _ *connect.Request[paprikav1.InvestigateRequest]) (*connect.Response[paprikav1.InvestigateResponse], error) {
+	log.FromContext(ctx).Info("Investigate not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement Investigate"))
+}
+
+// ListInvestigatorPlugins is not implemented by the repo server.
+func (s *Server) ListInvestigatorPlugins(ctx context.Context, _ *connect.Request[paprikav1.ListInvestigatorPluginsRequest]) (*connect.Response[paprikav1.ListInvestigatorPluginsResponse], error) {
+	log.FromContext(ctx).Info("ListInvestigatorPlugins not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListInvestigatorPlugins"))
+}
+
 // GetArtifact is not implemented by the repo server.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on repo server")
