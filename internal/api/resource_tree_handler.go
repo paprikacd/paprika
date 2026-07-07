@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"connectrpc.com/connect"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -72,6 +74,130 @@ func (s *PaprikaServer) GetResourceTree(
 	}
 
 	return connect.NewResponse(&paprikav1.GetResourceTreeResponse{Nodes: nodes}), nil
+}
+
+// GetResourceTreeDetailed returns the same tree as GetResourceTree but with
+// richer status per node (phase, ready/total replicas, container counts and
+// names). Used by the list view to render ready-count badges and phases.
+func (s *PaprikaServer) GetResourceTreeDetailed(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetResourceTreeDetailedRequest],
+) (*connect.Response[paprikav1.GetResourceTreeDetailedResponse], error) {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.ApplicationNamespace, Name: req.Msg.ApplicationName}, &app); err != nil {
+		return nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionRead, &app); err != nil {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+
+	healthMap := make(map[string]string, len(app.Status.ResourceHealth))
+	msgMap := make(map[string]string, len(app.Status.ResourceHealth))
+	for _, h := range app.Status.ResourceHealth {
+		healthMap[h.Kind+"/"+h.Name] = h.Health
+		msgMap[h.Kind+"/"+h.Name] = h.Message
+	}
+
+	nodes := make([]*paprikav1.ResourceTreeNode, 0, len(app.Status.Resources)*2)
+
+	// Add managed resources as root nodes.
+	for _, r := range app.Status.Resources {
+		n := &paprikav1.ResourceTreeNode{
+			Kind:          r.Kind,
+			Name:          r.Name,
+			Namespace:     r.Namespace,
+			SyncStatus:    r.Status,
+			Health:        healthMap[r.Kind+"/"+r.Name],
+			HealthMessage: msgMap[r.Kind+"/"+r.Name],
+			Managed:       true,
+		}
+		s.populateNodeDetail(ctx, n)
+		nodes = append(nodes, n)
+	}
+
+	// Discover live children for each managed resource.
+	if s.dynamicClient != nil {
+		existing := make([]*paprikav1.ResourceNode, 0, len(nodes))
+		for _, n := range nodes {
+			existing = append(existing, &paprikav1.ResourceNode{
+				Kind: n.Kind, Name: n.Name, Namespace: n.Namespace,
+			})
+		}
+		discovered := s.discoverChildren(ctx, app.Namespace, existing)
+		for _, d := range discovered {
+			tree := &paprikav1.ResourceTreeNode{
+				Kind:       d.Kind,
+				Name:       d.Name,
+				Namespace:  d.Namespace,
+				ParentKind: d.ParentKind,
+				ParentName: d.ParentName,
+				Uid:        d.Uid,
+				Managed:    false,
+			}
+			s.populateNodeDetail(ctx, tree)
+			nodes = append(nodes, tree)
+		}
+	}
+
+	return connect.NewResponse(&paprikav1.GetResourceTreeDetailedResponse{Nodes: nodes}), nil
+}
+
+// populateNodeDetail fetches status-specific fields via the typed clientset
+// (protobuf-negotiated). Failures are silent — leave fields empty.
+func (s *PaprikaServer) populateNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
+	if s.k8sClient == nil || n.Name == "" {
+		return
+	}
+	switch n.Kind {
+	case "Pod":
+		pod, err := s.k8sClient.CoreV1().Pods(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+		if err != nil {
+			return
+		}
+		n.Phase = string(pod.Status.Phase)
+		containers := make([]string, 0, len(pod.Spec.Containers))
+		ready := int32(0)
+		for _, c := range pod.Spec.Containers {
+			containers = append(containers, c.Name)
+		}
+		n.Containers = containers
+		n.Total = int32(len(pod.Spec.Containers))
+		for _, cs := range pod.Status.ContainerStatuses {
+			if cs.Ready {
+				ready++
+			}
+		}
+		n.Ready = ready
+		if pod.Status.Message != "" {
+			n.Message = pod.Status.Message
+		}
+	case "Deployment":
+		d, err := s.k8sClient.AppsV1().Deployments(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+		if err != nil {
+			return
+		}
+		n.Ready = d.Status.ReadyReplicas
+		n.Total = d.Status.Replicas
+		for _, cond := range d.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionFalse {
+				n.Message = cond.Message
+			}
+		}
+	case "StatefulSet":
+		ss, err := s.k8sClient.AppsV1().StatefulSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+		if err != nil {
+			return
+		}
+		n.Ready = ss.Status.ReadyReplicas
+		n.Total = ss.Status.Replicas
+	case "DaemonSet":
+		ds, err := s.k8sClient.AppsV1().DaemonSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+		if err != nil {
+			return
+		}
+		n.Ready = ds.Status.NumberReady
+		n.Total = ds.Status.DesiredNumberScheduled
+	}
 }
 
 // discoverChildren queries the cluster for child resources owned by any node
