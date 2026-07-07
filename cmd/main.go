@@ -643,6 +643,7 @@ func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get in-cluster config (use --k8s-api-server): %w", err)
 		}
+		negotiateProtobuf(config)
 		return config, nil
 	}
 
@@ -650,11 +651,21 @@ func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &rest.Config{
+	cfg := &rest.Config{
 		Host:            k8sAPIServer,
 		BearerToken:     token,
 		TLSClientConfig: rest.TLSClientConfig{Insecure: false},
-	}, nil
+	}
+	negotiateProtobuf(cfg)
+	return cfg, nil
+}
+
+// negotiateProtobuf configures the client-go rest.Config to prefer protobuf over JSON
+// for built-in K8s kinds. CRDs and Watch payloads without protobuf schemas fall back
+// to JSON automatically because AcceptContentTypes lists both.
+func negotiateProtobuf(cfg *rest.Config) {
+	cfg.ContentConfig.ContentType = runtime.ContentTypeProtobuf
+	cfg.ContentConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 }
 
 func readBearerToken(k8sTokenFile string) (string, error) {

@@ -300,9 +300,19 @@ func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {
 		if inErr != nil {
 			return nil, fmt.Errorf("no kubeconfig and no in-cluster config: %w", err)
 		}
+		negotiateProtobuf(inCluster)
 		return inCluster, nil
 	}
+	negotiateProtobuf(k8sConfig)
 	return k8sConfig, nil
+}
+
+// negotiateProtobuf configures the client-go rest.Config to prefer protobuf over JSON
+// for built-in K8s kinds. CRDs and Watch payloads without protobuf schemas fall back
+// to JSON automatically because AcceptContentTypes lists both.
+func negotiateProtobuf(cfg *rest.Config) {
+	cfg.ContentConfig.ContentType = runtime.ContentTypeProtobuf
+	cfg.ContentConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 }
 
 func buildRenderer(ctx context.Context, setupLog logr.Logger, workDir string, k8sClient client.Client, repoServerAddr string, cacheCfg cache.Config) pipelines.TemplateRenderer {

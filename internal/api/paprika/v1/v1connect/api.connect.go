@@ -121,6 +121,12 @@ const (
 	// PaprikaServiceGetResourceTreeProcedure is the fully-qualified name of the PaprikaService's
 	// GetResourceTree RPC.
 	PaprikaServiceGetResourceTreeProcedure = "/paprika.v1.PaprikaService/GetResourceTree"
+	// PaprikaServiceGetResourceLogsProcedure is the fully-qualified name of the PaprikaService's
+	// GetResourceLogs RPC.
+	PaprikaServiceGetResourceLogsProcedure = "/paprika.v1.PaprikaService/GetResourceLogs"
+	// PaprikaServiceGetResourceTreeDetailedProcedure is the fully-qualified name of the
+	// PaprikaService's GetResourceTreeDetailed RPC.
+	PaprikaServiceGetResourceTreeDetailedProcedure = "/paprika.v1.PaprikaService/GetResourceTreeDetailed"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -155,6 +161,8 @@ type PaprikaServiceClient interface {
 	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
 	GetResource(context.Context, *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error)
 	GetResourceTree(context.Context, *connect.Request[v1.GetResourceTreeRequest]) (*connect.Response[v1.GetResourceTreeResponse], error)
+	GetResourceLogs(context.Context, *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error)
+	GetResourceTreeDetailed(context.Context, *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -348,6 +356,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("GetResourceTree")),
 			connect.WithClientOptions(opts...),
 		),
+		getResourceLogs: connect.NewClient[v1.GetResourceLogsRequest, v1.GetResourceLogsResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetResourceLogsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetResourceLogs")),
+			connect.WithClientOptions(opts...),
+		),
+		getResourceTreeDetailed: connect.NewClient[v1.GetResourceTreeDetailedRequest, v1.GetResourceTreeDetailedResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetResourceTreeDetailedProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetResourceTreeDetailed")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -383,6 +403,8 @@ type paprikaServiceClient struct {
 	getStepLogs             *connect.Client[v1.GetStepLogsRequest, v1.GetStepLogsResponse]
 	getResource             *connect.Client[v1.GetResourceRequest, v1.GetResourceResponse]
 	getResourceTree         *connect.Client[v1.GetResourceTreeRequest, v1.GetResourceTreeResponse]
+	getResourceLogs         *connect.Client[v1.GetResourceLogsRequest, v1.GetResourceLogsResponse]
+	getResourceTreeDetailed *connect.Client[v1.GetResourceTreeDetailedRequest, v1.GetResourceTreeDetailedResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -535,6 +557,16 @@ func (c *paprikaServiceClient) GetResourceTree(ctx context.Context, req *connect
 	return c.getResourceTree.CallUnary(ctx, req)
 }
 
+// GetResourceLogs calls paprika.v1.PaprikaService.GetResourceLogs.
+func (c *paprikaServiceClient) GetResourceLogs(ctx context.Context, req *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error) {
+	return c.getResourceLogs.CallUnary(ctx, req)
+}
+
+// GetResourceTreeDetailed calls paprika.v1.PaprikaService.GetResourceTreeDetailed.
+func (c *paprikaServiceClient) GetResourceTreeDetailed(ctx context.Context, req *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error) {
+	return c.getResourceTreeDetailed.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -567,6 +599,8 @@ type PaprikaServiceHandler interface {
 	GetStepLogs(context.Context, *connect.Request[v1.GetStepLogsRequest]) (*connect.Response[v1.GetStepLogsResponse], error)
 	GetResource(context.Context, *connect.Request[v1.GetResourceRequest]) (*connect.Response[v1.GetResourceResponse], error)
 	GetResourceTree(context.Context, *connect.Request[v1.GetResourceTreeRequest]) (*connect.Response[v1.GetResourceTreeResponse], error)
+	GetResourceLogs(context.Context, *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error)
+	GetResourceTreeDetailed(context.Context, *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -756,6 +790,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("GetResourceTree")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetResourceLogsHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetResourceLogsProcedure,
+		svc.GetResourceLogs,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetResourceLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetResourceTreeDetailedHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetResourceTreeDetailedProcedure,
+		svc.GetResourceTreeDetailed,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetResourceTreeDetailed")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -818,6 +864,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceGetResourceHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetResourceTreeProcedure:
 			paprikaServiceGetResourceTreeHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetResourceLogsProcedure:
+			paprikaServiceGetResourceLogsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetResourceTreeDetailedProcedure:
+			paprikaServiceGetResourceTreeDetailedHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -945,4 +995,12 @@ func (UnimplementedPaprikaServiceHandler) GetResource(context.Context, *connect.
 
 func (UnimplementedPaprikaServiceHandler) GetResourceTree(context.Context, *connect.Request[v1.GetResourceTreeRequest]) (*connect.Response[v1.GetResourceTreeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetResourceTree is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetResourceLogs(context.Context, *connect.Request[v1.GetResourceLogsRequest]) (*connect.Response[v1.GetResourceLogsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetResourceLogs is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetResourceTreeDetailed(context.Context, *connect.Request[v1.GetResourceTreeDetailedRequest]) (*connect.Response[v1.GetResourceTreeDetailedResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetResourceTreeDetailed is not implemented"))
 }

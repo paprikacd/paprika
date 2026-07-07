@@ -333,6 +333,18 @@ func (s *Server) GetResourceTree(ctx context.Context, _ *connect.Request[paprika
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetResourceTree"))
 }
 
+// GetResourceLogs is not implemented by the repo server.
+func (s *Server) GetResourceLogs(ctx context.Context, _ *connect.Request[paprikav1.GetResourceLogsRequest]) (*connect.Response[paprikav1.GetResourceLogsResponse], error) {
+	log.FromContext(ctx).Info("GetResourceLogs not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetResourceLogs"))
+}
+
+// GetResourceTreeDetailed is not implemented by the repo server.
+func (s *Server) GetResourceTreeDetailed(ctx context.Context, _ *connect.Request[paprikav1.GetResourceTreeDetailedRequest]) (*connect.Response[paprikav1.GetResourceTreeDetailedResponse], error) {
+	log.FromContext(ctx).Info("GetResourceTreeDetailed not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetResourceTreeDetailed"))
+}
+
 // GetArtifact is not implemented by the repo server.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on repo server")

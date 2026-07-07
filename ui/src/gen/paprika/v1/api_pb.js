@@ -1206,3 +1206,77 @@ export const GetResourceTreeResponse = /*@__PURE__*/ proto3.makeMessageType(
   ],
 );
 
+/**
+ * @generated from message paprika.v1.GetResourceLogsRequest
+ */
+export const GetResourceLogsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceLogsRequest",
+  () => [
+    { no: 1, name: "application_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "resource_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "tail_lines", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetResourceLogsResponse
+ */
+export const GetResourceLogsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceLogsResponse",
+  () => [
+    { no: 1, name: "pod_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "container_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "containers", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 4, name: "logs", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "error", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetResourceTreeDetailedRequest
+ */
+export const GetResourceTreeDetailedRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceTreeDetailedRequest",
+  () => [
+    { no: 1, name: "application_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResourceTreeNode
+ */
+export const ResourceTreeNode = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResourceTreeNode",
+  () => [
+    { no: 1, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "sync_status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "health", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "health_message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "parent_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "parent_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "uid", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "managed", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 11, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 12, name: "ready", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 13, name: "total", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 14, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 15, name: "containers", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetResourceTreeDetailedResponse
+ */
+export const GetResourceTreeDetailedResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetResourceTreeDetailedResponse",
+  () => [
+    { no: 1, name: "nodes", kind: "message", T: ResourceTreeNode, repeated: true },
+  ],
+);
+

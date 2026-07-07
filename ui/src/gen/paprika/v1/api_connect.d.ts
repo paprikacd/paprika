@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -280,6 +280,24 @@ export declare const PaprikaService: {
       readonly name: "GetResourceTree",
       readonly I: typeof GetResourceTreeRequest,
       readonly O: typeof GetResourceTreeResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetResourceLogs
+     */
+    readonly getResourceLogs: {
+      readonly name: "GetResourceLogs",
+      readonly I: typeof GetResourceLogsRequest,
+      readonly O: typeof GetResourceLogsResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetResourceTreeDetailed
+     */
+    readonly getResourceTreeDetailed: {
+      readonly name: "GetResourceTreeDetailed",
+      readonly I: typeof GetResourceTreeDetailedRequest,
+      readonly O: typeof GetResourceTreeDetailedResponse,
       readonly kind: MethodKind.Unary,
     },
   }
