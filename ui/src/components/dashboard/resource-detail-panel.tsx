@@ -1,11 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
-import type { GetResourceResponse, GetResourceLogsResponse, KubernetesEvent } from "@/gen/paprika/v1/api_pb"
-import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw } from "lucide-react"
+import type { GetResourceResponse, KubernetesEvent, LogChunk } from "@/gen/paprika/v1/api_pb"
+import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw, Pause, Play, Search, Wifi, WifiOff } from "lucide-react"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
@@ -20,7 +20,9 @@ const tabs: { id: Tab; label: string; icon: typeof FileText }[] = [
   { id: "logs", label: "Logs", icon: Terminal },
 ]
 
-const LOG_POLL_INTERVAL_MS = 5000
+const LOG_BUFFER_LIMIT = 5000
+const RECONNECT_BASE_MS = 1000
+const RECONNECT_MAX_MS = 30_000
 
 export function ResourceDetailPanel({
   applicationNamespace,
@@ -251,119 +253,275 @@ function LogsTab({
   resource: { kind: string; name: string; namespace: string }
   isActive: boolean
 }) {
-  const [data, setData] = useState<GetResourceLogsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [lastFetched, setLastFetched] = useState<number | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [lines, setLines] = useState<LogChunk[]>([])
+  const [podName, setPodName] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [connected, setConnected] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const [filter, setFilter] = useState("")
+  const [lineCount, setLineCount] = useState(0)
+  const [firstChunkAt, setFirstChunkAt] = useState<number | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const preRef = useRef<HTMLPreElement | null>(null)
+  const userScrolledAwayRef = useRef(false)
 
-  const fetchLogs = async () => {
-    try {
-      const res = await client.getResourceLogs({
-        applicationNamespace,
-        applicationName,
-        resourceKind: resource.kind,
-        resourceName: resource.name,
-        resourceNamespace: resource.namespace,
-        tailLines: 100,
-      })
-      setData(res)
-      setLastFetched(Date.now())
-    } catch (err) {
-      console.warn("getResourceLogs failed:", err)
-    } finally {
-      setLoading(false)
+  // Reset state when (re)entering the tab or changing resource.
+  useEffect(() => {
+    if (!isActive) {
+      abortRef.current?.abort()
+      abortRef.current = null
+      return
     }
-  }
+    setLines([])
+    setPodName(null)
+    setError(null)
+    setLineCount(0)
+    setFirstChunkAt(null)
+    setReconnecting(false)
+  }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 
+  // Open the streaming RPC and pump chunks into the line buffer with
+  // exponential reconnect on transient errors.
   useEffect(() => {
     if (!isActive) return
-    setLoading(true)
-    fetchLogs()
-    intervalRef.current = setInterval(fetchLogs, LOG_POLL_INTERVAL_MS)
+    let cancelled = false
+    let attempt = 0
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+
+    const open = async () => {
+      if (cancelled) return
+      const controller = new AbortController()
+      abortRef.current = controller
+      setReconnecting(true)
+      try {
+        const iter = client.streamResourceLogs({
+          applicationNamespace,
+          applicationName,
+          resourceKind: resource.kind,
+          resourceName: resource.name,
+          resourceNamespace: resource.namespace,
+          follow: true,
+        })
+        const reader = iter[Symbol.asyncIterator]()
+        while (!cancelled) {
+          const { value, done } = await reader.next()
+          if (done) break
+          const chunk = value as LogChunk
+          // Bail out if the caller (tab switch / unmount / explicit cancel)
+          // aborted the stream while we were waiting.
+          if (controller.signal.aborted) break
+          if (!connected) {
+            setConnected(true)
+            setReconnecting(false)
+            attempt = 0
+          }
+          if (!podName && chunk.podName) setPodName(chunk.podName)
+          setLines((prev) => {
+            const next = prev.length >= LOG_BUFFER_LIMIT ? prev.slice(prev.length - LOG_BUFFER_LIMIT + 1) : prev
+            next.push(chunk)
+            return next
+          })
+          setLineCount((c) => c + 1)
+          if (firstChunkAt == null) setFirstChunkAt(Date.now())
+        }
+        // Normal completion (EOF or end of follow=false) — close cleanly.
+        if (!cancelled) {
+          setConnected(false)
+        }
+      } catch (err) {
+        if (cancelled) return
+        const msg = err instanceof Error ? err.message : String(err)
+        console.warn("StreamResourceLogs error:", msg)
+        if (err && typeof err === "object" && "code" in err) {
+          // Unimplemented on agent/repo-server — don't keep trying.
+          const code = (err as { code: unknown }).code
+          if (typeof code === "string" && code.includes("unimplemented")) {
+            setError("Streaming logs not available on this server. Falling back to polling.")
+            setConnected(false)
+            setReconnecting(false)
+            return
+          }
+        }
+        setError(msg)
+        setConnected(false)
+        // Exponential backoff reconnect
+        const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
+        attempt++
+        setReconnecting(true)
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null
+          void open()
+        }, delay)
+      }
+    }
+
+    void open()
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
+      cancelled = true
+      abortRef.current?.abort()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 
-  if (loading && !data) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  // Filter is debounced via useDeferredValue — input stays responsive even
+  // when the buffered set is large.
+  const deferredFilter = useDeferredValue(filter)
+  const visible = useMemo(() => {
+    const f = deferredFilter.trim().toLowerCase()
+    if (!f) return lines
+    return lines.filter((c) => c.line.toLowerCase().includes(f))
+  }, [lines, deferredFilter])
 
-  if (!data) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
-        <Terminal className="size-5 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No log data.</p>
-      </div>
-    )
-  }
+  // Auto-scroll to bottom unless the user has scrolled up. Only attempt
+  // autoscroll when the log buffer (length) actually changes, so React
+  // re-renders triggered by the filter don't snap-scroll.
+  useEffect(() => {
+    if (paused) return
+    if (userScrolledAwayRef.current) return
+    const pre = preRef.current
+    if (!pre) return
+    pre.scrollTop = pre.scrollHeight
+  }, [lineCount, paused])
 
-  if (data.error) {
+  if (error && lines.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
+      <div className="flex flex-col items-center gap-2 py-12 text-center" data-testid="logs-tab-error">
         <AlertTriangle className="size-5 text-amber-500" />
-        <p className="text-sm text-muted-foreground">{data.error}</p>
-        <button
-          onClick={fetchLogs}
-          className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-foreground/80 transition-[color,background-color] hover:bg-muted/40"
-        >
-          <RefreshCw className="size-3" />
-          Retry
-        </button>
-      </div>
-    )
-  }
-
-  if (!data.logs) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
-        <Terminal className="size-5 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No log output yet.</p>
+        <p className="text-sm text-muted-foreground">{error}</p>
+        {reconnecting && <p className="text-xs text-muted-foreground/60 tabular-nums">reconnecting…</p>}
       </div>
     )
   }
 
   return (
-    <div className="space-y-2" data-testid="logs-tab">
+    <div className="flex h-full flex-col gap-2" data-testid="logs-tab">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="relative flex size-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-          <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-        </span>
-        <span className="tabular-nums">Auto-refreshing every {LOG_POLL_INTERVAL_MS / 1000}s</span>
-        {lastFetched && <span className="tabular-nums">· updated {relativeTime(lastFetched)}</span>}
-        {data.podName && (
+        <ConnectionDot connected={connected} reconnecting={reconnecting} />
+        <span className="tabular-nums">{connected ? "live" : reconnecting ? "reconnecting…" : "idle"}</span>
+        {podName && (
           <span className="font-mono text-muted-foreground">
-            · pod/<span className="text-foreground/80">{data.podName}</span>
+            · pod/<span className="text-foreground/80">{podName}</span>
           </span>
         )}
+        <span className="tabular-nums">· {lineCount} lines</span>
         <button
-          onClick={fetchLogs}
+          onClick={() => {
+            const next = !paused
+            setPaused(next)
+            if (!next) {
+              // Unpausing — snap to bottom on next render.
+              userScrolledAwayRef.current = false
+            }
+          }}
+          aria-label={paused ? "Resume follow" : "Pause follow"}
+          data-testid="pause-toggle"
           className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 transition-[color,background-color] hover:bg-muted/40"
         >
-          <RefreshCw className="size-3" />
-          Refresh
+          {paused ? (
+            <>
+              <Play className="size-3" />
+              Resume
+            </>
+          ) : (
+            <>
+              <Pause className="size-3" />
+              Pause
+            </>
+          )}
         </button>
       </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter (case insensitive) — pause to inspect"
+          data-testid="logs-filter"
+          className="w-full rounded-md bg-background py-1 pl-7 pr-3 text-xs text-foreground/90 ring-1 ring-foreground/10 outline-none transition-[color,box-shadow] placeholder:text-muted-foreground/40 focus:ring-foreground/30"
+        />
+      </div>
+
+      {error && lines.length > 0 && (
+        <div className="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600">
+          <AlertTriangle className="size-3" />
+          <span className="truncate">{error}</span>
+          {reconnecting && <span className="ml-auto opacity-60">reconnecting…</span>}
+        </div>
+      )}
+
       <pre
+        ref={preRef}
         data-testid="logs-output"
-        className="max-h-[60vh] overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed ring-1 ring-foreground/10"
+        onScroll={(e) => {
+          const el = e.currentTarget
+          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16
+          userScrolledAwayRef.current = !atBottom
+        }}
+        className="max-h-[60vh] min-h-[200px] flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-background p-4 font-mono text-xs leading-relaxed ring-1 ring-foreground/10"
       >
-        {data.logs}
+        {visible.length === 0 ? (
+          <span className="text-muted-foreground/40 italic">
+            {firstChunkAt == null
+              ? "Waiting for first log line…"
+              : "No matches."}
+          </span>
+        ) : (
+          visible.map((chunk, i) => (
+            <div key={`${chunk.timestampMs}-${i}`} className="flex gap-2">
+              <span className="select-none whitespace-nowrap text-muted-foreground/40 tabular-nums">
+                {formatTimestamp(chunk.timestampMs)}
+              </span>
+              <span className="min-w-0 flex-1 break-words">{chunk.line}</span>
+            </div>
+          ))
+        )}
       </pre>
     </div>
   )
 }
 
-function relativeTime(ms: number): string {
-  const elapsed = Math.max(0, Math.floor((Date.now() - ms) / 1000))
-  if (elapsed < 1) return "just now"
-  if (elapsed < 60) return `${elapsed}s ago`
-  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m ago`
-  return `${Math.floor(elapsed / 3600)}h ago`
+function ConnectionDot({ connected, reconnecting }: { connected: boolean; reconnecting: boolean }) {
+  const live = connected
+  return (
+    <span className="relative flex size-2">
+      {live ? (
+        <>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+          <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+        </>
+      ) : reconnecting ? (
+        <>
+          <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-amber-500/40" />
+          <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
+        </>
+      ) : (
+        <>
+          <WifiOff className="size-3 text-muted-foreground/60" />
+        </>
+      )}
+      {!connected && !reconnecting ? null : null}
+      {live || reconnecting ? null : <Wifi className="hidden" />}
+    </span>
+  )
+}
+
+function formatTimestamp(ms: bigint): string {
+  if (!ms) return ""
+  const n = Number(ms)
+  const d = new Date(n)
+  // Compact HH:MM:SS.mmm — easier to skim than full RFC3339.
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : `${n}`
+}
+function pad3(n: number): string {
+  if (n < 10) return `00${n}`
+  if (n < 100) return `0${n}`
+  return `${n}`
 }

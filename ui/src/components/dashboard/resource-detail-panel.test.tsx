@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render, screen, waitFor, act } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel"
+import type { LogChunk } from "@/gen/paprika/v1/api_pb"
 
 // Mock the Connect RPC client.
 const mockClient = vi.hoisted(() => ({
   getResource: vi.fn(),
   getResourceLogs: vi.fn(),
   getResourceTreeDetailed: vi.fn(),
+  streamResourceLogs: vi.fn(),
 }))
 
 vi.mock("@connectrpc/connect-web", () => ({ createConnectTransport: vi.fn(() => ({})) }))
@@ -26,6 +28,11 @@ vi.mock("lucide-react", () => {
     AlertTriangle: Icon,
     Terminal: Icon,
     RefreshCw: Icon,
+    Pause: Icon,
+    Play: Icon,
+    Search: Icon,
+    Wifi: Icon,
+    WifiOff: Icon,
   }
 })
 
@@ -38,13 +45,52 @@ const resource = {
   healthMessage: "All good",
 }
 
+/**
+ * Build an async iterable that yields the given items lazily and never
+ * completes (until break). Mimics the Connect server-streaming iterable
+ * shape closely enough for test purposes.
+ */
+function asyncIter<T>(items: T[]): AsyncIterable<T> {
+  let i = 0
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next() {
+          if (i >= items.length) {
+            return new Promise<IteratorResult<T>>(() => {}) // never resolves
+          }
+          return Promise.resolve({ value: items[i++], done: false })
+        },
+        async return(): Promise<IteratorResult<T>> {
+          return { value: undefined as unknown as T, done: true }
+        },
+      }
+    },
+  }
+}
+
+function emptyIter(): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        async next(): Promise<IteratorResult<never>> {
+          return { value: undefined as never, done: true }
+        },
+        async return(): Promise<IteratorResult<never>> {
+          return { value: undefined as never, done: true }
+        },
+      }
+    },
+  }
+}
+
 describe("ResourceDetailPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it("shows loading state while fetching", () => {
-    mockClient.getResource.mockReturnValue(new Promise(() => {})) // never resolves
+    mockClient.getResource.mockReturnValue(new Promise(() => {}))
     render(
       <ResourceDetailPanel
         applicationNamespace="test-ns"
@@ -53,7 +99,6 @@ describe("ResourceDetailPanel", () => {
         onClose={vi.fn()}
       />,
     )
-    // The panel should show the resource name in the header.
     expect(screen.getByText("Deployment")).toBeInTheDocument()
     expect(screen.getByText("/demo-deploy")).toBeInTheDocument()
   })
@@ -81,7 +126,6 @@ describe("ResourceDetailPanel", () => {
       />,
     )
 
-    // Wait for data to load and diff to render. Each diff line is in its own div.
     await waitFor(() => {
       expect(screen.getByText(/replicas: 1/)).toBeInTheDocument()
     })
@@ -143,7 +187,6 @@ describe("ResourceDetailPanel", () => {
       />,
     )
 
-    // Click the Events tab.
     await waitFor(() => {
       expect(screen.getByText("Diff")).toBeInTheDocument()
     })
@@ -200,94 +243,132 @@ describe("ResourceDetailPanel", () => {
       expect(screen.getByText("Deployment")).toBeInTheDocument()
     })
 
-    // Click the backdrop overlay (first child div).
     const backdrop = container.querySelector(".fixed.inset-0")
     await userEvent.click(backdrop!)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it("shows logs tab and renders fetched logs", async () => {
-    const user = userEvent.setup()
-    mockClient.getResource.mockResolvedValue({
-      kind: "Deployment",
-      name: "demo-deploy",
-      namespace: "test-ns",
-      syncStatus: "Synced",
-      healthStatus: "Healthy",
-      healthMessage: "",
-      liveManifest: "",
-      desiredManifest: "",
-      diff: "",
-      events: [],
-    })
-    mockClient.getResourceLogs.mockResolvedValue({
-      podName: "demo-deploy-pod",
-      containerName: "app",
-      containers: ["app"],
-      logs: "INFO starting\nINFO ready\n",
-      error: "",
+  describe("LogsTab (streaming)", () => {
+    beforeEach(() => {
+      mockClient.getResource.mockResolvedValue({
+        kind: "Deployment",
+        name: "demo-deploy",
+        namespace: "test-ns",
+        syncStatus: "Synced",
+        healthStatus: "Healthy",
+        healthMessage: "",
+        liveManifest: "",
+        desiredManifest: "",
+        diff: "",
+        events: [],
+      })
+      mockClient.streamResourceLogs.mockReturnValue(emptyIter())
     })
 
-    render(
-      <ResourceDetailPanel
-        applicationNamespace="test-ns"
-        applicationName="demo-app"
-        resource={resource}
-        onClose={vi.fn()}
-      />,
-    )
+    it("subscribes to streamResourceLogs when Logs tab opens", async () => {
+      const user = userEvent.setup()
+      render(
+        <ResourceDetailPanel
+          applicationNamespace="test-ns"
+          applicationName="demo-app"
+          resource={resource}
+          onClose={vi.fn()}
+        />,
+      )
+      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+      await user.click(screen.getByText("Logs"))
 
-    await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-    await user.click(screen.getByText("Logs"))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("logs-output")).toHaveTextContent(/starting/)
-    })
-    expect(mockClient.getResourceLogs).toHaveBeenCalledWith(
-      expect.objectContaining({
-        resourceKind: "Deployment",
-        resourceName: "demo-deploy",
-        tailLines: 100,
-      }),
-    )
-  })
-
-  it("renders error message when logs API returns error field", async () => {
-    const user = userEvent.setup()
-    mockClient.getResource.mockResolvedValue({
-      kind: "ConfigMap",
-      name: "demo-cm",
-      namespace: "test-ns",
-      syncStatus: "Synced",
-      healthStatus: "Healthy",
-      healthMessage: "",
-      liveManifest: "",
-      desiredManifest: "",
-      diff: "",
-      events: [],
-    })
-    mockClient.getResourceLogs.mockResolvedValue({
-      podName: "",
-      containerName: "",
-      containers: [],
-      logs: "",
-      error: "logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job",
+      expect(mockClient.streamResourceLogs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resourceKind: "Deployment",
+          resourceName: "demo-deploy",
+          resourceNamespace: "test-ns",
+          follow: true,
+        }),
+      )
     })
 
-    render(
-      <ResourceDetailPanel
-        applicationNamespace="test-ns"
-        applicationName="demo-app"
-        resource={{ ...resource, kind: "ConfigMap", name: "demo-cm" }}
-        onClose={vi.fn()}
-      />,
-    )
+    it("renders each streamed chunk line", async () => {
+      const user = userEvent.setup()
+      const chunks: LogChunk[] = [
+        { podName: "demo-deploy-pod", containerName: "app", line: "starting up", timestampMs: 1 },
+        { podName: "demo-deploy-pod", containerName: "app", line: "ready", timestampMs: 2 },
+      ]
+      mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
 
-    await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-    await user.click(screen.getByText("Logs"))
+      render(
+        <ResourceDetailPanel
+          applicationNamespace="test-ns"
+          applicationName="demo-app"
+          resource={resource}
+          onClose={vi.fn()}
+        />,
+      )
+      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+      await user.click(screen.getByText("Logs"))
 
-    await waitFor(() => {
-      expect(screen.getByText(/only available for/i)).toBeInTheDocument()
+      const output = await screen.findByTestId("logs-output")
+      await waitFor(() => {
+        expect(output).toHaveTextContent(/starting up/)
+        expect(output).toHaveTextContent(/ready/)
+      })
+    })
+
+    it("filter input narrows visible lines", async () => {
+      const user = userEvent.setup()
+      const chunks: LogChunk[] = [
+        { podName: "p", containerName: "c", line: "hello", timestampMs: 1 },
+        { podName: "p", containerName: "c", line: "world", timestampMs: 2 },
+        { podName: "p", containerName: "c", line: "hello again", timestampMs: 3 },
+      ]
+      mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
+
+      render(
+        <ResourceDetailPanel
+          applicationNamespace="test-ns"
+          applicationName="demo-app"
+          resource={resource}
+          onClose={vi.fn()}
+        />,
+      )
+      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+      await user.click(screen.getByText("Logs"))
+
+      await waitFor(() => expect(screen.getByTestId("logs-output")).toHaveTextContent(/again/))
+
+      const input = screen.getByTestId("logs-filter") as HTMLInputElement
+      await user.type(input, "hello")
+
+      const output = await screen.findByTestId("logs-output")
+      await waitFor(() => {
+        expect(output).not.toHaveTextContent(/world/)
+      })
+      // The visible buffer should still contain hello-related lines, but never "world".
+      expect(output).toHaveTextContent(/hello/)
+    })
+
+    it("pause toggle disables auto-scroll without interrupting stream", async () => {
+      const user = userEvent.setup()
+      const chunks: LogChunk[] = [{ podName: "p", containerName: "c", line: "one", timestampMs: 1 }]
+      mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
+
+      render(
+        <ResourceDetailPanel
+          applicationNamespace="test-ns"
+          applicationName="demo-app"
+          resource={resource}
+          onClose={vi.fn()}
+        />,
+      )
+      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+      await user.click(screen.getByText("Logs"))
+      await waitFor(() => expect(screen.getByTestId("logs-output")).toHaveTextContent(/one/))
+
+      await user.click(screen.getByTestId("pause-toggle"))
+      // The toggle label switches — confirming the pause state took effect.
+      expect(screen.getByTestId("pause-toggle")).toHaveTextContent(/resume/i)
+      // The stream is still open and the chunks are visible.
+      expect(screen.getByTestId("logs-output")).toHaveTextContent(/one/)
     })
   })
 })
