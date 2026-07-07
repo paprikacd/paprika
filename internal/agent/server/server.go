@@ -751,6 +751,12 @@ func (s *Server) GetResource(ctx context.Context, _ *connect.Request[paprikav1.G
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getResource is not implemented on the agent"))
 }
 
+// GetResourceTree is not implemented by the agent.
+func (s *Server) GetResourceTree(ctx context.Context, _ *connect.Request[paprikav1.GetResourceTreeRequest]) (*connect.Response[paprikav1.GetResourceTreeResponse], error) {
+	log.FromContext(ctx).Info("GetResourceTree not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getResourceTree is not implemented on the agent"))
+}
+
 // GetArtifact is not implemented by the agent.
 func (s *Server) GetArtifact(ctx context.Context, _ *connect.Request[paprikav1.GetArtifactRequest]) (*connect.Response[paprikav1.GetArtifactResponse], error) {
 	log.FromContext(ctx).Info("GetArtifact not implemented on agent")

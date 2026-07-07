@@ -21,6 +21,8 @@ import {
   Stethoscope,
   GitBranch as GitBranchIcon,
   Layers,
+  Network,
+  List,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,7 @@ import {
   type MergedResource,
 } from "@/components/dashboard/resource-table";
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel";
+import { ResourceGraph, type ResourceGraphNode } from "@/components/dashboard/resource-graph";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, Release } from "@/gen/paprika/v1/api_pb";
@@ -127,6 +130,8 @@ function ApplicationDetail() {
   const [rollingBack, setRollingBack] = useState<string | null>(null);
   const [actingGate, setActingGate] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<MergedResource | null>(null);
+  const [viewMode, setViewMode] = useState<"graph" | "list">("graph");
+  const [treeNodes, setTreeNodes] = useState<ResourceGraphNode[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!namespace || !name) return;
@@ -165,6 +170,15 @@ function ApplicationDetail() {
       if (debounce) clearTimeout(debounce);
     };
   }, [fetchData]);
+
+  // Fetch resource tree when application is loaded.
+  useEffect(() => {
+    if (!namespace || !name) return;
+    client.getResourceTree({ namespace, name }).then((res) => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTreeNodes(res.nodes as unknown as ResourceGraphNode[])
+    }).catch(() => {})
+  }, [namespace, name, application?.phase, application?.outOfSync]);
 
   const filteredReleases = useMemo(
     () =>
@@ -334,21 +348,76 @@ function ApplicationDetail() {
           {application.resources && application.resources.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Boxes className="h-5 w-5" />
-                  Managed Resources
-                </CardTitle>
-                <CardDescription>
-                  {application.resources.length} resource{application.resources.length === 1 ? "" : "s"} ·{" "}
-                  <span className="tabular-nums">{application.outOfSync}</span> out of sync ·{" "}
-                  <span className="tabular-nums">{application.prunedResources}</span> pruned
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Boxes className="h-5 w-5" />
+                      Managed Resources
+                    </CardTitle>
+                    <CardDescription>
+                      {application.resources.length} resource{application.resources.length === 1 ? "" : "s"} ·{" "}
+                      <span className="tabular-nums">{application.outOfSync}</span> out of sync ·{" "}
+                      <span className="tabular-nums">{application.prunedResources}</span> pruned
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-0.5 ring-1 ring-foreground/5">
+                    <button
+                      onClick={() => setViewMode("graph")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-[color,background-color] ${
+                        viewMode === "graph" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Network className="size-3.5" />
+                      Graph
+                    </button>
+                    <button
+                      onClick={() => setViewMode("list")}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-[color,background-color] ${
+                        viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <List className="size-3.5" />
+                      List
+                    </button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
-                <ResourceTable
-                  resources={mergeResources(application)}
-                  onSelect={setSelectedResource}
-                />
+                {viewMode === "graph" ? (
+                  <ResourceGraph
+                    nodes={
+                      treeNodes.length > 0
+                        ? treeNodes
+                        : mergeResources(application).map((r) => ({
+                            kind: r.kind,
+                            name: r.name,
+                            namespace: r.namespace,
+                            syncStatus: r.syncStatus,
+                            health: r.health,
+                            healthMessage: r.healthMessage,
+                            parentKind: "",
+                            parentName: "",
+                            uid: "",
+                            managed: true,
+                          }))
+                    }
+                    onSelectNode={(n) =>
+                      setSelectedResource({
+                        kind: n.kind,
+                        name: n.name,
+                        namespace: n.namespace,
+                        syncStatus: n.syncStatus,
+                        health: n.health,
+                        healthMessage: n.healthMessage,
+                      })
+                    }
+                  />
+                ) : (
+                  <ResourceTable
+                    resources={mergeResources(application)}
+                    onSelect={setSelectedResource}
+                  />
+                )}
               </CardContent>
             </Card>
           )}

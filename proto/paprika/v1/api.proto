@@ -610,6 +610,28 @@ message GetResourceResponse {
   repeated KubernetesEvent events = 10;
 }
 
+message GetResourceTreeRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ResourceNode {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string sync_status = 4;
+  string health = 5;
+  string health_message = 6;
+  string parent_kind = 7;
+  string parent_name = 8;
+  string uid = 9;
+  bool managed = 10;
+}
+
+message GetResourceTreeResponse {
+  repeated ResourceNode nodes = 1;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -640,4 +662,5 @@ service PaprikaService {
   rpc CancelPipeline(CancelPipelineRequest) returns (CancelPipelineResponse);
   rpc GetStepLogs(GetStepLogsRequest) returns (GetStepLogsResponse);
   rpc GetResource(GetResourceRequest) returns (GetResourceResponse);
+  rpc GetResourceTree(GetResourceTreeRequest) returns (GetResourceTreeResponse);
 }

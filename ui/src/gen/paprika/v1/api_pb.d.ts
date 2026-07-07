@@ -3442,3 +3442,125 @@ export declare class GetResourceResponse extends Message<GetResourceResponse> {
   static equals(a: GetResourceResponse | PlainMessage<GetResourceResponse> | undefined, b: GetResourceResponse | PlainMessage<GetResourceResponse> | undefined): boolean;
 }
 
+/**
+ * @generated from message paprika.v1.GetResourceTreeRequest
+ */
+export declare class GetResourceTreeRequest extends Message<GetResourceTreeRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetResourceTreeRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetResourceTreeRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetResourceTreeRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetResourceTreeRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetResourceTreeRequest;
+
+  static equals(a: GetResourceTreeRequest | PlainMessage<GetResourceTreeRequest> | undefined, b: GetResourceTreeRequest | PlainMessage<GetResourceTreeRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResourceNode
+ */
+export declare class ResourceNode extends Message<ResourceNode> {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 3;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string sync_status = 4;
+   */
+  syncStatus: string;
+
+  /**
+   * @generated from field: string health = 5;
+   */
+  health: string;
+
+  /**
+   * @generated from field: string health_message = 6;
+   */
+  healthMessage: string;
+
+  /**
+   * @generated from field: string parent_kind = 7;
+   */
+  parentKind: string;
+
+  /**
+   * @generated from field: string parent_name = 8;
+   */
+  parentName: string;
+
+  /**
+   * @generated from field: string uid = 9;
+   */
+  uid: string;
+
+  /**
+   * @generated from field: bool managed = 10;
+   */
+  managed: boolean;
+
+  constructor(data?: PartialMessage<ResourceNode>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResourceNode";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResourceNode;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResourceNode;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResourceNode;
+
+  static equals(a: ResourceNode | PlainMessage<ResourceNode> | undefined, b: ResourceNode | PlainMessage<ResourceNode> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetResourceTreeResponse
+ */
+export declare class GetResourceTreeResponse extends Message<GetResourceTreeResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.ResourceNode nodes = 1;
+   */
+  nodes: ResourceNode[];
+
+  constructor(data?: PartialMessage<GetResourceTreeResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetResourceTreeResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetResourceTreeResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetResourceTreeResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetResourceTreeResponse;
+
+  static equals(a: GetResourceTreeResponse | PlainMessage<GetResourceTreeResponse> | undefined, b: GetResourceTreeResponse | PlainMessage<GetResourceTreeResponse> | undefined): boolean;
+}
+
