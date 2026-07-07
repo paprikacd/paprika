@@ -6,6 +6,8 @@ import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-pane
 // Mock the Connect RPC client.
 const mockClient = vi.hoisted(() => ({
   getResource: vi.fn(),
+  getResourceLogs: vi.fn(),
+  getResourceTreeDetailed: vi.fn(),
 }))
 
 vi.mock("@connectrpc/connect-web", () => ({ createConnectTransport: vi.fn(() => ({})) }))
@@ -22,6 +24,8 @@ vi.mock("lucide-react", () => {
     Loader2: Icon,
     CheckCircle2: Icon,
     AlertTriangle: Icon,
+    Terminal: Icon,
+    RefreshCw: Icon,
   }
 })
 
@@ -200,5 +204,90 @@ describe("ResourceDetailPanel", () => {
     const backdrop = container.querySelector(".fixed.inset-0")
     await userEvent.click(backdrop!)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it("shows logs tab and renders fetched logs", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockResolvedValue({
+      kind: "Deployment",
+      name: "demo-deploy",
+      namespace: "test-ns",
+      syncStatus: "Synced",
+      healthStatus: "Healthy",
+      healthMessage: "",
+      liveManifest: "",
+      desiredManifest: "",
+      diff: "",
+      events: [],
+    })
+    mockClient.getResourceLogs.mockResolvedValue({
+      podName: "demo-deploy-pod",
+      containerName: "app",
+      containers: ["app"],
+      logs: "INFO starting\nINFO ready\n",
+      error: "",
+    })
+
+    render(
+      <ResourceDetailPanel
+        applicationNamespace="test-ns"
+        applicationName="demo-app"
+        resource={resource}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+    await user.click(screen.getByText("Logs"))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("logs-output")).toHaveTextContent(/starting/)
+    })
+    expect(mockClient.getResourceLogs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resourceKind: "Deployment",
+        resourceName: "demo-deploy",
+        tailLines: 100,
+      }),
+    )
+  })
+
+  it("renders error message when logs API returns error field", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockResolvedValue({
+      kind: "ConfigMap",
+      name: "demo-cm",
+      namespace: "test-ns",
+      syncStatus: "Synced",
+      healthStatus: "Healthy",
+      healthMessage: "",
+      liveManifest: "",
+      desiredManifest: "",
+      diff: "",
+      events: [],
+    })
+    mockClient.getResourceLogs.mockResolvedValue({
+      podName: "",
+      containerName: "",
+      containers: [],
+      logs: "",
+      error: "logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job",
+    })
+
+    render(
+      <ResourceDetailPanel
+        applicationNamespace="test-ns"
+        applicationName="demo-app"
+        resource={{ ...resource, kind: "ConfigMap", name: "demo-cm" }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
+    await user.click(screen.getByText("Logs"))
+
+    await waitFor(() => {
+      expect(screen.getByText(/only available for/i)).toBeInTheDocument()
+    })
   })
 })

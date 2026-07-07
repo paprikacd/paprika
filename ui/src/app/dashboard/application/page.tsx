@@ -45,10 +45,11 @@ import {
 } from "@/components/ui/table";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
-  ResourceTable,
-  mergeResources,
+  ResourceListTable,
+  type FlatTreeNode as ResourceTableNode,
+  mergeResourcesFromApplication,
   type MergedResource,
-} from "@/components/dashboard/resource-table";
+} from "@/components/dashboard/resource-list-table";
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel";
 import { ResourceGraph, type ResourceGraphNode } from "@/components/dashboard/resource-graph";
 
@@ -132,6 +133,7 @@ function ApplicationDetail() {
   const [selectedResource, setSelectedResource] = useState<MergedResource | null>(null);
   const [viewMode, setViewMode] = useState<"graph" | "list">("graph");
   const [treeNodes, setTreeNodes] = useState<ResourceGraphNode[]>([]);
+  const [detailedTreeNodes, setDetailedTreeNodes] = useState<ResourceTableNode[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!namespace || !name) return;
@@ -179,6 +181,12 @@ function ApplicationDetail() {
       setTreeNodes(res.nodes as unknown as ResourceGraphNode[])
     }).catch(() => {
       console.warn("getResourceTree failed — resource graph will fall back to flat list")
+    })
+    client.getResourceTreeDetailed({ applicationNamespace: namespace, applicationName: name }).then((res) => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDetailedTreeNodes(res.nodes as unknown as ResourceTableNode[])
+    }).catch(() => {
+      console.warn("getResourceTreeDetailed failed — list view will fall back to merged resources")
     })
   }, [namespace, name, application?.phase, application?.outOfSync]);
 
@@ -389,7 +397,7 @@ function ApplicationDetail() {
                     nodes={
                       treeNodes.length > 0
                         ? treeNodes
-                        : mergeResources(application).map((r) => ({
+                        : mergeResourcesFromApplication(application).map((r) => ({
                             kind: r.kind,
                             name: r.name,
                             namespace: r.namespace,
@@ -414,9 +422,30 @@ function ApplicationDetail() {
                     }
                   />
                 ) : (
-                  <ResourceTable
-                    resources={mergeResources(application)}
-                    onSelect={setSelectedResource}
+                  <ResourceListTable
+                    nodes={
+                      detailedTreeNodes.length > 0
+                        ? detailedTreeNodes
+                        : mergeResourcesFromApplication(application).map((r) => ({
+                            kind: r.kind,
+                            name: r.name,
+                            namespace: r.namespace,
+                            syncStatus: r.syncStatus,
+                            health: r.health,
+                            healthMessage: r.healthMessage,
+                            managed: true,
+                          }))
+                    }
+                    onSelect={(n) =>
+                      setSelectedResource({
+                        kind: n.kind,
+                        name: n.name,
+                        namespace: n.namespace,
+                        syncStatus: n.syncStatus,
+                        health: n.health,
+                        healthMessage: n.healthMessage,
+                      })
+                    }
                   />
                 )}
               </CardContent>

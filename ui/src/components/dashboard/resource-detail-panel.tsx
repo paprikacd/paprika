@@ -1,23 +1,26 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
-import type { GetResourceResponse, KubernetesEvent } from "@/gen/paprika/v1/api_pb"
-import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle } from "lucide-react"
+import type { GetResourceResponse, GetResourceLogsResponse, KubernetesEvent } from "@/gen/paprika/v1/api_pb"
+import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw } from "lucide-react"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
-type Tab = "live" | "desired" | "diff" | "events"
+type Tab = "live" | "desired" | "diff" | "events" | "logs"
 
 const tabs: { id: Tab; label: string; icon: typeof FileText }[] = [
   { id: "diff", label: "Diff", icon: GitCompare },
   { id: "live", label: "Live", icon: FileText },
   { id: "desired", label: "Desired", icon: FileText },
   { id: "events", label: "Events", icon: ListChecks },
+  { id: "logs", label: "Logs", icon: Terminal },
 ]
+
+const LOG_POLL_INTERVAL_MS = 5000
 
 export function ResourceDetailPanel({
   applicationNamespace,
@@ -122,7 +125,14 @@ export function ResourceDetailPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-auto px-6 py-4">
-          {loading ? (
+          {tab === "logs" ? (
+            <LogsTab
+              applicationNamespace={applicationNamespace}
+              applicationName={applicationName}
+              resource={resource}
+              isActive={tab === "logs"}
+            />
+          ) : loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
@@ -228,4 +238,132 @@ function EventsView({ events }: { events: KubernetesEvent[] }) {
       })}
     </div>
   )
+}
+
+function LogsTab({
+  applicationNamespace,
+  applicationName,
+  resource,
+  isActive,
+}: {
+  applicationNamespace: string
+  applicationName: string
+  resource: { kind: string; name: string; namespace: string }
+  isActive: boolean
+}) {
+  const [data, setData] = useState<GetResourceLogsResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [lastFetched, setLastFetched] = useState<number | null>(null)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const fetchLogs = async () => {
+    try {
+      const res = await client.getResourceLogs({
+        applicationNamespace,
+        applicationName,
+        resourceKind: resource.kind,
+        resourceName: resource.name,
+        resourceNamespace: resource.namespace,
+        tailLines: 100,
+      })
+      setData(res)
+      setLastFetched(Date.now())
+    } catch (err) {
+      console.warn("getResourceLogs failed:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isActive) return
+    setLoading(true)
+    fetchLogs()
+    intervalRef.current = setInterval(fetchLogs, LOG_POLL_INTERVAL_MS)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-12 text-center">
+        <Terminal className="size-5 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No log data.</p>
+      </div>
+    )
+  }
+
+  if (data.error) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-12 text-center">
+        <AlertTriangle className="size-5 text-amber-500" />
+        <p className="text-sm text-muted-foreground">{data.error}</p>
+        <button
+          onClick={fetchLogs}
+          className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-foreground/80 transition-[color,background-color] hover:bg-muted/40"
+        >
+          <RefreshCw className="size-3" />
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  if (!data.logs) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-12 text-center">
+        <Terminal className="size-5 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No log output yet.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2" data-testid="logs-tab">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="relative flex size-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
+          <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+        </span>
+        <span className="tabular-nums">Auto-refreshing every {LOG_POLL_INTERVAL_MS / 1000}s</span>
+        {lastFetched && <span className="tabular-nums">· updated {relativeTime(lastFetched)}</span>}
+        {data.podName && (
+          <span className="font-mono text-muted-foreground">
+            · pod/<span className="text-foreground/80">{data.podName}</span>
+          </span>
+        )}
+        <button
+          onClick={fetchLogs}
+          className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 transition-[color,background-color] hover:bg-muted/40"
+        >
+          <RefreshCw className="size-3" />
+          Refresh
+        </button>
+      </div>
+      <pre
+        data-testid="logs-output"
+        className="max-h-[60vh] overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed ring-1 ring-foreground/10"
+      >
+        {data.logs}
+      </pre>
+    </div>
+  )
+}
+
+function relativeTime(ms: number): string {
+  const elapsed = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+  if (elapsed < 1) return "just now"
+  if (elapsed < 60) return `${elapsed}s ago`
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m ago`
+  return `${Math.floor(elapsed / 3600)}h ago`
 }
