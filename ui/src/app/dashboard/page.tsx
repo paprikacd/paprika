@@ -8,6 +8,7 @@ import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
+import type { Rollout } from "@/gen/paprika/v1/api_pb"
 import type { Application } from "@/gen/paprika/v1/api_pb"
 import type { ApplicationSet } from "@/gen/paprika/v1/api_pb"
 import type { Policy } from "@/gen/paprika/v1/api_pb"
@@ -135,6 +136,7 @@ export default function DashboardPage() {
   const [applications, setApplications] = useState<Application[]>([])
   const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
+  const [rollouts, setRollouts] = useState<Rollout[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const { setConnected } = useConnection()
@@ -148,6 +150,9 @@ export default function DashboardPage() {
   const fetchApplications = useCallback(() =>
     client.listApplications({}).then(r => setApplications(r.applications)), [])
 
+  const fetchRollouts = useCallback(() =>
+    client.listRollouts({}).then(r => setRollouts(r.rollouts)), [])
+
   const fetchApplicationSets = useCallback(() =>
     client.listApplicationSets({}).then(r => setApplicationSets(r.applicationsets)), [])
 
@@ -159,8 +164,9 @@ export default function DashboardPage() {
       client.listApplications({}),
       client.listApplicationSets({}),
       client.listPolicies({}),
+      client.listRollouts({}),
     ])
-      .then(([pr, rr, ar, asr, por]) => {
+      .then(([pr, rr, ar, asr, por, ror]) => {
         let anySuccess = false
         const next: Record<string, string> = {}
 
@@ -199,6 +205,13 @@ export default function DashboardPage() {
           next.policies = por.reason?.message ?? "Failed to load policies"
         }
 
+        if (ror.status === "fulfilled") {
+          setRollouts(ror.value.rollouts)
+          anySuccess = true
+        } else {
+          next.rollouts = ror.reason?.message ?? "Failed to load rollouts"
+        }
+
         setErrors(next)
         setConnected(anySuccess)
       })
@@ -208,6 +221,9 @@ export default function DashboardPage() {
 
   const refetchByEvent = useCallback((eventType: string) => {
     switch (eventType) {
+      case "pipeline":
+        fetchPipelines()
+        break
       case "application":
         fetchApplications()
         fetchApplicationSets()
@@ -215,11 +231,15 @@ export default function DashboardPage() {
       case "release":
         fetchReleases()
         fetchApplications()
+        fetchRollouts()
+        break
+      case "rollout":
+        fetchRollouts()
         break
       default:
         fetchData()
     }
-  }, [fetchApplications, fetchApplicationSets, fetchReleases, fetchData])
+  }, [fetchApplications, fetchApplicationSets, fetchPipelines, fetchReleases, fetchRollouts, fetchData])
 
   const debounceRef = useRef<number | null>(null)
   const sseConnectedRef = useRef(true)
@@ -283,6 +303,7 @@ export default function DashboardPage() {
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
   const failedCount = pipelines.filter((p) => p.phase === "Failed").length
   const appCount = applications.length
+  const activeRolloutCount = rollouts.filter((r) => r.phase === "Progressing" || r.phase === "Paused").length
   const releaseByName = new Map(releases.map((r) => [r.name, r]))
 
   return (
@@ -303,16 +324,18 @@ export default function DashboardPage() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
-          className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <StatCard icon={GitBranch} label="Pipelines" value={pipelines.length} loading={loading} />
           <StatCard icon={ListChecks} label="Running" value={runningCount} loading={loading} />
           <StatCard icon={Layers} label="Succeeded" value={succeededCount} loading={loading} />
           <StatCard icon={Activity} label="Failed" value={failedCount} loading={loading} />
           <StatCard icon={Rocket} label="Applications" value={appCount} loading={loading} />
+          <StatCard icon={Activity} label="Rollouts" value={`${activeRolloutCount}/${rollouts.length}`} loading={loading} />
           <StatCard icon={FolderTree} label="App Sets" value={applicationSets.length} loading={loading} />
         </motion.div>
 
         <motion.section
+          id="pipelines"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
@@ -347,6 +370,7 @@ export default function DashboardPage() {
         </motion.section>
 
         <motion.section
+          id="applications"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}

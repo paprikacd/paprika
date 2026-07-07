@@ -10,8 +10,11 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
@@ -110,10 +113,12 @@ func setupGetResourceTest(t *testing.T) (*PaprikaServer, client.Client) {
 			Resources: []pipelinesv1alpha1.ResourceSync{
 				{Kind: "Deployment", Name: "demo-deployment", Namespace: "test-ns", Status: "Synced"},
 				{Kind: "Service", Name: "demo-service", Namespace: "test-ns", Status: "Synced"},
+				{Kind: "Widget", Name: "demo-widget", Namespace: "test-ns", Status: "Synced"},
 			},
 			ResourceHealth: []pipelinesv1alpha1.ResourceHealth{
 				{Kind: "Deployment", Name: "demo-deployment", Namespace: "test-ns", Health: "Healthy", Message: "Deployment has minimum availability"},
 				{Kind: "Service", Name: "demo-service", Namespace: "test-ns", Health: "Healthy"},
+				{Kind: "Widget", Name: "demo-widget", Namespace: "test-ns", Health: "Degraded", Message: "custom status failed"},
 			},
 		},
 	}
@@ -156,12 +161,34 @@ func setupGetResourceTest(t *testing.T) (*PaprikaServer, client.Client) {
 			},
 		},
 	}
+	liveWidget := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "example.io/v1",
+		"kind":       "Widget",
+		"metadata": map[string]any{
+			"name":        "demo-widget",
+			"namespace":   "test-ns",
+			"uid":         "widget-uid",
+			"labels":      map[string]any{"app.kubernetes.io/name": "demo"},
+			"annotations": map[string]any{"paprika.io/source": "test"},
+		},
+		"spec": map[string]any{"enabled": true},
+	}}
 
 	// Register built-in types so the dynamic fake client's RESTMapper can resolve GVRs.
 	dynScheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(dynScheme))
 
-	dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, liveDeployment)
+	dynClient := dynamicfake.NewSimpleDynamicClient(dynScheme, liveDeployment, liveWidget)
+
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+		{Group: "example.io", Version: "v1"},
+	})
+	mapper.AddSpecific(
+		schema.GroupVersionKind{Group: "example.io", Version: "v1", Kind: "Widget"},
+		schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"},
+		schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widget"},
+		meta.RESTScopeNamespace,
+	)
 
 	// Fake k8s clientset with events.
 	eventList := &corev1.EventList{
@@ -198,10 +225,41 @@ func setupGetResourceTest(t *testing.T) (*PaprikaServer, client.Client) {
 	srv := NewPaprikaServer(c, nil,
 		WithRenderer(&fakeRenderer{manifests: []byte(desiredManifests)}),
 		WithDynamicClient(dynClient),
+		WithRESTMapper(mapper),
 		WithK8sClient(k8sClient),
 	)
 
 	return srv, c
+}
+
+func TestGetResource_CustomResourceResolvedByRESTMapper(t *testing.T) {
+	ctx := context.Background()
+	srv, _ := setupGetResourceTest(t)
+
+	req := connect.NewRequest(&paprikav1.GetResourceRequest{
+		ApplicationNamespace: "test-ns",
+		ApplicationName:      "demo-app",
+		ResourceKind:         "Widget",
+		ResourceName:         "demo-widget",
+		ResourceNamespace:    "test-ns",
+	})
+
+	resp, err := srv.GetResource(ctx, req)
+	require.NoError(t, err)
+	require.NotNil(t, resp.Msg)
+
+	require.Equal(t, "Widget", resp.Msg.Kind)
+	require.Equal(t, "example.io/v1", resp.Msg.ApiVersion)
+	require.Equal(t, "example.io", resp.Msg.Group)
+	require.Equal(t, "v1", resp.Msg.Version)
+	require.Equal(t, "widgets", resp.Msg.Resource)
+	require.Equal(t, "widget-uid", resp.Msg.Uid)
+	require.Equal(t, "demo", resp.Msg.Labels["app.kubernetes.io/name"])
+	require.Equal(t, "test", resp.Msg.Annotations["paprika.io/source"])
+	require.Equal(t, "Synced", resp.Msg.SyncStatus)
+	require.Equal(t, "Degraded", resp.Msg.HealthStatus)
+	require.Contains(t, resp.Msg.LiveManifest, "kind: Widget")
+	require.Contains(t, resp.Msg.LiveManifest, "enabled: true")
 }
 
 func TestGetResource_Deployment(t *testing.T) {

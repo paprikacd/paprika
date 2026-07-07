@@ -29,6 +29,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Rollout } from "@/gen/paprika/v1/api_pb";
+import { RolloutDebugPanel } from "@/components/dashboard/rollout-debug-panel";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -85,7 +86,10 @@ function RolloutDetail() {
   }, [namespace, name]);
 
   useEffect(() => {
-    fetchData();
+    const timer = window.setTimeout(() => {
+      void fetchData();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchData]);
 
   const handlePromote = useCallback(async () => {
@@ -255,6 +259,8 @@ function RolloutDetail() {
               </DetailRow>
             </CardContent>
           </Card>
+
+          <RolloutDebugPanel rollout={rollout} />
 
           {rollout.conditions && rollout.conditions.length > 0 && (
             <Card>

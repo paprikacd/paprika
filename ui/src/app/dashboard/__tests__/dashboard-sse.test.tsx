@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, waitFor, act, screen } from "@testing-library/react"
+import type { ReactNode, SVGProps } from "react"
 import DashboardPage from "../page"
 
 // === MOCK CLIENT (hoisted so vi.mock factories can reference it) ===
@@ -10,6 +11,7 @@ const mockClient = vi.hoisted(() => ({
   listApplications: vi.fn().mockResolvedValue({ applications: [] }),
   listApplicationSets: vi.fn().mockResolvedValue({ applicationsets: [] }),
   listPolicies: vi.fn().mockResolvedValue({ policies: [] }),
+  listRollouts: vi.fn().mockResolvedValue({ rollouts: [] }),
 }))
 
 const mockSetConnected = vi.hoisted(() => vi.fn())
@@ -45,8 +47,8 @@ vi.mock("@/components/dashboard/application-card", () => ({
 }))
 
 vi.mock("@/components/ui/card", () => ({
-  Card: ({ children }: any) => <div data-testid="card">{children}</div>,
-  CardContent: ({ children }: any) => <div data-testid="card-content">{children}</div>,
+  Card: ({ children }: { children?: ReactNode }) => <div data-testid="card">{children}</div>,
+  CardContent: ({ children }: { children?: ReactNode }) => <div data-testid="card-content">{children}</div>,
 }))
 
 vi.mock("@/components/ui/status-badge", () => ({
@@ -58,7 +60,7 @@ vi.mock("@/components/notifications/toast-stack", () => ({
 }))
 
 vi.mock("lucide-react", () => {
-  const Icon = (props: any) => <svg data-testid="icon" {...props} />
+  const Icon = (props: SVGProps<SVGSVGElement>) => <svg data-testid="icon" {...props} />
   return {
     GitBranch: Icon,
     ListChecks: Icon,
@@ -78,20 +80,20 @@ function makeEventData(type: string) {
 }
 
 function makeSSEEvent(type: string) {
-  return { data: makeEventData(type) }
+  return new MessageEvent<string>("message", { data: makeEventData(type) })
 }
 
 function makeMalformedEvent() {
-  return { data: "not valid json" }
+  return new MessageEvent<string>("message", { data: "not valid json" })
 }
 
 // === TEST SUITE ===
 
 describe("Dashboard SSE incremental updates", () => {
   let mockEventSource: {
-    onopen: ((e: any) => void) | null
-    onmessage: ((e: any) => void) | null
-    onerror: ((e: any) => void) | null
+    onopen: ((e: Event) => void) | null
+    onmessage: ((e: MessageEvent<string>) => void) | null
+    onerror: ((e: Event) => void) | null
     close: ReturnType<typeof vi.fn>
   }
 
@@ -127,7 +129,7 @@ describe("Dashboard SSE incremental updates", () => {
   })
 
   describe("initial data load", () => {
-    it("calls all 5 RPCs on mount", async () => {
+    it("calls all 6 RPCs on mount", async () => {
       render(<DashboardPage />)
       await waitFor(() => {
         expect(mockClient.listPipelines).toHaveBeenCalledTimes(1)
@@ -135,6 +137,7 @@ describe("Dashboard SSE incremental updates", () => {
         expect(mockClient.listApplications).toHaveBeenCalledTimes(1)
         expect(mockClient.listApplicationSets).toHaveBeenCalledTimes(1)
         expect(mockClient.listPolicies).toHaveBeenCalledTimes(1)
+        expect(mockClient.listRollouts).toHaveBeenCalledTimes(1)
       })
     })
 
@@ -165,7 +168,7 @@ describe("Dashboard SSE incremental updates", () => {
       vi.clearAllMocks()
     }
 
-    async function fireSSEEvent(event: { data: string }) {
+    async function fireSSEEvent(event: MessageEvent<string>) {
       act(() => {
         mockEventSource.onmessage!(event)
       })
@@ -179,6 +182,7 @@ describe("Dashboard SSE incremental updates", () => {
           mockClient.listApplications,
           mockClient.listApplicationSets,
           mockClient.listPolicies,
+          mockClient.listRollouts,
         ]
         const anyCalled = allMocks.some((m) => m.mock.calls.length > 0)
         expect(anyCalled).toBe(true)
@@ -205,7 +209,7 @@ describe("Dashboard SSE incremental updates", () => {
       expect(mockClient.listPolicies).not.toHaveBeenCalled()
     })
 
-    it("routes audit event to full fetchData (all 5 RPCs)", async () => {
+    it("routes audit event to full fetchData (all 6 RPCs)", async () => {
       await renderAndWaitForLoad()
       await fireSSEEvent(makeSSEEvent("audit"))
       expect(mockClient.listPipelines).toHaveBeenCalled()
@@ -213,6 +217,7 @@ describe("Dashboard SSE incremental updates", () => {
       expect(mockClient.listApplications).toHaveBeenCalled()
       expect(mockClient.listApplicationSets).toHaveBeenCalled()
       expect(mockClient.listPolicies).toHaveBeenCalled()
+      expect(mockClient.listRollouts).toHaveBeenCalled()
     })
 
     it("routes unknown event type to full fetchData (default fallback)", async () => {
@@ -223,6 +228,7 @@ describe("Dashboard SSE incremental updates", () => {
       expect(mockClient.listApplications).toHaveBeenCalled()
       expect(mockClient.listApplicationSets).toHaveBeenCalled()
       expect(mockClient.listPolicies).toHaveBeenCalled()
+      expect(mockClient.listRollouts).toHaveBeenCalled()
     })
 
     it("routes malformed JSON event to full fetchData (defaults to audit)", async () => {
@@ -233,26 +239,29 @@ describe("Dashboard SSE incremental updates", () => {
       expect(mockClient.listApplications).toHaveBeenCalled()
       expect(mockClient.listApplicationSets).toHaveBeenCalled()
       expect(mockClient.listPolicies).toHaveBeenCalled()
+      expect(mockClient.listRollouts).toHaveBeenCalled()
     })
 
     it("routes JSON without type field to full fetchData (typeof check fails)", async () => {
       await renderAndWaitForLoad()
-      await fireSSEEvent({ data: JSON.stringify({ payload: {} }) })
+      await fireSSEEvent(new MessageEvent<string>("message", { data: JSON.stringify({ payload: {} }) }))
       expect(mockClient.listPipelines).toHaveBeenCalled()
       expect(mockClient.listReleases).toHaveBeenCalled()
       expect(mockClient.listApplications).toHaveBeenCalled()
       expect(mockClient.listApplicationSets).toHaveBeenCalled()
       expect(mockClient.listPolicies).toHaveBeenCalled()
+      expect(mockClient.listRollouts).toHaveBeenCalled()
     })
 
     it("routes JSON with non-string type field to full fetchData", async () => {
       await renderAndWaitForLoad()
-      await fireSSEEvent({ data: JSON.stringify({ type: 42 }) })
+      await fireSSEEvent(new MessageEvent<string>("message", { data: JSON.stringify({ type: 42 }) }))
       expect(mockClient.listPipelines).toHaveBeenCalled()
       expect(mockClient.listReleases).toHaveBeenCalled()
       expect(mockClient.listApplications).toHaveBeenCalled()
       expect(mockClient.listApplicationSets).toHaveBeenCalled()
       expect(mockClient.listPolicies).toHaveBeenCalled()
+      expect(mockClient.listRollouts).toHaveBeenCalled()
     })
   })
 

@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -201,6 +202,9 @@ func run(setupLog logr.Logger) error {
 	opts = append(opts, apiserver.WithK8sClient(k8sClientset))
 	if dc, dErr := dynamic.NewForConfig(k8sConfig); dErr == nil {
 		opts = append(opts, apiserver.WithDynamicClient(dc))
+	}
+	if mapper, mapperErr := apiutil.NewDynamicRESTMapper(k8sConfig, nil); mapperErr == nil {
+		opts = append(opts, apiserver.WithRESTMapper(mapper))
 	}
 
 	paprikaServer := apiserver.NewPaprikaServer(k8sClient, nil, opts...)

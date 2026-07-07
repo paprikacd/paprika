@@ -10,13 +10,13 @@ import { useStepArtifacts } from "@/lib/use-step-artifacts"
 import { Loader2 } from "lucide-react"
 
 function useElapsedMs(startedAt?: bigint) {
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(0)
   useEffect(() => {
     if (!startedAt) return
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [startedAt])
-  if (!startedAt) return null
+  if (!startedAt || now === 0) return null
   const startMs = Number(startedAt) * 1000
   if (now < startMs) return null
   return `${Math.floor((now - startMs) / 1000)}s`
@@ -43,6 +43,7 @@ export function StepDetailPanel({
 }: StepDetailPanelProps) {
   const stepName = step?.name ?? ""
   const stepArtifacts = useStepArtifacts(artifacts ?? [], stepName)
+  const elapsed = useElapsedMs(status?.startedAt)
 
   if (!step) {
     return (
@@ -53,7 +54,6 @@ export function StepDetailPanel({
   }
 
   const phase = status?.phase ?? ""
-  const elapsed = useElapsedMs(status?.startedAt)
 
   return (
     <div className="flex h-full flex-col gap-4 p-4">

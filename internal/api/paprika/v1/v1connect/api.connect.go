@@ -95,6 +95,12 @@ const (
 	// PaprikaServiceAbortRolloutProcedure is the fully-qualified name of the PaprikaService's
 	// AbortRollout RPC.
 	PaprikaServiceAbortRolloutProcedure = "/paprika.v1.PaprikaService/AbortRollout"
+	// PaprikaServiceListAnalysisRunsProcedure is the fully-qualified name of the PaprikaService's
+	// ListAnalysisRuns RPC.
+	PaprikaServiceListAnalysisRunsProcedure = "/paprika.v1.PaprikaService/ListAnalysisRuns"
+	// PaprikaServiceGetAnalysisRunProcedure is the fully-qualified name of the PaprikaService's
+	// GetAnalysisRun RPC.
+	PaprikaServiceGetAnalysisRunProcedure = "/paprika.v1.PaprikaService/GetAnalysisRun"
 	// PaprikaServiceGetPipelineProcedure is the fully-qualified name of the PaprikaService's
 	// GetPipeline RPC.
 	PaprikaServiceGetPipelineProcedure = "/paprika.v1.PaprikaService/GetPipeline"
@@ -161,6 +167,8 @@ type PaprikaServiceClient interface {
 	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
+	ListAnalysisRuns(context.Context, *connect.Request[v1.ListAnalysisRunsRequest]) (*connect.Response[v1.ListAnalysisRunsResponse], error)
+	GetAnalysisRun(context.Context, *connect.Request[v1.GetAnalysisRunRequest]) (*connect.Response[v1.GetAnalysisRunResponse], error)
 	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
 	GetArtifact(context.Context, *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error)
 	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
@@ -314,6 +322,18 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
 			connect.WithClientOptions(opts...),
 		),
+		listAnalysisRuns: connect.NewClient[v1.ListAnalysisRunsRequest, v1.ListAnalysisRunsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListAnalysisRunsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListAnalysisRuns")),
+			connect.WithClientOptions(opts...),
+		),
+		getAnalysisRun: connect.NewClient[v1.GetAnalysisRunRequest, v1.GetAnalysisRunResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetAnalysisRunProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetAnalysisRun")),
+			connect.WithClientOptions(opts...),
+		),
 		getPipeline: connect.NewClient[v1.GetPipelineRequest, v1.GetPipelineResponse](
 			httpClient,
 			baseURL+PaprikaServiceGetPipelineProcedure,
@@ -424,6 +444,8 @@ type paprikaServiceClient struct {
 	getRollout              *connect.Client[v1.GetRolloutRequest, v1.GetRolloutResponse]
 	promoteRollout          *connect.Client[v1.PromoteRolloutRequest, v1.PromoteRolloutResponse]
 	abortRollout            *connect.Client[v1.AbortRolloutRequest, v1.AbortRolloutResponse]
+	listAnalysisRuns        *connect.Client[v1.ListAnalysisRunsRequest, v1.ListAnalysisRunsResponse]
+	getAnalysisRun          *connect.Client[v1.GetAnalysisRunRequest, v1.GetAnalysisRunResponse]
 	getPipeline             *connect.Client[v1.GetPipelineRequest, v1.GetPipelineResponse]
 	getArtifact             *connect.Client[v1.GetArtifactRequest, v1.GetArtifactResponse]
 	listArtifacts           *connect.Client[v1.ListArtifactsRequest, v1.ListArtifactsResponse]
@@ -545,6 +567,16 @@ func (c *paprikaServiceClient) AbortRollout(ctx context.Context, req *connect.Re
 	return c.abortRollout.CallUnary(ctx, req)
 }
 
+// ListAnalysisRuns calls paprika.v1.PaprikaService.ListAnalysisRuns.
+func (c *paprikaServiceClient) ListAnalysisRuns(ctx context.Context, req *connect.Request[v1.ListAnalysisRunsRequest]) (*connect.Response[v1.ListAnalysisRunsResponse], error) {
+	return c.listAnalysisRuns.CallUnary(ctx, req)
+}
+
+// GetAnalysisRun calls paprika.v1.PaprikaService.GetAnalysisRun.
+func (c *paprikaServiceClient) GetAnalysisRun(ctx context.Context, req *connect.Request[v1.GetAnalysisRunRequest]) (*connect.Response[v1.GetAnalysisRunResponse], error) {
+	return c.getAnalysisRun.CallUnary(ctx, req)
+}
+
 // GetPipeline calls paprika.v1.PaprikaService.GetPipeline.
 func (c *paprikaServiceClient) GetPipeline(ctx context.Context, req *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error) {
 	return c.getPipeline.CallUnary(ctx, req)
@@ -638,6 +670,8 @@ type PaprikaServiceHandler interface {
 	GetRollout(context.Context, *connect.Request[v1.GetRolloutRequest]) (*connect.Response[v1.GetRolloutResponse], error)
 	PromoteRollout(context.Context, *connect.Request[v1.PromoteRolloutRequest]) (*connect.Response[v1.PromoteRolloutResponse], error)
 	AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error)
+	ListAnalysisRuns(context.Context, *connect.Request[v1.ListAnalysisRunsRequest]) (*connect.Response[v1.ListAnalysisRunsResponse], error)
+	GetAnalysisRun(context.Context, *connect.Request[v1.GetAnalysisRunRequest]) (*connect.Response[v1.GetAnalysisRunResponse], error)
 	GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error)
 	GetArtifact(context.Context, *connect.Request[v1.GetArtifactRequest]) (*connect.Response[v1.GetArtifactResponse], error)
 	ListArtifacts(context.Context, *connect.Request[v1.ListArtifactsRequest]) (*connect.Response[v1.ListArtifactsResponse], error)
@@ -787,6 +821,18 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("AbortRollout")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceListAnalysisRunsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListAnalysisRunsProcedure,
+		svc.ListAnalysisRuns,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListAnalysisRuns")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetAnalysisRunHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetAnalysisRunProcedure,
+		svc.GetAnalysisRun,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetAnalysisRun")),
+		connect.WithHandlerOptions(opts...),
+	)
 	paprikaServiceGetPipelineHandler := connect.NewUnaryHandler(
 		PaprikaServiceGetPipelineProcedure,
 		svc.GetPipeline,
@@ -915,6 +961,10 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServicePromoteRolloutHandler.ServeHTTP(w, r)
 		case PaprikaServiceAbortRolloutProcedure:
 			paprikaServiceAbortRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServiceListAnalysisRunsProcedure:
+			paprikaServiceListAnalysisRunsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetAnalysisRunProcedure:
+			paprikaServiceGetAnalysisRunHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetPipelineProcedure:
 			paprikaServiceGetPipelineHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetArtifactProcedure:
@@ -1034,6 +1084,14 @@ func (UnimplementedPaprikaServiceHandler) PromoteRollout(context.Context, *conne
 
 func (UnimplementedPaprikaServiceHandler) AbortRollout(context.Context, *connect.Request[v1.AbortRolloutRequest]) (*connect.Response[v1.AbortRolloutResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.AbortRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListAnalysisRuns(context.Context, *connect.Request[v1.ListAnalysisRunsRequest]) (*connect.Response[v1.ListAnalysisRunsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListAnalysisRuns is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetAnalysisRun(context.Context, *connect.Request[v1.GetAnalysisRunRequest]) (*connect.Response[v1.GetAnalysisRunResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetAnalysisRun is not implemented"))
 }
 
 func (UnimplementedPaprikaServiceHandler) GetPipeline(context.Context, *connect.Request[v1.GetPipelineRequest]) (*connect.Response[v1.GetPipelineResponse], error) {

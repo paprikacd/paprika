@@ -291,6 +291,18 @@ func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement AbortRollout"))
 }
 
+// ListAnalysisRuns is not implemented by the repo server.
+func (s *Server) ListAnalysisRuns(ctx context.Context, _ *connect.Request[paprikav1.ListAnalysisRunsRequest]) (*connect.Response[paprikav1.ListAnalysisRunsResponse], error) {
+	log.FromContext(ctx).Info("ListAnalysisRuns not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement ListAnalysisRuns"))
+}
+
+// GetAnalysisRun is not implemented by the repo server.
+func (s *Server) GetAnalysisRun(ctx context.Context, _ *connect.Request[paprikav1.GetAnalysisRunRequest]) (*connect.Response[paprikav1.GetAnalysisRunResponse], error) {
+	log.FromContext(ctx).Info("GetAnalysisRun not implemented on repo server")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("repo server does not implement GetAnalysisRun"))
+}
+
 // GetPipeline is not implemented by the repo server.
 func (s *Server) GetPipeline(ctx context.Context, _ *connect.Request[paprikav1.GetPipelineRequest]) (*connect.Response[paprikav1.GetPipelineResponse], error) {
 	log.FromContext(ctx).Info("GetPipeline not implemented on repo server")

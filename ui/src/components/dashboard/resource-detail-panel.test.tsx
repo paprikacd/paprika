@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor, act } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel"
 import type { LogChunk } from "@/gen/paprika/v1/api_pb"
@@ -119,6 +119,10 @@ describe("ResourceDetailPanel", () => {
       liveManifest: "spec:\n  replicas: 2",
       desiredManifest: "spec:\n  replicas: 1",
       diff: "--- Desired\n+++ Live\n@@ -1,2 +1,2 @@\n spec:\n-  replicas: 1\n+  replicas: 2",
+      apiVersion: "apps/v1",
+      resource: "deployments",
+      uid: "deploy-uid",
+      labels: { "app.kubernetes.io/name": "demo" },
       events: [],
     })
 
@@ -132,9 +136,13 @@ describe("ResourceDetailPanel", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/replicas: 1/)).toBeInTheDocument()
+    expect(screen.getByText(/replicas: 1/)).toBeInTheDocument()
     })
     expect(screen.getByText(/replicas: 2/)).toBeInTheDocument()
+    expect(screen.getByText("apps/v1")).toBeInTheDocument()
+    expect(screen.getByText("deployments")).toBeInTheDocument()
+    expect(screen.getByText("deploy-uid")).toBeInTheDocument()
+    expect(screen.getByText("app.kubernetes.io/name=demo")).toBeInTheDocument()
   })
 
   it("shows no-diff message when diff is empty", async () => {

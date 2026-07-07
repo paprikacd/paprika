@@ -715,6 +715,16 @@ func (s *Server) AbortRollout(ctx context.Context, _ *connect.Request[paprikav1.
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("abortRollout is not implemented on the agent"))
 }
 
+func (s *Server) ListAnalysisRuns(ctx context.Context, _ *connect.Request[paprikav1.ListAnalysisRunsRequest]) (*connect.Response[paprikav1.ListAnalysisRunsResponse], error) {
+	log.FromContext(ctx).Info("ListAnalysisRuns not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("listAnalysisRuns is not implemented on the agent"))
+}
+
+func (s *Server) GetAnalysisRun(ctx context.Context, _ *connect.Request[paprikav1.GetAnalysisRunRequest]) (*connect.Response[paprikav1.GetAnalysisRunResponse], error) {
+	log.FromContext(ctx).Info("GetAnalysisRun not implemented on agent")
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("getAnalysisRun is not implemented on the agent"))
+}
+
 // GetPipeline is not implemented by the agent.
 func (s *Server) GetPipeline(ctx context.Context, _ *connect.Request[paprikav1.GetPipelineRequest]) (*connect.Response[paprikav1.GetPipelineResponse], error) {
 	log.FromContext(ctx).Info("GetPipeline not implemented on agent")

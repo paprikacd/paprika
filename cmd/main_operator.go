@@ -466,6 +466,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, uiAddr string, k8sCl
 	if dc, dErr := dynamic.NewForConfig(mgr.GetConfig()); dErr == nil {
 		opts = append(opts, apiserver.WithDynamicClient(dc))
 	}
+	opts = append(opts, apiserver.WithRESTMapper(mgr.GetRESTMapper()))
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()

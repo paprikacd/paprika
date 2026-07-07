@@ -21,14 +21,16 @@ export function NotificationCenter() {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        setReadIds(new Set(JSON.parse(raw)))
+    queueMicrotask(() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if (raw) {
+          setReadIds(new Set(JSON.parse(raw)))
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
+    })
   }, [])
 
   useEffect(() => {

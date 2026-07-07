@@ -789,6 +789,131 @@ export declare class AnalysisResult extends Message<AnalysisResult> {
 }
 
 /**
+ * @generated from message paprika.v1.AnalysisRunResult
+ */
+export declare class AnalysisRunResult extends Message<AnalysisRunResult> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: bool passed = 2;
+   */
+  passed: boolean;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+
+  /**
+   * @generated from field: string detail = 4;
+   */
+  detail: string;
+
+  /**
+   * RFC3339
+   *
+   * @generated from field: string checked_at = 5;
+   */
+  checkedAt: string;
+
+  constructor(data?: PartialMessage<AnalysisRunResult>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AnalysisRunResult";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AnalysisRunResult;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AnalysisRunResult;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AnalysisRunResult;
+
+  static equals(a: AnalysisRunResult | PlainMessage<AnalysisRunResult> | undefined, b: AnalysisRunResult | PlainMessage<AnalysisRunResult> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.AnalysisRun
+ */
+export declare class AnalysisRun extends Message<AnalysisRun> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 2;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string template_ref = 3;
+   */
+  templateRef: string;
+
+  /**
+   * @generated from field: string application_ref = 4;
+   */
+  applicationRef: string;
+
+  /**
+   * @generated from field: string phase = 5;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: int32 cycles_executed = 6;
+   */
+  cyclesExecuted: number;
+
+  /**
+   * @generated from field: int64 started_at = 7;
+   */
+  startedAt: bigint;
+
+  /**
+   * @generated from field: int64 completed_at = 8;
+   */
+  completedAt: bigint;
+
+  /**
+   * @generated from field: int64 observed_generation = 9;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * @generated from field: map<string, string> args = 10;
+   */
+  args: { [key: string]: string };
+
+  /**
+   * @generated from field: repeated paprika.v1.AnalysisRunResult results = 11;
+   */
+  results: AnalysisRunResult[];
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 12;
+   */
+  conditions: Condition[];
+
+  constructor(data?: PartialMessage<AnalysisRun>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AnalysisRun";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AnalysisRun;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AnalysisRun;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AnalysisRun;
+
+  static equals(a: AnalysisRun | PlainMessage<AnalysisRun> | undefined, b: AnalysisRun | PlainMessage<AnalysisRun> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.Application
  */
 export declare class Application extends Message<Application> {
@@ -1140,6 +1265,46 @@ export declare class Release extends Message<Release> {
    */
   rolledBackTo: string;
 
+  /**
+   * @generated from field: int64 observed_generation = 13;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 14;
+   */
+  conditions: Condition[];
+
+  /**
+   * @generated from field: string rendered_manifest_snapshot = 15;
+   */
+  renderedManifestSnapshot: string;
+
+  /**
+   * @generated from field: int32 canary_weight = 16;
+   */
+  canaryWeight: number;
+
+  /**
+   * @generated from field: int32 canary_step_index = 17;
+   */
+  canaryStepIndex: number;
+
+  /**
+   * @generated from field: int64 canary_step_started_at = 18;
+   */
+  canaryStepStartedAt: bigint;
+
+  /**
+   * @generated from field: string rollout_ref = 19;
+   */
+  rolloutRef: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.HookStatus hook_statuses = 20;
+   */
+  hookStatuses: HookStatus[];
+
   constructor(data?: PartialMessage<Release>);
 
   static readonly runtime: typeof proto3;
@@ -1176,6 +1341,11 @@ export declare class Promotion extends Message<Promotion> {
    */
   timestamp: bigint;
 
+  /**
+   * @generated from field: string manifest_snapshot = 4;
+   */
+  manifestSnapshot: string;
+
   constructor(data?: PartialMessage<Promotion>);
 
   static readonly runtime: typeof proto3;
@@ -1189,6 +1359,65 @@ export declare class Promotion extends Message<Promotion> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Promotion;
 
   static equals(a: Promotion | PlainMessage<Promotion> | undefined, b: Promotion | PlainMessage<Promotion> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.HookStatus
+ */
+export declare class HookStatus extends Message<HookStatus> {
+  /**
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 3;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string phase = 4;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: string status = 5;
+   */
+  status: string;
+
+  /**
+   * @generated from field: int64 started_at = 6;
+   */
+  startedAt: bigint;
+
+  /**
+   * @generated from field: int64 completed_at = 7;
+   */
+  completedAt: bigint;
+
+  /**
+   * @generated from field: string message = 8;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<HookStatus>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.HookStatus";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HookStatus;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HookStatus;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HookStatus;
+
+  static equals(a: HookStatus | PlainMessage<HookStatus> | undefined, b: HookStatus | PlainMessage<HookStatus> | undefined): boolean;
 }
 
 /**
@@ -1352,6 +1581,138 @@ export declare class GatewayAPIRouterConfig extends Message<GatewayAPIRouterConf
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GatewayAPIRouterConfig;
 
   static equals(a: GatewayAPIRouterConfig | PlainMessage<GatewayAPIRouterConfig> | undefined, b: GatewayAPIRouterConfig | PlainMessage<GatewayAPIRouterConfig> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutStep
+ */
+export declare class RolloutStep extends Message<RolloutStep> {
+  /**
+   * @generated from field: int32 set_weight = 1;
+   */
+  setWeight: number;
+
+  /**
+   * @generated from field: string duration = 2;
+   */
+  duration: string;
+
+  constructor(data?: PartialMessage<RolloutStep>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutStep";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutStep;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutStep;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutStep;
+
+  static equals(a: RolloutStep | PlainMessage<RolloutStep> | undefined, b: RolloutStep | PlainMessage<RolloutStep> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutAnalysisCheck
+ */
+export declare class RolloutAnalysisCheck extends Message<RolloutAnalysisCheck> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string url = 2;
+   */
+  url: string;
+
+  /**
+   * @generated from field: map<string, string> http_headers = 3;
+   */
+  httpHeaders: { [key: string]: string };
+
+  /**
+   * @generated from field: string success_threshold = 4;
+   */
+  successThreshold: string;
+
+  /**
+   * @generated from field: int32 timeout_seconds = 5;
+   */
+  timeoutSeconds: number;
+
+  /**
+   * @generated from field: int32 request_count = 6;
+   */
+  requestCount: number;
+
+  /**
+   * @generated from field: string metric = 7;
+   */
+  metric: string;
+
+  /**
+   * @generated from field: string threshold = 8;
+   */
+  threshold: string;
+
+  /**
+   * @generated from field: int32 window_seconds = 9;
+   */
+  windowSeconds: number;
+
+  constructor(data?: PartialMessage<RolloutAnalysisCheck>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutAnalysisCheck";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutAnalysisCheck;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutAnalysisCheck;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutAnalysisCheck;
+
+  static equals(a: RolloutAnalysisCheck | PlainMessage<RolloutAnalysisCheck> | undefined, b: RolloutAnalysisCheck | PlainMessage<RolloutAnalysisCheck> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutABRoute
+ */
+export declare class RolloutABRoute extends Message<RolloutABRoute> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string value = 3;
+   */
+  value: string;
+
+  /**
+   * @generated from field: string service = 4;
+   */
+  service: string;
+
+  constructor(data?: PartialMessage<RolloutABRoute>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutABRoute";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutABRoute;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutABRoute;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutABRoute;
+
+  static equals(a: RolloutABRoute | PlainMessage<RolloutABRoute> | undefined, b: RolloutABRoute | PlainMessage<RolloutABRoute> | undefined): boolean;
 }
 
 /**
@@ -2692,6 +3053,91 @@ export declare class Rollout extends Message<Rollout> {
    */
   targetName: string;
 
+  /**
+   * @generated from field: int32 replicas = 16;
+   */
+  replicas: number;
+
+  /**
+   * @generated from field: bool paused = 17;
+   */
+  paused: boolean;
+
+  /**
+   * @generated from field: bool abort = 18;
+   */
+  abort: boolean;
+
+  /**
+   * @generated from field: int32 stable_ready_replicas = 19;
+   */
+  stableReadyReplicas: number;
+
+  /**
+   * @generated from field: int32 canary_ready_replicas = 20;
+   */
+  canaryReadyReplicas: number;
+
+  /**
+   * @generated from field: int64 current_step_started_at = 21;
+   */
+  currentStepStartedAt: bigint;
+
+  /**
+   * @generated from field: int64 promoted_at = 22;
+   */
+  promotedAt: bigint;
+
+  /**
+   * @generated from field: int64 preview_healthy_at = 23;
+   */
+  previewHealthyAt: bigint;
+
+  /**
+   * @generated from field: string current_pod_hash = 24;
+   */
+  currentPodHash: string;
+
+  /**
+   * @generated from field: string previous_active_rs = 25;
+   */
+  previousActiveRs: string;
+
+  /**
+   * @generated from field: paprika.v1.TrafficRouter traffic_router = 26;
+   */
+  trafficRouter?: TrafficRouter;
+
+  /**
+   * @generated from field: repeated paprika.v1.RolloutStep canary_steps = 27;
+   */
+  canarySteps: RolloutStep[];
+
+  /**
+   * @generated from field: repeated paprika.v1.RolloutAnalysisCheck analysis_checks = 28;
+   */
+  analysisChecks: RolloutAnalysisCheck[];
+
+  /**
+   * @generated from field: repeated paprika.v1.RolloutABRoute ab_routes = 29;
+   */
+  abRoutes: RolloutABRoute[];
+
+  /**
+   * @generated from field: int32 mirror_percent = 30;
+   */
+  mirrorPercent: number;
+
+  /**
+   * @generated from field: int32 auto_promotion_seconds = 31;
+   */
+  autoPromotionSeconds: number;
+
+  /**
+   * @generated from field: int32 scale_down_delay_seconds = 32;
+   */
+  scaleDownDelaySeconds: number;
+
   constructor(data?: PartialMessage<Rollout>);
 
   static readonly runtime: typeof proto3;
@@ -2917,6 +3363,117 @@ export declare class AbortRolloutResponse extends Message<AbortRolloutResponse> 
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AbortRolloutResponse;
 
   static equals(a: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined, b: AbortRolloutResponse | PlainMessage<AbortRolloutResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListAnalysisRunsRequest
+ */
+export declare class ListAnalysisRunsRequest extends Message<ListAnalysisRunsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: string application_name = 2;
+   */
+  applicationName: string;
+
+  /**
+   * @generated from field: string project = 3;
+   */
+  project: string;
+
+  constructor(data?: PartialMessage<ListAnalysisRunsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListAnalysisRunsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAnalysisRunsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAnalysisRunsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAnalysisRunsRequest;
+
+  static equals(a: ListAnalysisRunsRequest | PlainMessage<ListAnalysisRunsRequest> | undefined, b: ListAnalysisRunsRequest | PlainMessage<ListAnalysisRunsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListAnalysisRunsResponse
+ */
+export declare class ListAnalysisRunsResponse extends Message<ListAnalysisRunsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.AnalysisRun analysis_runs = 1;
+   */
+  analysisRuns: AnalysisRun[];
+
+  constructor(data?: PartialMessage<ListAnalysisRunsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListAnalysisRunsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAnalysisRunsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAnalysisRunsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAnalysisRunsResponse;
+
+  static equals(a: ListAnalysisRunsResponse | PlainMessage<ListAnalysisRunsResponse> | undefined, b: ListAnalysisRunsResponse | PlainMessage<ListAnalysisRunsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetAnalysisRunRequest
+ */
+export declare class GetAnalysisRunRequest extends Message<GetAnalysisRunRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetAnalysisRunRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetAnalysisRunRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetAnalysisRunRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetAnalysisRunRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetAnalysisRunRequest;
+
+  static equals(a: GetAnalysisRunRequest | PlainMessage<GetAnalysisRunRequest> | undefined, b: GetAnalysisRunRequest | PlainMessage<GetAnalysisRunRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetAnalysisRunResponse
+ */
+export declare class GetAnalysisRunResponse extends Message<GetAnalysisRunResponse> {
+  /**
+   * @generated from field: paprika.v1.AnalysisRun analysis_run = 1;
+   */
+  analysisRun?: AnalysisRun;
+
+  constructor(data?: PartialMessage<GetAnalysisRunResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetAnalysisRunResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetAnalysisRunResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetAnalysisRunResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetAnalysisRunResponse;
+
+  static equals(a: GetAnalysisRunResponse | PlainMessage<GetAnalysisRunResponse> | undefined, b: GetAnalysisRunResponse | PlainMessage<GetAnalysisRunResponse> | undefined): boolean;
 }
 
 /**
@@ -3451,6 +4008,41 @@ export declare class GetResourceResponse extends Message<GetResourceResponse> {
    * @generated from field: repeated paprika.v1.KubernetesEvent events = 10;
    */
   events: KubernetesEvent[];
+
+  /**
+   * @generated from field: string api_version = 11;
+   */
+  apiVersion: string;
+
+  /**
+   * @generated from field: string group = 12;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string version = 13;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string resource = 14;
+   */
+  resource: string;
+
+  /**
+   * @generated from field: string uid = 15;
+   */
+  uid: string;
+
+  /**
+   * @generated from field: map<string, string> labels = 16;
+   */
+  labels: { [key: string]: string };
+
+  /**
+   * @generated from field: map<string, string> annotations = 17;
+   */
+  annotations: { [key: string]: string };
 
   constructor(data?: PartialMessage<GetResourceResponse>);
 

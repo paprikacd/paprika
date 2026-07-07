@@ -2,8 +2,16 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LogOut, User, LayoutDashboard } from "lucide-react"
+import { Boxes, GitBranch, LayoutDashboard, LogOut, Rocket, User } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
+import { cn } from "@/lib/utils"
+
+const navItems = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard#applications", label: "Applications", icon: Rocket },
+  { href: "/dashboard#pipelines", label: "Pipelines", icon: GitBranch },
+  { href: "/dashboard/rollouts", label: "Rollouts", icon: Boxes },
+]
 
 export function Nav() {
   const pathname = usePathname()
@@ -22,14 +30,27 @@ export function Nav() {
         </Link>
 
         {user && !isAuthPage && (
-          <nav className="flex items-center gap-1">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
-            >
-              <LayoutDashboard className="size-3.5" />
-              Dashboard
-            </Link>
+          <nav className="hidden items-center gap-1 md:flex">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const active =
+                item.href === "/dashboard"
+                  ? pathname === "/dashboard" || pathname === "/dashboard/"
+                  : pathname.startsWith(item.href.split("#")[0]) && item.href.includes("rollouts")
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]",
+                    active && "bg-muted text-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                  {item.label}
+                </Link>
+              )
+            })}
           </nav>
         )}
 

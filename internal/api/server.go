@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,6 +68,12 @@ func WithDynamicClient(c dynamic.Interface) ServerOption {
 	return func(s *PaprikaServer) { s.dynamicClient = c }
 }
 
+// WithRESTMapper sets the RESTMapper used to resolve arbitrary Kubernetes
+// kinds for dynamic resource lookups.
+func WithRESTMapper(m meta.RESTMapper) ServerOption {
+	return func(s *PaprikaServer) { s.restMapper = m }
+}
+
 // WithAuditor sets the audit logger used to record mutating API operations.
 // If not set, auditing is disabled (NoopAuditor).
 func WithAuditor(a audit.Auditor) ServerOption {
@@ -78,6 +85,7 @@ type PaprikaServer struct {
 	client                    client.Client
 	k8sClient                 kubernetes.Interface
 	dynamicClient             dynamic.Interface
+	restMapper                meta.RESTMapper
 	broker                    *events.Broker
 	renderer                  pipelines.SourceResolvingRenderer
 	evaluator                 Evaluator
@@ -850,24 +858,204 @@ func (s *PaprikaServer) authorizeRolloutWrite(ctx context.Context, ro *rolloutsv
 	return nil
 }
 
-func convertRollout(r *rolloutsv1alpha1.Rollout) *paprikav1.Rollout {
-	return &paprikav1.Rollout{
-		Name:               r.Name,
-		Namespace:          r.Namespace,
-		StrategyType:       r.Spec.Strategy.Type,
-		Phase:              string(r.Status.Phase),
-		CurrentStep:        r.Status.CurrentStepIndex,
-		CurrentWeight:      r.Status.CurrentStepWeight,
-		StableRs:           r.Status.StableRS,
-		CanaryRs:           r.Status.CanaryRS,
-		ActiveService:      r.Status.ActiveService,
-		PreviewService:     r.Status.PreviewService,
-		ObservedGeneration: r.Status.ObservedGeneration,
-		Conditions:         convertConditions(r.Status.Conditions),
-		Message:            r.Status.Message,
-		TargetKind:         r.Spec.Target.Kind,
-		TargetName:         r.Spec.Target.Name,
+// ListAnalysisRuns returns analysis executions, optionally scoped to namespace,
+// project, and owning application.
+func (s *PaprikaServer) ListAnalysisRuns(
+	ctx context.Context,
+	req *connect.Request[paprikav1.ListAnalysisRunsRequest],
+) (*connect.Response[paprikav1.ListAnalysisRunsResponse], error) {
+	var list pipelinesv1alpha1.AnalysisRunList
+	opts := []client.ListOption{}
+	if req.Msg.Namespace != nil {
+		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
+	if err := s.client.List(ctx, &list, opts...); err != nil {
+		return nil, fmt.Errorf("listing analysis runs: %w", err)
+	}
+
+	runs := make([]*paprikav1.AnalysisRun, 0, len(list.Items))
+	for i := range list.Items {
+		run := &list.Items[i]
+		if req.Msg.ApplicationName != "" && run.Spec.ApplicationRef != req.Msg.ApplicationName {
+			continue
+		}
+		if req.Msg.Project != "" && run.GetLabels()[projectLabelKey] != req.Msg.Project {
+			continue
+		}
+		if !s.authorizeProjectFromLabels(ctx, run, auth.ResourceApplications) {
+			continue
+		}
+		runs = append(runs, convertAnalysisRun(run))
+	}
+	return connect.NewResponse(&paprikav1.ListAnalysisRunsResponse{AnalysisRuns: runs}), nil
+}
+
+// GetAnalysisRun returns one analysis execution by namespace/name.
+func (s *PaprikaServer) GetAnalysisRun(
+	ctx context.Context,
+	req *connect.Request[paprikav1.GetAnalysisRunRequest],
+) (*connect.Response[paprikav1.GetAnalysisRunResponse], error) {
+	var run pipelinesv1alpha1.AnalysisRun
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &run); err != nil {
+		return nil, fmt.Errorf("getting analysis run: %w", err)
+	}
+	if !s.authorizeProjectFromLabels(ctx, &run, auth.ResourceApplications) {
+		return nil, connect.NewError(connect.CodePermissionDenied, auth.ErrUnauthorized)
+	}
+	return connect.NewResponse(&paprikav1.GetAnalysisRunResponse{AnalysisRun: convertAnalysisRun(&run)}), nil
+}
+
+func convertRollout(r *rolloutsv1alpha1.Rollout) *paprikav1.Rollout {
+	out := &paprikav1.Rollout{
+		Name:                  r.Name,
+		Namespace:             r.Namespace,
+		StrategyType:          r.Spec.Strategy.Type,
+		Phase:                 string(r.Status.Phase),
+		CurrentStep:           r.Status.CurrentStepIndex,
+		CurrentWeight:         r.Status.CurrentStepWeight,
+		StableRs:              r.Status.StableRS,
+		CanaryRs:              r.Status.CanaryRS,
+		ActiveService:         r.Status.ActiveService,
+		PreviewService:        r.Status.PreviewService,
+		ObservedGeneration:    r.Status.ObservedGeneration,
+		Conditions:            convertConditions(r.Status.Conditions),
+		Message:               r.Status.Message,
+		TargetKind:            r.Spec.Target.Kind,
+		TargetName:            r.Spec.Target.Name,
+		Paused:                r.Spec.Paused,
+		Abort:                 r.Status.Abort,
+		StableReadyReplicas:   r.Status.StableReadyReplicas,
+		CanaryReadyReplicas:   r.Status.CanaryReadyReplicas,
+		CurrentPodHash:        r.Status.CurrentPodHash,
+		PreviousActiveRs:      r.Status.PreviousActiveRS,
+		TrafficRouter:         convertRolloutTrafficRouter(r.Spec.TrafficRouter),
+		CanarySteps:           convertRolloutCanarySteps(r.Spec.Strategy.Canary),
+		AnalysisChecks:        convertRolloutAnalysisChecks(&r.Spec.Strategy),
+		AbRoutes:              convertRolloutABRoutes(r.Spec.Strategy.ABTest),
+		MirrorPercent:         rolloutMirrorPercent(r.Spec.Strategy.Mirror),
+		AutoPromotionSeconds:  rolloutAutoPromotionSeconds(r.Spec.Strategy.BlueGreen),
+		ScaleDownDelaySeconds: rolloutScaleDownDelaySeconds(r.Spec.Strategy.BlueGreen),
+	}
+	if r.Spec.Replicas != nil {
+		out.Replicas = *r.Spec.Replicas
+	}
+	if r.Status.CurrentStepStartedAt != nil {
+		out.CurrentStepStartedAt = r.Status.CurrentStepStartedAt.Unix()
+	}
+	if r.Status.PromotedAt != nil {
+		out.PromotedAt = r.Status.PromotedAt.Unix()
+	}
+	if r.Status.PreviewHealthyAt != nil {
+		out.PreviewHealthyAt = r.Status.PreviewHealthyAt.Unix()
+	}
+	return out
+}
+
+func convertRolloutTrafficRouter(in *rolloutsv1alpha1.TrafficRouter) *paprikav1.TrafficRouter {
+	if in == nil {
+		return nil
+	}
+	out := &paprikav1.TrafficRouter{Provider: in.Provider}
+	if in.Istio != nil {
+		out.Istio = &paprikav1.IstioRouterConfig{
+			VirtualService: in.Istio.VirtualService,
+			Routes:         append([]string(nil), in.Istio.Routes...),
+			Hosts:          append([]string(nil), in.Istio.Hosts...),
+			StableService:  in.Istio.StableService,
+			CanaryService:  in.Istio.CanaryService,
+		}
+	}
+	if in.GatewayAPI != nil {
+		out.GatewayApi = &paprikav1.GatewayAPIRouterConfig{
+			HttpRoute:     in.GatewayAPI.HTTPRoute,
+			StableService: in.GatewayAPI.StableService,
+			CanaryService: in.GatewayAPI.CanaryService,
+		}
+	}
+	return out
+}
+
+func convertRolloutCanarySteps(in *rolloutsv1alpha1.CanaryStrategy) []*paprikav1.RolloutStep {
+	if in == nil {
+		return nil
+	}
+	out := make([]*paprikav1.RolloutStep, 0, len(in.Steps))
+	for _, step := range in.Steps {
+		converted := &paprikav1.RolloutStep{SetWeight: step.SetWeight}
+		if step.Duration != nil {
+			converted.Duration = step.Duration.Duration.String()
+		}
+		out = append(out, converted)
+	}
+	return out
+}
+
+func convertRolloutAnalysisChecks(strategy *rolloutsv1alpha1.RolloutStrategy) []*paprikav1.RolloutAnalysisCheck {
+	var checks []rolloutsv1alpha1.AnalysisCheck
+	if strategy.Canary != nil && strategy.Canary.Analysis != nil {
+		checks = append(checks, strategy.Canary.Analysis.Checks...)
+	}
+	if strategy.BlueGreen != nil && strategy.BlueGreen.Analysis != nil {
+		checks = append(checks, strategy.BlueGreen.Analysis.Checks...)
+	}
+	if strategy.ABTest != nil && strategy.ABTest.Analysis != nil {
+		checks = append(checks, strategy.ABTest.Analysis.Checks...)
+	}
+	if strategy.Mirror != nil && strategy.Mirror.Analysis != nil {
+		checks = append(checks, strategy.Mirror.Analysis.Checks...)
+	}
+	out := make([]*paprikav1.RolloutAnalysisCheck, 0, len(checks))
+	for _, check := range checks {
+		out = append(out, &paprikav1.RolloutAnalysisCheck{
+			Type:             check.Type,
+			Url:              check.URL,
+			HttpHeaders:      copyStringMap(check.HTTPHeaders),
+			SuccessThreshold: check.SuccessThreshold,
+			TimeoutSeconds:   safeInt32(check.TimeoutSeconds),
+			RequestCount:     safeInt32(check.RequestCount),
+			Metric:           check.Metric,
+			Threshold:        check.Threshold,
+			WindowSeconds:    safeInt32(check.WindowSeconds),
+		})
+	}
+	return out
+}
+
+func convertRolloutABRoutes(in *rolloutsv1alpha1.ABTestStrategy) []*paprikav1.RolloutABRoute {
+	if in == nil {
+		return nil
+	}
+	out := make([]*paprikav1.RolloutABRoute, 0, len(in.Routes))
+	for _, route := range in.Routes {
+		out = append(out, &paprikav1.RolloutABRoute{
+			Type:    route.Type,
+			Name:    route.Name,
+			Value:   route.Value,
+			Service: route.Service,
+		})
+	}
+	return out
+}
+
+func rolloutMirrorPercent(in *rolloutsv1alpha1.MirrorStrategy) int32 {
+	if in == nil {
+		return 0
+	}
+	return in.MirrorPercent
+}
+
+func rolloutAutoPromotionSeconds(in *rolloutsv1alpha1.BlueGreenStrategy) int32 {
+	if in == nil || in.AutoPromotionSeconds == nil {
+		return 0
+	}
+	return *in.AutoPromotionSeconds
+}
+
+func rolloutScaleDownDelaySeconds(in *rolloutsv1alpha1.BlueGreenStrategy) int32 {
+	if in == nil || in.ScaleDownDelaySeconds == nil {
+		return 0
+	}
+	return *in.ScaleDownDelaySeconds
 }
 
 // convertArtifactToArtifactRef maps a pipelines Artifact CR to the protobuf
@@ -1070,22 +1258,33 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 	promos := make([]*paprikav1.Promotion, 0, len(r.Status.PromotionHistory))
 	for _, ph := range r.Status.PromotionHistory {
 		promos = append(promos, &paprikav1.Promotion{
-			Stage:     ph.Stage,
-			Result:    ph.Result,
-			Timestamp: ph.Timestamp.Unix(),
+			Stage:            ph.Stage,
+			Result:           ph.Result,
+			Timestamp:        ph.Timestamp.Unix(),
+			ManifestSnapshot: ph.ManifestSnapshot,
 		})
 	}
 	rel := &paprikav1.Release{
-		Name:             r.Name,
-		Namespace:        r.Namespace,
-		CreatedAt:        r.CreationTimestamp.Unix(),
-		Pipeline:         r.Spec.Pipeline,
-		Target:           r.Spec.Target,
-		Phase:            string(r.Status.Phase),
-		CurrentStage:     r.Status.CurrentStage,
-		PromotionHistory: promos,
-		Application:      r.Labels[engine.ApplicationNameLabelKey],
-		RolledBackTo:     r.Status.RolledBackTo,
+		Name:                     r.Name,
+		Namespace:                r.Namespace,
+		CreatedAt:                r.CreationTimestamp.Unix(),
+		Pipeline:                 r.Spec.Pipeline,
+		Target:                   r.Spec.Target,
+		Phase:                    string(r.Status.Phase),
+		CurrentStage:             r.Status.CurrentStage,
+		PromotionHistory:         promos,
+		Application:              r.Labels[engine.ApplicationNameLabelKey],
+		RolledBackTo:             r.Status.RolledBackTo,
+		ObservedGeneration:       r.Status.ObservedGeneration,
+		Conditions:               convertConditions(r.Status.Conditions),
+		RenderedManifestSnapshot: r.Status.RenderedManifestSnapshot,
+		CanaryWeight:             safeInt32(r.Status.CanaryWeight),
+		CanaryStepIndex:          safeInt32(r.Status.CanaryStepIndex),
+		RolloutRef:               r.Status.RolloutRef,
+		HookStatuses:             convertHookStatuses(r.Status.HookStatuses),
+	}
+	if r.Status.CanaryStepStartedAt != nil {
+		rel.CanaryStepStartedAt = r.Status.CanaryStepStartedAt.Unix()
 	}
 	if r.Spec.ManifestSource != nil {
 		rel.ManifestSource = &paprikav1.ManifestSource{
@@ -1103,6 +1302,28 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 		})
 	}
 	return rel
+}
+
+func convertHookStatuses(statuses []pipelinesv1alpha1.HookStatus) []*paprikav1.HookStatus {
+	out := make([]*paprikav1.HookStatus, 0, len(statuses))
+	for _, h := range statuses {
+		converted := &paprikav1.HookStatus{
+			Kind:      h.Kind,
+			Name:      h.Name,
+			Namespace: h.Namespace,
+			Phase:     h.Phase,
+			Status:    h.Status,
+			Message:   h.Message,
+		}
+		if h.StartedAt != nil {
+			converted.StartedAt = h.StartedAt.Unix()
+		}
+		if h.CompletedAt != nil {
+			converted.CompletedAt = h.CompletedAt.Unix()
+		}
+		out = append(out, converted)
+	}
+	return out
 }
 
 const (
@@ -1296,6 +1517,46 @@ func convertAnalysisResults(results []pipelinesv1alpha1.AnalysisResult) []*papri
 			Phase:     string(r.Phase),
 			Passed:    r.Passed,
 			Message:   r.Message,
+			CheckedAt: checkedAt,
+		})
+	}
+	return out
+}
+
+func convertAnalysisRun(run *pipelinesv1alpha1.AnalysisRun) *paprikav1.AnalysisRun {
+	out := &paprikav1.AnalysisRun{
+		Name:               run.Name,
+		Namespace:          run.Namespace,
+		TemplateRef:        run.Spec.TemplateRef,
+		ApplicationRef:     run.Spec.ApplicationRef,
+		Args:               run.Spec.Args,
+		Phase:              string(run.Status.Phase),
+		CyclesExecuted:     safeInt32(run.Status.CyclesExecuted),
+		ObservedGeneration: run.Status.ObservedGeneration,
+		Results:            convertAnalysisRunResults(run.Status.Results),
+		Conditions:         convertConditions(run.Status.Conditions),
+	}
+	if run.Status.StartedAt != nil {
+		out.StartedAt = run.Status.StartedAt.Unix()
+	}
+	if run.Status.CompletedAt != nil {
+		out.CompletedAt = run.Status.CompletedAt.Unix()
+	}
+	return out
+}
+
+func convertAnalysisRunResults(results []pipelinesv1alpha1.AnalysisRunResult) []*paprikav1.AnalysisRunResult {
+	out := make([]*paprikav1.AnalysisRunResult, 0, len(results))
+	for _, r := range results {
+		checkedAt := ""
+		if r.CheckedAt != nil {
+			checkedAt = r.CheckedAt.Format(time.RFC3339)
+		}
+		out = append(out, &paprikav1.AnalysisRunResult{
+			Name:      r.Name,
+			Passed:    r.Passed,
+			Message:   r.Message,
+			Detail:    r.Detail,
 			CheckedAt: checkedAt,
 		})
 	}

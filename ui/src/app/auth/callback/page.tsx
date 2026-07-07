@@ -13,11 +13,12 @@ function CallbackHandler() {
     if (processed.current) return
     processed.current = true
 
+    const fail = (message: string) => queueMicrotask(() => setError(message))
     const code = searchParams.get("code")
     const returnedState = searchParams.get("state")
 
     if (!code || !returnedState) {
-      setError("Missing authorization code or state")
+      fail("Missing authorization code or state")
       return
     }
 
@@ -26,12 +27,12 @@ function CallbackHandler() {
     const redirectURI = sessionStorage.getItem("paprika_redirect_uri")
 
     if (!expectedState || !codeVerifier || !redirectURI) {
-      setError("Login session not found. Please try signing in again.")
+      fail("Login session not found. Please try signing in again.")
       return
     }
 
     if (returnedState !== expectedState) {
-      setError("State mismatch. This may be a CSRF attack.")
+      fail("State mismatch. This may be a CSRF attack.")
       return
     }
 
@@ -60,7 +61,7 @@ function CallbackHandler() {
       .catch((err: Error) => {
         setError(err.message || "Token exchange failed")
       })
-  }, [])
+  }, [searchParams])
 
   if (error) {
     return (

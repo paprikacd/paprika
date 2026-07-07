@@ -71,24 +71,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (restored.current) return
     restored.current = true
 
-    const stored = localStorage.getItem(AUTH_TOKEN_KEY)
-    const storedUser = localStorage.getItem(AUTH_USER_KEY)
+    queueMicrotask(() => {
+      const stored = localStorage.getItem(AUTH_TOKEN_KEY)
+      const storedUser = localStorage.getItem(AUTH_USER_KEY)
 
-    if (stored && storedUser) {
-      if (isTokenExpired(stored)) {
-        localStorage.removeItem(AUTH_TOKEN_KEY)
-        localStorage.removeItem(AUTH_USER_KEY)
-      } else {
-        setIdToken(stored)
-        try {
-          setUser(JSON.parse(storedUser))
-        } catch {
+      if (stored && storedUser) {
+        if (isTokenExpired(stored)) {
           localStorage.removeItem(AUTH_TOKEN_KEY)
           localStorage.removeItem(AUTH_USER_KEY)
+        } else {
+          setIdToken(stored)
+          try {
+            setUser(JSON.parse(storedUser))
+          } catch {
+            localStorage.removeItem(AUTH_TOKEN_KEY)
+            localStorage.removeItem(AUTH_USER_KEY)
+          }
         }
       }
-    }
-    setIsLoading(false)
+      setIsLoading(false)
+    })
   }, [])
 
   const login = useCallback(async () => {

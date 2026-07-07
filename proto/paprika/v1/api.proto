@@ -145,6 +145,29 @@ message AnalysisResult {
   string checked_at = 5; // RFC3339
 }
 
+message AnalysisRunResult {
+  string name = 1;
+  bool passed = 2;
+  string message = 3;
+  string detail = 4;
+  string checked_at = 5; // RFC3339
+}
+
+message AnalysisRun {
+  string name = 1;
+  string namespace = 2;
+  string template_ref = 3;
+  string application_ref = 4;
+  string phase = 5;
+  int32 cycles_executed = 6;
+  int64 started_at = 7;
+  int64 completed_at = 8;
+  int64 observed_generation = 9;
+  map<string, string> args = 10;
+  repeated AnalysisRunResult results = 11;
+  repeated Condition conditions = 12;
+}
+
 message Application {
   string name = 1;
   string namespace = 2;
@@ -216,6 +239,14 @@ message Release {
   repeated PolicyResult policy_results = 10;
   string application = 11;
   string rolled_back_to = 12;
+  int64 observed_generation = 13;
+  repeated Condition conditions = 14;
+  string rendered_manifest_snapshot = 15;
+  int32 canary_weight = 16;
+  int32 canary_step_index = 17;
+  int64 canary_step_started_at = 18;
+  string rollout_ref = 19;
+  repeated HookStatus hook_statuses = 20;
 }
 
 message Promotion {
@@ -223,6 +254,18 @@ message Promotion {
   string result = 2;
   // Seconds since Unix epoch.
   int64 timestamp = 3;
+  string manifest_snapshot = 4;
+}
+
+message HookStatus {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+  string phase = 4;
+  string status = 5;
+  int64 started_at = 6;
+  int64 completed_at = 7;
+  string message = 8;
 }
 
 message Stage {
@@ -253,6 +296,30 @@ message GatewayAPIRouterConfig {
   string http_route = 1;
   string stable_service = 2;
   string canary_service = 3;
+}
+
+message RolloutStep {
+  int32 set_weight = 1;
+  string duration = 2;
+}
+
+message RolloutAnalysisCheck {
+  string type = 1;
+  string url = 2;
+  map<string, string> http_headers = 3;
+  string success_threshold = 4;
+  int32 timeout_seconds = 5;
+  int32 request_count = 6;
+  string metric = 7;
+  string threshold = 8;
+  int32 window_seconds = 9;
+}
+
+message RolloutABRoute {
+  string type = 1;
+  string name = 2;
+  string value = 3;
+  string service = 4;
 }
 
 message ListPipelinesRequest {
@@ -490,6 +557,23 @@ message Rollout {
   string message = 13;
   string target_kind = 14;
   string target_name = 15;
+  int32 replicas = 16;
+  bool paused = 17;
+  bool abort = 18;
+  int32 stable_ready_replicas = 19;
+  int32 canary_ready_replicas = 20;
+  int64 current_step_started_at = 21;
+  int64 promoted_at = 22;
+  int64 preview_healthy_at = 23;
+  string current_pod_hash = 24;
+  string previous_active_rs = 25;
+  TrafficRouter traffic_router = 26;
+  repeated RolloutStep canary_steps = 27;
+  repeated RolloutAnalysisCheck analysis_checks = 28;
+  repeated RolloutABRoute ab_routes = 29;
+  int32 mirror_percent = 30;
+  int32 auto_promotion_seconds = 31;
+  int32 scale_down_delay_seconds = 32;
 }
 
 message ListRolloutsRequest {
@@ -526,6 +610,23 @@ message AbortRolloutRequest {
 
 message AbortRolloutResponse {
   Rollout rollout = 1;
+}
+
+message ListAnalysisRunsRequest {
+  optional string namespace = 1;
+  string application_name = 2;
+  string project = 3;
+}
+message ListAnalysisRunsResponse {
+  repeated AnalysisRun analysis_runs = 1;
+}
+
+message GetAnalysisRunRequest {
+  string namespace = 1;
+  string name = 2;
+}
+message GetAnalysisRunResponse {
+  AnalysisRun analysis_run = 1;
 }
 
 message GetPipelineRequest {
@@ -608,6 +709,13 @@ message GetResourceResponse {
   string desired_manifest = 8;
   string diff = 9;
   repeated KubernetesEvent events = 10;
+  string api_version = 11;
+  string group = 12;
+  string version = 13;
+  string resource = 14;
+  string uid = 15;
+  map<string, string> labels = 16;
+  map<string, string> annotations = 17;
 }
 
 message GetResourceTreeRequest {
@@ -754,6 +862,8 @@ service PaprikaService {
   rpc GetRollout(GetRolloutRequest) returns (GetRolloutResponse);
   rpc PromoteRollout(PromoteRolloutRequest) returns (PromoteRolloutResponse);
   rpc AbortRollout(AbortRolloutRequest) returns (AbortRolloutResponse);
+  rpc ListAnalysisRuns(ListAnalysisRunsRequest) returns (ListAnalysisRunsResponse);
+  rpc GetAnalysisRun(GetAnalysisRunRequest) returns (GetAnalysisRunResponse);
   rpc GetPipeline(GetPipelineRequest) returns (GetPipelineResponse);
   rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
   rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);

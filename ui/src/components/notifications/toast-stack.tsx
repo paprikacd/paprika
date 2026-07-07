@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useConnection } from "@/lib/connection-context"
-import { X, Bell, AlertTriangle, CheckCircle2, Info } from "lucide-react"
+import { X, AlertTriangle, CheckCircle2, Info } from "lucide-react"
 
 const icons: Record<string, typeof Info> = {
   Failed: AlertTriangle,
@@ -26,7 +26,7 @@ export function ToastStack() {
     const title = `${payload.namespace}/${payload.name}`
     const body = `${payload.resourceType} is now ${phase}${payload.reason ? ` (${payload.reason})` : ""}`
     const id = Date.now()
-    setToasts((prev) => [...prev.slice(-4), { id, title, body, phase }])
+    queueMicrotask(() => setToasts((prev) => [...prev.slice(-4), { id, title, body, phase }]))
     const t = setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 8000)
     return () => clearTimeout(t)
   }, [events])

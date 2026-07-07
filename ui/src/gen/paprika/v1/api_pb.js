@@ -250,6 +250,41 @@ export const AnalysisResult = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.AnalysisRunResult
+ */
+export const AnalysisRunResult = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AnalysisRunResult",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "passed", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "detail", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "checked_at", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.AnalysisRun
+ */
+export const AnalysisRun = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AnalysisRun",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "template_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "application_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "cycles_executed", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 7, name: "started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "completed_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 9, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 10, name: "args", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+    { no: 11, name: "results", kind: "message", T: AnalysisRunResult, repeated: true },
+    { no: 12, name: "conditions", kind: "message", T: Condition, repeated: true },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Application
  */
 export const Application = /*@__PURE__*/ proto3.makeMessageType(
@@ -343,6 +378,14 @@ export const Release = /*@__PURE__*/ proto3.makeMessageType(
     { no: 10, name: "policy_results", kind: "message", T: PolicyResult, repeated: true },
     { no: 11, name: "application", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 12, name: "rolled_back_to", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 13, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 14, name: "conditions", kind: "message", T: Condition, repeated: true },
+    { no: 15, name: "rendered_manifest_snapshot", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 16, name: "canary_weight", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 17, name: "canary_step_index", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 18, name: "canary_step_started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 19, name: "rollout_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 20, name: "hook_statuses", kind: "message", T: HookStatus, repeated: true },
   ],
 );
 
@@ -355,6 +398,24 @@ export const Promotion = /*@__PURE__*/ proto3.makeMessageType(
     { no: 1, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "result", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "timestamp", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "manifest_snapshot", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.HookStatus
+ */
+export const HookStatus = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.HookStatus",
+  () => [
+    { no: 1, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 7, name: "completed_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -408,6 +469,48 @@ export const GatewayAPIRouterConfig = /*@__PURE__*/ proto3.makeMessageType(
     { no: 1, name: "http_route", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "stable_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "canary_service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutStep
+ */
+export const RolloutStep = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutStep",
+  () => [
+    { no: 1, name: "set_weight", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 2, name: "duration", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutAnalysisCheck
+ */
+export const RolloutAnalysisCheck = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutAnalysisCheck",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "http_headers", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+    { no: 4, name: "success_threshold", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "timeout_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 6, name: "request_count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 7, name: "metric", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "threshold", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "window_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutABRoute
+ */
+export const RolloutABRoute = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutABRoute",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "value", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -897,6 +1000,23 @@ export const Rollout = /*@__PURE__*/ proto3.makeMessageType(
     { no: 13, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 14, name: "target_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 15, name: "target_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 16, name: "replicas", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 17, name: "paused", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 18, name: "abort", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 19, name: "stable_ready_replicas", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 20, name: "canary_ready_replicas", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 21, name: "current_step_started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 22, name: "promoted_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 23, name: "preview_healthy_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 24, name: "current_pod_hash", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 25, name: "previous_active_rs", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 26, name: "traffic_router", kind: "message", T: TrafficRouter },
+    { no: 27, name: "canary_steps", kind: "message", T: RolloutStep, repeated: true },
+    { no: 28, name: "analysis_checks", kind: "message", T: RolloutAnalysisCheck, repeated: true },
+    { no: 29, name: "ab_routes", kind: "message", T: RolloutABRoute, repeated: true },
+    { no: 30, name: "mirror_percent", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 31, name: "auto_promotion_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 32, name: "scale_down_delay_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ],
 );
 
@@ -981,6 +1101,49 @@ export const AbortRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.AbortRolloutResponse",
   () => [
     { no: 1, name: "rollout", kind: "message", T: Rollout },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListAnalysisRunsRequest
+ */
+export const ListAnalysisRunsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListAnalysisRunsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListAnalysisRunsResponse
+ */
+export const ListAnalysisRunsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListAnalysisRunsResponse",
+  () => [
+    { no: 1, name: "analysis_runs", kind: "message", T: AnalysisRun, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetAnalysisRunRequest
+ */
+export const GetAnalysisRunRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetAnalysisRunRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetAnalysisRunResponse
+ */
+export const GetAnalysisRunResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetAnalysisRunResponse",
+  () => [
+    { no: 1, name: "analysis_run", kind: "message", T: AnalysisRun },
   ],
 );
 
@@ -1176,6 +1339,13 @@ export const GetResourceResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 8, name: "desired_manifest", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 9, name: "diff", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 10, name: "events", kind: "message", T: KubernetesEvent, repeated: true },
+    { no: 11, name: "api_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 12, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 13, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 14, name: "resource", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 15, name: "uid", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 16, name: "labels", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+    { no: 17, name: "annotations", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
   ],
 );
 

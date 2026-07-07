@@ -81,7 +81,10 @@ export function InvestigationPanel({
   }
 
   useEffect(() => {
-    run()
+    const timer = window.setTimeout(() => {
+      void run()
+    }, 0)
+    return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 

@@ -2,7 +2,7 @@ import type { PolicyResult, Release } from "@/gen/paprika/v1/api_pb"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
-import { GitBranch, Target, Layers, ArrowRight, CheckCircle2, XCircle, AlertTriangle, RotateCcw } from "lucide-react"
+import { GitBranch, Target, Layers, ArrowRight, CheckCircle2, XCircle, AlertTriangle, RotateCcw, Boxes, Workflow, FileText } from "lucide-react"
 
 function PolicySummary({ results }: { results?: PolicyResult[] }) {
   if (!results || results.length === 0) return null
@@ -35,6 +35,9 @@ function PolicySummary({ results }: { results?: PolicyResult[] }) {
 }
 
 function ReleaseCard({ release }: { release: Release }) {
+  const completedHooks = release.hookStatuses.filter((h) => h.status === "Succeeded").length
+  const totalHooks = release.hookStatuses.length
+
   return (
     <Card className="transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
@@ -76,6 +79,42 @@ function ReleaseCard({ release }: { release: Release }) {
             <Layers className="size-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Current stage:</span>
             <span className="font-mono text-xs font-medium">{release.currentStage}</span>
+          </div>
+        )}
+
+        {(release.rolloutRef || release.canaryWeight > 0 || totalHooks > 0 || release.renderedManifestSnapshot) && (
+          <div className="grid gap-2">
+            {release.rolloutRef && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2">
+                <Boxes className="size-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Rollout</span>
+                <span className="truncate font-mono text-xs font-medium">{release.rolloutRef}</span>
+              </div>
+            )}
+            {release.canaryWeight > 0 && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 px-3 py-2">
+                <div className="flex items-center gap-1.5">
+                  <Workflow className="size-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium">Canary {release.canaryWeight}%</span>
+                </div>
+                <span className="font-mono text-xs text-muted-foreground">step {release.canaryStepIndex}</span>
+              </div>
+            )}
+            {release.renderedManifestSnapshot && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-2">
+                <FileText className="size-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Snapshot</span>
+                <span className="truncate font-mono text-xs font-medium">{release.renderedManifestSnapshot}</span>
+              </div>
+            )}
+            {totalHooks > 0 && (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 px-3 py-2">
+                <span className="text-xs text-muted-foreground">Hooks</span>
+                <span className="font-mono text-xs font-medium tabular-nums">
+                  {completedHooks}/{totalHooks}
+                </span>
+              </div>
+            )}
           </div>
         )}
 

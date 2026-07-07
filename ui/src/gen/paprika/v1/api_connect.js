@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, InvestigateRequest, InvestigateResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -199,6 +199,24 @@ export const PaprikaService = {
       name: "AbortRollout",
       I: AbortRolloutRequest,
       O: AbortRolloutResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListAnalysisRuns
+     */
+    listAnalysisRuns: {
+      name: "ListAnalysisRuns",
+      I: ListAnalysisRunsRequest,
+      O: ListAnalysisRunsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetAnalysisRun
+     */
+    getAnalysisRun: {
+      name: "GetAnalysisRun",
+      I: GetAnalysisRunRequest,
+      O: GetAnalysisRunResponse,
       kind: MethodKind.Unary,
     },
     /**

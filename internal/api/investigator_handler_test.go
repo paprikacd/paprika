@@ -74,6 +74,7 @@ func TestInvestigate_DeploymentAllClear(t *testing.T) {
 	require.NotNil(t, resp.Msg)
 	require.Equal(t, "All clear", resp.Msg.Summary)
 	require.Equal(t, "deterministic", resp.Msg.Narrator)
+	require.NotZero(t, resp.Msg.GeneratedAtMs)
 }
 
 func TestInvestigate_DeploymentZeroReadyCritical(t *testing.T) {
@@ -96,7 +97,7 @@ func TestInvestigate_DeploymentZeroReadyCritical(t *testing.T) {
 	require.NoError(t, err)
 	found := false
 	for _, f := range resp.Msg.Findings {
-		if f.Id == "deployment_replicas_demo-deploy" && f.Severity == paprikav1.Severity_CRITICAL { //nolint:staticcheck
+		if f.Id == "deployment_replicas_demo-deploy" && f.Severity == paprikav1.Severity_CRITICAL {
 			found = true
 		}
 	}
@@ -107,7 +108,7 @@ func TestInvestigate_PodCrashLoop(t *testing.T) {
 	tail := int32(5)
 	srv := newInvestigatorServer(t, []runtime.Object{
 		&corev1.Pod{
-			TypeMeta: metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+			TypeMeta:   metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
 			ObjectMeta: metav1.ObjectMeta{Name: "demo-pod", Namespace: "test-ns"},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{Name: "app", Image: "demo:1"}},
@@ -134,7 +135,7 @@ func TestInvestigate_PodCrashLoop(t *testing.T) {
 	require.NoError(t, err)
 	found := false
 	for _, f := range resp.Msg.Findings {
-		if f.Id == "crash_loop_app" && f.Severity == paprikav1.Severity_CRITICAL { //nolint:staticcheck
+		if f.Id == "crash_loop_app" && f.Severity == paprikav1.Severity_CRITICAL {
 			found = true
 		}
 	}

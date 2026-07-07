@@ -9,7 +9,9 @@ import (
 	"connectrpc.com/connect"
 	"github.com/pmezard/go-difflib/difflib"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -43,6 +45,18 @@ var knownResourceGVRs = map[string]schema.GroupVersionResource{
 	"RoleBinding":             {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"},
 	"ClusterRole":             {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
 	"ClusterRoleBinding":      {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
+}
+
+var clusterScopedResources = map[schema.GroupVersionResource]bool{
+	{Group: "", Version: "v1", Resource: "namespaces"}:                                   true,
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}:        true,
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}: true,
+}
+
+type resolvedResourceMapping struct {
+	gvr   schema.GroupVersionResource
+	gvk   schema.GroupVersionKind
+	scope meta.RESTScopeName
 }
 
 // GetResource returns detailed information about a single managed resource
@@ -109,8 +123,11 @@ func (s *PaprikaServer) populateLiveManifest(ctx context.Context, resp *paprikav
 	if s.dynamicClient == nil {
 		return
 	}
-	if live, err := s.getLiveManifest(ctx, kind, name, namespace); err == nil {
-		resp.LiveManifest = live
+	if obj, mapping, err := s.getLiveResource(ctx, kind, name, namespace); err == nil {
+		populateResourceIdentity(resp, obj, &mapping)
+		if live, err := manifestToYAML(obj.Object); err == nil {
+			resp.LiveManifest = live
+		}
 	}
 }
 
@@ -137,24 +154,121 @@ func (s *PaprikaServer) populateEvents(ctx context.Context, resp *paprikav1.GetR
 	resp.Events = s.getResourceEvents(ctx, kind, name, namespace)
 }
 
-func (s *PaprikaServer) getLiveManifest(ctx context.Context, kind, name, namespace string) (string, error) {
-	gvr, ok := knownResourceGVRs[kind]
-	if !ok {
-		return "", fmt.Errorf("unknown kind %q", kind)
+func (s *PaprikaServer) getLiveResource(ctx context.Context, kind, name, namespace string) (*unstructured.Unstructured, resolvedResourceMapping, error) {
+	mapping, err := s.resolveResourceMapping(kind)
+	if err != nil {
+		return nil, resolvedResourceMapping{}, err
 	}
-	resource := s.dynamicClient.Resource(gvr)
-	if gvr.Group == "" && gvr.Resource == "namespaces" {
-		obj, err := resource.Get(ctx, name, metav1.GetOptions{})
-		if err != nil {
-			return "", fmt.Errorf("get live %s/%s: %w", kind, name, err)
+
+	resource := s.dynamicClient.Resource(mapping.gvr)
+	if mapping.scope == meta.RESTScopeNameRoot {
+		obj, getErr := resource.Get(ctx, name, metav1.GetOptions{})
+		if getErr != nil {
+			return nil, mapping, fmt.Errorf("get live %s/%s: %w", kind, name, getErr)
 		}
-		return manifestToYAML(obj.Object)
+		return obj, mapping, nil
 	}
 	obj, err := resource.Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("get live %s/%s/%s: %w", kind, namespace, name, err)
+		return nil, mapping, fmt.Errorf("get live %s/%s/%s: %w", kind, namespace, name, err)
 	}
-	return manifestToYAML(obj.Object)
+	return obj, mapping, nil
+}
+
+func (s *PaprikaServer) resolveResourceMapping(kind string) (resolvedResourceMapping, error) {
+	if gvr, ok := knownResourceGVRs[kind]; ok {
+		scope := meta.RESTScopeNameNamespace
+		if clusterScopedResources[gvr] {
+			scope = meta.RESTScopeNameRoot
+		}
+		return resolvedResourceMapping{
+			gvr:   gvr,
+			gvk:   schema.GroupVersionKind{Group: gvr.Group, Version: gvr.Version, Kind: kind},
+			scope: scope,
+		}, nil
+	}
+	if s.restMapper == nil {
+		return resolvedResourceMapping{}, fmt.Errorf("unknown kind %q", kind)
+	}
+	mapping, err := s.restMapper.RESTMapping(schema.GroupKind{Kind: kind})
+	if err == nil {
+		return resolvedResourceMapping{
+			gvr:   mapping.Resource,
+			gvk:   mapping.GroupVersionKind,
+			scope: mapping.Scope.Name(),
+		}, nil
+	}
+	mapping, err = s.resolveResourceMappingByPlural(kind)
+	if err != nil {
+		return resolvedResourceMapping{}, fmt.Errorf("resolve kind %q: %w", kind, err)
+	}
+	return resolvedResourceMapping{
+		gvr:   mapping.Resource,
+		gvk:   mapping.GroupVersionKind,
+		scope: mapping.Scope.Name(),
+	}, nil
+}
+
+func (s *PaprikaServer) resolveResourceMappingByPlural(kind string) (*meta.RESTMapping, error) {
+	resourceName := kindToResourceName(kind)
+	resources, err := s.restMapper.ResourcesFor(schema.GroupVersionResource{Resource: resourceName})
+	if err != nil {
+		return nil, fmt.Errorf("resolve resource %q: %w", resourceName, err)
+	}
+	for _, gvr := range resources {
+		gvks, err := s.restMapper.KindsFor(gvr)
+		if err != nil {
+			continue
+		}
+		for _, gvk := range gvks {
+			if gvk.Kind != kind {
+				continue
+			}
+			mapping, err := s.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+			if err == nil {
+				return mapping, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("no REST mapping for resource %q", resourceName)
+}
+
+func kindToResourceName(kind string) string {
+	if kind == "" {
+		return ""
+	}
+	lower := strings.ToLower(kind)
+	if strings.HasSuffix(lower, "s") {
+		return lower + "es"
+	}
+	if strings.HasSuffix(lower, "y") {
+		return strings.TrimSuffix(lower, "y") + "ies"
+	}
+	return lower + "s"
+}
+
+func populateResourceIdentity(resp *paprikav1.GetResourceResponse, obj *unstructured.Unstructured, mapping *resolvedResourceMapping) {
+	resp.ApiVersion = mapping.gvk.GroupVersion().String()
+	resp.Group = mapping.gvk.Group
+	resp.Version = mapping.gvk.Version
+	resp.Resource = mapping.gvr.Resource
+	resp.Uid = string(obj.GetUID())
+	resp.Labels = copyStringMap(obj.GetLabels())
+	resp.Annotations = copyStringMap(obj.GetAnnotations())
+	if resp.ApiVersion == "" {
+		resp.ApiVersion = obj.GetAPIVersion()
+	}
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *PaprikaServer) getDesiredManifest(ctx context.Context, app *pipelinesv1alpha1.Application, kind, name string) (string, error) {

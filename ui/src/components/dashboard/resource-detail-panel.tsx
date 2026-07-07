@@ -5,7 +5,7 @@ import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { GetResourceResponse, KubernetesEvent, LogChunk } from "@/gen/paprika/v1/api_pb"
-import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, RefreshCw, Pause, Play, Search, Wifi, WifiOff, Sparkles } from "lucide-react"
+import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, Pause, Play, Search, Wifi, WifiOff, Sparkles } from "lucide-react"
 import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
 
 const transport = createTransport()
@@ -44,29 +44,32 @@ export function ResourceDetailPanel({
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError(null)
-    client
-      .getResource({
-        applicationNamespace,
-        applicationName,
-        resourceKind: resource.kind,
-        resourceName: resource.name,
-        resourceNamespace: resource.namespace,
-      })
-      .then((res) => {
-        if (!cancelled) {
-          setData(res)
-          if (!res.diff && !res.liveManifest) {
-            setTab("live")
+    queueMicrotask(() => {
+      if (cancelled) return
+      setLoading(true)
+      setError(null)
+      client
+        .getResource({
+          applicationNamespace,
+          applicationName,
+          resourceKind: resource.kind,
+          resourceName: resource.name,
+          resourceNamespace: resource.namespace,
+        })
+        .then((res) => {
+          if (!cancelled) {
+            setData(res)
+            if (!res.diff && !res.liveManifest) {
+              setTab("live")
+            }
           }
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load resource")
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load resource")
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
       })
     return () => {
       cancelled = true
@@ -97,6 +100,33 @@ export function ResourceDetailPanel({
             </div>
             {resource.healthMessage && (
               <p className="mt-1 text-xs text-muted-foreground">{resource.healthMessage}</p>
+            )}
+            {data && (
+              <div className="mt-2 flex max-w-xl flex-wrap gap-1.5">
+                {data.apiVersion && (
+                  <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    {data.apiVersion}
+                  </span>
+                )}
+                {data.resource && (
+                  <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    {data.resource}
+                  </span>
+                )}
+                {data.uid && (
+                  <span className="max-w-48 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                    {data.uid}
+                  </span>
+                )}
+                {Object.entries(data.labels ?? {}).slice(0, 3).map(([key, value]) => (
+                  <span
+                    key={key}
+                    className="max-w-64 truncate rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary"
+                  >
+                    {key}={value}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -294,12 +324,14 @@ function LogsTab({
       abortRef.current = null
       return
     }
-    setLines([])
-    setPodName(null)
-    setError(null)
-    setLineCount(0)
-    setFirstChunkAt(null)
-    setReconnecting(false)
+    queueMicrotask(() => {
+      setLines([])
+      setPodName(null)
+      setError(null)
+      setLineCount(0)
+      setFirstChunkAt(null)
+      setReconnecting(false)
+    })
   }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 
   // Open the streaming RPC and pump chunks into the line buffer with

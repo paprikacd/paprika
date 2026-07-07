@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	corev1 "k8s.io/api/core/v1"
@@ -83,14 +84,17 @@ func (s *PaprikaServer) ListInvestigatorPlugins(
 	ctx context.Context,
 	_ *connect.Request[paprikav1.ListInvestigatorPluginsRequest],
 ) (*connect.Response[paprikav1.ListInvestigatorPluginsResponse], error) {
-	var plugins []*paprikav1.PluginInfo
-	for _, src := range investigatorRegistry.Sources() {
+	sources := investigatorRegistry.Sources()
+	detectors := investigatorRegistry.Detectors()
+	narrators := investigatorRegistry.Narrators()
+	plugins := make([]*paprikav1.PluginInfo, 0, len(sources)+len(detectors)+len(narrators))
+	for _, src := range sources {
 		plugins = append(plugins, &paprikav1.PluginInfo{Name: src.Name(), Type: "source"})
 	}
-	for _, det := range investigatorRegistry.Detectors() {
+	for _, det := range detectors {
 		plugins = append(plugins, &paprikav1.PluginInfo{Name: det.ID(), Type: "detector"})
 	}
-	for _, narr := range investigatorRegistry.Narrators() {
+	for _, narr := range narrators {
 		plugins = append(plugins, &paprikav1.PluginInfo{Name: narr.Name(), Type: "narrator"})
 	}
 	// Deterministic ordering for stable UI rendering.
@@ -186,7 +190,8 @@ func (s *PaprikaServer) fetchInvestigatorEvents(ctx context.Context, kind, name,
 		list.Items = list.Items[:investigatorEventsLimit]
 	}
 	out := make([]investigator.KubernetesEvent, 0, len(list.Items))
-	for _, e := range list.Items {
+	for i := range list.Items {
+		e := &list.Items[i]
 		out = append(out, investigator.KubernetesEvent{
 			Type:            e.Type,
 			Reason:          e.Reason,
@@ -210,8 +215,15 @@ func (s *PaprikaServer) fetchInvestigatorLogs(ctx context.Context, kind, name, n
 	if err != nil {
 		return nil
 	}
-	defer logs.Close()
-	data, _ := io.ReadAll(logs)
+	defer func() {
+		if closeErr := logs.Close(); closeErr != nil {
+			_ = closeErr
+		}
+	}()
+	data, err := io.ReadAll(logs)
+	if err != nil {
+		return nil
+	}
 	if len(data) == 0 {
 		return nil
 	}
@@ -222,8 +234,9 @@ func (s *PaprikaServer) fetchInvestigatorLogs(ctx context.Context, kind, name, n
 // shape (and stamps the generated-at timestamp).
 func toProtoInvestigateResponse(r *investigator.Response) *paprikav1.InvestigateResponse {
 	out := &paprikav1.InvestigateResponse{
-		Summary:  r.Summary,
-		Narrator: r.Narrator,
+		Summary:       r.Summary,
+		Narrator:      r.Narrator,
+		GeneratedAtMs: generatedAtMS(r),
 	}
 	for _, f := range r.Findings {
 		out.Findings = append(out.Findings, &paprikav1.InvestigationFinding{
@@ -236,6 +249,17 @@ func toProtoInvestigateResponse(r *investigator.Response) *paprikav1.Investigate
 		})
 	}
 	return out
+}
+
+func generatedAtMS(r *investigator.Response) uint64 {
+	if r != nil && r.GeneratedAtMS > 0 {
+		return uint64(r.GeneratedAtMS)
+	}
+	now := time.Now().UnixMilli()
+	if now <= 0 {
+		return 0
+	}
+	return uint64(now)
 }
 
 func evidenceToProto(ev []investigator.Evidence) []*paprikav1.FindingEvidence {
