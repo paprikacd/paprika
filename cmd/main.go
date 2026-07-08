@@ -757,6 +757,7 @@ func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Lo
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	mux.Handle("/events", apiserver.NewSSEHandler(broker))
 	mux.Handle("/healthz", healthzHandler(log))
+	mux.Handle("/readyz", healthzHandler(log))
 	// Register extra handlers before the / catch-all so specific routes win.
 	for _, h := range extraHandlers {
 		h(mux)

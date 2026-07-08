@@ -483,6 +483,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	uiMux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
+	uiMux.Handle("/healthz", healthzHandler(setupLog))
+	uiMux.Handle("/readyz", healthzHandler(setupLog))
 	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
 	if err != nil {
 		return nil, err
