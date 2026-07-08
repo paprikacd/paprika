@@ -1,8 +1,11 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/skunkworq/uptime/api
-  tag: latest
+  repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api
+  tag: ab2d5b3
+
+imagePullSecrets:
+  - name: telesis-gar
 
 secretEnv:
   existingSecret: telesis-api-env
@@ -44,4 +47,3 @@ autoscaling:
 
 pdb:
   enabled: false
-

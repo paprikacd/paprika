@@ -10,7 +10,7 @@ This note captures the current shape of `/Users/benebsworth/projects/uptime` and
 | API edge | Cloudflare Worker `uptime-edge-cache` at `https://api.telesis.dev` | Proxies to `origin.telesis.dev`; Worker deploy uses Wrangler. |
 | API origin | DigitalOcean droplet `170.64.247.130` | Caddy routes `api.telesis.dev` and `origin.telesis.dev` to localhost `9500`. |
 | Backend services | Docker Compose in `/opt/telesis` | `api`, `scheduler`, `runner`, `resultprocessor`, `rollup`, `pubsub`. |
-| Images | `ghcr.io/skunkworq/uptime/{api,scheduler,runner,resultprocessor,rollup}:latest` | Build script targets `linux/amd64`. |
+| Images | API mirrored to `australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api:ab2d5b3`; legacy services still reference `ghcr.io/skunkworq/uptime/{scheduler,runner,resultprocessor,rollup}:latest` | Build script targets `linux/amd64`. |
 | Database | Supabase Postgres | Existing compose notes IPv6 for direct DB connectivity. |
 | Auth | Firebase Authentication | API uses Firebase project and admin credentials. |
 | Queue | Pub/Sub emulator container | Existing services use pull mode through `PUBSUB_EMULATOR_HOST=pubsub:8085`. |
@@ -51,7 +51,7 @@ The first phase now has concrete artifacts:
 
 1. Add a Telesis ApplicationSet or multiple Applications with per-service health checks and environment Secret references.
 2. Use canary rollout for `api` first, with Cloudflare still pointing at the droplet origin until the VKE origin passes health and quick-check smoke.
-3. Use the Paprika health check for `POST /v1/quick-check` in `deploy/telesis-api-application.yaml` as the promotion gate.
+3. Use the Paprika health checks in `deploy/telesis-api-application.yaml` as the promotion gate, with `POST /v1/quick-check` kept as a manual or low-frequency synthetic smoke test.
 4. Decide runner isolation:
    - Preferred short term: keep runner on the existing droplet or a Sydney worker host, but manage it through Paprika once agent scheduling is ready.
    - Preferred long term: dedicated VKE node pool or separate Sydney cluster with restricted runner permissions.
@@ -61,21 +61,16 @@ The first phase now has concrete artifacts:
 
 ## Demo Coverage
 
-The demo app now exercises canary rollout and an HTTP health gate. Telesis uses the same shape through `deploy/telesis-api-application.yaml` once secrets and runner placement are ready:
+The demo app now exercises canary rollout and an HTTP health gate. Telesis uses the same shape through `deploy/telesis-api-application.yaml`, with the API image pulled from Google Artifact Registry through the `telesis-gar` secret:
 
 ```yaml
 healthChecks:
   - name: api-ready
     httpProbe:
-      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/health/ready
+      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/health
     expression: http.statusCode == 200
-  - name: api-quick-check
+  - name: api-detailed-health
     httpProbe:
-      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/v1/quick-check
-      method: POST
-      headers:
-        Content-Type: application/json
-      body: '{"url":"https://telesis.dev","type":"uptime","timeout_seconds":15}'
-      timeout: 65
-    expression: http.statusCode == 200 && http.body.contains('"status":"success"')
+      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/health
+    expression: http.statusCode == 200
 ```

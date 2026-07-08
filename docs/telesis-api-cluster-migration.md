@@ -6,7 +6,7 @@ This runbook moves the Telesis API origin into a Paprika-managed Kubernetes clus
 
 The first movable unit is only the public API origin:
 
-- `charts/telesis-api` deploys `ghcr.io/skunkworq/uptime/api`.
+- `charts/telesis-api` deploys `australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api`.
 - It owns a Deployment, Service, optional HTTPRoute or Ingress, optional HPA, optional PDB, and optional ServiceMonitor.
 - It reads non-secret runtime config from a ConfigMap.
 - It reads sensitive config from an existing Secret named by `secretEnv.existingSecret`.
@@ -25,7 +25,19 @@ That separation is deliberate. The API can move independently while the browser 
 
 Create these in the Application namespace before applying `deploy/telesis-api-application.yaml`.
 
-The API image lives in a private GHCR package (`ghcr.io`, not Google `gcr.io`). Create `skunkworq-ghcr` as a namespace-scoped `kubernetes.io/dockerconfigjson` image pull secret before rollout, and keep `imagePullSecrets[0].name: skunkworq-ghcr` in the Application parameters. The GitHub token must have `read:packages` and access to the `ghcr.io/skunkworq/uptime/api` package; a plain `repo` token can authenticate but still fail with `403 Forbidden`.
+The API image is mirrored into Google Artifact Registry at `australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api`. Create `telesis-gar` as a namespace-scoped `kubernetes.io/dockerconfigjson` image pull secret before rollout, and keep `imagePullSecrets[0].name: telesis-gar` in the Application parameters.
+
+```bash
+gcloud config set account ben.ebsworth@gmail.com
+gcloud config set project uptime-485903
+KUBECONFIG_PATH=terraform/omega-oidc.kubeconfig \
+  NAMESPACE=paprika-e2e \
+  ./deploy/seed-gar-pull-secret.sh
+```
+
+The helper creates or reuses `vultr-telesis-pull@uptime-485903.iam.gserviceaccount.com`, grants `roles/artifactregistry.reader` on the `uptime-prod-docker` repository, creates a service-account key for the Docker config, replaces the Kubernetes pull secret, and validates the pull with a temporary pod.
+
+GHCR remains usable as a fallback source if that package is made readable by a token with `read:packages` and package access:
 
 ```bash
 export GHCR_USERNAME='<github-user-or-bot>'
@@ -34,8 +46,6 @@ KUBECONFIG_PATH=terraform/omega-oidc.kubeconfig \
   NAMESPACE=paprika-e2e \
   ./deploy/seed-ghcr-pull-secret.sh
 ```
-
-If the target registry is moved to Google Artifact Registry instead, use the Artifact Registry host as `REGISTRY` and a service-account JSON key as the Docker password for username `_json_key`; keep the Kubernetes secret name and Application `imagePullSecrets` wiring the same.
 
 Firebase credentials are split by runtime boundary:
 

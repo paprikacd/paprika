@@ -15,9 +15,9 @@ spec:
     path: charts/telesis-api
     pollInterval: 60s
   parameters:
-    image.repository: ghcr.io/skunkworq/uptime/api
-    image.tag: latest
-    imagePullSecrets[0].name: skunkworq-ghcr
+    image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api
+    image.tag: ab2d5b3
+    imagePullSecrets[0].name: telesis-gar
     secretEnv.existingSecret: telesis-api-env
     secretEnv.optional: "false"
     firebaseAdmin.existingSecret: telesis-firebase-admin
