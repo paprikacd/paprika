@@ -15,6 +15,6 @@ import (
 // schemas fall back to JSON automatically because AcceptContentTypes lists
 // both content types.
 func negotiateProtobuf(cfg *rest.Config) {
-	cfg.ContentConfig.ContentType = runtime.ContentTypeProtobuf
-	cfg.ContentConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
+	cfg.ContentType = runtime.ContentTypeProtobuf
+	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 }

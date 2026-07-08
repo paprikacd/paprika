@@ -17,7 +17,7 @@ func (d *ConfigDriftDetector) ID() string { return "config_drift" }
 func (d *ConfigDriftDetector) Severity() Severity { return SeverityWarning }
 
 // Detect returns a finding when Input.Diff is non-empty.
-func (d *ConfigDriftDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *ConfigDriftDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if strings.TrimSpace(in.Diff) == "" {
 		return nil, nil
 	}

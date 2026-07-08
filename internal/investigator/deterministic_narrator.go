@@ -17,6 +17,8 @@ func (n *DeterministicNarrator) Narrate(_ context.Context, findings []Finding, _
 	var crit, warn, info int
 	for _, f := range findings {
 		switch f.Severity {
+		case SeverityUnspecified:
+			continue
 		case SeverityCritical:
 			crit++
 		case SeverityWarning:
@@ -67,7 +69,7 @@ func sprintfCount(format string, a, b, c int) string {
 		}
 		out = append(out, format[i])
 	}
-	if len(format) > 0 {
+	if format != "" {
 		out = append(out, format[len(format)-1])
 	}
 	return string(out)

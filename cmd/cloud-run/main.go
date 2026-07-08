@@ -315,8 +315,8 @@ func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {
 // for built-in K8s kinds. CRDs and Watch payloads without protobuf schemas fall back
 // to JSON automatically because AcceptContentTypes lists both.
 func negotiateProtobuf(cfg *rest.Config) {
-	cfg.ContentConfig.ContentType = runtime.ContentTypeProtobuf
-	cfg.ContentConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
+	cfg.ContentType = runtime.ContentTypeProtobuf
+	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 }
 
 func buildRenderer(ctx context.Context, setupLog logr.Logger, workDir string, k8sClient client.Client, repoServerAddr string, cacheCfg cache.Config) pipelines.TemplateRenderer {

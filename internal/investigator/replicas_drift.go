@@ -17,7 +17,7 @@ func (d *DeploymentReplicasDriftDetector) ID() string { return "deployment_repli
 func (d *DeploymentReplicasDriftDetector) Severity() Severity { return SeverityWarning }
 
 // Detect reads the Deployment's live replicas.
-func (d *DeploymentReplicasDriftDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *DeploymentReplicasDriftDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if in.LiveManifest == nil || in.LiveManifest.GetKind() != "Deployment" {
 		return nil, nil
 	}

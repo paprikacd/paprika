@@ -17,6 +17,6 @@ type ManifestSource struct{}
 func (s *ManifestSource) Name() string { return "manifest" }
 
 // Collect returns no evidence; manifest population happens in the handler.
-func (s *ManifestSource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence, error) {
+func (s *ManifestSource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence, error) { //nolint:gocritic // DataSource interface takes ResourceRef by value.
 	return nil, nil
 }

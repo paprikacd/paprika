@@ -9,12 +9,12 @@ import (
 // happyDetector always returns a fixed finding — used to verify the registry
 // fan-out + sort by severity.
 type happyDetector struct {
-	id string
-	sev Severity
+	id    string
+	sev   Severity
 	title string
 }
 
-func (d *happyDetector) ID() string { return d.id }
+func (d *happyDetector) ID() string         { return d.id }
 func (d *happyDetector) Severity() Severity { return d.sev }
 func (d *happyDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
 	return []Finding{{ID: d.id, Severity: d.sev, Title: d.title}}, nil
@@ -24,6 +24,7 @@ type happySource struct {
 	name string
 	ev   []Evidence
 }
+
 func (s *happySource) Name() string { return s.name }
 func (s *happySource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence, error) {
 	return s.ev, nil
@@ -32,12 +33,14 @@ func (s *happySource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence,
 type firstWinsNarrator struct {
 	out Report
 }
+
 func (n *firstWinsNarrator) Name() string { return "first" }
 func (n *firstWinsNarrator) Narrate(ctx context.Context, fs []Finding, ev []Evidence) (Report, error) {
 	return n.out, nil
 }
 
 type errorNarrator struct{}
+
 func (n *errorNarrator) Name() string { return "errors" }
 func (n *errorNarrator) Narrate(ctx context.Context, fs []Finding, ev []Evidence) (Report, error) {
 	return Report{}, errNarratorFail

@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"connectrpc.com/connect"
@@ -48,8 +49,8 @@ func (s *PaprikaServer) GetResourceLogs(
 	}
 
 	containerNames := make([]string, 0, len(pod.Spec.Containers))
-	for _, c := range pod.Spec.Containers {
-		containerNames = append(containerNames, c.Name)
+	for i := range pod.Spec.Containers {
+		containerNames = append(containerNames, pod.Spec.Containers[i].Name)
 	}
 	resp.PodName = pod.Name
 	resp.Containers = containerNames
@@ -78,7 +79,7 @@ func (s *PaprikaServer) resolveLogsPod(ctx context.Context, kind, name, namespac
 		return pod, nil
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Job":
 		pods, err := s.k8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: fmt.Sprintf("app=%s", name),
+			LabelSelector: "app=" + name,
 			Limit:         1,
 		})
 		if err != nil {
@@ -89,6 +90,6 @@ func (s *PaprikaServer) resolveLogsPod(ctx context.Context, kind, name, namespac
 		}
 		return &pods.Items[0], nil
 	default:
-		return nil, fmt.Errorf("logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job")
+		return nil, errors.New("logs only available for Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, or Job")
 	}
 }

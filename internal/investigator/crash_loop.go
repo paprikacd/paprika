@@ -2,7 +2,7 @@ package investigator
 
 import (
 	"context"
-	"strings"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,7 +20,7 @@ func (d *CrashLoopDetector) ID() string { return "crash_loop" }
 func (d *CrashLoopDetector) Severity() Severity { return SeverityCritical }
 
 // Detect inspects the live Pod manifest for restart counts and waiting reasons.
-func (d *CrashLoopDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *CrashLoopDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if in.LiveManifest == nil {
 		return nil, nil
 	}
@@ -33,7 +33,8 @@ func (d *CrashLoopDetector) Detect(ctx context.Context, in Input) ([]Finding, er
 		return nil, nil
 	}
 
-	for _, cs := range pod.Status.ContainerStatuses {
+	for i := range pod.Status.ContainerStatuses {
+		cs := &pod.Status.ContainerStatuses[i]
 		if cs.RestartCount >= 3 || cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff" {
 			f := Finding{
 				ID:       "crash_loop_" + cs.Name,
@@ -60,7 +61,7 @@ func (d *CrashLoopDetector) Detect(ctx context.Context, in Input) ([]Finding, er
 	return nil, nil
 }
 
-func reasonOrEmpty(cs corev1.ContainerStatus) string {
+func reasonOrEmpty(cs *corev1.ContainerStatus) string {
 	if cs.State.Waiting != nil {
 		return cs.State.Waiting.Reason
 	}
@@ -72,8 +73,8 @@ func reasonOrEmpty(cs corev1.ContainerStatus) string {
 
 // fromUnstructured converts an unstructured pod back into the typed object.
 func fromUnstructured(u *unstructured.Unstructured, out any) error {
-	return runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, out)
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, out); err != nil {
+		return fmt.Errorf("convert unstructured object: %w", err)
+	}
+	return nil
 }
-
-// unused-but-keeps-import from strings while we have the custom helpers.
-var _ = strings.Repeat

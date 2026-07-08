@@ -16,7 +16,7 @@ func (d *OOMKilledDetector) ID() string { return "oom_killed" }
 func (d *OOMKilledDetector) Severity() Severity { return SeverityCritical }
 
 // Detect reads the live Pod manifest's container statuses.
-func (d *OOMKilledDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *OOMKilledDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if in.LiveManifest == nil || in.LiveManifest.GetKind() != "Pod" {
 		return nil, nil
 	}
@@ -24,7 +24,8 @@ func (d *OOMKilledDetector) Detect(ctx context.Context, in Input) ([]Finding, er
 	if err := fromUnstructured(in.LiveManifest, &pod); err != nil {
 		return nil, nil
 	}
-	for _, cs := range pod.Status.ContainerStatuses {
+	for i := range pod.Status.ContainerStatuses {
+		cs := &pod.Status.ContainerStatuses[i]
 		if cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
 			exit := cs.LastTerminationState.Terminated.ExitCode
 			f := Finding{

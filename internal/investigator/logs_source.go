@@ -10,6 +10,6 @@ type LogsSource struct{}
 func (s *LogsSource) Name() string { return "logs" }
 
 // Collect returns no evidence; logs are pre-loaded by the handler.
-func (s *LogsSource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence, error) {
+func (s *LogsSource) Collect(ctx context.Context, ref ResourceRef) ([]Evidence, error) { //nolint:gocritic // DataSource interface takes ResourceRef by value.
 	return nil, nil
 }

@@ -3,8 +3,8 @@ package investigator
 // NewDefaultRegistry returns a Registry populated with all built-in plugins:
 //   - 3 DataSources: Manifest, Events, Logs
 //   - 8 Detectors: CrashLoop, OOMKilled, ImagePull, PendingScheduling,
-//                   DeploymentReplicasDrift, ConfigDrift, ForbiddenRbac,
-//                   EndpointMismatch
+//     DeploymentReplicasDrift, ConfigDrift, ForbiddenRbac,
+//     EndpointMismatch
 //   - 1 Narrator: DeterministicNarrator (always-on, never errors)
 //
 // Optional plugins (Anthropic narrator, MCP source, Prometheus source) live

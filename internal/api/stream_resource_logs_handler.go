@@ -57,7 +57,11 @@ func (s *PaprikaServer) StreamResourceLogs(
 	if err != nil {
 		return fmt.Errorf("opening log stream: %w", err)
 	}
-	defer func() { _ = kubeStream.Close() }()
+	defer func() {
+		if closeErr := kubeStream.Close(); closeErr != nil {
+			return
+		}
+	}()
 
 	container := pickContainer(req.Msg.ContainerName, pod)
 	// ServerStream satisfies logChunkSink (Send only); this is what makes the
@@ -74,9 +78,16 @@ type logChunkSink interface {
 
 // streamAdapter lets us pass *connect.ServerStream to forwardLogLines via the
 // logChunkSink interface.
-type streamAdapter struct{ s *connect.ServerStream[paprikav1.LogChunk] }
+type streamAdapter struct {
+	s *connect.ServerStream[paprikav1.LogChunk]
+}
 
-func (a streamAdapter) Send(c *paprikav1.LogChunk) error { return a.s.Send(c) }
+func (a streamAdapter) Send(c *paprikav1.LogChunk) error {
+	if err := a.s.Send(c); err != nil {
+		return fmt.Errorf("send log chunk: %w", err)
+	}
+	return nil
+}
 
 // pickContainer returns the explicit container name from the request, or the
 // first container on the pod if absent. Falls back to "" for pods with no
@@ -106,7 +117,7 @@ func forwardLogLines(
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return err
+			return fmt.Errorf("stream context done: %w", err)
 		}
 		line := scanner.Text()
 		// Trim trailing CR to keep client-side formatting clean.
@@ -118,7 +129,7 @@ func forwardLogLines(
 			TimestampMs:   time.Now().UnixMilli(),
 		}
 		if err := sink.Send(chunk); err != nil {
-			return err
+			return fmt.Errorf("send log chunk: %w", err)
 		}
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {

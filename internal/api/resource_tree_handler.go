@@ -150,54 +150,78 @@ func (s *PaprikaServer) populateNodeDetail(ctx context.Context, n *paprikav1.Res
 	}
 	switch n.Kind {
 	case "Pod":
-		pod, err := s.k8sClient.CoreV1().Pods(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
-		if err != nil {
-			return
-		}
-		n.Phase = string(pod.Status.Phase)
-		containers := make([]string, 0, len(pod.Spec.Containers))
-		ready := int32(0)
-		for _, c := range pod.Spec.Containers {
-			containers = append(containers, c.Name)
-		}
-		n.Containers = containers
-		n.Total = int32(len(pod.Spec.Containers))
-		for _, cs := range pod.Status.ContainerStatuses {
-			if cs.Ready {
-				ready++
-			}
-		}
-		n.Ready = ready
-		if pod.Status.Message != "" {
-			n.Message = pod.Status.Message
-		}
+		s.populatePodNodeDetail(ctx, n)
 	case "Deployment":
-		d, err := s.k8sClient.AppsV1().Deployments(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
-		if err != nil {
-			return
-		}
-		n.Ready = d.Status.ReadyReplicas
-		n.Total = d.Status.Replicas
-		for _, cond := range d.Status.Conditions {
-			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionFalse {
-				n.Message = cond.Message
-			}
-		}
+		s.populateDeploymentNodeDetail(ctx, n)
 	case "StatefulSet":
-		ss, err := s.k8sClient.AppsV1().StatefulSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
-		if err != nil {
-			return
-		}
-		n.Ready = ss.Status.ReadyReplicas
-		n.Total = ss.Status.Replicas
+		s.populateStatefulSetNodeDetail(ctx, n)
 	case "DaemonSet":
-		ds, err := s.k8sClient.AppsV1().DaemonSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
-		if err != nil {
-			return
-		}
-		n.Ready = ds.Status.NumberReady
-		n.Total = ds.Status.DesiredNumberScheduled
+		s.populateDaemonSetNodeDetail(ctx, n)
 	}
+}
+
+func (s *PaprikaServer) populatePodNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
+	pod, err := s.k8sClient.CoreV1().Pods(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	n.Phase = string(pod.Status.Phase)
+	containers := make([]string, 0, len(pod.Spec.Containers))
+	ready := int32(0)
+	for i := range pod.Spec.Containers {
+		containers = append(containers, pod.Spec.Containers[i].Name)
+	}
+	n.Containers = containers
+	n.Total = boundedInt32(len(pod.Spec.Containers))
+	for i := range pod.Status.ContainerStatuses {
+		if pod.Status.ContainerStatuses[i].Ready {
+			ready++
+		}
+	}
+	n.Ready = ready
+	if pod.Status.Message != "" {
+		n.Message = pod.Status.Message
+	}
+}
+
+func (s *PaprikaServer) populateDeploymentNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
+	d, err := s.k8sClient.AppsV1().Deployments(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	n.Ready = d.Status.ReadyReplicas
+	n.Total = d.Status.Replicas
+	for _, cond := range d.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionFalse {
+			n.Message = cond.Message
+		}
+	}
+}
+
+func (s *PaprikaServer) populateStatefulSetNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
+	ss, err := s.k8sClient.AppsV1().StatefulSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	n.Ready = ss.Status.ReadyReplicas
+	n.Total = ss.Status.Replicas
+}
+
+func (s *PaprikaServer) populateDaemonSetNodeDetail(ctx context.Context, n *paprikav1.ResourceTreeNode) {
+	ds, err := s.k8sClient.AppsV1().DaemonSets(n.Namespace).Get(ctx, n.Name, metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	n.Ready = ds.Status.NumberReady
+	n.Total = ds.Status.DesiredNumberScheduled
+}
+
+func boundedInt32(value int) int32 {
+	const maxInt32 = int(^uint32(0) >> 1)
+	if value > maxInt32 {
+		return int32(maxInt32)
+	}
+	return int32(value) //nolint:gosec // bounded above before conversion
 }
 
 // discoverChildren queries the cluster for child resources owned by any node

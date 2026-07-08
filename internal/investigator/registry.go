@@ -35,6 +35,8 @@ const (
 // String renders the severity enum as a lowercase label.
 func (s Severity) String() string {
 	switch s {
+	case SeverityUnspecified:
+		return "unspecified"
 	case SeverityCritical:
 		return "critical"
 	case SeverityWarning:
@@ -177,21 +179,40 @@ func (r *Registry) Narrators() []Narrator {
 //
 // Errors from individual plugins are swallowed; only catastrophic failures
 // (e.g. ctx cancelled) bubble up.
-func (r *Registry) Investigate(ctx context.Context, in Input) (*Response, error) {
+func (r *Registry) Investigate(ctx context.Context, in Input) (*Response, error) { //nolint:gocritic // Public API takes Input by value for detector consistency.
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("investigation context: %w", err)
 	}
 
-	// Collect evidence from sources.
-	var evidence []Evidence
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	evidence := r.collectEvidence(ctx, &in.Ref)
+	findings := r.detectFindings(ctx, &in)
+
+	sortFindings(findings)
+
+	summary, narrator := r.narrate(ctx, findings, evidence)
+
+	return &Response{
+		Findings: findings,
+		Summary:  summary,
+		Narrator: narrator,
+	}, nil
+}
+
+func (r *Registry) collectEvidence(ctx context.Context, ref *ResourceRef) []Evidence {
+	var (
+		evidence []Evidence
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+	)
 	for _, src := range r.Sources() {
 		src := src
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ev, _ := src.Collect(ctx, in.Ref)
+			ev, err := src.Collect(ctx, *ref)
+			if err != nil {
+				return
+			}
 			if len(ev) > 0 {
 				mu.Lock()
 				evidence = append(evidence, ev...)
@@ -200,15 +221,24 @@ func (r *Registry) Investigate(ctx context.Context, in Input) (*Response, error)
 		}()
 	}
 	wg.Wait()
+	return evidence
+}
 
-	// Run detectors.
-	var findings []Finding
+func (r *Registry) detectFindings(ctx context.Context, in *Input) []Finding {
+	var (
+		findings []Finding
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+	)
 	for _, det := range r.Detectors() {
 		det := det
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fs, _ := det.Detect(ctx, in)
+			fs, err := det.Detect(ctx, *in)
+			if err != nil {
+				return
+			}
 			if len(fs) > 0 {
 				mu.Lock()
 				findings = append(findings, fs...)
@@ -217,17 +247,19 @@ func (r *Registry) Investigate(ctx context.Context, in Input) (*Response, error)
 		}()
 	}
 	wg.Wait()
+	return findings
+}
 
-	// Sort critical → info, then by ID for stability.
+func sortFindings(findings []Finding) {
 	sort.SliceStable(findings, func(i, j int) bool {
 		if findings[i].Severity != findings[j].Severity {
 			return findings[i].Severity < findings[j].Severity
 		}
 		return findings[i].ID < findings[j].ID
 	})
+}
 
-	// First narrator wins.
-	var summary, narrator string
+func (r *Registry) narrate(ctx context.Context, findings []Finding, evidence []Evidence) (summary, narrator string) {
 	for _, narr := range r.Narrators() {
 		rep, err := narr.Narrate(ctx, findings, evidence)
 		if err != nil {
@@ -237,13 +269,5 @@ func (r *Registry) Investigate(ctx context.Context, in Input) (*Response, error)
 		narrator = narr.Name()
 		break
 	}
-
-	return &Response{
-		Findings: findings,
-		Summary:  summary,
-		Narrator: narrator,
-	}, nil
+	return summary, narrator
 }
-
-// Compile-time guard: keeps the unused import happy if Evidence types shrink.
-var _ = fmt.Sprintf

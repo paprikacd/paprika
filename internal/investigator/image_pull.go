@@ -15,7 +15,7 @@ func (d *ImagePullDetector) ID() string { return "image_pull" }
 func (d *ImagePullDetector) Severity() Severity { return SeverityCritical }
 
 // Detect scans K8s events for image-pull related failures.
-func (d *ImagePullDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *ImagePullDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if in.LiveManifest == nil {
 		return nil, nil
 	}
@@ -55,7 +55,7 @@ func (d *ImagePullDetector) Detect(ctx context.Context, in Input) ([]Finding, er
 			Title:    "Image pull failure",
 			Description: "Pod " + podNamespace + "/" + podName + " could not pull its container image. " +
 				"Check the image name, tag, registry credentials, and any imagePullSecrets.",
-			Evidence:    ev,
+			Evidence: ev,
 			Playbook: []string{
 				"Run `kubectl describe pod " + podName + "` to see the exact pull error",
 				"Verify the image tag exists in the registry (typo, missing digest, sha pinning)",

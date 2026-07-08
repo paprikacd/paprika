@@ -226,7 +226,7 @@ func TestGetResourceTreeDetailed_DeploymentWithReplicas(t *testing.T) {
 // mustExistingClient constructs a fake controller-runtime client with a minimal
 // demo-app Application. Used by detailed-tree tests that layer on top of
 // setupResourceTreeTest's discovery but need their own k8s clientsets.
-func mustExistingClient(t *testing.T) client.Client { //nolint:unused // (when k8sClient test refs differ)
+func mustExistingClient(t *testing.T) client.Client {
 	// Implementation provided by re-creating from scratch below.
 	t.Helper()
 	return buildDetHarnessClient(t)

@@ -22,7 +22,7 @@ func (d *EndpointMismatchDetector) Severity() Severity { return SeverityInfo }
 // decoupled); the handler is responsible for pre-loading Pods into Evidence.
 // For v1 we surface a "selector exists but no endpoints" check via the live
 // manifest plus any matching pod count from the Evidence list.
-func (d *EndpointMismatchDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *EndpointMismatchDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	if in.LiveManifest == nil || in.LiveManifest.GetKind() != "Service" {
 		return nil, nil
 	}

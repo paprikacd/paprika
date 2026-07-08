@@ -16,7 +16,7 @@ func (d *ForbiddenRbacDetector) ID() string { return "forbidden_rbac" }
 func (d *ForbiddenRbacDetector) Severity() Severity { return SeverityWarning }
 
 // Detect scans events for Forbidden reason targeting the resource.
-func (d *ForbiddenRbacDetector) Detect(ctx context.Context, in Input) ([]Finding, error) {
+func (d *ForbiddenRbacDetector) Detect(ctx context.Context, in Input) ([]Finding, error) { //nolint:gocritic // Detector interface takes Input by value.
 	var ev []Evidence
 	for _, e := range in.Events {
 		if e.Reason != "Forbidden" {

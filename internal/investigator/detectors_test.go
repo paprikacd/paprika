@@ -9,27 +9,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-func podManifest(status corev1.PodStatus) *unstructured.Unstructured {
-	u := &unstructured.Unstructured{Object: map[string]interface{}{}}
-	u.SetKind("Pod")
-	u.SetAPIVersion("v1")
-	u.SetName("demo-pod")
-	u.SetNamespace("demo-ns")
-	u.Object["spec"] = map[string]interface{}{
-		"containers": []interface{}{
-			map[string]interface{}{"name": "app", "image": "demo/app:1"},
-		},
-	}
-	// Marshal through converter round-trip so the detector can decode.
-	return u
-}
-
 // We rely on fromUnstructured needing a meaningful object. Build a fully-formed
 // Pod via runtime.NewScheme so detector tests stay representative.
 func podFixture(t *testing.T, status corev1.PodStatus) *unstructured.Unstructured {
 	t.Helper()
 	pod := corev1.Pod{
-		TypeMeta: metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+		TypeMeta:   metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-pod", Namespace: "demo-ns"},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{
 			{Name: "app", Image: "demo/app:1"},
@@ -108,7 +93,7 @@ func TestOOMKilledDetector_FiresOnTerminatedState(t *testing.T) {
 
 func TestDeploymentReplicasDetector_ZeroReadyEscalates(t *testing.T) {
 	in := Input{
-		Ref: ResourceRef{Kind: "Deployment", Name: "demo-deploy", Namespace: "demo-ns"},
+		Ref:          ResourceRef{Kind: "Deployment", Name: "demo-deploy", Namespace: "demo-ns"},
 		LiveManifest: deployFixture(t, 3, 0),
 	}
 	f, err := (&DeploymentReplicasDriftDetector{}).Detect(context.Background(), in)
@@ -125,7 +110,7 @@ func TestDeploymentReplicasDetector_ZeroReadyEscalates(t *testing.T) {
 
 func TestDeploymentReplicasDetector_PartialReplicasIsWarning(t *testing.T) {
 	in := Input{
-		Ref: ResourceRef{Kind: "Deployment", Name: "demo-deploy", Namespace: "demo-ns"},
+		Ref:          ResourceRef{Kind: "Deployment", Name: "demo-deploy", Namespace: "demo-ns"},
 		LiveManifest: deployFixture(t, 3, 1),
 	}
 	f, err := (&DeploymentReplicasDriftDetector{}).Detect(context.Background(), in)
@@ -139,7 +124,7 @@ func TestDeploymentReplicasDetector_PartialReplicasIsWarning(t *testing.T) {
 
 func TestDeploymentReplicasDetector_NoDrift(t *testing.T) {
 	in := Input{
-		Ref: ResourceRef{Kind: "Deployment", Name: "demo-deploy"},
+		Ref:          ResourceRef{Kind: "Deployment", Name: "demo-deploy"},
 		LiveManifest: deployFixture(t, 3, 3),
 	}
 	f, err := (&DeploymentReplicasDriftDetector{}).Detect(context.Background(), in)
@@ -273,7 +258,7 @@ func deployFixture(t *testing.T, replicas, ready int32) *unstructured.Unstructur
 func podPending(t *testing.T, phase corev1.PodPhase) *unstructured.Unstructured {
 	t.Helper()
 	pod := corev1.Pod{
-		TypeMeta: metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+		TypeMeta:   metav1.TypeMeta{Kind: "Pod", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-pod", Namespace: "demo-ns"},
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "demo/app:1"}}},
 		Status:     corev1.PodStatus{Phase: phase},
@@ -288,7 +273,7 @@ func podPending(t *testing.T, phase corev1.PodPhase) *unstructured.Unstructured 
 func svcFixture(t *testing.T, sel map[string]string) *unstructured.Unstructured {
 	t.Helper()
 	svc := corev1.Service{
-		TypeMeta: metav1.TypeMeta{Kind: "Service", APIVersion: "v1"},
+		TypeMeta:   metav1.TypeMeta{Kind: "Service", APIVersion: "v1"},
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-svc", Namespace: "demo-ns"},
 		Spec: corev1.ServiceSpec{
 			Selector: sel,
