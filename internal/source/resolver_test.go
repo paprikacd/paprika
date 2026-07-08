@@ -145,6 +145,48 @@ func TestComputeDirHash(t *testing.T) {
 	}
 }
 
+func TestComputeDirHashIgnoresGitMetadata(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Chart.yaml"), []byte("name: demo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := filepath.Join(dir, ".git", "refs", "heads")
+	if err := os.MkdirAll(gitDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "main"), []byte("old-ref"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	hash1, err := ComputeDirHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if writeErr := os.WriteFile(filepath.Join(gitDir, "main"), []byte("new-ref"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	hash2, err := ComputeDirHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash1 != hash2 {
+		t.Fatalf("git metadata change should not affect directory hash: %s != %s", hash1, hash2)
+	}
+
+	if writeErr := os.WriteFile(filepath.Join(dir, "Chart.yaml"), []byte("name: real-change\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	hash3, err := ComputeDirHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash2 == hash3 {
+		t.Fatal("chart content change should affect directory hash")
+	}
+}
+
 func TestSourceResolve_Invalid(t *testing.T) {
 	t.Parallel()
 

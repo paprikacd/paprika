@@ -45,8 +45,8 @@ func ComputeDirHash(dir string) (string, error) {
 		if err != nil {
 			return fmt.Errorf("walk path %q: %w", path, err)
 		}
-		if info.IsDir() {
-			return nil
+		if skip, skipErr := skipDirHashEntry(info); skip || skipErr != nil {
+			return skipErr
 		}
 		rel, relErr := filepath.Rel(dir, path)
 		if relErr != nil {
@@ -73,6 +73,16 @@ func ComputeDirHash(dir string) (string, error) {
 		return "", fmt.Errorf("hash directory: %w", err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func skipDirHashEntry(info os.FileInfo) (bool, error) {
+	if info.Name() == ".git" {
+		if info.IsDir() {
+			return true, filepath.SkipDir
+		}
+		return true, nil
+	}
+	return info.IsDir(), nil
 }
 
 // SanitizeName sanitizes a string for use in file paths.
