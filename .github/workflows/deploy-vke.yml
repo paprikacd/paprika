@@ -196,7 +196,7 @@ jobs:
       - name: Health check via port-forward
         run: |
           kubectl port-forward -n "${{ env.VKE_NAMESPACE }}" \
-            svc/${{ env.HELM_RELEASE }}-paprika-api-server 3000:3000 &
+            svc/${{ env.HELM_RELEASE }}-api-server 3000:3000 &
           PF_PID=$!
           trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
           sleep 5
