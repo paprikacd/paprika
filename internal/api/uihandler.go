@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -19,6 +20,17 @@ func cleanUIPath(p string) string {
 		p = "."
 	}
 	return p
+}
+
+func isUIHTMLRequest(sub fs.FS, requestPath string, info fs.FileInfo) bool {
+	if requestPath == "/" || strings.HasSuffix(requestPath, ".html") {
+		return true
+	}
+	if info.IsDir() {
+		_, err := fs.Stat(sub, path.Join(cleanUIPath(requestPath), "index.html"))
+		return err == nil
+	}
+	return false
 }
 
 //go:embed all:uistatic
@@ -60,6 +72,7 @@ func UIHandler() (http.Handler, error) {
 
 		f, err := sub.Open(cleanUIPath(r.URL.Path))
 		if err != nil {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write(indexPath); err != nil {
@@ -67,9 +80,10 @@ func UIHandler() (http.Handler, error) {
 			}
 			return
 		}
+		info, statErr := f.Stat()
 		f.Close() //nolint:errcheck,gosec // safe to ignore close error
 
-		if strings.HasSuffix(r.URL.Path, ".html") || r.URL.Path == "/" {
+		if statErr == nil && isUIHTMLRequest(sub, r.URL.Path, info) {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		} else {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
