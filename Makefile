@@ -437,7 +437,8 @@ omega-ci-vars: ## Sync non-secret VKE endpoint/CA/OIDC audience into GitHub Acti
 	gh variable set VKE_CLUSTER_ENDPOINT --body "$$endpoint"; \
 	gh variable set VKE_CLUSTER_CA_B64 --body "$$ca"; \
 	gh variable set VKE_K8S_OIDC_AUDIENCE --body "$$audience"; \
-	echo "Updated GitHub Actions VKE_CLUSTER_ENDPOINT, VKE_CLUSTER_CA_B64, and VKE_K8S_OIDC_AUDIENCE variables."
+	gh variable set VKE_TOKEN_EXCHANGE_URL --body "https://paprika.benebsworth.com/auth/github-actions/token"; \
+	echo "Updated GitHub Actions VKE_CLUSTER_ENDPOINT, VKE_CLUSTER_CA_B64, VKE_K8S_OIDC_AUDIENCE, and VKE_TOKEN_EXCHANGE_URL variables."
 
 ##@ E2E Testing
 

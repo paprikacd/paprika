@@ -3,6 +3,12 @@ kind: Namespace
 metadata:
   name: paprika-e2e
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-actions-vke-deployer
+  namespace: paprika-e2e
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -57,6 +63,9 @@ metadata:
   name: github-actions-vke-deployer
   namespace: paprika-e2e
 subjects:
+  - kind: ServiceAccount
+    name: github-actions-vke-deployer
+    namespace: paprika-e2e
   - apiGroup: rbac.authorization.k8s.io
     kind: User
     name: repo:paprikacd/paprika:environment:vke-production
@@ -98,6 +107,9 @@ kind: ClusterRoleBinding
 metadata:
   name: github-actions-vke-deployer
 subjects:
+  - kind: ServiceAccount
+    name: github-actions-vke-deployer
+    namespace: paprika-e2e
   - apiGroup: rbac.authorization.k8s.io
     kind: User
     name: repo:paprikacd/paprika:environment:vke-production

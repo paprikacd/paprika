@@ -10,6 +10,16 @@ metadata:
 {{- end }}
   name: {{ include "paprika.resourceName" (dict "suffix" "manager-role" "context" $) }}
 rules:
+{{- if .Values.githubActionsTokenExchange.enabled }}
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts/token
+  resourceNames:
+  - {{ .Values.githubActionsTokenExchange.serviceAccount.name | quote }}
+  verbs:
+  - create
+{{- end }}
 - apiGroups:
   - ""
   resources:

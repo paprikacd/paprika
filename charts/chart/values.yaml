@@ -767,6 +767,21 @@ auth:
   #   resources: ["applications"]
   #   namespaces: ["default"]
 
+## GitHub Actions OIDC token exchange for CI cluster access.
+## When enabled, the API server exposes /auth/github-actions/token. The endpoint
+## verifies GitHub's OIDC token claims before minting a short-lived Kubernetes
+## service-account token for kubectl/Helm.
+githubActionsTokenExchange:
+  enabled: false
+  audience: "paprika-vke-deploy"
+  repository: ""
+  environment: ""
+  subject: ""
+  tokenTTL: "15m"
+  serviceAccount:
+    namespace: ""
+    name: "github-actions-vke-deployer"
+
 ## RBAC configuration
 ##
 rbac:

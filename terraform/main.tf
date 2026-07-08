@@ -79,9 +79,9 @@ variable "kubernetes_oidc_username_claim" {
 }
 
 variable "kubernetes_oidc_groups_claim" {
-  description = "OIDC claim mapped to Kubernetes groups. GitHub Actions tokens do not include this by default, so RBAC binds exact user subjects."
+  description = "OIDC claim mapped to Kubernetes groups. GitHub Actions exposes repository as a string claim; RBAC still binds exact user subjects."
   type        = string
-  default     = "groups"
+  default     = "repository"
 }
 
 variable "cloudflare_api_key" {

@@ -220,6 +220,17 @@ auth:
       resources: ["*"]
       namespaces: ["*"]
 
+githubActionsTokenExchange:
+  enabled: true
+  audience: "paprika-vke-deploy"
+  repository: "paprikacd/paprika"
+  environment: "vke-production"
+  subject: "repo:paprikacd/paprika:environment:vke-production"
+  tokenTTL: "15m"
+  serviceAccount:
+    namespace: "paprika-e2e"
+    name: "github-actions-vke-deployer"
+
 rbac:
   helpers:
     enable: false

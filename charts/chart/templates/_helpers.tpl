@@ -192,6 +192,38 @@ Takes the component's .extraEnvFrom list.
 {{- end }}
 
 {{/*
+GitHub Actions token exchange environment shared between manager (monolith) and
+api-server deployments.
+*/}}
+{{- define "paprika.githubActionsTokenExchangeEnv" -}}
+{{- if .Values.githubActionsTokenExchange.enabled }}
+{{- if not .Values.githubActionsTokenExchange.repository }}
+{{- fail "githubActionsTokenExchange.repository is required when githubActionsTokenExchange.enabled=true" }}
+{{- end }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED
+  value: "true"
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_AUDIENCE
+  value: {{ .Values.githubActionsTokenExchange.audience | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REPOSITORY
+  value: {{ .Values.githubActionsTokenExchange.repository | quote }}
+{{- with .Values.githubActionsTokenExchange.environment }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENVIRONMENT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.githubActionsTokenExchange.subject }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SUBJECT
+  value: {{ . | quote }}
+{{- end }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAMESPACE
+  value: {{ default .Release.Namespace .Values.githubActionsTokenExchange.serviceAccount.namespace | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME
+  value: {{ .Values.githubActionsTokenExchange.serviceAccount.name | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_TOKEN_TTL
+  value: {{ .Values.githubActionsTokenExchange.tokenTTL | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}

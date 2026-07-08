@@ -111,6 +111,14 @@ type cliConfig struct {
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
 	authTokenSecret                                               string
+	githubActionsTokenExchangeEnabled                             bool
+	githubActionsTokenExchangeAudience                            string
+	githubActionsTokenExchangeRepository                          string
+	githubActionsTokenExchangeEnvironment                         string
+	githubActionsTokenExchangeSubject                             string
+	githubActionsTokenExchangeServiceAccountNamespace             string
+	githubActionsTokenExchangeServiceAccountName                  string
+	githubActionsTokenExchangeTTL                                 time.Duration
 	coordinatorMode                                               bool
 	coordinatorHeartbeat, coordinatorTTL                          time.Duration
 	zapOptions                                                    zap.Options
@@ -282,6 +290,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
 	cfg.authTokenSecret = getenv("PAPRIKA_AUTH_TOKEN_SECRET")
 	cfg.enableWebhooks = getenv("ENABLE_WEBHOOKS") != "false"
+	configureGitHubActionsTokenExchange(getenv, &cfg)
 
 	cfg.cacheBackend = getenv("PAPRIKA_CACHE_BACKEND")
 	cfg.cacheRedisAddr = getenv("PAPRIKA_REDIS_ADDR")
@@ -315,6 +324,22 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		return nil, fmt.Errorf("parse flags: %w", err)
 	}
 	return &cfg, nil
+}
+
+func configureGitHubActionsTokenExchange(getenv func(string) string, cfg *cliConfig) {
+	cfg.githubActionsTokenExchangeEnabled = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED") == "true"
+	cfg.githubActionsTokenExchangeAudience = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_AUDIENCE")
+	cfg.githubActionsTokenExchangeRepository = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REPOSITORY")
+	cfg.githubActionsTokenExchangeEnvironment = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENVIRONMENT")
+	cfg.githubActionsTokenExchangeSubject = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SUBJECT")
+	cfg.githubActionsTokenExchangeServiceAccountNamespace = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAMESPACE")
+	cfg.githubActionsTokenExchangeServiceAccountName = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME")
+	cfg.githubActionsTokenExchangeTTL = 15 * time.Minute
+	if ttl := getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_TOKEN_TTL"); ttl != "" {
+		if parsed, err := time.ParseDuration(ttl); err == nil {
+			cfg.githubActionsTokenExchangeTTL = parsed
+		}
+	}
 }
 
 func buildAPIServerOptions(
@@ -379,6 +404,11 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	if err != nil {
 		return err
 	}
+	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(apiCtx, cfg, clients.k8sClient)
+	if err != nil {
+		return err
+	}
+	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, extraMuxHandlers...)
 	if muxErr != nil {
@@ -486,6 +516,31 @@ func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.S
 	}
 
 	return handlers, nil
+}
+
+func buildGitHubActionsTokenExchangeHandlers(ctx context.Context, cfg *cliConfig, k8sClient kubernetes.Interface) ([]func(*http.ServeMux), error) {
+	if !cfg.githubActionsTokenExchangeEnabled {
+		return nil, nil
+	}
+	verifier, err := apiserver.NewGitHubActionsTokenVerifier(ctx, cfg.githubActionsTokenExchangeAudience)
+	if err != nil {
+		return nil, fmt.Errorf("create GitHub Actions token verifier: %w", err)
+	}
+	handler := apiserver.NewGitHubActionsTokenExchangeHandler(&apiserver.GitHubActionsTokenExchangeConfig{
+		Audience:                cfg.githubActionsTokenExchangeAudience,
+		Repository:              cfg.githubActionsTokenExchangeRepository,
+		Environment:             cfg.githubActionsTokenExchangeEnvironment,
+		Subject:                 cfg.githubActionsTokenExchangeSubject,
+		ServiceAccountNamespace: cfg.githubActionsTokenExchangeServiceAccountNamespace,
+		ServiceAccountName:      cfg.githubActionsTokenExchangeServiceAccountName,
+		ServiceAccountTokenTTL:  cfg.githubActionsTokenExchangeTTL,
+	}, verifier, apiserver.NewKubernetesServiceAccountTokenIssuer(k8sClient))
+
+	return []func(*http.ServeMux){
+		func(mux *http.ServeMux) {
+			mux.Handle("/auth/github-actions/token", handler)
+		},
+	}, nil
 }
 
 func buildWebhookCacheInvalidator(ctx context.Context, cacheCfg cache.Config, setupLog logr.Logger) *cache.Invalidator {

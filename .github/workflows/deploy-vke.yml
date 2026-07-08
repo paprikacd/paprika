@@ -64,9 +64,10 @@ jobs:
           VKE_CLUSTER_ENDPOINT: ${{ vars.VKE_CLUSTER_ENDPOINT }}
           VKE_CLUSTER_CA_B64: ${{ vars.VKE_CLUSTER_CA_B64 }}
           VKE_K8S_OIDC_AUDIENCE: ${{ vars.VKE_K8S_OIDC_AUDIENCE || 'paprika-vke-deploy' }}
+          VKE_TOKEN_EXCHANGE_URL: ${{ vars.VKE_TOKEN_EXCHANGE_URL || 'https://paprika.benebsworth.com/auth/github-actions/token' }}
         run: |
           missing=0
-          for name in VKE_CLUSTER_ENDPOINT VKE_CLUSTER_CA_B64 VKE_K8S_OIDC_AUDIENCE; do
+          for name in VKE_CLUSTER_ENDPOINT VKE_CLUSTER_CA_B64 VKE_K8S_OIDC_AUDIENCE VKE_TOKEN_EXCHANGE_URL; do
             if [ -z "${!name:-}" ]; then
               echo "::error::$name is required"
               missing=1
@@ -85,10 +86,11 @@ jobs:
             --certificate-authority="$HOME/.kube/vke-ca.crt" \
             --embed-certs=true
           kubectl config set-credentials github-actions-oidc \
-            --exec-command="$GITHUB_WORKSPACE/hack/github-actions-oidc-token.sh" \
+            --exec-command="$GITHUB_WORKSPACE/hack/github-actions-vke-token.sh" \
             --exec-api-version=client.authentication.k8s.io/v1 \
             --exec-interactive-mode=Never \
-            --exec-env=GITHUB_ACTIONS_OIDC_AUDIENCE="$VKE_K8S_OIDC_AUDIENCE"
+            --exec-env=GITHUB_ACTIONS_OIDC_AUDIENCE="$VKE_K8S_OIDC_AUDIENCE" \
+            --exec-env=GITHUB_ACTIONS_TOKEN_EXCHANGE_URL="$VKE_TOKEN_EXCHANGE_URL"
           kubectl config set-context vke \
             --cluster=vke \
             --user=github-actions-oidc \
