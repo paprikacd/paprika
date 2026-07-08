@@ -47,15 +47,41 @@ variable "vke_kubernetes_version" {
 }
 
 variable "oidc_client_id" {
-  description = "Google OAuth Desktop client ID for kubelogin"
+  description = "Deprecated Google OAuth Desktop client ID for the old local kubelogin flow."
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "oidc_client_secret" {
-  description = "Google OAuth Desktop client secret for kubelogin"
+  description = "Deprecated Google OAuth Desktop client secret for the old local kubelogin flow."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "kubernetes_oidc_issuer_url" {
+  description = "OIDC issuer trusted by the VKE Kubernetes API server."
+  type        = string
+  default     = "https://token.actions.githubusercontent.com"
+}
+
+variable "kubernetes_oidc_client_id" {
+  description = "OIDC audience/client ID accepted by the VKE Kubernetes API server."
+  type        = string
+  default     = "paprika-vke-deploy"
+}
+
+variable "kubernetes_oidc_username_claim" {
+  description = "OIDC claim mapped to the Kubernetes username."
+  type        = string
+  default     = "sub"
+}
+
+variable "kubernetes_oidc_groups_claim" {
+  description = "OIDC claim mapped to Kubernetes groups. GitHub Actions tokens do not include this by default, so RBAC binds exact user subjects."
+  type        = string
+  default     = "groups"
 }
 
 variable "cloudflare_api_key" {
@@ -119,8 +145,8 @@ provider "vultr" {
 }
 
 provider "cloudflare" {
-  api_key  = var.cloudflare_api_key
-  email    = var.cloudflare_email
+  api_key = var.cloudflare_api_key
+  email   = var.cloudflare_email
 }
 
 # Import existing repo (run: terraform import github_repository.paprika paprika)
@@ -150,16 +176,16 @@ resource "github_repository_pages" "paprika" {
   }
 }
 
-# VKE cluster with OIDC for kubelogin
+# VKE cluster with GitHub Actions OIDC for CI deploys.
 resource "vultr_kubernetes" "omega" {
   region  = var.vke_region
   label   = "omega"
   version = var.vke_kubernetes_version
 
-  oidc_issuer_url      = "https://accounts.google.com"
-  oidc_client_id       = var.oidc_client_id
-  oidc_username_claim  = "email"
-  oidc_groups_claim    = "groups"
+  oidc_issuer_url     = var.kubernetes_oidc_issuer_url
+  oidc_client_id      = var.kubernetes_oidc_client_id
+  oidc_username_claim = var.kubernetes_oidc_username_claim
+  oidc_groups_claim   = var.kubernetes_oidc_groups_claim
 
   node_pools {
     node_quantity = var.vke_node_count
@@ -176,66 +202,16 @@ resource "local_file" "kubeconfig" {
   file_permission = "0600"
 }
 
-# Apply OIDC ClusterRoleBinding once the cluster is up
-resource "null_resource" "oidc_rbac" {
+# Apply GitHub Actions deploy RBAC once the cluster is up.
+resource "null_resource" "github_actions_deployer_rbac" {
   depends_on = [local_file.kubeconfig]
+  triggers = {
+    manifest_sha = filesha256("${path.module}/github-actions-deployer-rbac.yaml")
+  }
 
   provisioner "local-exec" {
-    command = "KUBECONFIG=${local_file.kubeconfig.filename} kubectl apply -f ${abspath(path.module)}/oidc-admin.yaml"
+    command = "KUBECONFIG=${local_file.kubeconfig.filename} kubectl apply -f ${abspath(path.module)}/github-actions-deployer-rbac.yaml"
   }
-}
-
-# Generate OIDC kubeconfig for kubelogin
-resource "local_file" "oidc_kubeconfig" {
-  depends_on = [vultr_kubernetes.omega]
-  content = yamlencode({
-    apiVersion = "v1"
-    kind       = "Config"
-    current-context = "omega-oidc"
-    clusters = [
-      {
-        cluster = {
-          certificate-authority-data = vultr_kubernetes.omega.cluster_ca_certificate
-          server                     = "https://${vultr_kubernetes.omega.endpoint}:6443"
-        }
-        name = "omega"
-      }
-    ]
-    contexts = [
-      {
-        context = {
-          cluster   = "omega"
-          user      = "oidc"
-          namespace = "default"
-        }
-        name = "omega-oidc"
-      }
-    ]
-    users = [
-      {
-        name = "oidc"
-        user = {
-          exec = {
-            apiVersion = "client.authentication.k8s.io/v1beta1"
-            command    = "kubectl"
-            args = [
-              "oidc-login",
-              "get-token",
-              "--oidc-issuer-url=https://accounts.google.com",
-              "--oidc-client-id=${var.oidc_client_id}",
-              "--oidc-client-secret=${var.oidc_client_secret}",
-              "--grant-type=authcode",
-              "--oidc-extra-scope=email",
-              "--oidc-extra-scope=openid",
-              "--token-cache-dir=${abspath(path.module)}/.kube-cache",
-            ]
-          }
-        }
-      }
-    ]
-  })
-  filename        = "${path.module}/omega-oidc.kubeconfig"
-  file_permission = "0600"
 }
 
 # Cloudflare DNS for paprika.benebsworth.com
@@ -271,14 +247,14 @@ output "kubeconfig_admin" {
   value       = local_file.kubeconfig.filename
 }
 
-output "kubeconfig_oidc" {
-  description = "Path to OIDC kubeconfig for kubelogin"
-  value       = local_file.oidc_kubeconfig.filename
+output "github_actions_oidc_audience" {
+  description = "OIDC audience GitHub Actions must request for Kubernetes API access"
+  value       = var.kubernetes_oidc_client_id
 }
 
-output "oidc_rbac_applied" {
-  description = "Whether OIDC ClusterRoleBinding was applied"
-  value       = null_resource.oidc_rbac.id
+output "github_actions_deployer_rbac_applied" {
+  description = "Whether GitHub Actions deploy RBAC was applied"
+  value       = null_resource.github_actions_deployer_rbac.id
 }
 
 output "paprika_lb_ip" {

@@ -407,11 +407,10 @@ helm-history: ## Show Helm release history.
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
-##@ Omega Cluster (Vultr VKE with OIDC)
+##@ Omega Cluster (Vultr VKE with GitHub Actions OIDC)
 
 OMEGA_TERRAFORM_DIR ?= terraform
 OMEGA_KUBECONFIG ?= $(OMEGA_TERRAFORM_DIR)/omega.kubeconfig
-OMEGA_OIDC_KUBECONFIG ?= $(OMEGA_TERRAFORM_DIR)/omega-oidc.kubeconfig
 
 .PHONY: omega-apply
 omega-apply: ## Provision or update the omega VKE cluster via Terraform.
@@ -430,32 +429,15 @@ omega-plan: ## Show Terraform plan for the omega cluster.
 omega-nodes: ## List cluster nodes (admin kubeconfig, no auth required).
 	KUBECONFIG=$(OMEGA_KUBECONFIG) kubectl get nodes -o wide
 
-.PHONY: omega-oidc
-omega-oidc: ## Run kubectl via OIDC (opens browser on first use).
-	KUBECONFIG=$(OMEGA_OIDC_KUBECONFIG) kubectl get nodes
-
-.PHONY: omega-refresh
-omega-refresh: ## Force refresh the OIDC token (Google ID tokens expire after 1h).
-	@source .env 2>/dev/null || true; \
-	kubectl oidc-login get-token \
-	  --oidc-issuer-url=https://accounts.google.com \
-	  --oidc-client-id="$${OMEGA_OIDC_CLIENT_ID}" \
-	  --oidc-client-secret="$${OMEGA_OIDC_CLIENT_SECRET}" \
-	  --grant-type=authcode \
-	  --force-refresh
-
-.PHONY: omega-install
-omega-install: ## Merge omega-oidc into ~/.kube/config and switch to it (seamless kubectl).
-	hack/omega-install.sh
-
-.PHONY: omega-use
-omega-use: ## Print KUBECONFIG merge command for .zshrc (non-destructive).
-	@echo "Add to ~/.zshrc for seamless access:"
-	@echo "  export KUBECONFIG=\"\$$HOME/.kube/config:$(abspath $(OMEGA_OIDC_KUBECONFIG))\""
-	@echo ""
-	@echo "Then switch contexts with:"
-	@echo "  kubectl config use-context omega-oidc"
-	@echo "  kubectl config use-context <old-context>  # to switch back"
+.PHONY: omega-ci-vars
+omega-ci-vars: ## Sync non-secret VKE endpoint/CA/OIDC audience into GitHub Actions variables.
+	@endpoint=$$(terraform -chdir=$(OMEGA_TERRAFORM_DIR) output -raw cluster_endpoint); \
+	audience=$$(terraform -chdir=$(OMEGA_TERRAFORM_DIR) output -raw github_actions_oidc_audience); \
+	ca=$$(kubectl config view --kubeconfig=$(OMEGA_KUBECONFIG) --raw -o jsonpath='{.clusters[0].cluster.certificate-authority-data}'); \
+	gh variable set VKE_CLUSTER_ENDPOINT --body "$$endpoint"; \
+	gh variable set VKE_CLUSTER_CA_B64 --body "$$ca"; \
+	gh variable set VKE_K8S_OIDC_AUDIENCE --body "$$audience"; \
+	echo "Updated GitHub Actions VKE_CLUSTER_ENDPOINT, VKE_CLUSTER_CA_B64, and VKE_K8S_OIDC_AUDIENCE variables."
 
 ##@ E2E Testing
 

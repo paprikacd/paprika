@@ -7,7 +7,7 @@ REPOSITORY="${REPOSITORY:-uptime-prod-docker}"
 SERVICE_ACCOUNT_ID="${SERVICE_ACCOUNT_ID:-vultr-telesis-pull}"
 NAMESPACE="${NAMESPACE:-paprika-e2e}"
 SECRET_NAME="${SECRET_NAME:-telesis-gar}"
-KUBECONFIG_PATH="${KUBECONFIG_PATH:-terraform/omega-oidc.kubeconfig}"
+KUBECONFIG_PATH="${KUBECONFIG_PATH:-terraform/omega.kubeconfig}"
 IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/api:ab2d5b3}"
 CHECK_POD="${CHECK_POD:-gar-pull-check}"
 

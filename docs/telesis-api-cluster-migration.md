@@ -30,7 +30,7 @@ The API image is mirrored into Google Artifact Registry at `australia-southeast1
 ```bash
 gcloud config set account ben.ebsworth@gmail.com
 gcloud config set project uptime-485903
-KUBECONFIG_PATH=terraform/omega-oidc.kubeconfig \
+KUBECONFIG_PATH=terraform/omega.kubeconfig \
   NAMESPACE=paprika-e2e \
   ./deploy/seed-gar-pull-secret.sh
 ```
@@ -42,7 +42,7 @@ GHCR remains usable as a fallback source if that package is made readable by a t
 ```bash
 export GHCR_USERNAME='<github-user-or-bot>'
 export GHCR_TOKEN='<github-token-with-read-packages>'
-KUBECONFIG_PATH=terraform/omega-oidc.kubeconfig \
+KUBECONFIG_PATH=terraform/omega.kubeconfig \
   NAMESPACE=paprika-e2e \
   ./deploy/seed-ghcr-pull-secret.sh
 ```

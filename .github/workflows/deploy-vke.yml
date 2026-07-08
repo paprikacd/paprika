@@ -20,6 +20,7 @@ concurrency: deploy-vke
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   VKE_NAMESPACE: paprika-e2e
@@ -58,11 +59,41 @@ jobs:
         with:
           version: latest
 
-      - name: Setup kubectl
+      - name: Configure Kubernetes OIDC access
+        env:
+          VKE_CLUSTER_ENDPOINT: ${{ vars.VKE_CLUSTER_ENDPOINT }}
+          VKE_CLUSTER_CA_B64: ${{ vars.VKE_CLUSTER_CA_B64 }}
+          VKE_K8S_OIDC_AUDIENCE: ${{ vars.VKE_K8S_OIDC_AUDIENCE || 'paprika-vke-deploy' }}
         run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.VKE_KUBECONFIG }}" | base64 -d > ~/.kube/config
-          chmod 600 ~/.kube/config
+          missing=0
+          for name in VKE_CLUSTER_ENDPOINT VKE_CLUSTER_CA_B64 VKE_K8S_OIDC_AUDIENCE; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          install -d -m 700 "$HOME/.kube"
+          printf '%s' "$VKE_CLUSTER_CA_B64" | base64 -d > "$HOME/.kube/vke-ca.crt"
+          chmod 600 "$HOME/.kube/vke-ca.crt"
+
+          kubectl config set-cluster vke \
+            --server="https://${VKE_CLUSTER_ENDPOINT}:6443" \
+            --certificate-authority="$HOME/.kube/vke-ca.crt" \
+            --embed-certs=true
+          kubectl config set-credentials github-actions-oidc \
+            --exec-command="$GITHUB_WORKSPACE/hack/github-actions-oidc-token.sh" \
+            --exec-api-version=client.authentication.k8s.io/v1 \
+            --exec-interactive-mode=Never \
+            --exec-env=GITHUB_ACTIONS_OIDC_AUDIENCE="$VKE_K8S_OIDC_AUDIENCE"
+          kubectl config set-context vke \
+            --cluster=vke \
+            --user=github-actions-oidc \
+            --namespace="${{ env.VKE_NAMESPACE }}"
+          kubectl config use-context vke
 
       - name: Verify cluster access
         run: |
@@ -129,7 +160,7 @@ jobs:
           kubectl port-forward -n "${{ env.VKE_NAMESPACE }}" \
             svc/${{ env.HELM_RELEASE }}-paprika-api-server 3000:3000 &
           PF_PID=$!
-          trap "kill $PF_PID 2>/dev/null || true" EXIT
+          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
           sleep 5
 
           PASS=0
@@ -178,9 +209,11 @@ jobs:
 
       - name: Deployment Summary
         run: |
-          echo "## VKE Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Release**: ${{ env.HELM_RELEASE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Namespace**: ${{ env.VKE_NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: ghcr.io/paprikacd/paprika:${{ env.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ✅ Deployed and healthy" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## VKE Deployment Summary"
+            echo ""
+            echo "- **Release**: ${{ env.HELM_RELEASE }}"
+            echo "- **Namespace**: ${{ env.VKE_NAMESPACE }}"
+            echo "- **Image**: ghcr.io/paprikacd/paprika:${{ env.IMAGE_TAG }}"
+            echo "- **Status**: ✅ Deployed and healthy"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KUBECONFIG_PATH="${KUBECONFIG_PATH:-terraform/omega-oidc.kubeconfig}"
+KUBECONFIG_PATH="${KUBECONFIG_PATH:-terraform/omega.kubeconfig}"
 NAMESPACE="${NAMESPACE:-paprika-e2e}"
 SECRET_NAME="${SECRET_NAME:-skunkworq-ghcr}"
 REGISTRY="${REGISTRY:-ghcr.io}"
