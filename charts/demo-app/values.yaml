@@ -11,7 +11,17 @@ service:
   type: ClusterIP
   port: 80
 
-# Feature flags — toggled per release/stage
+probes:
+  enabled: true
+  readinessPath: /
+  livenessPath: /
+  startupPath: /
+  initialDelaySeconds: 3
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 6
+
+# Feature flags toggled per release/stage
 features:
   canary:
     enabled: false

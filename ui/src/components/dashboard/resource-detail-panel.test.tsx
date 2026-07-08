@@ -36,6 +36,7 @@ vi.mock("lucide-react", () => {
     Wifi: Icon,
     WifiOff: Icon,
     Sparkles: Icon,
+    Rows3: Icon,
   }
 })
 
@@ -378,7 +379,7 @@ describe("ResourceDetailPanel", () => {
       await waitFor(() => expect(screen.getByTestId("logs-output")).toHaveTextContent(/one/))
 
       await user.click(screen.getByTestId("pause-toggle"))
-      // The toggle label switches — confirming the pause state took effect.
+      // The toggle label switches, confirming the pause state took effect.
       expect(screen.getByTestId("pause-toggle")).toHaveTextContent(/resume/i)
       // The stream is still open and the chunks are visible.
       expect(screen.getByTestId("logs-output")).toHaveTextContent(/one/)

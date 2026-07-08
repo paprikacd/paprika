@@ -1,0 +1,70 @@
+# Telesis Uptime Migration Plan
+
+This note captures the current shape of `/Users/benebsworth/projects/uptime` and the safest path to bring it under Paprika control.
+
+## Current Topology
+
+| Layer | Current target | Notes |
+| --- | --- | --- |
+| Frontend | Vercel project `uptime-frontend`, alias `https://telesis.dev` | Prebuilt Vercel deploy from `frontend/`. |
+| API edge | Cloudflare Worker `uptime-edge-cache` at `https://api.telesis.dev` | Proxies to `origin.telesis.dev`; Worker deploy uses Wrangler. |
+| API origin | DigitalOcean droplet `170.64.247.130` | Caddy routes `api.telesis.dev` and `origin.telesis.dev` to localhost `9500`. |
+| Backend services | Docker Compose in `/opt/telesis` | `api`, `scheduler`, `runner`, `resultprocessor`, `rollup`, `pubsub`. |
+| Images | `ghcr.io/skunkworq/uptime/{api,scheduler,runner,resultprocessor,rollup}:latest` | Build script targets `linux/amd64`. |
+| Database | Supabase Postgres | Existing compose notes IPv6 for direct DB connectivity. |
+| Auth | Firebase Authentication | API uses Firebase project and admin credentials. |
+| Queue | Pub/Sub emulator container | Existing services use pull mode through `PUBSUB_EMULATOR_HOST=pubsub:8085`. |
+| Checks | Runner region `syd1` | Runner also needs Docker socket for Playwright sandbox checks. |
+
+## Recommended Path
+
+Use a two-phase migration so Paprika can own rollout and health without moving every dependency at once.
+
+| Phase | Target | Work |
+| --- | --- | --- |
+| 1 | Paprika-managed Telesis backend on VKE | Deploy the backend services as Applications with health checks on `/health`, `/health/live`, and `/health/ready`; keep Supabase, Firebase, Cloudflare, and Vercel external. |
+| 2 | Dedicated Sydney runner plane | Run runner and sandbox capacity in Sydney, either as a separate Paprika-managed cluster/agent or as a constrained node pool. Keep the control plane scheduling through queue topics. |
+
+This avoids coupling the UI/API move to the hardest operational part: regional browser check execution with Docker sandboxing.
+
+## VKE Application Cut Plan
+
+| Service | Kubernetes shape | Health |
+| --- | --- | --- |
+| `api` | Deployment + Service + Gateway route for `origin.telesis.dev` | `/health/ready` readiness, `/health/live` liveness, `/health` detailed health check in Paprika. |
+| `scheduler` | Deployment with 1 replica | `/health`; needs topic/bootstrap validation. |
+| `runner` | Deployment on dedicated runner nodes | `/health`; requires sandbox runtime decision before production traffic. |
+| `resultprocessor` | Deployment with 1 replica | `/health`; consumes result subscription. |
+| `rollup` | Deployment with 1 replica or Cron-style controller split later | `/health`; rollup intervals from env. |
+| `pubsub` | Prefer managed queue or NATS before long-term production | Current emulator is acceptable only for a controlled migration dry run. |
+
+## Required Paprika Work Before Cutting Traffic
+
+1. Add a Telesis ApplicationSet or multiple Applications with per-service health checks and environment Secret references.
+2. Use canary rollout for `api` first, with Cloudflare still pointing at the droplet origin until the VKE origin passes health and quick-check smoke.
+3. Add a Paprika health check for `POST /v1/quick-check` against the API origin as the promotion gate.
+4. Decide runner isolation:
+   - Preferred short term: keep runner on the existing droplet or a Sydney worker host, but manage it through Paprika once agent scheduling is ready.
+   - Preferred long term: dedicated VKE node pool or separate Sydney cluster with restricted runner permissions.
+5. Migrate DNS last:
+   - `origin.telesis.dev` to VKE Gateway.
+   - Keep `api.telesis.dev` Cloudflare Worker in front unless cache/auth behavior is intentionally replaced.
+
+## Demo Coverage To Add
+
+The demo app now exercises canary rollout and an HTTP health gate. Telesis should use the same shape once secrets and runner placement are ready:
+
+```yaml
+healthChecks:
+  - name: api-ready
+    type: HTTP
+    url: http://telesis-api.<namespace>.svc.cluster.local/health/ready
+    expression: http.statusCode == 200
+  - name: api-quick-check
+    type: HTTP
+    url: https://origin.telesis.dev/v1/quick-check
+    method: POST
+    expression: http.statusCode == 200
+```
+
+The second check needs Paprika HTTP health checks to support method/body configuration before it can become a real promotion gate.

@@ -1310,17 +1310,28 @@ var _ = Describe("Manager", Ordered, func() {
 						{
 							"name": "dev",
 							"ring": 1,
-							"parameters": {"replicaCount": "1", "features.canary.enabled": "false", "features.monitoring.enabled": "false", "features.ingress.enabled": "false"}
+							"parameters": {"replicaCount": "1", "features.canary.enabled": "false", "features.monitoring.enabled": "false", "features.ingress.enabled": "false"},
+							"canary": {
+								"steps": [50, 100],
+								"intervalSeconds": 1
+							}
 						}
 					],
-					"strategy": "Rolling",
+					"strategy": "Canary",
 					"syncPolicy": "Auto",
 					"parameters": {"image.tag": "latest"},
 					"healthChecks": [
-						{"name": "always-healthy", "expression": "true"}
+						{
+							"name": "stable-service-http",
+							"httpProbe": {
+								"url": "http://e2e-cicd-release-demo-app-stable.%s.svc.cluster.local/",
+								"timeout": 3
+							},
+							"expression": "http.statusCode == 200"
+						}
 					]
 				}
-			}`, namespace)
+			}`, namespace, namespace)
 			cmd := exec.Command("kubectl", "apply", "-f", "-")
 			cmd.Stdin = strings.NewReader(app)
 			_, err := utils.Run(cmd)
@@ -1353,7 +1364,15 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(out).To(Equal("Healthy"), "Application should reach Healthy phase")
 			}, 5*time.Minute, 3*time.Second).Should(Succeed())
 
-			By("verifying health check was evaluated")
+			By("verifying the canary release completed")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "release", "e2e-cicd-release", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Complete"), "Release should complete after canary promotion")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying health check was evaluated against the rendered service")
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.health}")
 				out, err := utils.Run(cmd)
@@ -1374,19 +1393,34 @@ var _ = Describe("Manager", Ordered, func() {
 				cmd := exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].name}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("always-healthy"))
+				g.Expect(out).To(Equal("stable-service-http"))
 
 				cmd = exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].status}")
 				out, err = utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("Healthy"))
+
+				cmd = exec.Command("kubectl", "get", "application", "e2e-cicd", "-n", namespace, "-o", "jsonpath={.status.healthChecks[0].httpStatusCode}")
+				out, err = utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("200"))
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
-			By("verifying a Deployment was created from the rendered manifests")
-			cmd = exec.Command("kubectl", "get", "deployment", "-n", namespace, "-l", "app.paprika.io/name=e2e-cicd", "-o", "jsonpath={.items[0].metadata.name}")
-			out, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(out).NotTo(BeEmpty(), "A deployment should have been created by the release")
+			By("verifying the stable Deployment is available")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "deployment", "e2e-cicd-release-demo-app-stable", "-n", namespace, "-o", "jsonpath={.status.readyReplicas}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("1"), "Stable Deployment should have one ready replica")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying the stable Service has ready endpoints")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "endpoints", "e2e-cicd-release-demo-app-stable", "-n", namespace, "-o", "jsonpath={.subsets[0].addresses[0].ip}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).NotTo(BeEmpty(), "Stable Service should have an endpoint")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 		})
 	})
 

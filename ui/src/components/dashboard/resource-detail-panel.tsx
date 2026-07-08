@@ -7,6 +7,7 @@ import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { GetResourceResponse, KubernetesEvent, LogChunk } from "@/gen/paprika/v1/api_pb"
 import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, Pause, Play, Search, Wifi, WifiOff, Sparkles } from "lucide-react"
 import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
+import { SyncDiffView } from "@/components/dashboard/sync-diff-view"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
@@ -95,8 +96,8 @@ export function ResourceDetailPanel({
               <span className="inline-flex items-center gap-1 text-muted-foreground tabular-nums">
                 {resource.namespace}
               </span>
-              <span className="text-muted-foreground">Sync: {resource.syncStatus || "—"}</span>
-              <span className="text-muted-foreground">Health: {resource.health || "—"}</span>
+              <span className="text-muted-foreground">Sync: {resource.syncStatus || "-"}</span>
+              <span className="text-muted-foreground">Health: {resource.health || "-"}</span>
             </div>
             {resource.healthMessage && (
               <p className="mt-1 text-xs text-muted-foreground">{resource.healthMessage}</p>
@@ -192,7 +193,7 @@ export function ResourceDetailPanel({
           ) : tab === "desired" ? (
             <ManifestView manifest={data.desiredManifest} label="Desired Manifest" />
           ) : tab === "diff" ? (
-            <DiffView diff={data.diff} />
+            <SyncDiffView diff={data.diff} />
            ) : (
             <EventsView events={data.events} />
           )}
@@ -222,34 +223,6 @@ function ManifestView({ manifest, label }: { manifest: string; label: string }) 
   return (
     <pre className="overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground/90 ring-1 ring-foreground/10">
       {manifest}
-    </pre>
-  )
-}
-
-function DiffView({ diff }: { diff: string }) {
-  if (!diff) {
-    return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
-        <CheckCircle2 className="size-5 text-emerald-500" />
-        <p className="text-sm text-muted-foreground">No differences — live manifest matches desired.</p>
-      </div>
-    )
-  }
-  const lines = diff.split("\n")
-  return (
-    <pre className="overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed ring-1 ring-foreground/10">
-      {lines.map((line, i) => {
-        let className = "text-muted-foreground"
-        if (line.startsWith("+++") || line.startsWith("---")) className = "text-foreground font-medium"
-        else if (line.startsWith("@@")) className = "text-primary"
-        else if (line.startsWith("+")) className = "text-emerald-500 bg-emerald-500/10"
-        else if (line.startsWith("-")) className = "text-destructive bg-destructive/10"
-        return (
-          <div key={i} className={`px-2 ${className}`}>
-            {line || "\u00a0"}
-          </div>
-        )
-      })}
     </pre>
   )
 }
@@ -378,7 +351,7 @@ function LogsTab({
           setLineCount((c) => c + 1)
           if (firstChunkAt == null) setFirstChunkAt(Date.now())
         }
-        // Normal completion (EOF or end of follow=false) — close cleanly.
+        // Normal completion (EOF or end of follow=false): close cleanly.
         if (!cancelled) {
           setConnected(false)
         }
@@ -387,7 +360,7 @@ function LogsTab({
         const msg = err instanceof Error ? err.message : String(err)
         console.warn("StreamResourceLogs error:", msg)
         if (err && typeof err === "object" && "code" in err) {
-          // Unimplemented on agent/repo-server — don't keep trying.
+          // Unimplemented on agent/repo-server: don't keep trying.
           const code = (err as { code: unknown }).code
           if (typeof code === "string" && code.includes("unimplemented")) {
             setError("Streaming logs not available on this server. Falling back to polling.")
@@ -418,7 +391,7 @@ function LogsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 
-  // Filter is debounced via useDeferredValue — input stays responsive even
+  // Filter is debounced via useDeferredValue so input stays responsive even
   // when the buffered set is large.
   const deferredFilter = useDeferredValue(filter)
   const visible = useMemo(() => {
@@ -464,7 +437,7 @@ function LogsTab({
             const next = !paused
             setPaused(next)
             if (!next) {
-              // Unpausing — snap to bottom on next render.
+              // Unpausing: snap to bottom on next render.
               userScrolledAwayRef.current = false
             }
           }}
@@ -492,7 +465,7 @@ function LogsTab({
           type="text"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter (case insensitive) — pause to inspect"
+          placeholder="Filter (case insensitive) - pause to inspect"
           data-testid="logs-filter"
           className="w-full rounded-md bg-background py-1 pl-7 pr-3 text-xs text-foreground/90 ring-1 ring-foreground/10 outline-none transition-[color,box-shadow] placeholder:text-muted-foreground/40 focus:ring-foreground/30"
         />
@@ -566,7 +539,7 @@ function formatTimestamp(ms: bigint): string {
   if (!ms) return ""
   const n = Number(ms)
   const d = new Date(n)
-  // Compact HH:MM:SS.mmm — easier to skim than full RFC3339.
+  // Compact HH:MM:SS.mmm is easier to skim than full RFC3339.
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
 

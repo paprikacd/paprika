@@ -19,7 +19,6 @@ import {
   XCircle,
   Boxes,
   Stethoscope,
-  GitBranch as GitBranchIcon,
   Layers,
   Network,
   List,
@@ -52,9 +51,11 @@ import {
 } from "@/components/dashboard/resource-list-table";
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel";
 import { ResourceGraph, type ResourceGraphNode } from "@/components/dashboard/resource-graph";
+import { InvestigationTriage } from "@/components/dashboard/investigation-triage";
+import { SyncDiffWorkbench } from "@/components/dashboard/sync-diff-workbench";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
-import type { Application, Release } from "@/gen/paprika/v1/api_pb";
+import type { Application, InvestigateResponse, Release } from "@/gen/paprika/v1/api_pb";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -115,7 +116,7 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 }
 
 function formatDate(ts?: bigint): string {
-  if (ts === undefined || ts === null) return "—";
+  if (ts === undefined || ts === null) return "-";
   return new Date(Number(ts) * 1000).toLocaleString();
 }
 
@@ -177,16 +178,14 @@ function ApplicationDetail() {
   useEffect(() => {
     if (!namespace || !name) return;
     client.getResourceTree({ namespace, name }).then((res) => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTreeNodes(res.nodes as unknown as ResourceGraphNode[])
     }).catch(() => {
-      console.warn("getResourceTree failed — resource graph will fall back to flat list")
+      console.warn("getResourceTree failed - resource graph will fall back to flat list")
     })
     client.getResourceTreeDetailed({ applicationNamespace: namespace, applicationName: name }).then((res) => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDetailedTreeNodes(res.nodes as unknown as ResourceTableNode[])
     }).catch(() => {
-      console.warn("getResourceTreeDetailed failed — list view will fall back to merged resources")
+      console.warn("getResourceTreeDetailed failed - list view will fall back to merged resources")
     })
   }, [namespace, name, application?.phase, application?.outOfSync]);
 
@@ -247,6 +246,19 @@ function ApplicationDetail() {
     [application, namespace, name, fetchData],
   );
 
+  const handleInvestigateResource = useCallback(
+    async (resource: MergedResource): Promise<InvestigateResponse> => {
+      return client.investigate({
+        applicationNamespace: namespace,
+        applicationName: name,
+        resourceKind: resource.kind,
+        resourceName: resource.name,
+        resourceNamespace: resource.namespace,
+      });
+    },
+    [namespace, name],
+  );
+
   const pageTitle = application?.name ?? name;
   const pageNamespace = application?.namespace ?? namespace;
 
@@ -304,7 +316,7 @@ function ApplicationDetail() {
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground">
-                  Strategy: {application.strategy || "—"}
+                  Strategy: {application.strategy || "-"}
                 </p>
               </CardContent>
             </Card>
@@ -313,7 +325,7 @@ function ApplicationDetail() {
               <CardHeader className="pb-2">
                 <CardDescription>Current Release</CardDescription>
                 <CardTitle className="text-lg truncate">
-                  {currentRelease ? currentRelease.name : "—"}
+                  {currentRelease ? currentRelease.name : "-"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -353,6 +365,17 @@ function ApplicationDetail() {
               </CardContent>
             </Card>
           </div>
+
+          <InvestigationTriage
+            application={application}
+            investigate={handleInvestigateResource}
+            onSelectResource={setSelectedResource}
+          />
+
+          <SyncDiffWorkbench
+            application={application}
+            onSelectResource={setSelectedResource}
+          />
 
           {/* Managed Resources */}
           <Card>
@@ -480,9 +503,9 @@ function ApplicationDetail() {
                           <HealthCheckBadge status={check.status} />
                         </TableCell>
                         <TableCell className="tabular-nums">
-                          {check.httpStatusCode > 0 ? check.httpStatusCode : "—"}
+                          {check.httpStatusCode > 0 ? check.httpStatusCode : "-"}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{check.message || "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{check.message || "-"}</TableCell>
                         <TableCell className="text-xs text-muted-foreground tabular-nums">
                           {formatDate(check.checkedAt)}
                         </TableCell>
@@ -555,12 +578,12 @@ function ApplicationDetail() {
                     {application.gates.map((gate) => (
                       <TableRow key={gate.name}>
                         <TableCell className="font-medium">{gate.name}</TableCell>
-                        <TableCell>{gate.stage || "—"}</TableCell>
-                        <TableCell>{gate.type || "—"}</TableCell>
+                        <TableCell>{gate.stage || "-"}</TableCell>
+                        <TableCell>{gate.type || "-"}</TableCell>
                         <TableCell>
                           <StatusBadge status={gate.status} />
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{gate.message || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{gate.message || "-"}</TableCell>
                         <TableCell className="text-right">
                           {gate.status === "Pending" && (
                             <div className="flex justify-end gap-2">
@@ -634,10 +657,10 @@ function ApplicationDetail() {
                           <StatusBadge status={release.phase} />
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {release.pipeline || "—"}
+                          {release.pipeline || "-"}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {release.target || "—"}
+                          {release.target || "-"}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDate(release.createdAt)}
@@ -656,7 +679,7 @@ function ApplicationDetail() {
                               </span>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
+                            <span className="text-xs text-muted-foreground">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-right">
@@ -713,7 +736,7 @@ function ApplicationDetail() {
                         </TableCell>
                         <TableCell className="font-mono text-xs">{result.action}</TableCell>
                         <TableCell className="text-muted-foreground">
-                          {result.message || "—"}
+                          {result.message || "-"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -732,20 +755,20 @@ function ApplicationDetail() {
             </CardHeader>
             <CardContent>
               <DetailRow label="Repository URL">
-                {application.source?.repoUrl ?? "—"}
+                {application.source?.repoUrl ?? "-"}
               </DetailRow>
               <Separator />
-              <DetailRow label="Path">{application.source?.path ?? "—"}</DetailRow>
+              <DetailRow label="Path">{application.source?.path ?? "-"}</DetailRow>
               <Separator />
               <DetailRow label="Revision">
-                {application.source?.revision ?? application.revision ?? "—"}
+                {application.source?.revision ?? application.revision ?? "-"}
               </DetailRow>
               <Separator />
               <DetailRow label="Sync Policy">
                 {application.syncPolicy || "Disabled"}
               </DetailRow>
               <Separator />
-              <DetailRow label="Strategy">{application.strategy || "—"}</DetailRow>
+              <DetailRow label="Strategy">{application.strategy || "-"}</DetailRow>
             </CardContent>
           </Card>
 
@@ -826,8 +849,8 @@ function AnalysisResultsCard({ results }: { results?: Application["analysisResul
                 <TableCell className="font-medium">{result.name}</TableCell>
                 <TableCell><StatusBadge status={result.phase} /></TableCell>
                 <TableCell>{result.passed ? <CheckCircle2 className="size-4 text-emerald-500" /> : <XCircle className="size-4 text-destructive" />}</TableCell>
-                <TableCell className="text-muted-foreground">{result.message || "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{result.checkedAt || "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{result.message || "-"}</TableCell>
+                <TableCell className="text-muted-foreground">{result.checkedAt || "-"}</TableCell>
               </TableRow>
             ))}
           </TableBody>

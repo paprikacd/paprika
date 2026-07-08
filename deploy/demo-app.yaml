@@ -16,10 +16,19 @@ spec:
     - name: dev
       ring: 1
       autoPromote: true
+      canary:
+        steps: [50, 100]
+        intervalSeconds: 10
       parameters:
         replicaCount: "1"
         features.ingress.enabled: "false"
-  strategy: Rolling
+  strategy: Canary
   syncPolicy: Auto
+  healthChecks:
+    - name: stable-service-http
+      httpProbe:
+        url: http://demo-app-release-demo-app-stable.paprika-e2e.svc.cluster.local/
+        timeout: 3
+      expression: http.statusCode == 200
   onFailure:
     action: rollback
