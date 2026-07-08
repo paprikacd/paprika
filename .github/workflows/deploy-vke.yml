@@ -169,18 +169,22 @@ jobs:
           PASS=0
           FAIL=0
           for component in controller-manager api-server webhook-receiver repo-server; do
+            selector="app.kubernetes.io/component=${component}"
+            if [ "$component" = "controller-manager" ]; then
+              selector="control-plane=controller-manager"
+            fi
             count=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
-              -l "app.kubernetes.io/component=${component}" \
+              -l "$selector" \
               -o json | jq '[.items[] | select(.status.phase == "Running")] | length')
             expected=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
-              -l "app.kubernetes.io/component=${component}" \
+              -l "$selector" \
               -o json | jq '.items | length')
             if [ "$count" -gt 0 ] && [ "$count" -eq "$expected" ]; then
               echo "  PASS  ${component}: ${count}/${expected} pods Running"
-              ((PASS++))
+              PASS=$((PASS + 1))
             else
               echo "  FAIL  ${component}: ${count}/${expected} pods Running"
-              ((FAIL++))
+              FAIL=$((FAIL + 1))
             fi
           done
           if [ "$FAIL" -gt 0 ]; then
@@ -205,10 +209,10 @@ jobs:
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || echo "FAIL")
             if [ "$code" = "$expected" ]; then
               echo "  PASS  $desc ($url → $expected)"
-              ((PASS++))
+              PASS=$((PASS + 1))
             else
               echo "  FAIL  $desc ($url → $code, expected $expected)"
-              ((FAIL++))
+              FAIL=$((FAIL + 1))
             fi
           }
 
@@ -220,14 +224,14 @@ jobs:
             CTYPE=$(curl -s -o /dev/null -w "%{content_type}" --max-time 5 "http://localhost:3000/" 2>/dev/null || echo "")
             if echo "$CTYPE" | grep -qi "html"; then
               echo "  PASS  UI serves HTML at /"
-              ((PASS++))
+              PASS=$((PASS + 1))
             else
               echo "  FAIL  UI at / returned non-HTML content-type: $CTYPE"
-              ((FAIL++))
+              FAIL=$((FAIL + 1))
             fi
           else
             echo "  FAIL  UI at / (HTTP $UI_CODE)"
-            ((FAIL++))
+            FAIL=$((FAIL + 1))
           fi
 
           check "Metrics endpoint" "http://localhost:3000/metrics" 200
