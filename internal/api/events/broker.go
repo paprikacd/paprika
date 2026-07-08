@@ -123,8 +123,6 @@ func NewBrokerFromEnvLegacy() (*Broker, error) {
 
 // Subscribe creates a channel that receives events for the given topic.
 func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan *Event {
-	paprikametrics.SSEConnections.Add(ctx, 1)
-
 	ch := make(chan *Event, 16)
 
 	b.mu.Lock()
@@ -134,12 +132,15 @@ func (b *Broker) Subscribe(ctx context.Context, topic string) <-chan *Event {
 		return nil
 	}
 	b.subscribers[topic] = append(b.subscribers[topic], ch)
+	pubsub := b.pubsub
 	b.mu.Unlock()
 
-	if b.pubsub != nil {
+	paprikametrics.SSEConnections.Add(ctx, 1)
+
+	if pubsub != nil {
 		// Subscribe to Redis outside the lock so Redis network I/O does not
 		// serialize publishers or other subscribers.
-		if err := b.pubsub.Subscribe(ctx, topic); err != nil {
+		if err := pubsub.Subscribe(ctx, topic); err != nil {
 			b.log.Error(err, "Failed to subscribe to Redis topic", "topic", topic)
 		}
 	}

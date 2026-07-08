@@ -44,6 +44,12 @@ manager:
 
   replicas: 1
 
+  ## The controller-manager needs in-cluster credentials to watch and
+  ## reconcile Paprika resources. Keep this enabled unless you provide
+  ## credentials through another mechanism.
+  ##
+  automountServiceAccountToken: true
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)
