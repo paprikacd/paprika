@@ -131,8 +131,8 @@ jobs:
 
       - name: Verify cluster access
         run: |
-          kubectl cluster-info
           kubectl get nodes
+          kubectl get namespace "${{ env.VKE_NAMESPACE }}"
 
       - name: Deploy Paprika chart
         run: |
