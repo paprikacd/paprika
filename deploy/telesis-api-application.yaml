@@ -10,9 +10,9 @@ spec:
   project: default
   source:
     type: git
-    repoUrl: https://github.com/paprikacd/paprika.git
-    revision: master
-    path: charts/telesis-api
+    repoUrl: https://github.com/paprikacd/telesis-api-chart.git
+    revision: main
+    path: "."
     pollInterval: 60s
   parameters:
     image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api

@@ -6,7 +6,7 @@ This runbook moves the Telesis API origin into a Paprika-managed Kubernetes clus
 
 The first movable unit is only the public API origin:
 
-- `charts/telesis-api` deploys `australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api`.
+- `https://github.com/paprikacd/telesis-api-chart` deploys `australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api`.
 - It owns a Deployment, Service, optional HTTPRoute or Ingress, optional HPA, optional PDB, and optional ServiceMonitor.
 - It reads non-secret runtime config from a ConfigMap.
 - It reads sensitive config from an existing Secret named by `secretEnv.existingSecret`.
@@ -17,9 +17,9 @@ That separation is deliberate. The API can move independently while the browser 
 
 ## Target Files
 
-- `charts/telesis-api/`: portable Helm chart for the API origin.
-- `deploy/telesis-api-values.example.yaml`: production-shaped values for direct Helm validation.
-- `deploy/telesis-api-application.yaml`: Paprika Application that sources the chart from this repo and rolls it out through canary steps.
+- `https://github.com/paprikacd/telesis-api-chart`: portable Helm chart for the API origin.
+- `deploy/telesis-api-values.example.yaml`: production-shaped values for direct Helm validation against the chart repo.
+- `deploy/telesis-api-application.yaml`: Paprika Application that sources the external chart repo and rolls it out through canary steps.
 
 ## Required Secrets
 
@@ -80,10 +80,12 @@ Optional keys can be omitted when the feature is intentionally disabled. `DATABA
 Render and validate locally:
 
 ```bash
-helm lint charts/telesis-api
-helm template telesis-api charts/telesis-api --values deploy/telesis-api-values.example.yaml
+helm lint ../telesis-api-chart
+helm template telesis-api ../telesis-api-chart --values deploy/telesis-api-values.example.yaml
 kubectl apply --dry-run=server -f deploy/telesis-api-application.yaml
 ```
+
+The Application tracks `https://github.com/paprikacd/telesis-api-chart.git` on `main` with `pollInterval: 60s`. The `paprika.benebsworth.com/webhook` route can also receive GitHub push events for the chart repo and trigger immediate syncs.
 
 After the Application is applied, Paprika should roll `telesis-api-release` through `10`, `50`, then `100` percent canary weights. The health checks validate `/health` on the in-cluster service. The stricter `/health/ready` endpoint can return `503` for degraded dependency latency even while the API is serving traffic.
 

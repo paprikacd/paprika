@@ -160,6 +160,20 @@ webhookReceiver:
   pdb:
     enabled: false
 
+  secret:
+    existingSecretName: paprika-webhook-secret
+    existingSecretKey: secret
+
+  ingress:
+    enabled: true
+    type: gateway-api
+    gateway:
+      gatewayRef:
+        name: paprika
+        namespace: envoy-gateway-system
+      hostname: paprika.benebsworth.com
+      path: /webhook
+
 # ── Repo server ───────────────────────────────────────────────────────────────
 repoServer:
   enabled: true

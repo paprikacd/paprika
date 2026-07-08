@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -107,11 +108,7 @@ func (g *GitSource) checkoutRevision(repo *git.Repository, revision string) erro
 	}
 
 	var hash *plumbing.Hash
-	for _, ref := range []string{
-		revision,
-		"refs/heads/" + revision,
-		"refs/tags/" + revision,
-	} {
+	for _, ref := range revisionCandidates(revision) {
 		h, resolveErr := repo.ResolveRevision(plumbing.Revision(ref))
 		if resolveErr == nil {
 			hash = h
@@ -126,6 +123,20 @@ func (g *GitSource) checkoutRevision(repo *git.Repository, revision string) erro
 		return fmt.Errorf("checkout revision %s: %w", revision, checkoutErr)
 	}
 	return nil
+}
+
+func revisionCandidates(revision string) []string {
+	candidates := make([]string, 0, 5)
+	if strings.HasPrefix(revision, "refs/heads/") {
+		candidates = append(candidates, "refs/remotes/origin/"+strings.TrimPrefix(revision, "refs/heads/"))
+	} else if !strings.HasPrefix(revision, "refs/") {
+		candidates = append(candidates, "refs/remotes/origin/"+revision)
+	}
+	candidates = append(candidates, revision)
+	if !strings.HasPrefix(revision, "refs/") {
+		candidates = append(candidates, "refs/heads/"+revision, "refs/tags/"+revision)
+	}
+	return candidates
 }
 
 func (g *GitSource) openExistingRepo(ctx context.Context, cloneDir string) (*git.Repository, error) {

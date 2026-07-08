@@ -31,7 +31,7 @@ The first phase now has concrete artifacts:
 
 | File | Purpose |
 | --- | --- |
-| `charts/telesis-api/` | Portable Helm chart for the Telesis API origin only. |
+| `https://github.com/paprikacd/telesis-api-chart` | Portable Helm chart for the Telesis API origin only. |
 | `deploy/telesis-api-values.example.yaml` | Production-shaped values for local Helm validation. |
 | `deploy/telesis-api-application.yaml` | Paprika Application with canary rollout and health gates. |
 | `docs/telesis-api-cluster-migration.md` | Runbook for secrets, validation, and DNS cutover. |
@@ -61,7 +61,7 @@ The first phase now has concrete artifacts:
 
 ## Demo Coverage
 
-The demo app now exercises canary rollout and an HTTP health gate. Telesis uses the same shape through `deploy/telesis-api-application.yaml`, with the API image pulled from Google Artifact Registry through the `telesis-gar` secret:
+The demo app now exercises canary rollout and an HTTP health gate. Telesis uses the same shape through `deploy/telesis-api-application.yaml`, with the chart sourced from `paprikacd/telesis-api-chart` and the API image pulled from Google Artifact Registry through the `telesis-gar` secret:
 
 ```yaml
 healthChecks:

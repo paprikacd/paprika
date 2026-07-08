@@ -3,8 +3,10 @@ package source
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSanitizeName(t *testing.T) {
@@ -180,5 +182,85 @@ func TestSourceResolve_Invalid(t *testing.T) {
 				t.Errorf("%s: expected error for invalid source", tc.name)
 			}
 		})
+	}
+}
+
+func TestGitSourceResolve_TracksUpdatedBranch(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=master", origin)
+	runGit(t, root, "init", "--initial-branch=master", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "master")
+
+	src := &GitSource{
+		RepoURL:  origin,
+		Revision: "master",
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+	}
+
+	first, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	writeChartFile(t, work, "second")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "second")
+	runGit(t, work, "push", "origin", "master")
+
+	second, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+
+	if second.Revision == first.Revision {
+		t.Fatalf("expected second resolve to track updated master, got same revision %s", second.Revision)
+	}
+
+	got, err := os.ReadFile(filepath.Join(second.LocalPath, "values.yaml"))
+	if err != nil {
+		t.Fatalf("read resolved chart file: %v", err)
+	}
+	if string(got) != "version: second\n" {
+		t.Fatalf("resolved chart content = %q, want updated branch content", string(got))
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// #nosec G204 -- test helper invokes git with fixed arguments from each test case.
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+}
+
+func writeChartFile(t *testing.T, dir, version string) {
+	t.Helper()
+
+	chartDir := filepath.Join(dir, "chart")
+	if err := os.MkdirAll(chartDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte("version: "+version+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

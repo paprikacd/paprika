@@ -459,6 +459,17 @@ webhookReceiver:
     # annotations:
     #   service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
 
+  ingress:
+    enabled: false
+    type: gateway-api
+    annotations: {}
+    gateway:
+      # gatewayRef:
+      #   name: paprika
+      #   namespace: envoy-gateway-system
+      # hostname: paprika.example.com
+      path: /webhook
+
   hpa:
     enabled: false
     minReplicas: 2

@@ -1,0 +1,46 @@
+{{- if and (eq .Values.deploymentMode "split") .Values.webhookReceiver.enabled .Values.webhookReceiver.ingress.enabled (eq (toString .Values.webhookReceiver.ingress.type) "gateway-api") }}
+{{- if not .Values.webhookReceiver.ingress.gateway }}
+{{- fail "webhookReceiver.ingress.gateway is required when type is gateway-api" }}
+{{- end }}
+{{- $gw := .Values.webhookReceiver.ingress.gateway }}
+{{- if not $gw.gatewayRef }}
+{{- fail "webhookReceiver.ingress.gateway.gatewayRef is required" }}
+{{- end }}
+{{- if not $gw.hostname }}
+{{- fail "webhookReceiver.ingress.gateway.hostname is required" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: webhook-receiver
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  {{- with .Values.webhookReceiver.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ $gw.gatewayRef.name }}
+    namespace: {{ $gw.gatewayRef.namespace }}
+  hostnames:
+  - {{ $gw.hostname | quote }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: {{ default "/webhook" $gw.path | quote }}
+    backendRefs:
+    - name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
+      port: {{ $.Values.webhookReceiver.service.port }}
+{{- end }}
