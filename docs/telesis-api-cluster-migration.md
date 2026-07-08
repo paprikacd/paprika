@@ -25,6 +25,8 @@ That separation is deliberate. The API can move independently while the browser 
 
 Create these in the Application namespace before applying `deploy/telesis-api-application.yaml`.
 
+The API image lives in a private GHCR package. Create `skunkworq-ghcr` as a namespace-scoped `kubernetes.io/dockerconfigjson` image pull secret before rollout, and keep `imagePullSecrets[0].name: skunkworq-ghcr` in the Application parameters.
+
 Firebase credentials are split by runtime boundary:
 
 - `telesis-firebase-admin`: mounted service-account JSON for API workloads that use `GOOGLE_APPLICATION_CREDENTIALS`.
@@ -63,18 +65,16 @@ helm template telesis-api charts/telesis-api --values deploy/telesis-api-values.
 kubectl apply --dry-run=server -f deploy/telesis-api-application.yaml
 ```
 
-After the Application is applied, Paprika should roll `telesis-api-release` through `10`, `50`, then `100` percent canary weights. The health checks validate:
+After the Application is applied, Paprika should roll `telesis-api-release` through `10`, `50`, then `100` percent canary weights. The health checks validate `/health` on the in-cluster service. The stricter `/health/ready` endpoint can return `503` for degraded dependency latency even while the API is serving traffic.
 
-- `/health/ready` on the in-cluster service.
-- `/health` on the in-cluster service.
-- `POST /v1/quick-check` on the in-cluster service, asking the API to check `https://telesis.dev`.
+Keep `POST /v1/quick-check` as a manual smoke test or a separate synthetic monitor with an explicit rate-limit budget. Do not use it as a high-frequency Paprika health gate because the public endpoint is intentionally rate limited.
 
 ## DNS Cutover
 
-Do not point production traffic at the new origin until the Paprika Application is Healthy and the quick-check gate passes consistently.
+Do not point production traffic at the new origin until the Paprika Application is Healthy and a manual quick-check smoke test passes.
 
 1. Create or verify the Gateway route for `origin-vke.telesis.dev`.
-2. Smoke test `https://origin-vke.telesis.dev/health/ready`.
+2. Smoke test `https://origin-vke.telesis.dev/health`.
 3. Smoke test `https://origin-vke.telesis.dev/v1/quick-check`.
 4. Update the Cloudflare Worker origin from `origin.telesis.dev` to `origin-vke.telesis.dev`.
 5. Keep the droplet origin available until rollback has been tested.

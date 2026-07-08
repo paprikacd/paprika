@@ -17,10 +17,12 @@ spec:
   parameters:
     image.repository: ghcr.io/skunkworq/uptime/api
     image.tag: latest
+    imagePullSecrets[0].name: skunkworq-ghcr
     secretEnv.existingSecret: telesis-api-env
     secretEnv.optional: "false"
     firebaseAdmin.existingSecret: telesis-firebase-admin
     firebaseAdmin.key: firebase-admin-key.json
+    probes.readinessPath: /health
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.telesis.dev
@@ -40,7 +42,7 @@ spec:
     - name: api-ready
       interval: 30s
       httpProbe:
-        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health/ready
+        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health
         method: GET
         timeout: 5
       expression: http.statusCode == 200
@@ -51,16 +53,6 @@ spec:
         method: GET
         timeout: 5
       expression: http.statusCode == 200
-    - name: api-quick-check
-      interval: 120s
-      httpProbe:
-        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/v1/quick-check
-        method: POST
-        headers:
-          Content-Type: application/json
-        body: '{"url":"https://telesis.dev","type":"uptime","timeout_seconds":15}'
-        timeout: 65
-      expression: http.statusCode == 200 && http.body.contains('"status":"success"')
   onFailure:
     action: rollback
   selfHeal:
