@@ -81,6 +81,35 @@ func (f *fakeApprovalEvaluator) Evaluate(_ context.Context, gate *gates.Approval
 	return &gates.ApprovalGateResult{Status: gates.ApprovalGateStatusPending}
 }
 
+func TestReleaseReconciler_renderManifests_usesReleaseScopedSnapshotName(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-dev", Namespace: "default"},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stage).Build()
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-release-abc12345", Namespace: "default"},
+		Spec:       pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+	}
+	r := &ReleaseReconciler{
+		client:           c,
+		TemplateRenderer: &fakeAllTemplatesRenderer{manifests: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n")},
+	}
+
+	_, snapshotName, err := r.renderManifests(ctx, release, stage)
+	if err != nil {
+		t.Fatalf("renderManifests failed: %v", err)
+	}
+	want := release.Name + "-manifest-snapshot"
+	if snapshotName != want {
+		t.Fatalf("snapshotName = %q, want %q", snapshotName, want)
+	}
+}
+
 func TestReleaseReconciler_verify(t *testing.T) {
 	t.Parallel()
 

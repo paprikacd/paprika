@@ -922,7 +922,7 @@ func (r *ReleaseReconciler) renderManifests(ctx context.Context, release *paprik
 	if err != nil {
 		return nil, "", fmt.Errorf("template rendering failed: %w", err)
 	}
-	return manifests, stage.Name + "-manifest-snapshot", nil
+	return manifests, release.Name + "-manifest-snapshot", nil
 }
 
 func parseManifests(bundle []byte) ([]*unstructured.Unstructured, error) {

@@ -3,6 +3,7 @@ package pipelines
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 const pruneTestAppName = "prune-test-app"
@@ -35,6 +37,18 @@ func newPruneTestClient(objs ...client.Object) client.Client {
 	scheme := runtime.NewScheme()
 	_ = pipelinesv1alpha1.AddToScheme(scheme)
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+}
+
+type staticSourceRenderer struct {
+	result *source.ResolveResult
+}
+
+func (r *staticSourceRenderer) ResolveSource(context.Context, *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	return r.result, nil
+}
+
+func (r *staticSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Template, map[string]string) ([]byte, error) {
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
 }
 
 func releaseWithPhase(name string, ts time.Time, phase pipelinesv1alpha1.ReleasePhase) *pipelinesv1alpha1.Release {
@@ -208,21 +222,30 @@ func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name       string
-		annotation string
+		name             string
+		annotation       string
+		manual           bool
+		wantManual       bool
+		wantPhase        pipelinesv1alpha1.ApplicationPhase
+		wantSourceStatus bool
 	}{
-		{"sync annotation", "paprika.io/sync"},
-		{"legacy resync annotation", "paprika.io/resync"},
-		{"legacy webhook trigger annotation", "paprika.io/webhook-trigger"},
+		{"sync annotation refresh", "paprika.io/sync", false, false, pipelinesv1alpha1.ApplicationHealthy, true},
+		{"legacy resync annotation refresh", "paprika.io/resync", false, false, pipelinesv1alpha1.ApplicationHealthy, true},
+		{"legacy webhook trigger annotation refresh", "paprika.io/webhook-trigger", false, false, pipelinesv1alpha1.ApplicationHealthy, true},
+		{"api manual sync", "paprika.io/sync", true, true, pipelinesv1alpha1.ApplicationPending, false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			annotations := map[string]string{tc.annotation: "123"}
+			if tc.manual {
+				annotations[manualSyncAnnotation] = "123"
+			}
 			app := &pipelinesv1alpha1.Application{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "sync-app",
 					Namespace:   "default",
-					Annotations: map[string]string{tc.annotation: "123"},
+					Annotations: annotations,
 				},
 				Status: pipelinesv1alpha1.ApplicationStatus{
 					Phase: pipelinesv1alpha1.ApplicationHealthy,
@@ -247,16 +270,108 @@ func TestApplicationReconciler_handleSyncTrigger(t *testing.T) {
 			if err := c.Get(ctx, client.ObjectKey{Name: "sync-app", Namespace: "default"}, &updated); err != nil {
 				t.Fatalf("get application: %v", err)
 			}
-			if _, ok := updated.Annotations[manualSyncAnnotation]; !ok {
-				t.Fatalf("expected manual-sync annotation to be set, got %v", updated.Annotations)
+			if _, ok := updated.Annotations[tc.annotation]; ok {
+				t.Fatalf("expected sync trigger annotation to be cleared, got %v", updated.Annotations)
 			}
-			if len(updated.Annotations) != 1 {
-				t.Fatalf("expected only manual-sync annotation, got %v", updated.Annotations)
+			_, hasManual := updated.Annotations[manualSyncAnnotation]
+			if hasManual != tc.wantManual {
+				t.Fatalf("manual-sync annotation present = %v, want %v; annotations=%v", hasManual, tc.wantManual, updated.Annotations)
 			}
-			if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
-				t.Fatalf("expected phase Pending, got %s", updated.Status.Phase)
+			if updated.Status.Phase != tc.wantPhase {
+				t.Fatalf("phase = %s, want %s", updated.Status.Phase, tc.wantPhase)
+			}
+			if tc.wantSourceStatus && updated.Status.SourceHash == "" {
+				t.Fatalf("expected refresh to record a source hash")
 			}
 		})
+	}
+}
+
+func TestApplicationReconciler_handleSyncTrigger_changedSourceStartsNewReleaseFlow(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "git-app",
+			Namespace:   "default",
+			Annotations: map[string]string{syncAnnotation: "123"},
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash: "old-hash",
+			ReleaseRef: "git-app-release",
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git: &pipelinesv1alpha1.GitSourceSpec{
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-release", Namespace: "default"},
+		Status:     pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+
+	r := &ApplicationReconciler{
+		client: c,
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "new-hash",
+			Revision: "new-revision",
+		}},
+	}
+	if _, err := r.handleSyncTrigger(ctx, app); err != nil {
+		t.Fatalf("handleSyncTrigger failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: "git-app", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want empty so a new Release can be created", updated.Status.ReleaseRef)
+	}
+	if updated.Status.SourceHash != "new-hash" || updated.Status.SourceRevision != "new-revision" {
+		t.Fatalf("source status = (%q, %q), want (new-hash, new-revision)", updated.Status.SourceHash, updated.Status.SourceRevision)
+	}
+	if _, ok := updated.Annotations[syncAnnotation]; ok {
+		t.Fatalf("sync annotation was not cleared: %v", updated.Annotations)
+	}
+	if _, ok := updated.Annotations[manualSyncAnnotation]; ok {
+		t.Fatalf("webhook-style sync should not create manual override annotation: %v", updated.Annotations)
+	}
+
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: "git-app-release", Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseSuperseded {
+		t.Fatalf("release phase = %s, want Superseded", updatedRelease.Status.Phase)
 	}
 }
 
@@ -340,6 +455,109 @@ func TestApplicationReconciler_reconcileSingleStage_usesAppLevelCanaryStrategy(t
 	}
 	if diff := cmp.Diff(app.Spec.Stages[0].Canary, stage.Spec.Canary); diff != "" {
 		t.Fatalf("unexpected canary config (-want +got):\n%s", diff)
+	}
+}
+
+func TestApplicationReconciler_handleHealthyPhase_changedSourceStartsNewReleaseFlow(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash: "old-hash",
+			ReleaseRef: "healthy-git-app-release",
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://github.com/org/repo.git", Revision: "main", Path: "charts/app"},
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-git-app-release", Namespace: "default"},
+		Status:     pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+
+	r := &ApplicationReconciler{
+		client: c,
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "new-hash",
+			Revision: "new-revision",
+		}},
+	}
+	if _, err := r.handleHealthyPhase(ctx, app); err != nil {
+		t.Fatalf("handleHealthyPhase failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: "healthy-git-app", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want empty so a new Release can be created", updated.Status.ReleaseRef)
+	}
+
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: "healthy-git-app-release", Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseSuperseded {
+		t.Fatalf("release phase = %s, want Superseded", updatedRelease.Status.Phase)
+	}
+}
+
+func TestApplicationReconciler_buildRelease_usesSourceHashForReleaseCRAndStableHelmName(t *testing.T) {
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Parameters: map[string]string{"image.tag": "v1"},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			SourceHash:     "abcdef1234567890:0123456789abcdef",
+			SourceRevision: "0123456789abcdef0123456789abcdef01234567",
+		},
+	}
+	stage := &pipelinesv1alpha1.ApplicationPromotionStage{Name: "dev", Ring: 1}
+
+	release := (&ApplicationReconciler{}).buildRelease(app, stage)
+
+	if release.Name == "git-app-release" {
+		t.Fatalf("release CR name should include source identity, got %q", release.Name)
+	}
+	if !strings.HasPrefix(release.Name, "git-app-release-") {
+		t.Fatalf("release CR name = %q, want git-app-release-*", release.Name)
+	}
+	if strings.Contains(release.Name, ":") || len(release.Name) > 63 {
+		t.Fatalf("release CR name must be a DNS label, got %q", release.Name)
+	}
+	if got := release.Spec.Parameters["release-name"]; got != "git-app-release" {
+		t.Fatalf("stable Helm release-name = %q, want git-app-release", got)
+	}
+	if got := release.Spec.Parameters["image.tag"]; got != "v1" {
+		t.Fatalf("image.tag parameter = %q, want v1", got)
 	}
 }
 

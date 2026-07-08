@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,6 +55,10 @@ const (
 	// legacyWebhookTriggerAnnotation was used by early webhook receiver
 	// implementations. Kept for backward compatibility.
 	legacyWebhookTriggerAnnotation = "paprika.io/webhook-trigger"
+
+	sourceHashAnnotation     = "paprika.io/source-hash"
+	sourceRevisionAnnotation = "paprika.io/source-revision"
+	maxKubernetesNameLength  = 63
 )
 
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
@@ -375,28 +380,51 @@ func (r *ApplicationReconciler) hasSyncTrigger(app *paprikav1.Application) bool 
 
 func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
-	log.Info("Sync trigger detected, resetting phase to Pending")
+	log.Info("Sync trigger detected")
+	manualOverride := app.Annotations[manualSyncAnnotation] != ""
 	patch := client.MergeFrom(app.DeepCopy())
 	for _, key := range []string{syncAnnotation, resyncAnnotation, legacyWebhookTriggerAnnotation} {
 		delete(app.Annotations, key)
 	}
-	if app.Annotations == nil {
-		app.Annotations = map[string]string{}
-	}
-	app.Annotations[manualSyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
 	if err := r.client.Patch(ctx, app, patch); err != nil {
-		log.Error(err, "Failed to set manual sync annotation")
-		return ctrl.Result{}, fmt.Errorf("setting manual sync annotation: %w", err)
+		log.Error(err, "Failed to clear sync trigger annotation")
+		return ctrl.Result{}, fmt.Errorf("clearing sync trigger annotation: %w", err)
 	}
-	app.Status.Phase = paprikav1.ApplicationPending
-	if err := r.patchAppStatus(ctx, app); err != nil {
-		log.Error(err, "Failed to update status after sync trigger")
-		return ctrl.Result{}, fmt.Errorf("updating status after sync trigger: %w", err)
+
+	if app.Status.Phase == paprikav1.ApplicationHealthy && !r.isInlineSource(app) {
+		sourceChanged, err := r.checkSourceChanged(ctx, app)
+		if err != nil {
+			log.Error(err, "Failed to refresh source after sync trigger")
+			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		}
+		if sourceChanged {
+			return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
+		}
+	}
+
+	if manualOverride {
+		if err := r.requestCurrentReleaseResync(ctx, app); err != nil {
+			log.Error(err, "Failed to request current release resync")
+			return ctrl.Result{}, fmt.Errorf("requesting current release resync: %w", err)
+		}
+		r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, "ManualSync", "manual sync requested")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			log.Error(err, "Failed to update status after manual sync trigger")
+			return ctrl.Result{}, fmt.Errorf("updating status after manual sync trigger: %w", err)
+		}
 	}
 	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
+	return r.patchAppStatusPreserving(ctx, app, true)
+}
+
+func (r *ApplicationReconciler) patchAppStatusAllowingReleaseRefClear(ctx context.Context, app *paprikav1.Application) error {
+	return r.patchAppStatusPreserving(ctx, app, false)
+}
+
+func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, app *paprikav1.Application, preserveReleaseRef bool) error {
 	desiredStatus := app.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh paprikav1.Application
@@ -407,7 +435,7 @@ func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprika
 		// ApplyBundle setting ReleaseRef, the Release controller's
 		// syncApplicationGateStatus setting Gates) when the current reconcile did not
 		// populate them.
-		if desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
+		if preserveReleaseRef && desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
 			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
 			app.Status.ReleaseRef = fresh.Status.ReleaseRef
 		}
@@ -829,7 +857,8 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 }
 
 func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) *paprikav1.Release {
-	releaseName := app.Name + "-release"
+	releaseName := applicationReleaseName(app)
+	stableReleaseName := stableApplicationReleaseName(app.Name)
 	stageName := app.Name + "-" + targetStage.Name
 	pipelineName := app.Name + "-pipeline"
 	if app.Status.PipelineRef == "" {
@@ -843,11 +872,23 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 	for k, v := range targetStage.Parameters {
 		params[k] = v
 	}
+	if _, ok := params["release-name"]; !ok {
+		params["release-name"] = stableReleaseName
+	}
+
+	annotations := map[string]string{}
+	if app.Status.SourceHash != "" {
+		annotations[sourceHashAnnotation] = app.Status.SourceHash
+	}
+	if app.Status.SourceRevision != "" {
+		annotations[sourceRevisionAnnotation] = app.Status.SourceRevision
+	}
 
 	return &paprikav1.Release{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      releaseName,
-			Namespace: app.Namespace,
+			Name:        releaseName,
+			Namespace:   app.Namespace,
+			Annotations: annotations,
 			Labels: withProjectLabels(app, map[string]string{
 				engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
 				engine.ApplicationNameLabelKey: app.Name,
@@ -863,6 +904,45 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 			SyncOptions: app.Spec.SyncOptions,
 		},
 	}
+}
+
+func stableApplicationReleaseName(appName string) string {
+	return truncateKubernetesName(appName + "-release")
+}
+
+func applicationReleaseName(app *paprikav1.Application) string {
+	base := stableApplicationReleaseName(app.Name)
+	identity := app.Status.SourceHash
+	if identity == "" {
+		identity = app.Status.SourceRevision
+	}
+	if identity == "" {
+		return base
+	}
+	sum := sha256.Sum256([]byte(identity + "\n" + app.Status.SourceRevision))
+	suffix := hex.EncodeToString(sum[:])[:10]
+	return addNameSuffix(base, suffix)
+}
+
+func addNameSuffix(base, suffix string) string {
+	if suffix == "" {
+		return truncateKubernetesName(base)
+	}
+	maxBaseLen := maxKubernetesNameLength - len(suffix) - 1
+	if maxBaseLen < 1 {
+		return truncateKubernetesName(suffix)
+	}
+	if len(base) > maxBaseLen {
+		base = strings.TrimRight(base[:maxBaseLen], "-")
+	}
+	return base + "-" + suffix
+}
+
+func truncateKubernetesName(name string) string {
+	if len(name) <= maxKubernetesNameLength {
+		return strings.TrimRight(name, "-")
+	}
+	return strings.TrimRight(name[:maxKubernetesNameLength], "-")
 }
 
 func (r *ApplicationReconciler) getCurrentReleasePhase(ctx context.Context, app *paprikav1.Application) paprikav1.ReleasePhase {
@@ -894,12 +974,20 @@ func (r *ApplicationReconciler) getPipelinePhase(ctx context.Context, app *papri
 func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) {
 	log := log.FromContext(ctx)
 
-	if app.Status.Phase == phase {
+	if !r.setApplicationPhase(ctx, app, phase, reason, message) {
 		return
+	}
+	if err := r.patchAppStatus(ctx, app); err != nil {
+		log.Error(err, "Failed to update application status", "phase", phase)
+	}
+}
+
+func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) bool {
+	if app.Status.Phase == phase {
+		return false
 	}
 
 	previousPhase := app.Status.Phase
-
 	app.Status.Phase = phase
 	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
 	app.Status.Conditions = append(app.Status.Conditions, metav1.Condition{
@@ -940,10 +1028,7 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 	}
 
 	r.publishApplicationEvent(ctx, app, reason, previousPhase, message)
-
-	if err := r.patchAppStatus(ctx, app); err != nil {
-		log.Error(err, "Failed to update application status", "phase", phase)
-	}
+	return true
 }
 
 func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string, previousPhase paprikav1.ApplicationPhase, message string) {
@@ -1305,21 +1390,8 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		return ctrl.Result{RequeueAfter: pollInterval}, nil
 	}
 	if sourceChanged {
-		targetStage := r.getTargetStage(app)
-		if allowed, res := r.syncWindowAllows(ctx, app, targetStage, false); !allowed {
-			msg := "Source change detected but " + res.Reason
-			log.Info(msg, "app", app.Name)
-			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), msg)
-			if err := r.patchAppStatus(ctx, app); err != nil {
-				log.Error(err, "Failed to patch sync-window status")
-			}
-			return ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}, nil
-		}
-
-		r.setSyncWindowCondition(app, metav1.ConditionTrue, "Allowed", "Source change within sync window")
 		log.Info("Source change detected, triggering re-sync", "app", app.Name)
-		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SourceChanged", "source hash changed, re-syncing")
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return r.startNewReleaseFlow(ctx, app, false, "SourceChanged", "source hash changed, creating a new release")
 	}
 
 	r.evaluateHealth(ctx, app)
@@ -1336,6 +1408,97 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	}
 
 	return ctrl.Result{RequeueAfter: pollInterval}, nil
+}
+
+func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *paprikav1.Application, manual bool, reason, message string) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+	targetStage := r.getTargetStage(app)
+	if allowed, res := r.syncWindowAllows(ctx, app, targetStage, manual); !allowed {
+		msg := "Source change detected but " + res.Reason
+		log.Info(msg, "app", app.Name)
+		r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), msg)
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			log.Error(err, "Failed to patch sync-window status")
+		}
+		return ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}, nil
+	}
+
+	r.setSyncWindowCondition(app, metav1.ConditionTrue, "Allowed", "Source change within sync window")
+	if err := r.supersedeCurrentRelease(ctx, app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("supersede current release: %w", err)
+	}
+	if app.Status.ReleaseRef != "" {
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+	r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, reason, message)
+	if err := r.patchAppStatusAllowingReleaseRefClear(ctx, app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("patch application status for new release: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+}
+
+func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context, app *paprikav1.Application) error {
+	if app.Status.ReleaseRef == "" {
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var release paprikav1.Release
+		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("get release: %w", err)
+		}
+		if release.Annotations == nil {
+			release.Annotations = map[string]string{}
+		}
+		release.Annotations[resyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
+		if err := r.client.Update(ctx, &release); err != nil {
+			return fmt.Errorf("update release resync annotation: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("request current release resync: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) supersedeCurrentRelease(ctx context.Context, app *paprikav1.Application) error {
+	releaseRef := app.Status.ReleaseRef
+	if releaseRef == "" {
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var release paprikav1.Release
+		if err := r.client.Get(ctx, types.NamespacedName{Name: releaseRef, Namespace: app.Namespace}, &release); err != nil {
+			if apierrors.IsNotFound(err) {
+				app.Status.ReleaseRef = ""
+				return nil
+			}
+			return fmt.Errorf("get release: %w", err)
+		}
+		if !applicationReleasePhaseTerminal(release.Status.Phase) {
+			return nil
+		}
+		if release.Status.Phase != paprikav1.ReleaseSuperseded {
+			release.Status.Phase = paprikav1.ReleaseSuperseded
+			if err := r.client.Status().Update(ctx, &release); err != nil {
+				return fmt.Errorf("update release phase: %w", err)
+			}
+		}
+		app.Status.ReleaseRef = ""
+		return nil
+	}); err != nil {
+		return fmt.Errorf("supersede release %s: %w", releaseRef, err)
+	}
+	return nil
+}
+
+func applicationReleasePhaseTerminal(phase paprikav1.ReleasePhase) bool {
+	return phase == paprikav1.ReleaseComplete ||
+		phase == paprikav1.ReleaseFailed ||
+		phase == paprikav1.ReleaseRolledBack ||
+		phase == paprikav1.ReleaseSuperseded
 }
 
 func (r *ApplicationReconciler) pruneReleasesIfInline(ctx context.Context, app *paprikav1.Application) {
