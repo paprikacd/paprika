@@ -146,9 +146,12 @@ func (e *CELEvaluator) evalExpression(expr string, app *paprikav1.Application, h
 		"status": structToMap(app.Status),
 	}
 	if httpResult != nil {
+		bodyJSON := parseJSONBody(httpResult.Body)
 		vars["http"] = map[string]interface{}{
 			"statusCode": httpResult.StatusCode,
 			"body":       httpResult.Body,
+			"bodyJson":   bodyJSON,
+			"json":       bodyJSON,
 			"headers":    httpResult.Headers,
 		}
 	}
@@ -159,6 +162,25 @@ func (e *CELEvaluator) evalExpression(expr string, app *paprikav1.Application, h
 	}
 
 	return interpretResult(out)
+}
+
+func parseJSONBody(body string) interface{} {
+	if strings.TrimSpace(body) == "" {
+		return nil
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		return nil
+	}
+	if m, ok := decoded.(map[string]interface{}); ok {
+		cleanNested(m)
+		return m
+	}
+	if s, ok := decoded.([]interface{}); ok {
+		cleanSlice(s)
+		return s
+	}
+	return decoded
 }
 
 // interpretResult converts a CEL result value to a health status.

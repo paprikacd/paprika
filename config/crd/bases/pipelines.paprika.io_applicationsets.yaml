@@ -624,12 +624,15 @@ spec:
                           description: |-
                             CEL expression to evaluate. Available variables:
                               app (Application spec), status (Application status), http (HTTP probe results).
+                            HTTP results expose http.statusCode, http.body, http.headers, and parsed
+                            JSON response bodies as http.bodyJson and http.json.
                             Expression must return a boolean or a string matching HealthStatus.
                           type: string
                         httpProbe:
                           description: |-
                             Optional HTTP probe to run before evaluating the expression.
-                            Results available in CEL as http.status, http.body, http.headers.
+                            Results available in CEL as http.statusCode, http.body, http.headers,
+                            http.bodyJson, and http.json.
                           properties:
                             body:
                               description: Request body (for POST/PUT)

@@ -326,10 +326,13 @@ type HealthCheck struct {
 	Name string `json:"name"`
 	// CEL expression to evaluate. Available variables:
 	//   app (Application spec), status (Application status), http (HTTP probe results).
+	// HTTP results expose http.statusCode, http.body, http.headers, and parsed
+	// JSON response bodies as http.bodyJson and http.json.
 	// Expression must return a boolean or a string matching HealthStatus.
 	Expression string `json:"expression"`
 	// Optional HTTP probe to run before evaluating the expression.
-	// Results available in CEL as http.status, http.body, http.headers.
+	// Results available in CEL as http.statusCode, http.body, http.headers,
+	// http.bodyJson, and http.json.
 	// +optional
 	HTTPProbe *HTTPProbe `json:"httpProbe,omitempty"`
 	// How often to run this check (default 30s)

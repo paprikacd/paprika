@@ -1,12 +1,26 @@
-# Self-signed issuer for origin TLS (Cloudflare Full mode)
+# Public issuer for Gateway origin TLS. HTTP-01 challenges attach to the
+# shared Envoy Gateway HTTP listener.
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
-  name: paprika-selfsigned
+  name: letsencrypt-prod
 spec:
-  selfSigned: {}
+  acme:
+    email: ben.ebsworth@gmail.com
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - group: gateway.networking.k8s.io
+                kind: Gateway
+                name: paprika
+                namespace: envoy-gateway-system
+                sectionName: http
 ---
-# Certificate for origin encryption (Cloudflare → Envoy)
+# Certificate for browser/Cloudflare origin traffic through Envoy Gateway.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -16,6 +30,7 @@ spec:
   secretName: paprika-tls
   dnsNames:
     - paprika.benebsworth.com
+    - origin-vke.telesis.dev
   issuerRef:
-    name: paprika-selfsigned
+    name: letsencrypt-prod
     kind: ClusterIssuer

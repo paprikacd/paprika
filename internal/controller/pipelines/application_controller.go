@@ -43,9 +43,10 @@ import (
 )
 
 const (
-	defaultRequeue    = 5 * time.Second
-	maxReleaseHistory = 10
-	releaseLabelKey   = "app.paprika.io/release"
+	defaultRequeue             = 5 * time.Second
+	maxReleaseHistory          = 10
+	releaseLabelKey            = "app.paprika.io/release"
+	defaultHealthCheckInterval = 30 * time.Second
 
 	// syncAnnotation is the canonical annotation used to request an immediate
 	// Application sync. It is set by the API (SyncApplication), webhooks, and
@@ -1116,11 +1117,18 @@ func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprika
 		return
 	}
 
-	var results []paprikav1.HealthCheckResult
+	previous := healthResultsByName(app.Status.HealthChecks)
+	results := make([]paprikav1.HealthCheckResult, 0, len(app.Spec.HealthChecks))
 	evalResults := make([]health.EvalResult, 0, len(app.Spec.HealthChecks))
 
-	now := metav1.Now()
+	now := metav1.Time{Time: r.currentTime()}
 	for _, check := range app.Spec.HealthChecks {
+		if prev, ok := previous[check.Name]; ok && healthCheckResultFresh(prev, check.Interval, now.Time) {
+			results = append(results, *prev)
+			evalResults = append(evalResults, evalResultFromHealthCheckResult(prev))
+			continue
+		}
+
 		result := r.HealthEval.Evaluate(ctx, check, app)
 		evalResults = append(evalResults, result)
 		hcr := paprikav1.HealthCheckResult{
@@ -1139,6 +1147,51 @@ func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprika
 
 	app.Status.HealthChecks = results
 	app.Status.Health = health.AggregateHealth(evalResults)
+}
+
+func healthResultsByName(results []paprikav1.HealthCheckResult) map[string]*paprikav1.HealthCheckResult {
+	byName := make(map[string]*paprikav1.HealthCheckResult, len(results))
+	for i := range results {
+		result := &results[i]
+		byName[result.Name] = result
+	}
+	return byName
+}
+
+func healthCheckResultFresh(result *paprikav1.HealthCheckResult, interval string, now time.Time) bool {
+	if result == nil {
+		return false
+	}
+	if result.CheckedAt == nil {
+		return false
+	}
+	return now.Sub(result.CheckedAt.Time) < applicationHealthCheckInterval(interval)
+}
+
+func applicationHealthCheckInterval(interval string) time.Duration {
+	if interval == "" {
+		return defaultHealthCheckInterval
+	}
+	d, err := time.ParseDuration(interval)
+	if err != nil || d <= 0 {
+		return defaultHealthCheckInterval
+	}
+	return d
+}
+
+func evalResultFromHealthCheckResult(result *paprikav1.HealthCheckResult) health.EvalResult {
+	eval := health.EvalResult{
+		Name:    result.Name,
+		Status:  result.Status,
+		Message: result.Message,
+	}
+	if result.HTTPStatusCode != 0 || result.HTTPBody != "" {
+		eval.HTTPResult = &health.HTTPResult{
+			StatusCode: result.HTTPStatusCode,
+			Body:       result.HTTPBody,
+		}
+	}
+	return eval
 }
 
 func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) {

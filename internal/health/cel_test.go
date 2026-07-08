@@ -109,7 +109,7 @@ func TestEvalExpression_HTTPResult(t *testing.T) {
 	app := &paprikav1.Application{}
 	httpResult := &HTTPResult{
 		StatusCode: 200,
-		Body:       `{"status": "ok"}`,
+		Body:       `{"status":"degraded","components":{"database":{"status":"healthy"},"queries":{"status":"degraded","response_time_ms":764}}}`,
 		Headers:    map[string]string{"Content-Type": "application/json"},
 	}
 
@@ -133,7 +133,25 @@ func TestEvalExpression_HTTPResult(t *testing.T) {
 		},
 		{
 			name:       "http body contains",
-			expr:       `http.statusCode == 200 && http.body.contains('"status": "ok"')`,
+			expr:       `http.statusCode == 200 && http.body.contains('"status":"degraded"')`,
+			httpResult: httpResult,
+			wantStatus: paprikav1.HealthHealthy,
+		},
+		{
+			name:       "http body json nested fields",
+			expr:       `http.statusCode == 200 && http.bodyJson.components.database.status == "healthy"`,
+			httpResult: httpResult,
+			wantStatus: paprikav1.HealthHealthy,
+		},
+		{
+			name:       "http body json detects degraded fields",
+			expr:       `http.statusCode == 200 && http.bodyJson.status == "healthy" && http.bodyJson.components.queries.status == "healthy"`,
+			httpResult: httpResult,
+			wantStatus: paprikav1.HealthDegraded,
+		},
+		{
+			name:       "http json alias",
+			expr:       `http.json.components.queries.response_time_ms < 1000`,
 			httpResult: httpResult,
 			wantStatus: paprikav1.HealthHealthy,
 		},

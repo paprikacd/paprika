@@ -22,6 +22,9 @@ spec:
     secretEnv.optional: "false"
     firebaseAdmin.existingSecret: telesis-firebase-admin
     firebaseAdmin.key: firebase-admin-key.json
+    env.nonSecret.GCP_PROJECT_ID: uptime-485903
+    env.nonSecret.PUBSUB_TOPIC_ID: check-jobs
+    env.nonSecret.PUBSUB_JOB_TOPIC_ID: check-jobs
     probes.readinessPath: /health
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
@@ -45,14 +48,14 @@ spec:
         url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health
         method: GET
         timeout: 5
-      expression: http.statusCode == 200
+      expression: http.statusCode == 200 && http.bodyJson.components.database.status == "healthy"
     - name: api-detailed-health
       interval: 60s
       httpProbe:
         url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health
         method: GET
         timeout: 5
-      expression: http.statusCode == 200
+      expression: http.statusCode == 200 && http.bodyJson.components.database.status == "healthy" && http.bodyJson.components.queries.response_time_ms < 1000
   onFailure:
     action: rollback
   selfHeal:

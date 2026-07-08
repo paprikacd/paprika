@@ -21,7 +21,7 @@ env:
     SERVICE_NAME: telesis-api
     GO_ENV: production
     ENV: production
-    GCP_PROJECT_ID: telesis-prod
+    GCP_PROJECT_ID: uptime-485903
     PUBSUB_TOPIC_ID: check-jobs
     PUBSUB_JOB_TOPIC_ID: check-jobs
     RUNNER_REGION: syd1

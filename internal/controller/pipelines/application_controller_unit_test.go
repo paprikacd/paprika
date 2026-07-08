@@ -3,7 +3,10 @@ package pipelines
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +21,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/health"
 	"github.com/benebsworth/paprika/internal/source"
 )
 
@@ -622,6 +626,72 @@ func TestApplicationReconciler_buildRelease_usesSourceHashForReleaseCRAndStableH
 	}
 	if got := release.Spec.Parameters["image.tag"]; got != "v1" {
 		t.Fatalf("image.tag parameter = %q, want v1", got)
+	}
+}
+
+func TestApplicationReconciler_evaluateHealthRespectsCheckIntervals(t *testing.T) {
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		probes.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"healthy"}`))
+	}))
+	defer server.Close()
+
+	base := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	now := base
+	r := &ApplicationReconciler{
+		HealthEval: health.NewCELEvaluator(),
+		now:        func() time.Time { return now },
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "health-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			HealthChecks: []pipelinesv1alpha1.HealthCheck{
+				{
+					Name:       "api",
+					Expression: "http.statusCode == 200",
+					Interval:   "1m",
+					HTTPProbe: &pipelinesv1alpha1.HTTPProbe{
+						URL:     server.URL,
+						Timeout: 1,
+					},
+				},
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Health: pipelinesv1alpha1.HealthHealthy,
+			HealthChecks: []pipelinesv1alpha1.HealthCheckResult{
+				{
+					Name:           "api",
+					Status:         pipelinesv1alpha1.HealthHealthy,
+					Message:        "previous result",
+					CheckedAt:      &metav1.Time{Time: base.Add(-30 * time.Second)},
+					HTTPStatusCode: 200,
+					HTTPBody:       `{"status":"healthy"}`,
+				},
+			},
+		},
+	}
+
+	r.evaluateHealth(context.Background(), app)
+	if got := probes.Load(); got != 0 {
+		t.Fatalf("fresh health result should be reused, got %d probes", got)
+	}
+	if got := app.Status.HealthChecks[0].Message; got != "previous result" {
+		t.Fatalf("health result message = %q, want previous result", got)
+	}
+
+	now = base.Add(61 * time.Second)
+	r.evaluateHealth(context.Background(), app)
+	if got := probes.Load(); got != 1 {
+		t.Fatalf("stale health result should be re-evaluated once, got %d probes", got)
+	}
+	if got := app.Status.HealthChecks[0].Message; got != "check passed" {
+		t.Fatalf("health result message = %q, want check passed", got)
+	}
+	if app.Status.HealthChecks[0].CheckedAt == nil || !app.Status.HealthChecks[0].CheckedAt.Time.Equal(now) {
+		t.Fatalf("checkedAt = %v, want %v", app.Status.HealthChecks[0].CheckedAt, now)
 	}
 }
 
