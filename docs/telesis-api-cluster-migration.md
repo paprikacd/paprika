@@ -25,6 +25,15 @@ That separation is deliberate. The API can move independently while the browser 
 
 Create these in the Application namespace before applying `deploy/telesis-api-application.yaml`.
 
+Firebase credentials are split by runtime boundary:
+
+- `telesis-firebase-admin`: mounted service-account JSON for API workloads that use `GOOGLE_APPLICATION_CREDENTIALS`.
+- `telesis-api-env`: minimal API env keys. For Firebase, keep this to `FIREBASE_PROJECT_ID` unless the API starts reading more Firebase env directly.
+- `telesis-firebase-admin-env`: env-style admin keys for future server components that cannot use a mounted JSON file.
+- `telesis-firebase-public-env`: public Firebase web config for future frontend components.
+
+Do not inject `telesis-firebase-admin-env` or `telesis-firebase-public-env` into the API chart by default. The API already has the mounted admin JSON and should not receive frontend config or duplicate private-key env vars.
+
 ```bash
 kubectl -n paprika-e2e create secret generic telesis-api-env \
   --from-literal=DATABASE_URL='...' \
@@ -76,4 +85,3 @@ Keep the runner plane independent from the API release. The runner needs either:
 - a dedicated cluster/node pool with explicit sandbox isolation and no broad API-origin permissions.
 
 Do not move the current Docker socket runner into the API chart. If a temporary Kubernetes runner is needed, package it as a separate chart/Application with isolated scheduling, a separate service account, explicit resource ceilings, and queue health gates.
-
