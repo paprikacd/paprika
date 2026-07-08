@@ -858,24 +858,15 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 }
 
 func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) *paprikav1.Release {
-	releaseName := applicationReleaseName(app)
 	stableReleaseName := stableApplicationReleaseName(app.Name)
+	releaseName := applicationReleaseName(app, targetStage)
 	stageName := app.Name + "-" + targetStage.Name
 	pipelineName := app.Name + "-pipeline"
 	if app.Status.PipelineRef == "" {
 		pipelineName = ""
 	}
 
-	params := make(map[string]string, len(app.Spec.Parameters)+len(targetStage.Parameters))
-	for k, v := range app.Spec.Parameters {
-		params[k] = v
-	}
-	for k, v := range targetStage.Parameters {
-		params[k] = v
-	}
-	if _, ok := params["release-name"]; !ok {
-		params["release-name"] = stableReleaseName
-	}
+	params := releaseParameters(app, targetStage, stableReleaseName)
 
 	annotations := map[string]string{}
 	if app.Status.SourceHash != "" {
@@ -911,18 +902,84 @@ func stableApplicationReleaseName(appName string) string {
 	return truncateKubernetesName(appName + "-release")
 }
 
-func applicationReleaseName(app *paprikav1.Application) string {
+func applicationReleaseName(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) string {
 	base := stableApplicationReleaseName(app.Name)
-	identity := app.Status.SourceHash
-	if identity == "" {
-		identity = app.Status.SourceRevision
-	}
+	identity := releaseIdentity(app, targetStage, base)
 	if identity == "" {
 		return base
 	}
-	sum := sha256.Sum256([]byte(identity + "\n" + app.Status.SourceRevision))
+	sum := sha256.Sum256([]byte(identity))
 	suffix := hex.EncodeToString(sum[:])[:10]
 	return addNameSuffix(base, suffix)
+}
+
+func releaseIdentity(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) string {
+	if !hasReleaseIdentityInput(app, targetStage) {
+		return ""
+	}
+
+	var b strings.Builder
+	appendIdentityField(&b, "sourceHash", app.Status.SourceHash)
+	appendIdentityField(&b, "sourceRevision", app.Status.SourceRevision)
+	if targetStage != nil {
+		appendIdentityField(&b, "stage", targetStage.Name)
+	}
+	writeReleaseParametersIdentity(&b, releaseParameters(app, targetStage, stableReleaseName))
+	return b.String()
+}
+
+func hasReleaseIdentityInput(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) bool {
+	hasSourceIdentity := app.Status.SourceHash != "" || app.Status.SourceRevision != ""
+	return hasSourceIdentity || len(app.Spec.Parameters) > 0 || (targetStage != nil && len(targetStage.Parameters) > 0)
+}
+
+func appendIdentityField(b *strings.Builder, key, value string) {
+	if value == "" {
+		return
+	}
+	b.WriteString(key)
+	b.WriteByte('=')
+	b.WriteString(value)
+	b.WriteByte('\n')
+}
+
+func writeReleaseParametersIdentity(b *strings.Builder, params map[string]string) {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString("param:")
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(params[k])
+		b.WriteByte('\n')
+	}
+}
+
+func releaseParameters(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) map[string]string {
+	params := make(map[string]string, len(app.Spec.Parameters))
+	for k, v := range app.Spec.Parameters {
+		params[k] = v
+	}
+	if targetStage != nil {
+		for k, v := range targetStage.Parameters {
+			params[k] = v
+		}
+	}
+	if _, ok := params["release-name"]; !ok {
+		params["release-name"] = stableReleaseName
+	}
+	return params
+}
+
+func releaseIdentityChanged(app *paprikav1.Application) (changed bool, desiredRelease string) {
+	if app.Status.ReleaseRef == "" || len(app.Spec.Stages) == 0 {
+		return false, ""
+	}
+	desiredRelease = applicationReleaseName(app, &app.Spec.Stages[0])
+	return desiredRelease != "" && app.Status.ReleaseRef != desiredRelease, desiredRelease
 }
 
 func addNameSuffix(base, suffix string) string {
@@ -1451,6 +1508,16 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		log.Info("Source change detected, triggering re-sync", "app", app.Name)
 		return r.startNewReleaseFlow(ctx, app, false, "SourceChanged", "source hash changed, creating a new release")
 	}
+	if changed, desiredRelease := releaseIdentityChanged(app); changed {
+		log.Info("Release identity changed, triggering re-sync", "app", app.Name, "currentRelease", app.Status.ReleaseRef, "desiredRelease", desiredRelease)
+		return r.startNewReleaseFlow(ctx, app, false, "ReleaseSpecChanged", "release parameters changed, creating a new release")
+	}
+
+	return r.evaluateHealthyApplication(ctx, app, pollInterval)
+}
+
+func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, app *paprikav1.Application, pollInterval time.Duration) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
 
 	r.evaluateHealth(ctx, app)
 	r.evaluateDiff(ctx, app)

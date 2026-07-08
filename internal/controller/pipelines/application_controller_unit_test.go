@@ -533,6 +533,92 @@ func TestApplicationReconciler_handleHealthyPhase_changedSourceStartsNewReleaseF
 	}
 }
 
+func TestApplicationReconciler_handleHealthyPhase_changedParametersStartNewReleaseFlow(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	stage := pipelinesv1alpha1.ApplicationPromotionStage{Name: "dev", Ring: 1}
+	oldApp := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "param-git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Parameters: map[string]string{"image.tag": "v1"},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+		},
+	}
+	oldReleaseName := (&ApplicationReconciler{}).buildRelease(oldApp, &stage).Name
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "param-git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+			Parameters: map[string]string{"image.tag": "v2"},
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{stage},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+			ReleaseRef:     oldReleaseName,
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "param-git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://github.com/org/repo.git", Revision: "main", Path: "charts/app"},
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: oldReleaseName, Namespace: "default"},
+		Status:     pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+	r := &ApplicationReconciler{
+		client: c,
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "same-source-hash",
+			Revision: "same-source-revision",
+		}},
+	}
+
+	if _, err := r.handleHealthyPhase(ctx, app); err != nil {
+		t.Fatalf("handleHealthyPhase failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want empty so parameter changes create a replacement Release", updated.Status.ReleaseRef)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: oldReleaseName, Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseSuperseded {
+		t.Fatalf("release phase = %s, want Superseded", updatedRelease.Status.Phase)
+	}
+}
+
 func TestApplicationReconciler_handleHealthyPhase_supersededReleaseStartsReplacementFlow(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
@@ -626,6 +712,16 @@ func TestApplicationReconciler_buildRelease_usesSourceHashForReleaseCRAndStableH
 	}
 	if got := release.Spec.Parameters["image.tag"]; got != "v1" {
 		t.Fatalf("image.tag parameter = %q, want v1", got)
+	}
+
+	updated := app.DeepCopy()
+	updated.Spec.Parameters["image.tag"] = "v2"
+	updatedRelease := (&ApplicationReconciler{}).buildRelease(updated, stage)
+	if updatedRelease.Name == release.Name {
+		t.Fatalf("release CR name should change when effective parameters change, got %q", updatedRelease.Name)
+	}
+	if got := updatedRelease.Spec.Parameters["release-name"]; got != "git-app-release" {
+		t.Fatalf("stable Helm release-name = %q, want git-app-release", got)
 	}
 }
 
