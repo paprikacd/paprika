@@ -138,6 +138,11 @@ spec:
         - containerPort: 8081
           name: health
           protocol: TCP
+        {{- if .Values.webhook.enabled }}
+        - containerPort: 9443
+          name: admission
+          protocol: TCP
+        {{- end }}
         {{- if eq .Values.deploymentMode "monolith" }}
         - containerPort: 3000
           name: ui

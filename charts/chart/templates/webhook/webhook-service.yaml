@@ -13,7 +13,7 @@ spec:
   ports:
   - port: 443
     protocol: TCP
-    targetPort: {{ .Values.webhook.port }}
+    targetPort: 9443
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     control-plane: controller-manager
