@@ -139,7 +139,10 @@ jobs:
           helm upgrade --install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART }}" \
             --namespace "${{ env.VKE_NAMESPACE }}" \
             --values "${{ env.TEST_VALUES }}" \
-            --set image.tag="${{ env.IMAGE_TAG }}" \
+            --set-string manager.image.tag="${{ env.IMAGE_TAG }}" \
+            --set-string apiServer.image.tag="${{ env.IMAGE_TAG }}" \
+            --set-string repoServer.image.tag="${{ env.IMAGE_TAG }}" \
+            --set-string webhookReceiver.image.tag="${{ env.IMAGE_TAG }}" \
             --set auth.oidc.clientID="${{ secrets.VKE_OIDC_CLIENT_ID }}" \
             --set auth.oidc.clientSecret="${{ secrets.VKE_OIDC_CLIENT_SECRET }}" \
             --set auth.tokenSecret="${{ secrets.VKE_AUTH_TOKEN_SECRET }}" \
