@@ -28,11 +28,13 @@ Create these in the Application namespace before applying `deploy/telesis-api-ap
 Firebase credentials are split by runtime boundary:
 
 - `telesis-firebase-admin`: mounted service-account JSON for API workloads that use `GOOGLE_APPLICATION_CREDENTIALS`.
-- `telesis-api-env`: minimal API env keys. For Firebase, keep this to `FIREBASE_PROJECT_ID` unless the API starts reading more Firebase env directly.
+- `telesis-api-env`: API runtime keys from the current droplet env file, including `DATABASE_URL`, `FIREBASE_PROJECT_ID`, `FRONTEND_BASE_URL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `RESEND_FROM_NAME`.
 - `telesis-firebase-admin-env`: env-style admin keys for future server components that cannot use a mounted JSON file.
 - `telesis-firebase-public-env`: public Firebase web config for future frontend components.
+- `telesis-web-env`: frontend auth/runtime keys from the current production frontend env file, including NextAuth, Google OAuth, and API URL values.
+- `telesis-provider-env`: provider and infra credentials from the repository root env file, including Cloudflare, Telstra, and Terraform-compatible Cloudflare aliases.
 
-Do not inject `telesis-firebase-admin-env` or `telesis-firebase-public-env` into the API chart by default. The API already has the mounted admin JSON and should not receive frontend config or duplicate private-key env vars.
+Do not inject `telesis-firebase-admin-env`, `telesis-firebase-public-env`, `telesis-web-env`, or `telesis-provider-env` into the API chart by default. The API already has the mounted admin JSON and only needs `telesis-api-env`; frontend config, provider credentials, and duplicate private-key env vars should stay out of the API pod.
 
 ```bash
 kubectl -n paprika-e2e create secret generic telesis-api-env \

@@ -11,9 +11,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -452,6 +455,72 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 
 	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n"), nil); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
+	}
+}
+
+func TestReleaseReconciler_applyAllDocuments_AppliesPortableHelmResources(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	registerUnstructured := func(gvk schema.GroupVersionKind) {
+		scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		scheme.AddKnownTypeWithName(schema.GroupVersionKind{
+			Group:   gvk.Group,
+			Version: gvk.Version,
+			Kind:    gvk.Kind + "List",
+		}, &unstructured.UnstructuredList{})
+	}
+	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ServiceAccount"})
+	registerUnstructured(schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"})
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	manifests := []byte(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: telesis-api-release
+automountServiceAccountToken: false
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: telesis-api-release
+spec:
+  parentRefs:
+    - name: paprika
+      namespace: envoy-gateway-system
+  hostnames:
+    - origin-vke.telesis.dev
+  rules:
+    - backendRefs:
+        - name: telesis-api-release
+          port: 9500
+`)
+
+	r := &ReleaseReconciler{}
+	applied, err := r.applyAllDocuments(
+		context.Background(),
+		logr.Discard(),
+		dynClient,
+		engine.SplitYAMLDocuments(manifests),
+		"paprika-e2e",
+		"telesis-api",
+		&pipelinesv1alpha1.SyncOptions{Replace: true},
+	)
+	if err != nil {
+		t.Fatalf("applyAllDocuments returned error: %v", err)
+	}
+	if applied != 2 {
+		t.Fatalf("expected 2 applied resources, got %d", applied)
+	}
+
+	saGVR := schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}
+	if _, err := dynClient.Resource(saGVR).Namespace("paprika-e2e").Get(context.Background(), "telesis-api-release", metav1.GetOptions{}); err != nil {
+		t.Fatalf("service account was not applied: %v", err)
+	}
+
+	routeGVR := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
+	if _, err := dynClient.Resource(routeGVR).Namespace("paprika-e2e").Get(context.Background(), "telesis-api-release", metav1.GetOptions{}); err != nil {
+		t.Fatalf("http route was not applied: %v", err)
 	}
 }
 

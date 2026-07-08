@@ -83,7 +83,9 @@ var errHookPhasePending = errors.New("hook phase still in progress")
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
+	{Group: "", Version: "v1", Resource: "serviceaccounts"},
 	{Group: "", Version: "v1", Resource: "services"},
+	{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
 	{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 }
 
@@ -97,6 +99,7 @@ var knownGVRs = map[string]schema.GroupVersionResource{
 	"Job":                   {Group: "batch", Version: "v1", Resource: "jobs"},
 	"Pod":                   {Group: "", Version: "v1", Resource: "pods"},
 	"ServiceAccount":        {Group: "", Version: "v1", Resource: "serviceaccounts"},
+	"HTTPRoute":             {Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
 	"ClusterRole":           {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},
 	"ClusterRoleBinding":    {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"},
 	"Role":                  {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"},
@@ -149,11 +152,12 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
