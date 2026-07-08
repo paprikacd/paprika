@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -288,40 +289,49 @@ func isPaprikaInternalResource(obj *unstructured.Unstructured) bool {
 // least one live element (by name if available, allowing live to carry extra
 // defaulted fields on list items like containers and ports).
 func specContains(desired, live interface{}) bool {
+	return specContainsAt(nil, desired, live)
+}
+
+func specContainsAt(path []string, desired, live interface{}) bool {
 	dMap, dOK := desired.(map[string]interface{})
 	lMap, lOK := live.(map[string]interface{})
 	if dOK && lOK {
-		return mapContains(dMap, lMap)
+		return mapContains(path, dMap, lMap)
 	}
 	dSlice, dOK := desired.([]interface{})
 	lSlice, lOK := live.([]interface{})
 	if dOK && lOK {
-		return sliceContains(dSlice, lSlice)
+		return sliceContains(path, dSlice, lSlice)
+	}
+	if isResourceQuantityPath(path) {
+		if quantitiesEqual(desired, live) {
+			return true
+		}
 	}
 	return fmt.Sprintf("%v", desired) == fmt.Sprintf("%v", live)
 }
 
-func mapContains(dMap, lMap map[string]interface{}) bool {
+func mapContains(path []string, dMap, lMap map[string]interface{}) bool {
 	for k, dv := range dMap {
 		lv, ok := lMap[k]
 		if !ok {
 			return false
 		}
-		if !specContains(dv, lv) {
+		if !specContainsAt(appendPath(path, k), dv, lv) {
 			return false
 		}
 	}
 	return true
 }
 
-func sliceContains(dSlice, lSlice []interface{}) bool {
+func sliceContains(path []string, dSlice, lSlice []interface{}) bool {
 	if len(dSlice) > len(lSlice) {
 		return false
 	}
 	for _, dv := range dSlice {
 		matched := false
 		for _, lv := range lSlice {
-			if specContains(dv, lv) {
+			if specContainsAt(path, dv, lv) {
 				matched = true
 				break
 			}
@@ -331,6 +341,50 @@ func sliceContains(dSlice, lSlice []interface{}) bool {
 		}
 	}
 	return true
+}
+
+func appendPath(path []string, key string) []string {
+	next := make([]string, 0, len(path)+1)
+	next = append(next, path...)
+	next = append(next, key)
+	return next
+}
+
+func isResourceQuantityPath(path []string) bool {
+	for i, part := range path {
+		if part != "resources" {
+			continue
+		}
+		for _, child := range path[i+1:] {
+			if child == "limits" || child == "requests" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func quantitiesEqual(desired, live interface{}) bool {
+	desiredQty, ok := parseQuantity(desired)
+	if !ok {
+		return false
+	}
+	liveQty, ok := parseQuantity(live)
+	if !ok {
+		return false
+	}
+	return desiredQty.Equal(liveQty)
+}
+
+func parseQuantity(value interface{}) (resource.Quantity, bool) {
+	switch v := value.(type) {
+	case string:
+		q, err := resource.ParseQuantity(v)
+		return q, err == nil
+	default:
+		q, err := resource.ParseQuantity(fmt.Sprintf("%v", v))
+		return q, err == nil
+	}
 }
 
 // ResourceSyncs converts the diff result into a flat list of resource sync statuses.

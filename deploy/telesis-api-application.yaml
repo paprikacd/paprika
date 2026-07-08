@@ -26,6 +26,35 @@ spec:
     env.nonSecret.PUBSUB_TOPIC_ID: check-jobs
     env.nonSecret.PUBSUB_JOB_TOPIC_ID: check-jobs
     probes.readinessPath: /health
+    components.scheduler.enabled: "true"
+    components.scheduler.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/scheduler
+    components.scheduler.image.tag: ab2d5b3
+    components.scheduler.secretEnv.existingSecret: telesis-api-env
+    components.scheduler.firebaseAdmin.enabled: "true"
+    components.scheduler.env.nonSecret.GCP_PROJECT_ID: uptime-485903
+    components.scheduler.env.nonSecret.PUBSUB_TOPIC_ID: check-jobs
+    components.runner.enabled: "true"
+    components.runner.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/runner
+    components.runner.image.tag: ab2d5b3
+    components.runner.secretEnv.existingSecret: telesis-api-env
+    components.runner.firebaseAdmin.enabled: "true"
+    components.runner.env.nonSecret.GCP_PROJECT_ID: uptime-485903
+    components.runner.env.nonSecret.PUBSUB_SUBSCRIPTION_ID: check-jobs-sub
+    components.runner.env.nonSecret.PUBSUB_RESULT_TOPIC_ID: check-results
+    components.runner.env.nonSecret.PUBSUB_MODE: pull
+    components.resultprocessor.enabled: "true"
+    components.resultprocessor.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/resultprocessor
+    components.resultprocessor.image.tag: ab2d5b3
+    components.resultprocessor.secretEnv.existingSecret: telesis-api-env
+    components.resultprocessor.firebaseAdmin.enabled: "true"
+    components.resultprocessor.env.nonSecret.GCP_PROJECT_ID: uptime-485903
+    components.resultprocessor.env.nonSecret.PUBSUB_RESULT_SUBSCRIPTION_ID: check-results-sub
+    components.resultprocessor.env.nonSecret.PUBSUB_MODE: pull
+    components.resultprocessor.env.nonSecret.FRONTEND_BASE_URL: https://telesis.dev
+    components.rollup.enabled: "true"
+    components.rollup.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/rollup
+    components.rollup.image.tag: ab2d5b3
+    components.rollup.secretEnv.existingSecret: telesis-api-env
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.telesis.dev
@@ -56,6 +85,34 @@ spec:
         method: GET
         timeout: 5
       expression: http.statusCode == 200 && http.bodyJson.components.database.status == "healthy" && http.bodyJson.components.queries.response_time_ms < 1000
+    - name: scheduler-live
+      interval: 30s
+      httpProbe:
+        url: http://telesis-api-release-scheduler.paprika-e2e.svc.cluster.local:8081/health
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200
+    - name: runner-live
+      interval: 30s
+      httpProbe:
+        url: http://telesis-api-release-runner.paprika-e2e.svc.cluster.local:8082/health/live
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "healthy"
+    - name: resultprocessor-live
+      interval: 30s
+      httpProbe:
+        url: http://telesis-api-release-resultprocessor.paprika-e2e.svc.cluster.local:8083/health/live
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "healthy"
+    - name: rollup-live
+      interval: 30s
+      httpProbe:
+        url: http://telesis-api-release-rollup.paprika-e2e.svc.cluster.local:9505/health
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200
   onFailure:
     action: rollback
   selfHeal:

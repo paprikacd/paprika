@@ -166,3 +166,66 @@ func TestComputeDiff_IgnoresReleaseOwnedInternalConfigMaps(t *testing.T) {
 	assert.Equal(t, "app-config", result.Unchanged[0].Name)
 	assert.Equal(t, 0, result.OutOfSyncCount())
 }
+
+func TestResourceEqual_NormalizesKubernetesResourceQuantities(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "runner",
+			"namespace": "default",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/name": "runner",
+			},
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name": "runner",
+							"resources": map[string]interface{}{
+								"limits": map[string]interface{}{
+									"cpu":    "1000m",
+									"memory": "1024Mi",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+	live := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "runner",
+			"namespace": "default",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/name": "runner",
+			},
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name": "runner",
+							"resources": map[string]interface{}{
+								"limits": map[string]interface{}{
+									"cpu":    "1",
+									"memory": "1Gi",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	assert.True(t, resourceEqual(desired, live))
+}
