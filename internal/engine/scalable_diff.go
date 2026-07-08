@@ -25,6 +25,9 @@ const ManagedByLabelValue = "paprika"
 // ApplicationNameLabelKey is the label key for the application name.
 const ApplicationNameLabelKey = "app.paprika.io/name"
 
+// ReleaseNameLabelKey links internal Paprika artifacts to their owning Release.
+const ReleaseNameLabelKey = "app.paprika.io/release"
+
 // ManagedBySelector returns a label selector for Paprika-managed resources.
 func ManagedBySelector() labels.Selector {
 	selector := labels.NewSelector()
@@ -185,7 +188,7 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 		}
 		for i := range list.Items {
 			item := &list.Items[i]
-			if hooks.IsHook(item) {
+			if shouldIgnoreLiveResource(item) {
 				continue
 			}
 			key := resourceKey(item)

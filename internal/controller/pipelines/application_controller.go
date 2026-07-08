@@ -1378,6 +1378,11 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 
 	r.pruneReleasesIfInline(ctx, app)
 
+	if app.Status.ReleaseRef != "" && r.getCurrentReleasePhase(ctx, app) == paprikav1.ReleaseSuperseded {
+		log.Info("Active release is superseded, creating replacement release", "release", app.Status.ReleaseRef)
+		return r.startNewReleaseFlow(ctx, app, false, "ReleaseSuperseded", "active release was superseded, creating a replacement")
+	}
+
 	pollInterval := defaultRequeue
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {

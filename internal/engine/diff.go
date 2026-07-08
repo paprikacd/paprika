@@ -155,7 +155,7 @@ func (d *DiffEngine) fetchLiveResources(ctx context.Context, namespace string) (
 			}
 			for i := range list.Items {
 				item := &list.Items[i]
-				if hooks.IsHook(item) {
+				if shouldIgnoreLiveResource(item) {
 					continue
 				}
 				key := resourceKey(item)
@@ -256,6 +256,25 @@ func stripServerAnnotations(in map[string]string) map[string]string {
 func isServerManagedAnnotation(key string) bool {
 	for _, prefix := range serverManagedAnnotationPrefixes {
 		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldIgnoreLiveResource(obj *unstructured.Unstructured) bool {
+	if hooks.IsHook(obj) {
+		return true
+	}
+	return isPaprikaInternalResource(obj)
+}
+
+func isPaprikaInternalResource(obj *unstructured.Unstructured) bool {
+	if obj.GetLabels()[ReleaseNameLabelKey] == "" {
+		return false
+	}
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Kind == "Release" && strings.HasPrefix(ref.APIVersion, "pipelines.paprika.io/") {
 			return true
 		}
 	}
