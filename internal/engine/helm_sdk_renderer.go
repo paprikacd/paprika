@@ -17,6 +17,7 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	helmg "helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
+	"helm.sh/helm/v3/pkg/strvals"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -381,7 +382,9 @@ func (r *HelmSDKRenderer) buildValues(params map[string]string, baseContent stri
 	}
 
 	for k, v := range params {
-		merged[k] = v
+		if err := strvals.ParseInto(fmt.Sprintf("%s=%s", k, v), merged); err != nil {
+			return nil, fmt.Errorf("parse parameter %q: %w", k, err)
+		}
 	}
 
 	return merged, nil

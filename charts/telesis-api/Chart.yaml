@@ -1,0 +1,7 @@
+apiVersion: v2
+name: telesis-api
+description: Telesis uptime API origin packaged for Paprika-managed Kubernetes rollouts.
+type: application
+version: 0.1.0
+appVersion: "latest"
+

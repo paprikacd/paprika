@@ -1,0 +1,8 @@
+Telesis API origin chart rendered.
+
+Service:
+  {{ include "telesis-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+
+Expected secrets:
+  secretEnv.existingSecret: {{ default "(not set)" .Values.secretEnv.existingSecret }}
+  firebaseAdmin.existingSecret: {{ default "(not set)" .Values.firebaseAdmin.existingSecret }}

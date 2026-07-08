@@ -1,0 +1,47 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/skunkworq/uptime/api
+  tag: latest
+
+secretEnv:
+  existingSecret: telesis-api-env
+  optional: false
+
+firebaseAdmin:
+  existingSecret: telesis-firebase-admin
+  key: firebase-admin-key.json
+
+env:
+  nonSecret:
+    PORT: "9500"
+    SERVICE_NAME: telesis-api
+    GO_ENV: production
+    ENV: production
+    GCP_PROJECT_ID: telesis-prod
+    PUBSUB_TOPIC_ID: check-jobs
+    PUBSUB_JOB_TOPIC_ID: check-jobs
+    RUNNER_REGION: syd1
+    RATE_LIMIT_REQUESTS_PER_MINUTE: "300"
+    RATE_LIMIT_BURST_SIZE: "60"
+    RATE_LIMIT_ENABLED: "true"
+    QUICK_CHECK_CACHE_TTL_SECONDS: "30"
+    API_BASE_URL: https://api.telesis.dev
+    FRONTEND_URL: https://telesis.dev
+    FRONTEND_BASE_URL: https://telesis.dev
+    RESEND_FROM_NAME: Telesis Alerts
+
+gateway:
+  enabled: true
+  parentRefs:
+    - name: paprika
+      namespace: envoy-gateway-system
+  hostnames:
+    - origin-vke.telesis.dev
+
+autoscaling:
+  enabled: false
+
+pdb:
+  enabled: false
+

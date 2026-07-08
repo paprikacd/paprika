@@ -131,6 +131,12 @@ func TestEvalExpression_HTTPResult(t *testing.T) {
 			httpResult: httpResult,
 			wantStatus: paprikav1.HealthDegraded,
 		},
+		{
+			name:       "http body contains",
+			expr:       `http.statusCode == 200 && http.body.contains('"status": "ok"')`,
+			httpResult: httpResult,
+			wantStatus: paprikav1.HealthHealthy,
+		},
 	}
 
 	for _, tc := range tests {

@@ -1,0 +1,69 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: telesis-api
+  namespace: paprika-e2e
+  labels:
+    app.kubernetes.io/name: telesis-api
+    app.kubernetes.io/part-of: telesis
+spec:
+  project: default
+  source:
+    type: git
+    repoUrl: https://github.com/paprikacd/paprika.git
+    revision: master
+    path: charts/telesis-api
+    pollInterval: 60s
+  parameters:
+    image.repository: ghcr.io/skunkworq/uptime/api
+    image.tag: latest
+    secretEnv.existingSecret: telesis-api-env
+    secretEnv.optional: "false"
+    firebaseAdmin.existingSecret: telesis-firebase-admin
+    firebaseAdmin.key: firebase-admin-key.json
+    gateway.parentRefs[0].name: paprika
+    gateway.parentRefs[0].namespace: envoy-gateway-system
+    gateway.hostnames[0]: origin-vke.telesis.dev
+  stages:
+    - name: vke-staging
+      ring: 1
+      autoPromote: false
+      canary:
+        steps: [10, 50, 100]
+        intervalSeconds: 60
+      parameters:
+        replicaCount: "2"
+        gateway.enabled: "true"
+  strategy: Canary
+  syncPolicy: Auto
+  healthChecks:
+    - name: api-ready
+      interval: 30s
+      httpProbe:
+        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health/ready
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200
+    - name: api-detailed-health
+      interval: 60s
+      httpProbe:
+        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/health
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200
+    - name: api-quick-check
+      interval: 120s
+      httpProbe:
+        url: http://telesis-api-release.paprika-e2e.svc.cluster.local:9500/v1/quick-check
+        method: POST
+        headers:
+          Content-Type: application/json
+        body: '{"url":"https://telesis.dev","type":"uptime","timeout_seconds":15}'
+        timeout: 65
+      expression: http.statusCode == 200 && http.body.contains('"status":"success"')
+  onFailure:
+    action: rollback
+  selfHeal:
+    autoSyncOnDrift: true
+    autoRevertOnHealthFailure: true
+    cooldown: 5m

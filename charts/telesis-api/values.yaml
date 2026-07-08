@@ -1,0 +1,139 @@
+replicaCount: 2
+revisionHistoryLimit: 3
+
+nameOverride: ""
+fullnameOverride: ""
+commonLabels: {}
+
+image:
+  repository: ghcr.io/skunkworq/uptime/api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automount: false
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+containerPort: 9500
+
+env:
+  nonSecret:
+    PORT: "9500"
+    SERVICE_NAME: telesis-api
+    GO_ENV: production
+    ENV: production
+    GCP_PROJECT_ID: telesis-prod
+    PUBSUB_TOPIC_ID: check-jobs
+    PUBSUB_JOB_TOPIC_ID: check-jobs
+    RUNNER_REGION: syd1
+    RATE_LIMIT_REQUESTS_PER_MINUTE: "300"
+    RATE_LIMIT_BURST_SIZE: "60"
+    RATE_LIMIT_ENABLED: "true"
+    QUICK_CHECK_CACHE_TTL_SECONDS: "30"
+    API_BASE_URL: https://api.telesis.dev
+    FRONTEND_URL: https://telesis.dev
+    FRONTEND_BASE_URL: https://telesis.dev
+    RESEND_FROM_NAME: Telesis Alerts
+
+secretEnv:
+  existingSecret: ""
+  optional: false
+
+extraEnv: []
+extraEnvFrom: []
+
+firebaseAdmin:
+  existingSecret: ""
+  key: firebase-admin-key.json
+  mountPath: /etc/telesis/firebase-admin-key.json
+
+probes:
+  enabled: true
+  readinessPath: /health/ready
+  livenessPath: /health/live
+  startupPath: /health/live
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 6
+
+service:
+  type: ClusterIP
+  port: 9500
+  annotations: {}
+
+gateway:
+  enabled: false
+  annotations: {}
+  parentRefs:
+    - name: paprika
+      namespace: envoy-gateway-system
+  hostnames: []
+  path: /
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: origin-vke.telesis.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+pdb:
+  enabled: false
+  minAvailable: 1
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+

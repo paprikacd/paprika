@@ -27,6 +27,15 @@ Use a two-phase migration so Paprika can own rollout and health without moving e
 
 This avoids coupling the UI/API move to the hardest operational part: regional browser check execution with Docker sandboxing.
 
+The first phase now has concrete artifacts:
+
+| File | Purpose |
+| --- | --- |
+| `charts/telesis-api/` | Portable Helm chart for the Telesis API origin only. |
+| `deploy/telesis-api-values.example.yaml` | Production-shaped values for local Helm validation. |
+| `deploy/telesis-api-application.yaml` | Paprika Application with canary rollout and health gates. |
+| `docs/telesis-api-cluster-migration.md` | Runbook for secrets, validation, and DNS cutover. |
+
 ## VKE Application Cut Plan
 
 | Service | Kubernetes shape | Health |
@@ -42,7 +51,7 @@ This avoids coupling the UI/API move to the hardest operational part: regional b
 
 1. Add a Telesis ApplicationSet or multiple Applications with per-service health checks and environment Secret references.
 2. Use canary rollout for `api` first, with Cloudflare still pointing at the droplet origin until the VKE origin passes health and quick-check smoke.
-3. Add a Paprika health check for `POST /v1/quick-check` against the API origin as the promotion gate.
+3. Use the Paprika health check for `POST /v1/quick-check` in `deploy/telesis-api-application.yaml` as the promotion gate.
 4. Decide runner isolation:
    - Preferred short term: keep runner on the existing droplet or a Sydney worker host, but manage it through Paprika once agent scheduling is ready.
    - Preferred long term: dedicated VKE node pool or separate Sydney cluster with restricted runner permissions.
@@ -50,21 +59,23 @@ This avoids coupling the UI/API move to the hardest operational part: regional b
    - `origin.telesis.dev` to VKE Gateway.
    - Keep `api.telesis.dev` Cloudflare Worker in front unless cache/auth behavior is intentionally replaced.
 
-## Demo Coverage To Add
+## Demo Coverage
 
-The demo app now exercises canary rollout and an HTTP health gate. Telesis should use the same shape once secrets and runner placement are ready:
+The demo app now exercises canary rollout and an HTTP health gate. Telesis uses the same shape through `deploy/telesis-api-application.yaml` once secrets and runner placement are ready:
 
 ```yaml
 healthChecks:
   - name: api-ready
-    type: HTTP
-    url: http://telesis-api.<namespace>.svc.cluster.local/health/ready
+    httpProbe:
+      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/health/ready
     expression: http.statusCode == 200
   - name: api-quick-check
-    type: HTTP
-    url: https://origin.telesis.dev/v1/quick-check
-    method: POST
-    expression: http.statusCode == 200
+    httpProbe:
+      url: http://telesis-api-release.<namespace>.svc.cluster.local:9500/v1/quick-check
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{"url":"https://telesis.dev","type":"uptime","timeout_seconds":15}'
+      timeout: 65
+    expression: http.statusCode == 200 && http.body.contains('"status":"success"')
 ```
-
-The second check needs Paprika HTTP health checks to support method/body configuration before it can become a real promotion gate.
