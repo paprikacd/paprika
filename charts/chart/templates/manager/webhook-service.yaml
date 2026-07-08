@@ -1,4 +1,4 @@
-{{- if eq .Values.deploymentMode "monolith" }}
+{{- if and (eq .Values.deploymentMode "monolith") .Values.webhook.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

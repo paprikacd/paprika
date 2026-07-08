@@ -226,6 +226,9 @@ redis:
 certManager:
   enable: true
 
+webhook:
+  enabled: true
+
 mtls:
   enabled: false
 

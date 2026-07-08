@@ -28,7 +28,9 @@ networkPolicy:
 ## Webhook configuration.
 ##
 webhook:
-  enabled: true
+  # Enable Kubernetes admission webhooks. This requires serving certificates,
+  # normally by setting certManager.enable=true in clusters with cert-manager.
+  enabled: false
   port: 8080
   service:
     ## Service annotations (e.g., for AWS NLB, service mesh)
