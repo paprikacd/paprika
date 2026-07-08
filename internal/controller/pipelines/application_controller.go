@@ -1332,32 +1332,57 @@ func (r *ApplicationReconciler) desiredManifests(ctx context.Context, app *papri
 		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
 	}
 
-	// Use the active Release's parameters (which merge app-level and
-	// stage-level params) so the rendered diff matches what was actually
-	// deployed. Fall back to app-level params if no Release exists yet.
-	params := make(map[string]string, len(app.Spec.Parameters)+1)
-	for k, v := range app.Spec.Parameters {
-		params[k] = v
-	}
-	releaseName := app.Name + "-release"
-	if app.Status.ReleaseRef != "" {
-		releaseName = app.Status.ReleaseRef
-		var activeRelease paprikav1.Release
-		if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: app.Namespace}, &activeRelease); err == nil {
-			for k, v := range activeRelease.Spec.Parameters {
-				params[k] = v
-			}
-		}
-	}
-	if _, ok := params["release-name"]; !ok {
-		params["release-name"] = releaseName
-	}
+	renderCtx := r.desiredManifestRenderContext(ctx, app)
+	stampTemplateSourceIdentity(&tmpl, renderCtx.sourceHash, renderCtx.sourceRevision)
 
-	manifests, err := renderer.Render(ctx, &tmpl, params)
+	manifests, err := renderer.Render(ctx, &tmpl, renderCtx.params)
 	if err != nil {
 		return nil, fmt.Errorf("render template for diff: %w", err)
 	}
 	return manifests, nil
+}
+
+type desiredManifestRenderContext struct {
+	params         map[string]string
+	releaseName    string
+	sourceHash     string
+	sourceRevision string
+}
+
+func (r *ApplicationReconciler) desiredManifestRenderContext(ctx context.Context, app *paprikav1.Application) desiredManifestRenderContext {
+	params := make(map[string]string, len(app.Spec.Parameters)+1)
+	for k, v := range app.Spec.Parameters {
+		params[k] = v
+	}
+	renderCtx := desiredManifestRenderContext{
+		params:         params,
+		releaseName:    app.Name + "-release",
+		sourceHash:     app.Status.SourceHash,
+		sourceRevision: app.Status.SourceRevision,
+	}
+	if app.Status.ReleaseRef != "" {
+		renderCtx.releaseName = app.Status.ReleaseRef
+		var activeRelease paprikav1.Release
+		if err := r.client.Get(ctx, types.NamespacedName{Name: renderCtx.releaseName, Namespace: app.Namespace}, &activeRelease); err == nil {
+			mergeActiveReleaseRenderContext(&renderCtx, &activeRelease)
+		}
+	}
+	if _, ok := renderCtx.params["release-name"]; !ok {
+		renderCtx.params["release-name"] = renderCtx.releaseName
+	}
+	return renderCtx
+}
+
+func mergeActiveReleaseRenderContext(renderCtx *desiredManifestRenderContext, release *paprikav1.Release) {
+	for k, v := range release.Spec.Parameters {
+		renderCtx.params[k] = v
+	}
+	if hash := release.Annotations[sourceHashAnnotation]; hash != "" {
+		renderCtx.sourceHash = hash
+	}
+	if revision := release.Annotations[sourceRevisionAnnotation]; revision != "" {
+		renderCtx.sourceRevision = revision
+	}
 }
 
 func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *paprikav1.Application) ([]byte, error) {

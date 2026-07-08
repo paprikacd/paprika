@@ -2443,9 +2443,19 @@ func (r *ReleaseReconciler) fetchStageTemplates(ctx context.Context, release *pa
 		if err := r.client.Get(ctx, types.NamespacedName{Name: tmplName, Namespace: release.Namespace}, &tmpl); err != nil {
 			return nil, fmt.Errorf("failed to fetch template %q: %w", tmplName, err)
 		}
+		stampTemplateSourceIdentity(&tmpl, release.Annotations[sourceHashAnnotation], release.Annotations[sourceRevisionAnnotation])
 		templates = append(templates, tmpl)
 	}
 	return templates, nil
+}
+
+func stampTemplateSourceIdentity(tmpl *paprikav1.Template, hash, revision string) {
+	if hash != "" {
+		tmpl.Status.SourceHash = hash
+	}
+	if revision != "" {
+		tmpl.Status.SourceRevision = revision
+	}
 }
 
 func (r *ReleaseReconciler) promotionParams(release *paprikav1.Release) map[string]string {

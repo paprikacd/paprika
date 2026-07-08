@@ -110,6 +110,48 @@ func TestReleaseReconciler_renderManifests_usesReleaseScopedSnapshotName(t *test
 	}
 }
 
+func TestReleaseReconciler_fetchStageTemplates_stampsReleaseSourceIdentity(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: "git",
+			Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://example.com/repo.git", Revision: "main"},
+		},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-dev", Namespace: "default"},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev", Templates: []string{template.Name}},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "git-app-release-abc12345",
+			Namespace: "default",
+			Annotations: map[string]string{
+				sourceHashAnnotation:     "commit123456789abc:chart123456789abc",
+				sourceRevisionAnnotation: "commit123456789abcdef",
+			},
+		},
+	}
+	r := &ReleaseReconciler{
+		client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(template, stage).Build(),
+	}
+
+	templates, err := r.fetchStageTemplates(ctx, release, stage)
+	if err != nil {
+		t.Fatalf("fetchStageTemplates failed: %v", err)
+	}
+	if got := templates[0].Status.SourceHash; got != release.Annotations[sourceHashAnnotation] {
+		t.Fatalf("template source hash = %q, want release annotation", got)
+	}
+	if got := templates[0].Status.SourceRevision; got != release.Annotations[sourceRevisionAnnotation] {
+		t.Fatalf("template source revision = %q, want release annotation", got)
+	}
+}
+
 func TestReleaseReconciler_verify(t *testing.T) {
 	t.Parallel()
 

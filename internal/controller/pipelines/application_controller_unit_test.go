@@ -55,6 +55,19 @@ func (r *staticSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Templa
 	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
 }
 
+type captureTemplateRenderer struct {
+	captured *pipelinesv1alpha1.Template
+}
+
+func (r *captureTemplateRenderer) ResolveSource(context.Context, *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	return nil, nil
+}
+
+func (r *captureTemplateRenderer) Render(_ context.Context, tmpl *pipelinesv1alpha1.Template, _ map[string]string) ([]byte, error) {
+	r.captured = tmpl.DeepCopy()
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
+}
+
 func releaseWithPhase(name string, ts time.Time, phase pipelinesv1alpha1.ReleasePhase) *pipelinesv1alpha1.Release {
 	return &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
@@ -94,6 +107,44 @@ func releaseNames(list *pipelinesv1alpha1.ReleaseList) map[string]bool {
 		names[list.Items[i].Name] = true
 	}
 	return names
+}
+
+func TestApplicationReconciler_desiredManifests_stampsApplicationSourceIdentity(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: "git",
+			Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://example.com/repo.git", Revision: "main"},
+		},
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			SourceHash:     "commit123456789abc:chart123456789abc",
+			SourceRevision: "commit123456789abcdef",
+		},
+	}
+	renderer := &captureTemplateRenderer{}
+	r := &ApplicationReconciler{
+		client:           fake.NewClientBuilder().WithScheme(scheme).WithObjects(template).Build(),
+		TemplateRenderer: renderer,
+	}
+
+	if _, err := r.desiredManifests(ctx, app); err != nil {
+		t.Fatalf("desiredManifests failed: %v", err)
+	}
+	if renderer.captured == nil {
+		t.Fatal("renderer did not capture template")
+	}
+	if got := renderer.captured.Status.SourceHash; got != app.Status.SourceHash {
+		t.Fatalf("template source hash = %q, want application status", got)
+	}
+	if got := renderer.captured.Status.SourceRevision; got != app.Status.SourceRevision {
+		t.Fatalf("template source revision = %q, want application status", got)
+	}
 }
 
 func TestApplicationReconciler_pruneOldReleases_noPruningWhenBelowLimit(t *testing.T) {
