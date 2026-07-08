@@ -18,6 +18,8 @@ spec:
       track: stable
   template:
     metadata:
+      annotations:
+        paprika.io/gitops-marker: {{ .Values.gitops.marker | quote }}
       labels:
         app.kubernetes.io/name: demo-app
         app.kubernetes.io/instance: {{ .Release.Name }}
@@ -128,6 +130,8 @@ spec:
       track: canary
   template:
     metadata:
+      annotations:
+        paprika.io/gitops-marker: {{ .Values.gitops.marker | quote }}
       labels:
         app.kubernetes.io/name: demo-app
         app.kubernetes.io/instance: {{ .Release.Name }}

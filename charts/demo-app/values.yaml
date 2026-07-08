@@ -11,6 +11,9 @@ service:
   type: ClusterIP
   port: 80
 
+gitops:
+  marker: gitops-roundtrip-1
+
 probes:
   enabled: true
   readinessPath: /
