@@ -12,8 +12,15 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/cache"
 )
 
@@ -107,6 +114,35 @@ func TestRepoServerHealthEndpoint(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("timeout waiting for runRepoServerMode to exit")
+	}
+}
+
+func TestBootstrapDefaultProjectsContinuesWhenOperatorNamespaceMissing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	scheme := newScheme()
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "paprika-e2e"},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1alpha1.AppProject); ok && obj.GetNamespace() == "paprika-system" {
+					return apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, obj.GetNamespace())
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		}).
+		Build()
+
+	bootstrapDefaultProjects(ctx, c, "paprika-system")
+
+	var project corev1alpha1.AppProject
+	if err := c.Get(context.Background(), client.ObjectKey{Name: "default", Namespace: "paprika-e2e"}, &project); err != nil {
+		t.Fatalf("expected default AppProject in application namespace: %v", err)
 	}
 }
 

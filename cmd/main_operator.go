@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	gozap "go.uber.org/zap"
 	gozapcore "go.uber.org/zap/zapcore"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -401,6 +402,10 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 		Steps:    20,
 	}, func(ctx context.Context) (bool, error) {
 		if err := bootstrap.EnsureDefaultAppProject(ctx, c, ns); err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("Skipping default AppProject bootstrap because namespace is missing", "namespace", ns)
+				return true, nil
+			}
 			log.Error(err, "Failed to ensure default AppProject, will retry", "namespace", ns)
 			return false, nil
 		}
