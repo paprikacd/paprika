@@ -670,67 +670,95 @@ func TestApplicationReconciler_handleHealthyPhase_changedParametersStartNewRelea
 	}
 }
 
-func TestApplicationReconciler_handleHealthyPhase_supersededReleaseStartsReplacementFlow(t *testing.T) {
-	ctx := context.Background()
-	scheme := runtime.NewScheme()
-	_ = pipelinesv1alpha1.AddToScheme(scheme)
-
-	app := &pipelinesv1alpha1.Application{
-		ObjectMeta: metav1.ObjectMeta{Name: "legacy-git-app", Namespace: "default"},
-		Spec: pipelinesv1alpha1.ApplicationSpec{
-			Source: pipelinesv1alpha1.ApplicationSource{
-				Type:     pipelinesv1alpha1.SourceTypeGit,
-				RepoURL:  "https://example.com/repo.git",
-				Revision: "main",
-				Path:     ".",
-			},
-			SyncPolicy: pipelinesv1alpha1.SyncAuto,
-			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{
-				Name: "prod",
-				Ring: 1,
-			}},
+func TestApplicationReconciler_handleHealthyPhase_terminalReleaseStartsReplacementFlow(t *testing.T) {
+	tests := []struct {
+		name   string
+		phase  pipelinesv1alpha1.ReleasePhase
+		reason string
+	}{
+		{
+			name:   "superseded",
+			phase:  pipelinesv1alpha1.ReleaseSuperseded,
+			reason: "ReleaseSuperseded",
 		},
-		Status: pipelinesv1alpha1.ApplicationStatus{
-			Phase:          pipelinesv1alpha1.ApplicationHealthy,
-			ReleaseRef:     "legacy-git-app-release",
-			SourceHash:     "same-source-hash",
-			SourceRevision: "same-source-revision",
-		},
-	}
-	release := &pipelinesv1alpha1.Release{
-		ObjectMeta: metav1.ObjectMeta{Name: "legacy-git-app-release", Namespace: "default"},
-		Status: pipelinesv1alpha1.ReleaseStatus{
-			Phase: pipelinesv1alpha1.ReleaseSuperseded,
+		{
+			name:   "rolled back",
+			phase:  pipelinesv1alpha1.ReleaseRolledBack,
+			reason: "ReleaseRolledBack",
 		},
 	}
 
-	c := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(app, release).
-		WithStatusSubresource(app, release).
-		Build()
-	r := &ApplicationReconciler{
-		client: c,
-		Scheme: scheme,
-		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
-			Hash:     "same-source-hash",
-			Revision: "same-source-revision",
-		}},
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			scheme := runtime.NewScheme()
+			_ = pipelinesv1alpha1.AddToScheme(scheme)
 
-	if _, err := r.handleHealthyPhase(ctx, app); err != nil {
-		t.Fatalf("handleHealthyPhase failed: %v", err)
-	}
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "legacy-git-app", Namespace: "default"},
+				Spec: pipelinesv1alpha1.ApplicationSpec{
+					Source: pipelinesv1alpha1.ApplicationSource{
+						Type:     pipelinesv1alpha1.SourceTypeGit,
+						RepoURL:  "https://example.com/repo.git",
+						Revision: "main",
+						Path:     ".",
+					},
+					SyncPolicy: pipelinesv1alpha1.SyncAuto,
+					Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{
+						Name: "prod",
+						Ring: 1,
+					}},
+				},
+				Status: pipelinesv1alpha1.ApplicationStatus{
+					Phase:          pipelinesv1alpha1.ApplicationHealthy,
+					ReleaseRef:     "legacy-git-app-release",
+					SourceHash:     "same-source-hash",
+					SourceRevision: "same-source-revision",
+				},
+			}
+			release := &pipelinesv1alpha1.Release{
+				ObjectMeta: metav1.ObjectMeta{Name: "legacy-git-app-release", Namespace: "default"},
+				Status: pipelinesv1alpha1.ReleaseStatus{
+					Phase: tc.phase,
+				},
+			}
 
-	var updated pipelinesv1alpha1.Application
-	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
-		t.Fatalf("get app: %v", err)
-	}
-	if updated.Status.ReleaseRef != "" {
-		t.Fatalf("releaseRef = %q, want empty so a replacement Release can be created", updated.Status.ReleaseRef)
-	}
-	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
-		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(app, release).
+				WithStatusSubresource(app, release).
+				Build()
+			r := &ApplicationReconciler{
+				client: c,
+				Scheme: scheme,
+				TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+					Hash:     "same-source-hash",
+					Revision: "same-source-revision",
+				}},
+			}
+
+			if _, err := r.handleHealthyPhase(ctx, app); err != nil {
+				t.Fatalf("handleHealthyPhase failed: %v", err)
+			}
+
+			var updated pipelinesv1alpha1.Application
+			if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+				t.Fatalf("get app: %v", err)
+			}
+			if updated.Status.ReleaseRef != "" {
+				t.Fatalf("releaseRef = %q, want empty so a replacement Release can be created", updated.Status.ReleaseRef)
+			}
+			if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+				t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+			}
+			if len(updated.Status.Conditions) == 0 {
+				t.Fatalf("conditions empty, want last reason %q", tc.reason)
+			}
+			lastCondition := updated.Status.Conditions[len(updated.Status.Conditions)-1]
+			if lastCondition.Reason != tc.reason {
+				t.Fatalf("last condition reason = %q, want %q", lastCondition.Reason, tc.reason)
+			}
+		})
 	}
 }
 

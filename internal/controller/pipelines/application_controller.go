@@ -1513,9 +1513,16 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 
 	r.pruneReleasesIfInline(ctx, app)
 
-	if app.Status.ReleaseRef != "" && r.getCurrentReleasePhase(ctx, app) == paprikav1.ReleaseSuperseded {
-		log.Info("Active release is superseded, creating replacement release", "release", app.Status.ReleaseRef)
-		return r.startNewReleaseFlow(ctx, app, false, "ReleaseSuperseded", "active release was superseded, creating a replacement")
+	if app.Status.ReleaseRef != "" {
+		phase := r.getCurrentReleasePhase(ctx, app)
+		if phase == paprikav1.ReleaseSuperseded {
+			log.Info("Active release is superseded, creating replacement release", "release", app.Status.ReleaseRef)
+			return r.startNewReleaseFlow(ctx, app, false, "ReleaseSuperseded", "active release was superseded, creating a replacement")
+		}
+		if phase == paprikav1.ReleaseRolledBack {
+			log.Info("Active release is rolled back, creating replacement release", "release", app.Status.ReleaseRef)
+			return r.startNewReleaseFlow(ctx, app, false, "ReleaseRolledBack", "active release was rolled back, creating a replacement")
+		}
 	}
 
 	pollInterval := defaultRequeue
