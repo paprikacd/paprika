@@ -56,6 +56,6 @@ spec:
   onFailure:
     action: rollback
   selfHeal:
-    autoSyncOnDrift: true
+    autoSyncOnDrift: false
     autoRevertOnHealthFailure: true
     cooldown: 5m
