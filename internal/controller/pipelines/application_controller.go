@@ -650,7 +650,7 @@ func (r *ApplicationReconciler) reconcileStages(ctx context.Context, app *paprik
 }
 
 func (r *ApplicationReconciler) reconcileSingleStage(ctx context.Context, app *paprikav1.Application, promotionStage *paprikav1.ApplicationPromotionStage, templateName, stageName string) error {
-	strategy := r.resolveStageStrategy(promotionStage)
+	strategy := r.resolveStageStrategy(app, promotionStage)
 	stageCanary := r.resolveStageCanary(promotionStage, strategy)
 
 	expected := r.buildStageSpec(app, promotionStage, templateName, stageName, stageCanary)
@@ -670,11 +670,11 @@ func (r *ApplicationReconciler) reconcileSingleStage(ctx context.Context, app *p
 	return r.updateStage(ctx, &existing, expected, stageName)
 }
 
-func (r *ApplicationReconciler) resolveStageStrategy(promotionStage *paprikav1.ApplicationPromotionStage) paprikav1.DeliveryStrategy {
+func (r *ApplicationReconciler) resolveStageStrategy(app *paprikav1.Application, promotionStage *paprikav1.ApplicationPromotionStage) paprikav1.DeliveryStrategy {
 	if promotionStage.Strategy != nil {
 		return *promotionStage.Strategy
 	}
-	return ""
+	return app.Spec.Strategy
 }
 
 func (r *ApplicationReconciler) resolveStageCanary(promotionStage *paprikav1.ApplicationPromotionStage, strategy paprikav1.DeliveryStrategy) *paprikav1.CanaryConfig {

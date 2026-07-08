@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -287,6 +288,58 @@ func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
 				t.Fatalf("hasSyncTrigger = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestApplicationReconciler_reconcileSingleStage_usesAppLevelCanaryStrategy(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "pipelines.paprika.io/v1alpha1",
+			Kind:       "Application",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo-app",
+			Namespace: "default",
+			UID:       types.UID("demo-app-uid"),
+		},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Strategy: pipelinesv1alpha1.StrategyCanary,
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+				{
+					Name: "dev",
+					Ring: 1,
+					Canary: &pipelinesv1alpha1.CanaryConfig{
+						Steps:           []int{50, 100},
+						IntervalSeconds: 10,
+					},
+				},
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app).
+		Build()
+	r := &ApplicationReconciler{client: c, Scheme: scheme}
+
+	if err := r.reconcileSingleStage(ctx, app, &app.Spec.Stages[0], "demo-template", "demo-app-dev"); err != nil {
+		t.Fatalf("reconcileSingleStage failed: %v", err)
+	}
+
+	var stage pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: "demo-app-dev", Namespace: "default"}, &stage); err != nil {
+		t.Fatalf("get stage: %v", err)
+	}
+	if stage.Spec.Canary == nil {
+		t.Fatalf("expected app-level canary strategy to populate stage canary")
+	}
+	if diff := cmp.Diff(app.Spec.Stages[0].Canary, stage.Spec.Canary); diff != "" {
+		t.Fatalf("unexpected canary config (-want +got):\n%s", diff)
 	}
 }
 
