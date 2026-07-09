@@ -159,7 +159,7 @@ jobs:
         run: |
           echo "Waiting for all Paprika pods to be ready..."
           kubectl wait --for=condition=Ready pods \
-            --all \
+            -l app.kubernetes.io/instance="${{ env.HELM_RELEASE }}" \
             -n "${{ env.VKE_NAMESPACE }}" \
             --timeout=180s
 
