@@ -16,7 +16,7 @@ spec:
     pollInterval: 60s
   parameters:
     image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api
-    image.tag: ab2d5b3
+    image.tag: 65e5ce5
     imagePullSecrets[0].name: telesis-gar
     secretEnv.existingSecret: telesis-api-env
     secretEnv.optional: "false"
