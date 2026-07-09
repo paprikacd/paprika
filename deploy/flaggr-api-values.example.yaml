@@ -1,0 +1,21 @@
+replicaCount: 1
+
+image:
+  repository: australia-southeast1-docker.pkg.dev/flaggr-478302/flaggr/api
+  tag: 954872b1ef6c-vke-20260709055002
+
+imagePullSecrets:
+  - name: flaggr-gar
+
+gcpCredentials:
+  existingSecret: flaggr-api-gcp-service-account
+  key: google-application-credentials.json
+
+gateway:
+  enabled: true
+  parentRefs:
+    - name: paprika
+      namespace: envoy-gateway-system
+  hostnames:
+    - origin-vke.flaggr.dev
+    - api.flaggr.dev

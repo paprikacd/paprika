@@ -33,6 +33,9 @@ spec:
     - origin-vke.telesis.dev
     - origin-vke.brandbrain.dev
     - api.brandbrain.dev
+    - origin-vke.cuttlefish.sh
+    - api.cuttlefish.sh
+    - origin-vke.flaggr.dev
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer

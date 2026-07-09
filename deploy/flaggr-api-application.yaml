@@ -1,0 +1,59 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: flaggr-api
+  namespace: paprika-e2e
+  labels:
+    app.kubernetes.io/name: flaggr-api
+    app.kubernetes.io/part-of: flaggr
+spec:
+  project: default
+  source:
+    type: git
+    repoUrl: https://github.com/paprikacd/flaggr-api-chart.git
+    revision: main
+    path: "."
+    pollInterval: 60s
+  parameters:
+    image.repository: australia-southeast1-docker.pkg.dev/flaggr-478302/flaggr/api
+    image.tag: 954872b1ef6c-vke-20260709055002
+    imagePullSecrets[0].name: flaggr-gar
+    gcpCredentials.existingSecret: flaggr-api-gcp-service-account
+    gcpCredentials.key: google-application-credentials.json
+    gateway.parentRefs[0].name: paprika
+    gateway.parentRefs[0].namespace: envoy-gateway-system
+    gateway.hostnames[0]: origin-vke.flaggr.dev
+    gateway.hostnames[1]: api.flaggr.dev
+  stages:
+    - name: vke-staging
+      ring: 1
+      autoPromote: false
+      canary:
+        steps: [10, 50, 100]
+        intervalSeconds: 60
+      parameters:
+        replicaCount: "1"
+        gateway.enabled: "true"
+  strategy: Canary
+  syncPolicy: Auto
+  healthChecks:
+    - name: api-live
+      interval: 30s
+      httpProbe:
+        url: http://flaggr-api-release.paprika-e2e.svc.cluster.local:8090/health
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "ok" && http.bodyJson.service == "flaggr-api"
+    - name: api-healthz
+      interval: 30s
+      httpProbe:
+        url: http://flaggr-api-release.paprika-e2e.svc.cluster.local:8090/healthz
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "ok"
+  onFailure:
+    action: rollback
+  selfHeal:
+    autoSyncOnDrift: false
+    autoRevertOnHealthFailure: true
+    cooldown: 5m
