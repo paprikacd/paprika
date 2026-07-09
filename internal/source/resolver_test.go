@@ -1,6 +1,7 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -403,6 +404,49 @@ func TestGitSourceResolve_RecreatesWorktreeFromMirrorAtPinnedRevision(t *testing
 	}
 }
 
+func TestGitSourceResolve_PinnedRevisionInitializesMirrorHEAD(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+	pinnedRevision := gitOutput(t, work, "rev-parse", "HEAD")
+
+	src := &GitSource{
+		RepoURL:  origin,
+		Revision: pinnedRevision,
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+		Shallow:  true,
+	}
+
+	resolved, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+	if resolved.Revision != pinnedRevision {
+		t.Fatalf("resolved revision = %s, want %s", resolved.Revision, pinnedRevision)
+	}
+	got, err := os.ReadFile(filepath.Join(resolved.LocalPath, "values.yaml"))
+	if err != nil {
+		t.Fatalf("read resolved chart file: %v", err)
+	}
+	if string(got) != "version: first\n" {
+		t.Fatalf("resolved chart content = %q, want pinned content", string(got))
+	}
+}
+
 func TestGitSourceAuthUsesBasicAuth(t *testing.T) {
 	t.Parallel()
 
@@ -421,6 +465,22 @@ func TestGitSourceAuthUsesBasicAuth(t *testing.T) {
 	if auth == nil {
 		t.Fatal("expected auth method")
 	}
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// #nosec G204 -- test helper invokes git with fixed arguments from each test case.
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+	return string(bytes.TrimSpace(out))
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

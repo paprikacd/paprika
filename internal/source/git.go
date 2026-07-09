@@ -189,6 +189,9 @@ func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repo
 	if err != nil {
 		return "", err
 	}
+	if headErr := g.setCloneableMirrorHEAD(mirrorRepo, hash); headErr != nil {
+		return "", headErr
+	}
 
 	worktreeRepo, err := g.openOrCloneWorktree(ctx, mirrorDir, worktreeDir)
 	if err != nil {
@@ -204,6 +207,78 @@ func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repo
 		return "", fmt.Errorf("checkout revision %s: %w", g.Revision, checkoutErr)
 	}
 	return hash.String(), nil
+}
+
+func (g *GitSource) setCloneableMirrorHEAD(repo *git.Repository, hash *plumbing.Hash) error {
+	if branch := g.branchReference(); branch != "" {
+		if _, err := repo.Reference(plumbing.ReferenceName(branch), true); err == nil {
+			if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(branch))); err != nil {
+				return fmt.Errorf("set mirror HEAD to branch: %w", err)
+			}
+			return nil
+		}
+	}
+	if ref, ok, err := firstCloneableMirrorRef(repo); err != nil {
+		return err
+	} else if ok {
+		if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref)); err != nil {
+			return fmt.Errorf("set mirror HEAD to existing ref: %w", err)
+		}
+		return nil
+	}
+	if hash == nil {
+		return nil
+	}
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, *hash)); err != nil {
+		return fmt.Errorf("set mirror HEAD to revision: %w", err)
+	}
+	return nil
+}
+
+func firstCloneableMirrorRef(repo *git.Repository) (plumbing.ReferenceName, bool, error) {
+	iter, err := repo.References()
+	if err != nil {
+		return "", false, fmt.Errorf("list mirror refs: %w", err)
+	}
+	defer iter.Close()
+
+	var refs [4]plumbing.ReferenceName
+	if err := iter.ForEach(rememberCloneableMirrorRef(&refs)); err != nil {
+		return "", false, fmt.Errorf("iterate mirror refs: %w", err)
+	}
+
+	for _, name := range refs {
+		if name != "" {
+			return name, true, nil
+		}
+	}
+	return "", false, nil
+}
+
+func rememberCloneableMirrorRef(refs *[4]plumbing.ReferenceName) func(*plumbing.Reference) error {
+	return func(ref *plumbing.Reference) error {
+		priority := mirrorRefPriority(ref.Name().String())
+		if priority < 0 || refs[priority] != "" {
+			return nil
+		}
+		refs[priority] = ref.Name()
+		return nil
+	}
+}
+
+func mirrorRefPriority(name string) int {
+	switch {
+	case name == "refs/heads/main":
+		return 0
+	case name == "refs/heads/master":
+		return 1
+	case strings.HasPrefix(name, "refs/heads/"):
+		return 2
+	case strings.HasPrefix(name, "refs/tags/"):
+		return 3
+	default:
+		return -1
+	}
 }
 
 func (g *GitSource) openOrCloneWorktree(ctx context.Context, mirrorDir, worktreeDir string) (*git.Repository, error) {
@@ -237,14 +312,25 @@ func (g *GitSource) cloneWorktree(ctx context.Context, mirrorDir, worktreeDir st
 	if mkErr := os.MkdirAll(filepath.Dir(worktreeDir), 0o750); mkErr != nil {
 		return nil, fmt.Errorf("create worktree parent dir: %w", mkErr)
 	}
-	opts := &git.CloneOptions{
-		URL:        mirrorDir,
-		Progress:   nil,
-		NoCheckout: true,
-	}
-	worktreeRepo, err := git.PlainCloneContext(ctx, worktreeDir, false, opts)
+	worktreeRepo, err := git.PlainInit(worktreeDir, false)
 	if err != nil {
-		return nil, fmt.Errorf("clone worktree from mirror: %w", err)
+		return nil, fmt.Errorf("init worktree repo: %w", err)
+	}
+	if _, remoteErr := worktreeRepo.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{mirrorDir},
+	}); remoteErr != nil {
+		return nil, fmt.Errorf("create worktree remote: %w", remoteErr)
+	}
+	err = worktreeRepo.FetchContext(ctx, &git.FetchOptions{
+		Progress: nil,
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/*:refs/remotes/origin/*",
+			"+refs/tags/*:refs/tags/*",
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("fetch worktree from mirror: %w", err)
 	}
 	return worktreeRepo, nil
 }
