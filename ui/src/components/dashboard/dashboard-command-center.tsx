@@ -22,7 +22,6 @@ import {
   Layers,
   Search,
   Shield,
-  Sparkles,
   Workflow,
 } from "lucide-react"
 
@@ -486,19 +485,21 @@ export function DashboardCommandCenter({
   return (
     <section
       aria-labelledby="dashboard-command-center-title"
-      className="overflow-hidden rounded-2xl bg-card ring-1 ring-foreground/10"
+      className="overflow-hidden rounded-2xl bg-card shadow-sm ring-1 ring-foreground/10"
     >
       <div className="border-b border-border/70 px-5 py-4 sm:px-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" aria-hidden="true" />
-              <h2 id="dashboard-command-center-title" className="text-sm font-semibold tracking-tight">
-                Cluster command center
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                <Search className="size-4" aria-hidden="true" />
+              </span>
+              <h2 id="dashboard-command-center-title" className="text-xl font-semibold tracking-tight">
+                Control Search
               </h2>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Search every Paprika object and inspect application health across namespaces.
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Search applications, releases, rollouts, pipelines, and policies from one control surface, then drill into app health.
             </p>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
@@ -524,7 +525,7 @@ export function DashboardCommandCenter({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search apps, releases, rollouts, pipelines, policies..."
-              className="h-12 w-full rounded-xl border border-border bg-background pl-10 pr-4 font-mono text-sm outline-none transition-[border-color,box-shadow] placeholder:font-sans placeholder:text-muted-foreground focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
+              className="h-14 w-full rounded-xl border border-border bg-background pl-10 pr-4 font-mono text-base outline-none transition-[border-color,box-shadow] placeholder:font-sans placeholder:text-muted-foreground focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
             />
           </div>
 

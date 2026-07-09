@@ -10,10 +10,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   ChevronRight,
-  History,
   LayoutGrid,
   RefreshCw,
-  RotateCcw,
   ShieldAlert,
   ShieldCheck,
   XCircle,
@@ -53,6 +51,7 @@ import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-pane
 import { ResourceGraph, type ResourceGraphNode } from "@/components/dashboard/resource-graph";
 import { InvestigationTriage } from "@/components/dashboard/investigation-triage";
 import { SyncDiffWorkbench } from "@/components/dashboard/sync-diff-workbench";
+import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, InvestigateResponse, Release } from "@/gen/paprika/v1/api_pb";
@@ -614,94 +613,11 @@ function ApplicationDetail() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                Release History
-              </CardTitle>
-              <CardDescription>
-                Prior releases and rollbacks for this application.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {filteredReleases.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No releases found.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Phase</TableHead>
-                      <TableHead>Pipeline</TableHead>
-                      <TableHead>Target</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Policies</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredReleases.map((release) => (
-                      <TableRow key={release.name}>
-                        <TableCell className="font-medium">
-                          <div className="flex flex-col">
-                            <span>{release.name}</span>
-                            {release.rolledBackTo && (
-                              <span className="text-xs text-muted-foreground">
-                                rolled back to {release.rolledBackTo}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge status={release.phase} />
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {release.pipeline || "-"}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {release.target || "-"}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(release.createdAt)}
-                        </TableCell>
-                        <TableCell>
-                          {release.policyResults && release.policyResults.length > 0 ? (
-                            <div className="flex items-center gap-1">
-                              {release.policyResults.some((p) => !p.passed) ? (
-                                <ShieldAlert className="h-4 w-4 text-red-500" />
-                              ) : (
-                                <ShieldCheck className="h-4 w-4 text-green-500" />
-                              )}
-                              <span className="text-xs">
-                                {release.policyResults.filter((p) => p.passed).length} /{" "}
-                                {release.policyResults.length}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRollback(release)}
-                            disabled={
-                              rollingBack === release.name || release.phase === "RolledBack"
-                            }
-                          >
-                            <RotateCcw className="mr-1 h-4 w-4" />
-                            Rollback
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+          <ApplicationReleaseHistory
+            releases={filteredReleases}
+            rollingBack={rollingBack}
+            onRollback={handleRollback}
+          />
 
           {currentRelease && currentRelease.policyResults.length > 0 && (
             <Card>

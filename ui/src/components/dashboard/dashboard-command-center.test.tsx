@@ -19,7 +19,6 @@ vi.mock("lucide-react", () => {
     Layers: Icon,
     Search: Icon,
     Shield: Icon,
-    Sparkles: Icon,
     Workflow: Icon,
   }
 })
@@ -112,6 +111,8 @@ describe("DashboardCommandCenter", () => {
   it("searches across cluster objects and remembers selected searches", async () => {
     const user = userEvent.setup()
     renderCommandCenter()
+
+    expect(screen.getByRole("heading", { name: /control search/i })).toBeInTheDocument()
 
     await user.type(screen.getByRole("searchbox", { name: /search operations/i }), "checkout")
 

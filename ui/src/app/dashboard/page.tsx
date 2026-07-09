@@ -13,7 +13,6 @@ import type { Application } from "@/gen/paprika/v1/api_pb"
 import type { ApplicationSet } from "@/gen/paprika/v1/api_pb"
 import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
-import { ReleaseGrid } from "@/components/dashboard/release-table"
 import { ApplicationCard } from "@/components/dashboard/application-card"
 import { DashboardCommandCenter } from "@/components/dashboard/dashboard-command-center"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -310,16 +309,7 @@ export default function DashboardPage() {
   return (
     <ErrorBoundary>
       <div className="mx-auto max-w-7xl space-y-10 px-6 py-8">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <h1 className="text-lg font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Pipeline operator overview
-          </p>
-        </motion.div>
+        <h1 className="sr-only">Dashboard</h1>
 
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -481,35 +471,6 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
-        </motion.section>
-
-        <motion.section
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="mb-4 flex items-baseline gap-2">
-            <h2 className="text-sm font-semibold">Releases</h2>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {releases.length} total
-              </span>
-          </div>
-          {errors.releases && <SectionError message={errors.releases} onRetry={fetchData} />}
-          {loading ? (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {[1, 2].map((i) => (
-                <div key={i} className="rounded-xl bg-card p-4 space-y-3 ring-1 ring-foreground/10">
-                  <div className="h-4 w-24 rounded bg-muted animate-pulse" />
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="h-10 rounded-lg bg-muted animate-pulse" />
-                    <div className="h-10 rounded-lg bg-muted animate-pulse" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <ReleaseGrid releases={releases} />
-          )}
         </motion.section>
 
         <motion.section
