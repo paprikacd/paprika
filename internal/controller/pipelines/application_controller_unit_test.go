@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -759,6 +760,93 @@ func TestApplicationReconciler_handleHealthyPhase_terminalReleaseStartsReplaceme
 				t.Fatalf("last condition reason = %q, want %q", lastCondition.Reason, tc.reason)
 			}
 		})
+	}
+}
+
+func TestApplicationReconciler_reconcileRelease_adoptsExistingTerminalReleaseWithSameIdentity(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	fixedNow := time.Date(2026, 7, 8, 23, 58, 0, 0, time.UTC)
+	stage := pipelinesv1alpha1.ApplicationPromotionStage{Name: "prod", Ring: 1}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "same-release-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://example.com/repo.git",
+				Revision: "main",
+				Path:     ".",
+			},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{stage},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationFailed,
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+		},
+	}
+	releaseName := (&ApplicationReconciler{}).buildRelease(app, &stage).Name
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        releaseName,
+			Namespace:   "default",
+			Annotations: map[string]string{rollbackAnnotation: "stale"},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			Phase: pipelinesv1alpha1.ReleaseRolledBack,
+		},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(app, release).
+		Build()
+	r := &ApplicationReconciler{
+		client: c,
+		Scheme: scheme,
+		now:    func() time.Time { return fixedNow },
+	}
+
+	res, err := r.reconcileRelease(ctx, app)
+	if err != nil {
+		t.Fatalf("reconcileRelease failed: %v", err)
+	}
+	if res.RequeueAfter != defaultRequeue {
+		t.Fatalf("requeueAfter = %s, want %s", res.RequeueAfter, defaultRequeue)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if updated.Status.ReleaseRef != releaseName {
+		t.Fatalf("releaseRef = %q, want %q", updated.Status.ReleaseRef, releaseName)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+	if len(updated.Status.Conditions) == 0 {
+		t.Fatal("conditions empty, want ReleaseResync condition")
+	}
+	lastCondition := updated.Status.Conditions[len(updated.Status.Conditions)-1]
+	if lastCondition.Reason != "ReleaseResync" {
+		t.Fatalf("last condition reason = %q, want ReleaseResync", lastCondition.Reason)
+	}
+
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: releaseName, Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if _, ok := updatedRelease.Annotations[rollbackAnnotation]; ok {
+		t.Fatalf("rollback annotation still present: %v", updatedRelease.Annotations)
+	}
+	wantResync := strconv.FormatInt(fixedNow.Unix(), 10)
+	if got := updatedRelease.Annotations[resyncAnnotation]; got != wantResync {
+		t.Fatalf("resync annotation = %q, want %q", got, wantResync)
 	}
 }
 

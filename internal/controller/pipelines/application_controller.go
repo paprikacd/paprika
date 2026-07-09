@@ -819,12 +819,44 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	}
 
 	if err := r.client.Create(ctx, release); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return r.adoptExistingRelease(ctx, app, targetStage, release.Name)
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to create release: %w", err)
 	}
 
 	app.Status.ReleaseRef = release.Name
 	r.updatePhase(ctx, app, paprikav1.ApplicationPromoting, "ReleaseCreated", "created release for stage "+targetStage.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, releaseName string) (ctrl.Result, error) {
+	var release paprikav1.Release
+	if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: app.Namespace}, &release); err != nil {
+		return ctrl.Result{}, fmt.Errorf("get existing release after create conflict: %w", err)
+	}
+
+	app.Status.ReleaseRef = releaseName
+	if applicationReleasePhaseTerminal(release.Status.Phase) {
+		if err := r.requestReleaseResync(ctx, app.Namespace, releaseName); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, "ReleaseResync", "existing terminal release was marked for resync")
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+
+	if release.Status.Phase != "" {
+		return r.handleActiveRelease(ctx, app, targetStage, release.Status.Phase)
+	}
+
+	r.setApplicationPhase(ctx, app, paprikav1.ApplicationPromoting, "ReleaseAdopted", "adopted existing release for stage "+targetStage.Name)
+	if err := r.patchAppStatus(ctx, app); err != nil {
+		return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
+	}
+	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 }
 
 func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, phase paprikav1.ReleasePhase) (ctrl.Result, error) {
@@ -1598,9 +1630,16 @@ func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context,
 	if app.Status.ReleaseRef == "" {
 		return nil
 	}
+	if err := r.requestReleaseResync(ctx, app.Namespace, app.Status.ReleaseRef); err != nil {
+		return fmt.Errorf("request current release resync: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) requestReleaseResync(ctx context.Context, namespace, releaseName string) error {
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var release paprikav1.Release
-		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+		if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: namespace}, &release); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil
 			}
@@ -1610,12 +1649,13 @@ func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context,
 			release.Annotations = map[string]string{}
 		}
 		release.Annotations[resyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
+		delete(release.Annotations, rollbackAnnotation)
 		if err := r.client.Update(ctx, &release); err != nil {
 			return fmt.Errorf("update release resync annotation: %w", err)
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("request current release resync: %w", err)
+		return fmt.Errorf("request release resync: %w", err)
 	}
 	return nil
 }
