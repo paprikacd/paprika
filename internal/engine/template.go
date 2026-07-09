@@ -47,11 +47,11 @@ func (r *TemplateRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Temp
 			return nil, errors.New("git source spec is required for type=git")
 		}
 		result, err := (&source.GitSource{
-			RepoURL:   gitSrc.RepoURL,
-			Revision:  gitSrc.Revision,
-			Path:      gitSrc.Path,
-			WorkDir:   r.WorkDir,
-			SecretRef: gitSrc.SecretRef,
+			RepoURL:  gitSrc.RepoURL,
+			Revision: gitSrc.Revision,
+			Path:     gitSrc.Path,
+			WorkDir:  r.WorkDir,
+			Shallow:  true,
 		}).Resolve(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("resolve git source: %w", err)
