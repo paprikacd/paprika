@@ -280,6 +280,149 @@ func TestGitSourceResolve_TracksUpdatedBranch(t *testing.T) {
 	}
 }
 
+func TestGitSourceResolve_ShallowMainBranchRepeatedResolve(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	src := &GitSource{
+		RepoURL:  origin,
+		Revision: "main",
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+		Shallow:  true,
+	}
+
+	first, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	second, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("second Resolve() error: %v", err)
+	}
+	if second.Revision != first.Revision {
+		t.Fatalf("same branch tip should resolve to same revision: %s != %s", second.Revision, first.Revision)
+	}
+
+	writeChartFile(t, work, "second")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "second")
+	runGit(t, work, "push", "origin", "main")
+
+	third, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("third Resolve() error: %v", err)
+	}
+	if third.Revision == first.Revision {
+		t.Fatalf("expected third resolve to track updated main, got same revision %s", third.Revision)
+	}
+
+	got, err := os.ReadFile(filepath.Join(third.LocalPath, "values.yaml"))
+	if err != nil {
+		t.Fatalf("read resolved chart file: %v", err)
+	}
+	if string(got) != "version: second\n" {
+		t.Fatalf("resolved chart content = %q, want updated branch content", string(got))
+	}
+}
+
+func TestGitSourceResolve_RecreatesWorktreeFromMirrorAtPinnedRevision(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	branchSource := &GitSource{
+		RepoURL:  origin,
+		Revision: "main",
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+		Shallow:  true,
+	}
+	resolved, err := branchSource.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("branch Resolve() error: %v", err)
+	}
+
+	writeChartFile(t, work, "second")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "second")
+	runGit(t, work, "push", "origin", "main")
+
+	if rmErr := os.RemoveAll(filepath.Join(resolverWorkDir, "git-clones")); rmErr != nil {
+		t.Fatalf("remove worktree cache: %v", rmErr)
+	}
+
+	pinnedSource := &GitSource{
+		RepoURL:  origin,
+		Revision: resolved.Revision,
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+		Shallow:  true,
+	}
+	pinned, err := pinnedSource.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("pinned Resolve() error: %v", err)
+	}
+	if pinned.Revision != resolved.Revision {
+		t.Fatalf("pinned revision = %s, want %s", pinned.Revision, resolved.Revision)
+	}
+	got, err := os.ReadFile(filepath.Join(pinned.LocalPath, "values.yaml"))
+	if err != nil {
+		t.Fatalf("read resolved chart file: %v", err)
+	}
+	if string(got) != "version: first\n" {
+		t.Fatalf("resolved chart content = %q, want pinned branch content", string(got))
+	}
+}
+
+func TestGitSourceAuthUsesBasicAuth(t *testing.T) {
+	t.Parallel()
+
+	src := &GitSource{
+		RepoURL: "https://github.com/skunkworq/safelabel.git",
+		Auth: GitAuth{
+			Username: "x-access-token",
+			Token:    "ghp_test",
+		},
+	}
+
+	auth, err := src.authMethod(context.Background())
+	if err != nil {
+		t.Fatalf("authMethod() error: %v", err)
+	}
+	if auth == nil {
+		t.Fatal("expected auth method")
+	}
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 

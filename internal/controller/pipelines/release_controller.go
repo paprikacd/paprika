@@ -83,14 +83,17 @@ var errHookPhasePending = errors.New("hook phase still in progress")
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
+	{Group: "apps", Version: "v1", Resource: "statefulsets"},
 	{Group: "", Version: "v1", Resource: "serviceaccounts"},
 	{Group: "", Version: "v1", Resource: "services"},
+	{Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
 	{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
 	{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 }
 
 var knownGVRs = map[string]schema.GroupVersionResource{
 	"Deployment":            {Group: "apps", Version: "v1", Resource: "deployments"},
+	"StatefulSet":           {Group: "apps", Version: "v1", Resource: "statefulsets"},
 	"Service":               {Group: "", Version: "v1", Resource: "services"},
 	"Ingress":               {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 	"ConfigMap":             {Group: "", Version: "v1", Resource: "configmaps"},
@@ -153,7 +156,9 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=templates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
@@ -2455,6 +2460,9 @@ func stampTemplateSourceIdentity(tmpl *paprikav1.Template, hash, revision string
 	}
 	if revision != "" {
 		tmpl.Status.SourceRevision = revision
+		if tmpl.Spec.Type == paprikav1.SourceTypeGit && tmpl.Spec.Git != nil {
+			tmpl.Spec.Git.Revision = revision
+		}
 	}
 }
 

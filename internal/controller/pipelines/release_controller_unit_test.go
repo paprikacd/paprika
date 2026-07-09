@@ -54,6 +54,34 @@ func mockTrafficRouterFactory(router traffic.WeightRouter, err error) TrafficRou
 	}
 }
 
+func TestReleaseReconcilerKnowsStatefulWorkloadGVRs(t *testing.T) {
+	t.Parallel()
+
+	reconciler := &ReleaseReconciler{}
+	statefulSet, err := reconciler.gvrFromKind("StatefulSet", "apps", "v1")
+	if err != nil {
+		t.Fatalf("gvrFromKind(StatefulSet) error: %v", err)
+	}
+	if statefulSet != (schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}) {
+		t.Fatalf("StatefulSet GVR = %+v", statefulSet)
+	}
+	if !managedGVRPresent(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}) {
+		t.Fatalf("managedGVRs missing StatefulSet cleanup GVR")
+	}
+	if !managedGVRPresent(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}) {
+		t.Fatalf("managedGVRs missing PVC cleanup GVR")
+	}
+}
+
+func managedGVRPresent(want schema.GroupVersionResource) bool {
+	for _, got := range managedGVRs {
+		if got == want {
+			return true
+		}
+	}
+	return false
+}
+
 type releaseFakeAnalyzer struct {
 	results []analysis.Result
 }
@@ -149,6 +177,9 @@ func TestReleaseReconciler_fetchStageTemplates_stampsReleaseSourceIdentity(t *te
 	}
 	if got := templates[0].Status.SourceRevision; got != release.Annotations[sourceRevisionAnnotation] {
 		t.Fatalf("template source revision = %q, want release annotation", got)
+	}
+	if got := templates[0].Spec.Git.Revision; got != release.Annotations[sourceRevisionAnnotation] {
+		t.Fatalf("template git revision = %q, want release source revision", got)
 	}
 }
 

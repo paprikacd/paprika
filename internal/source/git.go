@@ -7,24 +7,53 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
+// GitAuth holds authentication credentials for a git repository.
+type GitAuth struct {
+	Username  string
+	Password  string
+	Token     string
+	GitHubApp *GitHubAppAuth
+}
+
 // GitSource represents a git repository source.
 type GitSource struct {
-	RepoURL   string
-	Revision  string
-	Path      string
-	WorkDir   string
-	SecretRef string
+	RepoURL  string
+	Revision string
+	Path     string
+	WorkDir  string
+	Auth     GitAuth
+	Shallow  bool
+}
+
+var (
+	repoLocks  = make(map[string]*sync.Mutex)
+	repoLockMu sync.Mutex
+)
+
+func repoLock(key string) *sync.Mutex {
+	repoLockMu.Lock()
+	defer repoLockMu.Unlock()
+	if repoLocks[key] == nil {
+		repoLocks[key] = &sync.Mutex{}
+	}
+	return repoLocks[key]
 }
 
 // Resolve clones or updates the git repository and returns the local path.
@@ -46,33 +75,35 @@ func (g *GitSource) Resolve(ctx context.Context) (*ResolveResult, error) {
 }
 
 func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
-	cloneDir := filepath.Join(g.WorkDir, "git-clones", SanitizeName(g.RepoURL))
+	if g.RepoURL == "" {
+		return nil, errors.New("repoURL is required")
+	}
+	key := RepoCacheKey(g.RepoURL, g.credentialID())
+	mirrorDir := filepath.Join(g.WorkDir, "git-mirrors", key)
+	worktreeDir := filepath.Join(g.WorkDir, "git-clones", key)
+
+	lock := repoLock(key)
+	lock.Lock()
+	defer lock.Unlock()
+
 	// #nosec G301 -- git clone requires world-readable directories
-	if err := os.MkdirAll(filepath.Dir(cloneDir), 0o755); err != nil {
-		return nil, fmt.Errorf("create clone dir: %w", err)
+	if err := os.MkdirAll(mirrorDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create mirror dir: %w", err)
 	}
 
-	repo, err := g.cloneOrOpenRepo(ctx, cloneDir)
+	repo, err := g.openOrCloneMirror(ctx, mirrorDir)
 	if err != nil {
 		return nil, err
 	}
 
-	if g.Revision != "" {
-		if revErr := g.checkoutRevision(repo, g.Revision); revErr != nil {
-			return nil, revErr
-		}
-	}
-
-	head, err := repo.Head()
+	commitHash, err := g.resolveAndCheckout(ctx, repo, mirrorDir, worktreeDir)
 	if err != nil {
-		return nil, fmt.Errorf("get HEAD: %w", err)
+		return nil, err
 	}
 
-	commitHash := head.Hash().String()
-
-	chartPath := cloneDir
+	chartPath := worktreeDir
 	if g.Path != "" {
-		chartPath = filepath.Join(cloneDir, g.Path)
+		chartPath = filepath.Join(worktreeDir, g.Path)
 	}
 
 	dirHash, err := ComputeDirHash(chartPath)
@@ -87,66 +118,248 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	}, nil
 }
 
-// cloneOrOpenRepo clones a git repository, or opens and fetches if it already exists.
-func (g *GitSource) cloneOrOpenRepo(ctx context.Context, cloneDir string) (*git.Repository, error) {
-	repo, err := git.PlainCloneContext(ctx, cloneDir, false, &git.CloneOptions{
-		URL: g.RepoURL,
-	})
-	if err != nil {
-		if errors.Is(err, git.ErrRepositoryAlreadyExists) {
-			return g.openExistingRepo(ctx, cloneDir)
-		}
-		return nil, fmt.Errorf("clone repo %s: %w", g.RepoURL, err)
+func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*git.Repository, error) {
+	auth, authErr := g.authMethod(ctx)
+	if authErr != nil {
+		return nil, authErr
 	}
-	return repo, nil
+
+	repo, err := git.PlainOpen(mirrorDir)
+	if err == nil {
+		if fetchErr := g.fetchMirror(ctx, repo, auth); fetchErr != nil {
+			return nil, fetchErr
+		}
+		if headErr := g.setMirrorHEAD(repo); headErr != nil {
+			return nil, headErr
+		}
+		return repo, nil
+	}
+	if !errors.Is(err, git.ErrRepositoryNotExists) {
+		return nil, fmt.Errorf("open mirror %s: %w", g.RepoURL, err)
+	}
+
+	return g.createMirror(ctx, mirrorDir, auth)
 }
 
-func (g *GitSource) checkoutRevision(repo *git.Repository, revision string) error {
-	wt, wtErr := repo.Worktree()
-	if wtErr != nil {
-		return fmt.Errorf("get worktree: %w", wtErr)
-	}
-
-	var hash *plumbing.Hash
-	for _, ref := range revisionCandidates(revision) {
-		h, resolveErr := repo.ResolveRevision(plumbing.Revision(ref))
-		if resolveErr == nil {
-			hash = h
-			break
-		}
-	}
-	if hash == nil {
-		return fmt.Errorf("resolve revision %s: not found as branch, tag, or commit", revision)
-	}
-
-	if checkoutErr := wt.Checkout(&git.CheckoutOptions{Hash: *hash}); checkoutErr != nil {
-		return fmt.Errorf("checkout revision %s: %w", revision, checkoutErr)
+func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth transport.AuthMethod) error {
+	fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+		Auth:     auth,
+		Progress: nil,
+		Depth:    g.depth(),
+		RefSpecs: []config.RefSpec{"+refs/heads/*:refs/heads/*"},
+	})
+	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("fetch repo %s: %w", g.RepoURL, fetchErr)
 	}
 	return nil
 }
 
-func revisionCandidates(revision string) []string {
-	candidates := make([]string, 0, 5)
-	if strings.HasPrefix(revision, "refs/heads/") {
-		candidates = append(candidates, "refs/remotes/origin/"+strings.TrimPrefix(revision, "refs/heads/"))
-	} else if !strings.HasPrefix(revision, "refs/") {
-		candidates = append(candidates, "refs/remotes/origin/"+revision)
-	}
-	candidates = append(candidates, revision)
-	if !strings.HasPrefix(revision, "refs/") {
-		candidates = append(candidates, "refs/heads/"+revision, "refs/tags/"+revision)
-	}
-	return candidates
-}
-
-func (g *GitSource) openExistingRepo(ctx context.Context, cloneDir string) (*git.Repository, error) {
-	repo, err := git.PlainOpen(cloneDir)
+func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth transport.AuthMethod) (*git.Repository, error) {
+	repo, err := git.PlainInit(mirrorDir, true)
 	if err != nil {
-		return nil, fmt.Errorf("open existing repo: %w", err)
+		return nil, fmt.Errorf("init mirror %s: %w", g.RepoURL, err)
 	}
-	fetchErr := repo.FetchContext(ctx, &git.FetchOptions{})
-	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
-		return nil, fmt.Errorf("fetch repo: %w", fetchErr)
+	if _, err := repo.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{g.RepoURL},
+	}); err != nil {
+		return nil, fmt.Errorf("create remote %s: %w", g.RepoURL, err)
+	}
+
+	if err := g.fetchMirror(ctx, repo, auth); err != nil {
+		return nil, err
+	}
+	if err := g.setMirrorHEAD(repo); err != nil {
+		return nil, err
 	}
 	return repo, nil
 }
+
+func (g *GitSource) setMirrorHEAD(repo *git.Repository) error {
+	if branch := g.branchReference(); branch != "" {
+		if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(branch))); err != nil {
+			return fmt.Errorf("set mirror HEAD: %w", err)
+		}
+	}
+	return nil
+}
+
+func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repository, mirrorDir, worktreeDir string) (string, error) {
+	hash, err := g.resolveRevision(mirrorRepo, g.Revision)
+	if err != nil {
+		return "", err
+	}
+
+	worktreeRepo, err := g.openOrCloneWorktree(ctx, mirrorDir, worktreeDir)
+	if err != nil {
+		return "", err
+	}
+
+	wt, err := worktreeRepo.Worktree()
+	if err != nil {
+		return "", fmt.Errorf("get worktree: %w", err)
+	}
+
+	if checkoutErr := wt.Checkout(&git.CheckoutOptions{Hash: *hash, Force: true}); checkoutErr != nil {
+		return "", fmt.Errorf("checkout revision %s: %w", g.Revision, checkoutErr)
+	}
+	return hash.String(), nil
+}
+
+func (g *GitSource) openOrCloneWorktree(ctx context.Context, mirrorDir, worktreeDir string) (*git.Repository, error) {
+	if _, statErr := os.Stat(filepath.Join(worktreeDir, ".git")); statErr == nil {
+		return g.openExistingWorktree(ctx, worktreeDir)
+	}
+	return g.cloneWorktree(ctx, mirrorDir, worktreeDir)
+}
+
+func (g *GitSource) openExistingWorktree(ctx context.Context, worktreeDir string) (*git.Repository, error) {
+	worktreeRepo, err := git.PlainOpen(worktreeDir)
+	if err != nil {
+		return nil, fmt.Errorf("open worktree: %w", err)
+	}
+	if err := worktreeRepo.FetchContext(ctx, &git.FetchOptions{
+		Progress: nil,
+		RefSpecs: []config.RefSpec{
+			"+refs/heads/*:refs/remotes/origin/*",
+			"+refs/tags/*:refs/tags/*",
+		},
+	}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		return nil, fmt.Errorf("fetch worktree: %w", err)
+	}
+	return worktreeRepo, nil
+}
+
+func (g *GitSource) cloneWorktree(ctx context.Context, mirrorDir, worktreeDir string) (*git.Repository, error) {
+	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
+		return nil, fmt.Errorf("remove stale worktree dir: %w", rmErr)
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(worktreeDir), 0o750); mkErr != nil {
+		return nil, fmt.Errorf("create worktree parent dir: %w", mkErr)
+	}
+	opts := &git.CloneOptions{
+		URL:        mirrorDir,
+		Progress:   nil,
+		NoCheckout: true,
+	}
+	worktreeRepo, err := git.PlainCloneContext(ctx, worktreeDir, false, opts)
+	if err != nil {
+		return nil, fmt.Errorf("clone worktree from mirror: %w", err)
+	}
+	return worktreeRepo, nil
+}
+
+func (g *GitSource) resolveRevision(repo *git.Repository, revision string) (*plumbing.Hash, error) {
+	if revision == "" {
+		head, err := repo.Head()
+		if err != nil {
+			return nil, fmt.Errorf("get HEAD: %w", err)
+		}
+		hash := head.Hash()
+		return &hash, nil
+	}
+	for _, ref := range revisionCandidates(revision) {
+		h, resolveErr := repo.ResolveRevision(plumbing.Revision(ref))
+		if resolveErr == nil {
+			return h, nil
+		}
+	}
+	return nil, fmt.Errorf("resolve revision %s: not found as branch, tag, or commit", revision)
+}
+
+func revisionCandidates(revision string) []string {
+	candidates := make([]string, 0, 6)
+	if strings.HasPrefix(revision, "refs/heads/") {
+		candidates = append(candidates, "refs/remotes/origin/"+strings.TrimPrefix(revision, "refs/heads/"))
+	} else if strings.HasPrefix(revision, "refs/tags/") {
+		candidates = append(candidates, revision)
+	} else if !strings.HasPrefix(revision, "refs/") {
+		candidates = append(candidates,
+			"refs/remotes/origin/"+revision,
+			"refs/heads/"+revision,
+			"refs/tags/"+revision,
+		)
+	}
+	candidates = append(candidates, revision)
+	return candidates
+}
+
+func (g *GitSource) depth() int {
+	if g.Shallow && g.isBranchReference() {
+		return 1
+	}
+	return 0
+}
+
+func (g *GitSource) branchReference() string {
+	if g.isBranchReference() {
+		rev := strings.TrimSpace(g.Revision)
+		if rev == "" {
+			return "refs/heads/main"
+		}
+		if strings.HasPrefix(rev, "refs/heads/") {
+			return rev
+		}
+		if !strings.HasPrefix(rev, "refs/") {
+			return "refs/heads/" + rev
+		}
+	}
+	return ""
+}
+
+func (g *GitSource) isBranchReference() bool {
+	rev := strings.TrimSpace(g.Revision)
+	if rev == "" {
+		return true
+	}
+	if strings.HasPrefix(rev, "refs/heads/") {
+		return true
+	}
+	if strings.HasPrefix(rev, "refs/") {
+		return false
+	}
+	return !isHexSHA(rev)
+}
+
+var hexSHARe = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
+
+func isHexSHA(s string) bool {
+	return hexSHARe.MatchString(s)
+}
+
+func (g *GitSource) credentialID() string {
+	if g.Auth.GitHubApp != nil {
+		return fmt.Sprintf("github-app:%d:%d", g.Auth.GitHubApp.AppID, g.Auth.GitHubApp.InstallationID)
+	}
+	if g.Auth.Token != "" {
+		return "token:" + g.Auth.Token
+	}
+	if g.Auth.Username != "" || g.Auth.Password != "" {
+		return g.Auth.Username + ":" + g.Auth.Password
+	}
+	return ""
+}
+
+func (g *GitSource) authMethod(ctx context.Context) (transport.AuthMethod, error) {
+	return g.Auth.authMethod(ctx)
+}
+
+func (a GitAuth) authMethod(ctx context.Context) (transport.AuthMethod, error) {
+	if a.GitHubApp != nil {
+		token, err := a.GitHubApp.InstallationToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("github app token: %w", err)
+		}
+		return &http.BasicAuth{Username: "x-access-token", Password: token}, nil
+	}
+	if a.Token != "" {
+		return &http.BasicAuth{Username: "x-access-token", Password: a.Token}, nil
+	}
+	if a.Username != "" || a.Password != "" {
+		return &http.BasicAuth{Username: a.Username, Password: a.Password}, nil
+	}
+	return nil, nil
+}
+
+// Ensure transport.AuthMethod is used.
+var _ transport.AuthMethod = (*http.BasicAuth)(nil)

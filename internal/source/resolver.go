@@ -98,3 +98,18 @@ func SanitizeName(s string) string {
 	}
 	return string(result)
 }
+
+// RepoCacheKey returns a stable directory key for a repo URL and credential set.
+func RepoCacheKey(repoURL, credentialID string) string {
+	urlHash := sha256.Sum256([]byte(repoURL))
+	urlPart := hex.EncodeToString(urlHash[:])[:32]
+	if credentialID == "" {
+		return urlPart
+	}
+	h := sha256.New()
+	h.Write([]byte(repoURL))
+	h.Write([]byte{0})
+	h.Write([]byte(credentialID))
+	credPart := hex.EncodeToString(h.Sum(nil))[:32]
+	return urlPart + "-" + credPart
+}

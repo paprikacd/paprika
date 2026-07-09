@@ -179,7 +179,7 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		return r.handleSyncTrigger(ctx, app)
 	}
 
-	if app.Status.Phase == paprikav1.ApplicationHealthy {
+	if appNeedsReplacementReleaseFlow(app.Status.Phase) {
 		return r.handleHealthyPhase(ctx, app)
 	}
 
@@ -207,6 +207,10 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 	}
 
 	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+func appNeedsReplacementReleaseFlow(phase paprikav1.ApplicationPhase) bool {
+	return phase == paprikav1.ApplicationHealthy || phase == paprikav1.ApplicationRolledBack
 }
 
 func (r *ApplicationReconciler) reconcileAppAfterStages(ctx context.Context, app *paprikav1.Application, projectName string) (ctrl.Result, error) {

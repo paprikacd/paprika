@@ -76,6 +76,42 @@ func TestResolveTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "GitHubApp",
+			objs: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "gh-app", Namespace: "default"},
+					Data:       map[string][]byte{"privateKey": []byte("-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJ")},
+				},
+				&corev1alpha1.Repository{
+					ObjectMeta: metav1.ObjectMeta{Name: "gh-app-repo", Namespace: "default"},
+					Spec: corev1alpha1.RepositorySpec{
+						Type:      corev1alpha1.RepositoryTypeGit,
+						URL:       "https://github.com/org/repo",
+						SecretRef: &corev1alpha1.SecretRef{Name: "gh-app"},
+						GitHubApp: &corev1alpha1.GitHubAppCreds{
+							AppID:          "12345",
+							InstallationID: "67890",
+							EnterpriseURL:  "https://github.example.com",
+						},
+					},
+				},
+			},
+			repoRef: "gh-app-repo",
+			spec: paprikav1.TemplateSpec{
+				Type:    paprikav1.SourceTypeGit,
+				RepoRef: "gh-app-repo",
+				Git:     &paprikav1.GitSourceSpec{Revision: "main"},
+			},
+			want: func(t *testing.T, got *Resolved) {
+				assert.Equal(t, "https://github.com/org/repo", got.Spec.Git.RepoURL)
+				require.NotNil(t, got.GitHubApp)
+				assert.Equal(t, int64(12345), got.GitHubApp.AppID)
+				assert.Equal(t, int64(67890), got.GitHubApp.InstallationID)
+				assert.Equal(t, "https://github.example.com", got.GitHubApp.EnterpriseURL)
+				assert.Equal(t, "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJ", string(got.GitHubApp.PrivateKey))
+			},
+		},
+		{
 			name: "Helm",
 			objs: []client.Object{
 				&corev1alpha1.Repository{

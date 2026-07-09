@@ -31,11 +31,9 @@ COPY . .
 COPY --from=ui-builder /ui/out/ internal/api/uistatic/
 
 # Build
-# the GOARCH has no default value to allow the binary to be built according to the host where the command
-# was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
-# the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
-# by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager ./cmd
+# Docker buildx supplies TARGETARCH in CI. The amd64 fallback keeps local builds
+# compatible with the current VKE node architecture.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -a -o manager ./cmd
 
 # Install helm in a separate stage
 FROM alpine:3.24 AS helm-builder
@@ -45,9 +43,13 @@ RUN apk add --no-cache curl && \
     tar -xzf /tmp/helm.tar.gz -C /tmp && \
     mv /tmp/linux-${ARCH}/helm /helm
 
-# Use distroless as minimal base image to package the manager binary
-FROM gcr.io/distroless/static:nonroot
+# Use Alpine so the repo-backed renderer can execute git while keeping the
+# runtime image small and non-root.
+FROM alpine:3.24
 WORKDIR /
+RUN apk add --no-cache ca-certificates git && \
+    addgroup -S -g 65532 nonroot && \
+    adduser -S -D -H -u 65532 -G nonroot nonroot
 COPY --from=builder /workspace/manager .
 COPY --from=builder /workspace/charts /charts
 COPY --from=helm-builder /helm /usr/local/bin/helm

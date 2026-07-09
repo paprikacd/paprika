@@ -21,11 +21,13 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/repository"
 	"github.com/benebsworth/paprika/internal/source"
 )
 
@@ -117,17 +119,56 @@ func (r *HelmSDKRenderer) resolveGitSource(ctx context.Context, tmpl *paprika.Te
 	if gitSrc == nil {
 		return nil, errors.New("git source spec is required for type=git")
 	}
+
+	auth, err := r.resolveGitAuth(ctx, tmpl)
+	if err != nil {
+		return nil, fmt.Errorf("resolve git auth: %w", err)
+	}
+
 	result, err := (&source.GitSource{
-		RepoURL:   gitSrc.RepoURL,
-		Revision:  gitSrc.Revision,
-		Path:      gitSrc.Path,
-		WorkDir:   r.WorkDir,
-		SecretRef: gitSrc.SecretRef,
+		RepoURL:  gitSrc.RepoURL,
+		Revision: gitSrc.Revision,
+		Path:     gitSrc.Path,
+		WorkDir:  r.WorkDir,
+		Auth:     auth,
+		Shallow:  true,
 	}).Resolve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git source: %w", err)
 	}
 	return result, nil
+}
+
+func (r *HelmSDKRenderer) resolveGitAuth(ctx context.Context, tmpl *paprika.Template) (source.GitAuth, error) {
+	auth := source.GitAuth{}
+	if r.Client == nil {
+		return auth, nil
+	}
+
+	if tmpl.Spec.RepoRef != "" {
+		resolved, err := repository.NewResolver(r.Client).ResolveTemplate(ctx, tmpl.Namespace, &tmpl.Spec)
+		if err != nil {
+			return auth, fmt.Errorf("resolve repository %s: %w", tmpl.Spec.RepoRef, err)
+		}
+		if resolved != nil {
+			auth.Username = resolved.Username
+			auth.Password = resolved.Password
+			auth.GitHubApp = resolved.GitHubApp
+		}
+		return auth, nil
+	}
+
+	if tmpl.Spec.Git != nil && tmpl.Spec.Git.SecretRef != "" {
+		var secret corev1.Secret
+		if err := r.Client.Get(ctx, client.ObjectKey{Name: tmpl.Spec.Git.SecretRef, Namespace: tmpl.Namespace}, &secret); err != nil {
+			return auth, fmt.Errorf("get git secret %s/%s: %w", tmpl.Namespace, tmpl.Spec.Git.SecretRef, err)
+		}
+		auth.Username = string(secret.Data["username"])
+		auth.Password = string(secret.Data["password"])
+		auth.Token = string(secret.Data["token"])
+	}
+
+	return auth, nil
 }
 
 func (r *HelmSDKRenderer) resolveS3Source(ctx context.Context, tmpl *paprika.Template) (*source.ResolveResult, error) {

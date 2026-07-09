@@ -763,6 +763,70 @@ func TestApplicationReconciler_handleHealthyPhase_terminalReleaseStartsReplaceme
 	}
 }
 
+func TestApplicationReconciler_reconcileApp_rolledBackApplicationStartsReplacementFlow(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "rolled-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://example.com/repo.git",
+				Revision: "main",
+				Path:     ".",
+			},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{
+				Name: "prod",
+				Ring: 1,
+			}},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationRolledBack,
+			ReleaseRef:     "rolled-app-release",
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "rolled-app-release", Namespace: "default"},
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			Phase: pipelinesv1alpha1.ReleaseRolledBack,
+		},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(app, release).
+		Build()
+	r := &ApplicationReconciler{
+		client: c,
+		Scheme: scheme,
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "same-source-hash",
+			Revision: "same-source-revision",
+		}},
+	}
+
+	if _, err := r.reconcileApp(ctx, app); err != nil {
+		t.Fatalf("reconcileApp failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want empty so a replacement Release can be created", updated.Status.ReleaseRef)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+}
+
 func TestApplicationReconciler_reconcileRelease_adoptsExistingTerminalReleaseWithSameIdentity(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
