@@ -31,6 +31,8 @@ spec:
   dnsNames:
     - paprika.benebsworth.com
     - origin-vke.telesis.dev
+    - origin-vke.brandbrain.dev
+    - api.brandbrain.dev
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer

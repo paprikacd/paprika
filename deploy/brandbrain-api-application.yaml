@@ -1,0 +1,73 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: brandbrain-api
+  namespace: paprika-e2e
+  labels:
+    app.kubernetes.io/name: brandbrain-api
+    app.kubernetes.io/part-of: brandbrain
+spec:
+  project: default
+  source:
+    type: git
+    repoUrl: https://github.com/paprikacd/brandbrain-api-chart.git
+    revision: main
+    path: "."
+    pollInterval: 60s
+  parameters:
+    image.repository: us-central1-docker.pkg.dev/brandbrain-486909/brandbrain/api
+    image.tag: f6ec73d55c91-vke-20260709034617
+    imagePullSecrets[0].name: brandbrain-gar
+    secretEnv.existingSecret: brandbrain-api-env
+    secretEnv.optional: "false"
+    gcpCredentials.existingSecret: brandbrain-gcp-service-account
+    gcpCredentials.key: google-application-credentials.json
+    env.nonSecret.ML_DATASETS_DIR: /tmp/brandbrain-datasets
+    env.nonSecret.ML_MODELS_DIR: /tmp/brandbrain-models
+    gateway.parentRefs[0].name: paprika
+    gateway.parentRefs[0].namespace: envoy-gateway-system
+    gateway.hostnames[0]: origin-vke.brandbrain.dev
+    gateway.hostnames[1]: api.brandbrain.dev
+  stages:
+    - name: vke-staging
+      ring: 1
+      autoPromote: false
+      canary:
+        steps: [10, 50, 100]
+        intervalSeconds: 60
+      parameters:
+        replicaCount: "1"
+        gateway.enabled: "true"
+  strategy: Canary
+  syncPolicy: Auto
+  healthChecks:
+    - name: api-live
+      interval: 30s
+      httpProbe:
+        url: http://brandbrain-api-release.paprika-e2e.svc.cluster.local:4445/health
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "healthy"
+    - name: api-version-dependencies
+      interval: 60s
+      httpProbe:
+        url: http://brandbrain-api-release.paprika-e2e.svc.cluster.local:4445/version
+        method: GET
+        timeout: 5
+      expression: http.statusCode == 200 && http.bodyJson.status == "healthy" && http.bodyJson.checks.postgres.status == "ok" && http.bodyJson.checks.gcs.status == "ok"
+    - name: api-search-smoke
+      interval: 120s
+      httpProbe:
+        url: http://brandbrain-api-release.paprika-e2e.svc.cluster.local:4445/brandbrain.v1.BrandService/SearchBrands
+        method: POST
+        headers:
+          Content-Type: application/json
+        body: '{"query":"test","limit":1,"offset":0}'
+        timeout: 5
+      expression: http.statusCode == 200 && http.body.contains("{")
+  onFailure:
+    action: rollback
+  selfHeal:
+    autoSyncOnDrift: false
+    autoRevertOnHealthFailure: true
+    cooldown: 5m
