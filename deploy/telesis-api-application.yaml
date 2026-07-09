@@ -53,8 +53,10 @@ spec:
     components.resultprocessor.env.nonSecret.FRONTEND_BASE_URL: https://telesis.dev
     components.rollup.enabled: "true"
     components.rollup.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/rollup
-    components.rollup.image.tag: ab2d5b3
+    components.rollup.image.tag: 78fc26c
     components.rollup.secretEnv.existingSecret: telesis-api-env
+    components.rollup.env.nonSecret.RETENTION_DAYS: "7"
+    components.rollup.env.nonSecret.CLEANUP_BATCH_SIZE: "5000"
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.telesis.dev
