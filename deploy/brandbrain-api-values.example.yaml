@@ -1,9 +1,5 @@
 replicaCount: 1
 
-image:
-  repository: us-central1-docker.pkg.dev/brandbrain-486909/brandbrain/api
-  tag: f6ec73d55c91-vke-20260709034617
-
 imagePullSecrets:
   - name: brandbrain-gar
 
@@ -11,9 +7,12 @@ secretEnv:
   existingSecret: brandbrain-api-env
   optional: false
 
-gcpCredentials:
-  existingSecret: brandbrain-gcp-service-account
-  key: google-application-credentials.json
+workloadIdentity:
+  enabled: true
+  projectNumber: "976998755879"
+  pool: vke-omega
+  provider: omega
+  serviceAccountEmail: brandbrain-backend@brandbrain-486909.iam.gserviceaccount.com
 
 gateway:
   enabled: true
@@ -22,3 +21,4 @@ gateway:
       namespace: envoy-gateway-system
   hostnames:
     - origin-vke.brandbrain.dev
+    - api.brandbrain.dev

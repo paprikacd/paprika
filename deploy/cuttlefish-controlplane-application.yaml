@@ -15,13 +15,14 @@ spec:
     path: "."
     pollInterval: 60s
   parameters:
-    image.repository: us-central1-docker.pkg.dev/cuttlefish-d16cd/cuttlefish/controlplane
-    image.tag: d79947400714-vke-20260709055002
     imagePullSecrets[0].name: cuttlefish-gar
     secretEnv.existingSecret: cuttlefish-controlplane-env
     secretEnv.optional: "false"
-    gcpCredentials.existingSecret: cuttlefish-controlplane-gcp-service-account
-    gcpCredentials.key: google-application-credentials.json
+    workloadIdentity.enabled: "true"
+    workloadIdentity.projectNumber: "698099003913"
+    workloadIdentity.pool: vke-omega
+    workloadIdentity.provider: omega
+    workloadIdentity.serviceAccountEmail: cf-controlplane@cuttlefish-d16cd.iam.gserviceaccount.com
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.cuttlefish.sh

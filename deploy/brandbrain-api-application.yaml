@@ -15,15 +15,14 @@ spec:
     path: "."
     pollInterval: 60s
   parameters:
-    image.repository: us-central1-docker.pkg.dev/brandbrain-486909/brandbrain/api
-    image.tag: f6ec73d55c91-vke-20260709034617
     imagePullSecrets[0].name: brandbrain-gar
     secretEnv.existingSecret: brandbrain-api-env
     secretEnv.optional: "false"
-    gcpCredentials.existingSecret: brandbrain-gcp-service-account
-    gcpCredentials.key: google-application-credentials.json
-    env.nonSecret.ML_DATASETS_DIR: /tmp/brandbrain-datasets
-    env.nonSecret.ML_MODELS_DIR: /tmp/brandbrain-models
+    workloadIdentity.enabled: "true"
+    workloadIdentity.projectNumber: "976998755879"
+    workloadIdentity.pool: vke-omega
+    workloadIdentity.provider: omega
+    workloadIdentity.serviceAccountEmail: brandbrain-backend@brandbrain-486909.iam.gserviceaccount.com
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.brandbrain.dev

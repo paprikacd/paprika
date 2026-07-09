@@ -1,9 +1,5 @@
 replicaCount: 2
 
-image:
-  repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api
-  tag: ab2d5b3
-
 imagePullSecrets:
   - name: telesis-gar
 
@@ -11,9 +7,12 @@ secretEnv:
   existingSecret: telesis-api-env
   optional: false
 
-firebaseAdmin:
-  existingSecret: telesis-firebase-admin
-  key: firebase-admin-key.json
+workloadIdentity:
+  enabled: true
+  projectNumber: "1070169189903"
+  pool: vke-omega
+  provider: omega
+  serviceAccountEmail: telesis-vke-runtime@uptime-485903.iam.gserviceaccount.com
 
 env:
   nonSecret:
@@ -47,3 +46,41 @@ autoscaling:
 
 pdb:
   enabled: false
+
+components:
+  scheduler:
+    enabled: true
+    secretEnv:
+      existingSecret: telesis-api-env
+    env:
+      nonSecret:
+        GCP_PROJECT_ID: uptime-485903
+        PUBSUB_TOPIC_ID: check-jobs
+  runner:
+    enabled: true
+    secretEnv:
+      existingSecret: telesis-api-env
+    env:
+      nonSecret:
+        GCP_PROJECT_ID: uptime-485903
+        PUBSUB_SUBSCRIPTION_ID: check-jobs-sub
+        PUBSUB_RESULT_TOPIC_ID: check-results
+        PUBSUB_MODE: pull
+  resultprocessor:
+    enabled: true
+    secretEnv:
+      existingSecret: telesis-api-env
+    env:
+      nonSecret:
+        GCP_PROJECT_ID: uptime-485903
+        PUBSUB_RESULT_SUBSCRIPTION_ID: check-results-sub
+        PUBSUB_MODE: pull
+        FRONTEND_BASE_URL: https://telesis.dev
+  rollup:
+    enabled: true
+    secretEnv:
+      existingSecret: telesis-api-env
+    env:
+      nonSecret:
+        RETENTION_DAYS: "7"
+        CLEANUP_BATCH_SIZE: "5000"

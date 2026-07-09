@@ -15,45 +15,35 @@ spec:
     path: "."
     pollInterval: 60s
   parameters:
-    image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/api
-    image.tag: 65e5ce5
     imagePullSecrets[0].name: telesis-gar
     secretEnv.existingSecret: telesis-api-env
     secretEnv.optional: "false"
-    firebaseAdmin.existingSecret: telesis-firebase-admin
-    firebaseAdmin.key: firebase-admin-key.json
+    workloadIdentity.enabled: "true"
+    workloadIdentity.projectNumber: "1070169189903"
+    workloadIdentity.pool: vke-omega
+    workloadIdentity.provider: omega
+    workloadIdentity.serviceAccountEmail: telesis-vke-runtime@uptime-485903.iam.gserviceaccount.com
     env.nonSecret.GCP_PROJECT_ID: uptime-485903
     env.nonSecret.PUBSUB_TOPIC_ID: check-jobs
     env.nonSecret.PUBSUB_JOB_TOPIC_ID: check-jobs
     probes.readinessPath: /health
     components.scheduler.enabled: "true"
-    components.scheduler.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/scheduler
-    components.scheduler.image.tag: ab2d5b3
     components.scheduler.secretEnv.existingSecret: telesis-api-env
-    components.scheduler.firebaseAdmin.enabled: "true"
     components.scheduler.env.nonSecret.GCP_PROJECT_ID: uptime-485903
     components.scheduler.env.nonSecret.PUBSUB_TOPIC_ID: check-jobs
     components.runner.enabled: "true"
-    components.runner.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/runner
-    components.runner.image.tag: ab2d5b3
     components.runner.secretEnv.existingSecret: telesis-api-env
-    components.runner.firebaseAdmin.enabled: "true"
     components.runner.env.nonSecret.GCP_PROJECT_ID: uptime-485903
     components.runner.env.nonSecret.PUBSUB_SUBSCRIPTION_ID: check-jobs-sub
     components.runner.env.nonSecret.PUBSUB_RESULT_TOPIC_ID: check-results
     components.runner.env.nonSecret.PUBSUB_MODE: pull
     components.resultprocessor.enabled: "true"
-    components.resultprocessor.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/resultprocessor
-    components.resultprocessor.image.tag: ab2d5b3
     components.resultprocessor.secretEnv.existingSecret: telesis-api-env
-    components.resultprocessor.firebaseAdmin.enabled: "true"
     components.resultprocessor.env.nonSecret.GCP_PROJECT_ID: uptime-485903
     components.resultprocessor.env.nonSecret.PUBSUB_RESULT_SUBSCRIPTION_ID: check-results-sub
     components.resultprocessor.env.nonSecret.PUBSUB_MODE: pull
     components.resultprocessor.env.nonSecret.FRONTEND_BASE_URL: https://telesis.dev
     components.rollup.enabled: "true"
-    components.rollup.image.repository: australia-southeast1-docker.pkg.dev/uptime-485903/uptime-prod-docker/rollup
-    components.rollup.image.tag: 78fc26c
     components.rollup.secretEnv.existingSecret: telesis-api-env
     components.rollup.env.nonSecret.RETENTION_DAYS: "7"
     components.rollup.env.nonSecret.CLEANUP_BATCH_SIZE: "5000"

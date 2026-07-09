@@ -15,11 +15,12 @@ spec:
     path: "."
     pollInterval: 60s
   parameters:
-    image.repository: australia-southeast1-docker.pkg.dev/flaggr-478302/flaggr/api
-    image.tag: 954872b1ef6c-vke-20260709055002
     imagePullSecrets[0].name: flaggr-gar
-    gcpCredentials.existingSecret: flaggr-api-gcp-service-account
-    gcpCredentials.key: google-application-credentials.json
+    workloadIdentity.enabled: "true"
+    workloadIdentity.projectNumber: "92803451840"
+    workloadIdentity.pool: vke-omega
+    workloadIdentity.provider: omega
+    workloadIdentity.serviceAccountEmail: flaggr-grpc-sa@flaggr-478302.iam.gserviceaccount.com
     gateway.parentRefs[0].name: paprika
     gateway.parentRefs[0].namespace: envoy-gateway-system
     gateway.hostnames[0]: origin-vke.flaggr.dev

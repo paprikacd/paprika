@@ -1,9 +1,5 @@
 replicaCount: 1
 
-image:
-  repository: us-central1-docker.pkg.dev/cuttlefish-d16cd/cuttlefish/controlplane
-  tag: d79947400714-vke-20260709055002
-
 imagePullSecrets:
   - name: cuttlefish-gar
 
@@ -11,9 +7,12 @@ secretEnv:
   existingSecret: cuttlefish-controlplane-env
   optional: false
 
-gcpCredentials:
-  existingSecret: cuttlefish-controlplane-gcp-service-account
-  key: google-application-credentials.json
+workloadIdentity:
+  enabled: true
+  projectNumber: "698099003913"
+  pool: vke-omega
+  provider: omega
+  serviceAccountEmail: cf-controlplane@cuttlefish-d16cd.iam.gserviceaccount.com
 
 gateway:
   enabled: true
