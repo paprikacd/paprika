@@ -24,6 +24,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
   - serviceaccounts
   - services
   verbs:
@@ -71,6 +72,7 @@ rules:
   resources:
   - deployments
   - replicasets
+  - statefulsets
   verbs:
   - create
   - delete

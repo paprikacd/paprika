@@ -66,10 +66,10 @@ manager:
   resources:
     limits:
       cpu: 200m
-      memory: 256Mi
+      memory: 768Mi
     requests:
       cpu: 25m
-      memory: 64Mi
+      memory: 128Mi
 
   args: []
 
