@@ -40,14 +40,16 @@ func newResolveCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServic
 				return fmt.Errorf("create client: %w", err)
 			}
 
-			specJSON, sourceType, err := readTemplateSpec(file)
+			specJSON, sourceType, name, namespace, err := readTemplateSpec(file)
 			if err != nil {
 				return fmt.Errorf("read template spec: %w", err)
 			}
 
 			res, err := client.ResolveSource(ctx, connect.NewRequest(&paprikav1.ResolveSourceRequest{
-				Type:     sourceType,
-				SpecJson: specJSON,
+				Namespace: namespace,
+				Name:      name,
+				Type:      sourceType,
+				SpecJson:  specJSON,
 			}))
 			if err != nil {
 				return fmt.Errorf("resolve source: %w", err)

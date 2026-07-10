@@ -183,12 +183,14 @@ func (h *Handler) triggerReconciliation(ctx context.Context, repoURL, branch str
 	log := log.FromContext(ctx)
 
 	if h.cache != nil {
-		if err := h.cache.Invalidate(ctx, "git", repoURL, branch); err != nil {
+		// A push invalidates all cached source resolutions and manifests for the repo,
+		// not just a single branch/revision, because the new commit hash is unknown.
+		if err := h.cache.Invalidate(ctx, "git", repoURL, ""); err != nil {
 			log.Error(err, "Failed to invalidate cache", "repo", repoURL, "branch", branch)
 		}
 	}
 	if h.repoCache != nil {
-		if err := h.repoCache.Invalidate(ctx, "git", repoURL, branch); err != nil {
+		if err := h.repoCache.Invalidate(ctx, "git", repoURL, ""); err != nil {
 			log.Error(err, "Failed to invalidate repo server cache", "repo", repoURL, "branch", branch)
 		}
 	}

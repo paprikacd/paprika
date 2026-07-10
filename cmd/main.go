@@ -43,6 +43,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -106,6 +107,7 @@ type cliConfig struct {
 	shardIDSource                                                 string
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
+	apiCacheEnabled                                               bool
 	cacheSyncTimeout                                              time.Duration
 	authEnabled, enableWebhooks                                   bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
@@ -238,6 +240,8 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"Maximum time to wait for caches to sync on startup before exiting. "+
 			"Default 2m; raise this for large clusters or many CRDs (e.g. 5m) to avoid "+
 			"CrashLoopBackOff due to slow initial list calls on small API servers.")
+	fs.BoolVar(&cfg.apiCacheEnabled, "api-cache-enabled", getenv("PAPRIKA_API_CACHE_ENABLED") != "false",
+		"Enable the informer-backed API client cache. Set false only for local tests or emergency debugging.")
 	registerCoordinatorFlags(fs, &cfg)
 	fs.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
@@ -443,7 +447,13 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return nil, fmt.Errorf("build API config: %w", err)
 	}
 
-	apiClient, err := createAPIClient(config, scheme)
+	var apiClient client.Client
+	if cfg.apiCacheEnabled {
+		apiClient, err = createCachedAPIClient(ctx, config, scheme, cfg.cacheSyncTimeout, setupLog)
+	} else {
+		setupLog.Info("API informer cache disabled; using direct Kubernetes client")
+		apiClient, err = createAPIClient(config, scheme)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create API client: %w", err)
 	}
@@ -740,6 +750,66 @@ func createAPIClient(config *rest.Config, scheme *runtime.Scheme) (client.Client
 	apiClient, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("create k8s client: %w", err)
+	}
+	return apiClient, nil
+}
+
+func createCachedAPIClient(ctx context.Context, config *rest.Config, scheme *runtime.Scheme, syncTimeout time.Duration, setupLog logr.Logger) (client.Client, error) {
+	apiCache, err := crcache.New(config, crcache.Options{
+		Scheme:           scheme,
+		DefaultTransform: crcache.TransformStripManagedFields(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create k8s cache: %w", err)
+	}
+
+	warmObjects := []client.Object{
+		&pipelinesv1alpha1.Application{},
+		&pipelinesv1alpha1.ApplicationSet{},
+		&pipelinesv1alpha1.Pipeline{},
+		&pipelinesv1alpha1.Release{},
+		&pipelinesv1alpha1.Stage{},
+		&pipelinesv1alpha1.NotificationConfig{},
+		&pipelinesv1alpha1.AnalysisRun{},
+		&pipelinesv1alpha1.Artifact{},
+		&policyv1alpha1.Policy{},
+		&rolloutsv1alpha1.Rollout{},
+		&corev1alpha1.AppProject{},
+		&corev1alpha1.Repository{},
+		&clustersv1alpha1.Cluster{},
+		&featureflagsv1alpha1.FeatureFlag{},
+		&featureflagsv1alpha1.FeatureFlagBinding{},
+	}
+	for _, obj := range warmObjects {
+		if _, err := apiCache.GetInformer(ctx, obj); err != nil {
+			return nil, fmt.Errorf("create informer for %T: %w", obj, err)
+		}
+	}
+
+	go func() {
+		if err := apiCache.Start(ctx); err != nil && ctx.Err() == nil {
+			setupLog.Error(err, "API informer cache stopped")
+		}
+	}()
+
+	if syncTimeout <= 0 {
+		syncTimeout = 2 * time.Minute
+	}
+	started := time.Now()
+	syncCtx, cancel := context.WithTimeout(ctx, syncTimeout)
+	defer cancel()
+	if ok := apiCache.WaitForCacheSync(syncCtx); !ok {
+		return nil, fmt.Errorf("sync API informer cache within %s", syncTimeout)
+	}
+	metrics.APICacheSyncDuration.Record(ctx, time.Since(started).Milliseconds())
+	setupLog.Info("API informer cache synced", "duration", time.Since(started).String())
+
+	apiClient, err := client.New(config, client.Options{
+		Scheme: scheme,
+		Cache:  &client.CacheOptions{Reader: apiCache},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create cache-backed k8s client: %w", err)
 	}
 	return apiClient, nil
 }

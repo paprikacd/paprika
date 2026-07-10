@@ -334,10 +334,14 @@ message ListPipelinesResponse {
 message ListReleasesRequest {
   optional string namespace = 1;
   string project = 2;
+  string application_name = 3;
+  int32 page_size = 4;
+  int32 page_offset = 5;
 }
 
 message ListReleasesResponse {
   repeated Release releases = 1;
+  int32 total_count = 2;
 }
 
 message ListStagesRequest {

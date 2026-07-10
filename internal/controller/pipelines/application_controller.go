@@ -1152,16 +1152,20 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 }
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
+	log := log.FromContext(ctx)
 	newHash, newRevision, err := r.resolveSourceHash(ctx, app)
 	if err != nil {
 		return false, err
 	}
 
 	if newHash == "" && newRevision == "" {
+		log.Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
 		return false, nil
 	}
 
 	oldHash := app.Status.SourceHash
+	oldRevision := app.Status.SourceRevision
+	changed := oldHash != "" && oldHash != newHash
 
 	app.Status.SourceHash = newHash
 	app.Status.SourceRevision = newRevision
@@ -1169,11 +1173,20 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 		return false, fmt.Errorf("failed to update source hash: %w", err)
 	}
 
+	log.Info("Source identity checked",
+		"namespace", app.Namespace,
+		"name", app.Name,
+		"oldHash", oldHash,
+		"newHash", newHash,
+		"oldRevision", oldRevision,
+		"newRevision", newRevision,
+		"changed", changed)
+
 	if oldHash == "" {
 		return false, nil
 	}
 
-	return oldHash != newHash, nil
+	return changed, nil
 }
 
 func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {

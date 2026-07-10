@@ -58,20 +58,25 @@ func NewServerWithClient(workDir string, c repoCache, k8sClient client.Client) *
 
 // ResolveSource resolves a template source.
 func (s *Server) ResolveSource(ctx context.Context, req *connect.Request[paprikav1.ResolveSourceRequest]) (*connect.Response[paprikav1.ResolveSourceResponse], error) {
-	log.FromContext(ctx).Info("Resolving source", "namespace", req.Msg.Namespace, "name", req.Msg.Name)
+	log := log.FromContext(ctx)
+	log.Info("Resolving source", "namespace", req.Msg.Namespace, "name", req.Msg.Name)
 
 	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
 	}
+	tmpl.Namespace = req.Msg.Namespace
+	tmpl.Name = req.Msg.Name
 
 	result, err := s.renderer.ResolveSource(ctx, tmpl)
 	if err != nil {
+		log.Error(err, "Failed to resolve source", "namespace", req.Msg.Namespace, "name", req.Msg.Name, "type", req.Msg.Type)
 		return nil, fmt.Errorf("resolve source: %w", err)
 	}
 	if result == nil {
 		return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("source type %q produced no result", req.Msg.Type))
 	}
+	log.Info("Resolved source", "namespace", req.Msg.Namespace, "name", req.Msg.Name, "hash", result.Hash, "revision", result.Revision)
 
 	return connect.NewResponse(&paprikav1.ResolveSourceResponse{
 		LocalPath: result.LocalPath,
@@ -82,12 +87,15 @@ func (s *Server) ResolveSource(ctx context.Context, req *connect.Request[paprika
 
 // Render renders a template into manifests.
 func (s *Server) Render(ctx context.Context, req *connect.Request[paprikav1.RenderRequest]) (*connect.Response[paprikav1.RenderResponse], error) {
-	log.FromContext(ctx).Info("Rendering template", "namespace", req.Msg.Namespace, "name", req.Msg.Name)
+	log := log.FromContext(ctx)
+	log.Info("Rendering template", "namespace", req.Msg.Namespace, "name", req.Msg.Name)
 
 	tmpl, err := decodeTemplate(req.Msg.Type, req.Msg.SpecJson)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
 	}
+	tmpl.Namespace = req.Msg.Namespace
+	tmpl.Name = req.Msg.Name
 
 	values, err := decodeValues(req.Msg.ValuesJson)
 	if err != nil {
@@ -96,6 +104,7 @@ func (s *Server) Render(ctx context.Context, req *connect.Request[paprikav1.Rend
 
 	manifests, err := s.renderer.Render(ctx, tmpl, values)
 	if err != nil {
+		log.Error(err, "Failed to render template", "namespace", req.Msg.Namespace, "name", req.Msg.Name, "type", req.Msg.Type)
 		return nil, fmt.Errorf("render template: %w", err)
 	}
 

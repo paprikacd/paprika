@@ -7,6 +7,7 @@ import (
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/source"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // repoServerClient defines the subset of repo-server client methods used by RepoServerRenderer.
@@ -35,7 +36,8 @@ func (r *RepoServerRenderer) Render(ctx context.Context, tmpl *paprikav1.Templat
 		if err == nil {
 			return manifests, nil
 		}
-		// Fall back to local renderer on error.
+		log.FromContext(ctx).Error(err, "Repo server render failed; falling back to local renderer",
+			"namespace", tmpl.Namespace, "name", tmpl.Name, "type", tmpl.Spec.Type)
 	}
 	if r.local != nil {
 		manifests, err := r.local.Render(ctx, tmpl, params)
@@ -66,7 +68,8 @@ func (r *RepoServerRenderer) ResolveSource(ctx context.Context, tmpl *paprikav1.
 		if err == nil {
 			return result, nil
 		}
-		// Fall back to local renderer on error.
+		log.FromContext(ctx).Error(err, "Repo server source resolve failed; falling back to local renderer",
+			"namespace", tmpl.Namespace, "name", tmpl.Name, "type", tmpl.Spec.Type)
 	}
 	if r.local != nil {
 		result, err := r.local.ResolveSource(ctx, tmpl)

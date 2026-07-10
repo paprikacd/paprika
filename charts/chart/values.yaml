@@ -461,6 +461,7 @@ webhookReceiver:
 
   ingress:
     enabled: false
+    # -- Ingress type: "gateway-api" or "ingress"
     type: gateway-api
     annotations: {}
     gateway:
@@ -469,6 +470,15 @@ webhookReceiver:
       #   namespace: envoy-gateway-system
       # hostname: paprika.example.com
       path: /webhook
+    ingress:
+      # className: nginx
+      # hostname: paprika.example.com
+      path: /webhook
+      annotations: {}
+      # tls:
+      #   - secretName: paprika-webhook-tls
+      #     hosts:
+      #       - paprika.example.com
 
   hpa:
     enabled: false

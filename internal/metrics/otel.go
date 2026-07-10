@@ -51,6 +51,21 @@ var (
 		"Number of authorization decisions made")
 )
 
+// API list metrics
+var (
+	APIListDuration = mustHistogram(meter, "paprika.api.list.duration", "ms",
+		"Duration of API list handlers", metric.WithExplicitBucketBoundaries(msBuckets...))
+
+	APIListErrors = mustCounter(meter, "paprika.api.list.errors",
+		"Number of API list handler errors")
+
+	APIListItems = mustHistogram(meter, "paprika.api.list.items", "1",
+		"Number of objects returned by API list handlers", metric.WithExplicitBucketBoundaries(itemBuckets...))
+
+	APICacheSyncDuration = mustHistogram(meter, "paprika.api.cache.sync.duration", "ms",
+		"Duration of split API server Kubernetes informer cache sync", metric.WithExplicitBucketBoundaries(msBuckets...))
+)
+
 // Git/source metrics
 var (
 	GitOperations = mustCounter(meter, "paprika.git.operations",
@@ -97,6 +112,8 @@ var (
 )
 
 var defBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60}
+var msBuckets = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000}
+var itemBuckets = []float64{0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000}
 
 func mustCounter(m metric.Meter, name, desc string) metric.Int64Counter {
 	c, err := m.Int64Counter(name, metric.WithDescription(desc), metric.WithUnit("1"))

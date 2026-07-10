@@ -494,9 +494,9 @@ export function DashboardCommandCenter({
               <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
                 <Search className="size-4" aria-hidden="true" />
               </span>
-              <h2 id="dashboard-command-center-title" className="text-xl font-semibold tracking-tight">
-                Control Search
-              </h2>
+                <h2 id="dashboard-command-center-title" className="text-xl font-semibold tracking-tight">
+                  Cluster command center
+                </h2>
             </div>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               Search applications, releases, rollouts, pipelines, and policies from one control surface, then drill into app health.

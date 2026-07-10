@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -15,6 +16,8 @@ import (
 	"connectrpc.com/connect"
 	"github.com/go-logr/logr"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -36,6 +39,7 @@ import (
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 // ServerOption configures a PaprikaServer via functional options.
@@ -196,8 +200,10 @@ func (s *PaprikaServer) ListArtifacts(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListArtifactsRequest],
 ) (*connect.Response[paprikav1.ListArtifactsResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.ArtifactList
 	if err := s.client.List(ctx, &list, client.InNamespace(req.Msg.Namespace)); err != nil {
+		recordAPIList(ctx, "artifacts", started, 0, err)
 		return nil, fmt.Errorf("listing artifacts: %w", err)
 	}
 	artifacts := make([]*paprikav1.ArtifactRef, 0, len(list.Items))
@@ -216,6 +222,7 @@ func (s *PaprikaServer) ListArtifacts(
 		}
 		artifacts = append(artifacts, convertArtifactToArtifactRef(a, nil))
 	}
+	recordAPIList(ctx, "artifacts", started, len(artifacts), nil)
 	return connect.NewResponse(&paprikav1.ListArtifactsResponse{Artifacts: artifacts}), nil
 }
 
@@ -276,17 +283,28 @@ func (s *PaprikaServer) Broker() *events.Broker {
 	return s.broker
 }
 
+func recordAPIList(ctx context.Context, resource string, started time.Time, count int, err error) {
+	attr := attribute.String("resource", resource)
+	paprikametrics.APIListDuration.Record(ctx, time.Since(started).Milliseconds(), metric.WithAttributes(attr))
+	paprikametrics.APIListItems.Record(ctx, int64(count), metric.WithAttributes(attr))
+	if err != nil {
+		paprikametrics.APIListErrors.Add(ctx, 1, metric.WithAttributes(attr))
+	}
+}
+
 // ListPipelines returns a list of pipelines.
 func (s *PaprikaServer) ListPipelines(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListPipelinesRequest],
 ) (*connect.Response[paprikav1.ListPipelinesResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.PipelineList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "pipelines", started, 0, err)
 		return nil, fmt.Errorf("listing pipelines: %w", err)
 	}
 	pipelines := make([]*paprikav1.Pipeline, 0, len(list.Items))
@@ -297,6 +315,7 @@ func (s *PaprikaServer) ListPipelines(
 		}
 		pipelines = append(pipelines, convertPipeline(p))
 	}
+	recordAPIList(ctx, "pipelines", started, len(pipelines), nil)
 	return connect.NewResponse(&paprikav1.ListPipelinesResponse{Pipelines: pipelines}), nil
 }
 
@@ -312,6 +331,8 @@ func (s *PaprikaServer) ResolveSource(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
 	}
+	tmpl.Namespace = req.Msg.Namespace
+	tmpl.Name = req.Msg.Name
 	result, err := s.renderer.ResolveSource(ctx, tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("resolve source: %w", err)
@@ -338,6 +359,8 @@ func (s *PaprikaServer) Render(
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode template: %w", err))
 	}
+	tmpl.Namespace = req.Msg.Namespace
+	tmpl.Name = req.Msg.Name
 	values, err := decodeValues(req.Msg.ValuesJson)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("decode values: %w", err))
@@ -354,23 +377,57 @@ func (s *PaprikaServer) ListReleases(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListReleasesRequest],
 ) (*connect.Response[paprikav1.ListReleasesResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.ReleaseList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "releases", started, 0, err)
 		return nil, fmt.Errorf("listing releases: %w", err)
 	}
 	releases := make([]*paprikav1.Release, 0, len(list.Items))
 	for i := range list.Items {
 		rel := &list.Items[i]
+		if req.Msg.ApplicationName != "" && rel.GetLabels()[engine.ApplicationNameLabelKey] != req.Msg.ApplicationName {
+			continue
+		}
+		if req.Msg.Project != "" && rel.GetLabels()[projectLabelKey] != req.Msg.Project {
+			continue
+		}
 		if !s.authorizeProjectFromLabels(ctx, rel, auth.ResourceReleases) {
 			continue
 		}
 		releases = append(releases, convertRelease(rel))
 	}
-	return connect.NewResponse(&paprikav1.ListReleasesResponse{Releases: releases}), nil
+	sort.SliceStable(releases, func(i, j int) bool {
+		if releases[i].CreatedAt == releases[j].CreatedAt {
+			return releases[i].Name < releases[j].Name
+		}
+		return releases[i].CreatedAt > releases[j].CreatedAt
+	})
+	total := len(releases)
+	if req.Msg.PageOffset > 0 || req.Msg.PageSize > 0 {
+		offset := int(req.Msg.PageOffset)
+		if offset > total {
+			offset = total
+		}
+		pageSize := int(req.Msg.PageSize)
+		if pageSize <= 0 {
+			pageSize = total
+		}
+		if pageSize > 500 {
+			pageSize = 500
+		}
+		end := offset + pageSize
+		if end > total {
+			end = total
+		}
+		releases = releases[offset:end]
+	}
+	recordAPIList(ctx, "releases", started, len(releases), nil)
+	return connect.NewResponse(&paprikav1.ListReleasesResponse{Releases: releases, TotalCount: int32(total)}), nil
 }
 
 // ListStages returns a list of stages.
@@ -378,12 +435,14 @@ func (s *PaprikaServer) ListStages(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListStagesRequest],
 ) (*connect.Response[paprikav1.ListStagesResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.StageList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "stages", started, 0, err)
 		return nil, fmt.Errorf("listing stages: %w", err)
 	}
 	stages := make([]*paprikav1.Stage, 0, len(list.Items))
@@ -394,6 +453,7 @@ func (s *PaprikaServer) ListStages(
 		}
 		stages = append(stages, convertStage(st))
 	}
+	recordAPIList(ctx, "stages", started, len(stages), nil)
 	return connect.NewResponse(&paprikav1.ListStagesResponse{Stages: stages}), nil
 }
 
@@ -402,12 +462,14 @@ func (s *PaprikaServer) ListApplications(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListApplicationsRequest],
 ) (*connect.Response[paprikav1.ListApplicationsResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.ApplicationList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "applications", started, 0, err)
 		return nil, fmt.Errorf("listing applications: %w", err)
 	}
 	applications := make([]*paprikav1.Application, 0, len(list.Items))
@@ -422,6 +484,7 @@ func (s *PaprikaServer) ListApplications(
 		}
 		applications = append(applications, convertApplication(app))
 	}
+	recordAPIList(ctx, "applications", started, len(applications), nil)
 	return connect.NewResponse(&paprikav1.ListApplicationsResponse{Applications: applications}), nil
 }
 
@@ -430,8 +493,10 @@ func (s *PaprikaServer) ListPolicies(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListPoliciesRequest],
 ) (*connect.Response[paprikav1.ListPoliciesResponse], error) {
+	started := time.Now()
 	var list policyv1alpha1.PolicyList
 	if err := s.client.List(ctx, &list); err != nil {
+		recordAPIList(ctx, "policies", started, 0, err)
 		return nil, fmt.Errorf("listing policies: %w", err)
 	}
 	policies := make([]*paprikav1.Policy, 0, len(list.Items))
@@ -444,6 +509,7 @@ func (s *PaprikaServer) ListPolicies(
 			Description:   p.Spec.Description,
 		})
 	}
+	recordAPIList(ctx, "policies", started, len(policies), nil)
 	return connect.NewResponse(&paprikav1.ListPoliciesResponse{Policies: policies}), nil
 }
 
@@ -452,12 +518,14 @@ func (s *PaprikaServer) ListApplicationSets(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListApplicationSetsRequest],
 ) (*connect.Response[paprikav1.ListApplicationSetsResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.ApplicationSetList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "applicationsets", started, 0, err)
 		return nil, fmt.Errorf("listing applicationsets: %w", err)
 	}
 	sets := make([]*paprikav1.ApplicationSet, 0, len(list.Items))
@@ -471,6 +539,7 @@ func (s *PaprikaServer) ListApplicationSets(
 		}
 		sets = append(sets, convertApplicationSet(a))
 	}
+	recordAPIList(ctx, "applicationsets", started, len(sets), nil)
 	return connect.NewResponse(&paprikav1.ListApplicationSetsResponse{Applicationsets: sets}), nil
 }
 
@@ -479,18 +548,21 @@ func (s *PaprikaServer) ListNotificationConfigs(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListNotificationConfigsRequest],
 ) (*connect.Response[paprikav1.ListNotificationConfigsResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.NotificationConfigList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "notificationconfigs", started, 0, err)
 		return nil, fmt.Errorf("listing notification configs: %w", err)
 	}
 	configs := make([]*paprikav1.NotificationConfig, 0, len(list.Items))
 	for i := range list.Items {
 		configs = append(configs, convertNotificationConfig(&list.Items[i]))
 	}
+	recordAPIList(ctx, "notificationconfigs", started, len(configs), nil)
 	return connect.NewResponse(&paprikav1.ListNotificationConfigsResponse{NotificationConfigs: configs}), nil
 }
 
@@ -758,12 +830,14 @@ func (s *PaprikaServer) ListRollouts(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListRolloutsRequest],
 ) (*connect.Response[paprikav1.ListRolloutsResponse], error) {
+	started := time.Now()
 	var list rolloutsv1alpha1.RolloutList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "rollouts", started, 0, err)
 		return nil, fmt.Errorf("listing rollouts: %w", err)
 	}
 	rollouts := make([]*paprikav1.Rollout, 0, len(list.Items))
@@ -774,6 +848,7 @@ func (s *PaprikaServer) ListRollouts(
 		}
 		rollouts = append(rollouts, convertRollout(ro))
 	}
+	recordAPIList(ctx, "rollouts", started, len(rollouts), nil)
 	return connect.NewResponse(&paprikav1.ListRolloutsResponse{Rollouts: rollouts}), nil
 }
 
@@ -864,12 +939,14 @@ func (s *PaprikaServer) ListAnalysisRuns(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ListAnalysisRunsRequest],
 ) (*connect.Response[paprikav1.ListAnalysisRunsResponse], error) {
+	started := time.Now()
 	var list pipelinesv1alpha1.AnalysisRunList
 	opts := []client.ListOption{}
 	if req.Msg.Namespace != nil {
 		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
 	}
 	if err := s.client.List(ctx, &list, opts...); err != nil {
+		recordAPIList(ctx, "analysisruns", started, 0, err)
 		return nil, fmt.Errorf("listing analysis runs: %w", err)
 	}
 
@@ -887,6 +964,7 @@ func (s *PaprikaServer) ListAnalysisRuns(
 		}
 		runs = append(runs, convertAnalysisRun(run))
 	}
+	recordAPIList(ctx, "analysisruns", started, len(runs), nil)
 	return connect.NewResponse(&paprikav1.ListAnalysisRunsResponse{AnalysisRuns: runs}), nil
 }
 

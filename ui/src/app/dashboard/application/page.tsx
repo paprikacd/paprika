@@ -142,7 +142,7 @@ function ApplicationDetail() {
     try {
       const [appRes, relRes] = await Promise.all([
         client.getApplication({ namespace, name }),
-        client.listReleases({}),
+        client.listReleases({ namespace, applicationName: name }),
       ]);
       setApplication(appRes.application ?? null);
       setReleases(relRes.releases ?? []);

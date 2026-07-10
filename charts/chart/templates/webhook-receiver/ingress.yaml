@@ -1,0 +1,46 @@
+{{- if and (eq .Values.deploymentMode "split") .Values.webhookReceiver.enabled .Values.webhookReceiver.ingress.enabled (eq (toString .Values.webhookReceiver.ingress.type) "ingress") }}
+{{- if not .Values.webhookReceiver.ingress.ingress }}
+{{- fail "webhookReceiver.ingress.ingress is required when type is ingress" }}
+{{- end }}
+{{- $ing := .Values.webhookReceiver.ingress.ingress }}
+{{- if not $ing.hostname }}
+{{- fail "webhookReceiver.ingress.ingress.hostname is required" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: webhook-receiver
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+  - host: {{ $ing.hostname | quote }}
+    http:
+      paths:
+      - path: {{ default "/webhook" $ing.path | quote }}
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ include "paprika.resourceName" (dict "suffix" "webhook-receiver" "context" $) }}
+            port:
+              number: {{ $.Values.webhookReceiver.service.port }}
+  {{- with $ing.tls }}
+  tls:
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

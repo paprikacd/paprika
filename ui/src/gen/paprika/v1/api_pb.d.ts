@@ -1782,6 +1782,21 @@ export declare class ListReleasesRequest extends Message<ListReleasesRequest> {
    */
   project: string;
 
+  /**
+   * @generated from field: string application_name = 3;
+   */
+  applicationName: string;
+
+  /**
+   * @generated from field: int32 page_size = 4;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: int32 page_offset = 5;
+   */
+  pageOffset: number;
+
   constructor(data?: PartialMessage<ListReleasesRequest>);
 
   static readonly runtime: typeof proto3;
@@ -1805,6 +1820,11 @@ export declare class ListReleasesResponse extends Message<ListReleasesResponse> 
    * @generated from field: repeated paprika.v1.Release releases = 1;
    */
   releases: Release[];
+
+  /**
+   * @generated from field: int32 total_count = 2;
+   */
+  totalCount: number;
 
   constructor(data?: PartialMessage<ListReleasesResponse>);
 

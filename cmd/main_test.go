@@ -47,11 +47,12 @@ func TestAPIModeStartsWithoutError(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- runAPIMode(ctx, &cliConfig{
-			mode:         "api",
-			k8sAPIServer: fakeK8s.URL,
-			k8sTokenFile: tokenFile,
-			uiAddr:       ":0",
-			probeAddr:    ":0",
+			mode:            "api",
+			k8sAPIServer:    fakeK8s.URL,
+			k8sTokenFile:    tokenFile,
+			uiAddr:          ":0",
+			probeAddr:       ":0",
+			apiCacheEnabled: false,
 		}, newScheme(), logr.Discard(), probeAddrCh)
 	}()
 

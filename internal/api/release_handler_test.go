@@ -1,13 +1,17 @@
 package apiserver
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 func TestConvertRelease_ExposesRolloutHooksConditionsAndCanaryState(t *testing.T) {
@@ -65,4 +69,42 @@ func TestConvertRelease_ExposesRolloutHooksConditionsAndCanaryState(t *testing.T
 	require.Equal(t, "Succeeded", got.HookStatuses[0].Status)
 	require.EqualValues(t, 1700000010, got.HookStatuses[0].StartedAt)
 	require.EqualValues(t, 1700000020, got.HookStatuses[0].CompletedAt)
+}
+
+func TestListReleases_FiltersByApplicationAndPaginatesNewestFirst(t *testing.T) {
+	release := func(name, app string, created int64) *pipelinesv1alpha1.Release {
+		return &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              name,
+				Namespace:         "apps",
+				CreationTimestamp: metav1.NewTime(time.Unix(created, 0)),
+				Labels: map[string]string{
+					projectLabelKey:                "default",
+					engine.ApplicationNameLabelKey: app,
+				},
+			},
+			Spec: pipelinesv1alpha1.ReleaseSpec{Pipeline: "deploy", Target: "prod"},
+		}
+	}
+	cl := newPipelineTestClient(
+		release("checkout-1", "checkout", 100),
+		release("checkout-2", "checkout", 300),
+		release("checkout-3", "checkout", 200),
+		release("billing-1", "billing", 400),
+	)
+	srv := NewPaprikaServer(cl, nil)
+	namespace := "apps"
+
+	resp, err := srv.ListReleases(context.Background(), connect.NewRequest(&paprikav1.ListReleasesRequest{
+		Namespace:       &namespace,
+		ApplicationName: "checkout",
+		PageSize:        2,
+		PageOffset:      1,
+	}))
+
+	require.NoError(t, err)
+	require.EqualValues(t, 3, resp.Msg.TotalCount)
+	require.Len(t, resp.Msg.Releases, 2)
+	require.Equal(t, "checkout-3", resp.Msg.Releases[0].Name)
+	require.Equal(t, "checkout-1", resp.Msg.Releases[1].Name)
 }

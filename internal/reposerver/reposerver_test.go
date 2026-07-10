@@ -7,10 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/source"
 )
 
 type noopCache struct{}
@@ -46,4 +50,35 @@ func TestNewServer(t *testing.T) {
 	require.NotNil(t, srv)
 	require.NotNil(t, srv.renderer)
 	assert.Equal(t, dir, srv.workDir)
+}
+
+type captureRenderer struct {
+	template *pipelinesv1alpha1.Template
+}
+
+func (r *captureRenderer) Render(_ context.Context, tmpl *pipelinesv1alpha1.Template, _ map[string]string) ([]byte, error) {
+	r.template = tmpl.DeepCopy()
+	return []byte("ok"), nil
+}
+
+func (r *captureRenderer) ResolveSource(_ context.Context, tmpl *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	r.template = tmpl.DeepCopy()
+	return &source.ResolveResult{LocalPath: "/tmp/chart", Hash: "hash", Revision: "revision"}, nil
+}
+
+func TestResolveSourcePreservesRequestIdentity(t *testing.T) {
+	renderer := &captureRenderer{}
+	srv := NewServer(t.TempDir(), noopCache{})
+	srv.renderer = renderer
+
+	_, err := srv.ResolveSource(context.Background(), connect.NewRequest(&paprikav1.ResolveSourceRequest{
+		Namespace: "paprika-e2e",
+		Name:      "brandbrain-api-template",
+		Type:      "git",
+		SpecJson:  []byte(`{"type":"git","git":{"repoUrl":"https://github.com/skunkworq/brandbrain.git","revision":"main","path":"deploy/kubernetes/chart","secretRef":"skunkworq-git-read-token"}}`),
+	}))
+	require.NoError(t, err)
+	require.NotNil(t, renderer.template)
+	assert.Equal(t, "paprika-e2e", renderer.template.Namespace)
+	assert.Equal(t, "brandbrain-api-template", renderer.template.Name)
 }

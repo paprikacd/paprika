@@ -543,6 +543,9 @@ export const ListReleasesRequest = /*@__PURE__*/ proto3.makeMessageType(
   () => [
     { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
     { no: 2, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "application_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "page_size", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 5, name: "page_offset", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ],
 );
 
@@ -553,6 +556,7 @@ export const ListReleasesResponse = /*@__PURE__*/ proto3.makeMessageType(
   "paprika.v1.ListReleasesResponse",
   () => [
     { no: 1, name: "releases", kind: "message", T: Release, repeated: true },
+    { no: 2, name: "total_count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ],
 );
 

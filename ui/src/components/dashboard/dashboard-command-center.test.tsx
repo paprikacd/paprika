@@ -112,7 +112,7 @@ describe("DashboardCommandCenter", () => {
     const user = userEvent.setup()
     renderCommandCenter()
 
-    expect(screen.getByRole("heading", { name: /control search/i })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: /cluster command center/i })).toBeInTheDocument()
 
     await user.type(screen.getByRole("searchbox", { name: /search operations/i }), "checkout")
 

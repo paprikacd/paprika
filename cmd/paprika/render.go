@@ -39,7 +39,7 @@ func newRenderCmd(ctx context.Context, clientFn func() (v1connect.PaprikaService
 				return fmt.Errorf("create client: %w", err)
 			}
 
-			specJSON, sourceType, err := readTemplateSpec(file)
+			specJSON, sourceType, name, namespace, err := readTemplateSpec(file)
 			if err != nil {
 				return fmt.Errorf("read template spec: %w", err)
 			}
@@ -50,6 +50,8 @@ func newRenderCmd(ctx context.Context, clientFn func() (v1connect.PaprikaService
 			}
 
 			res, err := client.Render(ctx, connect.NewRequest(&paprikav1.RenderRequest{
+				Namespace:  namespace,
+				Name:       name,
 				Type:       sourceType,
 				SpecJson:   specJSON,
 				ValuesJson: valuesJSON,

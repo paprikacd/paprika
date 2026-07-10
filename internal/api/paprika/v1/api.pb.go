@@ -3000,11 +3000,14 @@ func (x *ListPipelinesResponse) GetPipelines() []*Pipeline {
 }
 
 type ListReleasesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Namespace     *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
-	Project       string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Namespace       *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	Project         string                 `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	ApplicationName string                 `protobuf:"bytes,3,opt,name=application_name,json=applicationName,proto3" json:"application_name,omitempty"`
+	PageSize        int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageOffset      int32                  `protobuf:"varint,5,opt,name=page_offset,json=pageOffset,proto3" json:"page_offset,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListReleasesRequest) Reset() {
@@ -3051,9 +3054,31 @@ func (x *ListReleasesRequest) GetProject() string {
 	return ""
 }
 
+func (x *ListReleasesRequest) GetApplicationName() string {
+	if x != nil {
+		return x.ApplicationName
+	}
+	return ""
+}
+
+func (x *ListReleasesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListReleasesRequest) GetPageOffset() int32 {
+	if x != nil {
+		return x.PageOffset
+	}
+	return 0
+}
+
 type ListReleasesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Releases      []*Release             `protobuf:"bytes,1,rep,name=releases,proto3" json:"releases,omitempty"`
+	TotalCount    int32                  `protobuf:"varint,2,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3093,6 +3118,13 @@ func (x *ListReleasesResponse) GetReleases() []*Release {
 		return x.Releases
 	}
 	return nil
+}
+
+func (x *ListReleasesResponse) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
 }
 
 type ListStagesRequest struct {
@@ -8570,14 +8602,20 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\n" +
 	"_namespace\"K\n" +
 	"\x15ListPipelinesResponse\x122\n" +
-	"\tpipelines\x18\x01 \x03(\v2\x14.paprika.v1.PipelineR\tpipelines\"`\n" +
+	"\tpipelines\x18\x01 \x03(\v2\x14.paprika.v1.PipelineR\tpipelines\"\xc9\x01\n" +
 	"\x13ListReleasesRequest\x12!\n" +
 	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
-	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\x12)\n" +
+	"\x10application_name\x18\x03 \x01(\tR\x0fapplicationName\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x1f\n" +
+	"\vpage_offset\x18\x05 \x01(\x05R\n" +
+	"pageOffsetB\f\n" +
 	"\n" +
-	"_namespace\"G\n" +
+	"_namespace\"h\n" +
 	"\x14ListReleasesResponse\x12/\n" +
-	"\breleases\x18\x01 \x03(\v2\x13.paprika.v1.ReleaseR\breleases\"^\n" +
+	"\breleases\x18\x01 \x03(\v2\x13.paprika.v1.ReleaseR\breleases\x12\x1f\n" +
+	"\vtotal_count\x18\x02 \x01(\x05R\n" +
+	"totalCount\"^\n" +
 	"\x11ListStagesRequest\x12!\n" +
 	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aprojectB\f\n" +

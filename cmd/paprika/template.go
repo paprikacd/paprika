@@ -25,34 +25,38 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func readTemplateSpec(path string) (specJSON []byte, sourceType string, err error) {
+func readTemplateSpec(path string) (specJSON []byte, sourceType, name, namespace string, err error) {
 	//nolint:gosec // path comes from user-provided CLI flag
 	data, readErr := os.ReadFile(path)
 	if readErr != nil {
-		return nil, "", fmt.Errorf("read template file: %w", readErr)
+		return nil, "", "", "", fmt.Errorf("read template file: %w", readErr)
 	}
 
 	var raw map[string]interface{}
 	if unmarshalErr := yaml.Unmarshal(data, &raw); unmarshalErr != nil {
-		return nil, "", fmt.Errorf("parse template file: %w", unmarshalErr)
+		return nil, "", "", "", fmt.Errorf("parse template file: %w", unmarshalErr)
 	}
 
 	// If the file is a full Template CRD, extract .spec.
 	if spec, ok := raw["spec"].(map[string]interface{}); ok {
+		if metadata, ok := raw["metadata"].(map[string]interface{}); ok {
+			name, _ = metadata["name"].(string)
+			namespace, _ = metadata["namespace"].(string)
+		}
 		raw = spec
 	}
 
 	sourceType, ok := raw["type"].(string)
 	if !ok {
-		return nil, "", errors.New("template type must be a string")
+		return nil, "", "", "", errors.New("template type must be a string")
 	}
 	if sourceType == "" {
-		return nil, "", errors.New("template type is required")
+		return nil, "", "", "", errors.New("template type is required")
 	}
 
 	specJSON, marshalErr := json.Marshal(raw)
 	if marshalErr != nil {
-		return nil, "", fmt.Errorf("encode template spec: %w", marshalErr)
+		return nil, "", "", "", fmt.Errorf("encode template spec: %w", marshalErr)
 	}
-	return specJSON, sourceType, nil
+	return specJSON, sourceType, name, namespace, nil
 }

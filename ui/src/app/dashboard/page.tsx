@@ -32,6 +32,7 @@ import {
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
+const DASHBOARD_RELEASE_SEARCH_LIMIT = 100
 
 const StatCard = memo(function StatCard({
   icon: Icon,
@@ -145,7 +146,7 @@ export default function DashboardPage() {
     client.listPipelines({}).then(r => setPipelines(r.pipelines)), [])
 
   const fetchReleases = useCallback(() =>
-    client.listReleases({}).then(r => setReleases(r.releases)), [])
+    client.listReleases({ pageSize: DASHBOARD_RELEASE_SEARCH_LIMIT }).then(r => setReleases(r.releases)), [])
 
   const fetchApplications = useCallback(() =>
     client.listApplications({}).then(r => setApplications(r.applications)), [])
@@ -160,7 +161,7 @@ export default function DashboardPage() {
     setErrors({})
     Promise.allSettled([
       client.listPipelines({}),
-      client.listReleases({}),
+      client.listReleases({ pageSize: DASHBOARD_RELEASE_SEARCH_LIMIT }),
       client.listApplications({}),
       client.listApplicationSets({}),
       client.listPolicies({}),
