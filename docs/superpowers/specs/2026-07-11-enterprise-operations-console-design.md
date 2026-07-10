@@ -282,7 +282,7 @@ PromQL expressions are connection configuration, not end-user dashboard input. `
 
 `scope.mode=label` requires application, namespace, and project correlation labels; selected stage/cluster labels are injected when configured. `scope.mode=dedicated` is allowed only to global administrators for a Prometheus endpoint/credential pair dedicated to one AppProject; application and namespace matchers remain mandatory, while a project matcher is unnecessary. Project-scoped writers cannot choose dedicated mode.
 
-Per-application queries inject the resolved Application, namespace, project, selected stage, and cluster. Fleet queries inject project scope but intentionally leave application/stage/cluster unbound. `requestRate.fleetExpression` must group by the configured application, namespace, project, stage, and cluster labels. The source controller parses both expressions and sets the `fleet` capability only when that grouping is present; the live Test RPC also verifies returned series contain those labels. Other signals do not support fleet projection in v1.
+Per-application queries inject the resolved Application, namespace, project, selected stage, and cluster. Fleet queries inject project scope but intentionally leave application/stage/cluster unbound. `requestRate.fleetExpression` must group by configured application, namespace, project, stage, and cluster labels. All five correlation label names are required for the `fleet` capability even though stage/cluster may be omitted for ordinary per-application signals. The source controller parses both expressions and sets `fleet` only when that grouping is present; the live Test RPC also verifies returned series contain all five labels. Other signals do not support fleet projection in v1.
 
 ### Source binding
 
@@ -454,7 +454,7 @@ Do not add new direct-Prometheus instruments.
 - Analysis tests cover both CRD check types, instant/range reduction, multi-series reduction, unit conversion, pass, threshold fail, stale/no data, provider error, recovery, and legacy upgrade preflight/compatibility flag; unavailable latency metrics must never pass implicitly in strict mode.
 - Broker tests cover structured filters, project-stream authorization, cross-project isolation, authorization revocation, multi-project cursor maps, partial in-memory epoch mismatch, per-project ordered bounded replay, selective gap reset, Redis Stream multi-writer ordering, and reconnect behavior.
 - Activity tests verify normalization, cursor behavior, coverage metadata, and that best-effort Kubernetes evidence is never presented as complete audit history.
-- Multi-cluster tests prove stage-only selection, generated Stage ownership validation, direct/agent resource/event/log/investigation routing, mismatch refusal, and absence of control-plane fallback.
+- Multi-cluster tests prove stage-only selection, generated Stage ownership validation, direct/agent resource/event/log/investigation routing, mismatch refusal, named-inline upgrade preflight/compatibility warning, and absence of unintended control-plane fallback.
 - Telemetry tests reject high-cardinality or sensitive attributes such as raw filters, application names, endpoint URLs, credentials, and PromQL.
 
 ### UI
@@ -502,6 +502,8 @@ The implementation work is written as four independently executable plans with i
 Protobuf and CRD schema changes are additive. Existing Connect RPCs, CRDs, CLI behavior, and deep links remain operational. Observability features are absent—not failed—until a source is configured. There is no data migration or new primary datastore.
 
 Analysis error handling is an intentional behavioral migration. The Helm pre-upgrade audit runs before controllers with strict behavior are rolled out. Operators must migrate flagged `podMetrics` checks or explicitly acknowledge the temporary compatibility flag; an unacknowledged unsafe check blocks the upgrade. Documentation includes the old/new outcome table and a declarative YAML migration example.
+
+Strict ClusterRef resolution is also a behavioral migration. The same pre-upgrade audit flags every Stage with a non-empty ClusterRef name plus inline connection fields, and every named reference whose Cluster CR does not exist. Upgrade is blocked until a valid Cluster CR is created and inline fields are removed, or the administrator explicitly enables one-release `clusters.allowLegacyNamedInlineFallback`. That flag preserves the old fallback only for named references with sufficient inline connection data, emits warning conditions/audit/metrics on every use, and is removed in the next major release; a missing named Cluster without usable inline data always blocks.
 
 ## Explicit Non-Goals
 
