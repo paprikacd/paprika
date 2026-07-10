@@ -40,6 +40,13 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources:
       - roles
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+    verbs: ["bind", "escalate"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
       - rolebindings
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["cert-manager.io"]
@@ -99,6 +106,13 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources:
       - clusterroles
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - clusterroles
+    verbs: ["bind", "escalate"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
       - clusterrolebindings
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
