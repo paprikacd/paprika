@@ -266,10 +266,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"Path to Kubernetes service account token. Only used in 'api' mode.")
 	fs.StringVar(&cfg.webhookAddr, "webhook-bind-address", ":8080",
 		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
-	fs.StringVar(&cfg.repoServerAddr, "repo-server-addr", getenv("PAPRIKA_REPO_SERVER_ADDR"),
-		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
-	fs.StringVar(&cfg.repoWorkDir, "repo-workdir", getenv("PAPRIKA_REPO_WORKDIR"),
-		"Working directory for the repo server. Only used in 'repo-server' mode.")
+	registerRepoServerFlags(fs, &cfg, getenv)
 	fs.StringVar(&cfg.agentClusterID, "agent-cluster-id", getenv("PAPRIKA_AGENT_CLUSTER_ID"),
 		"Cluster ID for the in-cluster agent. Only used in 'agent' mode.")
 	fs.BoolVar(&cfg.authEnabled, "auth-enabled", false,
@@ -328,6 +325,13 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		return nil, fmt.Errorf("parse flags: %w", err)
 	}
 	return &cfg, nil
+}
+
+func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {
+	fs.StringVar(&cfg.repoServerAddr, "repo-server-addr", getenv("PAPRIKA_REPO_SERVER_ADDR"),
+		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
+	fs.StringVar(&cfg.repoWorkDir, "repo-workdir", getenv("PAPRIKA_REPO_WORKDIR"),
+		"Working directory for the repo server. Only used in 'repo-server' mode.")
 }
 
 func configureGitHubActionsTokenExchange(getenv func(string) string, cfg *cliConfig) {
@@ -781,14 +785,14 @@ func createCachedAPIClient(ctx context.Context, config *rest.Config, scheme *run
 		&featureflagsv1alpha1.FeatureFlagBinding{},
 	}
 	for _, obj := range warmObjects {
-		if _, err := apiCache.GetInformer(ctx, obj); err != nil {
-			return nil, fmt.Errorf("create informer for %T: %w", obj, err)
+		if _, informerErr := apiCache.GetInformer(ctx, obj); informerErr != nil {
+			return nil, fmt.Errorf("create informer for %T: %w", obj, informerErr)
 		}
 	}
 
 	go func() {
-		if err := apiCache.Start(ctx); err != nil && ctx.Err() == nil {
-			setupLog.Error(err, "API informer cache stopped")
+		if startErr := apiCache.Start(ctx); startErr != nil && ctx.Err() == nil {
+			setupLog.Error(startErr, "API informer cache stopped")
 		}
 	}()
 

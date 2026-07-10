@@ -126,6 +126,10 @@ spec:
         {{- if and .Values.repoServer.enabled (eq .Values.deploymentMode "split") }}
         - name: PAPRIKA_REPO_SERVER_ADDR
           value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
+        {{- if .Values.repoServer.clientTimeout }}
+        - name: PAPRIKA_REPO_SERVER_TIMEOUT
+          value: {{ .Values.repoServer.clientTimeout | quote }}
+        {{- end }}
         {{- end }}
         {{- if .Values.webhookReceiver.secret.existingSecretName }}
         - name: PAPRIKA_WEBHOOK_SECRET

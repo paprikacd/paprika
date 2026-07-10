@@ -19,21 +19,51 @@ import (
 	"github.com/benebsworth/paprika/internal/source"
 )
 
+// DefaultTimeout is long enough for cold private Git fetches while still
+// bounding a stuck repo server request.
+const DefaultTimeout = 2 * time.Minute
+
+const timeoutEnv = "PAPRIKA_REPO_SERVER_TIMEOUT"
+
 // Client calls a repo server.
 type Client struct {
 	baseURL       string
+	httpClient    *http.Client
+	timeout       time.Duration
 	resolveSource v1connect.PaprikaServiceClient
 	render        v1connect.PaprikaServiceClient
 }
 
 // New creates a client for the given repo server base URL.
 func New(baseURL string) *Client {
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	return NewWithTimeout(baseURL, timeoutFromEnv())
+}
+
+// NewWithTimeout creates a client for the given repo server base URL and timeout.
+func NewWithTimeout(baseURL string, timeout time.Duration) *Client {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	httpClient := &http.Client{Timeout: timeout}
 	return &Client{
 		baseURL:       baseURL,
+		httpClient:    httpClient,
+		timeout:       timeout,
 		resolveSource: v1connect.NewPaprikaServiceClient(httpClient, baseURL),
 		render:        v1connect.NewPaprikaServiceClient(httpClient, baseURL),
 	}
+}
+
+func timeoutFromEnv() time.Duration {
+	raw := os.Getenv(timeoutEnv)
+	if raw == "" {
+		return DefaultTimeout
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		return DefaultTimeout
+	}
+	return parsed
 }
 
 // NewFromEnv creates a client from PAPRIKA_REPO_SERVER_ADDR. Returns nil if unset.
@@ -79,7 +109,7 @@ func (c *Client) Invalidate(ctx context.Context, sourceType, sourceURL, revision
 		return fmt.Errorf("create invalidate request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("repo server invalidate: %w", err)
 	}

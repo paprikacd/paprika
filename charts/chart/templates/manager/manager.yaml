@@ -192,6 +192,10 @@ spec:
         {{- if .Values.repoServer.enabled }}
         - name: PAPRIKA_REPO_SERVER_ADDR
           value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}
+        {{- if .Values.repoServer.clientTimeout }}
+        - name: PAPRIKA_REPO_SERVER_TIMEOUT
+          value: {{ .Values.repoServer.clientTimeout | quote }}
+        {{- end }}
         {{- end }}
         {{- if and (eq .Values.deploymentMode "monolith") .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
         - name: PAPRIKA_AUTH_RBAC_RULES

@@ -2,15 +2,16 @@ package reposerverclient
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
-	"github.com/benebsworth/paprika/internal/reposerver"
 )
 
 func TestNewFromEnv(t *testing.T) {
@@ -18,6 +19,8 @@ func TestNewFromEnv(t *testing.T) {
 	c := NewFromEnv(context.Background())
 	require.NotNil(t, c)
 	assert.True(t, c.Enabled())
+	assert.Equal(t, DefaultTimeout, c.timeout)
+	assert.Equal(t, DefaultTimeout, c.httpClient.Timeout)
 }
 
 func TestNewFromEnv_Missing(t *testing.T) {
@@ -27,9 +30,29 @@ func TestNewFromEnv_Missing(t *testing.T) {
 	assert.False(t, c.Enabled())
 }
 
+func TestNewFromEnv_Timeout(t *testing.T) {
+	t.Setenv("PAPRIKA_REPO_SERVER_ADDR", "http://repo-server:8082")
+	t.Setenv(timeoutEnv, "3m")
+
+	c := NewFromEnv(context.Background())
+	require.NotNil(t, c)
+	assert.Equal(t, 3*time.Minute, c.timeout)
+	assert.Equal(t, 3*time.Minute, c.httpClient.Timeout)
+}
+
+func TestNewWithTimeout_DefaultsInvalidTimeout(t *testing.T) {
+	c := NewWithTimeout("http://repo-server:8082", 0)
+
+	require.NotNil(t, c)
+	assert.Equal(t, DefaultTimeout, c.timeout)
+	assert.Equal(t, DefaultTimeout, c.httpClient.Timeout)
+}
+
 func TestClient_ResolveSource(t *testing.T) {
-	srv := reposerver.NewServer(t.TempDir(), nil)
-	ts := httptest.NewServer(srv.Handler())
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/paprika.v1.PaprikaService/ResolveSource", r.URL.Path)
+		http.Error(w, "forced failure", http.StatusInternalServerError)
+	}))
 	defer ts.Close()
 
 	c := New(ts.URL)
@@ -44,7 +67,6 @@ func TestClient_ResolveSource(t *testing.T) {
 			},
 		},
 	})
-	// Helm pull will fail because the repo does not exist; we just verify the RPC round-trip.
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "repo server ResolveSource")
 }

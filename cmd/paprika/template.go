@@ -39,10 +39,7 @@ func readTemplateSpec(path string) (specJSON []byte, sourceType, name, namespace
 
 	// If the file is a full Template CRD, extract .spec.
 	if spec, ok := raw["spec"].(map[string]interface{}); ok {
-		if metadata, ok := raw["metadata"].(map[string]interface{}); ok {
-			name, _ = metadata["name"].(string)
-			namespace, _ = metadata["namespace"].(string)
-		}
+		name, namespace = templateMetadata(raw)
 		raw = spec
 	}
 
@@ -59,4 +56,18 @@ func readTemplateSpec(path string) (specJSON []byte, sourceType, name, namespace
 		return nil, "", "", "", fmt.Errorf("encode template spec: %w", marshalErr)
 	}
 	return specJSON, sourceType, name, namespace, nil
+}
+
+func templateMetadata(raw map[string]interface{}) (name, namespace string) {
+	metadata, ok := raw["metadata"].(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+	if metadataName, ok := metadata["name"].(string); ok {
+		name = metadataName
+	}
+	if metadataNamespace, ok := metadata["namespace"].(string); ok {
+		namespace = metadataNamespace
+	}
+	return name, namespace
 }

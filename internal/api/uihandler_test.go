@@ -84,21 +84,28 @@ func TestEmbeddedDashboardStaticReferencesExist(t *testing.T) {
 		t.Fatalf("open embedded UI files: %v", err)
 	}
 
-	dashboardHTML, err := fs.ReadFile(sub, "dashboard/index.html")
-	if err != nil {
-		t.Fatalf("read dashboard HTML: %v", err)
-	}
-
 	staticRef := regexp.MustCompile(`(?:href|src)="/(_next/static/[^"]+)"`)
-	matches := staticRef.FindAllSubmatch(dashboardHTML, -1)
-	if len(matches) == 0 {
-		t.Fatal("dashboard HTML did not reference any Next static assets")
-	}
-
-	for _, match := range matches {
-		assetPath := string(match[1])
-		if _, err := fs.Stat(sub, assetPath); err != nil {
-			t.Fatalf("dashboard HTML references missing embedded asset %q: %v", assetPath, err)
+	checked := 0
+	if walkErr := fs.WalkDir(sub, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || (!strings.HasSuffix(path, ".html") && !strings.HasSuffix(path, ".txt")) {
+			return walkErr
 		}
+		data, readErr := fs.ReadFile(sub, path)
+		if readErr != nil {
+			return readErr
+		}
+		for _, match := range staticRef.FindAllSubmatch(data, -1) {
+			assetPath := string(match[1])
+			if _, statErr := fs.Stat(sub, assetPath); statErr != nil {
+				t.Fatalf("%s references missing embedded asset %q: %v", path, assetPath, statErr)
+			}
+			checked++
+		}
+		return nil
+	}); walkErr != nil {
+		t.Fatalf("walk embedded UI files: %v", walkErr)
+	}
+	if checked == 0 {
+		t.Fatal("embedded UI files did not reference any Next static assets")
 	}
 }

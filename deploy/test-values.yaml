@@ -178,6 +178,7 @@ webhookReceiver:
 repoServer:
   enabled: true
   replicas: 1
+  clientTimeout: 2m
   automountServiceAccountToken: true
 
   image:

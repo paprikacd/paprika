@@ -513,6 +513,8 @@ remoteCluster:
 repoServer:
   enabled: false
   replicas: 2
+  # -- Client timeout used by controllers/webhooks when calling the repo server.
+  clientTimeout: 2m
 
   image:
     repository: controller

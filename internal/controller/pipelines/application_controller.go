@@ -188,12 +188,7 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 	}
 
 	if appNeedsReplacementReleaseFlow(app.Status.Phase) {
-		if err := r.reconcileStages(ctx, app); err != nil {
-			log.Error(err, "Failed to reconcile Stages")
-			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
-			return ctrl.Result{}, err
-		}
-		return r.handleHealthyPhase(ctx, app)
+		return r.handleReplacementReleaseFlow(ctx, app)
 	}
 
 	r.pruneReleasesIfInline(ctx, app)
@@ -205,13 +200,27 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		return *ctrlResult, nil
 	}
 
-	if err := r.reconcileStages(ctx, app); err != nil {
-		log.Error(err, "Failed to reconcile Stages")
-		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
+	if err := r.reconcileStagesForApp(ctx, app); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+func (r *ApplicationReconciler) handleReplacementReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+	if err := r.reconcileStagesForApp(ctx, app); err != nil {
+		return ctrl.Result{}, err
+	}
+	return r.handleHealthyPhase(ctx, app)
+}
+
+func (r *ApplicationReconciler) reconcileStagesForApp(ctx context.Context, app *paprikav1.Application) error {
+	if err := r.reconcileStages(ctx, app); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to reconcile Stages")
+		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
+		return err
+	}
+	return nil
 }
 
 func appNeedsReplacementReleaseFlow(phase paprikav1.ApplicationPhase) bool {

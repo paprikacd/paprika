@@ -5,9 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/source"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // repoServerClient defines the subset of repo-server client methods used by RepoServerRenderer.
