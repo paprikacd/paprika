@@ -254,6 +254,11 @@ certManager:
 
 webhook:
   enabled: true
+  # VKE's managed API server can intermittently fail to reach in-cluster
+  # admission webhooks. Keep Paprika reconciliation available while TLS/DNS
+  # issues are being resolved.
+  failurePolicy: Ignore
+  timeoutSeconds: 10
 
 mtls:
   enabled: false

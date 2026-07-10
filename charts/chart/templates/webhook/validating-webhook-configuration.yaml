@@ -1,4 +1,6 @@
 {{- if .Values.webhook.enabled }}
+{{- $failurePolicy := .Values.webhook.failurePolicy | default "Fail" }}
+{{- $timeoutSeconds := .Values.webhook.timeoutSeconds | default 10 }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -15,7 +17,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-application
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vapplication-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -35,7 +38,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-core-paprika-io-v1alpha1-appproject
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vappproject-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -55,7 +59,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-pipeline
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vpipeline-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -75,7 +80,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-policy-paprika-io-v1alpha1-policy
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vpolicy-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -95,7 +101,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-release
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vrelease-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -115,7 +122,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-core-paprika-io-v1alpha1-repository
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vrepository-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -135,7 +143,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-stage
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vstage-v1alpha1.kb.io
   rules:
   - apiGroups:
@@ -155,7 +164,8 @@ webhooks:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-template
-  failurePolicy: Fail
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
   name: vtemplate-v1alpha1.kb.io
   rules:
   - apiGroups:

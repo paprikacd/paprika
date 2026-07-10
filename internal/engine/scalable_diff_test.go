@@ -255,3 +255,78 @@ func TestResourceEqual_IgnoresHelmAdoptionAnnotations(t *testing.T) {
 
 	assert.True(t, resourceEqual(desired, *live))
 }
+
+func TestResourceEqual_IgnoresControllerInjectedLiveMetadata(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "PersistentVolumeClaim",
+		"metadata": map[string]interface{}{
+			"name":      "greenveil-meilisearch",
+			"namespace": "paprika-e2e",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/name": "meilisearch",
+			},
+			"annotations": map[string]interface{}{
+				"backup.velero.io/backup-volumes": "data",
+			},
+		},
+		"spec": map[string]interface{}{
+			"accessModes": []interface{}{"ReadWriteOnce"},
+			"resources": map[string]interface{}{
+				"requests": map[string]interface{}{
+					"storage": "10Gi",
+				},
+			},
+		},
+	}}
+	live := desired.DeepCopy()
+	live.SetLabels(map[string]string{
+		"app.kubernetes.io/name":       "meilisearch",
+		"app.paprika.io/managed-by":    "paprika",
+		"app.paprika.io/name":          "greenveil-meilisearch",
+		"controller-added.example/key": "value",
+	})
+	live.SetAnnotations(map[string]string{
+		"backup.velero.io/backup-volumes":               "data",
+		"pv.kubernetes.io/bind-completed":               "yes",
+		"pv.kubernetes.io/bound-by-controller":          "yes",
+		"volume.beta.kubernetes.io/storage-provisioner": "bs.csi.vultr.com",
+		"volume.kubernetes.io/storage-provisioner":      "bs.csi.vultr.com",
+	})
+
+	assert.True(t, resourceEqual(desired, *live))
+}
+
+func TestResourceEqual_RequiresDesiredMetadata(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "app-config",
+			"namespace": "default",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/name": "app",
+			},
+			"annotations": map[string]interface{}{
+				"checksum/config": "abc123",
+			},
+		},
+		"data": map[string]interface{}{
+			"MODE": "prod",
+		},
+	}}
+
+	missingLabel := desired.DeepCopy()
+	missingLabel.SetLabels(map[string]string{})
+	assert.False(t, resourceEqual(desired, *missingLabel))
+
+	changedAnnotation := desired.DeepCopy()
+	changedAnnotation.SetAnnotations(map[string]string{
+		"checksum/config": "def456",
+	})
+	assert.False(t, resourceEqual(desired, *changedAnnotation))
+}

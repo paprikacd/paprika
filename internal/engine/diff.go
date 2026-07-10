@@ -184,6 +184,7 @@ var serverManagedAnnotationPrefixes = []string{
 	"pv.kubernetes.io/",
 	"service.kubernetes.io/",
 	"volume.kubernetes.io/",
+	"volume.beta.kubernetes.io/",
 	"node.kubernetes.io/",
 	"volumealpha.kubernetes.io/",
 	"meta.helm.sh/",
@@ -215,12 +216,9 @@ func metaEqual(desired, live unstructured.Unstructured) bool {
 	return annotationsEqual(desired.GetAnnotations(), live.GetAnnotations())
 }
 
-func labelsEqual(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if bv, ok := b[k]; !ok || bv != v {
+func labelsEqual(desired, live map[string]string) bool {
+	for k, v := range desired {
+		if bv, ok := live[k]; !ok || bv != v {
 			return false
 		}
 	}
@@ -230,9 +228,6 @@ func labelsEqual(a, b map[string]string) bool {
 func annotationsEqual(desired, live map[string]string) bool {
 	desired = stripServerAnnotations(desired)
 	live = stripServerAnnotations(live)
-	if len(desired) != len(live) {
-		return false
-	}
 	for k, v := range desired {
 		if bv, ok := live[k]; !ok || bv != v {
 			return false

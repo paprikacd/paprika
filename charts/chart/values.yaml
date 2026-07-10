@@ -32,6 +32,10 @@ webhook:
   # normally by setting certManager.enable=true in clusters with cert-manager.
   enabled: false
   port: 8080
+  # Admission failure policy for Paprika webhooks. Use Ignore on managed
+  # control planes that cannot reliably reach in-cluster webhook services.
+  failurePolicy: Fail
+  timeoutSeconds: 10
   service:
     ## Service annotations (e.g., for AWS NLB, service mesh)
     ##

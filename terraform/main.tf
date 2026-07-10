@@ -37,7 +37,7 @@ variable "vke_node_plan" {
 variable "vke_node_count" {
   description = "Node count for VKE node pool"
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "vke_kubernetes_version" {
