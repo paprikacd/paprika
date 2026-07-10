@@ -196,7 +196,7 @@ webhookReceiver:
 repoServer:
   enabled: true
   replicas: 1
-  clientTimeout: 2m
+  clientTimeout: 5m
   automountServiceAccountToken: true
 
   image:
@@ -206,11 +206,11 @@ repoServer:
 
   resources:
     limits:
-      cpu: 1000m
-      memory: 2Gi
+      cpu: 2000m
+      memory: 3Gi
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1Gi
 
   strategy:
     type: RollingUpdate

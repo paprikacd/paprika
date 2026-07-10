@@ -21,7 +21,7 @@ import (
 
 // DefaultTimeout is long enough for cold private Git fetches while still
 // bounding a stuck repo server request.
-const DefaultTimeout = 2 * time.Minute
+const DefaultTimeout = 5 * time.Minute
 
 const timeoutEnv = "PAPRIKA_REPO_SERVER_TIMEOUT"
 

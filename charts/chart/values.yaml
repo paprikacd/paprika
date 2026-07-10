@@ -534,7 +534,7 @@ repoServer:
   enabled: false
   replicas: 2
   # -- Client timeout used by controllers/webhooks when calling the repo server.
-  clientTimeout: 2m
+  clientTimeout: 5m
 
   image:
     repository: controller
@@ -570,11 +570,11 @@ repoServer:
 
   resources:
     limits:
-      cpu: 1000m
-      memory: 2Gi
+      cpu: 2000m
+      memory: 3Gi
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1Gi
 
   ## Deployment strategy
   ##
