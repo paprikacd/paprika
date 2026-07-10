@@ -86,6 +86,18 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	lock.Lock()
 	defer lock.Unlock()
 
+	result, err := g.resolveLocked(ctx, mirrorDir, worktreeDir)
+	if err == nil || !isRecoverableGitCacheError(err) {
+		return result, err
+	}
+
+	if resetErr := resetGitCache(mirrorDir, worktreeDir); resetErr != nil {
+		return nil, fmt.Errorf("%w; additionally failed to reset git cache: %w", err, resetErr)
+	}
+	return g.resolveLocked(ctx, mirrorDir, worktreeDir)
+}
+
+func (g *GitSource) resolveLocked(ctx context.Context, mirrorDir, worktreeDir string) (*ResolveResult, error) {
 	// #nosec G301 -- git clone requires world-readable directories
 	if err := os.MkdirAll(mirrorDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create mirror dir: %w", err)
@@ -116,6 +128,35 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 		Hash:      commitHash[:16] + ":" + dirHash[:16],
 		Revision:  commitHash,
 	}, nil
+}
+
+func resetGitCache(paths ...string) error {
+	for _, path := range paths {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove git cache %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func isRecoverableGitCacheError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if !containsAny(msg, "unexpected eof", "object not found", "invalid checksum", "malformed", "packfile") {
+		return false
+	}
+	return containsAny(msg, "checkout revision", "open mirror", "open worktree", "fetch worktree", "fetch repo")
+}
+
+func containsAny(s string, needles ...string) bool {
+	for _, needle := range needles {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*git.Repository, error) {

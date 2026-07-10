@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,7 @@ import (
 
 type stubRenderer struct {
 	renderCalled        bool
+	renderAllCalled     bool
 	resolveSourceCalled bool
 	renderResult        []byte
 	resolveResult       *source.ResolveResult
@@ -26,6 +28,7 @@ func (s *stubRenderer) Render(ctx context.Context, tmpl *paprikav1.Template, par
 }
 
 func (s *stubRenderer) RenderAll(ctx context.Context, templates []paprikav1.Template, params map[string]string) ([]byte, error) {
+	s.renderAllCalled = true
 	return s.renderResult, s.err
 }
 
@@ -36,6 +39,32 @@ func (s *stubRenderer) ResolveSource(ctx context.Context, tmpl *paprikav1.Templa
 
 func (s *stubRenderer) RenderHelmChart(ctx context.Context, chartName, chartRepo, chartVersion string, values map[string]string) ([]byte, error) {
 	return s.renderResult, s.err
+}
+
+type stubRepoServerClient struct {
+	enabled       bool
+	renderCalls   []string
+	resolveResult *source.ResolveResult
+	err           error
+}
+
+func (s *stubRepoServerClient) Enabled() bool {
+	return s.enabled
+}
+
+func (s *stubRepoServerClient) ResolveSource(context.Context, *paprikav1.Template) (*source.ResolveResult, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.resolveResult, nil
+}
+
+func (s *stubRepoServerClient) Render(_ context.Context, tmpl *paprikav1.Template, _ map[string]string) ([]byte, error) {
+	s.renderCalls = append(s.renderCalls, tmpl.Name)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return []byte(tmpl.Name + "\n"), nil
 }
 
 func TestRepoServerRenderer(t *testing.T) {
@@ -87,4 +116,41 @@ func TestRepoServerRenderer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRepoServerRenderer_RenderAllUsesRepoServer(t *testing.T) {
+	t.Parallel()
+
+	repoServer := &stubRepoServerClient{enabled: true}
+	local := &stubRenderer{renderResult: []byte("local")}
+	r := NewRepoServerRenderer(repoServer, local)
+
+	templates := []paprikav1.Template{
+		{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "default"}},
+	}
+	out, err := r.RenderAll(context.Background(), templates, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, []byte("api\nworker\n"), out)
+	assert.Equal(t, []string{"api", "worker"}, repoServer.renderCalls)
+	assert.False(t, local.renderCalled)
+	assert.False(t, local.renderAllCalled)
+}
+
+func TestRepoServerRenderer_RenderAllFallsBackPerTemplate(t *testing.T) {
+	t.Parallel()
+
+	repoServer := &stubRepoServerClient{enabled: true, err: errors.New("repo server unavailable")}
+	local := &stubRenderer{renderResult: []byte("local\n")}
+	r := NewRepoServerRenderer(repoServer, local)
+
+	templates := []paprikav1.Template{{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "default"}}}
+	out, err := r.RenderAll(context.Background(), templates, nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, []byte("local\n"), out)
+	assert.Equal(t, []string{"api"}, repoServer.renderCalls)
+	assert.True(t, local.renderCalled)
+	assert.False(t, local.renderAllCalled)
 }

@@ -207,6 +207,13 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 		return ctrl.Result{}, nil
 	}
 
+	logger.Info("Reconciling Release",
+		"namespace", release.Namespace,
+		"name", release.Name,
+		"phase", release.Status.Phase,
+		"generation", release.Generation,
+		"observedGeneration", release.Status.ObservedGeneration)
+
 	if !release.DeletionTimestamp.IsZero() {
 		return r.handleReleaseDeletion(ctx, &release)
 	}
@@ -792,10 +799,12 @@ func (r *ReleaseReconciler) promote(ctx context.Context, release *paprikav1.Rele
 		return fmt.Errorf("fetch stage: %w", err)
 	}
 
+	log.Info("Rendering release manifests", "stage", stage.Name)
 	manifests, snapshotName, err := r.renderManifests(ctx, release, stage)
 	if err != nil {
 		return fmt.Errorf("render manifests: %w", err)
 	}
+	log.Info("Rendered release manifests", "stage", stage.Name, "bytes", len(manifests))
 
 	// Governance gate: parse, normalize, validate, evaluate policies.
 	manifestObjects, err := parseManifests(manifests)

@@ -404,6 +404,55 @@ func TestGitSourceResolve_RecreatesWorktreeFromMirrorAtPinnedRevision(t *testing
 	}
 }
 
+func TestGitSourceResolve_RecoversCorruptWorktreeCache(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	src := &GitSource{
+		RepoURL:  origin,
+		Revision: "main",
+		Path:     "chart",
+		WorkDir:  resolverWorkDir,
+		Shallow:  true,
+	}
+	first, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	worktreeDir := filepath.Join(resolverWorkDir, "git-clones", RepoCacheKey(origin, ""))
+	corruptGitObject(t, filepath.Join(worktreeDir, ".git", "objects"))
+
+	second, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("second Resolve() should recover corrupt cache, got: %v", err)
+	}
+	if second.Revision != first.Revision {
+		t.Fatalf("recovered revision = %s, want %s", second.Revision, first.Revision)
+	}
+	got, err := os.ReadFile(filepath.Join(second.LocalPath, "values.yaml"))
+	if err != nil {
+		t.Fatalf("read recovered chart file: %v", err)
+	}
+	if string(got) != "version: first\n" {
+		t.Fatalf("recovered chart content = %q, want original content", string(got))
+	}
+}
+
 func TestGitSourceResolve_PinnedRevisionInitializesMirrorHEAD(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
@@ -481,6 +530,36 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
 	}
 	return string(bytes.TrimSpace(out))
+}
+
+func corruptGitObject(t *testing.T, objectsDir string) {
+	t.Helper()
+
+	var target string
+	err := filepath.WalkDir(objectsDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || target != "" {
+			return nil
+		}
+		if d.Type().IsRegular() {
+			target = path
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk git objects: %v", err)
+	}
+	if target == "" {
+		t.Fatalf("no git object found under %s", objectsDir)
+	}
+	if err := os.Chmod(target, 0o600); err != nil {
+		t.Fatalf("chmod git object %s: %v", target, err)
+	}
+	if err := os.WriteFile(target, []byte("corrupt"), 0o600); err != nil {
+		t.Fatalf("corrupt git object %s: %v", target, err)
+	}
 }
 
 func runGit(t *testing.T, dir string, args ...string) {

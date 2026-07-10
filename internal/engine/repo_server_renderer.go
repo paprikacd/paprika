@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -50,16 +51,18 @@ func (r *RepoServerRenderer) Render(ctx context.Context, tmpl *paprikav1.Templat
 	return nil, errors.New("no renderer available")
 }
 
-// RenderAll delegates to the local renderer (repo server batch not yet supported).
+// RenderAll renders each template through Render so repo-server backed
+// promotion paths get the same timeout/fallback behavior as single renders.
 func (r *RepoServerRenderer) RenderAll(ctx context.Context, templates []paprikav1.Template, params map[string]string) ([]byte, error) {
-	if r.local != nil {
-		manifests, err := r.local.RenderAll(ctx, templates, params)
+	var out bytes.Buffer
+	for i := range templates {
+		manifests, err := r.Render(ctx, &templates[i], params)
 		if err != nil {
-			return nil, fmt.Errorf("local render all: %w", err)
+			return nil, fmt.Errorf("render template %s/%s: %w", templates[i].Namespace, templates[i].Name, err)
 		}
-		return manifests, nil
+		out.Write(manifests)
 	}
-	return nil, errors.New("no renderer available")
+	return out.Bytes(), nil
 }
 
 // ResolveSource delegates to the repo server if enabled, otherwise to the local renderer.
