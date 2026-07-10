@@ -24,7 +24,8 @@ metadata:
   {{- end }}
 spec:
   {{- with .Values.manager.strategy }}
-  strategy: {{ toYaml . | nindent 6 }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
   {{- end }}
   {{- with .Values.revisionHistoryLimit }}
   revisionHistoryLimit: {{ . }}

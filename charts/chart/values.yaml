@@ -261,6 +261,14 @@ apiServer:
       cpu: 100m
       memory: 128Mi
 
+  ## Deployment strategy
+  ##
+  # strategy:
+  #   type: RollingUpdate
+  #   rollingUpdate:
+  #     maxSurge: 25%
+  #     maxUnavailable: 25%
+
   extraEnv: []
 
   extraEnvFrom: []
@@ -406,6 +414,14 @@ webhookReceiver:
     requests:
       cpu: 50m
       memory: 64Mi
+
+  ## Deployment strategy
+  ##
+  # strategy:
+  #   type: RollingUpdate
+  #   rollingUpdate:
+  #     maxSurge: 25%
+  #     maxUnavailable: 25%
 
   extraEnv: []
 
@@ -559,6 +575,14 @@ repoServer:
     requests:
       cpu: 250m
       memory: 512Mi
+
+  ## Deployment strategy
+  ##
+  # strategy:
+  #   type: RollingUpdate
+  #   rollingUpdate:
+  #     maxSurge: 25%
+  #     maxUnavailable: 25%
 
   extraEnv: []
 
