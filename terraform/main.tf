@@ -37,7 +37,19 @@ variable "vke_node_plan" {
 variable "vke_node_count" {
   description = "Node count for VKE node pool"
   type        = number
-  default     = 3
+  default     = 2
+}
+
+variable "vke_search_node_plan" {
+  description = "Vultr plan for the dedicated VKE search node pool"
+  type        = string
+  default     = "vc2-6c-16gb"
+}
+
+variable "vke_search_node_count" {
+  description = "Node count for the dedicated VKE search node pool"
+  type        = number
+  default     = 1
 }
 
 variable "vke_kubernetes_version" {
@@ -191,6 +203,20 @@ resource "vultr_kubernetes" "omega" {
     node_quantity = var.vke_node_count
     plan          = var.vke_node_plan
     label         = "core"
+  }
+
+}
+
+resource "vultr_kubernetes_node_pools" "search" {
+  cluster_id    = vultr_kubernetes.omega.id
+  node_quantity = var.vke_search_node_count
+  plan          = var.vke_search_node_plan
+  label         = "greenveil-search"
+
+  taints {
+    key    = "dedicated"
+    value  = "search"
+    effect = "NoSchedule"
   }
 }
 
