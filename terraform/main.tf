@@ -31,7 +31,7 @@ variable "vke_region" {
 variable "vke_node_plan" {
   description = "Vultr plan for VKE node pool"
   type        = string
-  default     = "vc2-2c-4gb"
+  default     = "vc2-4c-8gb"
 }
 
 variable "vke_node_count" {
