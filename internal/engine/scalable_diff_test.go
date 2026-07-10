@@ -330,3 +330,79 @@ func TestResourceEqual_RequiresDesiredMetadata(t *testing.T) {
 	})
 	assert.False(t, resourceEqual(desired, *changedAnnotation))
 }
+
+func TestResourceEqual_IgnoresOmittedProbeInitialDelayDefault(t *testing.T) {
+	t.Parallel()
+
+	desiredWithLivenessDelay := func(delay interface{}) unstructured.Unstructured {
+		return unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+			"metadata": map[string]interface{}{
+				"name":      "api",
+				"namespace": "default",
+			},
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"containers": []interface{}{
+							map[string]interface{}{
+								"name": "api",
+								"livenessProbe": map[string]interface{}{
+									"initialDelaySeconds": delay,
+									"httpGet": map[string]interface{}{
+										"path": "/health",
+										"port": "http",
+									},
+								},
+								"readinessProbe": map[string]interface{}{
+									"initialDelaySeconds": "0",
+									"httpGet": map[string]interface{}{
+										"path": "/ready",
+										"port": "http",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}}
+	}
+
+	desired := desiredWithLivenessDelay(int64(0))
+	live := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "api",
+			"namespace": "default",
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name": "api",
+							"livenessProbe": map[string]interface{}{
+								"httpGet": map[string]interface{}{
+									"path": "/health",
+									"port": "http",
+								},
+							},
+							"readinessProbe": map[string]interface{}{
+								"httpGet": map[string]interface{}{
+									"path": "/ready",
+									"port": "http",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	assert.True(t, resourceEqual(desired, live))
+	assert.False(t, resourceEqual(desiredWithLivenessDelay(int64(5)), live))
+}

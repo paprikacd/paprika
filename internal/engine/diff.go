@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -309,11 +310,15 @@ func specContainsAt(path []string, desired, live interface{}) bool {
 
 func mapContains(path []string, dMap, lMap map[string]interface{}) bool {
 	for k, dv := range dMap {
+		fieldPath := appendPath(path, k)
 		lv, ok := lMap[k]
 		if !ok {
+			if isOmittedKubernetesDefault(fieldPath, dv) {
+				continue
+			}
 			return false
 		}
-		if !specContainsAt(appendPath(path, k), dv, lv) {
+		if !specContainsAt(fieldPath, dv, lv) {
 			return false
 		}
 	}
@@ -344,6 +349,28 @@ func appendPath(path []string, key string) []string {
 	next = append(next, path...)
 	next = append(next, key)
 	return next
+}
+
+func isOmittedKubernetesDefault(path []string, desired interface{}) bool {
+	if len(path) == 0 || path[len(path)-1] != "initialDelaySeconds" || !isZeroNumber(desired) {
+		return false
+	}
+	for _, part := range path {
+		if part == "livenessProbe" || part == "readinessProbe" || part == "startupProbe" {
+			return true
+		}
+	}
+	return false
+}
+
+func isZeroNumber(value interface{}) bool {
+	switch v := value.(type) {
+	case string:
+		return v == "0"
+	default:
+		n, err := strconv.ParseFloat(fmt.Sprintf("%v", value), 64)
+		return err == nil && n == 0
+	}
 }
 
 func isResourceQuantityPath(path []string) bool {
