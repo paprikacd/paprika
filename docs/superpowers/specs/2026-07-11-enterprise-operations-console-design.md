@@ -74,7 +74,7 @@ Treemap size defaults to managed-resource count because it is always available a
 
 ### Application workspace
 
-Application detail becomes a tabbed operations workspace with a persistent identity/action header. The selected stage and cluster are URL state; the current stage is the default.
+Application detail becomes a tabbed operations workspace with a persistent identity/action header. The selected stage is URL state; the runtime cluster is derived from that stage and displayed read-only. The current stage is the default.
 
 - **Overview** — correlated change-and-health timeline, golden signals, current release/rollout, resource posture, top investigation findings, gates, and safe actions.
 - **Resources** — topology/list presentations, resource selection, live/desired manifests, diff, events, and streaming logs.
@@ -110,6 +110,13 @@ flowchart LR
 
 `FleetIndex` is a read-only, process-local projection fed by the API server's existing informer cache. It has no persistence and performs no live Kubernetes reads on the query hot path.
 
+The index receives an explicit `InformerSource` dependency rather than discovering a cache through `client.Client`:
+
+- In operator mode, `mgr.GetCache()` is injected and `FleetIndex` is registered as a manager `Runnable` before `mgr.Start`.
+- In standalone API mode, cache construction returns both the controller-runtime cache and cache-backed client. Informer handlers are registered before the cache starts; cache sync, initial index build, and HTTP readiness complete in that order.
+- `FleetIndex.Start(ctx)` owns its update workers and shuts them down when the process context is cancelled. Readiness is false until every required informer has synced and the initial atomic snapshot is installed.
+- `--api-cache-enabled=false` remains an emergency legacy-API mode. The process serves existing RPCs, but enterprise query RPCs return `Unavailable` with the configuration reason and the console shows a configuration error instead of an empty fleet. The Helm chart keeps the cache enabled.
+
 It owns:
 
 - An application-summary map keyed by namespace/name.
@@ -118,11 +125,17 @@ It owns:
 - Aggregate counters used for facets and fleet-map responses.
 - A monotonically increasing in-memory generation for diagnostics and cache invalidation.
 
-Application, Release, Rollout, Stage, Cluster, and Repository informer events update affected summaries incrementally. A full rebuild is allowed only at startup/cache resync. Queries return `Unavailable` until informer synchronization and the initial index build complete.
+Application, Release, Rollout, Stage, Cluster, Repository, AppProject, and ObservabilitySource informer events update affected summaries incrementally. The API cache's required warm-object set includes all of them. Reverse dependencies map project→Applications and source→Applications, so project default-source, source binding, and source status changes recompute affected summaries. Secret events invalidate provider clients/results but do not expose Secret data through FleetIndex. A full rebuild is allowed only at startup/cache resync. Queries return `Unavailable` until informer synchronization and the initial index build complete.
 
 Authorization is applied before facets or aggregates are calculated, preventing unauthorized project counts or names from leaking. The request-scoped authorized-project set is computed once and passed into the index query.
 
-Cursor pagination is live rather than snapshot-isolated. The opaque cursor contains the query hash and the last deterministic sort tuple, with namespace/name as the final tie-breaker. Using a cursor with different filters or search returns `InvalidArgument`. Concurrent updates may move an item between pages, but never authorize an otherwise hidden item.
+Full rebuilds construct a replacement snapshot while queueing informer deltas, apply the queued deltas, and then swap the snapshot atomically. A failed rebuild leaves the previous ready snapshot in service and reports degraded readiness/metrics.
+
+Cursor pagination is live rather than snapshot-isolated. The replica-independent, versioned opaque cursor contains the query hash and last deterministic sort tuple, with namespace/name as the final tie-breaker. It deliberately contains no process-local generation or epoch, so any API replica can serve the next page. Unknown cursor schema versions or a different query hash return `InvalidArgument` and the UI restarts at page one. Concurrent updates or replica cache skew may move an item between pages, but never authorize an otherwise hidden item; clients de-duplicate identities while paging.
+
+Filter values are ORed within a dimension and dimensions are ANDed together. Stage and cluster filters match any `StageTargetSummary` for the Application; current-stage/current-cluster remain separate summary fields. Facet counts apply search and every active filter except the facet's own dimension, enabling users to widen or narrow that dimension without losing the rest of the query.
+
+Name search normalizes Unicode to NFKC, lowercases, trims, and treats `-`, `_`, `.`, and repeated whitespace as equivalent separators. Ranking is exact, prefix, substring, then trigram similarity; trigram candidates below 0.3 are excluded. Sort ties always resolve by namespace/name. Search input is capped at 128 characters.
 
 ### Fleet query API
 
@@ -131,17 +144,25 @@ Add these Connect RPCs to `PaprikaService`:
 ```proto
 rpc QueryApplications(QueryApplicationsRequest) returns (QueryApplicationsResponse);
 rpc QueryFleetMap(QueryFleetMapRequest) returns (QueryFleetMapResponse);
+rpc QueryFleetMatrix(QueryFleetMatrixRequest) returns (QueryFleetMatrixResponse);
 rpc GetApplicationOverview(GetApplicationOverviewRequest) returns (GetApplicationOverviewResponse);
 rpc ListApplicationActivity(ListApplicationActivityRequest) returns (ListApplicationActivityResponse);
+rpc QueryActivity(QueryActivityRequest) returns (QueryActivityResponse);
 rpc QueryApplicationSignals(QueryApplicationSignalsRequest) returns (QueryApplicationSignalsResponse);
+rpc ListAppProjects(ListAppProjectsRequest) returns (ListAppProjectsResponse);
+rpc GetAppProject(GetAppProjectRequest) returns (GetAppProjectResponse);
 rpc WatchEvents(WatchEventsRequest) returns (stream WatchEvent);
 ```
 
 `QueryApplicationsRequest` carries repeated project, namespace, cluster, stage, health, sync, release-state, rollout-state, and source-type filters; normalized name search; sort field/direction; page size; and opaque cursor. Page size defaults to 100 and is capped at 500.
 
-`QueryApplicationsResponse` contains compact `ApplicationSummary` records, total authorized count, next cursor, index generation, and facet buckets. Summary records include identity, project, current stage/cluster, source type/revision, health, sync/drift counts, current release/rollout state, resource count, last transition, and explicit capabilities.
+`QueryApplicationsResponse` contains compact `ApplicationSummary` records, total authorized count, next cursor, index generation, and facet buckets. Summary records include identity, project, repeated `StageTargetSummary` entries, current stage/cluster, source type/revision, health, sync/drift counts, current release/rollout state, resource count, last transition, effective observability source, and explicit capabilities.
 
 `QueryFleetMapRequest` uses the same filter structure plus group dimension and size metric. The response is a hierarchy of aggregate and application leaf nodes with health buckets, counts, weights, and stable IDs. Presentation is a client concern and does not alter the API result semantics.
+
+`QueryFleetMatrixRequest` uses the same filters plus independent row and column dimensions. It returns ordered row/column headers and sparse aggregate cells. Row and column cannot be the same dimension. Matrix is not inferred from the single-dimension treemap hierarchy.
+
+Matrix aggregation never creates a cross-product of multi-valued stages and clusters. If neither axis is stage/cluster, each Application contributes once using overall health. If either axis is stage or cluster, the engine projects the Application into its actual `StageTargetSummary` records and each real stage→cluster pair contributes once; the other axis value is copied onto that record. Cells return both unique `application_count` and `target_count`, and stage health comes from the matching `Application.status.stages` entry or Unknown. Thus Stage×Cluster counts actual deployment targets, while Project×Health counts Applications.
 
 The existing `ListApplications` and related RPCs remain compatible. New pages use the query RPCs; old clients can continue using existing calls.
 
@@ -149,7 +170,7 @@ The existing `ListApplications` and related RPCs remain compatible. New pages us
 
 `GetApplicationOverview` returns only cheap current-state synthesis: application summary, latest releases/rollout, gates, resource posture, provider availability, and capabilities. Deep resource data, logs, investigation, and metric ranges remain lazy per tab.
 
-`ListApplicationActivity` constructs a bounded on-demand timeline from:
+`ListApplicationActivity` and global `QueryActivity` construct bounded on-demand timelines from:
 
 - Application and Release conditions.
 - Recent Releases and promotion history.
@@ -157,11 +178,31 @@ The existing `ListApplications` and related RPCs remain compatible. New pages us
 - Rollout transitions, analysis, gates, and hook statuses.
 - Recent Kubernetes events from the selected target cluster.
 
-Metric series are rendered on the same time axis but are not converted into durable activity records. Results are sorted by timestamp and deduplicated using a stable source/resource/reason/timestamp key. Default range is 24 hours, maximum range is 30 days, and default page size is 100.
+Metric series are rendered on the same time axis but are not converted into durable activity records. Results are sorted by timestamp and deduplicated using a stable source/resource/reason/timestamp key. Default range is two hours, maximum range is seven days, and default page size is 100.
+
+`QueryActivity` accepts the common authorized fleet scope plus resource type, outcome, and time filters. It returns the same normalized activity item and cursor contract as the application timeline. Both responses include per-source `ActivityCoverage` with earliest/latest available timestamp and `complete`/`best_effort` status. Release/condition history can be complete for retained CRs; Kubernetes Events and current Pipeline status are explicitly best effort. The UI never describes this view as an audit log or promises history beyond reported coverage.
 
 ### Multi-cluster resource access
 
-Introduce an `ApplicationResourceGateway` used by resource, event, log, investigation, and activity handlers. It resolves the selected Application stage to its Cluster and then chooses:
+Introduce an `ApplicationResourceGateway` used by resource, event, log, investigation, and activity handlers. Application workspace state contains a stage name only; cluster is derived and cannot be independently overridden.
+
+Stage resolution is deterministic:
+
+1. Default to `Application.status.currentStage`; if empty, use the lowest `(ring, name)` entry in `Application.spec.stages`.
+2. Validate the selected name exists in `Application.spec.stages`.
+3. Resolve the runtime Stage CR named `<application-name>-<stage-name>` in the Application namespace.
+4. Require the Stage CR controller owner UID and `app.paprika.io/name` label to match the Application and require `Stage.spec.name` to match the selected stage.
+5. Use `Stage.spec.cluster` as the authoritative runtime target because Releases deploy through that object. A missing or inconsistent Stage makes resource operations unavailable; the server never guesses from another stage or cluster.
+
+`Stage.spec.cluster` has one unambiguous connection mode:
+
+- When `ClusterRef.name` is non-empty, it is a strict reference to `clusters.paprika.io/Cluster` at `ClusterRef.namespace` or the Stage namespace by default. Inline `server`, `mode`, `agentAddress`, `kubeconfigSecret`, and `serviceAccount` fields must be empty. Missing, Disabled, or Unhealthy Cluster CRs fail resolution. The resolved Cluster spec/status determines mode, server, credential Secret, service account, and agent address.
+- When name is empty and every inline connection field is empty, the target is the control-plane in-cluster connection.
+- Existing name-empty inline connection fields remain a deprecated legacy form and are not managed by the Clusters UI. New or changed Stages cannot introduce that form; unchanged legacy objects continue to resolve through the compatibility adapter and are marked “unmanaged inline cluster”.
+
+The shared resolver used by Release deployment, governance validation, and `ApplicationResourceGateway` adopts these rules; the current behavior that silently retains inline fields when a named Cluster is missing is removed. Named Cluster deletion dependency checks cover only strict name references. Cluster Secret namespace comes from `Cluster.spec.kubeconfigSecretRef`, never from Stage reference namespace.
+
+After resolution, the gateway chooses:
 
 - The existing pooled client for in-cluster or direct clusters.
 - The existing agent transport for agent-managed clusters, extended with read-manifest, event, and streaming-log operations.
@@ -184,10 +225,13 @@ Add namespaced `observability.paprika.io/v1alpha1 ObservabilitySource`:
 
 ```yaml
 spec:
+  projectRef: platform
   provider: prometheus
   endpoint: https://prometheus.example.com
-  secretRef:
-    name: prometheus-credentials
+  auth:
+    type: bearer
+    secretRef:
+      name: prometheus-credentials
   tls:
     caSecretRef: prometheus-ca
     serverName: prometheus.example.com
@@ -196,6 +240,9 @@ spec:
     timeoutSeconds: 5
     maxConcurrent: 4
     maxSeries: 200
+    rateLimitPerMinute: 30
+  scope:
+    mode: label
   correlation:
     applicationLabel: app_paprika_io_name
     namespaceLabel: namespace
@@ -203,22 +250,55 @@ spec:
     clusterLabel: cluster
     stageLabel: stage
   goldenSignals:
-    requestRate: 'sum(rate(http_server_request_duration_seconds_count{...}[${window}]))'
-    errorRate: 'sum(rate(http_server_request_duration_seconds_count{status_code=~"5..",...}[${window}])) / ...'
-    latencyP95: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{...}[${window}])))'
-    saturation: 'max(container_cpu_usage_seconds_total{...}) / ...'
+    requestRate:
+      expression: 'sum(rate(http_server_request_duration_seconds_count[${window}]))'
+      fleetExpression: 'sum by (app_paprika_io_name, namespace, app_paprika_io_project, cluster, stage) (rate(http_server_request_duration_seconds_count[${window}]))'
+      unit: requests_per_second
+      multiplier: 1
+    errorRate:
+      expression: 'sum(rate(http_server_request_duration_seconds_count{status_code=~"5.."}[${window}])) / sum(rate(http_server_request_duration_seconds_count[${window}]))'
+      unit: ratio
+      multiplier: 1
+    latencyP95:
+      expression: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[${window}])))'
+      unit: seconds
+      multiplier: 1
+    saturation:
+      expression: 'max(container_cpu_usage_seconds_total)'
+      unit: ratio
+      multiplier: 1
 status:
   phase: Healthy
   observedGeneration: 1
   capabilities: [instant, range]
-  lastCheckedAt: "..."
+  lastCheckedAt: "2026-07-11T10:30:00Z"
   responseTime: 42ms
   message: connected
 ```
 
-The concrete schema uses typed nested structs, enums, bounds, Secret references, and metav1 conditions. PromQL templates are administrator configuration, not end-user dashboard input. Only documented variables (`application`, `namespace`, `project`, `cluster`, `stage`, `window`) are accepted. The controller validates template parsing and variables before reporting Healthy.
+The concrete schema uses typed nested structs, enums, bounds, Secret references, and metav1 conditions. `spec.projectRef` is required and names one AppProject in the same namespace. AppProject identity is always `(namespace, name)` throughout indexes, cursors, capabilities, events, and provider caches. Cross-project and cross-namespace source use is rejected in v1.
 
-An AppProject may use sources in its namespace. Cross-namespace source references are rejected in v1.
+PromQL expressions are connection configuration, not end-user dashboard input. `${window}` is the only textual variable; it is parsed then rendered as a canonical duration and may appear only in range-duration positions. Application/project correlation is not templated. The server parses the expression with Prometheus's `promql/parser` and injects enforced equality matchers into every vector selector before execution. Conflicting user matchers are rejected.
+
+`scope.mode=label` requires application, namespace, and project correlation labels; selected stage/cluster labels are injected when configured. `scope.mode=dedicated` is allowed only to global administrators for a Prometheus endpoint/credential pair dedicated to one AppProject; application and namespace matchers remain mandatory, while a project matcher is unnecessary. Project-scoped writers cannot choose dedicated mode.
+
+Per-application queries inject the resolved Application, namespace, project, selected stage, and cluster. Fleet queries inject project scope but intentionally leave application/stage/cluster unbound. `requestRate.fleetExpression` must group by the configured application, namespace, project, stage, and cluster labels. The source controller parses both expressions and sets the `fleet` capability only when that grouping is present; the live Test RPC also verifies returned series contain those labels. Other signals do not support fleet projection in v1.
+
+### Source binding
+
+Add declarative source references without adding an editor for them:
+
+- `AppProject.spec.defaultObservabilitySource` supplies the project default.
+- `AppProject.spec.allowedCredentialSecrets` declaratively allowlists externally managed Secret names that project connection writers may reference.
+- `Application.spec.observability.sourceRef` optionally overrides the project default.
+- `ApplicationPromotionStage.observabilitySourceRef` optionally overrides it for that stage.
+- `MetricAnalysisCheck.sourceRef` may explicitly choose a source for one check.
+
+Effective resolution is explicit check → selected stage → Application → AppProject. Every candidate must be in the Application namespace and have `ObservabilitySource.spec.projectRef` equal to `Application.spec.project`; otherwise resolution fails closed. No source means metrics are “not configured”, not an error for dashboards. Required metric analysis without an effective source enters `Error`.
+
+`ObservabilitySource.spec.auth.type` is one of `none`, `bearer`, `basic`, or `mtls`. Secrets are same-namespace and use fixed keys: bearer `token`; basic `username`/`password`; mTLS `tls.crt`/`tls.key`, with optional `ca.crt`. URL userinfo is forbidden.
+
+A project-scoped `connection.write` caller may reference only a Secret owned/labeled by that ObservabilitySource and project, or a same-namespace Secret named in `AppProject.spec.allowedCredentialSecrets`. The caller never receives Secret contents. Global `connection.admin` may bind other same-namespace external Secrets. Reconciliation fails closed if ownership/project labels or the declarative allowlist no longer permit the reference.
 
 ### Provider boundary
 
@@ -229,6 +309,7 @@ type MetricProvider interface {
     Health(ctx context.Context) (ProviderHealth, error)
     QueryInstant(ctx context.Context, req SignalRequest) (SignalResult, error)
     QueryRange(ctx context.Context, req SignalRequest) (SignalResult, error)
+    QueryFleetInstant(ctx context.Context, req FleetSignalRequest) (FleetSignalResult, error)
 }
 
 type MetricProviderFactory interface {
@@ -239,33 +320,43 @@ type MetricProviderFactory interface {
 
 The first factory implements the Prometheus HTTP API. Later providers are compiled adapters or versioned RPC integrations, not Go runtime plugins.
 
-`SignalRequest` contains source identity, authorized application correlation, signal enum, start/end/step, and window. `SignalResult` normalizes scalar and time-series values, labels, unit, source timestamp, warnings, and freshness. The browser cannot submit raw PromQL.
+`SignalRequest` contains source identity, authorized application correlation, signal enum, start/end/step, and window. `SignalResult` normalizes scalar and time-series values, labels, canonical unit, source timestamp, warnings, and freshness. The browser cannot submit raw PromQL.
 
-Provider clients are cached by source UID/resourceVersion and Secret resourceVersion. Query results use a bounded TTL cache and singleflight keyed by provider, signal, correlation, and time range. Source or Secret changes invalidate clients and results. Dashboard callers receive partial results; one failed signal does not discard successful signals.
+Provider clients are cached by source UID/resourceVersion and Secret resourceVersion. Query results use a bounded TTL cache and singleflight keyed by provider, signal, full correlation identity, start/end, step, and window. Source or Secret changes invalidate clients and results. Dashboard callers receive partial results; one failed signal does not discard successful signals.
+
+A `FleetMetricsProjector` refreshes request-rate weights per healthy source every 60 seconds with jitter. It performs the source's validated `requestRate.fleetExpression` once, never one query per Application, and keys results by `(project namespace, project, application namespace, application, stage, cluster)`. `QueryFleetMap(size=request_rate)` merges cached weights using each stage target's effective source. With no stage/cluster filter, an Application leaf uses its current-stage target; with stage/cluster filters it sums only matching actual targets. Matrix cells use the weight for their exact target projection. Missing/stale weights fall back to resource count and mark the node. Fleet refresh is capped at 20,000 series and 20 MiB per source; this separate fixed query is not subject to the interactive 200-series cap. Sources without the validated `fleet` capability cannot provide traffic sizing.
 
 ### Security and limits
 
-- Only HTTP(S) Prometheus endpoints are accepted; production defaults require TLS.
-- Credentials attach only to the configured origin. Cross-origin redirects are rejected.
+- Only HTTP(S) Prometheus endpoints are accepted; production defaults require TLS. Userinfo, fragments, and query strings in the base endpoint are rejected.
+- A mandatory administrator allowlist defines permitted DNS names and CIDRs and defaults to deny-all until configured through Helm. A custom dialer validates every resolved address on every connection, preventing DNS rebinding; loopback, link-local, multicast, and cloud metadata ranges are denied unless explicitly allowlisted. Helm NetworkPolicies provide the corresponding egress boundary.
+- `insecureSkipVerify` is rejected for project-scoped writers unless the global administrator has enabled the matching Helm policy; its use always produces an audit warning.
+- Credentials attach only to the configured origin. All redirects are disabled.
 - Timeout defaults to 5 seconds and is capped at 30 seconds.
 - Concurrency defaults to 4 queries per source.
-- Results default to 200 series maximum and are truncated with an explicit warning.
-- Query range and step are clamped server-side.
+- Interactive results are capped at 200 series, 1,000 points per series, and 10 MiB. Range is capped at seven days; step is raised to at least `max(15s, range/1000)`.
+- Each principal/source pair is limited to 30 interactive requests per minute with burst 10; the process allows at most 32 concurrent provider calls. Overload returns `ResourceExhausted` plus retry metadata.
 - Source access is authorized before template expansion or network access.
 - Endpoints, signals, latency, result counts, and failures are audited; credentials and expanded sensitive headers are never logged.
 
 ### Golden signals and rollout analysis
 
-`QueryApplicationSignals` accepts an Application, source reference, signal enums, and time range. It returns normalized golden signals and per-signal errors/freshness.
+`QueryApplicationSignals` accepts an Application, selected stage, signal enums, and time range. The server resolves the effective source; callers cannot bypass binding with an arbitrary source. It returns normalized golden signals and per-signal errors/freshness.
 
-Extend `AnalysisCheck` with `type: metric` and a typed `MetricAnalysisCheck` containing source reference, signal enum, comparator, numeric threshold, window, and no-data policy. The default no-data/provider-error policy is `Error`.
+Both `pipelines/v1alpha1.AnalysisCheck` and `rollouts/v1alpha1.AnalysisCheck` receive the same additive `type: metric` fields. Because the API packages cannot import each other, each CRD keeps its wire struct while conversion functions map both into one `internal/analysis.Check`; schema-equivalence tests prevent drift.
+
+`MetricAnalysisCheck` contains optional source reference, signal enum, comparator (`lt`, `lte`, `gt`, `gte`), numeric threshold in the signal's canonical unit, range window, step, time reducer (`last`, `avg`, `min`, `max`, `p95`), series reducer (`max`, `avg`, `min`, `sum`), maximum sample age, and no-data policy (`Error` or `Fail`). Defaults are range evaluation, `last` over time, conservative `max` across series, 120-second maximum age, and `Error` for no data. Provider/transport errors are always `Error` and are not configurable as pass.
+
+Canonical units are requests/second, ratio 0..1, seconds, and saturation ratio 0..1. A source signal's validated multiplier converts provider output to that unit before reduction and comparison. Empty series is NoData; a latest sample older than maximum age is NoData.
+
+Replace the analyzer's boolean result with an outcome enum (`Pass`, `Fail`, `Error`, `NoData`) plus value, unit, observed timestamp, and detail. AnalysisRun results expose that enum additively. Pipeline AnalysisRuns map Pass→Successful, threshold/explicit no-data Fail→Failed, and Error/NoData→Error. Rollout analysis uses the same internal result and writes distinct `AnalysisFailed` or `AnalysisError` conditions; Error pauses without invoking automatic rollback.
 
 - Dashboard metric errors are informational and render unavailable/stale states.
 - Required rollout checks that cannot query or return no data move AnalysisRun to `Error` and pause promotion.
 - Threshold failure follows the existing configured failure action.
 - No metric error silently passes and no provider error directly triggers an automatic rollback.
 
-The unsafe existing `latencyP99` behavior that assumes success when metrics are unavailable is removed. Existing `podMetrics` checks remain readable for compatibility but produce an explicit error when their required data source is unavailable.
+The unsafe existing `latencyP99` behavior that assumes success when metrics are unavailable is removed. This is a behavioral migration: a pre-upgrade audit lists every legacy `podMetrics` check that can currently assume pass. Upgrade is blocked until those checks are migrated or the administrator explicitly enables a one-release `analysis.allowLegacyAssumePass` compatibility flag. The flag preserves old behavior only for detected legacy checks, emits a warning condition/audit/metric on every use, and is removed in the next major release. With the flag disabled, unavailable legacy metrics produce Error.
 
 ### Investigator integration
 
@@ -283,7 +374,26 @@ Admin exposes:
 
 Add authorized list/get/create/update/delete/test RPCs for Repository, Cluster, and ObservabilitySource. These RPCs map to the existing/new CRDs and use resourceVersion preconditions for updates and deletes. Test RPCs perform a bounded live connection check without mutating status; controllers remain responsible for durable connection status.
 
-Connection forms may reference an existing Secret or create/rotate a connection-owned Secret. Submitted credentials are write-only. Responses return only the Secret name and configured authentication kind. UI-created Secrets are labeled and owner-referenced to their connection; externally supplied Secrets are never modified or deleted. Deleting a connection cascades only an owned credential Secret.
+Add read-only `ListAppProjects` and `GetAppProject` RPCs for the Projects screen. Non-global callers see only projects for which they have at least read access. `AppProjectSummary` exposes namespace/name, description, repository names, destinations, kind constraints, quotas, conditions, and caller capabilities. Role names and the caller's effective actions may be shown, but other role subjects are redacted unless the caller has global `project.admin`. The existing policy list is likewise restricted to namespaces/projects the caller may read; v1 adds no project or policy mutation RPC.
+
+Connection tenancy is explicit:
+
+- Repository and Cluster objects remain shared infrastructure. Create/update/delete/test requires global `connection.admin`; non-admins may list/get only Repositories named by an authorized AppProject's `spec.repositories` and Clusters named by its destinations.
+- ObservabilitySource is project-owned through required `spec.projectRef`. A matching AppProject role with `connection.write` may manage it; global administrators may manage all sources. Read/query requires ordinary read access to that project.
+- Facets and capabilities use these same rules, so two AppProjects in one namespace do not imply shared connection authority.
+
+Connection forms may reference an existing Secret or create/rotate a connection-owned Secret. Submitted credentials are write-only. Responses return only the Secret name and authentication kind. Secret namespace must equal connection namespace.
+
+Supported managed credential shapes are fixed:
+
+- Git HTTPS: `username`/`password` or `token`; Git SSH/GitHub App: `privateKey`.
+- Helm: `username`/`password`.
+- OCI: `username`/`password` or `.dockerconfigjson`.
+- Prometheus: bearer `token`, basic `username`/`password`, or mTLS `tls.crt`/`tls.key` with optional `ca.crt`.
+
+UI-created Secrets are immutable, labeled, and owner-referenced to the same-namespace connection. Create uses a compensating transaction: create the unowned Secret, create the connection, patch the owner reference, and delete both on any intermediate failure. Rotation creates and live-tests a new immutable Secret, patches the connection with a resourceVersion precondition, keeps the old Secret until the controller reports the new generation Healthy, then deletes it; failure leaves the old reference intact and deletes the candidate. Externally supplied Secrets are never modified or deleted.
+
+Deletion is blocked with `FailedPrecondition` while a Repository is referenced by an Application/Template/AppProject, a Cluster by a Stage/AppProject destination, or an ObservabilitySource by an Application/stage/AppProject/analysis check. The response lists dependent resource identities the caller may read. V1 has no force-delete. Deleting an unreferenced connection cascades only an owned credential Secret.
 
 The first tranche does not edit AppProject roles, global RBAC, policies, notifications, templates, or arbitrary Kubernetes Secrets.
 
@@ -293,11 +403,13 @@ Every read, facet, aggregate, metric query, stream subscription, and mutation is
 
 Summary and detail responses include explicit capabilities such as `application.sync`, `release.rollback`, `gate.approve`, `pipeline.retry`, `connection.write`, and `connection.test`. The UI uses capabilities for presentation, but handlers still enforce authorization independently.
 
-Replace the raw dashboard EventSource endpoint with `WatchEvents`, an authorized Connect server-streaming RPC. Requests specify resource/topic filters and an optional last sequence. Each event has a monotonic topic sequence and authorization metadata.
+Replace the raw dashboard EventSource endpoint with `WatchEvents`, an authorized Connect server-streaming RPC. Clients submit structured project/resource filters, never raw topic names. After authorization, the server subscribes to one stream per authorized project, keyed `project/<namespace>/<project>`. Events inside the stream carry resource type/namespace/name for server-side filtering. Published events must carry that authorization envelope; unqualified shared dashboard topics are removed.
 
-The broker retains at most 1,000 events or five minutes per topic in memory, with Redis providing the same bounded replay and cross-replica fan-out when configured. If the requested cursor is unavailable, the stream emits `reset_required`; the UI refetches affected query keys. This is reconnection support, not a durable event history.
+The versioned resume cursor is a map from project-stream identity to its last delivered position. In memory, each position is broker instance epoch plus sequence; Redis uses that project's Redis Stream ID. A fleet subscription fans in at most 200 authorized project streams, preserves order within each project, and makes no false total-order guarantee across projects. Each delivered event includes a refreshed opaque cursor covering every stream consumed so far. Reconnecting to another in-memory instance or after restart cannot match affected epochs and produces `reset_required` for those projects; other projects can replay normally. Redis Streams provide ordered multi-writer delivery/replay per project. The broker retains at most 1,000 events or five minutes per project stream. If any requested position is unavailable, the stream reports the affected project identities and the UI refetches only their query keys. This is reconnection support, not durable activity history.
 
-All management mutations, operational actions, analysis decisions, and metric source queries emit structured audit records with actor, project, resource, action, outcome, and correlation ID.
+The server re-evaluates project authorization on subscription, every 30-second heartbeat, and before delivering each event after the cached authorization TTL. Revocation terminates the stream with `PermissionDenied`; replay storage remains project-partitioned and is filtered again at delivery.
+
+All management mutations, operational actions, analysis decisions, and metric source queries emit structured audit records with actor, project, resource, action, outcome, and correlation ID. The existing `Auditor` interface and structured stdout/OTel log sink remain the delivery mechanism; Paprika does not retain audit history. Sink failures increment an OTel metric and are logged to the fallback process logger but do not roll back an already-completed mutation. Retention and immutability belong to the operator's log backend. Audit fields allowlisted by type exclude credentials, source query text, raw filters, application names in metric attributes, and expanded PromQL.
 
 ## Failure and Empty States
 
@@ -335,13 +447,15 @@ Do not add new direct-Prometheus instruments.
 
 ### Backend and contracts
 
-- Unit tests for exact filters, combined filters, fuzzy ranking, authorization-before-aggregation, deterministic sorting, cursor validation, and concurrent index updates.
-- Provider conformance suite covering health, instant/range normalization, timeouts, cancellation, partial results, series caps, redirects, TLS, credential rotation, and source deletion.
-- Envtest coverage for ObservabilitySource validation, status reconciliation, AppProject boundaries, connection CRUD preconditions, and owned/external Secret lifecycle.
-- API tests proving unauthorized applications never influence results or facet counts and unauthorized sources never cause outbound calls.
-- Analysis tests proving pass, threshold fail, no data, provider error, and recovery; unavailable latency metrics must never pass implicitly.
-- Broker tests for authorization, ordered delivery, bounded replay, gap reset, Redis fan-out, and reconnect behavior.
-- Multi-cluster tests proving resource, event, log, and investigation calls target the selected direct/agent cluster and never the control-plane fallback.
+- Unit tests for OR-within/AND-across filters, self-excluding facets, actual stage-target Matrix aggregation, fuzzy thresholds/ranking, authorization-before-aggregation, deterministic sorting, replica-independent cursor schema/query validation, atomic rebuild/delta replay, project/source invalidation, cache-disabled behavior, and graceful shutdown.
+- Provider conformance suite covering source binding precedence, server-injected correlation matchers, conflicting-matcher rejection, canonical window binding/final parsing, dedicated versus label scope, health, instant/range/fleet normalization, fleet-label validation, reducers/units/freshness, timeouts, cancellation, rate/concurrency/point/byte caps, overload, partial results, redirect rejection, SSRF/DNS rebinding defense, TLS, credential rotation, and source deletion.
+- Envtest coverage for ObservabilitySource validation/status, required project ownership, allowed/owned Secret enforcement, AppProject boundaries, effective-source resolution, shared Repository/Cluster read rules, strict versus legacy ClusterRef resolution, connection CRUD preconditions, dependency-blocked deletes, and compensating/rotating owned versus external Secret lifecycles.
+- API tests prove unauthorized applications never influence results or facet counts, unauthorized sources never cause outbound calls, AppProject list/get cannot reveal unauthorized projects, and role subjects are redacted for non-admin callers.
+- Analysis tests cover both CRD check types, instant/range reduction, multi-series reduction, unit conversion, pass, threshold fail, stale/no data, provider error, recovery, and legacy upgrade preflight/compatibility flag; unavailable latency metrics must never pass implicitly in strict mode.
+- Broker tests cover structured filters, project-stream authorization, cross-project isolation, authorization revocation, multi-project cursor maps, partial in-memory epoch mismatch, per-project ordered bounded replay, selective gap reset, Redis Stream multi-writer ordering, and reconnect behavior.
+- Activity tests verify normalization, cursor behavior, coverage metadata, and that best-effort Kubernetes evidence is never presented as complete audit history.
+- Multi-cluster tests prove stage-only selection, generated Stage ownership validation, direct/agent resource/event/log/investigation routing, mismatch refusal, and absence of control-plane fallback.
+- Telemetry tests reject high-cardinality or sensitive attributes such as raw filters, application names, endpoint URLs, credentials, and PromQL.
 
 ### UI
 
@@ -357,15 +471,15 @@ Add a real Playwright suite; the package is already installed but unused. It cov
 2. Fleet filtering and fuzzy name search.
 3. Treemap → Matrix → Table state preservation and Application drill-down.
 4. Target-cluster resource inspection, diff, event, and streaming-log flow.
-5. Repository/Registry/Cluster/Prometheus source creation, credential rotation, test, and redaction.
+5. Repository/Registry/Cluster/Prometheus source creation, project isolation, credential rotation/rollback, dependency-blocked deletion, test, and redaction.
 6. Golden-signal rendering, provider partial failure, and recovery.
-7. Metric-backed rollout gate pass, threshold fail, provider error/pause, and retry.
+7. Metric-backed rollout gate pass, threshold fail, stale/no-data/provider error pause, compatibility preflight, and retry.
 
 The kind E2E environment includes Prometheus plus seeded healthy, degraded, drifting, deploying, and gated Applications. Browser E2E runs against the compiled static UI and Go API, not mocked transports.
 
 ### Scale acceptance
 
-On an agreed CI reference machine with 10,000 indexed Applications and 100 Clusters:
+The scale gate runs on linux/amd64 with a four-vCPU quota, 8 GiB RAM, `GOMAXPROCS=4`, and headless Chromium at 1920×1080; the benchmark job records exact runner/kernel versions. With 10,000 indexed Applications and 100 Clusters:
 
 - Cached filter/search API latency is below 300 ms p95.
 - Initial fleet query plus treemap rendering is below two seconds p95.
@@ -383,7 +497,11 @@ Implementation order within this tranche:
 4. Add ObservabilitySource, Prometheus provider, golden signals, analysis integration, and investigator evidence.
 5. Add connection management, authorized WatchEvents, audit coverage, and complete E2E/scale validation.
 
-All protobuf/CRD changes are additive. Existing Connect RPCs, CRDs, CLI behavior, and deep links remain operational. Observability features are absent—not failed—until a source is configured. No data migration or new primary datastore is required.
+The implementation work is written as four independently executable plans with integration checkpoints: (1) fleet index/query API and unified shell, (2) application workspace and multi-cluster gateway, (3) ObservabilitySource/provider/analysis, and (4) connection management/authorized events/final E2E. Each plan leaves deployable behavior and runs its relevant compatibility suite; the final scale gate runs after all four.
+
+Protobuf and CRD schema changes are additive. Existing Connect RPCs, CRDs, CLI behavior, and deep links remain operational. Observability features are absent—not failed—until a source is configured. There is no data migration or new primary datastore.
+
+Analysis error handling is an intentional behavioral migration. The Helm pre-upgrade audit runs before controllers with strict behavior are rolled out. Operators must migrate flagged `podMetrics` checks or explicitly acknowledge the temporary compatibility flag; an unacknowledged unsafe check blocks the upgrade. Documentation includes the old/new outcome table and a declarative YAML migration example.
 
 ## Explicit Non-Goals
 
