@@ -31,7 +31,7 @@ variable "vke_region" {
 variable "vke_node_plan" {
   description = "Vultr plan for VKE node pool"
   type        = string
-  default     = "vc2-4c-8gb"
+  default     = "vc2-2c-4gb"
 }
 
 variable "vke_node_count" {
@@ -42,6 +42,24 @@ variable "vke_node_count" {
 
 variable "vke_core_max_nodes" {
   description = "Maximum autoscaled node count for the VKE core node pool"
+  type        = number
+  default     = 3
+}
+
+variable "vke_greenveil_node_plan" {
+  description = "Vultr plan for the dedicated Greenveil application node pool"
+  type        = string
+  default     = "vc2-4c-8gb"
+}
+
+variable "vke_greenveil_node_count" {
+  description = "Baseline node count for the dedicated Greenveil application node pool"
+  type        = number
+  default     = 2
+}
+
+variable "vke_greenveil_max_nodes" {
+  description = "Maximum autoscaled node count for the dedicated Greenveil application node pool"
   type        = number
   default     = 3
 }
@@ -225,6 +243,22 @@ resource "vultr_kubernetes_node_pools" "search" {
   taints {
     key    = "dedicated"
     value  = "search"
+    effect = "NoSchedule"
+  }
+}
+
+resource "vultr_kubernetes_node_pools" "greenveil_core" {
+  cluster_id    = vultr_kubernetes.omega.id
+  node_quantity = var.vke_greenveil_node_count
+  plan          = var.vke_greenveil_node_plan
+  label         = "greenveil-core"
+  auto_scaler   = true
+  min_nodes     = var.vke_greenveil_node_count
+  max_nodes     = var.vke_greenveil_max_nodes
+
+  taints {
+    key    = "dedicated"
+    value  = "greenveil"
     effect = "NoSchedule"
   }
 }
