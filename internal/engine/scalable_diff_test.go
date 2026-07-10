@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -63,6 +64,95 @@ func TestEnsureManagedLabels(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestComputeDiff_MatchesManagedCronJobs(t *testing.T) {
+	t.Parallel()
+
+	desired := []unstructured.Unstructured{{
+		Object: map[string]interface{}{
+			"apiVersion": "batch/v1",
+			"kind":       "CronJob",
+			"metadata": map[string]interface{}{
+				"name":      "search-index-sync",
+				"namespace": "default",
+				"labels": map[string]interface{}{
+					"app.kubernetes.io/name": "search-index-sync",
+				},
+			},
+			"spec": map[string]interface{}{
+				"schedule": "0 3 * * *",
+				"suspend":  true,
+				"jobTemplate": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"template": map[string]interface{}{
+							"spec": map[string]interface{}{
+								"restartPolicy": "Never",
+								"containers": []interface{}{
+									map[string]interface{}{
+										"name":  "search-index-sync",
+										"image": "example.com/search-index-sync:test",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}}
+	live := &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "search-index-sync",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app.kubernetes.io/name": "search-index-sync",
+				ManagedByLabelKey:        ManagedByLabelValue,
+				ApplicationNameLabelKey:  "greenveil-meilisearch",
+			},
+		},
+		Spec: batchv1.CronJobSpec{
+			Schedule: "0 3 * * *",
+			Suspend:  ptrBool(true),
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							RestartPolicy: corev1.RestartPolicyNever,
+							Containers: []corev1.Container{{
+								Name:  "search-index-sync",
+								Image: "example.com/search-index-sync:test",
+							}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, batchv1.AddToScheme(scheme))
+	dynClient := fake.NewSimpleDynamicClient(scheme, live)
+	eng := NewScalableDiffEngine(dynClient)
+	eng.SetLiveCache(nil)
+
+	result, err := eng.ComputeDiff(context.Background(), desired, &DiffOptions{
+		Namespace:       "default",
+		LabelSelector:   ManagedByAppSelector("greenveil-meilisearch").String(),
+		ApplicationName: "greenveil-meilisearch",
+	})
+	require.NoError(t, err)
+
+	assert.Empty(t, result.Added)
+	assert.Empty(t, result.Modified)
+	assert.Empty(t, result.Deleted)
+	require.Len(t, result.Unchanged, 1)
+	assert.Equal(t, "CronJob", result.Unchanged[0].Kind)
+	assert.Equal(t, 0, result.OutOfSyncCount())
+}
+
+func ptrBool(v bool) *bool {
+	return &v
 }
 
 func TestComputeDiff_AddsManagedLabels(t *testing.T) {

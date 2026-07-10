@@ -84,6 +84,7 @@ var errHookPhasePending = errors.New("hook phase still in progress")
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
 	{Group: "apps", Version: "v1", Resource: "statefulsets"},
+	{Group: "batch", Version: "v1", Resource: "cronjobs"},
 	{Group: "", Version: "v1", Resource: "serviceaccounts"},
 	{Group: "", Version: "v1", Resource: "services"},
 	{Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
@@ -100,6 +101,7 @@ var knownGVRs = map[string]schema.GroupVersionResource{
 	"Secret":                {Group: "", Version: "v1", Resource: "secrets"},
 	"Namespace":             {Group: "", Version: "v1", Resource: "namespaces"},
 	"Job":                   {Group: "batch", Version: "v1", Resource: "jobs"},
+	"CronJob":               {Group: "batch", Version: "v1", Resource: "cronjobs"},
 	"Pod":                   {Group: "", Version: "v1", Resource: "pods"},
 	"ServiceAccount":        {Group: "", Version: "v1", Resource: "serviceaccounts"},
 	"HTTPRoute":             {Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"},
@@ -159,6 +161,7 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,6 +34,8 @@ func (r *ResourceHealthChecker) Check(ctx context.Context, kind, name, namespace
 		return r.checkService(ctx, name, namespace)
 	case "Ingress":
 		return r.checkIngress(ctx, name, namespace)
+	case "CronJob":
+		return r.checkCronJob(ctx, name, namespace)
 	case "ConfigMap", "Secret":
 		return paprikav1.ResourceHealth{Kind: kind, Name: name, Namespace: namespace, Health: "Healthy"}
 	default:
@@ -79,6 +82,20 @@ func (r *ResourceHealthChecker) checkIngress(ctx context.Context, name, namespac
 		return paprikav1.ResourceHealth{Kind: "Ingress", Name: name, Namespace: namespace, Health: "Missing", Message: err.Error()}
 	}
 	return paprikav1.ResourceHealth{Kind: "Ingress", Name: name, Namespace: namespace, Health: "Healthy", Message: "ingress exists"}
+}
+
+func (r *ResourceHealthChecker) checkCronJob(ctx context.Context, name, namespace string) paprikav1.ResourceHealth {
+	var cj batchv1.CronJob
+	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &cj); err != nil {
+		return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Missing", Message: err.Error()}
+	}
+	if cj.Spec.Suspend != nil && *cj.Spec.Suspend {
+		return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Healthy", Message: "cronjob suspended"}
+	}
+	if len(cj.Status.Active) > 0 {
+		return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Progressing", Message: fmt.Sprintf("%d active jobs", len(cj.Status.Active))}
+	}
+	return paprikav1.ResourceHealth{Kind: "CronJob", Name: name, Namespace: namespace, Health: "Healthy", Message: "cronjob scheduled"}
 }
 
 // int32Ptr returns a pointer to an int32.

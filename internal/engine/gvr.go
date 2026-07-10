@@ -15,6 +15,7 @@ var knownGVRs = map[string]schema.GroupVersionResource{
 	"Secret":                   {Group: "", Version: "v1", Resource: "secrets"},
 	"Namespace":                {Group: "", Version: "v1", Resource: "namespaces"},
 	"Job":                      {Group: "batch", Version: "v1", Resource: "jobs"},
+	"CronJob":                  {Group: "batch", Version: "v1", Resource: "cronjobs"},
 	"Pod":                      {Group: "", Version: "v1", Resource: "pods"},
 	"ServiceAccount":           {Group: "", Version: "v1", Resource: "serviceaccounts"},
 	"ClusterRole":              {Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"},

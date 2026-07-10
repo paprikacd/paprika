@@ -71,6 +71,16 @@ func TestReleaseReconcilerKnowsStatefulWorkloadGVRs(t *testing.T) {
 	if !managedGVRPresent(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}) {
 		t.Fatalf("managedGVRs missing PVC cleanup GVR")
 	}
+	cronJob, err := reconciler.gvrFromKind("CronJob", "batch", "v1")
+	if err != nil {
+		t.Fatalf("gvrFromKind(CronJob) error: %v", err)
+	}
+	if cronJob != (schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}) {
+		t.Fatalf("CronJob GVR = %+v", cronJob)
+	}
+	if !managedGVRPresent(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}) {
+		t.Fatalf("managedGVRs missing CronJob cleanup GVR")
+	}
 }
 
 func managedGVRPresent(want schema.GroupVersionResource) bool {
