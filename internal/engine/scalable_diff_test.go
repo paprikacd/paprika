@@ -229,3 +229,29 @@ func TestResourceEqual_NormalizesKubernetesResourceQuantities(t *testing.T) {
 
 	assert.True(t, resourceEqual(desired, live))
 }
+
+func TestResourceEqual_IgnoresHelmAdoptionAnnotations(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "search-env",
+			"namespace": "default",
+			"labels": map[string]interface{}{
+				"app.kubernetes.io/name": "meilisearch",
+			},
+		},
+		"data": map[string]interface{}{
+			"MEILI_ENV": "production",
+		},
+	}}
+	live := desired.DeepCopy()
+	live.SetAnnotations(map[string]string{
+		"meta.helm.sh/release-name":      "greenveil-meilisearch",
+		"meta.helm.sh/release-namespace": "paprika-e2e",
+	})
+
+	assert.True(t, resourceEqual(desired, *live))
+}

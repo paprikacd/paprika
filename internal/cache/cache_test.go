@@ -74,10 +74,73 @@ func TestSourceKey(t *testing.T) {
 	require.Contains(t, k, SourceCachePrefix)
 }
 
+func TestInvalidatorDeletesManifestEntriesBySourceAndRevision(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := NewMemoryCache()
+	defer func() { _ = c.Close() }()
+
+	repo := "https://github.com/org/repo"
+	rev1A := ManifestKey("git", repo, "rev1", map[string]string{"release-name": "app-a"})
+	rev1B := ManifestKey("git", repo, "rev1", map[string]string{"release-name": "app-b"})
+	rev2 := ManifestKey("git", repo, "rev2", map[string]string{"release-name": "app-a"})
+	otherRepo := ManifestKey("git", "https://github.com/org/other", "rev1", map[string]string{"release-name": "app-a"})
+
+	require.NoError(t, c.Set(ctx, rev1A, []byte("rev1-a"), time.Hour))
+	require.NoError(t, c.Set(ctx, rev1B, []byte("rev1-b"), time.Hour))
+	require.NoError(t, c.Set(ctx, rev2, []byte("rev2"), time.Hour))
+	require.NoError(t, c.Set(ctx, otherRepo, []byte("other"), time.Hour))
+
+	require.NoError(t, NewInvalidator(c).Invalidate(ctx, "git", repo, "rev1"))
+
+	assertMissing(t, c, rev1A)
+	assertMissing(t, c, rev1B)
+	assertPresent(t, c, rev2)
+	assertPresent(t, c, otherRepo)
+}
+
+func TestInvalidatorDeletesAllManifestEntriesForSource(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c := NewMemoryCache()
+	defer func() { _ = c.Close() }()
+
+	repo := "https://github.com/org/repo"
+	rev1 := ManifestKey("git", repo, "rev1", map[string]string{"release-name": "app"})
+	rev2 := ManifestKey("git", repo, "rev2", map[string]string{"release-name": "app"})
+	otherRepo := ManifestKey("git", "https://github.com/org/other", "rev1", map[string]string{"release-name": "app"})
+
+	require.NoError(t, c.Set(ctx, rev1, []byte("rev1"), time.Hour))
+	require.NoError(t, c.Set(ctx, rev2, []byte("rev2"), time.Hour))
+	require.NoError(t, c.Set(ctx, otherRepo, []byte("other"), time.Hour))
+
+	require.NoError(t, NewInvalidator(c).Invalidate(ctx, "git", repo, ""))
+
+	assertMissing(t, c, rev1)
+	assertMissing(t, c, rev2)
+	assertPresent(t, c, otherRepo)
+}
+
 func TestMapHash(t *testing.T) {
 	t.Parallel()
 
 	h1 := mapHash(map[string]string{"b": "2", "a": "1"})
 	h2 := mapHash(map[string]string{"a": "1", "b": "2"})
 	require.Equal(t, h1, h2, "map hash should be order-independent")
+}
+
+func assertMissing(t *testing.T, c Getter, key string) {
+	t.Helper()
+	got, err := c.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.Nil(t, got)
+}
+
+func assertPresent(t *testing.T, c Getter, key string) {
+	t.Helper()
+	got, err := c.Get(context.Background(), key)
+	require.NoError(t, err)
+	require.NotNil(t, got)
 }

@@ -42,7 +42,7 @@ func NewCachedTemplateRenderer(inner templateRenderer, c manifestCache, workDir 
 
 // Render checks the cache before delegating to the inner renderer.
 func (r *CachedTemplateRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
-	key := cache.ManifestKey(tmpl.Spec.Type, manifestSourceURL(&tmpl.Spec), tmpl.Status.SourceRevision, params)
+	key := cache.ManifestKey(tmpl.Spec.Type, manifestSourceURL(&tmpl.Spec), manifestSourceIdentity(tmpl), params)
 
 	cached, err := r.cache.Get(ctx, key)
 	if err != nil {
@@ -99,27 +99,78 @@ func (r *CachedTemplateRenderer) RenderHelmChart(ctx context.Context, chartName,
 // Ensure CachedTemplateRenderer satisfies the internal renderer interface.
 var _ templateRenderer = (*CachedTemplateRenderer)(nil)
 
+var manifestSourceURLResolvers = map[string]func(*paprika.TemplateSpec) string{
+	"helm":      manifestHelmSourceURL,
+	"git":       manifestGitSourceURL,
+	"s3":        manifestS3SourceURL,
+	"oci":       manifestOCISourceURL,
+	"kustomize": manifestKustomizeSourceURL,
+}
+
 func manifestSourceURL(spec *paprika.TemplateSpec) string {
+	if resolve := manifestSourceURLResolvers[spec.Type]; resolve != nil {
+		return resolve(spec)
+	}
+	return ""
+}
+
+func manifestHelmSourceURL(spec *paprika.TemplateSpec) string {
+	if spec.Chart.Path != "" {
+		return spec.Chart.Path
+	}
+	return spec.Chart.Repo + "/" + spec.Chart.Name + "@" + spec.Chart.Version
+}
+
+func manifestGitSourceURL(spec *paprika.TemplateSpec) string {
+	if spec.Git == nil {
+		return ""
+	}
+	return spec.Git.RepoURL + "//" + spec.Git.Path
+}
+
+func manifestS3SourceURL(spec *paprika.TemplateSpec) string {
+	if spec.S3 == nil {
+		return ""
+	}
+	return "s3://" + spec.S3.Bucket + "/" + spec.S3.Key
+}
+
+func manifestOCISourceURL(spec *paprika.TemplateSpec) string {
+	if spec.OCI == nil {
+		return ""
+	}
+	return spec.OCI.URL
+}
+
+func manifestKustomizeSourceURL(spec *paprika.TemplateSpec) string {
+	if spec.Kustomize == nil {
+		return ""
+	}
+	if spec.Kustomize.InputFromPrevious {
+		return "kustomize:input-from-previous"
+	}
+	return spec.Kustomize.Path
+}
+
+func manifestSourceIdentity(tmpl *paprika.Template) string {
+	if tmpl.Status.SourceHash != "" {
+		return tmpl.Status.SourceHash
+	}
+	if tmpl.Status.SourceRevision != "" {
+		return tmpl.Status.SourceRevision
+	}
+	return manifestSpecRevision(&tmpl.Spec)
+}
+
+func manifestSpecRevision(spec *paprika.TemplateSpec) string {
 	switch spec.Type {
-	case "helm":
-		if spec.Chart.Path != "" {
-			return spec.Chart.Path
-		}
-		return spec.Chart.Repo + "/" + spec.Chart.Name + "@" + spec.Chart.Version
 	case "git":
 		if spec.Git != nil {
-			return spec.Git.RepoURL + "//" + spec.Git.Path
+			return spec.Git.Revision
 		}
-	case "s3":
-		if spec.S3 != nil {
-			return "s3://" + spec.S3.Bucket + "/" + spec.S3.Key
-		}
-	case "kustomize":
-		if spec.Kustomize != nil {
-			if spec.Kustomize.InputFromPrevious {
-				return "kustomize:input-from-previous"
-			}
-			return spec.Kustomize.Path
+	case "oci":
+		if spec.OCI != nil {
+			return spec.OCI.Tag
 		}
 	}
 	return ""

@@ -41,6 +41,27 @@ func (f *fakeRenderer) RenderHelmChart(_ context.Context, _, _, _ string, _ map[
 	return nil, nil
 }
 
+type revisionRenderer struct {
+	calls int
+}
+
+func (r *revisionRenderer) Render(_ context.Context, tmpl *paprika.Template, _ map[string]string) ([]byte, error) {
+	r.calls++
+	return []byte(tmpl.Spec.Git.Revision), nil
+}
+
+func (r *revisionRenderer) RenderAll(_ context.Context, _ []paprika.Template, _ map[string]string) ([]byte, error) {
+	return nil, nil
+}
+
+func (r *revisionRenderer) ResolveSource(_ context.Context, _ *paprika.Template) (*source.ResolveResult, error) {
+	return nil, nil
+}
+
+func (r *revisionRenderer) RenderHelmChart(_ context.Context, _, _, _ string, _ map[string]string) ([]byte, error) {
+	return nil, nil
+}
+
 func TestCachedTemplateRenderer(t *testing.T) {
 	t.Parallel()
 
@@ -108,4 +129,35 @@ func TestCachedTemplateRenderer(t *testing.T) {
 			require.Equal(t, tc.wantCalls, inner.calls)
 		})
 	}
+}
+
+func TestCachedTemplateRendererUsesGitSpecRevisionWhenStatusIsAbsent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	inner := &revisionRenderer{}
+	memCache := cache.NewMemoryCache()
+	renderer := engine.NewCachedTemplateRenderer(inner, memCache, t.TempDir(), 0)
+
+	tmpl := &paprika.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-template"},
+		Spec: paprika.TemplateSpec{
+			Type: "git",
+			Git: &paprika.GitSourceSpec{
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "rev1",
+				Path:     "charts/app",
+			},
+		},
+	}
+
+	got, err := renderer.Render(ctx, tmpl, map[string]string{"release-name": "app"})
+	require.NoError(t, err)
+	require.Equal(t, []byte("rev1"), got)
+
+	tmpl.Spec.Git.Revision = "rev2"
+	got, err = renderer.Render(ctx, tmpl, map[string]string{"release-name": "app"})
+	require.NoError(t, err)
+	require.Equal(t, []byte("rev2"), got)
+	require.Equal(t, 2, inner.calls)
 }

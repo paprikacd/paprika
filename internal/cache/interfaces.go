@@ -68,10 +68,18 @@ const (
 
 // ManifestKey returns a cache key for a rendered manifest.
 func ManifestKey(sourceType, sourceURL, revision string, params map[string]string) string {
-	return ManifestCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL+"|"+revision+"|"+mapHash(params))
+	return manifestSourcePrefix(sourceType, sourceURL) + ":" + hashKey(revision) + ":" + hashKey(mapHash(params))
 }
 
 // SourceKey returns a cache key for a source resolution result.
 func SourceKey(sourceType, sourceURL, revision string) string {
-	return SourceCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL+"|"+revision)
+	return sourceSourcePrefix(sourceType, sourceURL) + ":" + hashKey(revision)
+}
+
+func manifestSourcePrefix(sourceType, sourceURL string) string {
+	return ManifestCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL)
+}
+
+func sourceSourcePrefix(sourceType, sourceURL string) string {
+	return SourceCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL)
 }

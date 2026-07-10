@@ -23,20 +23,20 @@ func (i *Invalidator) Invalidate(ctx context.Context, sourceType, sourceURL, rev
 		return nil
 	}
 
-	sourcePrefix := SourceCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL)
+	sourcePrefix := sourceSourcePrefix(sourceType, sourceURL)
 	if err := i.cache.DeleteByPrefix(ctx, sourcePrefix); err != nil {
 		return fmt.Errorf("delete source cache entries by prefix: %w", err)
 	}
 
 	if revision == "" {
-		manifestPrefix := ManifestCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL)
+		manifestPrefix := manifestSourcePrefix(sourceType, sourceURL)
 		if err := i.cache.DeleteByPrefix(ctx, manifestPrefix); err != nil {
 			return fmt.Errorf("delete manifest cache entries by prefix: %w", err)
 		}
 		return nil
 	}
 
-	manifestPrefix := ManifestCachePrefix + ":" + hashKey(sourceType+"|"+sourceURL+"|"+revision)
+	manifestPrefix := manifestSourcePrefix(sourceType, sourceURL) + ":" + hashKey(revision)
 	if err := i.cache.DeleteByPrefix(ctx, manifestPrefix); err != nil {
 		return fmt.Errorf("delete manifest cache entries by prefix: %w", err)
 	}

@@ -186,6 +186,7 @@ var serverManagedAnnotationPrefixes = []string{
 	"volume.kubernetes.io/",
 	"node.kubernetes.io/",
 	"volumealpha.kubernetes.io/",
+	"meta.helm.sh/",
 }
 
 // resourceEqual compares two unstructured objects for semantic equality.
