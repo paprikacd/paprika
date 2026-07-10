@@ -56,6 +56,20 @@ func (r *staticSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Templa
 	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
 }
 
+type captureSourceRenderer struct {
+	result   *source.ResolveResult
+	captured *pipelinesv1alpha1.Template
+}
+
+func (r *captureSourceRenderer) ResolveSource(_ context.Context, tmpl *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	r.captured = tmpl.DeepCopy()
+	return r.result, nil
+}
+
+func (r *captureSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Template, map[string]string) ([]byte, error) {
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
+}
+
 type captureTemplateRenderer struct {
 	captured *pipelinesv1alpha1.Template
 }
@@ -582,6 +596,88 @@ func TestApplicationReconciler_handleHealthyPhase_changedSourceStartsNewReleaseF
 	}
 	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseSuperseded {
 		t.Fatalf("release phase = %s, want Superseded", updatedRelease.Status.Phase)
+	}
+}
+
+func TestApplicationReconciler_reconcileAppHealthyUpdatesTemplateBeforeSourceCheck(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-moved-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/new-repo.git",
+				Revision: "main",
+				Path:     "deploy/kubernetes/chart",
+			},
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash: "old-hash",
+			ReleaseRef: "healthy-moved-app-release",
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-moved-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git:  &pipelinesv1alpha1.GitSourceSpec{RepoURL: "https://github.com/org/old-chart.git", Revision: "main", Path: "."},
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "healthy-moved-app-release", Namespace: "default"},
+		Status:     pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+	renderer := &captureSourceRenderer{result: &source.ResolveResult{
+		Hash:     "new-hash",
+		Revision: "new-revision",
+	}}
+	r := &ApplicationReconciler{
+		client:           c,
+		Scheme:           scheme,
+		TemplateRenderer: renderer,
+	}
+
+	if _, err := r.reconcileApp(ctx, app); err != nil {
+		t.Fatalf("reconcileApp failed: %v", err)
+	}
+	if renderer.captured == nil || renderer.captured.Spec.Git == nil {
+		t.Fatalf("expected source resolver to receive updated git template")
+	}
+	if got := renderer.captured.Spec.Git.RepoURL; got != "https://github.com/org/new-repo.git" {
+		t.Fatalf("resolved template repoURL = %q, want updated Application source", got)
+	}
+	if got := renderer.captured.Spec.Git.Path; got != "deploy/kubernetes/chart" {
+		t.Fatalf("resolved template path = %q, want deploy/kubernetes/chart", got)
+	}
+
+	var updatedTemplate pipelinesv1alpha1.Template
+	if err := c.Get(ctx, client.ObjectKey{Name: "healthy-moved-app-template", Namespace: "default"}, &updatedTemplate); err != nil {
+		t.Fatalf("get template: %v", err)
+	}
+	if got := updatedTemplate.Spec.Git.RepoURL; got != "https://github.com/org/new-repo.git" {
+		t.Fatalf("stored template repoURL = %q, want updated Application source", got)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: "healthy-moved-app", Namespace: "default"}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want empty so a new Release can be created", updated.Status.ReleaseRef)
 	}
 }
 

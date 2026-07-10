@@ -175,20 +175,25 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 		projectName = defaultProjectName
 	}
 
-	if r.hasSyncTrigger(app) {
-		return r.handleSyncTrigger(ctx, app)
-	}
-
-	if appNeedsReplacementReleaseFlow(app.Status.Phase) {
-		return r.handleHealthyPhase(ctx, app)
-	}
-
 	if !r.isInlineSource(app) {
 		if err := r.reconcileTemplate(ctx, app); err != nil {
 			log.Error(err, "Failed to reconcile Template")
 			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
 			return ctrl.Result{}, err
 		}
+	}
+
+	if r.hasSyncTrigger(app) {
+		return r.handleSyncTrigger(ctx, app)
+	}
+
+	if appNeedsReplacementReleaseFlow(app.Status.Phase) {
+		if err := r.reconcileStages(ctx, app); err != nil {
+			log.Error(err, "Failed to reconcile Stages")
+			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "StageReconciliationFailed", err.Error())
+			return ctrl.Result{}, err
+		}
+		return r.handleHealthyPhase(ctx, app)
 	}
 
 	r.pruneReleasesIfInline(ctx, app)
