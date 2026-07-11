@@ -4,17 +4,14 @@ import { X } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
-import {
-  ApplicationTable,
-  releaseFocusOwnership,
-} from "@/components/fleet/application-table"
+import { ApplicationTable } from "@/components/fleet/application-table"
 import { AttentionQueue } from "@/components/fleet/attention-queue"
 import { FleetFilters } from "@/components/fleet/fleet-filters"
+import { FleetMatrix } from "@/components/fleet/fleet-matrix"
 import { FleetStateNotice } from "@/components/fleet/fleet-states"
-import type {
-  FleetFacetBucket,
-  FleetMapNode,
-} from "@/lib/fleet-client"
+import { FleetTreemap } from "@/components/fleet/fleet-treemap"
+import type { FleetFacetBucket } from "@/lib/fleet-client"
+import { useConnection } from "@/lib/connection-context"
 import {
   createFleetFocusCoordinator,
   type FleetFocusCoordinator,
@@ -31,10 +28,9 @@ import {
   type FleetView as FleetViewName,
   type NamespacedKey,
 } from "@/lib/fleet-query"
+import { useFleetRefresh } from "@/lib/fleet-refresh"
 import {
   useFleetData,
-  type FleetMapData,
-  type FleetMatrixData,
   type FleetPresentationData,
 } from "@/lib/use-fleet-data"
 
@@ -47,6 +43,7 @@ export function FleetView() {
   const rawQuery = searchParams.toString()
   const parsed = useMemo(() => parseFleetQuery(rawQuery), [rawQuery])
   const fleet = useFleetData(parsed.state)
+  const { reportRequestOutcome } = useConnection()
   const [focusMessage, setFocusMessage] = useState("")
   const [queryNotice, setQueryNotice] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -55,6 +52,20 @@ export function FleetView() {
   const [focusCoordinator] = useState(() =>
     createFleetFocusCoordinator({ announce: setFocusMessage }),
   )
+
+  useFleetRefresh(fleet.refresh, {
+    onRequestOutcome: reportRequestOutcome,
+    refreshOnMount: false,
+  })
+
+  useEffect(() => {
+    if (fleet.status === "loading" || fleet.status === "stale") return
+    reportRequestOutcome(
+      fleet.status === "ready" ||
+        fleet.status === "empty" ||
+        fleet.status === "partial",
+    )
+  }, [fleet.status, reportRequestOutcome])
 
   const replaceState = useCallback(
     (state: FleetQueryState) => {
@@ -158,6 +169,18 @@ export function FleetView() {
     (identity: NamespacedKey | null) => focusCoordinator.trackFocusedApplication(identity),
     [focusCoordinator],
   )
+  const registerSummaryTarget = useCallback(
+    (
+      view: "treemap" | "matrix",
+      identity: NamespacedKey,
+      target: HTMLElement | null,
+    ) => {
+      const key = `${view}:${identityKey(identity)}`
+      if (target) summaryTargets.current.set(key, target)
+      else summaryTargets.current.delete(key)
+    },
+    [],
+  )
 
   return (
     <section
@@ -219,13 +242,11 @@ export function FleetView() {
           onLoadMore={fleet.loadMore}
           onSelectApplication={selectApplication}
           onFocusedApplication={trackApplicationFocus}
+          state={parsed.state}
+          onPatch={patchState}
           focusCoordinator={focusCoordinator}
           getResultsHeadingTarget={getResultsHeadingTarget}
-          registerSummaryTarget={(view, identity, target) => {
-            const key = `${view}:${identityKey(identity)}`
-            if (target) summaryTargets.current.set(key, target)
-            else summaryTargets.current.delete(key)
-          }}
+          registerSummaryTarget={registerSummaryTarget}
         />
       ) : null}
 
@@ -251,6 +272,8 @@ function FleetPresentation({
   onLoadMore,
   onSelectApplication,
   onFocusedApplication,
+  state,
+  onPatch,
   focusCoordinator,
   getResultsHeadingTarget,
   registerSummaryTarget,
@@ -261,6 +284,8 @@ function FleetPresentation({
   onLoadMore: () => Promise<void>
   onSelectApplication: (identity: NamespacedKey) => void
   onFocusedApplication: (identity: NamespacedKey | null) => void
+  state: FleetQueryState
+  onPatch: (patch: FleetQueryPatch) => void
   focusCoordinator: FleetFocusCoordinator
   getResultsHeadingTarget: () => FleetFocusTarget | null
   registerSummaryTarget: (
@@ -269,6 +294,12 @@ function FleetPresentation({
     target: HTMLElement | null,
   ) => void
 }) {
+  const registerTreemapTarget = useCallback(
+    (identity: NamespacedKey, target: HTMLElement | null) =>
+      registerSummaryTarget("treemap", identity, target),
+    [registerSummaryTarget],
+  )
+
   switch (data.kind) {
     case "applications": {
       const props = {
@@ -290,127 +321,19 @@ function FleetPresentation({
     }
     case "map":
       return (
-        <FleetMapSummary
-          data={data}
-          registerTarget={registerSummaryTarget}
+        <FleetTreemap
+          result={data.result}
+          zoom={state.zoom}
+          selected={state.selected}
+          onZoomChange={(zoom) => onPatch({ zoom })}
           onSelectApplication={onSelectApplication}
           onFocusedApplication={onFocusedApplication}
+          registerTarget={registerTreemapTarget}
         />
       )
     case "matrix":
-      return <FleetMatrixSummary data={data} />
+      return <FleetMatrix result={data.result} />
   }
-}
-
-function FleetMapSummary({
-  data,
-  registerTarget,
-  onSelectApplication,
-  onFocusedApplication,
-}: {
-  data: FleetMapData
-  registerTarget: (
-    view: "treemap",
-    identity: NamespacedKey,
-    target: HTMLElement | null,
-  ) => void
-  onSelectApplication: (identity: NamespacedKey) => void
-  onFocusedApplication: (identity: NamespacedKey | null) => void
-}) {
-  const nodes = flattenMap(data.result.roots)
-  return (
-    <section role="region" aria-label="Fleet map summary" className="px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Treemap contract
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">Fleet map</h2>
-        </div>
-        <p className="font-mono text-xs tabular-nums text-muted-foreground">
-          {data.result.total.toString()} applications · generation {data.result.indexGeneration.toString()}
-        </p>
-      </div>
-      <div className="mt-4 grid gap-px overflow-hidden border border-border bg-border sm:grid-cols-2 xl:grid-cols-3">
-        {nodes.slice(0, 12).map((node) => {
-          const content = (
-            <>
-              <strong className="block truncate text-sm font-semibold text-foreground">{node.label}</strong>
-              <span className="mt-2 block font-mono text-[0.6875rem] tabular-nums text-muted-foreground">
-                {node.applicationCount.toString()} applications / {node.targetCount.toString()} targets
-              </span>
-            </>
-          )
-          return node.application ? (
-            <button
-              key={node.stableId}
-              ref={(target) => registerTarget("treemap", node.application!, target)}
-              type="button"
-              onFocus={() => onFocusedApplication(node.application!)}
-              onBlur={(event) =>
-                releaseFocusOwnership(
-                  event.currentTarget,
-                  event.relatedTarget,
-                  onFocusedApplication,
-                )
-              }
-              onClick={() => onSelectApplication(node.application!)}
-              className="min-h-20 bg-card px-4 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted"
-            >
-              {content}
-            </button>
-          ) : (
-            <div key={node.stableId} className="min-h-20 bg-card px-4 py-3">
-              {content}
-            </div>
-          )
-        })}
-      </div>
-      <p className="mt-4 text-xs leading-5 text-muted-foreground">
-        Accessible summary of the current grouped fleet snapshot.
-      </p>
-    </section>
-  )
-}
-
-function FleetMatrixSummary({ data }: { data: FleetMatrixData }) {
-  return (
-    <section role="region" aria-label="Fleet matrix summary" className="px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Sparse comparison
-          </p>
-          <h2 className="mt-1 text-lg font-semibold text-foreground">Fleet matrix</h2>
-        </div>
-        <p className="font-mono text-xs tabular-nums text-muted-foreground">
-          {data.result.total.toString()} applications · {data.result.cells.length} populated cells
-        </p>
-      </div>
-      <div className="mt-4 overflow-x-auto border border-border">
-        <table className="w-full min-w-[36rem] border-collapse text-left text-sm">
-          <thead className="bg-card font-mono text-[0.625rem] uppercase tracking-[0.12em] text-muted-foreground">
-            <tr>
-              <th className="border-b border-border px-4 py-3">Row</th>
-              <th className="border-b border-border px-4 py-3">Column</th>
-              <th className="border-b border-border px-4 py-3">Applications</th>
-              <th className="border-b border-border px-4 py-3">Targets</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.result.cells.slice(0, 20).map((cell) => (
-              <tr key={`${cell.rowId}:${cell.columnId}`} className="border-b border-border/70 last:border-b-0">
-                <td className="px-4 py-3 text-foreground">{headerLabel(data, "row", cell.rowId)}</td>
-                <td className="px-4 py-3 text-foreground">{headerLabel(data, "column", cell.columnId)}</td>
-                <td className="px-4 py-3 font-mono tabular-nums text-foreground">{cell.applicationCount.toString()}</td>
-                <td className="px-4 py-3 font-mono tabular-nums text-foreground">{cell.targetCount.toString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
 }
 
 function facetAvailability(facets: readonly FleetFacetBucket[]): FleetFacetAvailability {
@@ -457,13 +380,4 @@ function uniqueObjects(values: readonly NamespacedKey[]): NamespacedKey[] {
 
 function identityKey(identity: NamespacedKey): string {
   return `${identity.namespace}/${identity.name}`
-}
-
-function flattenMap(nodes: readonly FleetMapNode[]): FleetMapNode[] {
-  return nodes.flatMap((node) => [node, ...flattenMap(node.children)])
-}
-
-function headerLabel(data: FleetMatrixData, axis: "row" | "column", id: string): string {
-  const headers = axis === "row" ? data.result.rows : data.result.columns
-  return headers.find((header) => header.stableId === id)?.label || id
 }

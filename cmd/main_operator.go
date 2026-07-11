@@ -515,29 +515,42 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 
-	uiMux := http.NewServeMux()
-	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
-	uiMux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
-	uiMux.Handle("/healthz", healthzHandler(setupLog))
-	uiMux.Handle("/readyz", readinessHandler(setupLog, fleetReadyChecker(fleetReader)))
 	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
 	if err != nil {
 		return nil, err
-	}
-	for _, h := range githubExchangeHandlers {
-		h(uiMux)
 	}
 	uiHandler, err := apiserver.UIHandler()
 	if err != nil {
 		return nil, fmt.Errorf("build UI handler: %w", err)
 	}
-	uiMux.Handle("/", uiHandler)
+	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
 	return &http.Server{
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 	}, nil
+}
+
+func buildOperatorUIMux(
+	connectHandler http.Handler,
+	uiHandler http.Handler,
+	fleetReader fleet.Reader,
+	setupLog logr.Logger,
+	extraHandlers ...func(*http.ServeMux),
+) *http.ServeMux {
+	uiMux := http.NewServeMux()
+	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	// Do not expose the unauthenticated legacy SSE stream. The explicit route is
+	// required because the embedded UI is registered as the catch-all handler.
+	uiMux.Handle("/events", http.NotFoundHandler())
+	uiMux.Handle("/healthz", healthzHandler(setupLog))
+	uiMux.Handle("/readyz", readinessHandler(setupLog, fleetReadyChecker(fleetReader)))
+	for _, register := range extraHandlers {
+		register(uiMux)
+	}
+	uiMux.Handle("/", uiHandler)
+	return uiMux
 }
 
 func buildOperatorTLSOptions(enableHTTP2 bool, setupLog logr.Logger) []func(*tls.Config) {

@@ -23,9 +23,48 @@ import (
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
+
+func TestStandaloneEventsRouteDisabled(t *testing.T) {
+	t.Parallel()
+
+	mux, err := buildAPIMux(
+		http.NotFoundHandler(),
+		events.NewBroker(logr.Discard()),
+		logr.Discard(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build standalone API mux: %v", err)
+	}
+	assertEventsRouteDisabled(t, mux)
+}
+
+func TestOperatorEventsRouteDisabled(t *testing.T) {
+	t.Parallel()
+
+	mux := buildOperatorUIMux(
+		http.NotFoundHandler(),
+		http.NotFoundHandler(),
+		nil,
+		logr.Discard(),
+	)
+	assertEventsRouteDisabled(t, mux)
+}
+
+func assertEventsRouteDisabled(t *testing.T, handler http.Handler) {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/events?topic=dashboard", http.NoBody)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("GET /events status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
 
 func TestFleetCacheDisabled(t *testing.T) {
 	t.Parallel()

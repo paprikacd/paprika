@@ -248,6 +248,19 @@ describe("useFleetData primary presentation", () => {
       value: "degraded",
     })
   })
+
+  it("exposes one explicit refresh operation for bounded polling", async () => {
+    const { client, calls } = testClient()
+    const { result } = renderHook(
+      () => useFleetData(queryState("treemap"), { client }),
+      { wrapper: queryWrapper(newQueryClient()) },
+    )
+    await waitFor(() => expect(result.current.status).toBe("ready"))
+
+    await act(async () => result.current.refresh())
+
+    expect(calls.map).toHaveLength(2)
+  })
 })
 
 describe("useFleetData application paging", () => {

@@ -950,14 +950,17 @@ func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
 
 func buildAPIMux(
 	connectHandler http.Handler,
-	broker *events.Broker,
+	_ *events.Broker,
 	log logr.Logger,
 	ready healthz.Checker,
 	extraHandlers ...func(*http.ServeMux),
 ) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
-	mux.Handle("/events", apiserver.NewSSEHandler(broker))
+	// Raw browser SSE is intentionally disabled until an authorized WatchEvents
+	// transport is available. Keep the exact route fail-closed so the UI catch-all
+	// cannot accidentally serve index.html with a 200 response.
+	mux.Handle("/events", http.NotFoundHandler())
 	mux.Handle("/healthz", healthzHandler(log))
 	mux.Handle("/readyz", readinessHandler(log, ready))
 	// Register extra handlers before the / catch-all so specific routes win.

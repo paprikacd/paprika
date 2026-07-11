@@ -51,16 +51,7 @@ function makePipeline(artifacts: PartialMessage<ArtifactRef>[] = []): Pipeline {
   })
 }
 
-describe("PipelineDetailPage pipeline-artifact SSE handling", () => {
-  interface MockSSEEvent {
-    data: string
-  }
-  let mockEventSource: {
-    onopen: ((e: MockSSEEvent) => void) | null
-    onmessage: ((e: MockSSEEvent) => void) | null
-    onerror: ((e: MockSSEEvent) => void) | null
-    close: ReturnType<typeof vi.fn>
-  }
+describe("PipelineDetailPage safe refresh", () => {
   let originalEventSource: typeof globalThis.EventSource
 
   beforeEach(() => {
@@ -71,43 +62,23 @@ describe("PipelineDetailPage pipeline-artifact SSE handling", () => {
         { name: "pipeline-report", kind: "configmap", phase: "Ready", producingStep: "" },
       ]),
     })
-    mockEventSource = {
-      onopen: null,
-      onmessage: null,
-      onerror: null,
-      close: vi.fn(),
-    }
     originalEventSource = globalThis.EventSource
-    globalThis.EventSource = vi.fn(function () {
-      return mockEventSource
-    }) as unknown as typeof globalThis.EventSource
+    globalThis.EventSource = vi.fn() as unknown as typeof globalThis.EventSource
   })
 
   afterEach(() => {
     globalThis.EventSource = originalEventSource
   })
 
-  it("refetches the pipeline when a pipeline-artifact event arrives", async () => {
+  it("refetches the pipeline once when focus returns without constructing EventSource", async () => {
     render(<PipelineDetailPage />)
 
-    await waitFor(() => {
-      expect(mockClient.getPipeline).toHaveBeenCalledTimes(1)
-    })
+    expect(await screen.findByText("Pipeline Artifacts")).toBeInTheDocument()
+    expect(mockClient.getPipeline).toHaveBeenCalledTimes(1)
+    expect(globalThis.EventSource).not.toHaveBeenCalled()
 
     act(() => {
-      mockEventSource.onmessage!({
-        data: JSON.stringify({
-          type: "pipeline-artifact",
-          resourceType: "pipeline-artifact",
-          pipeline: "pipe",
-          namespace: "ns",
-          name: "build-image",
-          kind: "oci",
-          phase: "Ready",
-          producingStep: "build",
-          timestamp: "2026-06-25T00:00:00Z",
-        }),
-      })
+      window.dispatchEvent(new Event("focus"))
     })
 
     await waitFor(() => {
@@ -125,5 +96,20 @@ describe("PipelineDetailPage pipeline-artifact SSE handling", () => {
     expect(await screen.findByText("Pipeline Artifacts")).toBeInTheDocument()
     expect(screen.getByText("pipeline-report")).toBeInTheDocument()
     expect(screen.queryByText("build-image")).not.toBeInTheDocument()
+  })
+
+  it("keeps the last pipeline DAG visible when a background refresh fails", async () => {
+    mockClient.getPipeline
+      .mockResolvedValueOnce({ pipeline: makePipeline() })
+      .mockRejectedValueOnce(new Error("pipeline refresh unavailable"))
+    render(<PipelineDetailPage />)
+    expect(await screen.findByTestId("pipeline-dag")).toBeInTheDocument()
+
+    act(() => window.dispatchEvent(new Event("focus")))
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "pipeline refresh unavailable",
+    )
+    expect(screen.getByTestId("pipeline-dag")).toBeInTheDocument()
   })
 })

@@ -229,8 +229,10 @@ describe("FleetView states", () => {
 
     render(<FleetView />)
 
-    expect(screen.getByRole("status")).toHaveTextContent("Showing previous fleet data")
-    expect(screen.getByRole("region", { name: "Fleet map summary" })).toHaveTextContent(
+    expect(screen.getByText("Showing previous fleet data").closest('[role="status"]')).toHaveTextContent(
+      "Showing previous fleet data",
+    )
+    expect(screen.getByRole("region", { name: "Fleet map" })).toHaveTextContent(
       "12 applications",
     )
   })
@@ -537,6 +539,7 @@ function fleetResult(
     hasMore: false,
     isLoadingMore: false,
     loadMore: vi.fn().mockResolvedValue(undefined),
+    refresh: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }

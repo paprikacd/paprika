@@ -106,6 +106,7 @@ export interface UseFleetDataResult {
   hasMore: boolean
   isLoadingMore: boolean
   loadMore: () => Promise<void>
+  refresh: () => Promise<void>
 }
 
 const defaultClient: FleetDataClient = {
@@ -327,6 +328,10 @@ export function useFleetData(
     currentData?.kind === "applications" &&
     Boolean(currentData.pages.at(-1)?.nextCursor)
   const isLoadingMore = loadingMoreKey === keyId
+  const refetch = query.refetch
+  const refresh = useCallback(async () => {
+    await refetch({ throwOnError: true })
+  }, [refetch])
 
   return {
     state,
@@ -350,6 +355,7 @@ export function useFleetData(
     hasMore,
     isLoadingMore,
     loadMore,
+    refresh,
   }
 }
 
