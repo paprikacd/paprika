@@ -1,4 +1,5 @@
-{{- if and (eq .Values.deploymentMode "split") .Values.prometheus.enable }}
+{{- $metricsBindAddress := toString .Values.metrics.bindAddress }}
+{{- if and (eq .Values.deploymentMode "split") .Values.webhookReceiver.enabled .Values.prometheus.enable (ne $metricsBindAddress "") (ne $metricsBindAddress "0") (ne $metricsBindAddress ":0") }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -12,22 +13,15 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   endpoints:
-  - {{- if .Values.metrics.secure }}
-    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-    {{- end }}
-    {{- with .Values.metrics.serviceMonitor.interval }}
+  - {{- with .Values.metrics.serviceMonitor.interval }}
     interval: {{ . }}
     {{- end }}
     {{- with .Values.metrics.serviceMonitor.scrapeTimeout }}
     scrapeTimeout: {{ . }}
     {{- end }}
     path: /metrics
-    port: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
-    scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
-    {{- if .Values.metrics.secure }}
-    tlsConfig:
-      insecureSkipVerify: true
-    {{- end }}
+    port: metrics
+    scheme: http
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "paprika.name" . }}
