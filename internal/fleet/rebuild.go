@@ -29,12 +29,18 @@ type Rebuilder struct {
 	rebuilding bool
 	ledger     []ResourceDelta
 	deps       projectionDependencies
+
+	snapshotEditorsCreated uint64
 }
 
 type projectionDependencies struct {
 	stageOwners   map[types.NamespacedName]types.NamespacedName
 	releaseOwners map[types.NamespacedName]types.NamespacedName
 	rolloutOwners map[types.NamespacedName]types.NamespacedName
+
+	stagesByApplication  map[types.NamespacedName]map[types.NamespacedName]struct{}
+	releaseByApplication map[types.NamespacedName]types.NamespacedName
+	rolloutByApplication map[types.NamespacedName]types.NamespacedName
 }
 
 func newProjectionDependencies() projectionDependencies {
@@ -42,7 +48,179 @@ func newProjectionDependencies() projectionDependencies {
 		stageOwners:   make(map[types.NamespacedName]types.NamespacedName),
 		releaseOwners: make(map[types.NamespacedName]types.NamespacedName),
 		rolloutOwners: make(map[types.NamespacedName]types.NamespacedName),
+
+		stagesByApplication:  make(map[types.NamespacedName]map[types.NamespacedName]struct{}),
+		releaseByApplication: make(map[types.NamespacedName]types.NamespacedName),
+		rolloutByApplication: make(map[types.NamespacedName]types.NamespacedName),
 	}
+}
+
+func (d *projectionDependencies) rebuildReverse() {
+	d.stagesByApplication = make(map[types.NamespacedName]map[types.NamespacedName]struct{})
+	d.releaseByApplication = make(map[types.NamespacedName]types.NamespacedName)
+	d.rolloutByApplication = make(map[types.NamespacedName]types.NamespacedName)
+	for child, owner := range d.stageOwners {
+		children := d.stagesByApplication[owner]
+		if children == nil {
+			children = make(map[types.NamespacedName]struct{})
+			d.stagesByApplication[owner] = children
+		}
+		children[child] = struct{}{}
+	}
+	for child, owner := range d.releaseOwners {
+		d.releaseByApplication[owner] = child
+	}
+	for child, owner := range d.rolloutOwners {
+		d.rolloutByApplication[owner] = child
+	}
+}
+
+type dependencyEditor struct {
+	next projectionDependencies
+
+	stageOwnersCloned          bool
+	releaseOwnersCloned        bool
+	rolloutOwnersCloned        bool
+	stagesByApplicationCloned  bool
+	releaseByApplicationCloned bool
+	rolloutByApplicationCloned bool
+	touchedStageApplications   map[types.NamespacedName]struct{}
+}
+
+func newDependencyEditor(base projectionDependencies) *dependencyEditor {
+	return &dependencyEditor{
+		next:                     base,
+		touchedStageApplications: make(map[types.NamespacedName]struct{}),
+	}
+}
+
+func (e *dependencyEditor) setStage(child, owner types.NamespacedName) {
+	oldOwner := e.next.stageOwners[child]
+	if oldOwner == owner {
+		return
+	}
+	e.ensureStageOwners()
+	if owner == (types.NamespacedName{}) {
+		delete(e.next.stageOwners, child)
+	} else {
+		e.next.stageOwners[child] = owner
+	}
+	if oldOwner != (types.NamespacedName{}) {
+		children := e.mutableStageChildren(oldOwner)
+		delete(children, child)
+		if len(children) == 0 {
+			delete(e.next.stagesByApplication, oldOwner)
+		}
+	}
+	if owner != (types.NamespacedName{}) {
+		children := e.mutableStageChildren(owner)
+		children[child] = struct{}{}
+		e.next.stagesByApplication[owner] = children
+	}
+}
+
+func (e *dependencyEditor) replaceStages(
+	owner types.NamespacedName,
+	desired map[types.NamespacedName]struct{},
+) {
+	actual := e.next.stagesByApplication[owner]
+	for child := range actual {
+		if _, retained := desired[child]; !retained {
+			e.setStage(child, types.NamespacedName{})
+		}
+	}
+	for child := range desired {
+		if _, present := actual[child]; !present {
+			e.setStage(child, owner)
+		}
+	}
+}
+
+func (e *dependencyEditor) setReleaseForApplication(
+	owner, child types.NamespacedName,
+) {
+	setScalarDependency(
+		&e.next.releaseOwners,
+		&e.releaseOwnersCloned,
+		&e.next.releaseByApplication,
+		&e.releaseByApplicationCloned,
+		owner,
+		child,
+	)
+}
+
+func (e *dependencyEditor) setRolloutForApplication(
+	owner, child types.NamespacedName,
+) {
+	setScalarDependency(
+		&e.next.rolloutOwners,
+		&e.rolloutOwnersCloned,
+		&e.next.rolloutByApplication,
+		&e.rolloutByApplicationCloned,
+		owner,
+		child,
+	)
+}
+
+//nolint:gocritic // map header pointers provide lazy top-level COW replacement.
+func setScalarDependency(
+	forward *map[types.NamespacedName]types.NamespacedName,
+	forwardCloned *bool,
+	reverse *map[types.NamespacedName]types.NamespacedName,
+	reverseCloned *bool,
+	owner, desiredChild types.NamespacedName,
+) {
+	currentChild := (*reverse)[owner]
+	if currentChild == desiredChild {
+		return
+	}
+	if !*forwardCloned {
+		*forward = cloneMap(*forward)
+		*forwardCloned = true
+	}
+	if !*reverseCloned {
+		*reverse = cloneMap(*reverse)
+		*reverseCloned = true
+	}
+	if currentChild != (types.NamespacedName{}) {
+		delete(*forward, currentChild)
+	}
+	if desiredChild == (types.NamespacedName{}) {
+		delete(*reverse, owner)
+		return
+	}
+	if previousOwner := (*forward)[desiredChild]; previousOwner != (types.NamespacedName{}) && previousOwner != owner {
+		delete(*reverse, previousOwner)
+	}
+	(*forward)[desiredChild] = owner
+	(*reverse)[owner] = desiredChild
+}
+
+func (e *dependencyEditor) ensureStageOwners() {
+	if e.stageOwnersCloned {
+		return
+	}
+	e.next.stageOwners = cloneMap(e.next.stageOwners)
+	e.stageOwnersCloned = true
+}
+
+func (e *dependencyEditor) mutableStageChildren(
+	owner types.NamespacedName,
+) map[types.NamespacedName]struct{} {
+	if !e.stagesByApplicationCloned {
+		e.next.stagesByApplication = cloneMap(e.next.stagesByApplication)
+		e.stagesByApplicationCloned = true
+	}
+	children := e.next.stagesByApplication[owner]
+	if _, touched := e.touchedStageApplications[owner]; !touched {
+		children = cloneMap(children)
+		e.touchedStageApplications[owner] = struct{}{}
+	}
+	if children == nil {
+		children = make(map[types.NamespacedName]struct{})
+	}
+	e.next.stagesByApplication[owner] = children
+	return children
 }
 
 // NewRebuilder binds a cache-only store to an atomic fleet index.
@@ -80,10 +258,10 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 		pending := append([]ResourceDelta(nil), r.ledger[replayed:]...)
 		r.mu.Unlock()
 
-		for _, delta := range pending {
+		if len(pending) > 0 {
 			var replayResult ProjectionResult
 			var replayOwned ownedSnapshot
-			replayOwned, dependencies, replayResult, err = r.applyDeltaToSnapshot(ctx, builder, dependencies, delta)
+			replayOwned, dependencies, replayResult, err = r.applyDeltasToSnapshot(ctx, builder, dependencies, pending)
 			if err != nil {
 				r.failRebuild()
 				return ProjectionResult{}, err
@@ -131,29 +309,40 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 	}
 }
 
-// ApplyDelta either records normalized key metadata while a rebuild is in
-// flight (or before initial publication), or performs one batched COW edit and
-// one owned publication. It never changes readiness health.
+// ApplyDelta is the single-event compatibility wrapper around ApplyDeltas.
+func (r *Rebuilder) ApplyDelta(ctx context.Context, delta ResourceDelta) (ProjectionResult, error) {
+	return r.ApplyDeltas(ctx, []ResourceDelta{delta})
+}
+
+// ApplyDeltas records or applies an ordered delta batch with one snapshot
+// editor, seal, and at most one publication. Fatal errors discard all snapshot
+// and dependency edits from the batch. It never changes readiness health.
 //
 //nolint:cyclop // validation, queueing, no-op, and publication are distinct outcomes.
-func (r *Rebuilder) ApplyDelta(ctx context.Context, delta ResourceDelta) (ProjectionResult, error) {
+func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (ProjectionResult, error) {
 	if r == nil || r.index == nil || r.store == nil {
 		return ProjectionResult{}, errors.New("fleet delta projection is not configured")
 	}
-	if !validResourceKind(delta.Kind) || delta.Key.Name == "" {
-		return ProjectionResult{}, errors.New("fleet delta metadata is invalid")
+	if len(deltas) == 0 {
+		return ProjectionResult{}, nil
 	}
-	delta = normalizeDelta(delta)
+	normalized := make([]ResourceDelta, len(deltas))
+	for i := range deltas {
+		if !validResourceKind(deltas[i].Kind) || deltas[i].Key.Name == "" {
+			return ProjectionResult{}, errors.New("fleet delta metadata is invalid")
+		}
+		normalized[i] = normalizeDelta(deltas[i])
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.rebuilding || r.index.snapshot.Load() == nil {
-		r.ledger = append(r.ledger, delta)
+		r.ledger = append(r.ledger, normalized...)
 		return ProjectionResult{}, nil
 	}
 
 	base := r.index.snapshot.Load()
-	next, dependencies, result, err := r.applyDeltaToSnapshot(ctx, base, r.deps, delta)
+	next, dependencies, result, err := r.applyDeltasToSnapshot(ctx, base, r.deps, normalized)
 	if err != nil {
 		return ProjectionResult{}, err
 	}
@@ -327,86 +516,111 @@ func buildProjectionSnapshot(
 	if err := validateSnapshot(builder); err != nil {
 		return nil, projectionDependencies{}, ProjectionResult{}, errors.New("fleet full projection is invalid")
 	}
+	dependencies.rebuildReverse()
 	return builder, dependencies, result, nil
 }
 
-//nolint:cyclop,funlen,gocognit,gocyclo // each resource kind has an explicit fail-closed delta path.
-func (r *Rebuilder) applyDeltaToSnapshot(
+func (r *Rebuilder) applyDeltasToSnapshot(
 	ctx context.Context,
 	base *Snapshot,
 	dependencies projectionDependencies,
-	delta ResourceDelta,
+	deltas []ResourceDelta,
 ) (ownedSnapshot, projectionDependencies, ProjectionResult, error) {
-	delta = normalizeDelta(delta)
 	editor := newSnapshotEditor(base)
-	nextDependencies := dependencies
+	r.snapshotEditorsCreated++
+	dependencyChanges := newDependencyEditor(dependencies)
+	result := ProjectionResult{}
+	for _, delta := range deltas {
+		deltaResult, err := r.applyDeltaToEditor(ctx, editor, dependencyChanges, delta)
+		if err != nil {
+			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, err
+		}
+		result.ProjectionErrorCount += deltaResult.ProjectionErrorCount
+	}
+	result.Changed = editor.changed
+	if !editor.changed {
+		return ownedSnapshot{snapshot: base}, dependencyChanges.next, result, nil
+	}
+	owned, err := editor.seal(base.Generation)
+	if err != nil {
+		return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, errors.New("fleet delta editor produced an invalid snapshot")
+	}
+	return owned, dependencyChanges.next, result, nil
+}
+
+//nolint:cyclop,gocognit,gocyclo // each resource kind has an explicit fail-closed delta path.
+func (r *Rebuilder) applyDeltaToEditor(
+	ctx context.Context,
+	editor *snapshotEditor,
+	dependencies *dependencyEditor,
+	delta ResourceDelta,
+) (ProjectionResult, error) {
+	delta = normalizeDelta(delta)
 	result := ProjectionResult{}
 
 	switch delta.Kind {
 	case ResourceApplication:
-		projected, err := r.reprojectApplicationDelta(ctx, editor, &nextDependencies, delta.Key)
+		projected, err := r.reprojectApplicationDelta(ctx, editor, dependencies, delta.Key)
 		if err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, err
+			return ProjectionResult{}, err
 		}
 		result.ProjectionErrorCount += projected
 	case ResourceStage:
 		stage, found, err := r.store.GetStage(ctx, delta.Key)
 		if err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, safeStoreError(ctx, "stage")
+			return ProjectionResult{}, safeStoreError(ctx, "stage")
 		}
-		oldOwner := nextDependencies.stageOwners[delta.Key]
+		oldOwner := dependencies.next.stageOwners[delta.Key]
 		affected := append([]types.NamespacedName(nil), delta.AffectedApplications...)
 		if found {
 			newOwner, valid, validationErr := r.validateStageOwner(ctx, stage)
 			if validationErr != nil {
-				return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, validationErr
+				return ProjectionResult{}, validationErr
 			}
 			if !valid {
-				return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{ProjectionErrorCount: 1}, nil
+				return ProjectionResult{ProjectionErrorCount: 1}, nil
 			}
-			nextDependencies.stageOwners = withDependency(
-				nextDependencies.stageOwners, delta.Key, newOwner,
-			)
+			dependencies.setStage(delta.Key, newOwner)
 			affected = append(affected, oldOwner, newOwner)
 		} else {
-			nextDependencies.stageOwners = withoutDependency(nextDependencies.stageOwners, delta.Key)
+			dependencies.setStage(delta.Key, types.NamespacedName{})
 			affected = append(affected, oldOwner)
 		}
-		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, nextDependencies, normalizeKeys(affected))
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, normalizeKeys(affected))
 		if reprojectErr != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, reprojectErr
+			return ProjectionResult{}, reprojectErr
 		}
 		result.ProjectionErrorCount += projected
 	case ResourceRelease:
-		affected, associationError, err := r.updateReleaseDependency(ctx, &nextDependencies, delta)
+		affected, associationError, err := r.updateReleaseDependency(ctx, dependencies, delta)
 		if err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, err
+			return ProjectionResult{}, err
 		}
 		if associationError {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{ProjectionErrorCount: 1}, nil
+			return ProjectionResult{ProjectionErrorCount: 1}, nil
 		}
-		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, nextDependencies, affected)
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
 		if reprojectErr != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, reprojectErr
+			return ProjectionResult{}, reprojectErr
 		}
 		result.ProjectionErrorCount += projected
 	case ResourceRollout:
-		affected, associationError, err := r.updateRolloutDependency(ctx, &nextDependencies, delta)
+		affected, associationError, err := r.updateRolloutDependency(ctx, dependencies, delta)
 		if err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, err
+			return ProjectionResult{}, err
 		}
 		if associationError {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{ProjectionErrorCount: 1}, nil
+			return ProjectionResult{ProjectionErrorCount: 1}, nil
 		}
-		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, nextDependencies, affected)
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
 		if reprojectErr != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, reprojectErr
+			return ProjectionResult{}, reprojectErr
 		}
 		result.ProjectionErrorCount += projected
 	case ResourceAppProject:
 		project, found, err := r.store.GetAppProject(ctx, delta.Key)
 		if err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, safeStoreError(ctx, "app project")
+			return ProjectionResult{}, safeStoreError(ctx, "app project")
 		}
 		if found {
 			editor.upsertProject(ProjectSummary{Identity: objectKey(project)})
@@ -415,29 +629,20 @@ func (r *Rebuilder) applyDeltaToSnapshot(
 		}
 	case ResourceRepository:
 		if _, _, err := r.store.GetRepository(ctx, delta.Key); err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, safeStoreError(ctx, "repository")
+			return ProjectionResult{}, safeStoreError(ctx, "repository")
 		}
 	case ResourceCluster:
 		if _, _, err := r.store.GetCluster(ctx, delta.Key); err != nil {
-			return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, safeStoreError(ctx, "cluster")
+			return ProjectionResult{}, safeStoreError(ctx, "cluster")
 		}
 	}
-
-	result.Changed = editor.changed
-	if !editor.changed {
-		return ownedSnapshot{snapshot: base}, nextDependencies, result, nil
-	}
-	owned, err := editor.seal(base.Generation)
-	if err != nil {
-		return ownedSnapshot{snapshot: base}, dependencies, ProjectionResult{}, errors.New("fleet delta editor produced an invalid snapshot")
-	}
-	return owned, nextDependencies, result, nil
+	return result, nil
 }
 
 func (r *Rebuilder) reprojectApplicationDelta(
 	ctx context.Context,
 	editor *snapshotEditor,
-	dependencies *projectionDependencies,
+	dependencies *dependencyEditor,
 	key types.NamespacedName,
 ) (uint64, error) {
 	app, found, err := r.store.GetApplication(ctx, key)
@@ -445,9 +650,9 @@ func (r *Rebuilder) reprojectApplicationDelta(
 		return 0, safeStoreError(ctx, "application")
 	}
 	if !found {
-		dependencies.stageOwners = replaceDependencyOwner(dependencies.stageOwners, key, nil)
-		dependencies.releaseOwners = replaceDependencyOwner(dependencies.releaseOwners, key, nil)
-		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, key, nil)
+		dependencies.replaceStages(key, nil)
+		dependencies.setReleaseForApplication(key, types.NamespacedName{})
+		dependencies.setRolloutForApplication(key, types.NamespacedName{})
 		editor.deleteApplication(key)
 		return 0, nil
 	}
@@ -459,7 +664,7 @@ func (r *Rebuilder) reprojectApplicationDelta(
 	if err != nil {
 		return 0, err
 	}
-	input, err := r.loadProjectionInput(ctx, app, *dependencies)
+	input, err := r.loadProjectionInput(ctx, app, dependencies.next)
 	if err != nil {
 		return 0, err
 	}
@@ -472,15 +677,14 @@ func (r *Rebuilder) reprojectApplicationDelta(
 //nolint:cyclop // stage, release, and rollout dependency chains require distinct cache reads.
 func (r *Rebuilder) reconcileApplicationDependencies(
 	ctx context.Context,
-	dependencies *projectionDependencies,
+	dependencies *dependencyEditor,
 	app *pipelinesv1alpha1.Application,
 ) (uint64, error) {
 	appKey := objectKey(app)
-	stageKeys := make([]types.NamespacedName, 0, len(app.Status.StageRefs))
-	for stageKey, owner := range dependencies.stageOwners {
-		if owner == appKey {
-			stageKeys = append(stageKeys, stageKey)
-		}
+	ownedStages := dependencies.next.stagesByApplication[appKey]
+	stageKeys := make([]types.NamespacedName, 0, len(ownedStages)+len(app.Status.StageRefs))
+	for stageKey := range ownedStages {
+		stageKeys = append(stageKeys, stageKey)
 	}
 	for _, stageName := range app.Status.StageRefs {
 		if stageName != "" {
@@ -503,12 +707,11 @@ func (r *Rebuilder) reconcileApplicationDependencies(
 		}
 		desiredStages[stageKey] = struct{}{}
 	}
-	dependencies.stageOwners = replaceDependencyOwner(dependencies.stageOwners, appKey, desiredStages)
+	dependencies.replaceStages(appKey, desiredStages)
 
-	var desiredRelease, desiredRollout types.NamespacedName
 	if app.Status.ReleaseRef == "" {
-		dependencies.releaseOwners = replaceDependencyOwner(dependencies.releaseOwners, appKey, nil)
-		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, appKey, nil)
+		dependencies.setReleaseForApplication(appKey, types.NamespacedName{})
+		dependencies.setRolloutForApplication(appKey, types.NamespacedName{})
 		return projectionErrors, nil
 	}
 	releaseKey := types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}
@@ -517,16 +720,13 @@ func (r *Rebuilder) reconcileApplicationDependencies(
 		return 0, safeStoreError(ctx, "release")
 	}
 	if !found || !validReleaseAssociation(release, app) {
-		dependencies.releaseOwners = replaceDependencyOwner(dependencies.releaseOwners, appKey, nil)
-		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, appKey, nil)
+		dependencies.setReleaseForApplication(appKey, types.NamespacedName{})
+		dependencies.setRolloutForApplication(appKey, types.NamespacedName{})
 		return projectionErrors, nil
 	}
-	desiredRelease = releaseKey
+	dependencies.setReleaseForApplication(appKey, releaseKey)
 	if release.Status.RolloutRef == "" {
-		dependencies.releaseOwners = replaceDependencyOwner(
-			dependencies.releaseOwners, appKey, map[types.NamespacedName]struct{}{desiredRelease: {}},
-		)
-		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, appKey, nil)
+		dependencies.setRolloutForApplication(appKey, types.NamespacedName{})
 		return projectionErrors, nil
 	}
 	rolloutKey := types.NamespacedName{Namespace: release.Namespace, Name: release.Status.RolloutRef}
@@ -535,77 +735,11 @@ func (r *Rebuilder) reconcileApplicationDependencies(
 		return 0, safeStoreError(ctx, "rollout")
 	}
 	if rolloutFound && validRolloutAssociation(rollout, app, release) {
-		desiredRollout = rolloutKey
+		dependencies.setRolloutForApplication(appKey, rolloutKey)
+	} else {
+		dependencies.setRolloutForApplication(appKey, types.NamespacedName{})
 	}
-	dependencies.releaseOwners = replaceDependencyOwner(
-		dependencies.releaseOwners, appKey, map[types.NamespacedName]struct{}{desiredRelease: {}},
-	)
-	desiredRollouts := make(map[types.NamespacedName]struct{})
-	if desiredRollout != (types.NamespacedName{}) {
-		desiredRollouts[desiredRollout] = struct{}{}
-	}
-	dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, appKey, desiredRollouts)
 	return projectionErrors, nil
-}
-
-func replaceDependencyOwner(
-	dependencies map[types.NamespacedName]types.NamespacedName,
-	owner types.NamespacedName,
-	desired map[types.NamespacedName]struct{},
-) map[types.NamespacedName]types.NamespacedName {
-	actualCount := 0
-	matches := true
-	for key, candidate := range dependencies {
-		if candidate == owner {
-			actualCount++
-			if _, ok := desired[key]; !ok {
-				matches = false
-			}
-		}
-	}
-	if matches && actualCount == len(desired) {
-		return dependencies
-	}
-	replacement := cloneMap(dependencies)
-	if replacement == nil {
-		replacement = make(map[types.NamespacedName]types.NamespacedName)
-	}
-	for key, candidate := range replacement {
-		if candidate == owner {
-			delete(replacement, key)
-		}
-	}
-	for key := range desired {
-		replacement[key] = owner
-	}
-	return replacement
-}
-
-func withDependency(
-	dependencies map[types.NamespacedName]types.NamespacedName,
-	key, owner types.NamespacedName,
-) map[types.NamespacedName]types.NamespacedName {
-	if dependencies[key] == owner {
-		return dependencies
-	}
-	replacement := cloneMap(dependencies)
-	if replacement == nil {
-		replacement = make(map[types.NamespacedName]types.NamespacedName)
-	}
-	replacement[key] = owner
-	return replacement
-}
-
-func withoutDependency(
-	dependencies map[types.NamespacedName]types.NamespacedName,
-	key types.NamespacedName,
-) map[types.NamespacedName]types.NamespacedName {
-	if _, ok := dependencies[key]; !ok {
-		return dependencies
-	}
-	replacement := cloneMap(dependencies)
-	delete(replacement, key)
-	return replacement
 }
 
 func (r *Rebuilder) validateStageOwner(
@@ -629,10 +763,10 @@ func (r *Rebuilder) validateStageOwner(
 //nolint:cyclop // release validation reconciles both Application and Rollout owner chains.
 func (r *Rebuilder) updateReleaseDependency(
 	ctx context.Context,
-	dependencies *projectionDependencies,
+	dependencies *dependencyEditor,
 	delta ResourceDelta,
 ) ([]types.NamespacedName, bool, error) {
-	oldOwner := dependencies.releaseOwners[delta.Key]
+	oldOwner := dependencies.next.releaseOwners[delta.Key]
 	affected := append([]types.NamespacedName(nil), delta.AffectedApplications...)
 	affected = append(affected, oldOwner)
 	release, found, err := r.store.GetRelease(ctx, delta.Key)
@@ -640,9 +774,9 @@ func (r *Rebuilder) updateReleaseDependency(
 		return nil, false, safeStoreError(ctx, "release")
 	}
 	if !found {
-		dependencies.releaseOwners = withoutDependency(dependencies.releaseOwners, delta.Key)
 		if oldOwner != (types.NamespacedName{}) {
-			dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+			dependencies.setReleaseForApplication(oldOwner, types.NamespacedName{})
+			dependencies.setRolloutForApplication(oldOwner, types.NamespacedName{})
 		}
 		return normalizeKeys(affected), false, nil
 	}
@@ -663,16 +797,16 @@ func (r *Rebuilder) updateReleaseDependency(
 	}
 	affected = append(affected, ownerKey)
 	if app.Status.ReleaseRef != release.Name {
-		dependencies.releaseOwners = withoutDependency(dependencies.releaseOwners, delta.Key)
 		if oldOwner != (types.NamespacedName{}) {
-			dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+			dependencies.setReleaseForApplication(oldOwner, types.NamespacedName{})
+			dependencies.setRolloutForApplication(oldOwner, types.NamespacedName{})
 		}
 		return normalizeKeys(affected), false, nil
 	}
 	if oldOwner != (types.NamespacedName{}) && oldOwner != ownerKey {
-		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+		dependencies.setRolloutForApplication(oldOwner, types.NamespacedName{})
 	}
-	dependencies.releaseOwners = withDependency(dependencies.releaseOwners, delta.Key, ownerKey)
+	dependencies.setReleaseForApplication(ownerKey, delta.Key)
 	if err := r.reconcileReleaseRolloutDependency(ctx, dependencies, app, release); err != nil {
 		return nil, false, err
 	}
@@ -681,11 +815,11 @@ func (r *Rebuilder) updateReleaseDependency(
 
 func (r *Rebuilder) reconcileReleaseRolloutDependency(
 	ctx context.Context,
-	dependencies *projectionDependencies,
+	dependencies *dependencyEditor,
 	app *pipelinesv1alpha1.Application,
 	release *pipelinesv1alpha1.Release,
 ) error {
-	desired := make(map[types.NamespacedName]struct{})
+	desired := types.NamespacedName{}
 	if release.Status.RolloutRef != "" {
 		rolloutKey := types.NamespacedName{Namespace: release.Namespace, Name: release.Status.RolloutRef}
 		rollout, found, err := r.store.GetRollout(ctx, rolloutKey)
@@ -693,24 +827,20 @@ func (r *Rebuilder) reconcileReleaseRolloutDependency(
 			return safeStoreError(ctx, "rollout")
 		}
 		if found && validRolloutAssociation(rollout, app, release) {
-			desired[rolloutKey] = struct{}{}
+			desired = rolloutKey
 		}
 	}
-	dependencies.rolloutOwners = replaceDependencyOwner(
-		dependencies.rolloutOwners,
-		objectKey(app),
-		desired,
-	)
+	dependencies.setRolloutForApplication(objectKey(app), desired)
 	return nil
 }
 
 //nolint:cyclop // rollout validation intentionally walks the complete owner chain.
 func (r *Rebuilder) updateRolloutDependency(
 	ctx context.Context,
-	dependencies *projectionDependencies,
+	dependencies *dependencyEditor,
 	delta ResourceDelta,
 ) ([]types.NamespacedName, bool, error) {
-	oldOwner := dependencies.rolloutOwners[delta.Key]
+	oldOwner := dependencies.next.rolloutOwners[delta.Key]
 	affected := append([]types.NamespacedName(nil), delta.AffectedApplications...)
 	affected = append(affected, oldOwner)
 	rollout, found, err := r.store.GetRollout(ctx, delta.Key)
@@ -718,7 +848,9 @@ func (r *Rebuilder) updateRolloutDependency(
 		return nil, false, safeStoreError(ctx, "rollout")
 	}
 	if !found {
-		dependencies.rolloutOwners = withoutDependency(dependencies.rolloutOwners, delta.Key)
+		if oldOwner != (types.NamespacedName{}) {
+			dependencies.setRolloutForApplication(oldOwner, types.NamespacedName{})
+		}
 		return normalizeKeys(affected), false, nil
 	}
 
@@ -749,13 +881,15 @@ func (r *Rebuilder) updateRolloutDependency(
 	}
 	affected = append(affected, appKey)
 	if release.Status.RolloutRef != rollout.Name {
-		dependencies.rolloutOwners = withoutDependency(dependencies.rolloutOwners, delta.Key)
+		if oldOwner != (types.NamespacedName{}) {
+			dependencies.setRolloutForApplication(oldOwner, types.NamespacedName{})
+		}
 		return normalizeKeys(affected), false, nil
 	}
 	if !validRolloutAssociation(rollout, app, release) {
 		return nil, true, nil
 	}
-	dependencies.rolloutOwners = withDependency(dependencies.rolloutOwners, delta.Key, appKey)
+	dependencies.setRolloutForApplication(appKey, delta.Key)
 	return normalizeKeys(affected), false, nil
 }
 
@@ -776,7 +910,7 @@ func (r *Rebuilder) anyApplicationReferencesRelease(
 func (r *Rebuilder) reprojectApplicationKeys(
 	ctx context.Context,
 	editor *snapshotEditor,
-	dependencies projectionDependencies,
+	dependencies *dependencyEditor,
 	keys []types.NamespacedName,
 ) (uint64, error) {
 	var projectionErrors uint64
@@ -786,10 +920,13 @@ func (r *Rebuilder) reprojectApplicationKeys(
 			return 0, safeStoreError(ctx, "application")
 		}
 		if !found {
+			dependencies.replaceStages(key, nil)
+			dependencies.setReleaseForApplication(key, types.NamespacedName{})
+			dependencies.setRolloutForApplication(key, types.NamespacedName{})
 			editor.deleteApplication(key)
 			continue
 		}
-		input, inputErr := r.loadProjectionInput(ctx, app, dependencies)
+		input, inputErr := r.loadProjectionInput(ctx, app, dependencies.next)
 		if inputErr != nil {
 			return 0, inputErr
 		}
@@ -810,11 +947,10 @@ func (r *Rebuilder) loadProjectionInput(
 	input := projectionInput{
 		application: app,
 	}
-	stageKeys := make([]types.NamespacedName, 0)
-	for stageKey, owner := range dependencies.stageOwners {
-		if owner == appKey {
-			stageKeys = append(stageKeys, stageKey)
-		}
+	stageChildren := dependencies.stagesByApplication[appKey]
+	stageKeys := make([]types.NamespacedName, 0, len(stageChildren))
+	for stageKey := range stageChildren {
+		stageKeys = append(stageKeys, stageKey)
 	}
 	sortNamespacedNames(stageKeys)
 	for _, stageKey := range stageKeys {

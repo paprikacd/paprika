@@ -522,6 +522,36 @@ func TestDeltaApplicationDeleteCleansChildDependencies(t *testing.T) {
 	require.Same(t, prior, requireSnapshot(t, index))
 }
 
+func TestDeltaChildDeleteCleansDependenciesWhenApplicationIsAlreadyAbsent(t *testing.T) {
+	t.Parallel()
+
+	store, appID, _ := populatedProjectionStore()
+	stageID := fleetID(appID.Namespace, "checkout-prod-runtime")
+	releaseID := fleetID(appID.Namespace, "release-current")
+	rolloutID := fleetID(appID.Namespace, "rollout-current")
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+
+	store.deleteApplication(appID)
+	store.deleteStage(stageID)
+	result, err := rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+		Kind: ResourceStage,
+		Key:  stageID,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Changed)
+	require.NotContains(t, requireSnapshot(t, index).Applications, appID)
+	require.NotContains(t, rebuilder.deps.stageOwners, stageID)
+	require.NotContains(t, rebuilder.deps.releaseOwners, releaseID)
+	require.NotContains(t, rebuilder.deps.rolloutOwners, rolloutID)
+	require.NotContains(t, rebuilder.deps.stagesByApplication, appID)
+	require.NotContains(t, rebuilder.deps.releaseByApplication, appID)
+	require.NotContains(t, rebuilder.deps.rolloutByApplication, appID)
+	requireDependencyInvariants(t, rebuilder.deps)
+}
+
 func TestSnapshotEditorOwnedSealRequiredForPublication(t *testing.T) {
 	t.Parallel()
 
@@ -601,6 +631,175 @@ func TestSnapshotEditorDeltaUsesOwnedCopyOnWriteAndPreservesOldSnapshots(t *test
 	require.NotEqual(t, mapIdentity(updated.Trigrams["coh"]), mapIdentity(afterAdd.Trigrams["coh"]))
 	require.NotContains(t, updated.Trigrams["coh"], newID)
 	require.Contains(t, afterAdd.Trigrams["coh"], newID)
+}
+
+func TestDeltaBatchPublishesManyApplicationChangesWithOneEditor(t *testing.T) {
+	t.Parallel()
+
+	store := newFakeProjectionStore()
+	const applicationCount = 512
+	keys := make([]types.NamespacedName, 0, applicationCount)
+	for i := 0; i < applicationCount; i++ {
+		app := projectionApplication("batch", fmt.Sprintf("app-%04d", i), fmt.Sprintf("app-uid-%04d", i))
+		app.Status.SourceRevision = "before"
+		app.Status.Synced = true
+		app.Spec.Stages = []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}}
+		stage := projectionStage(
+			app,
+			fmt.Sprintf("app-%04d-prod-runtime", i),
+			fmt.Sprintf("stage-uid-%04d", i),
+			"prod",
+			1,
+			pipelinesv1alpha1.ClusterRef{},
+		)
+		app.Status.StageRefs = []string{stage.Name}
+		release := projectionRelease(
+			app,
+			fmt.Sprintf("release-%04d", i),
+			fmt.Sprintf("release-uid-%04d", i),
+			pipelinesv1alpha1.ReleasePromoting,
+		)
+		rollout := projectionRollout(
+			app,
+			release,
+			fmt.Sprintf("rollout-%04d", i),
+			fmt.Sprintf("rollout-uid-%04d", i),
+			rolloutsv1alpha1.RolloutPhaseProgressing,
+		)
+		release.Status.RolloutRef = rollout.Name
+		app.Status.ReleaseRef = release.Name
+		store.putApplication(app)
+		store.putStage(stage)
+		store.putRelease(release)
+		store.putRollout(rollout)
+		keys = append(keys, clientKey(app))
+	}
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+	old := requireSnapshot(t, index)
+	priorEditors := rebuilder.snapshotEditorsCreated
+	priorStageReverse := rebuilder.deps.stagesByApplication
+	priorReleaseReverse := rebuilder.deps.releaseByApplication
+	priorRolloutReverse := rebuilder.deps.rolloutByApplication
+	requireDependencyInvariants(t, rebuilder.deps)
+	for _, key := range keys {
+		require.Len(t, priorStageReverse[key], 1)
+		require.NotEmpty(t, rebuilder.deps.releaseByApplication[key].Name)
+		require.NotEmpty(t, rebuilder.deps.rolloutByApplication[key].Name)
+	}
+
+	deltas := make([]ResourceDelta, 0, len(keys))
+	for _, key := range keys {
+		store.mutateApplication(key, func(app *pipelinesv1alpha1.Application) {
+			app.Status.SourceRevision = "after"
+		})
+		deltas = append(deltas, ResourceDelta{Kind: ResourceApplication, Key: key})
+	}
+	result, err := rebuilder.ApplyDeltas(context.Background(), deltas)
+	require.NoError(t, err)
+	require.True(t, result.Changed)
+	require.Equal(t, priorEditors+1, rebuilder.snapshotEditorsCreated)
+	require.Equal(t, mapIdentity(priorStageReverse), mapIdentity(rebuilder.deps.stagesByApplication),
+		"source-only batch must share the untouched reverse dependency index")
+	require.Equal(t, mapIdentity(priorReleaseReverse), mapIdentity(rebuilder.deps.releaseByApplication),
+		"source-only batch must share the untouched release reverse index")
+	require.Equal(t, mapIdentity(priorRolloutReverse), mapIdentity(rebuilder.deps.rolloutByApplication),
+		"source-only batch must share the untouched rollout reverse index")
+	requireDependencyInvariants(t, rebuilder.deps)
+
+	updated := requireSnapshot(t, index)
+	require.Equal(t, uint64(2), updated.Generation)
+	require.NotSame(t, old, updated)
+	require.NotEqual(t, mapIdentity(old.Applications), mapIdentity(updated.Applications))
+	for _, key := range keys {
+		require.Equal(t, "before", old.Applications[key].SourceRevision)
+		require.Equal(t, "after", updated.Applications[key].SourceRevision)
+	}
+}
+
+func TestDeltaBatchStoreErrorPublishesAndCommitsNothing(t *testing.T) {
+	t.Parallel()
+
+	store := newFakeProjectionStore()
+	keys := make([]types.NamespacedName, 0, 3)
+	for i := 0; i < 3; i++ {
+		app := projectionApplication("atomic", fmt.Sprintf("app-%d", i), fmt.Sprintf("app-uid-%d", i))
+		app.Status.SourceRevision = "before"
+		store.putApplication(app)
+		keys = append(keys, clientKey(app))
+	}
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+	prior := requireSnapshot(t, index)
+	priorDependencies := rebuilder.deps
+	priorEditors := rebuilder.snapshotEditorsCreated
+	for _, key := range keys {
+		store.mutateApplication(key, func(app *pipelinesv1alpha1.Application) {
+			app.Status.SourceRevision = "after"
+		})
+	}
+	store.setApplicationGetError(keys[1], errors.New("mid-batch cache failure"))
+
+	result, err := rebuilder.ApplyDeltas(context.Background(), []ResourceDelta{
+		{Kind: ResourceApplication, Key: keys[0]},
+		{Kind: ResourceApplication, Key: keys[1]},
+		{Kind: ResourceApplication, Key: keys[2]},
+	})
+	require.Error(t, err)
+	require.False(t, result.Changed)
+	require.Same(t, prior, requireSnapshot(t, index))
+	require.Equal(t, uint64(1), prior.Generation)
+	require.Equal(t, mapIdentity(priorDependencies.stageOwners), mapIdentity(rebuilder.deps.stageOwners))
+	require.Equal(t, mapIdentity(priorDependencies.releaseOwners), mapIdentity(rebuilder.deps.releaseOwners))
+	require.Equal(t, mapIdentity(priorDependencies.rolloutOwners), mapIdentity(rebuilder.deps.rolloutOwners))
+	require.Equal(t, priorEditors+1, rebuilder.snapshotEditorsCreated)
+}
+
+func TestRebuildReplaysDrainedLedgerBatchWithOneEditor(t *testing.T) {
+	store := newFakeProjectionStore()
+	const applicationCount = 128
+	keys := make([]types.NamespacedName, 0, applicationCount)
+	for i := 0; i < applicationCount; i++ {
+		app := projectionApplication("ledger", fmt.Sprintf("app-%04d", i), fmt.Sprintf("app-uid-%04d", i))
+		app.Status.SourceRevision = "before"
+		store.putApplication(app)
+		keys = append(keys, clientKey(app))
+	}
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+	priorEditors := rebuilder.snapshotEditorsCreated
+	started, proceed := store.blockNextApplicationList()
+	done := make(chan error, 1)
+	go func() {
+		_, rebuildErr := rebuilder.Rebuild(context.Background())
+		done <- rebuildErr
+	}()
+	<-started
+	for _, key := range keys {
+		store.mutateApplication(key, func(app *pipelinesv1alpha1.Application) {
+			app.Status.SourceRevision = "after"
+		})
+		queued, deltaErr := rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+			Kind: ResourceApplication,
+			Key:  key,
+		})
+		require.NoError(t, deltaErr)
+		require.False(t, queued.Changed)
+	}
+	close(proceed)
+	require.NoError(t, <-done)
+	require.Equal(t, priorEditors+1, rebuilder.snapshotEditorsCreated)
+	snapshot := requireSnapshot(t, index)
+	require.Equal(t, uint64(2), snapshot.Generation)
+	for _, key := range keys {
+		require.Equal(t, "after", snapshot.Applications[key].SourceRevision)
+	}
 }
 
 func TestDeltaPreservesDegradedHealthUntilSuccessfulFullRebuild(t *testing.T) {
@@ -763,6 +962,38 @@ func mapIdentity[K comparable, V any](value map[K]V) uintptr {
 	return reflect.ValueOf(value).Pointer()
 }
 
+func requireDependencyInvariants(t *testing.T, dependencies projectionDependencies) {
+	t.Helper()
+	stageCount := 0
+	for owner, children := range dependencies.stagesByApplication {
+		require.NotEmpty(t, children)
+		stageCount += len(children)
+		for child := range children {
+			require.Equal(t, owner, dependencies.stageOwners[child])
+		}
+	}
+	require.Len(t, dependencies.stageOwners, stageCount)
+	for child, owner := range dependencies.stageOwners {
+		require.Contains(t, dependencies.stagesByApplication[owner], child)
+	}
+
+	require.Len(t, dependencies.releaseByApplication, len(dependencies.releaseOwners))
+	for child, owner := range dependencies.releaseOwners {
+		require.Equal(t, child, dependencies.releaseByApplication[owner])
+	}
+	for owner, child := range dependencies.releaseByApplication {
+		require.Equal(t, owner, dependencies.releaseOwners[child])
+	}
+
+	require.Len(t, dependencies.rolloutByApplication, len(dependencies.rolloutOwners))
+	for child, owner := range dependencies.rolloutOwners {
+		require.Equal(t, child, dependencies.rolloutByApplication[owner])
+	}
+	for owner, child := range dependencies.rolloutByApplication {
+		require.Equal(t, owner, dependencies.rolloutOwners[child])
+	}
+}
+
 func sliceDataPointer[T any](value []T) uintptr {
 	return reflect.ValueOf(value).Pointer()
 }
@@ -778,10 +1009,11 @@ type fakeProjectionStore struct {
 	repositories map[types.NamespacedName]*corev1alpha1.Repository
 	clusters     map[types.NamespacedName]*clustersv1alpha1.Cluster
 
-	listCalls  map[ResourceKind]int
-	listErrors map[ResourceKind]error
-	getErrors  map[ResourceKind]error
-	listBlock  *projectionListBlock
+	listCalls            map[ResourceKind]int
+	listErrors           map[ResourceKind]error
+	getErrors            map[ResourceKind]error
+	applicationGetErrors map[types.NamespacedName]error
+	listBlock            *projectionListBlock
 }
 
 type projectionListBlock struct {
@@ -791,16 +1023,17 @@ type projectionListBlock struct {
 
 func newFakeProjectionStore() *fakeProjectionStore {
 	return &fakeProjectionStore{
-		applications: make(map[types.NamespacedName]*pipelinesv1alpha1.Application),
-		stages:       make(map[types.NamespacedName]*pipelinesv1alpha1.Stage),
-		releases:     make(map[types.NamespacedName]*pipelinesv1alpha1.Release),
-		rollouts:     make(map[types.NamespacedName]*rolloutsv1alpha1.Rollout),
-		projects:     make(map[types.NamespacedName]*corev1alpha1.AppProject),
-		repositories: make(map[types.NamespacedName]*corev1alpha1.Repository),
-		clusters:     make(map[types.NamespacedName]*clustersv1alpha1.Cluster),
-		listCalls:    make(map[ResourceKind]int),
-		listErrors:   make(map[ResourceKind]error),
-		getErrors:    make(map[ResourceKind]error),
+		applications:         make(map[types.NamespacedName]*pipelinesv1alpha1.Application),
+		stages:               make(map[types.NamespacedName]*pipelinesv1alpha1.Stage),
+		releases:             make(map[types.NamespacedName]*pipelinesv1alpha1.Release),
+		rollouts:             make(map[types.NamespacedName]*rolloutsv1alpha1.Rollout),
+		projects:             make(map[types.NamespacedName]*corev1alpha1.AppProject),
+		repositories:         make(map[types.NamespacedName]*corev1alpha1.Repository),
+		clusters:             make(map[types.NamespacedName]*clustersv1alpha1.Cluster),
+		listCalls:            make(map[ResourceKind]int),
+		listErrors:           make(map[ResourceKind]error),
+		getErrors:            make(map[ResourceKind]error),
+		applicationGetErrors: make(map[types.NamespacedName]error),
 	}
 }
 
@@ -827,6 +1060,9 @@ func (s *fakeProjectionStore) GetApplication(_ context.Context, key types.Namesp
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.getErrors[ResourceApplication]; err != nil {
+		return nil, false, err
+	}
+	if err := s.applicationGetErrors[key]; err != nil {
 		return nil, false, err
 	}
 	value, ok := s.applications[key]
@@ -1078,6 +1314,12 @@ func (s *fakeProjectionStore) setGetError(kind ResourceKind, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.getErrors[kind] = err
+}
+
+func (s *fakeProjectionStore) setApplicationGetError(key types.NamespacedName, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.applicationGetErrors[key] = err
 }
 
 func (s *fakeProjectionStore) setListError(kind ResourceKind, err error) {
