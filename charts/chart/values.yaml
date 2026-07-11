@@ -877,6 +877,7 @@ metrics:
   secure: true
   # Metrics bind address for split-plane deployments.
   # Set to ":8080" to enable on HTTP, or ":0" to disable.
+  # The webhook receiver uses dedicated port :8082 when this is enabled because :8080 serves webhooks.
   bindAddress: ":0"
   # Prometheus ServiceMonitor configuration
   serviceMonitor:
