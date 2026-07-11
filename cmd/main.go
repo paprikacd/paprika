@@ -23,6 +23,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -36,6 +37,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
@@ -46,6 +48,7 @@ import (
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -64,6 +67,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
@@ -78,6 +82,8 @@ const (
 	defaultReadHeaderTimeout = 10 * time.Second
 	serverShutdownTimeout    = 5 * time.Second
 	defaultRedisAddr         = "localhost:6379"
+	defaultCacheSyncTimeout  = 2 * time.Minute
+	apiCacheDisabledReason   = "fleet queries are unavailable because --api-cache-enabled=false"
 )
 
 func newScheme() *runtime.Scheme {
@@ -385,6 +391,81 @@ func buildAPIServerOptions(
 	return opts, nil
 }
 
+type apiCacheLifecycle interface {
+	Start(context.Context) error
+	WaitForCacheSync(context.Context) bool
+}
+
+type fleetRuntimeLifecycle interface {
+	Start(context.Context) error
+	WaitReady(context.Context) error
+}
+
+// runFleetCacheLifecycle owns the cache, fleet runtime, and main API server
+// under one cancelable error group. The main API does not start until the
+// cache has synced and the initial fleet snapshot has been installed.
+func runFleetCacheLifecycle(
+	ctx context.Context,
+	apiCache apiCacheLifecycle,
+	fleetRuntime fleetRuntimeLifecycle,
+	syncTimeout time.Duration,
+	serve func(context.Context) error,
+) error {
+	if syncTimeout <= 0 {
+		syncTimeout = defaultCacheSyncTimeout
+	}
+	lifecycleCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	group, groupCtx := errgroup.WithContext(lifecycleCtx)
+	group.Go(func() error {
+		return runLifecycleComponent(groupCtx, "API informer cache", apiCache.Start)
+	})
+	group.Go(func() error {
+		return runLifecycleComponent(groupCtx, "fleet runtime", fleetRuntime.Start)
+	})
+
+	started := time.Now()
+	syncCtx, syncCancel := context.WithTimeout(groupCtx, syncTimeout)
+	if ok := apiCache.WaitForCacheSync(syncCtx); !ok {
+		syncErr := syncCtx.Err()
+		if syncErr == nil {
+			syncErr = errors.New("cache sync failed")
+		}
+		syncCancel()
+		cancel()
+		return errors.Join(fmt.Errorf("sync API informer cache within %s: %w", syncTimeout, syncErr), group.Wait())
+	}
+	metrics.APICacheSyncDuration.Record(groupCtx, time.Since(started).Milliseconds())
+	if err := fleetRuntime.WaitReady(syncCtx); err != nil {
+		syncCancel()
+		cancel()
+		return errors.Join(fmt.Errorf("initialize fleet index: %w", err), group.Wait())
+	}
+	syncCancel()
+
+	group.Go(func() error {
+		return runLifecycleComponent(groupCtx, "API server", serve)
+	})
+	if err := group.Wait(); err != nil {
+		return fmt.Errorf("run API lifecycle: %w", err)
+	}
+	return nil
+}
+
+func runLifecycleComponent(
+	ctx context.Context,
+	name string,
+	start func(context.Context) error,
+) error {
+	if err := start(ctx); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if ctx.Err() == nil {
+		return fmt.Errorf("%s stopped unexpectedly", name)
+	}
+	return nil
+}
+
 func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger, probeAddrCh chan<- string) error {
 	apiCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -393,6 +474,10 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	defer func() { _ = telemetry.Shutdown(apiCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 
 	clients, err := buildAPIClients(apiCtx, cfg, scheme, setupLog)
+	if err != nil {
+		return err
+	}
+	fleetRuntime, err := prepareStandaloneFleetRuntime(apiCtx, clients, scheme)
 	if err != nil {
 		return err
 	}
@@ -418,12 +503,13 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
-	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, extraMuxHandlers...)
+	ready := fleetReadyChecker(clients.fleetReader)
+	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, ready, extraMuxHandlers...)
 	if muxErr != nil {
 		return fmt.Errorf("build API mux: %w", muxErr)
 	}
 	wrappedHandler := otelhttp.NewHandler(apiserver.MetricsMiddleware(mux), "paprika-http")
-	healthMux := buildHealthMux(setupLog)
+	healthMux := buildHealthMux(setupLog, ready)
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
 	go func() {
@@ -432,9 +518,42 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		}
 	}()
 
-	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
+	startMetricsServer(apiCtx, cfg.metricsAddr, setupLog)
 
-	return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
+	if clients.cacheBundle == nil {
+		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
+	}
+	return runFleetCacheLifecycle(
+		apiCtx,
+		clients.cacheBundle.Cache,
+		fleetRuntime,
+		cfg.cacheSyncTimeout,
+		func(ctx context.Context) error {
+			setupLog.Info("API informer cache and fleet index ready")
+			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, setupLog)
+		},
+	)
+}
+
+func prepareStandaloneFleetRuntime(
+	ctx context.Context,
+	clients *apiClients,
+	scheme *runtime.Scheme,
+) (*fleet.Runtime, error) {
+	if clients.cacheBundle == nil {
+		return nil, nil
+	}
+	fleetIndex := fleet.NewIndex()
+	fleetStore := fleet.NewCacheStore(clients.cacheBundle.Cache, scheme)
+	fleetRuntime, err := fleet.NewRuntime(clients.cacheBundle.Cache, fleetStore, fleetIndex)
+	if err != nil {
+		return nil, fmt.Errorf("build fleet index runtime: %w", err)
+	}
+	if err = fleetRuntime.Register(ctx); err != nil {
+		return nil, fmt.Errorf("register fleet index informers: %w", err)
+	}
+	clients.fleetReader = fleetRuntime.Reader()
+	return fleetRuntime, nil
 }
 
 type apiClients struct {
@@ -443,6 +562,8 @@ type apiClients struct {
 	restConfig  *rest.Config
 	authCfg     auth.Config
 	interceptor connect.Interceptor
+	cacheBundle *apiCacheBundle
+	fleetReader fleet.Reader
 }
 
 func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (*apiClients, error) {
@@ -451,12 +572,20 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return nil, fmt.Errorf("build API config: %w", err)
 	}
 
-	var apiClient client.Client
+	var (
+		apiClient   client.Client
+		cacheBundle *apiCacheBundle
+		fleetReader fleet.Reader
+	)
 	if cfg.apiCacheEnabled {
-		apiClient, err = createCachedAPIClient(ctx, config, scheme, cfg.cacheSyncTimeout, setupLog)
+		cacheBundle, err = createAPICacheBundle(ctx, config, scheme)
+		if cacheBundle != nil {
+			apiClient = cacheBundle.Client
+		}
 	} else {
 		setupLog.Info("API informer cache disabled; using direct Kubernetes client")
 		apiClient, err = createAPIClient(config, scheme)
+		fleetReader = fleet.NewUnavailableReader(apiCacheDisabledReason)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("create API client: %w", err)
@@ -480,6 +609,8 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		restConfig:  config,
 		authCfg:     authCfg,
 		interceptor: authInterceptor,
+		cacheBundle: cacheBundle,
+		fleetReader: fleetReader,
 	}, nil
 }
 
@@ -605,7 +736,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	mux.Handle("/healthz", healthzHandler(setupLog))
 	mux.Handle("/readyz", healthzHandler(setupLog))
 
-	healthMux := buildHealthMux(setupLog)
+	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
 		if srvErr := runHTTPServer(whCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
@@ -657,7 +788,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 	telemetry := observability.NewTelemetry(rsCtx, observability.ConfigFromEnv())
 	defer func() { _ = telemetry.Shutdown(rsCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 
-	healthMux := buildHealthMux(setupLog)
+	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
 		if srvErr := runHTTPServer(rsCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
@@ -694,7 +825,7 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr s
 	telemetry := observability.NewTelemetry(agentCtx, observability.ConfigFromEnv())
 	defer func() { _ = telemetry.Shutdown(agentCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort
 
-	healthMux := buildHealthMux(setupLog)
+	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
 		if srvErr := runHTTPServer(agentCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
@@ -758,7 +889,15 @@ func createAPIClient(config *rest.Config, scheme *runtime.Scheme) (client.Client
 	return apiClient, nil
 }
 
-func createCachedAPIClient(ctx context.Context, config *rest.Config, scheme *runtime.Scheme, syncTimeout time.Duration, setupLog logr.Logger) (client.Client, error) {
+type apiCacheBundle struct {
+	Cache  crcache.Cache
+	Client client.Client
+}
+
+// createAPICacheBundle constructs and warms the standalone API cache without
+// starting it. Callers must register every informer handler before taking
+// ownership of Cache.Start.
+func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runtime.Scheme) (*apiCacheBundle, error) {
 	apiCache, err := crcache.New(config, crcache.Options{
 		Scheme:           scheme,
 		DefaultTransform: crcache.TransformStripManagedFields(),
@@ -790,24 +929,6 @@ func createCachedAPIClient(ctx context.Context, config *rest.Config, scheme *run
 		}
 	}
 
-	go func() {
-		if startErr := apiCache.Start(ctx); startErr != nil && ctx.Err() == nil {
-			setupLog.Error(startErr, "API informer cache stopped")
-		}
-	}()
-
-	if syncTimeout <= 0 {
-		syncTimeout = 2 * time.Minute
-	}
-	started := time.Now()
-	syncCtx, cancel := context.WithTimeout(ctx, syncTimeout)
-	defer cancel()
-	if ok := apiCache.WaitForCacheSync(syncCtx); !ok {
-		return nil, fmt.Errorf("sync API informer cache within %s", syncTimeout)
-	}
-	metrics.APICacheSyncDuration.Record(ctx, time.Since(started).Milliseconds())
-	setupLog.Info("API informer cache synced", "duration", time.Since(started).String())
-
 	apiClient, err := client.New(config, client.Options{
 		Scheme: scheme,
 		Cache:  &client.CacheOptions{Reader: apiCache},
@@ -815,7 +936,7 @@ func createCachedAPIClient(ctx context.Context, config *rest.Config, scheme *run
 	if err != nil {
 		return nil, fmt.Errorf("create cache-backed k8s client: %w", err)
 	}
-	return apiClient, nil
+	return &apiCacheBundle{Cache: apiCache, Client: apiClient}, nil
 }
 
 func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
@@ -826,12 +947,18 @@ func createK8sClient(config *rest.Config) (kubernetes.Interface, error) {
 	return k8sClient, nil
 }
 
-func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Logger, extraHandlers ...func(*http.ServeMux)) (*http.ServeMux, error) {
+func buildAPIMux(
+	connectHandler http.Handler,
+	broker *events.Broker,
+	log logr.Logger,
+	ready healthz.Checker,
+	extraHandlers ...func(*http.ServeMux),
+) (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	mux.Handle("/events", apiserver.NewSSEHandler(broker))
 	mux.Handle("/healthz", healthzHandler(log))
-	mux.Handle("/readyz", healthzHandler(log))
+	mux.Handle("/readyz", readinessHandler(log, ready))
 	// Register extra handlers before the / catch-all so specific routes win.
 	for _, h := range extraHandlers {
 		h(mux)
@@ -844,11 +971,38 @@ func buildAPIMux(connectHandler http.Handler, broker *events.Broker, log logr.Lo
 	return mux, nil
 }
 
-func buildHealthMux(log logr.Logger) *http.ServeMux {
+func buildHealthMux(log logr.Logger, ready healthz.Checker) *http.ServeMux {
 	healthMux := http.NewServeMux()
 	healthMux.Handle("/healthz", healthzHandler(log))
-	healthMux.Handle("/readyz", healthzHandler(log))
+	healthMux.Handle("/readyz", readinessHandler(log, ready))
 	return healthMux
+}
+
+func fleetReadyChecker(reader fleet.Reader) healthz.Checker {
+	return func(_ *http.Request) error {
+		if reader == nil {
+			return errors.New("fleet reader is not configured")
+		}
+		return reader.CheckReady()
+	}
+}
+
+func readinessHandler(log logr.Logger, check healthz.Checker) http.HandlerFunc {
+	if check == nil {
+		check = healthz.Ping
+	}
+	return func(w http.ResponseWriter, req *http.Request) {
+		if err := check(req); err != nil {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			// #nosec G705 -- readiness errors are HTML-escaped and served as plain text.
+			if _, writeErr := fmt.Fprintln(w, html.EscapeString(err.Error())); writeErr != nil {
+				log.Error(writeErr, "Failed to write readiness response")
+			}
+			return
+		}
+		healthzHandler(log)(w, req)
+	}
 }
 
 func healthzHandler(log logr.Logger) http.HandlerFunc {

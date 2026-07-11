@@ -59,6 +59,7 @@ import (
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
 	"github.com/benebsworth/paprika/internal/coordinator"
+	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
@@ -82,6 +83,7 @@ type operatorDependencies struct {
 	broker         *events.Broker
 	repoServerAddr string
 	coordinator    *coordinator.Coordinator
+	fleetReader    fleet.Reader
 }
 
 // bridgeZapWithOTel tees raw's zap core with an otelzap core that forwards
@@ -173,10 +175,11 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	}
 	defer closeOperatorDependencies(opCtx, deps, setupLog)
 
-	mgr, err := buildOperatorManagerAndServer(cfg, scheme, setupLog)
+	mgr, fleetReader, err := buildOperatorManagerAndFleetRuntime(opCtx, cfg, scheme, setupLog)
 	if err != nil {
-		return fmt.Errorf("build operator manager and server: %w", err)
+		return err
 	}
+	deps.fleetReader = fleetReader
 
 	if coordErr := startCoordinatorIfMode(opCtx, cfg, deps, mgr, setupLog); coordErr != nil {
 		return fmt.Errorf("start coordinator: %w", coordErr)
@@ -195,7 +198,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, cfg.auditLogEnabled, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.auditLogEnabled, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
@@ -210,6 +213,32 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("failed to run manager: %w", err)
 	}
 	return nil
+}
+
+func buildOperatorManagerAndFleetRuntime(
+	ctx context.Context,
+	cfg *cliConfig,
+	scheme *runtime.Scheme,
+	setupLog logr.Logger,
+) (ctrl.Manager, fleet.Reader, error) {
+	mgr, err := buildOperatorManagerAndServer(cfg, scheme, setupLog)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build operator manager and server: %w", err)
+	}
+
+	fleetIndex := fleet.NewIndex()
+	fleetStore := fleet.NewCacheStore(mgr.GetCache(), scheme)
+	fleetRuntime, err := fleet.NewRuntime(mgr.GetCache(), fleetStore, fleetIndex)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build fleet index runtime: %w", err)
+	}
+	if err = fleetRuntime.Register(ctx); err != nil {
+		return nil, nil, fmt.Errorf("register fleet index informers: %w", err)
+	}
+	if err = mgr.Add(fleetRuntime); err != nil {
+		return nil, nil, fmt.Errorf("register fleet index runtime: %w", err)
+	}
+	return mgr, fleetRuntime.Reader(), nil
 }
 
 func registerGauges(setupLog logr.Logger, c client.Client) {
@@ -417,8 +446,8 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, auditEnabled, setupLog)
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
@@ -451,7 +480,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -489,7 +518,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
 	uiMux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
 	uiMux.Handle("/healthz", healthzHandler(setupLog))
-	uiMux.Handle("/readyz", healthzHandler(setupLog))
+	uiMux.Handle("/readyz", readinessHandler(setupLog, fleetReadyChecker(fleetReader)))
 	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
 	if err != nil {
 		return nil, err

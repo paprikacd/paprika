@@ -120,6 +120,9 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("failed to set up ready check: %w", err)
 	}
+	if err := mgr.AddReadyzCheck("fleet-index", fleetReadyChecker(deps.fleetReader)); err != nil {
+		return fmt.Errorf("failed to set up fleet index ready check: %w", err)
+	}
 	return nil
 }
 
