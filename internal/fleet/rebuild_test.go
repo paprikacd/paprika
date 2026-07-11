@@ -39,8 +39,8 @@ func TestRebuildInitialBuildListsAllResourcesAndPublishesGenerationOne(t *testin
 	require.Equal(t, ReleaseStatePromoting, snapshot.Applications[appID].ReleaseState)
 	require.Equal(t, RolloutStateProgressing, snapshot.Applications[appID].RolloutState)
 	require.Len(t, snapshot.Applications[appID].Targets, 1)
-	require.Equal(t, ConnectionStateUnspecified, snapshot.Applications[appID].RepositoryConnection)
-	require.Equal(t, ConnectionStateUnspecified, snapshot.Applications[appID].Targets[0].ClusterConnection)
+	require.Equal(t, ConnectionStateHealthy, snapshot.Applications[appID].RepositoryConnection)
+	require.Equal(t, ConnectionStateHealthy, snapshot.Applications[appID].Targets[0].ClusterConnection)
 
 	store.mu.Lock()
 	defer store.mu.Unlock()

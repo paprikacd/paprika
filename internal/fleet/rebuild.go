@@ -9,6 +9,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
@@ -22,8 +23,10 @@ const rebuildFailureReason = "fleet snapshot rebuild failed"
 // with an ordered ledger. Kubernetes objects are always re-read from the store
 // by key before projection.
 type Rebuilder struct {
-	index *Index
-	store ProjectionStore
+	index                   *Index
+	store                   ProjectionStore
+	optionalSourceProjector OptionalSourceProjector
+	configurationErr        error
 
 	mu         sync.Mutex
 	rebuilding bool
@@ -224,8 +227,39 @@ func (e *dependencyEditor) mutableStageChildren(
 }
 
 // NewRebuilder binds a cache-only store to an atomic fleet index.
-func NewRebuilder(index *Index, store ProjectionStore) *Rebuilder {
-	return &Rebuilder{index: index, store: store, deps: newProjectionDependencies()}
+func NewRebuilder(
+	index *Index,
+	store ProjectionStore,
+	projectors ...OptionalSourceProjector,
+) *Rebuilder {
+	rebuilder := &Rebuilder{index: index, store: store, deps: newProjectionDependencies()}
+	switch len(projectors) {
+	case 0:
+	case 1:
+		rebuilder.optionalSourceProjector = projectors[0]
+		_, rebuilder.configurationErr = optionalSourcePrototype(projectors[0])
+	default:
+		rebuilder.configurationErr = errors.New("exactly one optional source projector may be registered")
+	}
+	if rebuilder.configurationErr == nil && rebuilder.optionalSourceProjector != nil {
+		if _, ok := store.(OptionalSourceStore); !ok {
+			rebuilder.configurationErr = errors.New("optional source store is not configured")
+		}
+	}
+	return rebuilder
+}
+
+// OptionalSourcePrototype returns a fresh object for informer registration.
+// Mutating the returned object cannot corrupt projector-owned state.
+func (r *Rebuilder) OptionalSourcePrototype() client.Object {
+	if r == nil || r.configurationErr != nil {
+		return nil
+	}
+	prototype, err := optionalSourcePrototype(r.optionalSourceProjector)
+	if err != nil {
+		return nil
+	}
+	return prototype
 }
 
 // Rebuild constructs a complete replacement off-lock, replays every ledgered
@@ -236,6 +270,9 @@ func NewRebuilder(index *Index, store ProjectionStore) *Rebuilder {
 func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 	if r == nil || r.index == nil || r.store == nil {
 		return ProjectionResult{}, errors.New("fleet rebuild is not configured")
+	}
+	if r.configurationErr != nil {
+		return ProjectionResult{}, fmt.Errorf("fleet optional source projection is not configured: %w", r.configurationErr)
 	}
 
 	r.mu.Lock()
@@ -323,6 +360,9 @@ func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (Pr
 	if r == nil || r.index == nil || r.store == nil {
 		return ProjectionResult{}, errors.New("fleet delta projection is not configured")
 	}
+	if r.configurationErr != nil {
+		return ProjectionResult{}, fmt.Errorf("fleet optional source projection is not configured: %w", r.configurationErr)
+	}
 	if len(deltas) == 0 {
 		return ProjectionResult{}, nil
 	}
@@ -330,6 +370,9 @@ func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (Pr
 	for i := range deltas {
 		if !validResourceKind(deltas[i].Kind) || deltas[i].Key.Name == "" {
 			return ProjectionResult{}, errors.New("fleet delta metadata is invalid")
+		}
+		if deltas[i].Kind == ResourceOptionalSource && r.optionalSourceProjector == nil {
+			return ProjectionResult{}, errors.New("optional source projector is not configured")
 		}
 		normalized[i] = normalizeDelta(deltas[i])
 	}
@@ -369,6 +412,7 @@ func (r *Rebuilder) storeDegradedHealth() {
 	r.index.health.Store(&HealthState{Degraded: true, Reason: rebuildFailureReason})
 }
 
+//nolint:cyclop // required typed cache lists each have an explicit sanitized failure path.
 func (r *Rebuilder) buildReplacement(
 	ctx context.Context,
 ) (*Snapshot, projectionDependencies, ProjectionResult, error) {
@@ -400,11 +444,29 @@ func (r *Rebuilder) buildReplacement(
 	if err != nil {
 		return nil, projectionDependencies{}, ProjectionResult{}, safeStoreError(ctx, "clusters")
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, projectionDependencies{}, ProjectionResult{}, fmt.Errorf("fleet rebuild canceled: %w", err)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, projectionDependencies{}, ProjectionResult{}, fmt.Errorf("fleet rebuild canceled: %w", contextErr)
+	}
+	var optionalSources []client.Object
+	if r.optionalSourceProjector != nil {
+		prototype, prototypeErr := optionalSourcePrototype(r.optionalSourceProjector)
+		if prototypeErr != nil {
+			return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source prototype is invalid")
+		}
+		optionalStore, ok := r.store.(OptionalSourceStore)
+		if !ok {
+			return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source store is not configured")
+		}
+		optionalSources, err = optionalStore.ListOptionalSources(ctx, prototype)
+		if err != nil {
+			return nil, projectionDependencies{}, ProjectionResult{}, safeStoreError(ctx, "optional sources")
+		}
 	}
 
-	return buildProjectionSnapshot(applications, stages, releases, rollouts, projects, repositories, clusters)
+	return buildProjectionSnapshot(
+		applications, stages, releases, rollouts, projects, repositories, clusters,
+		r.optionalSourceProjector, optionalSources,
+	)
 }
 
 func safeStoreError(ctx context.Context, resource string) error {
@@ -421,8 +483,10 @@ func buildProjectionSnapshot(
 	releases []*pipelinesv1alpha1.Release,
 	rollouts []*rolloutsv1alpha1.Rollout,
 	projects []*corev1alpha1.AppProject,
-	_ []*corev1alpha1.Repository,
-	_ []*clustersv1alpha1.Cluster,
+	repositories []*corev1alpha1.Repository,
+	clusters []*clustersv1alpha1.Cluster,
+	optionalProjector OptionalSourceProjector,
+	optionalObjects []client.Object,
 ) (*Snapshot, projectionDependencies, ProjectionResult, error) {
 	builder := NewSnapshot(0)
 	dependencies := newProjectionDependencies()
@@ -453,6 +517,56 @@ func buildProjectionSnapshot(
 	}
 	for _, key := range sortedObjectKeys(projectByKey) {
 		builder.Projects[key] = ProjectSummary{Identity: key}
+	}
+
+	seenRepositories := make(map[RepositoryKey]struct{}, len(repositories))
+	for _, repository := range repositories {
+		if repository == nil || repository.Name == "" {
+			result.ProjectionErrorCount++
+			continue
+		}
+		summary := projectRepositorySummary(repository)
+		if _, duplicate := seenRepositories[summary.Identity]; duplicate {
+			delete(builder.Repositories, summary.Identity)
+			result.ProjectionErrorCount++
+			continue
+		}
+		seenRepositories[summary.Identity] = struct{}{}
+		builder.Repositories[summary.Identity] = summary
+	}
+	seenClusters := make(map[ClusterKey]struct{}, len(clusters))
+	for _, cluster := range clusters {
+		if cluster == nil || cluster.Name == "" {
+			result.ProjectionErrorCount++
+			continue
+		}
+		summary := projectClusterSummary(cluster)
+		if _, duplicate := seenClusters[summary.Identity]; duplicate {
+			delete(builder.Clusters, summary.Identity)
+			result.ProjectionErrorCount++
+			continue
+		}
+		seenClusters[summary.Identity] = struct{}{}
+		builder.Clusters[summary.Identity] = summary
+	}
+	if optionalProjector != nil {
+		for _, object := range optionalObjects {
+			if object == nil || object.GetName() == "" {
+				return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source list contains an invalid object")
+			}
+			objectCopy, copied := copyOptionalSourceObject(object)
+			if !copied {
+				return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source list contains an invalid object")
+			}
+			summary, summaryErr := optionalProjector.Summarize(objectCopy)
+			if summaryErr != nil || !validSourceSummary(objectKey(object), summary) {
+				return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source summary is invalid")
+			}
+			if _, duplicate := builder.Sources[summary.Identity]; duplicate {
+				return nil, projectionDependencies{}, ProjectionResult{}, errors.New("optional source list contains a duplicate identity")
+			}
+			builder.Sources[summary.Identity] = summary
+		}
 	}
 
 	stagesByApp := make(map[types.NamespacedName][]*pipelinesv1alpha1.Stage)
@@ -487,8 +601,13 @@ func buildProjectionSnapshot(
 	for _, appKey := range sortedObjectKeys(appByKey) {
 		app := appByKey[appKey]
 		input := projectionInput{
-			application: app,
-			stages:      stagesByApp[appKey],
+			application:             app,
+			project:                 projectByKey[declaredProject(app)],
+			stages:                  stagesByApp[appKey],
+			repositories:            builder.Repositories,
+			clusters:                builder.Clusters,
+			sources:                 builder.Sources,
+			optionalSourceProjector: optionalProjector,
 		}
 		if app.Status.ReleaseRef != "" {
 			releaseKey := types.NamespacedName{Namespace: app.Namespace, Name: app.Status.ReleaseRef}
@@ -548,7 +667,7 @@ func (r *Rebuilder) applyDeltasToSnapshot(
 	return owned, dependencyChanges.next, result, nil
 }
 
-//nolint:cyclop,gocognit,gocyclo // each resource kind has an explicit fail-closed delta path.
+//nolint:cyclop,funlen,gocognit,gocyclo // each resource kind has an explicit fail-closed delta path.
 func (r *Rebuilder) applyDeltaToEditor(
 	ctx context.Context,
 	editor *snapshotEditor,
@@ -618,6 +737,7 @@ func (r *Rebuilder) applyDeltaToEditor(
 		}
 		result.ProjectionErrorCount += projected
 	case ResourceAppProject:
+		affected := sortedIDs(editor.next.ByProject[delta.Key])
 		project, found, err := r.store.GetAppProject(ctx, delta.Key)
 		if err != nil {
 			return ProjectionResult{}, safeStoreError(ctx, "app project")
@@ -627,14 +747,88 @@ func (r *Rebuilder) applyDeltaToEditor(
 		} else {
 			editor.deleteProject(delta.Key)
 		}
+		if r.optionalSourceProjector != nil {
+			projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
+			if reprojectErr != nil {
+				return ProjectionResult{}, reprojectErr
+			}
+			result.ProjectionErrorCount += projected
+		}
 	case ResourceRepository:
-		if _, _, err := r.store.GetRepository(ctx, delta.Key); err != nil {
+		affected := sortedIDs(editor.next.ByRepository[delta.Key])
+		repository, found, err := r.store.GetRepository(ctx, delta.Key)
+		if err != nil {
 			return ProjectionResult{}, safeStoreError(ctx, "repository")
 		}
+		if found {
+			summary := projectRepositorySummary(repository)
+			if summary.Identity != delta.Key {
+				return ProjectionResult{}, errors.New("repository projection identity is invalid")
+			}
+			editor.upsertRepository(summary)
+		} else {
+			editor.deleteRepository(delta.Key)
+		}
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
+		if reprojectErr != nil {
+			return ProjectionResult{}, reprojectErr
+		}
+		result.ProjectionErrorCount += projected
 	case ResourceCluster:
-		if _, _, err := r.store.GetCluster(ctx, delta.Key); err != nil {
+		affected := sortedIDs(editor.next.ByCluster[delta.Key])
+		cluster, found, err := r.store.GetCluster(ctx, delta.Key)
+		if err != nil {
 			return ProjectionResult{}, safeStoreError(ctx, "cluster")
 		}
+		if found {
+			summary := projectClusterSummary(cluster)
+			if summary.Identity != delta.Key {
+				return ProjectionResult{}, errors.New("cluster projection identity is invalid")
+			}
+			editor.upsertCluster(summary)
+		} else {
+			editor.deleteCluster(delta.Key)
+		}
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
+		if reprojectErr != nil {
+			return ProjectionResult{}, reprojectErr
+		}
+		result.ProjectionErrorCount += projected
+	case ResourceOptionalSource:
+		if r.optionalSourceProjector == nil {
+			return ProjectionResult{}, errors.New("optional source projector is not configured")
+		}
+		affected := sortedIDs(editor.next.BySource[delta.Key])
+		prototype, prototypeErr := optionalSourcePrototype(r.optionalSourceProjector)
+		if prototypeErr != nil {
+			return ProjectionResult{}, errors.New("optional source prototype is invalid")
+		}
+		optionalStore, ok := r.store.(OptionalSourceStore)
+		if !ok {
+			return ProjectionResult{}, errors.New("optional source store is not configured")
+		}
+		object, found, err := optionalStore.GetOptionalSource(ctx, prototype, delta.Key)
+		if err != nil {
+			return ProjectionResult{}, safeStoreError(ctx, "optional source")
+		}
+		if found {
+			objectCopy, copied := copyOptionalSourceObject(object)
+			if !copied {
+				return ProjectionResult{}, errors.New("optional source object is invalid")
+			}
+			summary, summaryErr := r.optionalSourceProjector.Summarize(objectCopy)
+			if summaryErr != nil || !validSourceSummary(delta.Key, summary) {
+				return ProjectionResult{}, errors.New("optional source summary is invalid")
+			}
+			editor.upsertSource(summary)
+		} else {
+			editor.deleteSource(delta.Key)
+		}
+		projected, reprojectErr := r.reprojectApplicationKeys(ctx, editor, dependencies, affected)
+		if reprojectErr != nil {
+			return ProjectionResult{}, reprojectErr
+		}
+		result.ProjectionErrorCount += projected
 	}
 	return result, nil
 }
@@ -664,7 +858,7 @@ func (r *Rebuilder) reprojectApplicationDelta(
 	if err != nil {
 		return 0, err
 	}
-	input, err := r.loadProjectionInput(ctx, app, dependencies.next)
+	input, err := r.loadProjectionInput(ctx, app, dependencies.next, editor.next)
 	if err != nil {
 		return 0, err
 	}
@@ -926,7 +1120,7 @@ func (r *Rebuilder) reprojectApplicationKeys(
 			editor.deleteApplication(key)
 			continue
 		}
-		input, inputErr := r.loadProjectionInput(ctx, app, dependencies.next)
+		input, inputErr := r.loadProjectionInput(ctx, app, dependencies.next, editor.next)
 		if inputErr != nil {
 			return 0, inputErr
 		}
@@ -942,10 +1136,15 @@ func (r *Rebuilder) loadProjectionInput(
 	ctx context.Context,
 	app *pipelinesv1alpha1.Application,
 	dependencies projectionDependencies,
+	snapshot *Snapshot,
 ) (projectionInput, error) {
 	appKey := objectKey(app)
 	input := projectionInput{
-		application: app,
+		application:             app,
+		repositories:            snapshot.Repositories,
+		clusters:                snapshot.Clusters,
+		sources:                 snapshot.Sources,
+		optionalSourceProjector: r.optionalSourceProjector,
 	}
 	stageChildren := dependencies.stagesByApplication[appKey]
 	stageKeys := make([]types.NamespacedName, 0, len(stageChildren))
@@ -962,6 +1161,16 @@ func (r *Rebuilder) loadProjectionInput(
 			continue
 		}
 		input.stages = append(input.stages, stage)
+	}
+	if r.optionalSourceProjector != nil {
+		projectKey := declaredProject(app)
+		project, found, err := r.store.GetAppProject(ctx, projectKey)
+		if err != nil {
+			return projectionInput{}, safeStoreError(ctx, "app project")
+		}
+		if found {
+			input.project = project
+		}
 	}
 	if app.Status.ReleaseRef == "" {
 		return input, nil

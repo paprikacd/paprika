@@ -44,6 +44,9 @@ const (
 	ResourceAppProject
 	ResourceRepository
 	ResourceCluster
+	// ResourceOptionalSource is enabled only when an OptionalSourceProjector is
+	// registered; the core ProjectionStore remains the seven-CRD contract.
+	ResourceOptionalSource
 )
 
 // ResourceDelta is key-only replay metadata. AffectedApplications can contain
@@ -76,5 +79,5 @@ func normalizeDelta(delta ResourceDelta) ResourceDelta {
 }
 
 func validResourceKind(kind ResourceKind) bool {
-	return kind >= ResourceApplication && kind <= ResourceCluster
+	return kind >= ResourceApplication && kind <= ResourceOptionalSource
 }

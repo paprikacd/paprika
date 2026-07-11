@@ -221,20 +221,22 @@ func TestProjectStageValidatedTargetsPairStageAndClusterDeterministically(t *tes
 	require.Zero(t, result.ProjectionErrorCount)
 	require.Equal(t, []StageTargetSummary{
 		{
-			StableID:     "stage-dev",
-			Stage:        "dev",
-			Ring:         10,
-			Cluster:      fleetID("apps", "dev-cluster"),
-			ClusterLabel: "dev-cluster",
-			Health:       HealthHealthy,
+			StableID:          "stage-dev",
+			Stage:             "dev",
+			Ring:              10,
+			Cluster:           fleetID("apps", "dev-cluster"),
+			ClusterLabel:      "dev-cluster",
+			Health:            HealthHealthy,
+			ClusterConnection: ConnectionStateUnhealthy,
 		},
 		{
-			StableID:     "stage-prod",
-			Stage:        "prod",
-			Ring:         20,
-			Cluster:      fleetID("shared-clusters", "prod-cluster"),
-			ClusterLabel: "prod-cluster",
-			Health:       HealthProgressing,
+			StableID:          "stage-prod",
+			Stage:             "prod",
+			Ring:              20,
+			Cluster:           fleetID("shared-clusters", "prod-cluster"),
+			ClusterLabel:      "prod-cluster",
+			Health:            HealthProgressing,
+			ClusterConnection: ConnectionStateUnhealthy,
 		},
 	}, summary.Targets)
 	require.Equal(t, "prod", summary.CurrentStage)

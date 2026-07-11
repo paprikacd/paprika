@@ -10,6 +10,13 @@ type ProjectKey = types.NamespacedName
 // or Kubernetes custom resource type.
 type ClusterKey = types.NamespacedName
 
+// RepositoryKey identifies a namespaced repository connection without
+// retaining provider configuration or credentials in the fleet index.
+type RepositoryKey = types.NamespacedName
+
+// SourceKey identifies an optional namespaced operational data source.
+type SourceKey = types.NamespacedName
+
 // IDSet is a set of application identities.
 type IDSet map[types.NamespacedName]struct{}
 
@@ -155,12 +162,40 @@ type ApplicationSummary struct {
 	RepositoryConnection         ConnectionState
 	EffectiveObservabilitySource types.NamespacedName
 	ObservabilityConnection      ConnectionState
-	BlockedGateCount             uint32
-	LastTransitionUnixMS         int64
+	// ObservabilityBindings retains every normalized source dependency returned
+	// by the optional projector. The first entry is the effective source; all
+	// entries participate in reverse invalidation. It is immutable after install.
+	ObservabilityBindings []types.NamespacedName
+	BlockedGateCount      uint32
+	LastTransitionUnixMS  int64
 }
 
 // ProjectSummary is the provider-neutral project metadata retained by a
 // snapshot for grouping and display.
 type ProjectSummary struct {
 	Identity ProjectKey
+}
+
+// RepositorySummary is deliberately compact: provider URLs, credential
+// references, messages, and raw Kubernetes objects never enter the index.
+type RepositorySummary struct {
+	Identity   RepositoryKey
+	Connection ConnectionState
+}
+
+// ClusterSummary retains only the identity and display/connection data needed
+// by fleet views. Connection configuration and Secret references are excluded.
+type ClusterSummary struct {
+	Identity    ClusterKey
+	DisplayName string
+	Connection  ConnectionState
+}
+
+// SourceSummary is the provider-neutral output of an optional source
+// projector. Project enables fail-closed binding validation without importing
+// a future provider CRD.
+type SourceSummary struct {
+	Identity   SourceKey
+	Project    ProjectKey
+	Connection ConnectionState
 }

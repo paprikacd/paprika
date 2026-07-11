@@ -33,10 +33,15 @@ type ProjectionResult struct {
 // is deliberately package-private so Kubernetes objects never escape into the
 // provider-neutral Snapshot model.
 type projectionInput struct {
-	application *pipelinesv1alpha1.Application
-	stages      []*pipelinesv1alpha1.Stage
-	releases    []*pipelinesv1alpha1.Release
-	rollouts    []*rolloutsv1alpha1.Rollout
+	application             *pipelinesv1alpha1.Application
+	project                 *corev1alpha1.AppProject
+	stages                  []*pipelinesv1alpha1.Stage
+	releases                []*pipelinesv1alpha1.Release
+	rollouts                []*rolloutsv1alpha1.Rollout
+	repositories            map[RepositoryKey]RepositorySummary
+	clusters                map[ClusterKey]ClusterSummary
+	sources                 map[SourceKey]SourceSummary
+	optionalSourceProjector OptionalSourceProjector
 }
 
 //nolint:cyclop // each optional child association is validated independently.
@@ -60,18 +65,34 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 		LastTransitionUnixMS: latestConditionUnixMS(app.Status.Conditions),
 	}
 	summary.Sync = mapSyncState(summary.DriftCount, app.Status.Synced)
+	summary.Repository, summary.RepositoryConnection = projectRepositoryConnection(app, input.repositories)
 	result := ProjectionResult{Changed: true}
 	validStages := make(map[string]*pipelinesv1alpha1.Stage)
+	validatedStages := make([]*pipelinesv1alpha1.Stage, 0, len(input.stages))
 	for _, stage := range input.stages {
 		if !validStageAssociation(stage, app) {
 			result.ProjectionErrorCount++
 			continue
 		}
-		target := projectStageTarget(stage, app)
+		target, invalidConnection := projectStageConnection(stage, app, input.clusters)
+		if invalidConnection {
+			result.ProjectionErrorCount++
+		}
 		summary.Targets = append(summary.Targets, target)
 		validStages[stage.Name] = stage
+		validatedStages = append(validatedStages, stage)
 	}
 	sortStageTargets(summary.Targets)
+	sortProjectionStages(validatedStages)
+	optionalResult := projectOptionalSourceBinding(
+		&summary,
+		app,
+		input.project,
+		validatedStages,
+		input.optionalSourceProjector,
+		input.sources,
+	)
+	result.ProjectionErrorCount += optionalResult.ProjectionErrorCount
 
 	currentRelease, releaseFound, releaseAmbiguous := findCurrentRelease(app, input.releases)
 	if releaseAmbiguous {
@@ -100,6 +121,21 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 	}
 
 	return summary, result
+}
+
+func sortProjectionStages(stages []*pipelinesv1alpha1.Stage) {
+	sort.Slice(stages, func(i, j int) bool {
+		if stages[i].Spec.Ring != stages[j].Spec.Ring {
+			return stages[i].Spec.Ring < stages[j].Spec.Ring
+		}
+		if stages[i].Spec.Name != stages[j].Spec.Name {
+			return stages[i].Spec.Name < stages[j].Spec.Name
+		}
+		if stages[i].Namespace != stages[j].Namespace {
+			return stages[i].Namespace < stages[j].Namespace
+		}
+		return stages[i].Name < stages[j].Name
+	})
 }
 
 func declaredProject(app *pipelinesv1alpha1.Application) ProjectKey {
@@ -271,31 +307,6 @@ func hasExactControllerOwner(
 		}
 	}
 	return controllers == 1 && matched
-}
-
-func projectStageTarget(
-	stage *pipelinesv1alpha1.Stage,
-	app *pipelinesv1alpha1.Application,
-) StageTargetSummary {
-	target := StageTargetSummary{
-		StableID: stageStableID(stage),
-		Stage:    stage.Spec.Name,
-		Ring:     clampInt32(stage.Spec.Ring),
-		Health:   stageHealth(app.Status.Stages, stage.Spec.Name),
-	}
-	if stage.Spec.Cluster.Name == "" {
-		target.ClusterLabel = inlineClusterLabel
-		target.UnmanagedInlineCluster = true
-		return target
-	}
-
-	clusterNamespace := stage.Spec.Cluster.Namespace
-	if clusterNamespace == "" {
-		clusterNamespace = stage.Namespace
-	}
-	target.Cluster = ClusterKey{Namespace: clusterNamespace, Name: stage.Spec.Cluster.Name}
-	target.ClusterLabel = stage.Spec.Cluster.Name
-	return target
 }
 
 func stageStableID(stage *pipelinesv1alpha1.Stage) string {
