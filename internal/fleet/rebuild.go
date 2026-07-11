@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -15,6 +16,7 @@ import (
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 const rebuildFailureReason = "fleet snapshot rebuild failed"
@@ -266,8 +268,18 @@ func (r *Rebuilder) OptionalSourcePrototype() client.Object {
 // key in order, and performs one final owned publication under the same mutex
 // used to enqueue deltas.
 //
-//nolint:cyclop // rebuild/ledger failure and handoff states are intentionally explicit.
-func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
+//nolint:cyclop,funlen // rebuild/ledger failure, telemetry, and handoff states are intentionally explicit.
+func (r *Rebuilder) Rebuild(ctx context.Context) (result ProjectionResult, err error) {
+	started := time.Now()
+	ctx, telemetrySpan := startFleetIndexBuildSpan(ctx)
+	telemetryFields, telemetryInstalled := fleetSnapshotSpanFields(rebuilderSnapshot(r))
+	degraded := false
+	defer func() {
+		recordFleetBuildTelemetry(
+			ctx, started, telemetrySpan, telemetryFields, telemetryInstalled, result, err, degraded,
+		)
+	}()
+
 	if r == nil || r.index == nil || r.store == nil {
 		return ProjectionResult{}, errors.New("fleet rebuild is not configured")
 	}
@@ -285,6 +297,7 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 
 	builder, dependencies, result, err := r.buildReplacement(ctx)
 	if err != nil {
+		degraded = true
 		r.failRebuild()
 		return ProjectionResult{}, err
 	}
@@ -300,6 +313,7 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 			var replayOwned ownedSnapshot
 			replayOwned, dependencies, replayResult, err = r.applyDeltasToSnapshot(ctx, builder, dependencies, pending)
 			if err != nil {
+				degraded = true
 				r.failRebuild()
 				return ProjectionResult{}, err
 			}
@@ -309,6 +323,7 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 		replayed += len(pending)
 		fullyOwned, validationErr := sealFullyValidatedSnapshot(builder)
 		if validationErr != nil {
+			degraded = true
 			r.failRebuild()
 			return ProjectionResult{}, errors.New("fleet rebuild produced an invalid snapshot")
 		}
@@ -325,12 +340,15 @@ func (r *Rebuilder) Rebuild(ctx context.Context) (ProjectionResult, error) {
 		}
 		fullyOwned.snapshot.Generation = generation
 		if installErr := r.index.installOwned(fullyOwned); installErr != nil {
+			degraded = true
 			r.storeDegradedHealth()
 			r.rebuilding = false
 			r.mu.Unlock()
 			return ProjectionResult{}, errors.New("fleet rebuild produced an invalid snapshot")
 		}
+		telemetryFields, telemetryInstalled = fleetSnapshotSpanFields(fullyOwned.snapshot)
 		if healthErr := r.index.SetHealth(HealthState{Ready: true}); healthErr != nil {
+			degraded = true
 			r.storeDegradedHealth()
 			r.rebuilding = false
 			r.mu.Unlock()
@@ -356,7 +374,7 @@ func (r *Rebuilder) ApplyDelta(ctx context.Context, delta ResourceDelta) (Projec
 // and dependency edits from the batch. It never changes readiness health.
 //
 //nolint:cyclop // validation, queueing, no-op, and publication are distinct outcomes.
-func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (ProjectionResult, error) {
+func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (result ProjectionResult, err error) {
 	if r == nil || r.index == nil || r.store == nil {
 		return ProjectionResult{}, errors.New("fleet delta projection is not configured")
 	}
@@ -366,6 +384,15 @@ func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (Pr
 	if len(deltas) == 0 {
 		return ProjectionResult{}, nil
 	}
+	started := time.Now()
+	ctx, telemetrySpan := startFleetIndexUpdateSpan(ctx)
+	telemetryFields, telemetryInstalled := fleetSnapshotSpanFields(rebuilderSnapshot(r))
+	defer func() {
+		recordFleetUpdateTelemetry(
+			ctx, started, telemetrySpan, telemetryFields, telemetryInstalled, result, err, len(deltas),
+		)
+	}()
+
 	normalized := make([]ResourceDelta, len(deltas))
 	for i := range deltas {
 		if !validResourceKind(deltas[i].Kind) || deltas[i].Key.Name == "" {
@@ -379,12 +406,13 @@ func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (Pr
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.rebuilding || r.index.snapshot.Load() == nil {
+	base := r.index.snapshot.Load()
+	telemetryFields, telemetryInstalled = fleetSnapshotSpanFields(base)
+	if r.rebuilding || base == nil {
 		r.ledger = append(r.ledger, normalized...)
 		return ProjectionResult{}, nil
 	}
 
-	base := r.index.snapshot.Load()
 	next, dependencies, result, err := r.applyDeltasToSnapshot(ctx, base, r.deps, normalized)
 	if err != nil {
 		return ProjectionResult{}, err
@@ -397,8 +425,83 @@ func (r *Rebuilder) ApplyDeltas(ctx context.Context, deltas []ResourceDelta) (Pr
 	if err := r.index.installOwned(next); err != nil {
 		return ProjectionResult{}, errors.New("fleet delta produced an invalid snapshot")
 	}
+	telemetryFields, telemetryInstalled = fleetSnapshotSpanFields(next.snapshot)
 	r.deps = dependencies
 	return result, nil
+}
+
+func recordFleetBuildTelemetry(
+	ctx context.Context,
+	started time.Time,
+	span fleetTelemetrySpan,
+	fields fleetSpanFields,
+	installed bool,
+	result ProjectionResult,
+	err error,
+	degraded bool,
+) {
+	fields.ProjectionErrorCount = result.ProjectionErrorCount
+	outcome := fleetTelemetrySuccess
+	metricOutcome := paprikametrics.FleetOutcomeSuccess
+	if err != nil {
+		outcome = fleetTelemetryError
+		metricOutcome = paprikametrics.FleetOutcomeError
+		if degraded {
+			outcome = fleetTelemetryDegraded
+			metricOutcome = paprikametrics.FleetOutcomeDegraded
+			if installed {
+				fields.CacheOutcome = fleetCacheStale
+			} else {
+				fields.CacheOutcome = fleetCacheMiss
+			}
+		}
+	}
+	span.End(outcome, fields)
+	paprikametrics.RecordFleetIndexBuild(ctx, time.Since(started), metricOutcome)
+	if err != nil {
+		paprikametrics.RecordFleetRebuildFailure(ctx, paprikametrics.FleetOperationBuild, metricOutcome)
+	}
+	if err == nil && installed {
+		paprikametrics.RecordFleetIndexState(
+			boundedTelemetryCount(fields.ItemCount),
+			boundedTelemetryCount(fields.Generation),
+		)
+	}
+}
+
+func recordFleetUpdateTelemetry(
+	ctx context.Context,
+	started time.Time,
+	span fleetTelemetrySpan,
+	fields fleetSpanFields,
+	installed bool,
+	result ProjectionResult,
+	err error,
+	deltaCount int,
+) {
+	fields.DeltaCount = uint64(max(deltaCount, 0)) // #nosec G115 -- a bounded slice length is nonnegative.
+	fields.ProjectionErrorCount = result.ProjectionErrorCount
+	outcome := fleetTelemetrySuccess
+	metricOutcome := paprikametrics.FleetOutcomeSuccess
+	if err != nil {
+		outcome = fleetTelemetryError
+		metricOutcome = paprikametrics.FleetOutcomeError
+	}
+	span.End(outcome, fields)
+	paprikametrics.RecordFleetIndexUpdate(ctx, time.Since(started), metricOutcome)
+	if err == nil && installed {
+		paprikametrics.RecordFleetIndexState(
+			boundedTelemetryCount(fields.ItemCount),
+			boundedTelemetryCount(fields.Generation),
+		)
+	}
+}
+
+func rebuilderSnapshot(rebuilder *Rebuilder) *Snapshot {
+	if rebuilder == nil || rebuilder.index == nil {
+		return nil
+	}
+	return rebuilder.index.snapshot.Load()
 }
 
 func (r *Rebuilder) failRebuild() {

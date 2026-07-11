@@ -2,7 +2,11 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"sort"
+	"time"
+
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 // Reader is the narrow, cache-only fleet surface consumed by the API layer.
@@ -22,15 +26,25 @@ var _ Reader = (*Index)(nil)
 // ProjectKeys returns only declared or indexed project identities, optionally
 // constrained by project namespace. It never invents candidates and never
 // lists Kubernetes objects. Results are de-duplicated and deterministic.
-func (i *Index) ProjectKeys(_ context.Context, namespaces []string) ([]ProjectKey, error) {
+func (i *Index) ProjectKeys(ctx context.Context, namespaces []string) (keys []ProjectKey, err error) {
+	activeDimensions := 0
+	if len(namespaces) > 0 {
+		activeDimensions = 1
+	}
+	observation := startFleetQueryObservation(
+		ctx, fleetQueryProjectKeys, paprikametrics.FleetQueryProjectKeys, activeDimensions,
+	)
+	defer func() { observation.end(err) }()
+
 	snapshot, err := i.LoadSnapshot()
 	if err != nil {
 		return nil, err
 	}
+	observation.observeSnapshot(snapshot, fleetSnapshotCacheOutcome(i, snapshot))
 
 	namespaceSet := projectNamespaceSet(namespaces)
 	projects := snapshotProjectCandidates(snapshot)
-	keys := make([]ProjectKey, 0, len(projects))
+	keys = make([]ProjectKey, 0, len(projects))
 	for project := range projects {
 		if projectNamespaceAllowed(project, namespaceSet) {
 			keys = append(keys, project)
@@ -39,6 +53,7 @@ func (i *Index) ProjectKeys(_ context.Context, namespaces []string) ([]ProjectKe
 	sort.Slice(keys, func(left, right int) bool {
 		return compareObjectKeys(keys[left], keys[right]) < 0
 	})
+	observation.fields.ResultCount = uint64(len(keys))
 	return keys, nil
 }
 
@@ -80,38 +95,178 @@ func projectNamespaceAllowed(project ProjectKey, namespaces map[string]struct{})
 //
 //nolint:gocritic // Reader methods consistently accept immutable query value objects.
 func (i *Index) QueryApplications(
-	_ context.Context,
+	ctx context.Context,
 	scope QueryScope,
 	query ApplicationQuery,
 	cursor string,
-) (ApplicationPage, error) {
+) (page ApplicationPage, err error) {
+	observation := startFleetQueryObservation(
+		ctx, fleetQueryApplications, paprikametrics.FleetQueryApplications,
+		activeFleetFilterDimensions(&query.Filter),
+	)
+	defer func() { observation.end(err) }()
+
 	snapshot, err := i.LoadSnapshot()
 	if err != nil {
 		return ApplicationPage{}, err
 	}
-	return snapshot.QueryApplications(scope, query, cursor)
+	observation.observeSnapshot(snapshot, fleetSnapshotCacheOutcome(i, snapshot))
+	page, err = snapshot.QueryApplications(scope, query, cursor)
+	observation.fields.ResultCount = uint64(len(page.Applications))
+	return page, err
 }
 
 // QueryMap delegates without a WeightReader until the future metrics cache is
 // injected through a fleet-owned decorator or Index dependency.
 //
 //nolint:gocritic // Reader methods consistently accept immutable query value objects.
-func (i *Index) QueryMap(_ context.Context, scope QueryScope, query FleetMapQuery) (FleetMap, error) {
+func (i *Index) QueryMap(ctx context.Context, scope QueryScope, query FleetMapQuery) (result FleetMap, err error) {
+	observation := startFleetQueryObservation(
+		ctx, fleetQueryMap, paprikametrics.FleetQueryMap,
+		activeFleetFilterDimensions(&query.Filter),
+	)
+	defer func() { observation.end(err) }()
+
 	snapshot, err := i.LoadSnapshot()
 	if err != nil {
 		return FleetMap{}, err
 	}
-	return snapshot.QueryMap(scope, query, nil)
+	observation.observeSnapshot(snapshot, fleetSnapshotCacheOutcome(i, snapshot))
+	result, err = snapshot.QueryMap(scope, query, nil)
+	observation.fields.ResultCount = uint64(len(result.Roots))
+	return result, err
 }
 
 // QueryMatrix delegates without a WeightReader until the future metrics cache
 // is injected through a fleet-owned decorator or Index dependency.
 //
 //nolint:gocritic // Reader methods consistently accept immutable query value objects.
-func (i *Index) QueryMatrix(_ context.Context, scope QueryScope, query FleetMatrixQuery) (FleetMatrix, error) {
+func (i *Index) QueryMatrix(ctx context.Context, scope QueryScope, query FleetMatrixQuery) (result FleetMatrix, err error) {
+	observation := startFleetQueryObservation(
+		ctx, fleetQueryMatrix, paprikametrics.FleetQueryMatrix,
+		activeFleetFilterDimensions(&query.Filter),
+	)
+	defer func() { observation.end(err) }()
+
 	snapshot, err := i.LoadSnapshot()
 	if err != nil {
 		return FleetMatrix{}, err
 	}
-	return snapshot.QueryMatrix(scope, query, nil)
+	observation.observeSnapshot(snapshot, fleetSnapshotCacheOutcome(i, snapshot))
+	result, err = snapshot.QueryMatrix(scope, query, nil)
+	observation.fields.ResultCount = uint64(len(result.Cells))
+	return result, err
+}
+
+type fleetQueryObservation struct {
+	ctx              context.Context
+	started          time.Time
+	span             fleetTelemetrySpan
+	metricKind       paprikametrics.FleetQueryKind
+	activeDimensions int
+	fields           fleetSpanFields
+}
+
+func startFleetQueryObservation(
+	ctx context.Context,
+	kind fleetQueryKind,
+	metricKind paprikametrics.FleetQueryKind,
+	activeDimensions int,
+) *fleetQueryObservation {
+	started := time.Now()
+	spanCtx, span := startFleetQuerySpan(ctx, kind, activeDimensions)
+	return &fleetQueryObservation{
+		ctx: spanCtx, started: started, span: span, metricKind: metricKind,
+		activeDimensions: activeDimensions,
+		fields:           fleetSpanFields{CacheOutcome: fleetCacheMiss},
+	}
+}
+
+func (o *fleetQueryObservation) observeSnapshot(snapshot *Snapshot, cacheOutcome fleetCacheOutcome) {
+	fields, installed := fleetSnapshotSpanFields(snapshot)
+	if installed {
+		o.fields.Generation = fields.Generation
+	}
+	o.fields.CacheOutcome = cacheOutcome
+}
+
+func (o *fleetQueryObservation) end(err error) {
+	outcome := fleetTelemetrySuccess
+	metricOutcome := paprikametrics.FleetOutcomeSuccess
+	if err != nil {
+		outcome = fleetTelemetryError
+		metricOutcome = paprikametrics.FleetOutcomeError
+		var unavailable *ErrUnavailable
+		if errors.As(err, &unavailable) {
+			outcome = fleetTelemetryUnavailable
+			metricOutcome = paprikametrics.FleetOutcomeUnavailable
+		}
+	}
+	o.span.End(outcome, o.fields)
+	paprikametrics.RecordFleetQuery(
+		o.ctx,
+		o.metricKind,
+		time.Since(o.started),
+		boundedTelemetryCount(o.fields.ResultCount),
+		o.activeDimensions,
+		metricCacheOutcome(o.fields.CacheOutcome),
+		metricOutcome,
+	)
+}
+
+func fleetSnapshotSpanFields(snapshot *Snapshot) (fleetSpanFields, bool) {
+	if snapshot == nil {
+		return fleetSpanFields{}, false
+	}
+	return fleetSpanFields{
+		Generation: snapshot.Generation,
+		ItemCount:  uint64(len(snapshot.Applications)),
+	}, true
+}
+
+func fleetSnapshotCacheOutcome(index *Index, snapshot *Snapshot) fleetCacheOutcome {
+	if index == nil || snapshot == nil {
+		return fleetCacheMiss
+	}
+	health := index.health.Load()
+	if health != nil && health.Degraded {
+		return fleetCacheStale
+	}
+	return fleetCacheHit
+}
+
+func metricCacheOutcome(outcome fleetCacheOutcome) paprikametrics.FleetCacheOutcome {
+	switch outcome {
+	case fleetCacheHit:
+		return paprikametrics.FleetCacheHit
+	case fleetCacheStale:
+		return paprikametrics.FleetCacheStale
+	case fleetCacheMiss:
+		return paprikametrics.FleetCacheMiss
+	default:
+		return paprikametrics.FleetCacheOutcome("")
+	}
+}
+
+func activeFleetFilterDimensions(filter *ApplicationFilter) int {
+	if filter == nil {
+		return 0
+	}
+	count := 0
+	for _, active := range [...]bool{
+		len(filter.Projects) > 0,
+		len(filter.Namespaces) > 0,
+		len(filter.Clusters) > 0,
+		len(filter.Stages) > 0,
+		len(filter.Health) > 0,
+		len(filter.Sync) > 0,
+		len(filter.ReleaseStates) > 0,
+		len(filter.RolloutStates) > 0,
+		len(filter.SourceTypes) > 0,
+	} {
+		if active {
+			count++
+		}
+	}
+	return count
 }
