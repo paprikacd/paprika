@@ -148,7 +148,7 @@ docker run \
 
     go test ./internal/fleet -run "^TestFleetAPIScaleGate$" -count=1 -v 2>&1 |
       tee "${ARTIFACT_DIR}/api-scale.log"
-    go build -o /workspace/bin/fleet-console-fixture ./test/fleetconsole 2>&1 |
+    go build -buildvcs=false -o /workspace/bin/fleet-console-fixture ./test/fleetconsole 2>&1 |
       tee "${ARTIFACT_DIR}/fixture-build.log"
   '
 
