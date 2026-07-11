@@ -82,12 +82,15 @@ export function FleetView() {
     [parsed.state, replaceState],
   )
 
-  const hasSettledFacets =
+  const hasSettledData =
     fleet.currentData !== undefined &&
     (fleet.status === "ready" || fleet.status === "empty" || fleet.status === "partial")
+  const fleetReadyTotal = hasSettledData && fleet.currentData
+    ? presentationTotal(fleet.currentData).toString()
+    : undefined
   const settledFacets = useMemo(
-    () => hasSettledFacets ? presentationFacets(fleet.currentData) : undefined,
-    [fleet.currentData, hasSettledFacets],
+    () => hasSettledData ? presentationFacets(fleet.currentData) : undefined,
+    [fleet.currentData, hasSettledData],
   )
   const availability = useMemo(
     () =>
@@ -186,6 +189,7 @@ export function FleetView() {
     <section
       aria-labelledby="applications-title"
       aria-busy={fleet.status === "loading" || fleet.status === "stale"}
+      data-fleet-ready={fleetReadyTotal}
       className="min-w-0 bg-background"
     >
       <header className="border-b border-border bg-background px-4 py-7 sm:px-6 lg:flex lg:items-end lg:justify-between lg:gap-8">
@@ -370,6 +374,10 @@ function presentationFacets(
 ): readonly FleetFacetBucket[] {
   if (!data) return []
   return data.kind === "applications" ? data.facets : data.result.facets
+}
+
+function presentationTotal(data: FleetPresentationData): bigint {
+  return data.kind === "applications" ? data.total : data.result.total
 }
 
 function uniqueObjects(values: readonly NamespacedKey[]): NamespacedKey[] {

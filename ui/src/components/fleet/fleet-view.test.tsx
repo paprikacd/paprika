@@ -196,6 +196,35 @@ describe("FleetView URL state", () => {
 })
 
 describe("FleetView states", () => {
+  it("exposes the authorized total only after the current fleet snapshot settles", () => {
+    const settledMap: FleetPresentationData = {
+      kind: "map",
+      view: "treemap",
+      result: mapResult(),
+    }
+    let overrides: Partial<UseFleetDataResult> = {
+      status: "stale",
+      staleData: settledMap,
+      displayData: settledMap,
+    }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, overrides),
+    )
+    const { rerender } = render(<FleetView />)
+    const inventory = screen.getByRole("region", { name: "Applications" })
+
+    expect(inventory).not.toHaveAttribute("data-fleet-ready")
+
+    overrides = {
+      status: "ready",
+      currentData: settledMap,
+      displayData: settledMap,
+    }
+    rerender(<FleetView />)
+
+    expect(inventory).toHaveAttribute("data-fleet-ready", "12")
+  })
+
   it.each([
     ["loading", "Loading fleet data", "status"],
     ["empty", "No applications match this scope", "status"],

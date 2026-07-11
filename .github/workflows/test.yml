@@ -29,3 +29,83 @@ jobs:
         run: |
           go mod tidy
           make test-race
+
+  fleet-ui-smoke:
+    permissions:
+      contents: read
+    name: Fleet console browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build compiled UI
+        working-directory: ui
+        run: npm run build
+
+      - name: Build real fleet fixture
+        run: go build -o bin/fleet-console-fixture ./test/fleetconsole
+
+      - name: Install Chromium
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+
+      - name: Run real fleet console smoke
+        working-directory: ui
+        run: npm run test:e2e -- fleet-console.spec.ts
+
+      - name: Upload browser diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: fleet-ui-smoke
+          path: |
+            ui/playwright-report
+            ui/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fleet-scale:
+    permissions:
+      contents: read
+    name: Controlled fleet scale gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run controlled linux amd64 scale gate
+        run: bash hack/test-fleet-scale.sh
+
+      - name: Upload fleet scale evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: fleet-scale
+          path: artifacts/fleet-scale
+          if-no-files-found: warn
+          retention-days: 30
