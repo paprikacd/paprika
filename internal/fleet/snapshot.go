@@ -69,12 +69,14 @@ func (i *Index) Install(builder *Snapshot) error {
 	if builder == nil {
 		return errors.New("fleet snapshot builder must not be nil")
 	}
+	if err := validateSnapshot(builder); err != nil {
+		return err
+	}
 
 	snapshot := cloneSnapshot(builder)
 	snapshot.rebuildSearchIndex()
 	i.snapshot.Store(snapshot)
-	i.health.Store(&HealthState{Ready: true})
-	return nil
+	return i.SetHealth(HealthState{Ready: true})
 }
 
 // LoadSnapshot returns the currently serving snapshot regardless of degraded
@@ -85,6 +87,56 @@ func (i *Index) LoadSnapshot() (*Snapshot, error) {
 		return nil, &ErrUnavailable{Reason: initialUnavailableReason}
 	}
 	return snapshot, nil
+}
+
+func validateSnapshot(builder *Snapshot) error {
+	if err := validateRecordIdentities(builder); err != nil {
+		return err
+	}
+	if snapshotIndexesContainUnknownApplication(builder) {
+		return errors.New("fleet snapshot index contains an unknown application")
+	}
+	return nil
+}
+
+func validateRecordIdentities(builder *Snapshot) error {
+	for id := range builder.Applications {
+		if id != builder.Applications[id].Identity {
+			return errors.New("fleet snapshot application identity is inconsistent")
+		}
+	}
+	for key := range builder.Projects {
+		if key != builder.Projects[key].Identity {
+			return errors.New("fleet snapshot project identity is inconsistent")
+		}
+	}
+	return nil
+}
+
+func snapshotIndexesContainUnknownApplication(builder *Snapshot) bool {
+	return indexContainsUnknownApplication(builder.Applications, builder.ByProject) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByNamespace) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByCluster) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByStage) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByHealth) ||
+		indexContainsUnknownApplication(builder.Applications, builder.BySync) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByRelease) ||
+		indexContainsUnknownApplication(builder.Applications, builder.ByRollout) ||
+		indexContainsUnknownApplication(builder.Applications, builder.BySourceType)
+}
+
+func indexContainsUnknownApplication[K comparable](
+	applications map[types.NamespacedName]ApplicationSummary,
+	index map[K]IDSet,
+) bool {
+	for _, ids := range index {
+		for id := range ids {
+			if _, ok := applications[id]; !ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cloneSnapshot(source *Snapshot) *Snapshot {

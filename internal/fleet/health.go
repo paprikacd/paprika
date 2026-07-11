@@ -1,6 +1,9 @@
 package fleet
 
-const initialUnavailableReason = "fleet snapshot has not been installed"
+const (
+	initialUnavailableReason   = "fleet snapshot has not been installed"
+	readyWithoutSnapshotReason = "fleet index cannot be ready before a snapshot is installed"
+)
 
 // ErrUnavailable is returned when the fleet index cannot satisfy an
 // availability or readiness check. Reason must contain only safe operational
@@ -26,8 +29,12 @@ type HealthState struct {
 
 // SetHealth atomically replaces readiness health without changing the serving
 // snapshot. Reasons supplied here must already be safe for operator exposure.
-func (i *Index) SetHealth(state HealthState) {
+func (i *Index) SetHealth(state HealthState) error {
+	if state.Ready && i.snapshot.Load() == nil {
+		return &ErrUnavailable{Reason: readyWithoutSnapshotReason}
+	}
 	i.health.Store(&state)
+	return nil
 }
 
 // CheckReady reads health only. Snapshot serving availability is checked by

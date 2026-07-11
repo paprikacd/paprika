@@ -1,12 +1,14 @@
 package fleet
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +38,7 @@ func TestSnapshotInstallNilDoesNotChangeSnapshotOrHealth(t *testing.T) {
 
 	builder := generationSnapshot(7)
 	require.NoError(t, index.Install(builder))
-	index.SetHealth(HealthState{Degraded: true, Reason: "last rebuild failed"})
+	require.NoError(t, index.SetHealth(HealthState{Degraded: true, Reason: "last rebuild failed"}))
 
 	require.Error(t, index.Install(nil))
 	installed, err := index.LoadSnapshot()
@@ -164,6 +166,109 @@ func TestSnapshotInstallRebuildsAuthoritativeTrigramPostings(t *testing.T) {
 	require.Equal(t, idSet(app.Identity), installed.Trigrams["che"])
 }
 
+func TestSnapshotInstallRejectsCanonicalInvariantViolationsWithoutChangingState(t *testing.T) {
+	sensitiveID := fleetID("credentials", "raw-request-must-not-leak")
+	differentID := fleetID("different", "identity")
+
+	tests := []struct {
+		name   string
+		mutate func(*Snapshot)
+	}{
+		{
+			name: "application map key differs from record identity",
+			mutate: func(builder *Snapshot) {
+				builder.Applications[sensitiveID] = ApplicationSummary{Identity: differentID}
+			},
+		},
+		{
+			name: "project map key differs from record identity",
+			mutate: func(builder *Snapshot) {
+				builder.Projects[sensitiveID] = ProjectSummary{Identity: differentID}
+			},
+		},
+		{
+			name: "project index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByProject[fleetID("missing", "project")] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "namespace index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByNamespace["missing"] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "cluster index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByCluster[fleetID("missing", "cluster")] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "stage index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByStage["missing"] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "health index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByHealth[HealthUnknown] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "sync index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.BySync[SyncStateUnknown] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "release index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByRelease[ReleaseStatePending] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "rollout index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.ByRollout[RolloutStatePending] = idSet(sensitiveID)
+			},
+		},
+		{
+			name: "source type index contains unknown application",
+			mutate: func(builder *Snapshot) {
+				builder.BySourceType[SourceTypeGit] = idSet(sensitiveID)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			index := NewIndex()
+			require.NoError(t, index.Install(generationSnapshot(1)))
+			prior, err := index.LoadSnapshot()
+			require.NoError(t, err)
+			require.NoError(t, index.SetHealth(HealthState{
+				Degraded: true,
+				Reason:   "prior degraded state",
+			}))
+			priorHealthErr := index.CheckReady()
+			require.Error(t, priorHealthErr)
+
+			invalid := generationSnapshot(2)
+			test.mutate(invalid)
+			err = index.Install(invalid)
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), sensitiveID.Name)
+
+			retained, loadErr := index.LoadSnapshot()
+			require.NoError(t, loadErr)
+			require.Same(t, prior, retained)
+			require.EqualError(t, index.CheckReady(), priorHealthErr.Error())
+		})
+	}
+}
+
 func TestSnapshotConcurrentSwapsRemainGenerationCoherent(t *testing.T) {
 	index := NewIndex()
 	require.NoError(t, index.Install(generationSnapshot(1)))
@@ -222,20 +327,29 @@ func TestSnapshotConcurrentSwapsRemainGenerationCoherent(t *testing.T) {
 	}
 }
 
-func TestHealthInitialStateIsUnavailableAndCheckReadyUsesOnlyHealth(t *testing.T) {
+func TestHealthReadyStateRequiresSnapshotAndRejectedUpdatePreservesHealth(t *testing.T) {
 	t.Parallel()
 
 	index := NewIndex()
-	err := index.CheckReady()
-	require.Error(t, err)
+	initialReadyErr := index.CheckReady()
+	require.Error(t, initialReadyErr)
 	var unavailable *ErrUnavailable
-	require.ErrorAs(t, err, &unavailable)
+	require.ErrorAs(t, initialReadyErr, &unavailable)
 	require.NotEmpty(t, unavailable.Reason)
 
-	// Readiness intentionally consults health only; snapshot serving has its own
-	// availability contract through LoadSnapshot.
-	index.SetHealth(HealthState{Ready: true})
-	require.NoError(t, index.CheckReady())
+	err := index.SetHealth(HealthState{Ready: true})
+	require.ErrorAs(t, err, &unavailable)
+	require.EqualError(t, index.CheckReady(), initialReadyErr.Error())
+
+	require.NoError(t, index.SetHealth(HealthState{
+		Degraded: true,
+		Reason:   "initial build is degraded",
+	}))
+	require.ErrorContains(t, index.CheckReady(), "initial build is degraded")
+
+	err = index.SetHealth(HealthState{Ready: true})
+	require.ErrorAs(t, err, &unavailable)
+	require.ErrorContains(t, index.CheckReady(), "initial build is degraded")
 	_, err = index.LoadSnapshot()
 	require.ErrorAs(t, err, &unavailable)
 }
@@ -247,17 +361,17 @@ func TestHealthDegradedStateRetainsSnapshotAndCanRecoverWithoutSwap(t *testing.T
 	require.NoError(t, index.Install(generationSnapshot(8)))
 	require.NoError(t, index.CheckReady())
 
-	index.SetHealth(HealthState{
+	require.NoError(t, index.SetHealth(HealthState{
 		Ready:    false,
 		Degraded: true,
 		Reason:   "projection rebuild failed",
-	})
+	}))
 	require.ErrorContains(t, index.CheckReady(), "projection rebuild failed")
 	retained, err := index.LoadSnapshot()
 	require.NoError(t, err)
 	require.Equal(t, uint64(8), retained.Generation)
 
-	index.SetHealth(HealthState{Ready: true})
+	require.NoError(t, index.SetHealth(HealthState{Ready: true}))
 	require.NoError(t, index.CheckReady())
 	recovered, err := index.LoadSnapshot()
 	require.NoError(t, err)
@@ -266,24 +380,39 @@ func TestHealthDegradedStateRetainsSnapshotAndCanRecoverWithoutSwap(t *testing.T
 
 func TestHealthFirstInstallNeverReportsReadyBeforeSnapshotExists(t *testing.T) {
 	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
 	for range 1000 {
 		index := NewIndex()
 		observed := make(chan error, 1)
 		go func() {
 			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 				if err := index.CheckReady(); err != nil {
 					runtime.Gosched()
 					continue
 				}
 				_, err := index.LoadSnapshot()
-				observed <- err
+				select {
+				case observed <- err:
+				case <-ctx.Done():
+				}
 				return
 			}
 		}()
 
 		require.NoError(t, index.Install(generationSnapshot(1)))
-		require.NoError(t, <-observed)
+		select {
+		case err := <-observed:
+			require.NoError(t, err)
+		case <-ctx.Done():
+			t.Fatalf("first install readiness observation timed out: %v", ctx.Err())
+		}
 	}
 }
 

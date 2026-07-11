@@ -163,6 +163,24 @@ func TestSearchIntersectsCallerCandidatesBeforeMatching(t *testing.T) {
 	}
 }
 
+func TestSearchIntersectsCallerCandidatesBeforeFuzzyMatching(t *testing.T) {
+	t.Parallel()
+
+	unauthorized := application("private", "alphx")
+	authorized := application("public", "alphy")
+	snapshot := searchSnapshot(t, unauthorized, authorized)
+
+	matches, err := snapshot.Search("alpha", idSet(authorized.Identity))
+	require.NoError(t, err)
+	require.Equal(t, []SearchMatch{{
+		Identity:       authorized.Identity,
+		Tier:           SearchTierTrigram,
+		Similarity:     0.5,
+		SharedTrigrams: 2,
+		UnionTrigrams:  4,
+	}}, matches)
+}
+
 func TestSearchEmptyNormalizedQueryIsCandidateScopedAndDeterministic(t *testing.T) {
 	t.Parallel()
 

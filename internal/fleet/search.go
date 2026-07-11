@@ -142,7 +142,7 @@ func neutralMatches(allowed IDSet) []SearchMatch {
 func (s *Snapshot) directMatches(query string, allowed IDSet) ([]SearchMatch, IDSet) {
 	matches := make([]SearchMatch, 0, len(allowed))
 	ranked := make(IDSet)
-	for _, id := range sortedIDs(allowed) {
+	for id := range allowed {
 		document, ok := s.searchDocuments[id]
 		if !ok {
 			continue
