@@ -465,6 +465,9 @@ func (s *PaprikaServer) applyIfNeeded(
 	if existingApp, existingRelease, found, err := s.findExistingCompleteRelease(ctx, appName, namespace, bundle); err != nil {
 		return nil, nil, fmt.Errorf("check existing release: %w", err)
 	} else if found {
+		if err := s.ensureStage(ctx, existingApp, project, existingRelease.Name, appName+"-default"); err != nil {
+			return nil, nil, fmt.Errorf("ensure stage for existing release: %w", err)
+		}
 		return existingApp, existingRelease, nil
 	}
 	return s.applyInline(ctx, appName, namespace, project, bundle, policyResults)
@@ -480,6 +483,9 @@ func (s *PaprikaServer) applyInline(
 	releaseName := generateReleaseName(appName, bundle)
 	snapshotName := releaseName + "-manifests"
 	stageName := appName + "-default"
+	if err := s.preflightStageApplicationOwner(ctx, namespace, appName, stageName); err != nil {
+		return nil, nil, fmt.Errorf("preflight stage ownership: %w", err)
+	}
 
 	app, err := s.createOrUpdateApplication(ctx, appName, namespace, snapshotName, project)
 	if err != nil {
@@ -487,7 +493,7 @@ func (s *PaprikaServer) applyInline(
 	}
 	oldReleaseRef := app.Status.ReleaseRef
 
-	if err := s.ensureStage(ctx, appName, namespace, project, releaseName, stageName); err != nil {
+	if err := s.ensureStage(ctx, app, project, releaseName, stageName); err != nil {
 		return nil, nil, fmt.Errorf("ensure stage: %w", err)
 	}
 
@@ -585,14 +591,17 @@ func (s *PaprikaServer) createOrUpdateApplication(
 //nolint:nestif // label update path is straightforward.
 func (s *PaprikaServer) ensureStage(
 	ctx context.Context,
-	appName, namespace, project, releaseName, stageName string,
+	app *pipelinesv1alpha1.Application,
+	project, releaseName, stageName string,
 ) error {
-	labels := s.baseLabels(appName, releaseName, project)
+	labels := s.baseLabels(app.Name, releaseName, project)
+	owner := applicationControllerOwner(app)
 	stage := &pipelinesv1alpha1.Stage{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      stageName,
-			Namespace: namespace,
-			Labels:    labels,
+			Name:            stageName,
+			Namespace:       app.Namespace,
+			Labels:          labels,
+			OwnerReferences: []metav1.OwnerReference{owner},
 		},
 		Spec: pipelinesv1alpha1.StageSpec{
 			Name:      "default",
@@ -605,13 +614,17 @@ func (s *PaprikaServer) ensureStage(
 			return fmt.Errorf("create stage: %w", err)
 		}
 		var existing pipelinesv1alpha1.Stage
-		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: stageName}, &existing); getErr != nil {
+		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: stageName}, &existing); getErr != nil {
 			return fmt.Errorf("get existing stage: %w", getErr)
+		}
+		ownerChanged, ownerErr := repairApplicationControllerOwner(&existing, owner)
+		if ownerErr != nil {
+			return ownerErr
 		}
 		if existing.Labels == nil {
 			existing.Labels = map[string]string{}
 		}
-		changed := false
+		changed := ownerChanged
 		for k, v := range labels {
 			if existing.Labels[k] != v {
 				existing.Labels[k] = v
@@ -625,6 +638,124 @@ func (s *PaprikaServer) ensureStage(
 		}
 	}
 	return nil
+}
+
+func applicationControllerOwner(app *pipelinesv1alpha1.Application) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+		Kind:       "Application",
+		Name:       app.Name,
+		UID:        app.UID,
+		Controller: ptr(true),
+	}
+}
+
+//nolint:cyclop,gocritic // owner upsert deliberately preserves unrelated refs and value-copies the desired identity.
+func repairApplicationControllerOwner(
+	stage *pipelinesv1alpha1.Stage,
+	desired metav1.OwnerReference,
+) (bool, error) {
+	controllerIndex := -1
+	for i := range stage.OwnerReferences {
+		if stage.OwnerReferences[i].Controller == nil || !*stage.OwnerReferences[i].Controller {
+			continue
+		}
+		if controllerIndex >= 0 {
+			return false, errors.New("stage has multiple controller owners")
+		}
+		controllerIndex = i
+	}
+	if controllerIndex >= 0 && !sameApplicationOwnerIdentity(stage.OwnerReferences[controllerIndex], desired) {
+		return false, errors.New("stage is controlled by another resource")
+	}
+
+	replacement := make([]metav1.OwnerReference, 0, len(stage.OwnerReferences)+1)
+	inserted := false
+	for i := range stage.OwnerReferences {
+		if sameApplicationOwnerIdentity(stage.OwnerReferences[i], desired) {
+			if !inserted {
+				replacement = append(replacement, desired)
+				inserted = true
+			}
+			continue
+		}
+		replacement = append(replacement, stage.OwnerReferences[i])
+	}
+	if !inserted {
+		replacement = append(replacement, desired)
+	}
+	if ownerReferencesEqual(stage.OwnerReferences, replacement) {
+		return false, nil
+	}
+	stage.OwnerReferences = replacement
+	return true, nil
+}
+
+func (s *PaprikaServer) preflightStageApplicationOwner(
+	ctx context.Context,
+	namespace, appName, stageName string,
+) error {
+	var stage pipelinesv1alpha1.Stage
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: stageName}, &stage); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("get stage: %w", err)
+	}
+	desired := metav1.OwnerReference{
+		APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+		Kind:       "Application",
+		Name:       appName,
+	}
+	controllers := 0
+	for i := range stage.OwnerReferences {
+		if stage.OwnerReferences[i].Controller == nil || !*stage.OwnerReferences[i].Controller {
+			continue
+		}
+		controllers++
+		if !sameApplicationOwnerIdentity(stage.OwnerReferences[i], desired) {
+			return errors.New("stage is controlled by another resource")
+		}
+	}
+	if controllers > 1 {
+		return errors.New("stage has multiple controller owners")
+	}
+	return nil
+}
+
+//nolint:gocritic // owner references are small immutable identity values here.
+func sameApplicationOwnerIdentity(left, right metav1.OwnerReference) bool {
+	if left.Kind != right.Kind || left.Name != right.Name {
+		return false
+	}
+	if left.APIVersion == right.APIVersion {
+		return true
+	}
+	leftGroup, _, leftHasVersion := strings.Cut(left.APIVersion, "/")
+	rightGroup, _, rightHasVersion := strings.Cut(right.APIVersion, "/")
+	return leftHasVersion && rightHasVersion && leftGroup == rightGroup
+}
+
+func ownerReferencesEqual(left, right []metav1.OwnerReference) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].APIVersion != right[i].APIVersion || left[i].Kind != right[i].Kind ||
+			left[i].Name != right[i].Name || left[i].UID != right[i].UID ||
+			!boolPointersEqual(left[i].Controller, right[i].Controller) ||
+			!boolPointersEqual(left[i].BlockOwnerDeletion, right[i].BlockOwnerDeletion) {
+			return false
+		}
+	}
+	return true
+}
+
+func boolPointersEqual(left, right *bool) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func (s *PaprikaServer) createSnapshot(

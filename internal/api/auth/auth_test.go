@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -11,6 +13,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
 const (
@@ -248,6 +251,133 @@ func TestInterceptor_Unauthenticated(t *testing.T) {
 	_, err = wrapped(context.Background(), connect.NewRequest(&paprikav1.ListApplicationsRequest{Namespace: &ns}))
 	require.Error(t, err)
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
+}
+
+func TestFleetQueryInterceptorDefersProjectSetAuthorization(t *testing.T) {
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	interceptor, err := Interceptor(context.Background(), Config{
+		Enabled: true,
+		BasicAuth: &BasicAuthConfig{
+			Username:     testUsername,
+			PasswordHash: string(ph),
+		},
+		// With no RBAC rules or project reader, BuildAuthorizer returns DenyAll.
+		// Reaching the handlers therefore proves that middleware did not invoke
+		// legacy single-project authorization with an empty project.
+	}, nil)
+	require.NoError(t, err)
+
+	service := &fleetAuthTestService{t: t}
+	_, handler := v1connect.NewPaprikaServiceHandler(
+		service,
+		connect.WithInterceptors(interceptor),
+	)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := v1connect.NewPaprikaServiceClient(server.Client(), server.URL)
+	authorization := "Basic " + base64.StdEncoding.EncodeToString([]byte(testUsername+":"+testPassword))
+
+	calls := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "applications",
+			call: func() error {
+				req := connect.NewRequest(&paprikav1.QueryApplicationsRequest{})
+				req.Header().Set("Authorization", authorization)
+				_, callErr := client.QueryApplications(context.Background(), req)
+				return callErr
+			},
+		},
+		{
+			name: "map",
+			call: func() error {
+				req := connect.NewRequest(&paprikav1.QueryFleetMapRequest{})
+				req.Header().Set("Authorization", authorization)
+				_, callErr := client.QueryFleetMap(context.Background(), req)
+				return callErr
+			},
+		},
+		{
+			name: "matrix",
+			call: func() error {
+				req := connect.NewRequest(&paprikav1.QueryFleetMatrixRequest{})
+				req.Header().Set("Authorization", authorization)
+				_, callErr := client.QueryFleetMatrix(context.Background(), req)
+				return callErr
+			},
+		},
+	}
+	for _, tc := range calls {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, tc.call())
+		})
+	}
+	assert.Equal(t, 3, service.fleetCalls)
+
+	_, err = client.QueryApplications(
+		context.Background(),
+		connect.NewRequest(&paprikav1.QueryApplicationsRequest{}),
+	)
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
+	assert.Equal(t, 3, service.fleetCalls, "authentication must still precede the fleet handler")
+
+	listReq := connect.NewRequest(&paprikav1.ListApplicationsRequest{})
+	listReq.Header().Set("Authorization", authorization)
+	_, err = client.ListApplications(context.Background(), listReq)
+	assert.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	assert.Zero(t, service.legacyCalls, "the bypass must be limited to fleet project-set queries")
+}
+
+type fleetAuthTestService struct {
+	v1connect.UnimplementedPaprikaServiceHandler
+	t           *testing.T
+	fleetCalls  int
+	legacyCalls int
+}
+
+func (s *fleetAuthTestService) QueryApplications(
+	ctx context.Context,
+	_ *connect.Request[paprikav1.QueryApplicationsRequest],
+) (*connect.Response[paprikav1.QueryApplicationsResponse], error) {
+	s.requirePrincipal(ctx)
+	s.fleetCalls++
+	return connect.NewResponse(&paprikav1.QueryApplicationsResponse{}), nil
+}
+
+func (s *fleetAuthTestService) QueryFleetMap(
+	ctx context.Context,
+	_ *connect.Request[paprikav1.QueryFleetMapRequest],
+) (*connect.Response[paprikav1.QueryFleetMapResponse], error) {
+	s.requirePrincipal(ctx)
+	s.fleetCalls++
+	return connect.NewResponse(&paprikav1.QueryFleetMapResponse{}), nil
+}
+
+func (s *fleetAuthTestService) QueryFleetMatrix(
+	ctx context.Context,
+	_ *connect.Request[paprikav1.QueryFleetMatrixRequest],
+) (*connect.Response[paprikav1.QueryFleetMatrixResponse], error) {
+	s.requirePrincipal(ctx)
+	s.fleetCalls++
+	return connect.NewResponse(&paprikav1.QueryFleetMatrixResponse{}), nil
+}
+
+func (s *fleetAuthTestService) ListApplications(
+	context.Context,
+	*connect.Request[paprikav1.ListApplicationsRequest],
+) (*connect.Response[paprikav1.ListApplicationsResponse], error) {
+	s.legacyCalls++
+	return connect.NewResponse(&paprikav1.ListApplicationsResponse{}), nil
+}
+
+func (s *fleetAuthTestService) requirePrincipal(ctx context.Context) {
+	s.t.Helper()
+	principal := PrincipalFromContext(ctx)
+	require.NotNil(s.t, principal)
+	assert.Equal(s.t, testUsername, principal.Subject)
 }
 
 func TestStringSlice(t *testing.T) {

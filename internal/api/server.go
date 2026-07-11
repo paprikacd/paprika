@@ -38,6 +38,7 @@ import (
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
@@ -53,6 +54,11 @@ func WithRenderer(r pipelines.SourceResolvingRenderer) ServerOption {
 // WithAuthorizer sets the project/RBAC authorizer for server-side access checks.
 func WithAuthorizer(a auth.Authorizer) ServerOption {
 	return func(s *PaprikaServer) { s.authorizer = a }
+}
+
+// WithFleetIndex sets the narrow immutable fleet query surface.
+func WithFleetIndex(reader fleet.Reader) ServerOption {
+	return func(s *PaprikaServer) { s.fleetIndex = reader }
 }
 
 // WithClock sets the clock used for annotation timestamps.
@@ -96,6 +102,7 @@ type PaprikaServer struct {
 	governanceValidator       *governance.ProjectValidator
 	governancePolicyEvaluator *governance.PolicyEvaluator
 	authorizer                auth.Authorizer
+	fleetIndex                fleet.Reader
 	// Auditor records structured audit events for mutating API operations. When
 	// nil, the AuditInterceptor falls back to a NoopAuditor.
 	Auditor audit.Auditor

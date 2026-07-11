@@ -64,7 +64,7 @@
 /* Primary: paprika orange oklch(0.63 0.19 35)                         */
 /* Surface hierarchy: darker bg → lighter elevated surfaces             */
 /* ──────────────────────────────────────────────────────────────────── */
-.dark {
+:root.dark {
   --background: oklch(0.115 0.01 50);
   --foreground: oklch(0.93 0.012 50);
   --card: oklch(0.155 0.014 50);
