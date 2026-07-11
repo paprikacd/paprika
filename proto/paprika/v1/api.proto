@@ -844,6 +844,282 @@ message LogChunk {
   int64 timestamp_ms = 4;
 }
 
+enum FleetHealth {
+  FLEET_HEALTH_UNSPECIFIED = 0;
+  FLEET_HEALTH_HEALTHY = 1;
+  FLEET_HEALTH_PROGRESSING = 2;
+  FLEET_HEALTH_DEGRADED = 3;
+  FLEET_HEALTH_FAILED = 4;
+  FLEET_HEALTH_UNKNOWN = 5;
+  FLEET_HEALTH_MISSING = 6;
+}
+
+enum FleetSyncState {
+  FLEET_SYNC_STATE_UNSPECIFIED = 0;
+  FLEET_SYNC_STATE_SYNCED = 1;
+  FLEET_SYNC_STATE_OUT_OF_SYNC = 2;
+  FLEET_SYNC_STATE_UNKNOWN = 3;
+}
+
+enum FleetSourceType {
+  FLEET_SOURCE_TYPE_UNSPECIFIED = 0;
+  FLEET_SOURCE_TYPE_GIT = 1;
+  FLEET_SOURCE_TYPE_HELM = 2;
+  FLEET_SOURCE_TYPE_KUSTOMIZE = 3;
+  FLEET_SOURCE_TYPE_S3 = 4;
+  FLEET_SOURCE_TYPE_OCI = 5;
+  FLEET_SOURCE_TYPE_INLINE = 6;
+}
+
+enum FleetReleaseState {
+  FLEET_RELEASE_STATE_UNSPECIFIED = 0;
+  FLEET_RELEASE_STATE_PENDING = 1;
+  FLEET_RELEASE_STATE_PROMOTING = 2;
+  FLEET_RELEASE_STATE_CANARYING = 3;
+  FLEET_RELEASE_STATE_VERIFYING = 4;
+  FLEET_RELEASE_STATE_COMPLETE = 5;
+  FLEET_RELEASE_STATE_FAILED = 6;
+  FLEET_RELEASE_STATE_ROLLED_BACK = 7;
+  FLEET_RELEASE_STATE_SUPERSEDED = 8;
+  FLEET_RELEASE_STATE_AWAITING_APPROVAL = 9;
+}
+
+enum FleetRolloutState {
+  FLEET_ROLLOUT_STATE_UNSPECIFIED = 0;
+  FLEET_ROLLOUT_STATE_PENDING = 1;
+  FLEET_ROLLOUT_STATE_PROGRESSING = 2;
+  FLEET_ROLLOUT_STATE_PAUSED = 3;
+  FLEET_ROLLOUT_STATE_HEALTHY = 4;
+  FLEET_ROLLOUT_STATE_DEGRADED = 5;
+  FLEET_ROLLOUT_STATE_FAILED = 6;
+  FLEET_ROLLOUT_STATE_ROLLED_BACK = 7;
+  FLEET_ROLLOUT_STATE_ABORTED = 8;
+}
+
+enum FleetSortField {
+  FLEET_SORT_FIELD_UNSPECIFIED = 0;
+  FLEET_SORT_FIELD_NAME = 1;
+  FLEET_SORT_FIELD_PROJECT = 2;
+  FLEET_SORT_FIELD_CLUSTER = 3;
+  FLEET_SORT_FIELD_STAGE = 4;
+  FLEET_SORT_FIELD_HEALTH = 5;
+  FLEET_SORT_FIELD_SYNC = 6;
+  FLEET_SORT_FIELD_RELEASE = 7;
+  FLEET_SORT_FIELD_ROLLOUT = 8;
+  FLEET_SORT_FIELD_RESOURCE_COUNT = 9;
+  FLEET_SORT_FIELD_LAST_TRANSITION = 10;
+  FLEET_SORT_FIELD_IMPACT = 11;
+  FLEET_SORT_FIELD_RELEVANCE = 12;
+}
+
+enum FleetSortDirection {
+  FLEET_SORT_DIRECTION_UNSPECIFIED = 0;
+  FLEET_SORT_DIRECTION_ASC = 1;
+  FLEET_SORT_DIRECTION_DESC = 2;
+}
+
+enum FleetGroupDimension {
+  FLEET_GROUP_DIMENSION_UNSPECIFIED = 0;
+  FLEET_GROUP_DIMENSION_PROJECT = 1;
+  FLEET_GROUP_DIMENSION_CLUSTER = 2;
+  FLEET_GROUP_DIMENSION_STAGE = 3;
+  FLEET_GROUP_DIMENSION_HEALTH = 4;
+}
+
+enum FleetSizeMetric {
+  FLEET_SIZE_METRIC_UNSPECIFIED = 0;
+  FLEET_SIZE_METRIC_RESOURCE_COUNT = 1;
+  FLEET_SIZE_METRIC_REQUEST_RATE = 2;
+}
+
+enum FleetFacetDimension {
+  FLEET_FACET_DIMENSION_UNSPECIFIED = 0;
+  FLEET_FACET_DIMENSION_PROJECT = 1;
+  FLEET_FACET_DIMENSION_NAMESPACE = 2;
+  FLEET_FACET_DIMENSION_CLUSTER = 3;
+  FLEET_FACET_DIMENSION_STAGE = 4;
+  FLEET_FACET_DIMENSION_HEALTH = 5;
+  FLEET_FACET_DIMENSION_SYNC = 6;
+  FLEET_FACET_DIMENSION_RELEASE = 7;
+  FLEET_FACET_DIMENSION_ROLLOUT = 8;
+  FLEET_FACET_DIMENSION_SOURCE_TYPE = 9;
+}
+
+enum FleetCapability {
+  FLEET_CAPABILITY_UNSPECIFIED = 0;
+  FLEET_CAPABILITY_APPLICATION_SYNC = 1;
+  FLEET_CAPABILITY_RELEASE_ROLLBACK = 2;
+  FLEET_CAPABILITY_GATE_APPROVE = 3;
+  FLEET_CAPABILITY_PIPELINE_RETRY = 4;
+}
+
+enum FleetConnectionState {
+  FLEET_CONNECTION_STATE_UNSPECIFIED = 0;
+  FLEET_CONNECTION_STATE_HEALTHY = 1;
+  FLEET_CONNECTION_STATE_UNHEALTHY = 2;
+  FLEET_CONNECTION_STATE_DISABLED = 3;
+  FLEET_CONNECTION_STATE_NOT_CONFIGURED = 4;
+}
+
+enum FleetMapNodeKind {
+  FLEET_MAP_NODE_KIND_UNSPECIFIED = 0;
+  FLEET_MAP_NODE_KIND_GROUP = 1;
+  FLEET_MAP_NODE_KIND_APPLICATION = 2;
+}
+
+message FleetObjectKey {
+  string namespace = 1;
+  string name = 2;
+}
+
+message FleetFilter {
+  repeated FleetObjectKey projects = 1;
+  repeated string namespaces = 2;
+  repeated FleetObjectKey clusters = 3;
+  repeated string stages = 4;
+  repeated FleetHealth health = 5;
+  repeated FleetSyncState sync = 6;
+  repeated FleetReleaseState release_states = 7;
+  repeated FleetRolloutState rollout_states = 8;
+  repeated FleetSourceType source_types = 9;
+}
+
+message StageTargetSummary {
+  string stable_id = 1;
+  string stage = 2;
+  int32 ring = 3;
+  FleetObjectKey cluster = 4;
+  string cluster_label = 5;
+  FleetHealth health = 6;
+  FleetConnectionState cluster_connection = 7;
+  bool unmanaged_inline_cluster = 8;
+}
+
+message ApplicationSummary {
+  FleetObjectKey identity = 1;
+  FleetObjectKey project = 2;
+  repeated StageTargetSummary targets = 3;
+  string current_stage = 4;
+  FleetObjectKey current_cluster = 5;
+  string current_cluster_label = 6;
+  FleetSourceType source_type = 7;
+  string source_revision = 8;
+  FleetHealth health = 9;
+  FleetSyncState sync = 10;
+  uint32 drift_count = 11;
+  uint32 missing_resource_count = 12;
+  FleetReleaseState release_state = 13;
+  FleetRolloutState rollout_state = 14;
+  uint32 resource_count = 15;
+  FleetObjectKey repository = 16;
+  FleetConnectionState repository_connection = 17;
+  FleetObjectKey effective_observability_source = 18;
+  FleetConnectionState observability_connection = 19;
+  uint32 blocked_gate_count = 20;
+  int64 last_transition_unix_ms = 21;
+  repeated FleetCapability capabilities = 22;
+}
+
+message FleetFacetBucket {
+  FleetFacetDimension dimension = 1;
+  oneof key {
+    FleetObjectKey object = 2;
+    string value = 3;
+  }
+  string label = 4;
+  uint64 count = 5;
+}
+
+message FleetHealthBucket {
+  FleetHealth health = 1;
+  uint64 count = 2;
+}
+
+message QueryApplicationsRequest {
+  FleetFilter filter = 1;
+  string search = 2;
+  FleetSortField sort = 3;
+  FleetSortDirection direction = 4;
+  uint32 page_size = 5;
+  string cursor = 6;
+}
+
+message QueryApplicationsResponse {
+  repeated ApplicationSummary applications = 1;
+  uint64 total = 2;
+  string next_cursor = 3;
+  uint64 index_generation = 4;
+  repeated FleetFacetBucket facets = 5;
+}
+
+message FleetMapNode {
+  string stable_id = 1;
+  FleetMapNodeKind kind = 2;
+  string label = 3;
+  FleetObjectKey application = 4;
+  oneof group_key {
+    FleetObjectKey group_object = 5;
+    string group_value = 6;
+  }
+  uint64 application_count = 7;
+  uint64 target_count = 8;
+  repeated FleetHealthBucket health = 9;
+  uint64 resource_weight = 10;
+  double request_rate_weight = 11;
+  double effective_weight = 12;
+  bool used_resource_fallback = 13;
+  repeated FleetMapNode children = 14;
+}
+
+message QueryFleetMapRequest {
+  FleetFilter filter = 1;
+  string search = 2;
+  FleetGroupDimension group = 3;
+  FleetSizeMetric size_metric = 4;
+}
+
+message QueryFleetMapResponse {
+  repeated FleetMapNode roots = 1;
+  uint64 total = 2;
+  uint64 index_generation = 3;
+}
+
+message FleetMatrixHeader {
+  string stable_id = 1;
+  string label = 2;
+  oneof key {
+    FleetObjectKey object = 3;
+    string value = 4;
+  }
+}
+
+message FleetMatrixCell {
+  string row_id = 1;
+  string column_id = 2;
+  uint64 application_count = 3;
+  uint64 target_count = 4;
+  repeated FleetHealthBucket health = 5;
+  uint64 resource_weight = 6;
+  double request_rate_weight = 7;
+  bool used_resource_fallback = 8;
+}
+
+message QueryFleetMatrixRequest {
+  FleetFilter filter = 1;
+  string search = 2;
+  FleetGroupDimension row_group = 3;
+  FleetGroupDimension column_group = 4;
+  FleetSizeMetric size_metric = 5;
+}
+
+message QueryFleetMatrixResponse {
+  repeated FleetMatrixHeader rows = 1;
+  repeated FleetMatrixHeader columns = 2;
+  repeated FleetMatrixCell cells = 3;
+  uint64 total = 4;
+  uint64 index_generation = 5;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -882,4 +1158,7 @@ service PaprikaService {
   rpc StreamResourceLogs(StreamResourceLogsRequest) returns (stream LogChunk);
   rpc Investigate(InvestigateRequest) returns (InvestigateResponse);
   rpc ListInvestigatorPlugins(ListInvestigatorPluginsRequest) returns (ListInvestigatorPluginsResponse);
+  rpc QueryApplications(QueryApplicationsRequest) returns (QueryApplicationsResponse);
+  rpc QueryFleetMap(QueryFleetMapRequest) returns (QueryFleetMapResponse);
+  rpc QueryFleetMatrix(QueryFleetMatrixRequest) returns (QueryFleetMatrixResponse);
 }

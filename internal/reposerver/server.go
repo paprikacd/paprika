@@ -31,6 +31,7 @@ type repoCache interface {
 
 // Server provides cached source resolution and manifest rendering.
 type Server struct {
+	v1connect.UnimplementedPaprikaServiceHandler
 	renderer    pipelines.SourceResolvingRenderer
 	workDir     string
 	cache       repoCache

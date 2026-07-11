@@ -53,6 +53,7 @@ const (
 
 // Server implements the agent-side PaprikaService handler.
 type Server struct {
+	v1connect.UnimplementedPaprikaServiceHandler
 	clusterID string
 	dynClient dynamic.Interface
 	mapper    apimeta.RESTMapper

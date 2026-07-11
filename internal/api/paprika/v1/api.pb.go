@@ -73,6 +73,778 @@ func (Severity) EnumDescriptor() ([]byte, []int) {
 	return file_paprika_v1_api_proto_rawDescGZIP(), []int{0}
 }
 
+type FleetHealth int32
+
+const (
+	FleetHealth_FLEET_HEALTH_UNSPECIFIED FleetHealth = 0
+	FleetHealth_FLEET_HEALTH_HEALTHY     FleetHealth = 1
+	FleetHealth_FLEET_HEALTH_PROGRESSING FleetHealth = 2
+	FleetHealth_FLEET_HEALTH_DEGRADED    FleetHealth = 3
+	FleetHealth_FLEET_HEALTH_FAILED      FleetHealth = 4
+	FleetHealth_FLEET_HEALTH_UNKNOWN     FleetHealth = 5
+	FleetHealth_FLEET_HEALTH_MISSING     FleetHealth = 6
+)
+
+// Enum value maps for FleetHealth.
+var (
+	FleetHealth_name = map[int32]string{
+		0: "FLEET_HEALTH_UNSPECIFIED",
+		1: "FLEET_HEALTH_HEALTHY",
+		2: "FLEET_HEALTH_PROGRESSING",
+		3: "FLEET_HEALTH_DEGRADED",
+		4: "FLEET_HEALTH_FAILED",
+		5: "FLEET_HEALTH_UNKNOWN",
+		6: "FLEET_HEALTH_MISSING",
+	}
+	FleetHealth_value = map[string]int32{
+		"FLEET_HEALTH_UNSPECIFIED": 0,
+		"FLEET_HEALTH_HEALTHY":     1,
+		"FLEET_HEALTH_PROGRESSING": 2,
+		"FLEET_HEALTH_DEGRADED":    3,
+		"FLEET_HEALTH_FAILED":      4,
+		"FLEET_HEALTH_UNKNOWN":     5,
+		"FLEET_HEALTH_MISSING":     6,
+	}
+)
+
+func (x FleetHealth) Enum() *FleetHealth {
+	p := new(FleetHealth)
+	*p = x
+	return p
+}
+
+func (x FleetHealth) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetHealth) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[1].Descriptor()
+}
+
+func (FleetHealth) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[1]
+}
+
+func (x FleetHealth) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetHealth.Descriptor instead.
+func (FleetHealth) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{1}
+}
+
+type FleetSyncState int32
+
+const (
+	FleetSyncState_FLEET_SYNC_STATE_UNSPECIFIED FleetSyncState = 0
+	FleetSyncState_FLEET_SYNC_STATE_SYNCED      FleetSyncState = 1
+	FleetSyncState_FLEET_SYNC_STATE_OUT_OF_SYNC FleetSyncState = 2
+	FleetSyncState_FLEET_SYNC_STATE_UNKNOWN     FleetSyncState = 3
+)
+
+// Enum value maps for FleetSyncState.
+var (
+	FleetSyncState_name = map[int32]string{
+		0: "FLEET_SYNC_STATE_UNSPECIFIED",
+		1: "FLEET_SYNC_STATE_SYNCED",
+		2: "FLEET_SYNC_STATE_OUT_OF_SYNC",
+		3: "FLEET_SYNC_STATE_UNKNOWN",
+	}
+	FleetSyncState_value = map[string]int32{
+		"FLEET_SYNC_STATE_UNSPECIFIED": 0,
+		"FLEET_SYNC_STATE_SYNCED":      1,
+		"FLEET_SYNC_STATE_OUT_OF_SYNC": 2,
+		"FLEET_SYNC_STATE_UNKNOWN":     3,
+	}
+)
+
+func (x FleetSyncState) Enum() *FleetSyncState {
+	p := new(FleetSyncState)
+	*p = x
+	return p
+}
+
+func (x FleetSyncState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetSyncState) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[2].Descriptor()
+}
+
+func (FleetSyncState) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[2]
+}
+
+func (x FleetSyncState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetSyncState.Descriptor instead.
+func (FleetSyncState) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{2}
+}
+
+type FleetSourceType int32
+
+const (
+	FleetSourceType_FLEET_SOURCE_TYPE_UNSPECIFIED FleetSourceType = 0
+	FleetSourceType_FLEET_SOURCE_TYPE_GIT         FleetSourceType = 1
+	FleetSourceType_FLEET_SOURCE_TYPE_HELM        FleetSourceType = 2
+	FleetSourceType_FLEET_SOURCE_TYPE_KUSTOMIZE   FleetSourceType = 3
+	FleetSourceType_FLEET_SOURCE_TYPE_S3          FleetSourceType = 4
+	FleetSourceType_FLEET_SOURCE_TYPE_OCI         FleetSourceType = 5
+	FleetSourceType_FLEET_SOURCE_TYPE_INLINE      FleetSourceType = 6
+)
+
+// Enum value maps for FleetSourceType.
+var (
+	FleetSourceType_name = map[int32]string{
+		0: "FLEET_SOURCE_TYPE_UNSPECIFIED",
+		1: "FLEET_SOURCE_TYPE_GIT",
+		2: "FLEET_SOURCE_TYPE_HELM",
+		3: "FLEET_SOURCE_TYPE_KUSTOMIZE",
+		4: "FLEET_SOURCE_TYPE_S3",
+		5: "FLEET_SOURCE_TYPE_OCI",
+		6: "FLEET_SOURCE_TYPE_INLINE",
+	}
+	FleetSourceType_value = map[string]int32{
+		"FLEET_SOURCE_TYPE_UNSPECIFIED": 0,
+		"FLEET_SOURCE_TYPE_GIT":         1,
+		"FLEET_SOURCE_TYPE_HELM":        2,
+		"FLEET_SOURCE_TYPE_KUSTOMIZE":   3,
+		"FLEET_SOURCE_TYPE_S3":          4,
+		"FLEET_SOURCE_TYPE_OCI":         5,
+		"FLEET_SOURCE_TYPE_INLINE":      6,
+	}
+)
+
+func (x FleetSourceType) Enum() *FleetSourceType {
+	p := new(FleetSourceType)
+	*p = x
+	return p
+}
+
+func (x FleetSourceType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetSourceType) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[3].Descriptor()
+}
+
+func (FleetSourceType) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[3]
+}
+
+func (x FleetSourceType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetSourceType.Descriptor instead.
+func (FleetSourceType) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{3}
+}
+
+type FleetReleaseState int32
+
+const (
+	FleetReleaseState_FLEET_RELEASE_STATE_UNSPECIFIED       FleetReleaseState = 0
+	FleetReleaseState_FLEET_RELEASE_STATE_PENDING           FleetReleaseState = 1
+	FleetReleaseState_FLEET_RELEASE_STATE_PROMOTING         FleetReleaseState = 2
+	FleetReleaseState_FLEET_RELEASE_STATE_CANARYING         FleetReleaseState = 3
+	FleetReleaseState_FLEET_RELEASE_STATE_VERIFYING         FleetReleaseState = 4
+	FleetReleaseState_FLEET_RELEASE_STATE_COMPLETE          FleetReleaseState = 5
+	FleetReleaseState_FLEET_RELEASE_STATE_FAILED            FleetReleaseState = 6
+	FleetReleaseState_FLEET_RELEASE_STATE_ROLLED_BACK       FleetReleaseState = 7
+	FleetReleaseState_FLEET_RELEASE_STATE_SUPERSEDED        FleetReleaseState = 8
+	FleetReleaseState_FLEET_RELEASE_STATE_AWAITING_APPROVAL FleetReleaseState = 9
+)
+
+// Enum value maps for FleetReleaseState.
+var (
+	FleetReleaseState_name = map[int32]string{
+		0: "FLEET_RELEASE_STATE_UNSPECIFIED",
+		1: "FLEET_RELEASE_STATE_PENDING",
+		2: "FLEET_RELEASE_STATE_PROMOTING",
+		3: "FLEET_RELEASE_STATE_CANARYING",
+		4: "FLEET_RELEASE_STATE_VERIFYING",
+		5: "FLEET_RELEASE_STATE_COMPLETE",
+		6: "FLEET_RELEASE_STATE_FAILED",
+		7: "FLEET_RELEASE_STATE_ROLLED_BACK",
+		8: "FLEET_RELEASE_STATE_SUPERSEDED",
+		9: "FLEET_RELEASE_STATE_AWAITING_APPROVAL",
+	}
+	FleetReleaseState_value = map[string]int32{
+		"FLEET_RELEASE_STATE_UNSPECIFIED":       0,
+		"FLEET_RELEASE_STATE_PENDING":           1,
+		"FLEET_RELEASE_STATE_PROMOTING":         2,
+		"FLEET_RELEASE_STATE_CANARYING":         3,
+		"FLEET_RELEASE_STATE_VERIFYING":         4,
+		"FLEET_RELEASE_STATE_COMPLETE":          5,
+		"FLEET_RELEASE_STATE_FAILED":            6,
+		"FLEET_RELEASE_STATE_ROLLED_BACK":       7,
+		"FLEET_RELEASE_STATE_SUPERSEDED":        8,
+		"FLEET_RELEASE_STATE_AWAITING_APPROVAL": 9,
+	}
+)
+
+func (x FleetReleaseState) Enum() *FleetReleaseState {
+	p := new(FleetReleaseState)
+	*p = x
+	return p
+}
+
+func (x FleetReleaseState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetReleaseState) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[4].Descriptor()
+}
+
+func (FleetReleaseState) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[4]
+}
+
+func (x FleetReleaseState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetReleaseState.Descriptor instead.
+func (FleetReleaseState) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{4}
+}
+
+type FleetRolloutState int32
+
+const (
+	FleetRolloutState_FLEET_ROLLOUT_STATE_UNSPECIFIED FleetRolloutState = 0
+	FleetRolloutState_FLEET_ROLLOUT_STATE_PENDING     FleetRolloutState = 1
+	FleetRolloutState_FLEET_ROLLOUT_STATE_PROGRESSING FleetRolloutState = 2
+	FleetRolloutState_FLEET_ROLLOUT_STATE_PAUSED      FleetRolloutState = 3
+	FleetRolloutState_FLEET_ROLLOUT_STATE_HEALTHY     FleetRolloutState = 4
+	FleetRolloutState_FLEET_ROLLOUT_STATE_DEGRADED    FleetRolloutState = 5
+	FleetRolloutState_FLEET_ROLLOUT_STATE_FAILED      FleetRolloutState = 6
+	FleetRolloutState_FLEET_ROLLOUT_STATE_ROLLED_BACK FleetRolloutState = 7
+	FleetRolloutState_FLEET_ROLLOUT_STATE_ABORTED     FleetRolloutState = 8
+)
+
+// Enum value maps for FleetRolloutState.
+var (
+	FleetRolloutState_name = map[int32]string{
+		0: "FLEET_ROLLOUT_STATE_UNSPECIFIED",
+		1: "FLEET_ROLLOUT_STATE_PENDING",
+		2: "FLEET_ROLLOUT_STATE_PROGRESSING",
+		3: "FLEET_ROLLOUT_STATE_PAUSED",
+		4: "FLEET_ROLLOUT_STATE_HEALTHY",
+		5: "FLEET_ROLLOUT_STATE_DEGRADED",
+		6: "FLEET_ROLLOUT_STATE_FAILED",
+		7: "FLEET_ROLLOUT_STATE_ROLLED_BACK",
+		8: "FLEET_ROLLOUT_STATE_ABORTED",
+	}
+	FleetRolloutState_value = map[string]int32{
+		"FLEET_ROLLOUT_STATE_UNSPECIFIED": 0,
+		"FLEET_ROLLOUT_STATE_PENDING":     1,
+		"FLEET_ROLLOUT_STATE_PROGRESSING": 2,
+		"FLEET_ROLLOUT_STATE_PAUSED":      3,
+		"FLEET_ROLLOUT_STATE_HEALTHY":     4,
+		"FLEET_ROLLOUT_STATE_DEGRADED":    5,
+		"FLEET_ROLLOUT_STATE_FAILED":      6,
+		"FLEET_ROLLOUT_STATE_ROLLED_BACK": 7,
+		"FLEET_ROLLOUT_STATE_ABORTED":     8,
+	}
+)
+
+func (x FleetRolloutState) Enum() *FleetRolloutState {
+	p := new(FleetRolloutState)
+	*p = x
+	return p
+}
+
+func (x FleetRolloutState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetRolloutState) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[5].Descriptor()
+}
+
+func (FleetRolloutState) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[5]
+}
+
+func (x FleetRolloutState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetRolloutState.Descriptor instead.
+func (FleetRolloutState) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{5}
+}
+
+type FleetSortField int32
+
+const (
+	FleetSortField_FLEET_SORT_FIELD_UNSPECIFIED     FleetSortField = 0
+	FleetSortField_FLEET_SORT_FIELD_NAME            FleetSortField = 1
+	FleetSortField_FLEET_SORT_FIELD_PROJECT         FleetSortField = 2
+	FleetSortField_FLEET_SORT_FIELD_CLUSTER         FleetSortField = 3
+	FleetSortField_FLEET_SORT_FIELD_STAGE           FleetSortField = 4
+	FleetSortField_FLEET_SORT_FIELD_HEALTH          FleetSortField = 5
+	FleetSortField_FLEET_SORT_FIELD_SYNC            FleetSortField = 6
+	FleetSortField_FLEET_SORT_FIELD_RELEASE         FleetSortField = 7
+	FleetSortField_FLEET_SORT_FIELD_ROLLOUT         FleetSortField = 8
+	FleetSortField_FLEET_SORT_FIELD_RESOURCE_COUNT  FleetSortField = 9
+	FleetSortField_FLEET_SORT_FIELD_LAST_TRANSITION FleetSortField = 10
+	FleetSortField_FLEET_SORT_FIELD_IMPACT          FleetSortField = 11
+	FleetSortField_FLEET_SORT_FIELD_RELEVANCE       FleetSortField = 12
+)
+
+// Enum value maps for FleetSortField.
+var (
+	FleetSortField_name = map[int32]string{
+		0:  "FLEET_SORT_FIELD_UNSPECIFIED",
+		1:  "FLEET_SORT_FIELD_NAME",
+		2:  "FLEET_SORT_FIELD_PROJECT",
+		3:  "FLEET_SORT_FIELD_CLUSTER",
+		4:  "FLEET_SORT_FIELD_STAGE",
+		5:  "FLEET_SORT_FIELD_HEALTH",
+		6:  "FLEET_SORT_FIELD_SYNC",
+		7:  "FLEET_SORT_FIELD_RELEASE",
+		8:  "FLEET_SORT_FIELD_ROLLOUT",
+		9:  "FLEET_SORT_FIELD_RESOURCE_COUNT",
+		10: "FLEET_SORT_FIELD_LAST_TRANSITION",
+		11: "FLEET_SORT_FIELD_IMPACT",
+		12: "FLEET_SORT_FIELD_RELEVANCE",
+	}
+	FleetSortField_value = map[string]int32{
+		"FLEET_SORT_FIELD_UNSPECIFIED":     0,
+		"FLEET_SORT_FIELD_NAME":            1,
+		"FLEET_SORT_FIELD_PROJECT":         2,
+		"FLEET_SORT_FIELD_CLUSTER":         3,
+		"FLEET_SORT_FIELD_STAGE":           4,
+		"FLEET_SORT_FIELD_HEALTH":          5,
+		"FLEET_SORT_FIELD_SYNC":            6,
+		"FLEET_SORT_FIELD_RELEASE":         7,
+		"FLEET_SORT_FIELD_ROLLOUT":         8,
+		"FLEET_SORT_FIELD_RESOURCE_COUNT":  9,
+		"FLEET_SORT_FIELD_LAST_TRANSITION": 10,
+		"FLEET_SORT_FIELD_IMPACT":          11,
+		"FLEET_SORT_FIELD_RELEVANCE":       12,
+	}
+)
+
+func (x FleetSortField) Enum() *FleetSortField {
+	p := new(FleetSortField)
+	*p = x
+	return p
+}
+
+func (x FleetSortField) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetSortField) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[6].Descriptor()
+}
+
+func (FleetSortField) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[6]
+}
+
+func (x FleetSortField) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetSortField.Descriptor instead.
+func (FleetSortField) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{6}
+}
+
+type FleetSortDirection int32
+
+const (
+	FleetSortDirection_FLEET_SORT_DIRECTION_UNSPECIFIED FleetSortDirection = 0
+	FleetSortDirection_FLEET_SORT_DIRECTION_ASC         FleetSortDirection = 1
+	FleetSortDirection_FLEET_SORT_DIRECTION_DESC        FleetSortDirection = 2
+)
+
+// Enum value maps for FleetSortDirection.
+var (
+	FleetSortDirection_name = map[int32]string{
+		0: "FLEET_SORT_DIRECTION_UNSPECIFIED",
+		1: "FLEET_SORT_DIRECTION_ASC",
+		2: "FLEET_SORT_DIRECTION_DESC",
+	}
+	FleetSortDirection_value = map[string]int32{
+		"FLEET_SORT_DIRECTION_UNSPECIFIED": 0,
+		"FLEET_SORT_DIRECTION_ASC":         1,
+		"FLEET_SORT_DIRECTION_DESC":        2,
+	}
+)
+
+func (x FleetSortDirection) Enum() *FleetSortDirection {
+	p := new(FleetSortDirection)
+	*p = x
+	return p
+}
+
+func (x FleetSortDirection) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetSortDirection) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[7].Descriptor()
+}
+
+func (FleetSortDirection) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[7]
+}
+
+func (x FleetSortDirection) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetSortDirection.Descriptor instead.
+func (FleetSortDirection) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{7}
+}
+
+type FleetGroupDimension int32
+
+const (
+	FleetGroupDimension_FLEET_GROUP_DIMENSION_UNSPECIFIED FleetGroupDimension = 0
+	FleetGroupDimension_FLEET_GROUP_DIMENSION_PROJECT     FleetGroupDimension = 1
+	FleetGroupDimension_FLEET_GROUP_DIMENSION_CLUSTER     FleetGroupDimension = 2
+	FleetGroupDimension_FLEET_GROUP_DIMENSION_STAGE       FleetGroupDimension = 3
+	FleetGroupDimension_FLEET_GROUP_DIMENSION_HEALTH      FleetGroupDimension = 4
+)
+
+// Enum value maps for FleetGroupDimension.
+var (
+	FleetGroupDimension_name = map[int32]string{
+		0: "FLEET_GROUP_DIMENSION_UNSPECIFIED",
+		1: "FLEET_GROUP_DIMENSION_PROJECT",
+		2: "FLEET_GROUP_DIMENSION_CLUSTER",
+		3: "FLEET_GROUP_DIMENSION_STAGE",
+		4: "FLEET_GROUP_DIMENSION_HEALTH",
+	}
+	FleetGroupDimension_value = map[string]int32{
+		"FLEET_GROUP_DIMENSION_UNSPECIFIED": 0,
+		"FLEET_GROUP_DIMENSION_PROJECT":     1,
+		"FLEET_GROUP_DIMENSION_CLUSTER":     2,
+		"FLEET_GROUP_DIMENSION_STAGE":       3,
+		"FLEET_GROUP_DIMENSION_HEALTH":      4,
+	}
+)
+
+func (x FleetGroupDimension) Enum() *FleetGroupDimension {
+	p := new(FleetGroupDimension)
+	*p = x
+	return p
+}
+
+func (x FleetGroupDimension) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetGroupDimension) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[8].Descriptor()
+}
+
+func (FleetGroupDimension) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[8]
+}
+
+func (x FleetGroupDimension) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetGroupDimension.Descriptor instead.
+func (FleetGroupDimension) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{8}
+}
+
+type FleetSizeMetric int32
+
+const (
+	FleetSizeMetric_FLEET_SIZE_METRIC_UNSPECIFIED    FleetSizeMetric = 0
+	FleetSizeMetric_FLEET_SIZE_METRIC_RESOURCE_COUNT FleetSizeMetric = 1
+	FleetSizeMetric_FLEET_SIZE_METRIC_REQUEST_RATE   FleetSizeMetric = 2
+)
+
+// Enum value maps for FleetSizeMetric.
+var (
+	FleetSizeMetric_name = map[int32]string{
+		0: "FLEET_SIZE_METRIC_UNSPECIFIED",
+		1: "FLEET_SIZE_METRIC_RESOURCE_COUNT",
+		2: "FLEET_SIZE_METRIC_REQUEST_RATE",
+	}
+	FleetSizeMetric_value = map[string]int32{
+		"FLEET_SIZE_METRIC_UNSPECIFIED":    0,
+		"FLEET_SIZE_METRIC_RESOURCE_COUNT": 1,
+		"FLEET_SIZE_METRIC_REQUEST_RATE":   2,
+	}
+)
+
+func (x FleetSizeMetric) Enum() *FleetSizeMetric {
+	p := new(FleetSizeMetric)
+	*p = x
+	return p
+}
+
+func (x FleetSizeMetric) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetSizeMetric) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[9].Descriptor()
+}
+
+func (FleetSizeMetric) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[9]
+}
+
+func (x FleetSizeMetric) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetSizeMetric.Descriptor instead.
+func (FleetSizeMetric) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{9}
+}
+
+type FleetFacetDimension int32
+
+const (
+	FleetFacetDimension_FLEET_FACET_DIMENSION_UNSPECIFIED FleetFacetDimension = 0
+	FleetFacetDimension_FLEET_FACET_DIMENSION_PROJECT     FleetFacetDimension = 1
+	FleetFacetDimension_FLEET_FACET_DIMENSION_NAMESPACE   FleetFacetDimension = 2
+	FleetFacetDimension_FLEET_FACET_DIMENSION_CLUSTER     FleetFacetDimension = 3
+	FleetFacetDimension_FLEET_FACET_DIMENSION_STAGE       FleetFacetDimension = 4
+	FleetFacetDimension_FLEET_FACET_DIMENSION_HEALTH      FleetFacetDimension = 5
+	FleetFacetDimension_FLEET_FACET_DIMENSION_SYNC        FleetFacetDimension = 6
+	FleetFacetDimension_FLEET_FACET_DIMENSION_RELEASE     FleetFacetDimension = 7
+	FleetFacetDimension_FLEET_FACET_DIMENSION_ROLLOUT     FleetFacetDimension = 8
+	FleetFacetDimension_FLEET_FACET_DIMENSION_SOURCE_TYPE FleetFacetDimension = 9
+)
+
+// Enum value maps for FleetFacetDimension.
+var (
+	FleetFacetDimension_name = map[int32]string{
+		0: "FLEET_FACET_DIMENSION_UNSPECIFIED",
+		1: "FLEET_FACET_DIMENSION_PROJECT",
+		2: "FLEET_FACET_DIMENSION_NAMESPACE",
+		3: "FLEET_FACET_DIMENSION_CLUSTER",
+		4: "FLEET_FACET_DIMENSION_STAGE",
+		5: "FLEET_FACET_DIMENSION_HEALTH",
+		6: "FLEET_FACET_DIMENSION_SYNC",
+		7: "FLEET_FACET_DIMENSION_RELEASE",
+		8: "FLEET_FACET_DIMENSION_ROLLOUT",
+		9: "FLEET_FACET_DIMENSION_SOURCE_TYPE",
+	}
+	FleetFacetDimension_value = map[string]int32{
+		"FLEET_FACET_DIMENSION_UNSPECIFIED": 0,
+		"FLEET_FACET_DIMENSION_PROJECT":     1,
+		"FLEET_FACET_DIMENSION_NAMESPACE":   2,
+		"FLEET_FACET_DIMENSION_CLUSTER":     3,
+		"FLEET_FACET_DIMENSION_STAGE":       4,
+		"FLEET_FACET_DIMENSION_HEALTH":      5,
+		"FLEET_FACET_DIMENSION_SYNC":        6,
+		"FLEET_FACET_DIMENSION_RELEASE":     7,
+		"FLEET_FACET_DIMENSION_ROLLOUT":     8,
+		"FLEET_FACET_DIMENSION_SOURCE_TYPE": 9,
+	}
+)
+
+func (x FleetFacetDimension) Enum() *FleetFacetDimension {
+	p := new(FleetFacetDimension)
+	*p = x
+	return p
+}
+
+func (x FleetFacetDimension) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetFacetDimension) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[10].Descriptor()
+}
+
+func (FleetFacetDimension) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[10]
+}
+
+func (x FleetFacetDimension) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetFacetDimension.Descriptor instead.
+func (FleetFacetDimension) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{10}
+}
+
+type FleetCapability int32
+
+const (
+	FleetCapability_FLEET_CAPABILITY_UNSPECIFIED      FleetCapability = 0
+	FleetCapability_FLEET_CAPABILITY_APPLICATION_SYNC FleetCapability = 1
+	FleetCapability_FLEET_CAPABILITY_RELEASE_ROLLBACK FleetCapability = 2
+	FleetCapability_FLEET_CAPABILITY_GATE_APPROVE     FleetCapability = 3
+	FleetCapability_FLEET_CAPABILITY_PIPELINE_RETRY   FleetCapability = 4
+)
+
+// Enum value maps for FleetCapability.
+var (
+	FleetCapability_name = map[int32]string{
+		0: "FLEET_CAPABILITY_UNSPECIFIED",
+		1: "FLEET_CAPABILITY_APPLICATION_SYNC",
+		2: "FLEET_CAPABILITY_RELEASE_ROLLBACK",
+		3: "FLEET_CAPABILITY_GATE_APPROVE",
+		4: "FLEET_CAPABILITY_PIPELINE_RETRY",
+	}
+	FleetCapability_value = map[string]int32{
+		"FLEET_CAPABILITY_UNSPECIFIED":      0,
+		"FLEET_CAPABILITY_APPLICATION_SYNC": 1,
+		"FLEET_CAPABILITY_RELEASE_ROLLBACK": 2,
+		"FLEET_CAPABILITY_GATE_APPROVE":     3,
+		"FLEET_CAPABILITY_PIPELINE_RETRY":   4,
+	}
+)
+
+func (x FleetCapability) Enum() *FleetCapability {
+	p := new(FleetCapability)
+	*p = x
+	return p
+}
+
+func (x FleetCapability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetCapability) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[11].Descriptor()
+}
+
+func (FleetCapability) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[11]
+}
+
+func (x FleetCapability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetCapability.Descriptor instead.
+func (FleetCapability) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{11}
+}
+
+type FleetConnectionState int32
+
+const (
+	FleetConnectionState_FLEET_CONNECTION_STATE_UNSPECIFIED    FleetConnectionState = 0
+	FleetConnectionState_FLEET_CONNECTION_STATE_HEALTHY        FleetConnectionState = 1
+	FleetConnectionState_FLEET_CONNECTION_STATE_UNHEALTHY      FleetConnectionState = 2
+	FleetConnectionState_FLEET_CONNECTION_STATE_DISABLED       FleetConnectionState = 3
+	FleetConnectionState_FLEET_CONNECTION_STATE_NOT_CONFIGURED FleetConnectionState = 4
+)
+
+// Enum value maps for FleetConnectionState.
+var (
+	FleetConnectionState_name = map[int32]string{
+		0: "FLEET_CONNECTION_STATE_UNSPECIFIED",
+		1: "FLEET_CONNECTION_STATE_HEALTHY",
+		2: "FLEET_CONNECTION_STATE_UNHEALTHY",
+		3: "FLEET_CONNECTION_STATE_DISABLED",
+		4: "FLEET_CONNECTION_STATE_NOT_CONFIGURED",
+	}
+	FleetConnectionState_value = map[string]int32{
+		"FLEET_CONNECTION_STATE_UNSPECIFIED":    0,
+		"FLEET_CONNECTION_STATE_HEALTHY":        1,
+		"FLEET_CONNECTION_STATE_UNHEALTHY":      2,
+		"FLEET_CONNECTION_STATE_DISABLED":       3,
+		"FLEET_CONNECTION_STATE_NOT_CONFIGURED": 4,
+	}
+)
+
+func (x FleetConnectionState) Enum() *FleetConnectionState {
+	p := new(FleetConnectionState)
+	*p = x
+	return p
+}
+
+func (x FleetConnectionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetConnectionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[12].Descriptor()
+}
+
+func (FleetConnectionState) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[12]
+}
+
+func (x FleetConnectionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetConnectionState.Descriptor instead.
+func (FleetConnectionState) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{12}
+}
+
+type FleetMapNodeKind int32
+
+const (
+	FleetMapNodeKind_FLEET_MAP_NODE_KIND_UNSPECIFIED FleetMapNodeKind = 0
+	FleetMapNodeKind_FLEET_MAP_NODE_KIND_GROUP       FleetMapNodeKind = 1
+	FleetMapNodeKind_FLEET_MAP_NODE_KIND_APPLICATION FleetMapNodeKind = 2
+)
+
+// Enum value maps for FleetMapNodeKind.
+var (
+	FleetMapNodeKind_name = map[int32]string{
+		0: "FLEET_MAP_NODE_KIND_UNSPECIFIED",
+		1: "FLEET_MAP_NODE_KIND_GROUP",
+		2: "FLEET_MAP_NODE_KIND_APPLICATION",
+	}
+	FleetMapNodeKind_value = map[string]int32{
+		"FLEET_MAP_NODE_KIND_UNSPECIFIED": 0,
+		"FLEET_MAP_NODE_KIND_GROUP":       1,
+		"FLEET_MAP_NODE_KIND_APPLICATION": 2,
+	}
+)
+
+func (x FleetMapNodeKind) Enum() *FleetMapNodeKind {
+	p := new(FleetMapNodeKind)
+	*p = x
+	return p
+}
+
+func (x FleetMapNodeKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FleetMapNodeKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_paprika_v1_api_proto_enumTypes[13].Descriptor()
+}
+
+func (FleetMapNodeKind) Type() protoreflect.EnumType {
+	return &file_paprika_v1_api_proto_enumTypes[13]
+}
+
+func (x FleetMapNodeKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FleetMapNodeKind.Descriptor instead.
+func (FleetMapNodeKind) EnumDescriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{13}
+}
+
 type Step struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -8295,6 +9067,1452 @@ func (x *LogChunk) GetTimestampMs() int64 {
 	return 0
 }
 
+type FleetObjectKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetObjectKey) Reset() {
+	*x = FleetObjectKey{}
+	mi := &file_paprika_v1_api_proto_msgTypes[120]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetObjectKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetObjectKey) ProtoMessage() {}
+
+func (x *FleetObjectKey) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[120]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetObjectKey.ProtoReflect.Descriptor instead.
+func (*FleetObjectKey) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{120}
+}
+
+func (x *FleetObjectKey) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *FleetObjectKey) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type FleetFilter struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Projects      []*FleetObjectKey      `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	Namespaces    []string               `protobuf:"bytes,2,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	Clusters      []*FleetObjectKey      `protobuf:"bytes,3,rep,name=clusters,proto3" json:"clusters,omitempty"`
+	Stages        []string               `protobuf:"bytes,4,rep,name=stages,proto3" json:"stages,omitempty"`
+	Health        []FleetHealth          `protobuf:"varint,5,rep,packed,name=health,proto3,enum=paprika.v1.FleetHealth" json:"health,omitempty"`
+	Sync          []FleetSyncState       `protobuf:"varint,6,rep,packed,name=sync,proto3,enum=paprika.v1.FleetSyncState" json:"sync,omitempty"`
+	ReleaseStates []FleetReleaseState    `protobuf:"varint,7,rep,packed,name=release_states,json=releaseStates,proto3,enum=paprika.v1.FleetReleaseState" json:"release_states,omitempty"`
+	RolloutStates []FleetRolloutState    `protobuf:"varint,8,rep,packed,name=rollout_states,json=rolloutStates,proto3,enum=paprika.v1.FleetRolloutState" json:"rollout_states,omitempty"`
+	SourceTypes   []FleetSourceType      `protobuf:"varint,9,rep,packed,name=source_types,json=sourceTypes,proto3,enum=paprika.v1.FleetSourceType" json:"source_types,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetFilter) Reset() {
+	*x = FleetFilter{}
+	mi := &file_paprika_v1_api_proto_msgTypes[121]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetFilter) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetFilter) ProtoMessage() {}
+
+func (x *FleetFilter) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[121]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetFilter.ProtoReflect.Descriptor instead.
+func (*FleetFilter) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{121}
+}
+
+func (x *FleetFilter) GetProjects() []*FleetObjectKey {
+	if x != nil {
+		return x.Projects
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetClusters() []*FleetObjectKey {
+	if x != nil {
+		return x.Clusters
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetStages() []string {
+	if x != nil {
+		return x.Stages
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetHealth() []FleetHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetSync() []FleetSyncState {
+	if x != nil {
+		return x.Sync
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetReleaseStates() []FleetReleaseState {
+	if x != nil {
+		return x.ReleaseStates
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetRolloutStates() []FleetRolloutState {
+	if x != nil {
+		return x.RolloutStates
+	}
+	return nil
+}
+
+func (x *FleetFilter) GetSourceTypes() []FleetSourceType {
+	if x != nil {
+		return x.SourceTypes
+	}
+	return nil
+}
+
+type StageTargetSummary struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	StableId               string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
+	Stage                  string                 `protobuf:"bytes,2,opt,name=stage,proto3" json:"stage,omitempty"`
+	Ring                   int32                  `protobuf:"varint,3,opt,name=ring,proto3" json:"ring,omitempty"`
+	Cluster                *FleetObjectKey        `protobuf:"bytes,4,opt,name=cluster,proto3" json:"cluster,omitempty"`
+	ClusterLabel           string                 `protobuf:"bytes,5,opt,name=cluster_label,json=clusterLabel,proto3" json:"cluster_label,omitempty"`
+	Health                 FleetHealth            `protobuf:"varint,6,opt,name=health,proto3,enum=paprika.v1.FleetHealth" json:"health,omitempty"`
+	ClusterConnection      FleetConnectionState   `protobuf:"varint,7,opt,name=cluster_connection,json=clusterConnection,proto3,enum=paprika.v1.FleetConnectionState" json:"cluster_connection,omitempty"`
+	UnmanagedInlineCluster bool                   `protobuf:"varint,8,opt,name=unmanaged_inline_cluster,json=unmanagedInlineCluster,proto3" json:"unmanaged_inline_cluster,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *StageTargetSummary) Reset() {
+	*x = StageTargetSummary{}
+	mi := &file_paprika_v1_api_proto_msgTypes[122]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StageTargetSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StageTargetSummary) ProtoMessage() {}
+
+func (x *StageTargetSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[122]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StageTargetSummary.ProtoReflect.Descriptor instead.
+func (*StageTargetSummary) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{122}
+}
+
+func (x *StageTargetSummary) GetStableId() string {
+	if x != nil {
+		return x.StableId
+	}
+	return ""
+}
+
+func (x *StageTargetSummary) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *StageTargetSummary) GetRing() int32 {
+	if x != nil {
+		return x.Ring
+	}
+	return 0
+}
+
+func (x *StageTargetSummary) GetCluster() *FleetObjectKey {
+	if x != nil {
+		return x.Cluster
+	}
+	return nil
+}
+
+func (x *StageTargetSummary) GetClusterLabel() string {
+	if x != nil {
+		return x.ClusterLabel
+	}
+	return ""
+}
+
+func (x *StageTargetSummary) GetHealth() FleetHealth {
+	if x != nil {
+		return x.Health
+	}
+	return FleetHealth_FLEET_HEALTH_UNSPECIFIED
+}
+
+func (x *StageTargetSummary) GetClusterConnection() FleetConnectionState {
+	if x != nil {
+		return x.ClusterConnection
+	}
+	return FleetConnectionState_FLEET_CONNECTION_STATE_UNSPECIFIED
+}
+
+func (x *StageTargetSummary) GetUnmanagedInlineCluster() bool {
+	if x != nil {
+		return x.UnmanagedInlineCluster
+	}
+	return false
+}
+
+type ApplicationSummary struct {
+	state                        protoimpl.MessageState `protogen:"open.v1"`
+	Identity                     *FleetObjectKey        `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	Project                      *FleetObjectKey        `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
+	Targets                      []*StageTargetSummary  `protobuf:"bytes,3,rep,name=targets,proto3" json:"targets,omitempty"`
+	CurrentStage                 string                 `protobuf:"bytes,4,opt,name=current_stage,json=currentStage,proto3" json:"current_stage,omitempty"`
+	CurrentCluster               *FleetObjectKey        `protobuf:"bytes,5,opt,name=current_cluster,json=currentCluster,proto3" json:"current_cluster,omitempty"`
+	CurrentClusterLabel          string                 `protobuf:"bytes,6,opt,name=current_cluster_label,json=currentClusterLabel,proto3" json:"current_cluster_label,omitempty"`
+	SourceType                   FleetSourceType        `protobuf:"varint,7,opt,name=source_type,json=sourceType,proto3,enum=paprika.v1.FleetSourceType" json:"source_type,omitempty"`
+	SourceRevision               string                 `protobuf:"bytes,8,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
+	Health                       FleetHealth            `protobuf:"varint,9,opt,name=health,proto3,enum=paprika.v1.FleetHealth" json:"health,omitempty"`
+	Sync                         FleetSyncState         `protobuf:"varint,10,opt,name=sync,proto3,enum=paprika.v1.FleetSyncState" json:"sync,omitempty"`
+	DriftCount                   uint32                 `protobuf:"varint,11,opt,name=drift_count,json=driftCount,proto3" json:"drift_count,omitempty"`
+	MissingResourceCount         uint32                 `protobuf:"varint,12,opt,name=missing_resource_count,json=missingResourceCount,proto3" json:"missing_resource_count,omitempty"`
+	ReleaseState                 FleetReleaseState      `protobuf:"varint,13,opt,name=release_state,json=releaseState,proto3,enum=paprika.v1.FleetReleaseState" json:"release_state,omitempty"`
+	RolloutState                 FleetRolloutState      `protobuf:"varint,14,opt,name=rollout_state,json=rolloutState,proto3,enum=paprika.v1.FleetRolloutState" json:"rollout_state,omitempty"`
+	ResourceCount                uint32                 `protobuf:"varint,15,opt,name=resource_count,json=resourceCount,proto3" json:"resource_count,omitempty"`
+	Repository                   *FleetObjectKey        `protobuf:"bytes,16,opt,name=repository,proto3" json:"repository,omitempty"`
+	RepositoryConnection         FleetConnectionState   `protobuf:"varint,17,opt,name=repository_connection,json=repositoryConnection,proto3,enum=paprika.v1.FleetConnectionState" json:"repository_connection,omitempty"`
+	EffectiveObservabilitySource *FleetObjectKey        `protobuf:"bytes,18,opt,name=effective_observability_source,json=effectiveObservabilitySource,proto3" json:"effective_observability_source,omitempty"`
+	ObservabilityConnection      FleetConnectionState   `protobuf:"varint,19,opt,name=observability_connection,json=observabilityConnection,proto3,enum=paprika.v1.FleetConnectionState" json:"observability_connection,omitempty"`
+	BlockedGateCount             uint32                 `protobuf:"varint,20,opt,name=blocked_gate_count,json=blockedGateCount,proto3" json:"blocked_gate_count,omitempty"`
+	LastTransitionUnixMs         int64                  `protobuf:"varint,21,opt,name=last_transition_unix_ms,json=lastTransitionUnixMs,proto3" json:"last_transition_unix_ms,omitempty"`
+	Capabilities                 []FleetCapability      `protobuf:"varint,22,rep,packed,name=capabilities,proto3,enum=paprika.v1.FleetCapability" json:"capabilities,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
+}
+
+func (x *ApplicationSummary) Reset() {
+	*x = ApplicationSummary{}
+	mi := &file_paprika_v1_api_proto_msgTypes[123]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplicationSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplicationSummary) ProtoMessage() {}
+
+func (x *ApplicationSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[123]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplicationSummary.ProtoReflect.Descriptor instead.
+func (*ApplicationSummary) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{123}
+}
+
+func (x *ApplicationSummary) GetIdentity() *FleetObjectKey {
+	if x != nil {
+		return x.Identity
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetProject() *FleetObjectKey {
+	if x != nil {
+		return x.Project
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetTargets() []*StageTargetSummary {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetCurrentStage() string {
+	if x != nil {
+		return x.CurrentStage
+	}
+	return ""
+}
+
+func (x *ApplicationSummary) GetCurrentCluster() *FleetObjectKey {
+	if x != nil {
+		return x.CurrentCluster
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetCurrentClusterLabel() string {
+	if x != nil {
+		return x.CurrentClusterLabel
+	}
+	return ""
+}
+
+func (x *ApplicationSummary) GetSourceType() FleetSourceType {
+	if x != nil {
+		return x.SourceType
+	}
+	return FleetSourceType_FLEET_SOURCE_TYPE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetSourceRevision() string {
+	if x != nil {
+		return x.SourceRevision
+	}
+	return ""
+}
+
+func (x *ApplicationSummary) GetHealth() FleetHealth {
+	if x != nil {
+		return x.Health
+	}
+	return FleetHealth_FLEET_HEALTH_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetSync() FleetSyncState {
+	if x != nil {
+		return x.Sync
+	}
+	return FleetSyncState_FLEET_SYNC_STATE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetDriftCount() uint32 {
+	if x != nil {
+		return x.DriftCount
+	}
+	return 0
+}
+
+func (x *ApplicationSummary) GetMissingResourceCount() uint32 {
+	if x != nil {
+		return x.MissingResourceCount
+	}
+	return 0
+}
+
+func (x *ApplicationSummary) GetReleaseState() FleetReleaseState {
+	if x != nil {
+		return x.ReleaseState
+	}
+	return FleetReleaseState_FLEET_RELEASE_STATE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetRolloutState() FleetRolloutState {
+	if x != nil {
+		return x.RolloutState
+	}
+	return FleetRolloutState_FLEET_ROLLOUT_STATE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetResourceCount() uint32 {
+	if x != nil {
+		return x.ResourceCount
+	}
+	return 0
+}
+
+func (x *ApplicationSummary) GetRepository() *FleetObjectKey {
+	if x != nil {
+		return x.Repository
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetRepositoryConnection() FleetConnectionState {
+	if x != nil {
+		return x.RepositoryConnection
+	}
+	return FleetConnectionState_FLEET_CONNECTION_STATE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetEffectiveObservabilitySource() *FleetObjectKey {
+	if x != nil {
+		return x.EffectiveObservabilitySource
+	}
+	return nil
+}
+
+func (x *ApplicationSummary) GetObservabilityConnection() FleetConnectionState {
+	if x != nil {
+		return x.ObservabilityConnection
+	}
+	return FleetConnectionState_FLEET_CONNECTION_STATE_UNSPECIFIED
+}
+
+func (x *ApplicationSummary) GetBlockedGateCount() uint32 {
+	if x != nil {
+		return x.BlockedGateCount
+	}
+	return 0
+}
+
+func (x *ApplicationSummary) GetLastTransitionUnixMs() int64 {
+	if x != nil {
+		return x.LastTransitionUnixMs
+	}
+	return 0
+}
+
+func (x *ApplicationSummary) GetCapabilities() []FleetCapability {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+type FleetFacetBucket struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Dimension FleetFacetDimension    `protobuf:"varint,1,opt,name=dimension,proto3,enum=paprika.v1.FleetFacetDimension" json:"dimension,omitempty"`
+	// Types that are valid to be assigned to Key:
+	//
+	//	*FleetFacetBucket_Object
+	//	*FleetFacetBucket_Value
+	Key           isFleetFacetBucket_Key `protobuf_oneof:"key"`
+	Label         string                 `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
+	Count         uint64                 `protobuf:"varint,5,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetFacetBucket) Reset() {
+	*x = FleetFacetBucket{}
+	mi := &file_paprika_v1_api_proto_msgTypes[124]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetFacetBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetFacetBucket) ProtoMessage() {}
+
+func (x *FleetFacetBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[124]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetFacetBucket.ProtoReflect.Descriptor instead.
+func (*FleetFacetBucket) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{124}
+}
+
+func (x *FleetFacetBucket) GetDimension() FleetFacetDimension {
+	if x != nil {
+		return x.Dimension
+	}
+	return FleetFacetDimension_FLEET_FACET_DIMENSION_UNSPECIFIED
+}
+
+func (x *FleetFacetBucket) GetKey() isFleetFacetBucket_Key {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *FleetFacetBucket) GetObject() *FleetObjectKey {
+	if x != nil {
+		if x, ok := x.Key.(*FleetFacetBucket_Object); ok {
+			return x.Object
+		}
+	}
+	return nil
+}
+
+func (x *FleetFacetBucket) GetValue() string {
+	if x != nil {
+		if x, ok := x.Key.(*FleetFacetBucket_Value); ok {
+			return x.Value
+		}
+	}
+	return ""
+}
+
+func (x *FleetFacetBucket) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *FleetFacetBucket) GetCount() uint64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type isFleetFacetBucket_Key interface {
+	isFleetFacetBucket_Key()
+}
+
+type FleetFacetBucket_Object struct {
+	Object *FleetObjectKey `protobuf:"bytes,2,opt,name=object,proto3,oneof"`
+}
+
+type FleetFacetBucket_Value struct {
+	Value string `protobuf:"bytes,3,opt,name=value,proto3,oneof"`
+}
+
+func (*FleetFacetBucket_Object) isFleetFacetBucket_Key() {}
+
+func (*FleetFacetBucket_Value) isFleetFacetBucket_Key() {}
+
+type FleetHealthBucket struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Health        FleetHealth            `protobuf:"varint,1,opt,name=health,proto3,enum=paprika.v1.FleetHealth" json:"health,omitempty"`
+	Count         uint64                 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetHealthBucket) Reset() {
+	*x = FleetHealthBucket{}
+	mi := &file_paprika_v1_api_proto_msgTypes[125]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetHealthBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetHealthBucket) ProtoMessage() {}
+
+func (x *FleetHealthBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[125]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetHealthBucket.ProtoReflect.Descriptor instead.
+func (*FleetHealthBucket) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{125}
+}
+
+func (x *FleetHealthBucket) GetHealth() FleetHealth {
+	if x != nil {
+		return x.Health
+	}
+	return FleetHealth_FLEET_HEALTH_UNSPECIFIED
+}
+
+func (x *FleetHealthBucket) GetCount() uint64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type QueryApplicationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filter        *FleetFilter           `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
+	Search        string                 `protobuf:"bytes,2,opt,name=search,proto3" json:"search,omitempty"`
+	Sort          FleetSortField         `protobuf:"varint,3,opt,name=sort,proto3,enum=paprika.v1.FleetSortField" json:"sort,omitempty"`
+	Direction     FleetSortDirection     `protobuf:"varint,4,opt,name=direction,proto3,enum=paprika.v1.FleetSortDirection" json:"direction,omitempty"`
+	PageSize      uint32                 `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	Cursor        string                 `protobuf:"bytes,6,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryApplicationsRequest) Reset() {
+	*x = QueryApplicationsRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryApplicationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryApplicationsRequest) ProtoMessage() {}
+
+func (x *QueryApplicationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryApplicationsRequest.ProtoReflect.Descriptor instead.
+func (*QueryApplicationsRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *QueryApplicationsRequest) GetFilter() *FleetFilter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+func (x *QueryApplicationsRequest) GetSearch() string {
+	if x != nil {
+		return x.Search
+	}
+	return ""
+}
+
+func (x *QueryApplicationsRequest) GetSort() FleetSortField {
+	if x != nil {
+		return x.Sort
+	}
+	return FleetSortField_FLEET_SORT_FIELD_UNSPECIFIED
+}
+
+func (x *QueryApplicationsRequest) GetDirection() FleetSortDirection {
+	if x != nil {
+		return x.Direction
+	}
+	return FleetSortDirection_FLEET_SORT_DIRECTION_UNSPECIFIED
+}
+
+func (x *QueryApplicationsRequest) GetPageSize() uint32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *QueryApplicationsRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+type QueryApplicationsResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Applications    []*ApplicationSummary  `protobuf:"bytes,1,rep,name=applications,proto3" json:"applications,omitempty"`
+	Total           uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	NextCursor      string                 `protobuf:"bytes,3,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	IndexGeneration uint64                 `protobuf:"varint,4,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	Facets          []*FleetFacetBucket    `protobuf:"bytes,5,rep,name=facets,proto3" json:"facets,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *QueryApplicationsResponse) Reset() {
+	*x = QueryApplicationsResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryApplicationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryApplicationsResponse) ProtoMessage() {}
+
+func (x *QueryApplicationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryApplicationsResponse.ProtoReflect.Descriptor instead.
+func (*QueryApplicationsResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *QueryApplicationsResponse) GetApplications() []*ApplicationSummary {
+	if x != nil {
+		return x.Applications
+	}
+	return nil
+}
+
+func (x *QueryApplicationsResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *QueryApplicationsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *QueryApplicationsResponse) GetIndexGeneration() uint64 {
+	if x != nil {
+		return x.IndexGeneration
+	}
+	return 0
+}
+
+func (x *QueryApplicationsResponse) GetFacets() []*FleetFacetBucket {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
+}
+
+type FleetMapNode struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	StableId    string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
+	Kind        FleetMapNodeKind       `protobuf:"varint,2,opt,name=kind,proto3,enum=paprika.v1.FleetMapNodeKind" json:"kind,omitempty"`
+	Label       string                 `protobuf:"bytes,3,opt,name=label,proto3" json:"label,omitempty"`
+	Application *FleetObjectKey        `protobuf:"bytes,4,opt,name=application,proto3" json:"application,omitempty"`
+	// Types that are valid to be assigned to GroupKey:
+	//
+	//	*FleetMapNode_GroupObject
+	//	*FleetMapNode_GroupValue
+	GroupKey             isFleetMapNode_GroupKey `protobuf_oneof:"group_key"`
+	ApplicationCount     uint64                  `protobuf:"varint,7,opt,name=application_count,json=applicationCount,proto3" json:"application_count,omitempty"`
+	TargetCount          uint64                  `protobuf:"varint,8,opt,name=target_count,json=targetCount,proto3" json:"target_count,omitempty"`
+	Health               []*FleetHealthBucket    `protobuf:"bytes,9,rep,name=health,proto3" json:"health,omitempty"`
+	ResourceWeight       uint64                  `protobuf:"varint,10,opt,name=resource_weight,json=resourceWeight,proto3" json:"resource_weight,omitempty"`
+	RequestRateWeight    float64                 `protobuf:"fixed64,11,opt,name=request_rate_weight,json=requestRateWeight,proto3" json:"request_rate_weight,omitempty"`
+	EffectiveWeight      float64                 `protobuf:"fixed64,12,opt,name=effective_weight,json=effectiveWeight,proto3" json:"effective_weight,omitempty"`
+	UsedResourceFallback bool                    `protobuf:"varint,13,opt,name=used_resource_fallback,json=usedResourceFallback,proto3" json:"used_resource_fallback,omitempty"`
+	Children             []*FleetMapNode         `protobuf:"bytes,14,rep,name=children,proto3" json:"children,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *FleetMapNode) Reset() {
+	*x = FleetMapNode{}
+	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetMapNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetMapNode) ProtoMessage() {}
+
+func (x *FleetMapNode) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetMapNode.ProtoReflect.Descriptor instead.
+func (*FleetMapNode) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *FleetMapNode) GetStableId() string {
+	if x != nil {
+		return x.StableId
+	}
+	return ""
+}
+
+func (x *FleetMapNode) GetKind() FleetMapNodeKind {
+	if x != nil {
+		return x.Kind
+	}
+	return FleetMapNodeKind_FLEET_MAP_NODE_KIND_UNSPECIFIED
+}
+
+func (x *FleetMapNode) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *FleetMapNode) GetApplication() *FleetObjectKey {
+	if x != nil {
+		return x.Application
+	}
+	return nil
+}
+
+func (x *FleetMapNode) GetGroupKey() isFleetMapNode_GroupKey {
+	if x != nil {
+		return x.GroupKey
+	}
+	return nil
+}
+
+func (x *FleetMapNode) GetGroupObject() *FleetObjectKey {
+	if x != nil {
+		if x, ok := x.GroupKey.(*FleetMapNode_GroupObject); ok {
+			return x.GroupObject
+		}
+	}
+	return nil
+}
+
+func (x *FleetMapNode) GetGroupValue() string {
+	if x != nil {
+		if x, ok := x.GroupKey.(*FleetMapNode_GroupValue); ok {
+			return x.GroupValue
+		}
+	}
+	return ""
+}
+
+func (x *FleetMapNode) GetApplicationCount() uint64 {
+	if x != nil {
+		return x.ApplicationCount
+	}
+	return 0
+}
+
+func (x *FleetMapNode) GetTargetCount() uint64 {
+	if x != nil {
+		return x.TargetCount
+	}
+	return 0
+}
+
+func (x *FleetMapNode) GetHealth() []*FleetHealthBucket {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *FleetMapNode) GetResourceWeight() uint64 {
+	if x != nil {
+		return x.ResourceWeight
+	}
+	return 0
+}
+
+func (x *FleetMapNode) GetRequestRateWeight() float64 {
+	if x != nil {
+		return x.RequestRateWeight
+	}
+	return 0
+}
+
+func (x *FleetMapNode) GetEffectiveWeight() float64 {
+	if x != nil {
+		return x.EffectiveWeight
+	}
+	return 0
+}
+
+func (x *FleetMapNode) GetUsedResourceFallback() bool {
+	if x != nil {
+		return x.UsedResourceFallback
+	}
+	return false
+}
+
+func (x *FleetMapNode) GetChildren() []*FleetMapNode {
+	if x != nil {
+		return x.Children
+	}
+	return nil
+}
+
+type isFleetMapNode_GroupKey interface {
+	isFleetMapNode_GroupKey()
+}
+
+type FleetMapNode_GroupObject struct {
+	GroupObject *FleetObjectKey `protobuf:"bytes,5,opt,name=group_object,json=groupObject,proto3,oneof"`
+}
+
+type FleetMapNode_GroupValue struct {
+	GroupValue string `protobuf:"bytes,6,opt,name=group_value,json=groupValue,proto3,oneof"`
+}
+
+func (*FleetMapNode_GroupObject) isFleetMapNode_GroupKey() {}
+
+func (*FleetMapNode_GroupValue) isFleetMapNode_GroupKey() {}
+
+type QueryFleetMapRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filter        *FleetFilter           `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
+	Search        string                 `protobuf:"bytes,2,opt,name=search,proto3" json:"search,omitempty"`
+	Group         FleetGroupDimension    `protobuf:"varint,3,opt,name=group,proto3,enum=paprika.v1.FleetGroupDimension" json:"group,omitempty"`
+	SizeMetric    FleetSizeMetric        `protobuf:"varint,4,opt,name=size_metric,json=sizeMetric,proto3,enum=paprika.v1.FleetSizeMetric" json:"size_metric,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryFleetMapRequest) Reset() {
+	*x = QueryFleetMapRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[129]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryFleetMapRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryFleetMapRequest) ProtoMessage() {}
+
+func (x *QueryFleetMapRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[129]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryFleetMapRequest.ProtoReflect.Descriptor instead.
+func (*QueryFleetMapRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{129}
+}
+
+func (x *QueryFleetMapRequest) GetFilter() *FleetFilter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+func (x *QueryFleetMapRequest) GetSearch() string {
+	if x != nil {
+		return x.Search
+	}
+	return ""
+}
+
+func (x *QueryFleetMapRequest) GetGroup() FleetGroupDimension {
+	if x != nil {
+		return x.Group
+	}
+	return FleetGroupDimension_FLEET_GROUP_DIMENSION_UNSPECIFIED
+}
+
+func (x *QueryFleetMapRequest) GetSizeMetric() FleetSizeMetric {
+	if x != nil {
+		return x.SizeMetric
+	}
+	return FleetSizeMetric_FLEET_SIZE_METRIC_UNSPECIFIED
+}
+
+type QueryFleetMapResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Roots           []*FleetMapNode        `protobuf:"bytes,1,rep,name=roots,proto3" json:"roots,omitempty"`
+	Total           uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	IndexGeneration uint64                 `protobuf:"varint,3,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *QueryFleetMapResponse) Reset() {
+	*x = QueryFleetMapResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[130]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryFleetMapResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryFleetMapResponse) ProtoMessage() {}
+
+func (x *QueryFleetMapResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[130]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryFleetMapResponse.ProtoReflect.Descriptor instead.
+func (*QueryFleetMapResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{130}
+}
+
+func (x *QueryFleetMapResponse) GetRoots() []*FleetMapNode {
+	if x != nil {
+		return x.Roots
+	}
+	return nil
+}
+
+func (x *QueryFleetMapResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *QueryFleetMapResponse) GetIndexGeneration() uint64 {
+	if x != nil {
+		return x.IndexGeneration
+	}
+	return 0
+}
+
+type FleetMatrixHeader struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	StableId string                 `protobuf:"bytes,1,opt,name=stable_id,json=stableId,proto3" json:"stable_id,omitempty"`
+	Label    string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	// Types that are valid to be assigned to Key:
+	//
+	//	*FleetMatrixHeader_Object
+	//	*FleetMatrixHeader_Value
+	Key           isFleetMatrixHeader_Key `protobuf_oneof:"key"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetMatrixHeader) Reset() {
+	*x = FleetMatrixHeader{}
+	mi := &file_paprika_v1_api_proto_msgTypes[131]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetMatrixHeader) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetMatrixHeader) ProtoMessage() {}
+
+func (x *FleetMatrixHeader) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[131]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetMatrixHeader.ProtoReflect.Descriptor instead.
+func (*FleetMatrixHeader) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{131}
+}
+
+func (x *FleetMatrixHeader) GetStableId() string {
+	if x != nil {
+		return x.StableId
+	}
+	return ""
+}
+
+func (x *FleetMatrixHeader) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *FleetMatrixHeader) GetKey() isFleetMatrixHeader_Key {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *FleetMatrixHeader) GetObject() *FleetObjectKey {
+	if x != nil {
+		if x, ok := x.Key.(*FleetMatrixHeader_Object); ok {
+			return x.Object
+		}
+	}
+	return nil
+}
+
+func (x *FleetMatrixHeader) GetValue() string {
+	if x != nil {
+		if x, ok := x.Key.(*FleetMatrixHeader_Value); ok {
+			return x.Value
+		}
+	}
+	return ""
+}
+
+type isFleetMatrixHeader_Key interface {
+	isFleetMatrixHeader_Key()
+}
+
+type FleetMatrixHeader_Object struct {
+	Object *FleetObjectKey `protobuf:"bytes,3,opt,name=object,proto3,oneof"`
+}
+
+type FleetMatrixHeader_Value struct {
+	Value string `protobuf:"bytes,4,opt,name=value,proto3,oneof"`
+}
+
+func (*FleetMatrixHeader_Object) isFleetMatrixHeader_Key() {}
+
+func (*FleetMatrixHeader_Value) isFleetMatrixHeader_Key() {}
+
+type FleetMatrixCell struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	RowId                string                 `protobuf:"bytes,1,opt,name=row_id,json=rowId,proto3" json:"row_id,omitempty"`
+	ColumnId             string                 `protobuf:"bytes,2,opt,name=column_id,json=columnId,proto3" json:"column_id,omitempty"`
+	ApplicationCount     uint64                 `protobuf:"varint,3,opt,name=application_count,json=applicationCount,proto3" json:"application_count,omitempty"`
+	TargetCount          uint64                 `protobuf:"varint,4,opt,name=target_count,json=targetCount,proto3" json:"target_count,omitempty"`
+	Health               []*FleetHealthBucket   `protobuf:"bytes,5,rep,name=health,proto3" json:"health,omitempty"`
+	ResourceWeight       uint64                 `protobuf:"varint,6,opt,name=resource_weight,json=resourceWeight,proto3" json:"resource_weight,omitempty"`
+	RequestRateWeight    float64                `protobuf:"fixed64,7,opt,name=request_rate_weight,json=requestRateWeight,proto3" json:"request_rate_weight,omitempty"`
+	UsedResourceFallback bool                   `protobuf:"varint,8,opt,name=used_resource_fallback,json=usedResourceFallback,proto3" json:"used_resource_fallback,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *FleetMatrixCell) Reset() {
+	*x = FleetMatrixCell{}
+	mi := &file_paprika_v1_api_proto_msgTypes[132]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetMatrixCell) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetMatrixCell) ProtoMessage() {}
+
+func (x *FleetMatrixCell) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[132]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetMatrixCell.ProtoReflect.Descriptor instead.
+func (*FleetMatrixCell) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{132}
+}
+
+func (x *FleetMatrixCell) GetRowId() string {
+	if x != nil {
+		return x.RowId
+	}
+	return ""
+}
+
+func (x *FleetMatrixCell) GetColumnId() string {
+	if x != nil {
+		return x.ColumnId
+	}
+	return ""
+}
+
+func (x *FleetMatrixCell) GetApplicationCount() uint64 {
+	if x != nil {
+		return x.ApplicationCount
+	}
+	return 0
+}
+
+func (x *FleetMatrixCell) GetTargetCount() uint64 {
+	if x != nil {
+		return x.TargetCount
+	}
+	return 0
+}
+
+func (x *FleetMatrixCell) GetHealth() []*FleetHealthBucket {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *FleetMatrixCell) GetResourceWeight() uint64 {
+	if x != nil {
+		return x.ResourceWeight
+	}
+	return 0
+}
+
+func (x *FleetMatrixCell) GetRequestRateWeight() float64 {
+	if x != nil {
+		return x.RequestRateWeight
+	}
+	return 0
+}
+
+func (x *FleetMatrixCell) GetUsedResourceFallback() bool {
+	if x != nil {
+		return x.UsedResourceFallback
+	}
+	return false
+}
+
+type QueryFleetMatrixRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Filter        *FleetFilter           `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
+	Search        string                 `protobuf:"bytes,2,opt,name=search,proto3" json:"search,omitempty"`
+	RowGroup      FleetGroupDimension    `protobuf:"varint,3,opt,name=row_group,json=rowGroup,proto3,enum=paprika.v1.FleetGroupDimension" json:"row_group,omitempty"`
+	ColumnGroup   FleetGroupDimension    `protobuf:"varint,4,opt,name=column_group,json=columnGroup,proto3,enum=paprika.v1.FleetGroupDimension" json:"column_group,omitempty"`
+	SizeMetric    FleetSizeMetric        `protobuf:"varint,5,opt,name=size_metric,json=sizeMetric,proto3,enum=paprika.v1.FleetSizeMetric" json:"size_metric,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryFleetMatrixRequest) Reset() {
+	*x = QueryFleetMatrixRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[133]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryFleetMatrixRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryFleetMatrixRequest) ProtoMessage() {}
+
+func (x *QueryFleetMatrixRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[133]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryFleetMatrixRequest.ProtoReflect.Descriptor instead.
+func (*QueryFleetMatrixRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{133}
+}
+
+func (x *QueryFleetMatrixRequest) GetFilter() *FleetFilter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+func (x *QueryFleetMatrixRequest) GetSearch() string {
+	if x != nil {
+		return x.Search
+	}
+	return ""
+}
+
+func (x *QueryFleetMatrixRequest) GetRowGroup() FleetGroupDimension {
+	if x != nil {
+		return x.RowGroup
+	}
+	return FleetGroupDimension_FLEET_GROUP_DIMENSION_UNSPECIFIED
+}
+
+func (x *QueryFleetMatrixRequest) GetColumnGroup() FleetGroupDimension {
+	if x != nil {
+		return x.ColumnGroup
+	}
+	return FleetGroupDimension_FLEET_GROUP_DIMENSION_UNSPECIFIED
+}
+
+func (x *QueryFleetMatrixRequest) GetSizeMetric() FleetSizeMetric {
+	if x != nil {
+		return x.SizeMetric
+	}
+	return FleetSizeMetric_FLEET_SIZE_METRIC_UNSPECIFIED
+}
+
+type QueryFleetMatrixResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Rows            []*FleetMatrixHeader   `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	Columns         []*FleetMatrixHeader   `protobuf:"bytes,2,rep,name=columns,proto3" json:"columns,omitempty"`
+	Cells           []*FleetMatrixCell     `protobuf:"bytes,3,rep,name=cells,proto3" json:"cells,omitempty"`
+	Total           uint64                 `protobuf:"varint,4,opt,name=total,proto3" json:"total,omitempty"`
+	IndexGeneration uint64                 `protobuf:"varint,5,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *QueryFleetMatrixResponse) Reset() {
+	*x = QueryFleetMatrixResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[134]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryFleetMatrixResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryFleetMatrixResponse) ProtoMessage() {}
+
+func (x *QueryFleetMatrixResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[134]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryFleetMatrixResponse.ProtoReflect.Descriptor instead.
+func (*QueryFleetMatrixResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{134}
+}
+
+func (x *QueryFleetMatrixResponse) GetRows() []*FleetMatrixHeader {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
+func (x *QueryFleetMatrixResponse) GetColumns() []*FleetMatrixHeader {
+	if x != nil {
+		return x.Columns
+	}
+	return nil
+}
+
+func (x *QueryFleetMatrixResponse) GetCells() []*FleetMatrixCell {
+	if x != nil {
+		return x.Cells
+	}
+	return nil
+}
+
+func (x *QueryFleetMatrixResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *QueryFleetMatrixResponse) GetIndexGeneration() uint64 {
+	if x != nil {
+		return x.IndexGeneration
+	}
+	return 0
+}
+
 var File_paprika_v1_api_proto protoreflect.FileDescriptor
 
 const file_paprika_v1_api_proto_rawDesc = "" +
@@ -9026,12 +11244,243 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\bpod_name\x18\x01 \x01(\tR\apodName\x12%\n" +
 	"\x0econtainer_name\x18\x02 \x01(\tR\rcontainerName\x12\x12\n" +
 	"\x04line\x18\x03 \x01(\tR\x04line\x12!\n" +
-	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs*I\n" +
+	"\ftimestamp_ms\x18\x04 \x01(\x03R\vtimestampMs\"B\n" +
+	"\x0eFleetObjectKey\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xe2\x03\n" +
+	"\vFleetFilter\x126\n" +
+	"\bprojects\x18\x01 \x03(\v2\x1a.paprika.v1.FleetObjectKeyR\bprojects\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x02 \x03(\tR\n" +
+	"namespaces\x126\n" +
+	"\bclusters\x18\x03 \x03(\v2\x1a.paprika.v1.FleetObjectKeyR\bclusters\x12\x16\n" +
+	"\x06stages\x18\x04 \x03(\tR\x06stages\x12/\n" +
+	"\x06health\x18\x05 \x03(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12.\n" +
+	"\x04sync\x18\x06 \x03(\x0e2\x1a.paprika.v1.FleetSyncStateR\x04sync\x12D\n" +
+	"\x0erelease_states\x18\a \x03(\x0e2\x1d.paprika.v1.FleetReleaseStateR\rreleaseStates\x12D\n" +
+	"\x0erollout_states\x18\b \x03(\x0e2\x1d.paprika.v1.FleetRolloutStateR\rrolloutStates\x12>\n" +
+	"\fsource_types\x18\t \x03(\x0e2\x1b.paprika.v1.FleetSourceTypeR\vsourceTypes\"\xf2\x02\n" +
+	"\x12StageTargetSummary\x12\x1b\n" +
+	"\tstable_id\x18\x01 \x01(\tR\bstableId\x12\x14\n" +
+	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x12\n" +
+	"\x04ring\x18\x03 \x01(\x05R\x04ring\x124\n" +
+	"\acluster\x18\x04 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\acluster\x12#\n" +
+	"\rcluster_label\x18\x05 \x01(\tR\fclusterLabel\x12/\n" +
+	"\x06health\x18\x06 \x01(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12O\n" +
+	"\x12cluster_connection\x18\a \x01(\x0e2 .paprika.v1.FleetConnectionStateR\x11clusterConnection\x128\n" +
+	"\x18unmanaged_inline_cluster\x18\b \x01(\bR\x16unmanagedInlineCluster\"\xa0\n" +
+	"\n" +
+	"\x12ApplicationSummary\x126\n" +
+	"\bidentity\x18\x01 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\bidentity\x124\n" +
+	"\aproject\x18\x02 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\aproject\x128\n" +
+	"\atargets\x18\x03 \x03(\v2\x1e.paprika.v1.StageTargetSummaryR\atargets\x12#\n" +
+	"\rcurrent_stage\x18\x04 \x01(\tR\fcurrentStage\x12C\n" +
+	"\x0fcurrent_cluster\x18\x05 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\x0ecurrentCluster\x122\n" +
+	"\x15current_cluster_label\x18\x06 \x01(\tR\x13currentClusterLabel\x12<\n" +
+	"\vsource_type\x18\a \x01(\x0e2\x1b.paprika.v1.FleetSourceTypeR\n" +
+	"sourceType\x12'\n" +
+	"\x0fsource_revision\x18\b \x01(\tR\x0esourceRevision\x12/\n" +
+	"\x06health\x18\t \x01(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12.\n" +
+	"\x04sync\x18\n" +
+	" \x01(\x0e2\x1a.paprika.v1.FleetSyncStateR\x04sync\x12\x1f\n" +
+	"\vdrift_count\x18\v \x01(\rR\n" +
+	"driftCount\x124\n" +
+	"\x16missing_resource_count\x18\f \x01(\rR\x14missingResourceCount\x12B\n" +
+	"\rrelease_state\x18\r \x01(\x0e2\x1d.paprika.v1.FleetReleaseStateR\freleaseState\x12B\n" +
+	"\rrollout_state\x18\x0e \x01(\x0e2\x1d.paprika.v1.FleetRolloutStateR\frolloutState\x12%\n" +
+	"\x0eresource_count\x18\x0f \x01(\rR\rresourceCount\x12:\n" +
+	"\n" +
+	"repository\x18\x10 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\n" +
+	"repository\x12U\n" +
+	"\x15repository_connection\x18\x11 \x01(\x0e2 .paprika.v1.FleetConnectionStateR\x14repositoryConnection\x12`\n" +
+	"\x1eeffective_observability_source\x18\x12 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\x1ceffectiveObservabilitySource\x12[\n" +
+	"\x18observability_connection\x18\x13 \x01(\x0e2 .paprika.v1.FleetConnectionStateR\x17observabilityConnection\x12,\n" +
+	"\x12blocked_gate_count\x18\x14 \x01(\rR\x10blockedGateCount\x125\n" +
+	"\x17last_transition_unix_ms\x18\x15 \x01(\x03R\x14lastTransitionUnixMs\x12?\n" +
+	"\fcapabilities\x18\x16 \x03(\x0e2\x1b.paprika.v1.FleetCapabilityR\fcapabilities\"\xd2\x01\n" +
+	"\x10FleetFacetBucket\x12=\n" +
+	"\tdimension\x18\x01 \x01(\x0e2\x1f.paprika.v1.FleetFacetDimensionR\tdimension\x124\n" +
+	"\x06object\x18\x02 \x01(\v2\x1a.paprika.v1.FleetObjectKeyH\x00R\x06object\x12\x16\n" +
+	"\x05value\x18\x03 \x01(\tH\x00R\x05value\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\x12\x14\n" +
+	"\x05count\x18\x05 \x01(\x04R\x05countB\x05\n" +
+	"\x03key\"Z\n" +
+	"\x11FleetHealthBucket\x12/\n" +
+	"\x06health\x18\x01 \x01(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x04R\x05count\"\x86\x02\n" +
+	"\x18QueryApplicationsRequest\x12/\n" +
+	"\x06filter\x18\x01 \x01(\v2\x17.paprika.v1.FleetFilterR\x06filter\x12\x16\n" +
+	"\x06search\x18\x02 \x01(\tR\x06search\x12.\n" +
+	"\x04sort\x18\x03 \x01(\x0e2\x1a.paprika.v1.FleetSortFieldR\x04sort\x12<\n" +
+	"\tdirection\x18\x04 \x01(\x0e2\x1e.paprika.v1.FleetSortDirectionR\tdirection\x12\x1b\n" +
+	"\tpage_size\x18\x05 \x01(\rR\bpageSize\x12\x16\n" +
+	"\x06cursor\x18\x06 \x01(\tR\x06cursor\"\xf7\x01\n" +
+	"\x19QueryApplicationsResponse\x12B\n" +
+	"\fapplications\x18\x01 \x03(\v2\x1e.paprika.v1.ApplicationSummaryR\fapplications\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x04R\x05total\x12\x1f\n" +
+	"\vnext_cursor\x18\x03 \x01(\tR\n" +
+	"nextCursor\x12)\n" +
+	"\x10index_generation\x18\x04 \x01(\x04R\x0findexGeneration\x124\n" +
+	"\x06facets\x18\x05 \x03(\v2\x1c.paprika.v1.FleetFacetBucketR\x06facets\"\x99\x05\n" +
+	"\fFleetMapNode\x12\x1b\n" +
+	"\tstable_id\x18\x01 \x01(\tR\bstableId\x120\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1c.paprika.v1.FleetMapNodeKindR\x04kind\x12\x14\n" +
+	"\x05label\x18\x03 \x01(\tR\x05label\x12<\n" +
+	"\vapplication\x18\x04 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\vapplication\x12?\n" +
+	"\fgroup_object\x18\x05 \x01(\v2\x1a.paprika.v1.FleetObjectKeyH\x00R\vgroupObject\x12!\n" +
+	"\vgroup_value\x18\x06 \x01(\tH\x00R\n" +
+	"groupValue\x12+\n" +
+	"\x11application_count\x18\a \x01(\x04R\x10applicationCount\x12!\n" +
+	"\ftarget_count\x18\b \x01(\x04R\vtargetCount\x125\n" +
+	"\x06health\x18\t \x03(\v2\x1d.paprika.v1.FleetHealthBucketR\x06health\x12'\n" +
+	"\x0fresource_weight\x18\n" +
+	" \x01(\x04R\x0eresourceWeight\x12.\n" +
+	"\x13request_rate_weight\x18\v \x01(\x01R\x11requestRateWeight\x12)\n" +
+	"\x10effective_weight\x18\f \x01(\x01R\x0feffectiveWeight\x124\n" +
+	"\x16used_resource_fallback\x18\r \x01(\bR\x14usedResourceFallback\x124\n" +
+	"\bchildren\x18\x0e \x03(\v2\x18.paprika.v1.FleetMapNodeR\bchildrenB\v\n" +
+	"\tgroup_key\"\xd4\x01\n" +
+	"\x14QueryFleetMapRequest\x12/\n" +
+	"\x06filter\x18\x01 \x01(\v2\x17.paprika.v1.FleetFilterR\x06filter\x12\x16\n" +
+	"\x06search\x18\x02 \x01(\tR\x06search\x125\n" +
+	"\x05group\x18\x03 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\x05group\x12<\n" +
+	"\vsize_metric\x18\x04 \x01(\x0e2\x1b.paprika.v1.FleetSizeMetricR\n" +
+	"sizeMetric\"\x88\x01\n" +
+	"\x15QueryFleetMapResponse\x12.\n" +
+	"\x05roots\x18\x01 \x03(\v2\x18.paprika.v1.FleetMapNodeR\x05roots\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x04R\x05total\x12)\n" +
+	"\x10index_generation\x18\x03 \x01(\x04R\x0findexGeneration\"\x9b\x01\n" +
+	"\x11FleetMatrixHeader\x12\x1b\n" +
+	"\tstable_id\x18\x01 \x01(\tR\bstableId\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x124\n" +
+	"\x06object\x18\x03 \x01(\v2\x1a.paprika.v1.FleetObjectKeyH\x00R\x06object\x12\x16\n" +
+	"\x05value\x18\x04 \x01(\tH\x00R\x05valueB\x05\n" +
+	"\x03key\"\xdb\x02\n" +
+	"\x0fFleetMatrixCell\x12\x15\n" +
+	"\x06row_id\x18\x01 \x01(\tR\x05rowId\x12\x1b\n" +
+	"\tcolumn_id\x18\x02 \x01(\tR\bcolumnId\x12+\n" +
+	"\x11application_count\x18\x03 \x01(\x04R\x10applicationCount\x12!\n" +
+	"\ftarget_count\x18\x04 \x01(\x04R\vtargetCount\x125\n" +
+	"\x06health\x18\x05 \x03(\v2\x1d.paprika.v1.FleetHealthBucketR\x06health\x12'\n" +
+	"\x0fresource_weight\x18\x06 \x01(\x04R\x0eresourceWeight\x12.\n" +
+	"\x13request_rate_weight\x18\a \x01(\x01R\x11requestRateWeight\x124\n" +
+	"\x16used_resource_fallback\x18\b \x01(\bR\x14usedResourceFallback\"\xa2\x02\n" +
+	"\x17QueryFleetMatrixRequest\x12/\n" +
+	"\x06filter\x18\x01 \x01(\v2\x17.paprika.v1.FleetFilterR\x06filter\x12\x16\n" +
+	"\x06search\x18\x02 \x01(\tR\x06search\x12<\n" +
+	"\trow_group\x18\x03 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\browGroup\x12B\n" +
+	"\fcolumn_group\x18\x04 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\vcolumnGroup\x12<\n" +
+	"\vsize_metric\x18\x05 \x01(\x0e2\x1b.paprika.v1.FleetSizeMetricR\n" +
+	"sizeMetric\"\xfa\x01\n" +
+	"\x18QueryFleetMatrixResponse\x121\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1d.paprika.v1.FleetMatrixHeaderR\x04rows\x127\n" +
+	"\acolumns\x18\x02 \x03(\v2\x1d.paprika.v1.FleetMatrixHeaderR\acolumns\x121\n" +
+	"\x05cells\x18\x03 \x03(\v2\x1b.paprika.v1.FleetMatrixCellR\x05cells\x12\x14\n" +
+	"\x05total\x18\x04 \x01(\x04R\x05total\x12)\n" +
+	"\x10index_generation\x18\x05 \x01(\x04R\x0findexGeneration*I\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bCRITICAL\x10\x01\x12\v\n" +
 	"\aWARNING\x10\x02\x12\b\n" +
-	"\x04INFO\x10\x032\xad\x19\n" +
+	"\x04INFO\x10\x03*\xcb\x01\n" +
+	"\vFleetHealth\x12\x1c\n" +
+	"\x18FLEET_HEALTH_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14FLEET_HEALTH_HEALTHY\x10\x01\x12\x1c\n" +
+	"\x18FLEET_HEALTH_PROGRESSING\x10\x02\x12\x19\n" +
+	"\x15FLEET_HEALTH_DEGRADED\x10\x03\x12\x17\n" +
+	"\x13FLEET_HEALTH_FAILED\x10\x04\x12\x18\n" +
+	"\x14FLEET_HEALTH_UNKNOWN\x10\x05\x12\x18\n" +
+	"\x14FLEET_HEALTH_MISSING\x10\x06*\x8f\x01\n" +
+	"\x0eFleetSyncState\x12 \n" +
+	"\x1cFLEET_SYNC_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17FLEET_SYNC_STATE_SYNCED\x10\x01\x12 \n" +
+	"\x1cFLEET_SYNC_STATE_OUT_OF_SYNC\x10\x02\x12\x1c\n" +
+	"\x18FLEET_SYNC_STATE_UNKNOWN\x10\x03*\xdf\x01\n" +
+	"\x0fFleetSourceType\x12!\n" +
+	"\x1dFLEET_SOURCE_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15FLEET_SOURCE_TYPE_GIT\x10\x01\x12\x1a\n" +
+	"\x16FLEET_SOURCE_TYPE_HELM\x10\x02\x12\x1f\n" +
+	"\x1bFLEET_SOURCE_TYPE_KUSTOMIZE\x10\x03\x12\x18\n" +
+	"\x14FLEET_SOURCE_TYPE_S3\x10\x04\x12\x19\n" +
+	"\x15FLEET_SOURCE_TYPE_OCI\x10\x05\x12\x1c\n" +
+	"\x18FLEET_SOURCE_TYPE_INLINE\x10\x06*\xf8\x02\n" +
+	"\x11FleetReleaseState\x12#\n" +
+	"\x1fFLEET_RELEASE_STATE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bFLEET_RELEASE_STATE_PENDING\x10\x01\x12!\n" +
+	"\x1dFLEET_RELEASE_STATE_PROMOTING\x10\x02\x12!\n" +
+	"\x1dFLEET_RELEASE_STATE_CANARYING\x10\x03\x12!\n" +
+	"\x1dFLEET_RELEASE_STATE_VERIFYING\x10\x04\x12 \n" +
+	"\x1cFLEET_RELEASE_STATE_COMPLETE\x10\x05\x12\x1e\n" +
+	"\x1aFLEET_RELEASE_STATE_FAILED\x10\x06\x12#\n" +
+	"\x1fFLEET_RELEASE_STATE_ROLLED_BACK\x10\a\x12\"\n" +
+	"\x1eFLEET_RELEASE_STATE_SUPERSEDED\x10\b\x12)\n" +
+	"%FLEET_RELEASE_STATE_AWAITING_APPROVAL\x10\t*\xc7\x02\n" +
+	"\x11FleetRolloutState\x12#\n" +
+	"\x1fFLEET_ROLLOUT_STATE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bFLEET_ROLLOUT_STATE_PENDING\x10\x01\x12#\n" +
+	"\x1fFLEET_ROLLOUT_STATE_PROGRESSING\x10\x02\x12\x1e\n" +
+	"\x1aFLEET_ROLLOUT_STATE_PAUSED\x10\x03\x12\x1f\n" +
+	"\x1bFLEET_ROLLOUT_STATE_HEALTHY\x10\x04\x12 \n" +
+	"\x1cFLEET_ROLLOUT_STATE_DEGRADED\x10\x05\x12\x1e\n" +
+	"\x1aFLEET_ROLLOUT_STATE_FAILED\x10\x06\x12#\n" +
+	"\x1fFLEET_ROLLOUT_STATE_ROLLED_BACK\x10\a\x12\x1f\n" +
+	"\x1bFLEET_ROLLOUT_STATE_ABORTED\x10\b*\xa1\x03\n" +
+	"\x0eFleetSortField\x12 \n" +
+	"\x1cFLEET_SORT_FIELD_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15FLEET_SORT_FIELD_NAME\x10\x01\x12\x1c\n" +
+	"\x18FLEET_SORT_FIELD_PROJECT\x10\x02\x12\x1c\n" +
+	"\x18FLEET_SORT_FIELD_CLUSTER\x10\x03\x12\x1a\n" +
+	"\x16FLEET_SORT_FIELD_STAGE\x10\x04\x12\x1b\n" +
+	"\x17FLEET_SORT_FIELD_HEALTH\x10\x05\x12\x19\n" +
+	"\x15FLEET_SORT_FIELD_SYNC\x10\x06\x12\x1c\n" +
+	"\x18FLEET_SORT_FIELD_RELEASE\x10\a\x12\x1c\n" +
+	"\x18FLEET_SORT_FIELD_ROLLOUT\x10\b\x12#\n" +
+	"\x1fFLEET_SORT_FIELD_RESOURCE_COUNT\x10\t\x12$\n" +
+	" FLEET_SORT_FIELD_LAST_TRANSITION\x10\n" +
+	"\x12\x1b\n" +
+	"\x17FLEET_SORT_FIELD_IMPACT\x10\v\x12\x1e\n" +
+	"\x1aFLEET_SORT_FIELD_RELEVANCE\x10\f*w\n" +
+	"\x12FleetSortDirection\x12$\n" +
+	" FLEET_SORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18FLEET_SORT_DIRECTION_ASC\x10\x01\x12\x1d\n" +
+	"\x19FLEET_SORT_DIRECTION_DESC\x10\x02*\xc5\x01\n" +
+	"\x13FleetGroupDimension\x12%\n" +
+	"!FLEET_GROUP_DIMENSION_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dFLEET_GROUP_DIMENSION_PROJECT\x10\x01\x12!\n" +
+	"\x1dFLEET_GROUP_DIMENSION_CLUSTER\x10\x02\x12\x1f\n" +
+	"\x1bFLEET_GROUP_DIMENSION_STAGE\x10\x03\x12 \n" +
+	"\x1cFLEET_GROUP_DIMENSION_HEALTH\x10\x04*~\n" +
+	"\x0fFleetSizeMetric\x12!\n" +
+	"\x1dFLEET_SIZE_METRIC_UNSPECIFIED\x10\x00\x12$\n" +
+	" FLEET_SIZE_METRIC_RESOURCE_COUNT\x10\x01\x12\"\n" +
+	"\x1eFLEET_SIZE_METRIC_REQUEST_RATE\x10\x02*\xf7\x02\n" +
+	"\x13FleetFacetDimension\x12%\n" +
+	"!FLEET_FACET_DIMENSION_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dFLEET_FACET_DIMENSION_PROJECT\x10\x01\x12#\n" +
+	"\x1fFLEET_FACET_DIMENSION_NAMESPACE\x10\x02\x12!\n" +
+	"\x1dFLEET_FACET_DIMENSION_CLUSTER\x10\x03\x12\x1f\n" +
+	"\x1bFLEET_FACET_DIMENSION_STAGE\x10\x04\x12 \n" +
+	"\x1cFLEET_FACET_DIMENSION_HEALTH\x10\x05\x12\x1e\n" +
+	"\x1aFLEET_FACET_DIMENSION_SYNC\x10\x06\x12!\n" +
+	"\x1dFLEET_FACET_DIMENSION_RELEASE\x10\a\x12!\n" +
+	"\x1dFLEET_FACET_DIMENSION_ROLLOUT\x10\b\x12%\n" +
+	"!FLEET_FACET_DIMENSION_SOURCE_TYPE\x10\t*\xc9\x01\n" +
+	"\x0fFleetCapability\x12 \n" +
+	"\x1cFLEET_CAPABILITY_UNSPECIFIED\x10\x00\x12%\n" +
+	"!FLEET_CAPABILITY_APPLICATION_SYNC\x10\x01\x12%\n" +
+	"!FLEET_CAPABILITY_RELEASE_ROLLBACK\x10\x02\x12!\n" +
+	"\x1dFLEET_CAPABILITY_GATE_APPROVE\x10\x03\x12#\n" +
+	"\x1fFLEET_CAPABILITY_PIPELINE_RETRY\x10\x04*\xd8\x01\n" +
+	"\x14FleetConnectionState\x12&\n" +
+	"\"FLEET_CONNECTION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eFLEET_CONNECTION_STATE_HEALTHY\x10\x01\x12$\n" +
+	" FLEET_CONNECTION_STATE_UNHEALTHY\x10\x02\x12#\n" +
+	"\x1fFLEET_CONNECTION_STATE_DISABLED\x10\x03\x12)\n" +
+	"%FLEET_CONNECTION_STATE_NOT_CONFIGURED\x10\x04*{\n" +
+	"\x10FleetMapNodeKind\x12#\n" +
+	"\x1fFLEET_MAP_NODE_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19FLEET_MAP_NODE_KIND_GROUP\x10\x01\x12#\n" +
+	"\x1fFLEET_MAP_NODE_KIND_APPLICATION\x10\x022\xc4\x1b\n" +
 	"\x0ePaprikaService\x12T\n" +
 	"\rListPipelines\x12 .paprika.v1.ListPipelinesRequest\x1a!.paprika.v1.ListPipelinesResponse\x12Q\n" +
 	"\fListReleases\x12\x1f.paprika.v1.ListReleasesRequest\x1a .paprika.v1.ListReleasesResponse\x12K\n" +
@@ -9072,7 +11521,10 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x17GetResourceTreeDetailed\x12*.paprika.v1.GetResourceTreeDetailedRequest\x1a+.paprika.v1.GetResourceTreeDetailedResponse\x12S\n" +
 	"\x12StreamResourceLogs\x12%.paprika.v1.StreamResourceLogsRequest\x1a\x14.paprika.v1.LogChunk0\x01\x12N\n" +
 	"\vInvestigate\x12\x1e.paprika.v1.InvestigateRequest\x1a\x1f.paprika.v1.InvestigateResponse\x12r\n" +
-	"\x17ListInvestigatorPlugins\x12*.paprika.v1.ListInvestigatorPluginsRequest\x1a+.paprika.v1.ListInvestigatorPluginsResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
+	"\x17ListInvestigatorPlugins\x12*.paprika.v1.ListInvestigatorPluginsRequest\x1a+.paprika.v1.ListInvestigatorPluginsResponse\x12`\n" +
+	"\x11QueryApplications\x12$.paprika.v1.QueryApplicationsRequest\x1a%.paprika.v1.QueryApplicationsResponse\x12T\n" +
+	"\rQueryFleetMap\x12 .paprika.v1.QueryFleetMapRequest\x1a!.paprika.v1.QueryFleetMapResponse\x12]\n" +
+	"\x10QueryFleetMatrix\x12#.paprika.v1.QueryFleetMatrixRequest\x1a$.paprika.v1.QueryFleetMatrixResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
 
 var (
 	file_paprika_v1_api_proto_rawDescOnce sync.Once
@@ -9086,293 +11538,377 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 	return file_paprika_v1_api_proto_rawDescData
 }
 
-var file_paprika_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 128)
+var file_paprika_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 143)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(Severity)(0),                           // 0: paprika.v1.Severity
-	(*Step)(nil),                            // 1: paprika.v1.Step
-	(*StepStatus)(nil),                      // 2: paprika.v1.StepStatus
-	(*ArtifactRef)(nil),                     // 3: paprika.v1.ArtifactRef
-	(*ChartRef)(nil),                        // 4: paprika.v1.ChartRef
-	(*InlineSource)(nil),                    // 5: paprika.v1.InlineSource
-	(*OCISource)(nil),                       // 6: paprika.v1.OCISource
-	(*ApplicationSource)(nil),               // 7: paprika.v1.ApplicationSource
-	(*ApplicationStage)(nil),                // 8: paprika.v1.ApplicationStage
-	(*HTTPProbe)(nil),                       // 9: paprika.v1.HTTPProbe
-	(*HealthCheck)(nil),                     // 10: paprika.v1.HealthCheck
-	(*HealthCheckResult)(nil),               // 11: paprika.v1.HealthCheckResult
-	(*ResourceSync)(nil),                    // 12: paprika.v1.ResourceSync
-	(*ResourceHealth)(nil),                  // 13: paprika.v1.ResourceHealth
-	(*GateStatus)(nil),                      // 14: paprika.v1.GateStatus
-	(*Condition)(nil),                       // 15: paprika.v1.Condition
-	(*AnalysisResult)(nil),                  // 16: paprika.v1.AnalysisResult
-	(*AnalysisRunResult)(nil),               // 17: paprika.v1.AnalysisRunResult
-	(*AnalysisRun)(nil),                     // 18: paprika.v1.AnalysisRun
-	(*Application)(nil),                     // 19: paprika.v1.Application
-	(*Pipeline)(nil),                        // 20: paprika.v1.Pipeline
-	(*ManifestSource)(nil),                  // 21: paprika.v1.ManifestSource
-	(*PolicyResult)(nil),                    // 22: paprika.v1.PolicyResult
-	(*Release)(nil),                         // 23: paprika.v1.Release
-	(*Promotion)(nil),                       // 24: paprika.v1.Promotion
-	(*HookStatus)(nil),                      // 25: paprika.v1.HookStatus
-	(*Stage)(nil),                           // 26: paprika.v1.Stage
-	(*TrafficRouter)(nil),                   // 27: paprika.v1.TrafficRouter
-	(*IstioRouterConfig)(nil),               // 28: paprika.v1.IstioRouterConfig
-	(*GatewayAPIRouterConfig)(nil),          // 29: paprika.v1.GatewayAPIRouterConfig
-	(*RolloutStep)(nil),                     // 30: paprika.v1.RolloutStep
-	(*RolloutAnalysisCheck)(nil),            // 31: paprika.v1.RolloutAnalysisCheck
-	(*RolloutABRoute)(nil),                  // 32: paprika.v1.RolloutABRoute
-	(*ListPipelinesRequest)(nil),            // 33: paprika.v1.ListPipelinesRequest
-	(*ListPipelinesResponse)(nil),           // 34: paprika.v1.ListPipelinesResponse
-	(*ListReleasesRequest)(nil),             // 35: paprika.v1.ListReleasesRequest
-	(*ListReleasesResponse)(nil),            // 36: paprika.v1.ListReleasesResponse
-	(*ListStagesRequest)(nil),               // 37: paprika.v1.ListStagesRequest
-	(*ListStagesResponse)(nil),              // 38: paprika.v1.ListStagesResponse
-	(*ListApplicationsRequest)(nil),         // 39: paprika.v1.ListApplicationsRequest
-	(*ListApplicationsResponse)(nil),        // 40: paprika.v1.ListApplicationsResponse
-	(*ListPoliciesRequest)(nil),             // 41: paprika.v1.ListPoliciesRequest
-	(*ListPoliciesResponse)(nil),            // 42: paprika.v1.ListPoliciesResponse
-	(*Policy)(nil),                          // 43: paprika.v1.Policy
-	(*GetApplicationRequest)(nil),           // 44: paprika.v1.GetApplicationRequest
-	(*GetApplicationResponse)(nil),          // 45: paprika.v1.GetApplicationResponse
-	(*ApplicationSet)(nil),                  // 46: paprika.v1.ApplicationSet
-	(*ListApplicationSetsRequest)(nil),      // 47: paprika.v1.ListApplicationSetsRequest
-	(*ListApplicationSetsResponse)(nil),     // 48: paprika.v1.ListApplicationSetsResponse
-	(*GetApplicationSetRequest)(nil),        // 49: paprika.v1.GetApplicationSetRequest
-	(*GetApplicationSetResponse)(nil),       // 50: paprika.v1.GetApplicationSetResponse
-	(*SyncApplicationRequest)(nil),          // 51: paprika.v1.SyncApplicationRequest
-	(*SyncApplicationResponse)(nil),         // 52: paprika.v1.SyncApplicationResponse
-	(*NotificationTrigger)(nil),             // 53: paprika.v1.NotificationTrigger
-	(*NotificationDestination)(nil),         // 54: paprika.v1.NotificationDestination
-	(*SMTPConfig)(nil),                      // 55: paprika.v1.SMTPConfig
-	(*NotificationRateLimit)(nil),           // 56: paprika.v1.NotificationRateLimit
-	(*NotificationConfig)(nil),              // 57: paprika.v1.NotificationConfig
-	(*ListNotificationConfigsRequest)(nil),  // 58: paprika.v1.ListNotificationConfigsRequest
-	(*ListNotificationConfigsResponse)(nil), // 59: paprika.v1.ListNotificationConfigsResponse
-	(*ApproveGateRequest)(nil),              // 60: paprika.v1.ApproveGateRequest
-	(*ApproveGateResponse)(nil),             // 61: paprika.v1.ApproveGateResponse
-	(*ListGateStatusRequest)(nil),           // 62: paprika.v1.ListGateStatusRequest
-	(*ListGateStatusResponse)(nil),          // 63: paprika.v1.ListGateStatusResponse
-	(*RejectGateRequest)(nil),               // 64: paprika.v1.RejectGateRequest
-	(*RejectGateResponse)(nil),              // 65: paprika.v1.RejectGateResponse
-	(*ResolveSourceRequest)(nil),            // 66: paprika.v1.ResolveSourceRequest
-	(*ResolveSourceResponse)(nil),           // 67: paprika.v1.ResolveSourceResponse
-	(*RenderRequest)(nil),                   // 68: paprika.v1.RenderRequest
-	(*RenderResponse)(nil),                  // 69: paprika.v1.RenderResponse
-	(*ApplyBundleRequest)(nil),              // 70: paprika.v1.ApplyBundleRequest
-	(*ApplyBundleResponse)(nil),             // 71: paprika.v1.ApplyBundleResponse
-	(*RollbackReleaseRequest)(nil),          // 72: paprika.v1.RollbackReleaseRequest
-	(*RollbackReleaseResponse)(nil),         // 73: paprika.v1.RollbackReleaseResponse
-	(*Rollout)(nil),                         // 74: paprika.v1.Rollout
-	(*ListRolloutsRequest)(nil),             // 75: paprika.v1.ListRolloutsRequest
-	(*ListRolloutsResponse)(nil),            // 76: paprika.v1.ListRolloutsResponse
-	(*GetRolloutRequest)(nil),               // 77: paprika.v1.GetRolloutRequest
-	(*GetRolloutResponse)(nil),              // 78: paprika.v1.GetRolloutResponse
-	(*PromoteRolloutRequest)(nil),           // 79: paprika.v1.PromoteRolloutRequest
-	(*PromoteRolloutResponse)(nil),          // 80: paprika.v1.PromoteRolloutResponse
-	(*AbortRolloutRequest)(nil),             // 81: paprika.v1.AbortRolloutRequest
-	(*AbortRolloutResponse)(nil),            // 82: paprika.v1.AbortRolloutResponse
-	(*ListAnalysisRunsRequest)(nil),         // 83: paprika.v1.ListAnalysisRunsRequest
-	(*ListAnalysisRunsResponse)(nil),        // 84: paprika.v1.ListAnalysisRunsResponse
-	(*GetAnalysisRunRequest)(nil),           // 85: paprika.v1.GetAnalysisRunRequest
-	(*GetAnalysisRunResponse)(nil),          // 86: paprika.v1.GetAnalysisRunResponse
-	(*GetPipelineRequest)(nil),              // 87: paprika.v1.GetPipelineRequest
-	(*GetPipelineResponse)(nil),             // 88: paprika.v1.GetPipelineResponse
-	(*GetArtifactRequest)(nil),              // 89: paprika.v1.GetArtifactRequest
-	(*GetArtifactResponse)(nil),             // 90: paprika.v1.GetArtifactResponse
-	(*ListArtifactsRequest)(nil),            // 91: paprika.v1.ListArtifactsRequest
-	(*ListArtifactsResponse)(nil),           // 92: paprika.v1.ListArtifactsResponse
-	(*RetryStepRequest)(nil),                // 93: paprika.v1.RetryStepRequest
-	(*RetryStepResponse)(nil),               // 94: paprika.v1.RetryStepResponse
-	(*SkipStepRequest)(nil),                 // 95: paprika.v1.SkipStepRequest
-	(*SkipStepResponse)(nil),                // 96: paprika.v1.SkipStepResponse
-	(*CancelPipelineRequest)(nil),           // 97: paprika.v1.CancelPipelineRequest
-	(*CancelPipelineResponse)(nil),          // 98: paprika.v1.CancelPipelineResponse
-	(*GetStepLogsRequest)(nil),              // 99: paprika.v1.GetStepLogsRequest
-	(*GetStepLogsResponse)(nil),             // 100: paprika.v1.GetStepLogsResponse
-	(*GetResourceRequest)(nil),              // 101: paprika.v1.GetResourceRequest
-	(*KubernetesEvent)(nil),                 // 102: paprika.v1.KubernetesEvent
-	(*GetResourceResponse)(nil),             // 103: paprika.v1.GetResourceResponse
-	(*GetResourceTreeRequest)(nil),          // 104: paprika.v1.GetResourceTreeRequest
-	(*ResourceNode)(nil),                    // 105: paprika.v1.ResourceNode
-	(*GetResourceTreeResponse)(nil),         // 106: paprika.v1.GetResourceTreeResponse
-	(*GetResourceLogsRequest)(nil),          // 107: paprika.v1.GetResourceLogsRequest
-	(*GetResourceLogsResponse)(nil),         // 108: paprika.v1.GetResourceLogsResponse
-	(*GetResourceTreeDetailedRequest)(nil),  // 109: paprika.v1.GetResourceTreeDetailedRequest
-	(*ResourceTreeNode)(nil),                // 110: paprika.v1.ResourceTreeNode
-	(*GetResourceTreeDetailedResponse)(nil), // 111: paprika.v1.GetResourceTreeDetailedResponse
-	(*InvestigateRequest)(nil),              // 112: paprika.v1.InvestigateRequest
-	(*FindingEvidence)(nil),                 // 113: paprika.v1.FindingEvidence
-	(*InvestigationFinding)(nil),            // 114: paprika.v1.InvestigationFinding
-	(*InvestigateResponse)(nil),             // 115: paprika.v1.InvestigateResponse
-	(*ListInvestigatorPluginsRequest)(nil),  // 116: paprika.v1.ListInvestigatorPluginsRequest
-	(*PluginInfo)(nil),                      // 117: paprika.v1.PluginInfo
-	(*ListInvestigatorPluginsResponse)(nil), // 118: paprika.v1.ListInvestigatorPluginsResponse
-	(*StreamResourceLogsRequest)(nil),       // 119: paprika.v1.StreamResourceLogsRequest
-	(*LogChunk)(nil),                        // 120: paprika.v1.LogChunk
-	nil,                                     // 121: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                                     // 122: paprika.v1.AnalysisRun.ArgsEntry
-	nil,                                     // 123: paprika.v1.Application.ParametersEntry
-	nil,                                     // 124: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
-	nil,                                     // 125: paprika.v1.NotificationDestination.HeadersEntry
-	nil,                                     // 126: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
-	nil,                                     // 127: paprika.v1.GetResourceResponse.LabelsEntry
-	nil,                                     // 128: paprika.v1.GetResourceResponse.AnnotationsEntry
+	(FleetHealth)(0),                        // 1: paprika.v1.FleetHealth
+	(FleetSyncState)(0),                     // 2: paprika.v1.FleetSyncState
+	(FleetSourceType)(0),                    // 3: paprika.v1.FleetSourceType
+	(FleetReleaseState)(0),                  // 4: paprika.v1.FleetReleaseState
+	(FleetRolloutState)(0),                  // 5: paprika.v1.FleetRolloutState
+	(FleetSortField)(0),                     // 6: paprika.v1.FleetSortField
+	(FleetSortDirection)(0),                 // 7: paprika.v1.FleetSortDirection
+	(FleetGroupDimension)(0),                // 8: paprika.v1.FleetGroupDimension
+	(FleetSizeMetric)(0),                    // 9: paprika.v1.FleetSizeMetric
+	(FleetFacetDimension)(0),                // 10: paprika.v1.FleetFacetDimension
+	(FleetCapability)(0),                    // 11: paprika.v1.FleetCapability
+	(FleetConnectionState)(0),               // 12: paprika.v1.FleetConnectionState
+	(FleetMapNodeKind)(0),                   // 13: paprika.v1.FleetMapNodeKind
+	(*Step)(nil),                            // 14: paprika.v1.Step
+	(*StepStatus)(nil),                      // 15: paprika.v1.StepStatus
+	(*ArtifactRef)(nil),                     // 16: paprika.v1.ArtifactRef
+	(*ChartRef)(nil),                        // 17: paprika.v1.ChartRef
+	(*InlineSource)(nil),                    // 18: paprika.v1.InlineSource
+	(*OCISource)(nil),                       // 19: paprika.v1.OCISource
+	(*ApplicationSource)(nil),               // 20: paprika.v1.ApplicationSource
+	(*ApplicationStage)(nil),                // 21: paprika.v1.ApplicationStage
+	(*HTTPProbe)(nil),                       // 22: paprika.v1.HTTPProbe
+	(*HealthCheck)(nil),                     // 23: paprika.v1.HealthCheck
+	(*HealthCheckResult)(nil),               // 24: paprika.v1.HealthCheckResult
+	(*ResourceSync)(nil),                    // 25: paprika.v1.ResourceSync
+	(*ResourceHealth)(nil),                  // 26: paprika.v1.ResourceHealth
+	(*GateStatus)(nil),                      // 27: paprika.v1.GateStatus
+	(*Condition)(nil),                       // 28: paprika.v1.Condition
+	(*AnalysisResult)(nil),                  // 29: paprika.v1.AnalysisResult
+	(*AnalysisRunResult)(nil),               // 30: paprika.v1.AnalysisRunResult
+	(*AnalysisRun)(nil),                     // 31: paprika.v1.AnalysisRun
+	(*Application)(nil),                     // 32: paprika.v1.Application
+	(*Pipeline)(nil),                        // 33: paprika.v1.Pipeline
+	(*ManifestSource)(nil),                  // 34: paprika.v1.ManifestSource
+	(*PolicyResult)(nil),                    // 35: paprika.v1.PolicyResult
+	(*Release)(nil),                         // 36: paprika.v1.Release
+	(*Promotion)(nil),                       // 37: paprika.v1.Promotion
+	(*HookStatus)(nil),                      // 38: paprika.v1.HookStatus
+	(*Stage)(nil),                           // 39: paprika.v1.Stage
+	(*TrafficRouter)(nil),                   // 40: paprika.v1.TrafficRouter
+	(*IstioRouterConfig)(nil),               // 41: paprika.v1.IstioRouterConfig
+	(*GatewayAPIRouterConfig)(nil),          // 42: paprika.v1.GatewayAPIRouterConfig
+	(*RolloutStep)(nil),                     // 43: paprika.v1.RolloutStep
+	(*RolloutAnalysisCheck)(nil),            // 44: paprika.v1.RolloutAnalysisCheck
+	(*RolloutABRoute)(nil),                  // 45: paprika.v1.RolloutABRoute
+	(*ListPipelinesRequest)(nil),            // 46: paprika.v1.ListPipelinesRequest
+	(*ListPipelinesResponse)(nil),           // 47: paprika.v1.ListPipelinesResponse
+	(*ListReleasesRequest)(nil),             // 48: paprika.v1.ListReleasesRequest
+	(*ListReleasesResponse)(nil),            // 49: paprika.v1.ListReleasesResponse
+	(*ListStagesRequest)(nil),               // 50: paprika.v1.ListStagesRequest
+	(*ListStagesResponse)(nil),              // 51: paprika.v1.ListStagesResponse
+	(*ListApplicationsRequest)(nil),         // 52: paprika.v1.ListApplicationsRequest
+	(*ListApplicationsResponse)(nil),        // 53: paprika.v1.ListApplicationsResponse
+	(*ListPoliciesRequest)(nil),             // 54: paprika.v1.ListPoliciesRequest
+	(*ListPoliciesResponse)(nil),            // 55: paprika.v1.ListPoliciesResponse
+	(*Policy)(nil),                          // 56: paprika.v1.Policy
+	(*GetApplicationRequest)(nil),           // 57: paprika.v1.GetApplicationRequest
+	(*GetApplicationResponse)(nil),          // 58: paprika.v1.GetApplicationResponse
+	(*ApplicationSet)(nil),                  // 59: paprika.v1.ApplicationSet
+	(*ListApplicationSetsRequest)(nil),      // 60: paprika.v1.ListApplicationSetsRequest
+	(*ListApplicationSetsResponse)(nil),     // 61: paprika.v1.ListApplicationSetsResponse
+	(*GetApplicationSetRequest)(nil),        // 62: paprika.v1.GetApplicationSetRequest
+	(*GetApplicationSetResponse)(nil),       // 63: paprika.v1.GetApplicationSetResponse
+	(*SyncApplicationRequest)(nil),          // 64: paprika.v1.SyncApplicationRequest
+	(*SyncApplicationResponse)(nil),         // 65: paprika.v1.SyncApplicationResponse
+	(*NotificationTrigger)(nil),             // 66: paprika.v1.NotificationTrigger
+	(*NotificationDestination)(nil),         // 67: paprika.v1.NotificationDestination
+	(*SMTPConfig)(nil),                      // 68: paprika.v1.SMTPConfig
+	(*NotificationRateLimit)(nil),           // 69: paprika.v1.NotificationRateLimit
+	(*NotificationConfig)(nil),              // 70: paprika.v1.NotificationConfig
+	(*ListNotificationConfigsRequest)(nil),  // 71: paprika.v1.ListNotificationConfigsRequest
+	(*ListNotificationConfigsResponse)(nil), // 72: paprika.v1.ListNotificationConfigsResponse
+	(*ApproveGateRequest)(nil),              // 73: paprika.v1.ApproveGateRequest
+	(*ApproveGateResponse)(nil),             // 74: paprika.v1.ApproveGateResponse
+	(*ListGateStatusRequest)(nil),           // 75: paprika.v1.ListGateStatusRequest
+	(*ListGateStatusResponse)(nil),          // 76: paprika.v1.ListGateStatusResponse
+	(*RejectGateRequest)(nil),               // 77: paprika.v1.RejectGateRequest
+	(*RejectGateResponse)(nil),              // 78: paprika.v1.RejectGateResponse
+	(*ResolveSourceRequest)(nil),            // 79: paprika.v1.ResolveSourceRequest
+	(*ResolveSourceResponse)(nil),           // 80: paprika.v1.ResolveSourceResponse
+	(*RenderRequest)(nil),                   // 81: paprika.v1.RenderRequest
+	(*RenderResponse)(nil),                  // 82: paprika.v1.RenderResponse
+	(*ApplyBundleRequest)(nil),              // 83: paprika.v1.ApplyBundleRequest
+	(*ApplyBundleResponse)(nil),             // 84: paprika.v1.ApplyBundleResponse
+	(*RollbackReleaseRequest)(nil),          // 85: paprika.v1.RollbackReleaseRequest
+	(*RollbackReleaseResponse)(nil),         // 86: paprika.v1.RollbackReleaseResponse
+	(*Rollout)(nil),                         // 87: paprika.v1.Rollout
+	(*ListRolloutsRequest)(nil),             // 88: paprika.v1.ListRolloutsRequest
+	(*ListRolloutsResponse)(nil),            // 89: paprika.v1.ListRolloutsResponse
+	(*GetRolloutRequest)(nil),               // 90: paprika.v1.GetRolloutRequest
+	(*GetRolloutResponse)(nil),              // 91: paprika.v1.GetRolloutResponse
+	(*PromoteRolloutRequest)(nil),           // 92: paprika.v1.PromoteRolloutRequest
+	(*PromoteRolloutResponse)(nil),          // 93: paprika.v1.PromoteRolloutResponse
+	(*AbortRolloutRequest)(nil),             // 94: paprika.v1.AbortRolloutRequest
+	(*AbortRolloutResponse)(nil),            // 95: paprika.v1.AbortRolloutResponse
+	(*ListAnalysisRunsRequest)(nil),         // 96: paprika.v1.ListAnalysisRunsRequest
+	(*ListAnalysisRunsResponse)(nil),        // 97: paprika.v1.ListAnalysisRunsResponse
+	(*GetAnalysisRunRequest)(nil),           // 98: paprika.v1.GetAnalysisRunRequest
+	(*GetAnalysisRunResponse)(nil),          // 99: paprika.v1.GetAnalysisRunResponse
+	(*GetPipelineRequest)(nil),              // 100: paprika.v1.GetPipelineRequest
+	(*GetPipelineResponse)(nil),             // 101: paprika.v1.GetPipelineResponse
+	(*GetArtifactRequest)(nil),              // 102: paprika.v1.GetArtifactRequest
+	(*GetArtifactResponse)(nil),             // 103: paprika.v1.GetArtifactResponse
+	(*ListArtifactsRequest)(nil),            // 104: paprika.v1.ListArtifactsRequest
+	(*ListArtifactsResponse)(nil),           // 105: paprika.v1.ListArtifactsResponse
+	(*RetryStepRequest)(nil),                // 106: paprika.v1.RetryStepRequest
+	(*RetryStepResponse)(nil),               // 107: paprika.v1.RetryStepResponse
+	(*SkipStepRequest)(nil),                 // 108: paprika.v1.SkipStepRequest
+	(*SkipStepResponse)(nil),                // 109: paprika.v1.SkipStepResponse
+	(*CancelPipelineRequest)(nil),           // 110: paprika.v1.CancelPipelineRequest
+	(*CancelPipelineResponse)(nil),          // 111: paprika.v1.CancelPipelineResponse
+	(*GetStepLogsRequest)(nil),              // 112: paprika.v1.GetStepLogsRequest
+	(*GetStepLogsResponse)(nil),             // 113: paprika.v1.GetStepLogsResponse
+	(*GetResourceRequest)(nil),              // 114: paprika.v1.GetResourceRequest
+	(*KubernetesEvent)(nil),                 // 115: paprika.v1.KubernetesEvent
+	(*GetResourceResponse)(nil),             // 116: paprika.v1.GetResourceResponse
+	(*GetResourceTreeRequest)(nil),          // 117: paprika.v1.GetResourceTreeRequest
+	(*ResourceNode)(nil),                    // 118: paprika.v1.ResourceNode
+	(*GetResourceTreeResponse)(nil),         // 119: paprika.v1.GetResourceTreeResponse
+	(*GetResourceLogsRequest)(nil),          // 120: paprika.v1.GetResourceLogsRequest
+	(*GetResourceLogsResponse)(nil),         // 121: paprika.v1.GetResourceLogsResponse
+	(*GetResourceTreeDetailedRequest)(nil),  // 122: paprika.v1.GetResourceTreeDetailedRequest
+	(*ResourceTreeNode)(nil),                // 123: paprika.v1.ResourceTreeNode
+	(*GetResourceTreeDetailedResponse)(nil), // 124: paprika.v1.GetResourceTreeDetailedResponse
+	(*InvestigateRequest)(nil),              // 125: paprika.v1.InvestigateRequest
+	(*FindingEvidence)(nil),                 // 126: paprika.v1.FindingEvidence
+	(*InvestigationFinding)(nil),            // 127: paprika.v1.InvestigationFinding
+	(*InvestigateResponse)(nil),             // 128: paprika.v1.InvestigateResponse
+	(*ListInvestigatorPluginsRequest)(nil),  // 129: paprika.v1.ListInvestigatorPluginsRequest
+	(*PluginInfo)(nil),                      // 130: paprika.v1.PluginInfo
+	(*ListInvestigatorPluginsResponse)(nil), // 131: paprika.v1.ListInvestigatorPluginsResponse
+	(*StreamResourceLogsRequest)(nil),       // 132: paprika.v1.StreamResourceLogsRequest
+	(*LogChunk)(nil),                        // 133: paprika.v1.LogChunk
+	(*FleetObjectKey)(nil),                  // 134: paprika.v1.FleetObjectKey
+	(*FleetFilter)(nil),                     // 135: paprika.v1.FleetFilter
+	(*StageTargetSummary)(nil),              // 136: paprika.v1.StageTargetSummary
+	(*ApplicationSummary)(nil),              // 137: paprika.v1.ApplicationSummary
+	(*FleetFacetBucket)(nil),                // 138: paprika.v1.FleetFacetBucket
+	(*FleetHealthBucket)(nil),               // 139: paprika.v1.FleetHealthBucket
+	(*QueryApplicationsRequest)(nil),        // 140: paprika.v1.QueryApplicationsRequest
+	(*QueryApplicationsResponse)(nil),       // 141: paprika.v1.QueryApplicationsResponse
+	(*FleetMapNode)(nil),                    // 142: paprika.v1.FleetMapNode
+	(*QueryFleetMapRequest)(nil),            // 143: paprika.v1.QueryFleetMapRequest
+	(*QueryFleetMapResponse)(nil),           // 144: paprika.v1.QueryFleetMapResponse
+	(*FleetMatrixHeader)(nil),               // 145: paprika.v1.FleetMatrixHeader
+	(*FleetMatrixCell)(nil),                 // 146: paprika.v1.FleetMatrixCell
+	(*QueryFleetMatrixRequest)(nil),         // 147: paprika.v1.QueryFleetMatrixRequest
+	(*QueryFleetMatrixResponse)(nil),        // 148: paprika.v1.QueryFleetMatrixResponse
+	nil,                                     // 149: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                                     // 150: paprika.v1.AnalysisRun.ArgsEntry
+	nil,                                     // 151: paprika.v1.Application.ParametersEntry
+	nil,                                     // 152: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	nil,                                     // 153: paprika.v1.NotificationDestination.HeadersEntry
+	nil,                                     // 154: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	nil,                                     // 155: paprika.v1.GetResourceResponse.LabelsEntry
+	nil,                                     // 156: paprika.v1.GetResourceResponse.AnnotationsEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
-	4,   // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
-	5,   // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
-	6,   // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
-	121, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
-	9,   // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
-	122, // 5: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
-	17,  // 6: paprika.v1.AnalysisRun.results:type_name -> paprika.v1.AnalysisRunResult
-	15,  // 7: paprika.v1.AnalysisRun.conditions:type_name -> paprika.v1.Condition
-	8,   // 8: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
-	7,   // 9: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	123, // 10: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
-	11,  // 11: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
-	12,  // 12: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
-	13,  // 13: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
-	14,  // 14: paprika.v1.Application.gates:type_name -> paprika.v1.GateStatus
-	15,  // 15: paprika.v1.Application.conditions:type_name -> paprika.v1.Condition
-	16,  // 16: paprika.v1.Application.analysis_results:type_name -> paprika.v1.AnalysisResult
-	1,   // 17: paprika.v1.Pipeline.steps:type_name -> paprika.v1.Step
-	2,   // 18: paprika.v1.Pipeline.step_statuses:type_name -> paprika.v1.StepStatus
-	3,   // 19: paprika.v1.Pipeline.artifacts:type_name -> paprika.v1.ArtifactRef
-	24,  // 20: paprika.v1.Release.promotion_history:type_name -> paprika.v1.Promotion
-	21,  // 21: paprika.v1.Release.manifest_source:type_name -> paprika.v1.ManifestSource
-	22,  // 22: paprika.v1.Release.policy_results:type_name -> paprika.v1.PolicyResult
-	15,  // 23: paprika.v1.Release.conditions:type_name -> paprika.v1.Condition
-	25,  // 24: paprika.v1.Release.hook_statuses:type_name -> paprika.v1.HookStatus
-	28,  // 25: paprika.v1.TrafficRouter.istio:type_name -> paprika.v1.IstioRouterConfig
-	29,  // 26: paprika.v1.TrafficRouter.gateway_api:type_name -> paprika.v1.GatewayAPIRouterConfig
-	124, // 27: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
-	20,  // 28: paprika.v1.ListPipelinesResponse.pipelines:type_name -> paprika.v1.Pipeline
-	23,  // 29: paprika.v1.ListReleasesResponse.releases:type_name -> paprika.v1.Release
-	26,  // 30: paprika.v1.ListStagesResponse.stages:type_name -> paprika.v1.Stage
-	19,  // 31: paprika.v1.ListApplicationsResponse.applications:type_name -> paprika.v1.Application
-	43,  // 32: paprika.v1.ListPoliciesResponse.policies:type_name -> paprika.v1.Policy
-	19,  // 33: paprika.v1.GetApplicationResponse.application:type_name -> paprika.v1.Application
-	46,  // 34: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
-	46,  // 35: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
-	19,  // 36: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	125, // 37: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
-	53,  // 38: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
-	54,  // 39: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
-	55,  // 40: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
-	56,  // 41: paprika.v1.NotificationConfig.rate_limit:type_name -> paprika.v1.NotificationRateLimit
-	57,  // 42: paprika.v1.ListNotificationConfigsResponse.notification_configs:type_name -> paprika.v1.NotificationConfig
-	19,  // 43: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
-	14,  // 44: paprika.v1.ListGateStatusResponse.gates:type_name -> paprika.v1.GateStatus
-	19,  // 45: paprika.v1.RejectGateResponse.application:type_name -> paprika.v1.Application
-	126, // 46: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
-	19,  // 47: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
-	23,  // 48: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
-	22,  // 49: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
-	23,  // 50: paprika.v1.RollbackReleaseResponse.release:type_name -> paprika.v1.Release
-	15,  // 51: paprika.v1.Rollout.conditions:type_name -> paprika.v1.Condition
-	27,  // 52: paprika.v1.Rollout.traffic_router:type_name -> paprika.v1.TrafficRouter
-	30,  // 53: paprika.v1.Rollout.canary_steps:type_name -> paprika.v1.RolloutStep
-	31,  // 54: paprika.v1.Rollout.analysis_checks:type_name -> paprika.v1.RolloutAnalysisCheck
-	32,  // 55: paprika.v1.Rollout.ab_routes:type_name -> paprika.v1.RolloutABRoute
-	74,  // 56: paprika.v1.ListRolloutsResponse.rollouts:type_name -> paprika.v1.Rollout
-	74,  // 57: paprika.v1.GetRolloutResponse.rollout:type_name -> paprika.v1.Rollout
-	74,  // 58: paprika.v1.PromoteRolloutResponse.rollout:type_name -> paprika.v1.Rollout
-	74,  // 59: paprika.v1.AbortRolloutResponse.rollout:type_name -> paprika.v1.Rollout
-	18,  // 60: paprika.v1.ListAnalysisRunsResponse.analysis_runs:type_name -> paprika.v1.AnalysisRun
-	18,  // 61: paprika.v1.GetAnalysisRunResponse.analysis_run:type_name -> paprika.v1.AnalysisRun
-	20,  // 62: paprika.v1.GetPipelineResponse.pipeline:type_name -> paprika.v1.Pipeline
-	3,   // 63: paprika.v1.GetArtifactResponse.artifact:type_name -> paprika.v1.ArtifactRef
-	3,   // 64: paprika.v1.ListArtifactsResponse.artifacts:type_name -> paprika.v1.ArtifactRef
-	102, // 65: paprika.v1.GetResourceResponse.events:type_name -> paprika.v1.KubernetesEvent
-	127, // 66: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
-	128, // 67: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
-	105, // 68: paprika.v1.GetResourceTreeResponse.nodes:type_name -> paprika.v1.ResourceNode
-	110, // 69: paprika.v1.GetResourceTreeDetailedResponse.nodes:type_name -> paprika.v1.ResourceTreeNode
+	17,  // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
+	18,  // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
+	19,  // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
+	149, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	22,  // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
+	150, // 5: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
+	30,  // 6: paprika.v1.AnalysisRun.results:type_name -> paprika.v1.AnalysisRunResult
+	28,  // 7: paprika.v1.AnalysisRun.conditions:type_name -> paprika.v1.Condition
+	21,  // 8: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
+	20,  // 9: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
+	151, // 10: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	24,  // 11: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
+	25,  // 12: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
+	26,  // 13: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
+	27,  // 14: paprika.v1.Application.gates:type_name -> paprika.v1.GateStatus
+	28,  // 15: paprika.v1.Application.conditions:type_name -> paprika.v1.Condition
+	29,  // 16: paprika.v1.Application.analysis_results:type_name -> paprika.v1.AnalysisResult
+	14,  // 17: paprika.v1.Pipeline.steps:type_name -> paprika.v1.Step
+	15,  // 18: paprika.v1.Pipeline.step_statuses:type_name -> paprika.v1.StepStatus
+	16,  // 19: paprika.v1.Pipeline.artifacts:type_name -> paprika.v1.ArtifactRef
+	37,  // 20: paprika.v1.Release.promotion_history:type_name -> paprika.v1.Promotion
+	34,  // 21: paprika.v1.Release.manifest_source:type_name -> paprika.v1.ManifestSource
+	35,  // 22: paprika.v1.Release.policy_results:type_name -> paprika.v1.PolicyResult
+	28,  // 23: paprika.v1.Release.conditions:type_name -> paprika.v1.Condition
+	38,  // 24: paprika.v1.Release.hook_statuses:type_name -> paprika.v1.HookStatus
+	41,  // 25: paprika.v1.TrafficRouter.istio:type_name -> paprika.v1.IstioRouterConfig
+	42,  // 26: paprika.v1.TrafficRouter.gateway_api:type_name -> paprika.v1.GatewayAPIRouterConfig
+	152, // 27: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	33,  // 28: paprika.v1.ListPipelinesResponse.pipelines:type_name -> paprika.v1.Pipeline
+	36,  // 29: paprika.v1.ListReleasesResponse.releases:type_name -> paprika.v1.Release
+	39,  // 30: paprika.v1.ListStagesResponse.stages:type_name -> paprika.v1.Stage
+	32,  // 31: paprika.v1.ListApplicationsResponse.applications:type_name -> paprika.v1.Application
+	56,  // 32: paprika.v1.ListPoliciesResponse.policies:type_name -> paprika.v1.Policy
+	32,  // 33: paprika.v1.GetApplicationResponse.application:type_name -> paprika.v1.Application
+	59,  // 34: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
+	59,  // 35: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
+	32,  // 36: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
+	153, // 37: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
+	66,  // 38: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
+	67,  // 39: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
+	68,  // 40: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
+	69,  // 41: paprika.v1.NotificationConfig.rate_limit:type_name -> paprika.v1.NotificationRateLimit
+	70,  // 42: paprika.v1.ListNotificationConfigsResponse.notification_configs:type_name -> paprika.v1.NotificationConfig
+	32,  // 43: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
+	27,  // 44: paprika.v1.ListGateStatusResponse.gates:type_name -> paprika.v1.GateStatus
+	32,  // 45: paprika.v1.RejectGateResponse.application:type_name -> paprika.v1.Application
+	154, // 46: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	32,  // 47: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
+	36,  // 48: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
+	35,  // 49: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
+	36,  // 50: paprika.v1.RollbackReleaseResponse.release:type_name -> paprika.v1.Release
+	28,  // 51: paprika.v1.Rollout.conditions:type_name -> paprika.v1.Condition
+	40,  // 52: paprika.v1.Rollout.traffic_router:type_name -> paprika.v1.TrafficRouter
+	43,  // 53: paprika.v1.Rollout.canary_steps:type_name -> paprika.v1.RolloutStep
+	44,  // 54: paprika.v1.Rollout.analysis_checks:type_name -> paprika.v1.RolloutAnalysisCheck
+	45,  // 55: paprika.v1.Rollout.ab_routes:type_name -> paprika.v1.RolloutABRoute
+	87,  // 56: paprika.v1.ListRolloutsResponse.rollouts:type_name -> paprika.v1.Rollout
+	87,  // 57: paprika.v1.GetRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	87,  // 58: paprika.v1.PromoteRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	87,  // 59: paprika.v1.AbortRolloutResponse.rollout:type_name -> paprika.v1.Rollout
+	31,  // 60: paprika.v1.ListAnalysisRunsResponse.analysis_runs:type_name -> paprika.v1.AnalysisRun
+	31,  // 61: paprika.v1.GetAnalysisRunResponse.analysis_run:type_name -> paprika.v1.AnalysisRun
+	33,  // 62: paprika.v1.GetPipelineResponse.pipeline:type_name -> paprika.v1.Pipeline
+	16,  // 63: paprika.v1.GetArtifactResponse.artifact:type_name -> paprika.v1.ArtifactRef
+	16,  // 64: paprika.v1.ListArtifactsResponse.artifacts:type_name -> paprika.v1.ArtifactRef
+	115, // 65: paprika.v1.GetResourceResponse.events:type_name -> paprika.v1.KubernetesEvent
+	155, // 66: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
+	156, // 67: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
+	118, // 68: paprika.v1.GetResourceTreeResponse.nodes:type_name -> paprika.v1.ResourceNode
+	123, // 69: paprika.v1.GetResourceTreeDetailedResponse.nodes:type_name -> paprika.v1.ResourceTreeNode
 	0,   // 70: paprika.v1.InvestigationFinding.severity:type_name -> paprika.v1.Severity
-	113, // 71: paprika.v1.InvestigationFinding.evidence:type_name -> paprika.v1.FindingEvidence
-	114, // 72: paprika.v1.InvestigateResponse.findings:type_name -> paprika.v1.InvestigationFinding
-	117, // 73: paprika.v1.ListInvestigatorPluginsResponse.plugins:type_name -> paprika.v1.PluginInfo
-	33,  // 74: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	35,  // 75: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	37,  // 76: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	39,  // 77: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	41,  // 78: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
-	47,  // 79: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
-	49,  // 80: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
-	58,  // 81: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
-	44,  // 82: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	51,  // 83: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	60,  // 84: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	62,  // 85: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
-	64,  // 86: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
-	66,  // 87: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	68,  // 88: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	70,  // 89: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	72,  // 90: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
-	75,  // 91: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
-	77,  // 92: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
-	79,  // 93: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
-	81,  // 94: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
-	83,  // 95: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
-	85,  // 96: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
-	87,  // 97: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
-	89,  // 98: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
-	91,  // 99: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
-	93,  // 100: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
-	95,  // 101: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
-	97,  // 102: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
-	99,  // 103: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
-	101, // 104: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
-	104, // 105: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
-	107, // 106: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
-	109, // 107: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
-	119, // 108: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
-	112, // 109: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
-	116, // 110: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
-	34,  // 111: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	36,  // 112: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	38,  // 113: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	40,  // 114: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	42,  // 115: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	48,  // 116: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	50,  // 117: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	59,  // 118: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	45,  // 119: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	52,  // 120: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	61,  // 121: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	63,  // 122: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
-	65,  // 123: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
-	67,  // 124: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	69,  // 125: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	71,  // 126: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	73,  // 127: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	76,  // 128: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
-	78,  // 129: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
-	80,  // 130: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
-	82,  // 131: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
-	84,  // 132: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
-	86,  // 133: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
-	88,  // 134: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
-	90,  // 135: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
-	92,  // 136: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
-	94,  // 137: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
-	96,  // 138: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
-	98,  // 139: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
-	100, // 140: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
-	103, // 141: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
-	106, // 142: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
-	108, // 143: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
-	111, // 144: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
-	120, // 145: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
-	115, // 146: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
-	118, // 147: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
-	111, // [111:148] is the sub-list for method output_type
-	74,  // [74:111] is the sub-list for method input_type
-	74,  // [74:74] is the sub-list for extension type_name
-	74,  // [74:74] is the sub-list for extension extendee
-	0,   // [0:74] is the sub-list for field type_name
+	126, // 71: paprika.v1.InvestigationFinding.evidence:type_name -> paprika.v1.FindingEvidence
+	127, // 72: paprika.v1.InvestigateResponse.findings:type_name -> paprika.v1.InvestigationFinding
+	130, // 73: paprika.v1.ListInvestigatorPluginsResponse.plugins:type_name -> paprika.v1.PluginInfo
+	134, // 74: paprika.v1.FleetFilter.projects:type_name -> paprika.v1.FleetObjectKey
+	134, // 75: paprika.v1.FleetFilter.clusters:type_name -> paprika.v1.FleetObjectKey
+	1,   // 76: paprika.v1.FleetFilter.health:type_name -> paprika.v1.FleetHealth
+	2,   // 77: paprika.v1.FleetFilter.sync:type_name -> paprika.v1.FleetSyncState
+	4,   // 78: paprika.v1.FleetFilter.release_states:type_name -> paprika.v1.FleetReleaseState
+	5,   // 79: paprika.v1.FleetFilter.rollout_states:type_name -> paprika.v1.FleetRolloutState
+	3,   // 80: paprika.v1.FleetFilter.source_types:type_name -> paprika.v1.FleetSourceType
+	134, // 81: paprika.v1.StageTargetSummary.cluster:type_name -> paprika.v1.FleetObjectKey
+	1,   // 82: paprika.v1.StageTargetSummary.health:type_name -> paprika.v1.FleetHealth
+	12,  // 83: paprika.v1.StageTargetSummary.cluster_connection:type_name -> paprika.v1.FleetConnectionState
+	134, // 84: paprika.v1.ApplicationSummary.identity:type_name -> paprika.v1.FleetObjectKey
+	134, // 85: paprika.v1.ApplicationSummary.project:type_name -> paprika.v1.FleetObjectKey
+	136, // 86: paprika.v1.ApplicationSummary.targets:type_name -> paprika.v1.StageTargetSummary
+	134, // 87: paprika.v1.ApplicationSummary.current_cluster:type_name -> paprika.v1.FleetObjectKey
+	3,   // 88: paprika.v1.ApplicationSummary.source_type:type_name -> paprika.v1.FleetSourceType
+	1,   // 89: paprika.v1.ApplicationSummary.health:type_name -> paprika.v1.FleetHealth
+	2,   // 90: paprika.v1.ApplicationSummary.sync:type_name -> paprika.v1.FleetSyncState
+	4,   // 91: paprika.v1.ApplicationSummary.release_state:type_name -> paprika.v1.FleetReleaseState
+	5,   // 92: paprika.v1.ApplicationSummary.rollout_state:type_name -> paprika.v1.FleetRolloutState
+	134, // 93: paprika.v1.ApplicationSummary.repository:type_name -> paprika.v1.FleetObjectKey
+	12,  // 94: paprika.v1.ApplicationSummary.repository_connection:type_name -> paprika.v1.FleetConnectionState
+	134, // 95: paprika.v1.ApplicationSummary.effective_observability_source:type_name -> paprika.v1.FleetObjectKey
+	12,  // 96: paprika.v1.ApplicationSummary.observability_connection:type_name -> paprika.v1.FleetConnectionState
+	11,  // 97: paprika.v1.ApplicationSummary.capabilities:type_name -> paprika.v1.FleetCapability
+	10,  // 98: paprika.v1.FleetFacetBucket.dimension:type_name -> paprika.v1.FleetFacetDimension
+	134, // 99: paprika.v1.FleetFacetBucket.object:type_name -> paprika.v1.FleetObjectKey
+	1,   // 100: paprika.v1.FleetHealthBucket.health:type_name -> paprika.v1.FleetHealth
+	135, // 101: paprika.v1.QueryApplicationsRequest.filter:type_name -> paprika.v1.FleetFilter
+	6,   // 102: paprika.v1.QueryApplicationsRequest.sort:type_name -> paprika.v1.FleetSortField
+	7,   // 103: paprika.v1.QueryApplicationsRequest.direction:type_name -> paprika.v1.FleetSortDirection
+	137, // 104: paprika.v1.QueryApplicationsResponse.applications:type_name -> paprika.v1.ApplicationSummary
+	138, // 105: paprika.v1.QueryApplicationsResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	13,  // 106: paprika.v1.FleetMapNode.kind:type_name -> paprika.v1.FleetMapNodeKind
+	134, // 107: paprika.v1.FleetMapNode.application:type_name -> paprika.v1.FleetObjectKey
+	134, // 108: paprika.v1.FleetMapNode.group_object:type_name -> paprika.v1.FleetObjectKey
+	139, // 109: paprika.v1.FleetMapNode.health:type_name -> paprika.v1.FleetHealthBucket
+	142, // 110: paprika.v1.FleetMapNode.children:type_name -> paprika.v1.FleetMapNode
+	135, // 111: paprika.v1.QueryFleetMapRequest.filter:type_name -> paprika.v1.FleetFilter
+	8,   // 112: paprika.v1.QueryFleetMapRequest.group:type_name -> paprika.v1.FleetGroupDimension
+	9,   // 113: paprika.v1.QueryFleetMapRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
+	142, // 114: paprika.v1.QueryFleetMapResponse.roots:type_name -> paprika.v1.FleetMapNode
+	134, // 115: paprika.v1.FleetMatrixHeader.object:type_name -> paprika.v1.FleetObjectKey
+	139, // 116: paprika.v1.FleetMatrixCell.health:type_name -> paprika.v1.FleetHealthBucket
+	135, // 117: paprika.v1.QueryFleetMatrixRequest.filter:type_name -> paprika.v1.FleetFilter
+	8,   // 118: paprika.v1.QueryFleetMatrixRequest.row_group:type_name -> paprika.v1.FleetGroupDimension
+	8,   // 119: paprika.v1.QueryFleetMatrixRequest.column_group:type_name -> paprika.v1.FleetGroupDimension
+	9,   // 120: paprika.v1.QueryFleetMatrixRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
+	145, // 121: paprika.v1.QueryFleetMatrixResponse.rows:type_name -> paprika.v1.FleetMatrixHeader
+	145, // 122: paprika.v1.QueryFleetMatrixResponse.columns:type_name -> paprika.v1.FleetMatrixHeader
+	146, // 123: paprika.v1.QueryFleetMatrixResponse.cells:type_name -> paprika.v1.FleetMatrixCell
+	46,  // 124: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	48,  // 125: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	50,  // 126: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	52,  // 127: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	54,  // 128: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	60,  // 129: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
+	62,  // 130: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
+	71,  // 131: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
+	57,  // 132: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	64,  // 133: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	73,  // 134: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	75,  // 135: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
+	77,  // 136: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
+	79,  // 137: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	81,  // 138: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	83,  // 139: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	85,  // 140: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
+	88,  // 141: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
+	90,  // 142: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
+	92,  // 143: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
+	94,  // 144: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
+	96,  // 145: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
+	98,  // 146: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
+	100, // 147: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
+	102, // 148: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
+	104, // 149: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
+	106, // 150: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
+	108, // 151: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
+	110, // 152: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
+	112, // 153: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
+	114, // 154: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
+	117, // 155: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
+	120, // 156: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
+	122, // 157: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
+	132, // 158: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
+	125, // 159: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
+	129, // 160: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
+	140, // 161: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
+	143, // 162: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
+	147, // 163: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
+	47,  // 164: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	49,  // 165: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	51,  // 166: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	53,  // 167: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	55,  // 168: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	61,  // 169: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	63,  // 170: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	72,  // 171: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	58,  // 172: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	65,  // 173: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	74,  // 174: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	76,  // 175: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
+	78,  // 176: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
+	80,  // 177: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	82,  // 178: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	84,  // 179: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	86,  // 180: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	89,  // 181: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	91,  // 182: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	93,  // 183: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	95,  // 184: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	97,  // 185: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
+	99,  // 186: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
+	101, // 187: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
+	103, // 188: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
+	105, // 189: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
+	107, // 190: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
+	109, // 191: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
+	111, // 192: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
+	113, // 193: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
+	116, // 194: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
+	119, // 195: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
+	121, // 196: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
+	124, // 197: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
+	133, // 198: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
+	128, // 199: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
+	131, // 200: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
+	141, // 201: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
+	144, // 202: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
+	148, // 203: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
+	164, // [164:204] is the sub-list for method output_type
+	124, // [124:164] is the sub-list for method input_type
+	124, // [124:124] is the sub-list for extension type_name
+	124, // [124:124] is the sub-list for extension extendee
+	0,   // [0:124] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }
@@ -9392,13 +11928,25 @@ func file_paprika_v1_api_proto_init() {
 	file_paprika_v1_api_proto_msgTypes[74].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[82].OneofWrappers = []any{}
 	file_paprika_v1_api_proto_msgTypes[90].OneofWrappers = []any{}
+	file_paprika_v1_api_proto_msgTypes[124].OneofWrappers = []any{
+		(*FleetFacetBucket_Object)(nil),
+		(*FleetFacetBucket_Value)(nil),
+	}
+	file_paprika_v1_api_proto_msgTypes[128].OneofWrappers = []any{
+		(*FleetMapNode_GroupObject)(nil),
+		(*FleetMapNode_GroupValue)(nil),
+	}
+	file_paprika_v1_api_proto_msgTypes[131].OneofWrappers = []any{
+		(*FleetMatrixHeader_Object)(nil),
+		(*FleetMatrixHeader_Value)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   128,
+			NumEnums:      14,
+			NumMessages:   143,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

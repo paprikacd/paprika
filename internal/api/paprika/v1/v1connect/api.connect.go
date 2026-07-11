@@ -142,6 +142,15 @@ const (
 	// PaprikaServiceListInvestigatorPluginsProcedure is the fully-qualified name of the
 	// PaprikaService's ListInvestigatorPlugins RPC.
 	PaprikaServiceListInvestigatorPluginsProcedure = "/paprika.v1.PaprikaService/ListInvestigatorPlugins"
+	// PaprikaServiceQueryApplicationsProcedure is the fully-qualified name of the PaprikaService's
+	// QueryApplications RPC.
+	PaprikaServiceQueryApplicationsProcedure = "/paprika.v1.PaprikaService/QueryApplications"
+	// PaprikaServiceQueryFleetMapProcedure is the fully-qualified name of the PaprikaService's
+	// QueryFleetMap RPC.
+	PaprikaServiceQueryFleetMapProcedure = "/paprika.v1.PaprikaService/QueryFleetMap"
+	// PaprikaServiceQueryFleetMatrixProcedure is the fully-qualified name of the PaprikaService's
+	// QueryFleetMatrix RPC.
+	PaprikaServiceQueryFleetMatrixProcedure = "/paprika.v1.PaprikaService/QueryFleetMatrix"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -183,6 +192,9 @@ type PaprikaServiceClient interface {
 	StreamResourceLogs(context.Context, *connect.Request[v1.StreamResourceLogsRequest]) (*connect.ServerStreamForClient[v1.LogChunk], error)
 	Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error)
 	ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error)
+	QueryApplications(context.Context, *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error)
+	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
+	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -418,6 +430,24 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("ListInvestigatorPlugins")),
 			connect.WithClientOptions(opts...),
 		),
+		queryApplications: connect.NewClient[v1.QueryApplicationsRequest, v1.QueryApplicationsResponse](
+			httpClient,
+			baseURL+PaprikaServiceQueryApplicationsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("QueryApplications")),
+			connect.WithClientOptions(opts...),
+		),
+		queryFleetMap: connect.NewClient[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse](
+			httpClient,
+			baseURL+PaprikaServiceQueryFleetMapProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMap")),
+			connect.WithClientOptions(opts...),
+		),
+		queryFleetMatrix: connect.NewClient[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse](
+			httpClient,
+			baseURL+PaprikaServiceQueryFleetMatrixProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMatrix")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -460,6 +490,9 @@ type paprikaServiceClient struct {
 	streamResourceLogs      *connect.Client[v1.StreamResourceLogsRequest, v1.LogChunk]
 	investigate             *connect.Client[v1.InvestigateRequest, v1.InvestigateResponse]
 	listInvestigatorPlugins *connect.Client[v1.ListInvestigatorPluginsRequest, v1.ListInvestigatorPluginsResponse]
+	queryApplications       *connect.Client[v1.QueryApplicationsRequest, v1.QueryApplicationsResponse]
+	queryFleetMap           *connect.Client[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse]
+	queryFleetMatrix        *connect.Client[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -647,6 +680,21 @@ func (c *paprikaServiceClient) ListInvestigatorPlugins(ctx context.Context, req 
 	return c.listInvestigatorPlugins.CallUnary(ctx, req)
 }
 
+// QueryApplications calls paprika.v1.PaprikaService.QueryApplications.
+func (c *paprikaServiceClient) QueryApplications(ctx context.Context, req *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error) {
+	return c.queryApplications.CallUnary(ctx, req)
+}
+
+// QueryFleetMap calls paprika.v1.PaprikaService.QueryFleetMap.
+func (c *paprikaServiceClient) QueryFleetMap(ctx context.Context, req *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error) {
+	return c.queryFleetMap.CallUnary(ctx, req)
+}
+
+// QueryFleetMatrix calls paprika.v1.PaprikaService.QueryFleetMatrix.
+func (c *paprikaServiceClient) QueryFleetMatrix(ctx context.Context, req *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error) {
+	return c.queryFleetMatrix.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -686,6 +734,9 @@ type PaprikaServiceHandler interface {
 	StreamResourceLogs(context.Context, *connect.Request[v1.StreamResourceLogsRequest], *connect.ServerStream[v1.LogChunk]) error
 	Investigate(context.Context, *connect.Request[v1.InvestigateRequest]) (*connect.Response[v1.InvestigateResponse], error)
 	ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error)
+	QueryApplications(context.Context, *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error)
+	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
+	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -917,6 +968,24 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("ListInvestigatorPlugins")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceQueryApplicationsHandler := connect.NewUnaryHandler(
+		PaprikaServiceQueryApplicationsProcedure,
+		svc.QueryApplications,
+		connect.WithSchema(paprikaServiceMethods.ByName("QueryApplications")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceQueryFleetMapHandler := connect.NewUnaryHandler(
+		PaprikaServiceQueryFleetMapProcedure,
+		svc.QueryFleetMap,
+		connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMap")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceQueryFleetMatrixHandler := connect.NewUnaryHandler(
+		PaprikaServiceQueryFleetMatrixProcedure,
+		svc.QueryFleetMatrix,
+		connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMatrix")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -993,6 +1062,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceInvestigateHandler.ServeHTTP(w, r)
 		case PaprikaServiceListInvestigatorPluginsProcedure:
 			paprikaServiceListInvestigatorPluginsHandler.ServeHTTP(w, r)
+		case PaprikaServiceQueryApplicationsProcedure:
+			paprikaServiceQueryApplicationsHandler.ServeHTTP(w, r)
+		case PaprikaServiceQueryFleetMapProcedure:
+			paprikaServiceQueryFleetMapHandler.ServeHTTP(w, r)
+		case PaprikaServiceQueryFleetMatrixProcedure:
+			paprikaServiceQueryFleetMatrixHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1148,4 +1223,16 @@ func (UnimplementedPaprikaServiceHandler) Investigate(context.Context, *connect.
 
 func (UnimplementedPaprikaServiceHandler) ListInvestigatorPlugins(context.Context, *connect.Request[v1.ListInvestigatorPluginsRequest]) (*connect.Response[v1.ListInvestigatorPluginsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListInvestigatorPlugins is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) QueryApplications(context.Context, *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryApplications is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryFleetMap is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryFleetMatrix is not implemented"))
 }

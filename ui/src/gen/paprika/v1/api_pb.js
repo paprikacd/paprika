@@ -19,6 +19,207 @@ export const Severity = /*@__PURE__*/ proto3.makeEnum(
 );
 
 /**
+ * @generated from enum paprika.v1.FleetHealth
+ */
+export const FleetHealth = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetHealth",
+  [
+    {no: 0, name: "FLEET_HEALTH_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_HEALTH_HEALTHY", localName: "HEALTHY"},
+    {no: 2, name: "FLEET_HEALTH_PROGRESSING", localName: "PROGRESSING"},
+    {no: 3, name: "FLEET_HEALTH_DEGRADED", localName: "DEGRADED"},
+    {no: 4, name: "FLEET_HEALTH_FAILED", localName: "FAILED"},
+    {no: 5, name: "FLEET_HEALTH_UNKNOWN", localName: "UNKNOWN"},
+    {no: 6, name: "FLEET_HEALTH_MISSING", localName: "MISSING"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetSyncState
+ */
+export const FleetSyncState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetSyncState",
+  [
+    {no: 0, name: "FLEET_SYNC_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_SYNC_STATE_SYNCED", localName: "SYNCED"},
+    {no: 2, name: "FLEET_SYNC_STATE_OUT_OF_SYNC", localName: "OUT_OF_SYNC"},
+    {no: 3, name: "FLEET_SYNC_STATE_UNKNOWN", localName: "UNKNOWN"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetSourceType
+ */
+export const FleetSourceType = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetSourceType",
+  [
+    {no: 0, name: "FLEET_SOURCE_TYPE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_SOURCE_TYPE_GIT", localName: "GIT"},
+    {no: 2, name: "FLEET_SOURCE_TYPE_HELM", localName: "HELM"},
+    {no: 3, name: "FLEET_SOURCE_TYPE_KUSTOMIZE", localName: "KUSTOMIZE"},
+    {no: 4, name: "FLEET_SOURCE_TYPE_S3", localName: "S3"},
+    {no: 5, name: "FLEET_SOURCE_TYPE_OCI", localName: "OCI"},
+    {no: 6, name: "FLEET_SOURCE_TYPE_INLINE", localName: "INLINE"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetReleaseState
+ */
+export const FleetReleaseState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetReleaseState",
+  [
+    {no: 0, name: "FLEET_RELEASE_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_RELEASE_STATE_PENDING", localName: "PENDING"},
+    {no: 2, name: "FLEET_RELEASE_STATE_PROMOTING", localName: "PROMOTING"},
+    {no: 3, name: "FLEET_RELEASE_STATE_CANARYING", localName: "CANARYING"},
+    {no: 4, name: "FLEET_RELEASE_STATE_VERIFYING", localName: "VERIFYING"},
+    {no: 5, name: "FLEET_RELEASE_STATE_COMPLETE", localName: "COMPLETE"},
+    {no: 6, name: "FLEET_RELEASE_STATE_FAILED", localName: "FAILED"},
+    {no: 7, name: "FLEET_RELEASE_STATE_ROLLED_BACK", localName: "ROLLED_BACK"},
+    {no: 8, name: "FLEET_RELEASE_STATE_SUPERSEDED", localName: "SUPERSEDED"},
+    {no: 9, name: "FLEET_RELEASE_STATE_AWAITING_APPROVAL", localName: "AWAITING_APPROVAL"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetRolloutState
+ */
+export const FleetRolloutState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetRolloutState",
+  [
+    {no: 0, name: "FLEET_ROLLOUT_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_ROLLOUT_STATE_PENDING", localName: "PENDING"},
+    {no: 2, name: "FLEET_ROLLOUT_STATE_PROGRESSING", localName: "PROGRESSING"},
+    {no: 3, name: "FLEET_ROLLOUT_STATE_PAUSED", localName: "PAUSED"},
+    {no: 4, name: "FLEET_ROLLOUT_STATE_HEALTHY", localName: "HEALTHY"},
+    {no: 5, name: "FLEET_ROLLOUT_STATE_DEGRADED", localName: "DEGRADED"},
+    {no: 6, name: "FLEET_ROLLOUT_STATE_FAILED", localName: "FAILED"},
+    {no: 7, name: "FLEET_ROLLOUT_STATE_ROLLED_BACK", localName: "ROLLED_BACK"},
+    {no: 8, name: "FLEET_ROLLOUT_STATE_ABORTED", localName: "ABORTED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetSortField
+ */
+export const FleetSortField = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetSortField",
+  [
+    {no: 0, name: "FLEET_SORT_FIELD_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_SORT_FIELD_NAME", localName: "NAME"},
+    {no: 2, name: "FLEET_SORT_FIELD_PROJECT", localName: "PROJECT"},
+    {no: 3, name: "FLEET_SORT_FIELD_CLUSTER", localName: "CLUSTER"},
+    {no: 4, name: "FLEET_SORT_FIELD_STAGE", localName: "STAGE"},
+    {no: 5, name: "FLEET_SORT_FIELD_HEALTH", localName: "HEALTH"},
+    {no: 6, name: "FLEET_SORT_FIELD_SYNC", localName: "SYNC"},
+    {no: 7, name: "FLEET_SORT_FIELD_RELEASE", localName: "RELEASE"},
+    {no: 8, name: "FLEET_SORT_FIELD_ROLLOUT", localName: "ROLLOUT"},
+    {no: 9, name: "FLEET_SORT_FIELD_RESOURCE_COUNT", localName: "RESOURCE_COUNT"},
+    {no: 10, name: "FLEET_SORT_FIELD_LAST_TRANSITION", localName: "LAST_TRANSITION"},
+    {no: 11, name: "FLEET_SORT_FIELD_IMPACT", localName: "IMPACT"},
+    {no: 12, name: "FLEET_SORT_FIELD_RELEVANCE", localName: "RELEVANCE"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetSortDirection
+ */
+export const FleetSortDirection = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetSortDirection",
+  [
+    {no: 0, name: "FLEET_SORT_DIRECTION_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_SORT_DIRECTION_ASC", localName: "ASC"},
+    {no: 2, name: "FLEET_SORT_DIRECTION_DESC", localName: "DESC"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetGroupDimension
+ */
+export const FleetGroupDimension = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetGroupDimension",
+  [
+    {no: 0, name: "FLEET_GROUP_DIMENSION_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_GROUP_DIMENSION_PROJECT", localName: "PROJECT"},
+    {no: 2, name: "FLEET_GROUP_DIMENSION_CLUSTER", localName: "CLUSTER"},
+    {no: 3, name: "FLEET_GROUP_DIMENSION_STAGE", localName: "STAGE"},
+    {no: 4, name: "FLEET_GROUP_DIMENSION_HEALTH", localName: "HEALTH"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetSizeMetric
+ */
+export const FleetSizeMetric = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetSizeMetric",
+  [
+    {no: 0, name: "FLEET_SIZE_METRIC_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_SIZE_METRIC_RESOURCE_COUNT", localName: "RESOURCE_COUNT"},
+    {no: 2, name: "FLEET_SIZE_METRIC_REQUEST_RATE", localName: "REQUEST_RATE"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetFacetDimension
+ */
+export const FleetFacetDimension = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetFacetDimension",
+  [
+    {no: 0, name: "FLEET_FACET_DIMENSION_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_FACET_DIMENSION_PROJECT", localName: "PROJECT"},
+    {no: 2, name: "FLEET_FACET_DIMENSION_NAMESPACE", localName: "NAMESPACE"},
+    {no: 3, name: "FLEET_FACET_DIMENSION_CLUSTER", localName: "CLUSTER"},
+    {no: 4, name: "FLEET_FACET_DIMENSION_STAGE", localName: "STAGE"},
+    {no: 5, name: "FLEET_FACET_DIMENSION_HEALTH", localName: "HEALTH"},
+    {no: 6, name: "FLEET_FACET_DIMENSION_SYNC", localName: "SYNC"},
+    {no: 7, name: "FLEET_FACET_DIMENSION_RELEASE", localName: "RELEASE"},
+    {no: 8, name: "FLEET_FACET_DIMENSION_ROLLOUT", localName: "ROLLOUT"},
+    {no: 9, name: "FLEET_FACET_DIMENSION_SOURCE_TYPE", localName: "SOURCE_TYPE"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetCapability
+ */
+export const FleetCapability = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetCapability",
+  [
+    {no: 0, name: "FLEET_CAPABILITY_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_CAPABILITY_APPLICATION_SYNC", localName: "APPLICATION_SYNC"},
+    {no: 2, name: "FLEET_CAPABILITY_RELEASE_ROLLBACK", localName: "RELEASE_ROLLBACK"},
+    {no: 3, name: "FLEET_CAPABILITY_GATE_APPROVE", localName: "GATE_APPROVE"},
+    {no: 4, name: "FLEET_CAPABILITY_PIPELINE_RETRY", localName: "PIPELINE_RETRY"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetConnectionState
+ */
+export const FleetConnectionState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetConnectionState",
+  [
+    {no: 0, name: "FLEET_CONNECTION_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_CONNECTION_STATE_HEALTHY", localName: "HEALTHY"},
+    {no: 2, name: "FLEET_CONNECTION_STATE_UNHEALTHY", localName: "UNHEALTHY"},
+    {no: 3, name: "FLEET_CONNECTION_STATE_DISABLED", localName: "DISABLED"},
+    {no: 4, name: "FLEET_CONNECTION_STATE_NOT_CONFIGURED", localName: "NOT_CONFIGURED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.FleetMapNodeKind
+ */
+export const FleetMapNodeKind = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.FleetMapNodeKind",
+  [
+    {no: 0, name: "FLEET_MAP_NODE_KIND_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "FLEET_MAP_NODE_KIND_GROUP", localName: "GROUP"},
+    {no: 2, name: "FLEET_MAP_NODE_KIND_APPLICATION", localName: "APPLICATION"},
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Step
  */
 export const Step = /*@__PURE__*/ proto3.makeMessageType(
@@ -1577,6 +1778,243 @@ export const LogChunk = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "container_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "line", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "timestamp_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetObjectKey
+ */
+export const FleetObjectKey = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetObjectKey",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetFilter
+ */
+export const FleetFilter = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetFilter",
+  () => [
+    { no: 1, name: "projects", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 2, name: "namespaces", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 3, name: "clusters", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 4, name: "stages", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 5, name: "health", kind: "enum", T: proto3.getEnumType(FleetHealth), repeated: true },
+    { no: 6, name: "sync", kind: "enum", T: proto3.getEnumType(FleetSyncState), repeated: true },
+    { no: 7, name: "release_states", kind: "enum", T: proto3.getEnumType(FleetReleaseState), repeated: true },
+    { no: 8, name: "rollout_states", kind: "enum", T: proto3.getEnumType(FleetRolloutState), repeated: true },
+    { no: 9, name: "source_types", kind: "enum", T: proto3.getEnumType(FleetSourceType), repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.StageTargetSummary
+ */
+export const StageTargetSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.StageTargetSummary",
+  () => [
+    { no: 1, name: "stable_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "ring", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 4, name: "cluster", kind: "message", T: FleetObjectKey },
+    { no: 5, name: "cluster_label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "health", kind: "enum", T: proto3.getEnumType(FleetHealth) },
+    { no: 7, name: "cluster_connection", kind: "enum", T: proto3.getEnumType(FleetConnectionState) },
+    { no: 8, name: "unmanaged_inline_cluster", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplicationSummary
+ */
+export const ApplicationSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationSummary",
+  () => [
+    { no: 1, name: "identity", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "project", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "targets", kind: "message", T: StageTargetSummary, repeated: true },
+    { no: 4, name: "current_stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "current_cluster", kind: "message", T: FleetObjectKey },
+    { no: 6, name: "current_cluster_label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "source_type", kind: "enum", T: proto3.getEnumType(FleetSourceType) },
+    { no: 8, name: "source_revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "health", kind: "enum", T: proto3.getEnumType(FleetHealth) },
+    { no: 10, name: "sync", kind: "enum", T: proto3.getEnumType(FleetSyncState) },
+    { no: 11, name: "drift_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 12, name: "missing_resource_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 13, name: "release_state", kind: "enum", T: proto3.getEnumType(FleetReleaseState) },
+    { no: 14, name: "rollout_state", kind: "enum", T: proto3.getEnumType(FleetRolloutState) },
+    { no: 15, name: "resource_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 16, name: "repository", kind: "message", T: FleetObjectKey },
+    { no: 17, name: "repository_connection", kind: "enum", T: proto3.getEnumType(FleetConnectionState) },
+    { no: 18, name: "effective_observability_source", kind: "message", T: FleetObjectKey },
+    { no: 19, name: "observability_connection", kind: "enum", T: proto3.getEnumType(FleetConnectionState) },
+    { no: 20, name: "blocked_gate_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 21, name: "last_transition_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 22, name: "capabilities", kind: "enum", T: proto3.getEnumType(FleetCapability), repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetFacetBucket
+ */
+export const FleetFacetBucket = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetFacetBucket",
+  () => [
+    { no: 1, name: "dimension", kind: "enum", T: proto3.getEnumType(FleetFacetDimension) },
+    { no: 2, name: "object", kind: "message", T: FleetObjectKey, oneof: "key" },
+    { no: 3, name: "value", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "key" },
+    { no: 4, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetHealthBucket
+ */
+export const FleetHealthBucket = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetHealthBucket",
+  () => [
+    { no: 1, name: "health", kind: "enum", T: proto3.getEnumType(FleetHealth) },
+    { no: 2, name: "count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryApplicationsRequest
+ */
+export const QueryApplicationsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryApplicationsRequest",
+  () => [
+    { no: 1, name: "filter", kind: "message", T: FleetFilter },
+    { no: 2, name: "search", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "sort", kind: "enum", T: proto3.getEnumType(FleetSortField) },
+    { no: 4, name: "direction", kind: "enum", T: proto3.getEnumType(FleetSortDirection) },
+    { no: 5, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryApplicationsResponse
+ */
+export const QueryApplicationsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryApplicationsResponse",
+  () => [
+    { no: 1, name: "applications", kind: "message", T: ApplicationSummary, repeated: true },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "facets", kind: "message", T: FleetFacetBucket, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetMapNode
+ */
+export const FleetMapNode = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetMapNode",
+  () => [
+    { no: 1, name: "stable_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "kind", kind: "enum", T: proto3.getEnumType(FleetMapNodeKind) },
+    { no: 3, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 5, name: "group_object", kind: "message", T: FleetObjectKey, oneof: "group_key" },
+    { no: 6, name: "group_value", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "group_key" },
+    { no: 7, name: "application_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 8, name: "target_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 9, name: "health", kind: "message", T: FleetHealthBucket, repeated: true },
+    { no: 10, name: "resource_weight", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 11, name: "request_rate_weight", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 12, name: "effective_weight", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 13, name: "used_resource_fallback", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 14, name: "children", kind: "message", T: FleetMapNode, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryFleetMapRequest
+ */
+export const QueryFleetMapRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryFleetMapRequest",
+  () => [
+    { no: 1, name: "filter", kind: "message", T: FleetFilter },
+    { no: 2, name: "search", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "group", kind: "enum", T: proto3.getEnumType(FleetGroupDimension) },
+    { no: 4, name: "size_metric", kind: "enum", T: proto3.getEnumType(FleetSizeMetric) },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryFleetMapResponse
+ */
+export const QueryFleetMapResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryFleetMapResponse",
+  () => [
+    { no: 1, name: "roots", kind: "message", T: FleetMapNode, repeated: true },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetMatrixHeader
+ */
+export const FleetMatrixHeader = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetMatrixHeader",
+  () => [
+    { no: 1, name: "stable_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "object", kind: "message", T: FleetObjectKey, oneof: "key" },
+    { no: 4, name: "value", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "key" },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.FleetMatrixCell
+ */
+export const FleetMatrixCell = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetMatrixCell",
+  () => [
+    { no: 1, name: "row_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "column_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "application_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 4, name: "target_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "health", kind: "message", T: FleetHealthBucket, repeated: true },
+    { no: 6, name: "resource_weight", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 7, name: "request_rate_weight", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 8, name: "used_resource_fallback", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryFleetMatrixRequest
+ */
+export const QueryFleetMatrixRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryFleetMatrixRequest",
+  () => [
+    { no: 1, name: "filter", kind: "message", T: FleetFilter },
+    { no: 2, name: "search", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "row_group", kind: "enum", T: proto3.getEnumType(FleetGroupDimension) },
+    { no: 4, name: "column_group", kind: "enum", T: proto3.getEnumType(FleetGroupDimension) },
+    { no: 5, name: "size_metric", kind: "enum", T: proto3.getEnumType(FleetSizeMetric) },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryFleetMatrixResponse
+ */
+export const QueryFleetMatrixResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryFleetMatrixResponse",
+  () => [
+    { no: 1, name: "rows", kind: "message", T: FleetMatrixHeader, repeated: true },
+    { no: 2, name: "columns", kind: "message", T: FleetMatrixHeader, repeated: true },
+    { no: 3, name: "cells", kind: "message", T: FleetMatrixCell, repeated: true },
+    { no: 4, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
   ],
 );
 
