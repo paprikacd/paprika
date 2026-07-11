@@ -2,11 +2,13 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
@@ -101,122 +103,6 @@ func TestFleetValidation(t *testing.T) {
 			call: func(_ *testing.T, server *PaprikaServer) error {
 				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
 					Direction: paprikav1.FleetSortDirection(99),
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter accepts all concrete enum values",
-			wantCode: connect.CodeUnimplemented,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{
-						Health:        []paprikav1.FleetHealth{paprikav1.FleetHealth_FLEET_HEALTH_HEALTHY, paprikav1.FleetHealth_FLEET_HEALTH_MISSING},
-						Sync:          []paprikav1.FleetSyncState{paprikav1.FleetSyncState_FLEET_SYNC_STATE_SYNCED, paprikav1.FleetSyncState_FLEET_SYNC_STATE_UNKNOWN},
-						ReleaseStates: []paprikav1.FleetReleaseState{paprikav1.FleetReleaseState_FLEET_RELEASE_STATE_PENDING, paprikav1.FleetReleaseState_FLEET_RELEASE_STATE_AWAITING_APPROVAL},
-						RolloutStates: []paprikav1.FleetRolloutState{paprikav1.FleetRolloutState_FLEET_ROLLOUT_STATE_PENDING, paprikav1.FleetRolloutState_FLEET_ROLLOUT_STATE_ABORTED},
-						SourceTypes:   []paprikav1.FleetSourceType{paprikav1.FleetSourceType_FLEET_SOURCE_TYPE_GIT, paprikav1.FleetSourceType_FLEET_SOURCE_TYPE_INLINE},
-					},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unspecified health",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{Health: []paprikav1.FleetHealth{paprikav1.FleetHealth_FLEET_HEALTH_UNSPECIFIED}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unknown health",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{Health: []paprikav1.FleetHealth{paprikav1.FleetHealth(99)}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unknown sync",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{Sync: []paprikav1.FleetSyncState{paprikav1.FleetSyncState(99)}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unspecified sync",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{Sync: []paprikav1.FleetSyncState{paprikav1.FleetSyncState_FLEET_SYNC_STATE_UNSPECIFIED}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unknown release state",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{ReleaseStates: []paprikav1.FleetReleaseState{paprikav1.FleetReleaseState(99)}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unspecified release state",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{ReleaseStates: []paprikav1.FleetReleaseState{paprikav1.FleetReleaseState_FLEET_RELEASE_STATE_UNSPECIFIED}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unknown rollout state",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{RolloutStates: []paprikav1.FleetRolloutState{paprikav1.FleetRolloutState(99)}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unspecified rollout state",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{RolloutStates: []paprikav1.FleetRolloutState{paprikav1.FleetRolloutState_FLEET_ROLLOUT_STATE_UNSPECIFIED}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unknown source type",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{SourceTypes: []paprikav1.FleetSourceType{paprikav1.FleetSourceType(99)}},
-				}))
-				return err
-			},
-		},
-		{
-			name:     "filter rejects unspecified source type",
-			wantCode: connect.CodeInvalidArgument,
-			call: func(_ *testing.T, server *PaprikaServer) error {
-				_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-					Filter: &paprikav1.FleetFilter{SourceTypes: []paprikav1.FleetSourceType{paprikav1.FleetSourceType_FLEET_SOURCE_TYPE_UNSPECIFIED}},
 				}))
 				return err
 			},
@@ -365,6 +251,92 @@ func TestFleetValidation(t *testing.T) {
 			err := test.call(t, &PaprikaServer{})
 			require.Error(t, err)
 			require.Equal(t, test.wantCode, connect.CodeOf(err))
+		})
+	}
+}
+
+func TestFleetFilterValidation(t *testing.T) {
+	type filterDimension struct {
+		name       string
+		descriptor protoreflect.EnumDescriptor
+		filter     func(protoreflect.EnumNumber) *paprikav1.FleetFilter
+	}
+
+	dimensions := []filterDimension{
+		{
+			name:       "health",
+			descriptor: paprikav1.FleetHealth(0).Descriptor(),
+			filter: func(number protoreflect.EnumNumber) *paprikav1.FleetFilter {
+				return &paprikav1.FleetFilter{Health: []paprikav1.FleetHealth{paprikav1.FleetHealth(number)}}
+			},
+		},
+		{
+			name:       "sync",
+			descriptor: paprikav1.FleetSyncState(0).Descriptor(),
+			filter: func(number protoreflect.EnumNumber) *paprikav1.FleetFilter {
+				return &paprikav1.FleetFilter{Sync: []paprikav1.FleetSyncState{paprikav1.FleetSyncState(number)}}
+			},
+		},
+		{
+			name:       "release_state",
+			descriptor: paprikav1.FleetReleaseState(0).Descriptor(),
+			filter: func(number protoreflect.EnumNumber) *paprikav1.FleetFilter {
+				return &paprikav1.FleetFilter{ReleaseStates: []paprikav1.FleetReleaseState{paprikav1.FleetReleaseState(number)}}
+			},
+		},
+		{
+			name:       "rollout_state",
+			descriptor: paprikav1.FleetRolloutState(0).Descriptor(),
+			filter: func(number protoreflect.EnumNumber) *paprikav1.FleetFilter {
+				return &paprikav1.FleetFilter{RolloutStates: []paprikav1.FleetRolloutState{paprikav1.FleetRolloutState(number)}}
+			},
+		},
+		{
+			name:       "source_type",
+			descriptor: paprikav1.FleetSourceType(0).Descriptor(),
+			filter: func(number protoreflect.EnumNumber) *paprikav1.FleetFilter {
+				return &paprikav1.FleetFilter{SourceTypes: []paprikav1.FleetSourceType{paprikav1.FleetSourceType(number)}}
+			},
+		},
+	}
+
+	server := &PaprikaServer{}
+	assertFilterCode := func(t *testing.T, filter *paprikav1.FleetFilter, wantCode connect.Code) {
+		t.Helper()
+		_, err := server.QueryApplications(context.Background(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{Filter: filter}))
+		require.Error(t, err)
+		require.Equal(t, wantCode, connect.CodeOf(err))
+	}
+
+	for _, dimension := range dimensions {
+		t.Run(dimension.name, func(t *testing.T) {
+			values := dimension.descriptor.Values()
+			maxNumber := protoreflect.EnumNumber(0)
+			concreteCount := 0
+			for i := 0; i < values.Len(); i++ {
+				value := values.Get(i)
+				if value.Number() > maxNumber {
+					maxNumber = value.Number()
+				}
+				if value.Number() == 0 {
+					continue
+				}
+				concreteCount++
+				t.Run("accepts_"+string(value.Name()), func(t *testing.T) {
+					assertFilterCode(t, dimension.filter(value.Number()), connect.CodeUnimplemented)
+				})
+			}
+			require.Positive(t, concreteCount, "enum %s must define concrete filter values", dimension.descriptor.FullName())
+
+			t.Run("rejects_unspecified", func(t *testing.T) {
+				assertFilterCode(t, dimension.filter(0), connect.CodeInvalidArgument)
+			})
+
+			unknown := maxNumber + 1
+			require.Nil(t, values.ByNumber(unknown), "probe value must be outside the enum descriptor range")
+			t.Run(fmt.Sprintf("rejects_unknown_%d", unknown), func(t *testing.T) {
+				assertFilterCode(t, dimension.filter(unknown), connect.CodeInvalidArgument)
+			})
 		})
 	}
 }
