@@ -528,6 +528,114 @@ func TestApplicationReconciler_reconcileSingleStage_usesAppLevelCanaryStrategy(t
 	}
 }
 
+func TestApplicationReconciler_reconcileSingleStage_repairsApplicationOwner(t *testing.T) {
+	tests := []struct {
+		name   string
+		owners []metav1.OwnerReference
+	}{
+		{name: "missing"},
+		{
+			name: "stale uid",
+			owners: []metav1.OwnerReference{{
+				APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+				Kind:       "Application",
+				Name:       "owner-app",
+				UID:        types.UID("stale-app-uid"),
+				Controller: func() *bool { value := true; return &value }(),
+			}},
+		},
+		{
+			name: "matching non controller",
+			owners: []metav1.OwnerReference{{
+				APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+				Kind:       "Application",
+				Name:       "owner-app",
+				UID:        types.UID("current-app-uid"),
+			}},
+		},
+		{
+			name: "stale api version",
+			owners: []metav1.OwnerReference{{
+				APIVersion: "pipelines.paprika.io/v1beta1",
+				Kind:       "Application",
+				Name:       "owner-app",
+				UID:        types.UID("current-app-uid"),
+				Controller: func() *bool { value := true; return &value }(),
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			scheme := runtime.NewScheme()
+			if err := pipelinesv1alpha1.AddToScheme(scheme); err != nil {
+				t.Fatalf("add scheme: %v", err)
+			}
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "owner-app",
+					Namespace: "default",
+					UID:       types.UID("current-app-uid"),
+				},
+				Spec: pipelinesv1alpha1.ApplicationSpec{
+					Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 7}},
+				},
+			}
+			existing := &pipelinesv1alpha1.Stage{ObjectMeta: metav1.ObjectMeta{
+				Name:            "owner-app-prod",
+				Namespace:       app.Namespace,
+				Labels:          map[string]string{"preserved": "yes"},
+				OwnerReferences: test.owners,
+			}}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(app, existing).Build()
+			r := &ApplicationReconciler{client: c, Scheme: scheme}
+
+			if err := r.reconcileSingleStage(ctx, app, &app.Spec.Stages[0], "owner-app-template", existing.Name); err != nil {
+				t.Fatalf("reconcileSingleStage: %v", err)
+			}
+			var updated pipelinesv1alpha1.Stage
+			if err := c.Get(ctx, client.ObjectKeyFromObject(existing), &updated); err != nil {
+				t.Fatalf("get updated stage: %v", err)
+			}
+			if updated.Labels["preserved"] != "yes" || updated.Labels[engine.ApplicationNameLabelKey] != app.Name {
+				t.Fatalf("labels not retained/installed: %#v", updated.Labels)
+			}
+			if updated.Spec.Name != "prod" || updated.Spec.Ring != 7 {
+				t.Fatalf("spec not updated: %#v", updated.Spec)
+			}
+			controllers := controllerOwners(updated.OwnerReferences)
+			if len(controllers) != 1 {
+				t.Fatalf("controller owners = %#v, want exactly one", controllers)
+			}
+			owner := controllers[0]
+			if owner.APIVersion != pipelinesv1alpha1.GroupVersion.String() || owner.Kind != "Application" ||
+				owner.Name != app.Name || owner.UID != app.UID {
+				t.Fatalf("controller owner = %#v, want exact Application owner", owner)
+			}
+			matchingIdentity := 0
+			for i := range updated.OwnerReferences {
+				if updated.OwnerReferences[i].Kind == "Application" && updated.OwnerReferences[i].Name == app.Name {
+					matchingIdentity++
+				}
+			}
+			if matchingIdentity != 1 {
+				t.Fatalf("matching Application owner count = %d, want 1: %#v", matchingIdentity, updated.OwnerReferences)
+			}
+		})
+	}
+}
+
+func controllerOwners(owners []metav1.OwnerReference) []metav1.OwnerReference {
+	controllers := make([]metav1.OwnerReference, 0, len(owners))
+	for i := range owners {
+		if owners[i].Controller != nil && *owners[i].Controller {
+			controllers = append(controllers, owners[i])
+		}
+	}
+	return controllers
+}
+
 func TestApplicationReconciler_handleHealthyPhase_changedSourceStartsNewReleaseFlow(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()

@@ -767,6 +767,9 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 }
 
 func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expected *paprikav1.Stage, stageName string) error {
+	if err := updateStageApplicationOwner(existing, expected); err != nil {
+		return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
+	}
 	existing.Spec = expected.Spec
 	if len(existing.Labels) == 0 {
 		existing.Labels = make(map[string]string)
@@ -778,6 +781,67 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expec
 		return fmt.Errorf("failed to update stage %s: %w", stageName, err)
 	}
 	return nil
+}
+
+//nolint:cyclop // owner reconciliation explicitly preserves unrelated non-controller references.
+func updateStageApplicationOwner(existing, expected *paprikav1.Stage) error {
+	var desired *metav1.OwnerReference
+	for i := range expected.OwnerReferences {
+		if expected.OwnerReferences[i].Controller != nil && *expected.OwnerReferences[i].Controller {
+			if desired != nil {
+				return errors.New("expected stage has multiple controller owners")
+			}
+			desired = &expected.OwnerReferences[i]
+		}
+	}
+	if desired == nil {
+		return errors.New("expected stage is missing its application controller owner")
+	}
+
+	controllerIndex := -1
+	for i := range existing.OwnerReferences {
+		if existing.OwnerReferences[i].Controller == nil || !*existing.OwnerReferences[i].Controller {
+			continue
+		}
+		if controllerIndex >= 0 {
+			return errors.New("existing stage has multiple controller owners")
+		}
+		controllerIndex = i
+	}
+	if controllerIndex >= 0 && !sameStageApplicationOwnerIdentity(existing.OwnerReferences[controllerIndex], *desired) {
+		return errors.New("existing stage is controlled by another resource")
+	}
+
+	replacement := make([]metav1.OwnerReference, 0, len(existing.OwnerReferences)+1)
+	inserted := false
+	for i := range existing.OwnerReferences {
+		if sameStageApplicationOwnerIdentity(existing.OwnerReferences[i], *desired) {
+			if !inserted {
+				replacement = append(replacement, *desired)
+				inserted = true
+			}
+			continue
+		}
+		replacement = append(replacement, existing.OwnerReferences[i])
+	}
+	if !inserted {
+		replacement = append(replacement, *desired)
+	}
+	existing.OwnerReferences = replacement
+	return nil
+}
+
+//nolint:gocritic // owner references are small immutable identity values here.
+func sameStageApplicationOwnerIdentity(left, right metav1.OwnerReference) bool {
+	if left.Kind != right.Kind || left.Name != right.Name {
+		return false
+	}
+	if left.APIVersion == right.APIVersion {
+		return true
+	}
+	leftGroup, _, leftHasVersion := strings.Cut(left.APIVersion, "/")
+	rightGroup, _, rightHasVersion := strings.Cut(right.APIVersion, "/")
+	return leftHasVersion && rightHasVersion && leftGroup == rightGroup
 }
 
 //nolint:cyclop // stage/release branching is inherent to the reconcile flow.
