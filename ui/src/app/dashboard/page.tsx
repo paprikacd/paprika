@@ -313,6 +313,7 @@ export default function DashboardPage() {
         <h1 className="sr-only">Dashboard</h1>
 
         <motion.div
+          id="releases"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.04, ease: [0.22, 1, 0.36, 1] }}
