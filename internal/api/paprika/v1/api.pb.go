@@ -10108,6 +10108,7 @@ type QueryFleetMapResponse struct {
 	Roots           []*FleetMapNode        `protobuf:"bytes,1,rep,name=roots,proto3" json:"roots,omitempty"`
 	Total           uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
 	IndexGeneration uint64                 `protobuf:"varint,3,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	Facets          []*FleetFacetBucket    `protobuf:"bytes,4,rep,name=facets,proto3" json:"facets,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -10161,6 +10162,13 @@ func (x *QueryFleetMapResponse) GetIndexGeneration() uint64 {
 		return x.IndexGeneration
 	}
 	return 0
+}
+
+func (x *QueryFleetMapResponse) GetFacets() []*FleetFacetBucket {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
 }
 
 type FleetMatrixHeader struct {
@@ -10444,6 +10452,7 @@ type QueryFleetMatrixResponse struct {
 	Cells           []*FleetMatrixCell     `protobuf:"bytes,3,rep,name=cells,proto3" json:"cells,omitempty"`
 	Total           uint64                 `protobuf:"varint,4,opt,name=total,proto3" json:"total,omitempty"`
 	IndexGeneration uint64                 `protobuf:"varint,5,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	Facets          []*FleetFacetBucket    `protobuf:"bytes,6,rep,name=facets,proto3" json:"facets,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -10511,6 +10520,13 @@ func (x *QueryFleetMatrixResponse) GetIndexGeneration() uint64 {
 		return x.IndexGeneration
 	}
 	return 0
+}
+
+func (x *QueryFleetMatrixResponse) GetFacets() []*FleetFacetBucket {
+	if x != nil {
+		return x.Facets
+	}
+	return nil
 }
 
 var File_paprika_v1_api_proto protoreflect.FileDescriptor
@@ -11345,11 +11361,12 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x06search\x18\x02 \x01(\tR\x06search\x125\n" +
 	"\x05group\x18\x03 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\x05group\x12<\n" +
 	"\vsize_metric\x18\x04 \x01(\x0e2\x1b.paprika.v1.FleetSizeMetricR\n" +
-	"sizeMetric\"\x88\x01\n" +
+	"sizeMetric\"\xbe\x01\n" +
 	"\x15QueryFleetMapResponse\x12.\n" +
 	"\x05roots\x18\x01 \x03(\v2\x18.paprika.v1.FleetMapNodeR\x05roots\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x04R\x05total\x12)\n" +
-	"\x10index_generation\x18\x03 \x01(\x04R\x0findexGeneration\"\x9b\x01\n" +
+	"\x10index_generation\x18\x03 \x01(\x04R\x0findexGeneration\x124\n" +
+	"\x06facets\x18\x04 \x03(\v2\x1c.paprika.v1.FleetFacetBucketR\x06facets\"\x9b\x01\n" +
 	"\x11FleetMatrixHeader\x12\x1b\n" +
 	"\tstable_id\x18\x01 \x01(\tR\bstableId\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x124\n" +
@@ -11371,13 +11388,14 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\trow_group\x18\x03 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\browGroup\x12B\n" +
 	"\fcolumn_group\x18\x04 \x01(\x0e2\x1f.paprika.v1.FleetGroupDimensionR\vcolumnGroup\x12<\n" +
 	"\vsize_metric\x18\x05 \x01(\x0e2\x1b.paprika.v1.FleetSizeMetricR\n" +
-	"sizeMetric\"\xfa\x01\n" +
+	"sizeMetric\"\xb0\x02\n" +
 	"\x18QueryFleetMatrixResponse\x121\n" +
 	"\x04rows\x18\x01 \x03(\v2\x1d.paprika.v1.FleetMatrixHeaderR\x04rows\x127\n" +
 	"\acolumns\x18\x02 \x03(\v2\x1d.paprika.v1.FleetMatrixHeaderR\acolumns\x121\n" +
 	"\x05cells\x18\x03 \x03(\v2\x1b.paprika.v1.FleetMatrixCellR\x05cells\x12\x14\n" +
 	"\x05total\x18\x04 \x01(\x04R\x05total\x12)\n" +
-	"\x10index_generation\x18\x05 \x01(\x04R\x0findexGeneration*I\n" +
+	"\x10index_generation\x18\x05 \x01(\x04R\x0findexGeneration\x124\n" +
+	"\x06facets\x18\x06 \x03(\v2\x1c.paprika.v1.FleetFacetBucketR\x06facets*I\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bCRITICAL\x10\x01\x12\v\n" +
@@ -11815,100 +11833,102 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	8,   // 112: paprika.v1.QueryFleetMapRequest.group:type_name -> paprika.v1.FleetGroupDimension
 	9,   // 113: paprika.v1.QueryFleetMapRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
 	142, // 114: paprika.v1.QueryFleetMapResponse.roots:type_name -> paprika.v1.FleetMapNode
-	134, // 115: paprika.v1.FleetMatrixHeader.object:type_name -> paprika.v1.FleetObjectKey
-	139, // 116: paprika.v1.FleetMatrixCell.health:type_name -> paprika.v1.FleetHealthBucket
-	135, // 117: paprika.v1.QueryFleetMatrixRequest.filter:type_name -> paprika.v1.FleetFilter
-	8,   // 118: paprika.v1.QueryFleetMatrixRequest.row_group:type_name -> paprika.v1.FleetGroupDimension
-	8,   // 119: paprika.v1.QueryFleetMatrixRequest.column_group:type_name -> paprika.v1.FleetGroupDimension
-	9,   // 120: paprika.v1.QueryFleetMatrixRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
-	145, // 121: paprika.v1.QueryFleetMatrixResponse.rows:type_name -> paprika.v1.FleetMatrixHeader
-	145, // 122: paprika.v1.QueryFleetMatrixResponse.columns:type_name -> paprika.v1.FleetMatrixHeader
-	146, // 123: paprika.v1.QueryFleetMatrixResponse.cells:type_name -> paprika.v1.FleetMatrixCell
-	46,  // 124: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	48,  // 125: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	50,  // 126: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	52,  // 127: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	54,  // 128: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
-	60,  // 129: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
-	62,  // 130: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
-	71,  // 131: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
-	57,  // 132: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	64,  // 133: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	73,  // 134: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	75,  // 135: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
-	77,  // 136: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
-	79,  // 137: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	81,  // 138: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	83,  // 139: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	85,  // 140: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
-	88,  // 141: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
-	90,  // 142: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
-	92,  // 143: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
-	94,  // 144: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
-	96,  // 145: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
-	98,  // 146: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
-	100, // 147: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
-	102, // 148: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
-	104, // 149: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
-	106, // 150: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
-	108, // 151: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
-	110, // 152: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
-	112, // 153: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
-	114, // 154: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
-	117, // 155: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
-	120, // 156: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
-	122, // 157: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
-	132, // 158: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
-	125, // 159: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
-	129, // 160: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
-	140, // 161: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
-	143, // 162: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
-	147, // 163: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
-	47,  // 164: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	49,  // 165: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	51,  // 166: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	53,  // 167: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	55,  // 168: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	61,  // 169: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	63,  // 170: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	72,  // 171: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	58,  // 172: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	65,  // 173: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	74,  // 174: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	76,  // 175: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
-	78,  // 176: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
-	80,  // 177: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	82,  // 178: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	84,  // 179: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	86,  // 180: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	89,  // 181: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
-	91,  // 182: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
-	93,  // 183: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
-	95,  // 184: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
-	97,  // 185: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
-	99,  // 186: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
-	101, // 187: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
-	103, // 188: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
-	105, // 189: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
-	107, // 190: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
-	109, // 191: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
-	111, // 192: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
-	113, // 193: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
-	116, // 194: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
-	119, // 195: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
-	121, // 196: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
-	124, // 197: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
-	133, // 198: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
-	128, // 199: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
-	131, // 200: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
-	141, // 201: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
-	144, // 202: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
-	148, // 203: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
-	164, // [164:204] is the sub-list for method output_type
-	124, // [124:164] is the sub-list for method input_type
-	124, // [124:124] is the sub-list for extension type_name
-	124, // [124:124] is the sub-list for extension extendee
-	0,   // [0:124] is the sub-list for field type_name
+	138, // 115: paprika.v1.QueryFleetMapResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	134, // 116: paprika.v1.FleetMatrixHeader.object:type_name -> paprika.v1.FleetObjectKey
+	139, // 117: paprika.v1.FleetMatrixCell.health:type_name -> paprika.v1.FleetHealthBucket
+	135, // 118: paprika.v1.QueryFleetMatrixRequest.filter:type_name -> paprika.v1.FleetFilter
+	8,   // 119: paprika.v1.QueryFleetMatrixRequest.row_group:type_name -> paprika.v1.FleetGroupDimension
+	8,   // 120: paprika.v1.QueryFleetMatrixRequest.column_group:type_name -> paprika.v1.FleetGroupDimension
+	9,   // 121: paprika.v1.QueryFleetMatrixRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
+	145, // 122: paprika.v1.QueryFleetMatrixResponse.rows:type_name -> paprika.v1.FleetMatrixHeader
+	145, // 123: paprika.v1.QueryFleetMatrixResponse.columns:type_name -> paprika.v1.FleetMatrixHeader
+	146, // 124: paprika.v1.QueryFleetMatrixResponse.cells:type_name -> paprika.v1.FleetMatrixCell
+	138, // 125: paprika.v1.QueryFleetMatrixResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	46,  // 126: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	48,  // 127: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	50,  // 128: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	52,  // 129: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	54,  // 130: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	60,  // 131: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
+	62,  // 132: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
+	71,  // 133: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
+	57,  // 134: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	64,  // 135: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	73,  // 136: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	75,  // 137: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
+	77,  // 138: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
+	79,  // 139: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	81,  // 140: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	83,  // 141: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	85,  // 142: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
+	88,  // 143: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
+	90,  // 144: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
+	92,  // 145: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
+	94,  // 146: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
+	96,  // 147: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
+	98,  // 148: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
+	100, // 149: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
+	102, // 150: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
+	104, // 151: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
+	106, // 152: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
+	108, // 153: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
+	110, // 154: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
+	112, // 155: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
+	114, // 156: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
+	117, // 157: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
+	120, // 158: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
+	122, // 159: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
+	132, // 160: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
+	125, // 161: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
+	129, // 162: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
+	140, // 163: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
+	143, // 164: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
+	147, // 165: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
+	47,  // 166: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	49,  // 167: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	51,  // 168: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	53,  // 169: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	55,  // 170: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	61,  // 171: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	63,  // 172: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	72,  // 173: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	58,  // 174: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	65,  // 175: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	74,  // 176: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	76,  // 177: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
+	78,  // 178: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
+	80,  // 179: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	82,  // 180: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	84,  // 181: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	86,  // 182: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	89,  // 183: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	91,  // 184: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	93,  // 185: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	95,  // 186: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	97,  // 187: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
+	99,  // 188: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
+	101, // 189: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
+	103, // 190: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
+	105, // 191: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
+	107, // 192: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
+	109, // 193: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
+	111, // 194: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
+	113, // 195: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
+	116, // 196: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
+	119, // 197: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
+	121, // 198: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
+	124, // 199: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
+	133, // 200: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
+	128, // 201: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
+	131, // 202: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
+	141, // 203: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
+	144, // 204: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
+	148, // 205: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
+	166, // [166:206] is the sub-list for method output_type
+	126, // [126:166] is the sub-list for method input_type
+	126, // [126:126] is the sub-list for extension type_name
+	126, // [126:126] is the sub-list for extension extendee
+	0,   // [0:126] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }

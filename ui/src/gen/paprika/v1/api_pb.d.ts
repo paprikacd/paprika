@@ -5870,6 +5870,11 @@ export declare class QueryFleetMapResponse extends Message<QueryFleetMapResponse
    */
   indexGeneration: bigint;
 
+  /**
+   * @generated from field: repeated paprika.v1.FleetFacetBucket facets = 4;
+   */
+  facets: FleetFacetBucket[];
+
   constructor(data?: PartialMessage<QueryFleetMapResponse>);
 
   static readonly runtime: typeof proto3;
@@ -6062,6 +6067,11 @@ export declare class QueryFleetMatrixResponse extends Message<QueryFleetMatrixRe
    * @generated from field: uint64 index_generation = 5;
    */
   indexGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetFacetBucket facets = 6;
+   */
+  facets: FleetFacetBucket[];
 
   constructor(data?: PartialMessage<QueryFleetMatrixResponse>);
 

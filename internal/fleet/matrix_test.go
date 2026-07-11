@@ -7,6 +7,32 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestFleetMatrixCarriesAuthorizedSelfExcludingFacetsForItsSearch(t *testing.T) {
+	t.Parallel()
+
+	snapshot, scope, filter, privateProject := aggregationFacetFixture(t)
+	want, err := snapshot.Facets(scope, filter, "alpha")
+	require.NoError(t, err)
+
+	result, err := snapshot.QueryMatrix(scope, FleetMatrixQuery{
+		Filter:      filter,
+		Search:      "alpha",
+		RowGroup:    GroupDimensionProject,
+		ColumnGroup: GroupDimensionHealth,
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, result.Facets)
+	require.Contains(t, result.Facets, FacetBucket{
+		Dimension: FacetDimensionHealth,
+		Value:     "healthy",
+		Label:     "healthy",
+		Count:     1,
+	})
+	for _, bucket := range result.Facets {
+		require.NotEqual(t, privateProject, bucket.Object)
+	}
+}
+
 func TestFleetMatrixProjectByHealthContributesOncePerApplication(t *testing.T) {
 	t.Parallel()
 

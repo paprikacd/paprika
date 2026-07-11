@@ -608,11 +608,15 @@ func fleetFacetToProto(bucket *fleet.FacetBucket) *paprikav1.FleetFacetBucket {
 
 func fleetMapToProto(result *fleet.FleetMap) *paprikav1.QueryFleetMapResponse {
 	response := &paprikav1.QueryFleetMapResponse{
-		Roots: make([]*paprikav1.FleetMapNode, 0, len(result.Roots)),
-		Total: result.Total, IndexGeneration: result.Generation,
+		Roots:  make([]*paprikav1.FleetMapNode, 0, len(result.Roots)),
+		Facets: make([]*paprikav1.FleetFacetBucket, 0, len(result.Facets)),
+		Total:  result.Total, IndexGeneration: result.Generation,
 	}
 	for i := range result.Roots {
 		response.Roots = append(response.Roots, fleetMapNodeToProto(&result.Roots[i]))
+	}
+	for i := range result.Facets {
+		response.Facets = append(response.Facets, fleetFacetToProto(&result.Facets[i]))
 	}
 	return response
 }
@@ -645,6 +649,7 @@ func fleetMatrixToProto(result *fleet.FleetMatrix) *paprikav1.QueryFleetMatrixRe
 		Rows:    make([]*paprikav1.FleetMatrixHeader, 0, len(result.Rows)),
 		Columns: make([]*paprikav1.FleetMatrixHeader, 0, len(result.Columns)),
 		Cells:   make([]*paprikav1.FleetMatrixCell, 0, len(result.Cells)),
+		Facets:  make([]*paprikav1.FleetFacetBucket, 0, len(result.Facets)),
 		Total:   result.Total, IndexGeneration: result.Generation,
 	}
 	for i := range result.Rows {
@@ -655,6 +660,9 @@ func fleetMatrixToProto(result *fleet.FleetMatrix) *paprikav1.QueryFleetMatrixRe
 	}
 	for i := range result.Cells {
 		response.Cells = append(response.Cells, fleetMatrixCellToProto(&result.Cells[i]))
+	}
+	for i := range result.Facets {
+		response.Facets = append(response.Facets, fleetFacetToProto(&result.Facets[i]))
 	}
 	return response
 }

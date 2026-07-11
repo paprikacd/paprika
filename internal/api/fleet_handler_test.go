@@ -467,6 +467,10 @@ func TestQueryFleetMapServesConvertedAggregationWithDefaults(t *testing.T) {
 				}},
 			}},
 			Total: 1, Generation: 73,
+			Facets: []fleet.FacetBucket{{
+				Dimension: fleet.FacetDimensionProject,
+				Object:    project, Label: "retail", Count: 1,
+			}},
 		},
 	}
 	server := NewPaprikaServer(nil, nil, WithFleetIndex(reader))
@@ -492,6 +496,8 @@ func TestQueryFleetMapServesConvertedAggregationWithDefaults(t *testing.T) {
 	require.Len(t, root.Children, 1)
 	require.Equal(t, application.Name, root.Children[0].Application.Name)
 	require.Equal(t, "degraded", root.Children[0].GetGroupValue())
+	require.Len(t, response.Msg.Facets, 1)
+	require.Equal(t, project.Name, response.Msg.Facets[0].GetObject().Name)
 	require.Zero(t, reader.checkReadyCalls)
 }
 
@@ -511,6 +517,10 @@ func TestQueryFleetMatrixServesConvertedAggregationWithDefaults(t *testing.T) {
 				ResourceWeight: 18, RequestRateWeight: 7.25, UsedResourceFallback: true,
 			}},
 			Total: 1, Generation: 81,
+			Facets: []fleet.FacetBucket{{
+				Dimension: fleet.FacetDimensionStage,
+				Value:     "production", Label: "production", Count: 1,
+			}},
 		},
 	}
 	server := NewPaprikaServer(nil, nil, WithFleetIndex(reader))
@@ -534,6 +544,8 @@ func TestQueryFleetMatrixServesConvertedAggregationWithDefaults(t *testing.T) {
 	require.Equal(t, paprikav1.FleetHealth_FLEET_HEALTH_PROGRESSING, response.Msg.Cells[0].Health[0].Health)
 	require.Equal(t, 7.25, response.Msg.Cells[0].RequestRateWeight)
 	require.True(t, response.Msg.Cells[0].UsedResourceFallback)
+	require.Len(t, response.Msg.Facets, 1)
+	require.Equal(t, "production", response.Msg.Facets[0].GetValue())
 	require.Zero(t, reader.checkReadyCalls)
 }
 

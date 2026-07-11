@@ -344,6 +344,10 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 		},
 		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
 		"index_generation": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"facets": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetFacetBucket",
+		},
 	},
 	"FleetMatrixHeader": {
 		"stable_id": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
@@ -401,6 +405,10 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 		},
 		"total":            {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
 		"index_generation": {number: 5, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"facets": {
+			number: 6, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetFacetBucket",
+		},
 	},
 }
 

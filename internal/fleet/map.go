@@ -95,6 +95,7 @@ type FleetMap struct {
 	Roots      []FleetMapNode
 	Total      uint64
 	Generation uint64
+	Facets     []FacetBucket
 }
 
 type mapGroupKey struct {
@@ -130,6 +131,10 @@ func (s *Snapshot) QueryMap(scope QueryScope, query FleetMapQuery, weights Weigh
 	if err != nil {
 		return FleetMap{}, err
 	}
+	facets, err := s.Facets(scope, filter, query.Search)
+	if err != nil {
+		return FleetMap{}, err
+	}
 	selector := newTargetFilterSelector(&filter)
 
 	grouped := make(map[mapGroupKey][]FleetMapNode)
@@ -156,6 +161,7 @@ func (s *Snapshot) QueryMap(scope QueryScope, query FleetMapQuery, weights Weigh
 		Roots:      make([]FleetMapNode, 0, len(keys)),
 		Total:      uint64(len(filtered.IDs)),
 		Generation: s.Generation,
+		Facets:     facets,
 	}
 	for _, key := range keys {
 		children := grouped[key]

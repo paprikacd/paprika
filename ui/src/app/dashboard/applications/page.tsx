@@ -1,24 +1,32 @@
-import Link from "next/link"
+import { Suspense } from "react"
 
-export default function ApplicationsPlaceholderPage() {
+import { FleetView } from "@/components/fleet/fleet-view"
+
+export default function ApplicationsPage() {
   return (
-    <section aria-labelledby="applications-title" className="mx-auto max-w-7xl px-6 py-10">
-      <p className="font-mono text-[0.625rem] font-medium uppercase tracking-[0.18em] text-primary">
-        Fleet inventory
+    <Suspense fallback={<ApplicationsFallback />}>
+      <FleetView />
+    </Suspense>
+  )
+}
+
+function ApplicationsFallback() {
+  return (
+    <section aria-labelledby="applications-loading-title" aria-busy="true" className="bg-background">
+      <header className="border-b border-border px-4 py-7 sm:px-6">
+        <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.18em] text-primary">
+          Fleet inventory
+        </p>
+        <h1
+          id="applications-loading-title"
+          className="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl"
+        >
+          Applications
+        </h1>
+      </header>
+      <p role="status" aria-live="polite" className="mx-4 my-8 border border-border bg-card px-5 py-8 text-sm text-muted-foreground sm:mx-6">
+        Loading fleet query controls…
       </p>
-      <h1 id="applications-title" className="mt-3 text-3xl font-semibold tracking-tight">
-        Applications
-      </h1>
-      <p className="mt-4 max-w-xl text-sm leading-6 text-muted-foreground">
-        The enterprise inventory is being prepared. Existing application details remain available from the
-        operational overview.
-      </p>
-      <Link
-        href="/dashboard"
-        className="mt-6 inline-flex min-h-11 items-center border border-border bg-secondary px-4 text-sm font-semibold text-secondary-foreground transition-colors hover:bg-muted"
-      >
-        Open current overview
-      </Link>
     </section>
   )
 }

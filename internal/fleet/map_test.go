@@ -70,6 +70,49 @@ func TestFleetMapDefaultsAuthorizeAndAggregateDeterministically(t *testing.T) {
 	require.NotContains(t, mapNodeIDs(result.Roots), "g:project:private/payments")
 }
 
+func TestFleetMapCarriesAuthorizedSelfExcludingFacetsForItsSearch(t *testing.T) {
+	t.Parallel()
+
+	snapshot, scope, filter, privateProject := aggregationFacetFixture(t)
+	want, err := snapshot.Facets(scope, filter, "alpha")
+	require.NoError(t, err)
+
+	result, err := snapshot.QueryMap(scope, FleetMapQuery{
+		Filter: filter,
+		Search: "alpha",
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, want, result.Facets)
+	require.Contains(t, result.Facets, FacetBucket{
+		Dimension: FacetDimensionHealth,
+		Value:     "healthy",
+		Label:     "healthy",
+		Count:     1,
+	})
+	for _, bucket := range result.Facets {
+		require.NotEqual(t, privateProject, bucket.Object)
+	}
+}
+
+func aggregationFacetFixture(
+	t *testing.T,
+) (*Snapshot, QueryScope, ApplicationFilter, ProjectKey) {
+	t.Helper()
+
+	project := fleetID("team", "payments")
+	privateProject := fleetID("private", "payments")
+	cluster := fleetID("clusters", "prod")
+	baseline := facetApplication("apps", "alpha-api", project, cluster, "prod")
+	alternative := facetApplication("apps", "alpha-worker", project, cluster, "prod")
+	alternative.Health = HealthHealthy
+	searchMiss := facetApplication("apps", "beta-api", project, cluster, "prod")
+	unauthorized := facetApplication("private", "alpha-secret", privateProject, cluster, "prod")
+	snapshot := newQuerySnapshot(t, baseline, alternative, searchMiss, unauthorized)
+	filter := ApplicationFilter{Health: []Health{HealthDegraded}}
+	scope := QueryScope{Projects: ProjectSet{project: {}}}
+	return snapshot, scope, filter, privateProject
+}
+
 func TestFleetMapStageAndClusterUseOneCurrentActualTargetPerApplication(t *testing.T) {
 	t.Parallel()
 

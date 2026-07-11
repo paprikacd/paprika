@@ -50,6 +50,7 @@ type FleetMatrix struct {
 	Cells      []FleetMatrixCell
 	Total      uint64
 	Generation uint64
+	Facets     []FacetBucket
 }
 
 // ErrInvalidMatrixAxes reports caller-controlled row/column axis errors.
@@ -115,6 +116,10 @@ func (s *Snapshot) QueryMatrix(
 	if err != nil {
 		return FleetMatrix{}, err
 	}
+	facets, err := s.Facets(scope, filter, query.Search)
+	if err != nil {
+		return FleetMatrix{}, err
+	}
 
 	rowLabels := make(map[matrixAxisKey]string)
 	columnLabels := make(map[matrixAxisKey]string)
@@ -138,10 +143,12 @@ func (s *Snapshot) QueryMatrix(
 		)
 	}
 
-	return buildFleetMatrix(
+	result := buildFleetMatrix(
 		rowLabels, columnLabels, cells, sizeMetric,
 		uint64(len(filtered.IDs)), s.Generation,
-	), nil
+	)
+	result.Facets = facets
+	return result, nil
 }
 
 func validateMatrixAxes(row, column GroupDimension) error {

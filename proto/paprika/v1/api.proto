@@ -1082,6 +1082,7 @@ message QueryFleetMapResponse {
   repeated FleetMapNode roots = 1;
   uint64 total = 2;
   uint64 index_generation = 3;
+  repeated FleetFacetBucket facets = 4;
 }
 
 message FleetMatrixHeader {
@@ -1118,6 +1119,7 @@ message QueryFleetMatrixResponse {
   repeated FleetMatrixCell cells = 3;
   uint64 total = 4;
   uint64 index_generation = 5;
+  repeated FleetFacetBucket facets = 6;
 }
 
 service PaprikaService {

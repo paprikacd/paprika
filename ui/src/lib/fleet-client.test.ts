@@ -16,9 +16,13 @@ import {
   FleetSourceType,
   FleetSyncState,
   QueryApplicationsResponse,
+  QueryFleetMapResponse,
+  QueryFleetMatrixResponse,
 } from "@/gen/paprika/v1/api_pb"
 import {
   fromQueryApplicationsResponse,
+  fromQueryFleetMapResponse,
+  fromQueryFleetMatrixResponse,
   toQueryApplicationsRequest,
   toQueryFleetMapRequest,
   toQueryFleetMatrixRequest,
@@ -160,5 +164,34 @@ describe("fleet protobuf boundary", () => {
       label: "Degraded",
       count: BigInt(3),
     })
+  })
+
+  it("carries authorized facets through map and matrix responses", () => {
+    const facet = new FleetFacetBucket({
+      dimension: FleetFacetDimension.PROJECT,
+      key: {
+        case: "object",
+        value: new FleetObjectKey({ namespace: "tenant", name: "payments" }),
+      },
+      label: "Payments",
+      count: BigInt(4),
+    })
+
+    const map = fromQueryFleetMapResponse(
+      new QueryFleetMapResponse({ facets: [facet] }),
+    )
+    const matrix = fromQueryFleetMatrixResponse(
+      new QueryFleetMatrixResponse({ facets: [facet] }),
+    )
+
+    expect(map.facets).toEqual([
+      {
+        dimension: "project",
+        object: { namespace: "tenant", name: "payments" },
+        label: "Payments",
+        count: BigInt(4),
+      },
+    ])
+    expect(matrix.facets).toEqual(map.facets)
   })
 })

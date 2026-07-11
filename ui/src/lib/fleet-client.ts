@@ -152,6 +152,7 @@ export interface FleetMapResult {
   roots: FleetMapNode[]
   total: bigint
   indexGeneration: bigint
+  facets: FleetFacetBucket[]
 }
 
 export interface FleetMatrixHeader {
@@ -178,6 +179,7 @@ export interface FleetMatrixResult {
   cells: FleetMatrixCell[]
   total: bigint
   indexGeneration: bigint
+  facets: FleetFacetBucket[]
 }
 
 export interface QueryApplicationsOptions {
@@ -278,6 +280,7 @@ export function fromQueryFleetMapResponse(response: QueryFleetMapResponse): Flee
     roots: response.roots.map(fromMapNode),
     total: response.total,
     indexGeneration: response.indexGeneration,
+    facets: response.facets.map(fromFacetBucket),
   }
 }
 
@@ -288,6 +291,7 @@ export function fromQueryFleetMatrixResponse(response: QueryFleetMatrixResponse)
     cells: response.cells.map(fromMatrixCell),
     total: response.total,
     indexGeneration: response.indexGeneration,
+    facets: response.facets.map(fromFacetBucket),
   }
 }
 

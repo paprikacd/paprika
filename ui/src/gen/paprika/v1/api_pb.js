@@ -1957,6 +1957,7 @@ export const QueryFleetMapResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 1, name: "roots", kind: "message", T: FleetMapNode, repeated: true },
     { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 3, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 4, name: "facets", kind: "message", T: FleetFacetBucket, repeated: true },
   ],
 );
 
@@ -2015,6 +2016,7 @@ export const QueryFleetMatrixResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 3, name: "cells", kind: "message", T: FleetMatrixCell, repeated: true },
     { no: 4, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 5, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 6, name: "facets", kind: "message", T: FleetFacetBucket, repeated: true },
   ],
 );
 
