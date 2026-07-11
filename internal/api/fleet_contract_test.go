@@ -103,97 +103,336 @@ func TestFleetDescriptor(t *testing.T) {
 		require.Equalf(t, wantValues, gotValues, "enum %s changed", enumName)
 	}
 
-	wantMessages := map[string]map[string]int32{
-		"FleetObjectKey": {"namespace": 1, "name": 2},
-		"FleetFilter": {
-			"projects": 1, "namespaces": 2, "clusters": 3, "stages": 4,
-			"health": 5, "sync": 6, "release_states": 7, "rollout_states": 8,
-			"source_types": 9,
-		},
-		"StageTargetSummary": {
-			"stable_id": 1, "stage": 2, "ring": 3, "cluster": 4,
-			"cluster_label": 5, "health": 6, "cluster_connection": 7,
-			"unmanaged_inline_cluster": 8,
-		},
-		"ApplicationSummary": {
-			"identity": 1, "project": 2, "targets": 3, "current_stage": 4,
-			"current_cluster": 5, "current_cluster_label": 6, "source_type": 7,
-			"source_revision": 8, "health": 9, "sync": 10, "drift_count": 11,
-			"missing_resource_count": 12, "release_state": 13, "rollout_state": 14,
-			"resource_count": 15, "repository": 16, "repository_connection": 17,
-			"effective_observability_source": 18, "observability_connection": 19,
-			"blocked_gate_count": 20, "last_transition_unix_ms": 21, "capabilities": 22,
-		},
-		"FleetFacetBucket": {
-			"dimension": 1, "object": 2, "value": 3, "label": 4, "count": 5,
-		},
-		"FleetHealthBucket": {"health": 1, "count": 2},
-		"QueryApplicationsRequest": {
-			"filter": 1, "search": 2, "sort": 3, "direction": 4, "page_size": 5, "cursor": 6,
-		},
-		"QueryApplicationsResponse": {
-			"applications": 1, "total": 2, "next_cursor": 3, "index_generation": 4, "facets": 5,
-		},
-		"FleetMapNode": {
-			"stable_id": 1, "kind": 2, "label": 3, "application": 4,
-			"group_object": 5, "group_value": 6, "application_count": 7,
-			"target_count": 8, "health": 9, "resource_weight": 10,
-			"request_rate_weight": 11, "effective_weight": 12,
-			"used_resource_fallback": 13, "children": 14,
-		},
-		"QueryFleetMapRequest":  {"filter": 1, "search": 2, "group": 3, "size_metric": 4},
-		"QueryFleetMapResponse": {"roots": 1, "total": 2, "index_generation": 3},
-		"FleetMatrixHeader":     {"stable_id": 1, "label": 2, "object": 3, "value": 4},
-		"FleetMatrixCell": {
-			"row_id": 1, "column_id": 2, "application_count": 3, "target_count": 4,
-			"health": 5, "resource_weight": 6, "request_rate_weight": 7,
-			"used_resource_fallback": 8,
-		},
-		"QueryFleetMatrixRequest": {
-			"filter": 1, "search": 2, "row_group": 3, "column_group": 4, "size_metric": 5,
-		},
-		"QueryFleetMatrixResponse": {
-			"rows": 1, "columns": 2, "cells": 3, "total": 4, "index_generation": 5,
-		},
-	}
-	wantOneofs := map[string]map[string][]string{
-		"FleetFacetBucket":  {"key": {"object", "value"}},
-		"FleetMapNode":      {"group_key": {"group_object", "group_value"}},
-		"FleetMatrixHeader": {"key": {"object", "value"}},
-	}
-	for messageName, wantFields := range wantMessages {
-		message := file.Messages().ByName(protoreflect.Name(messageName))
-		require.NotNilf(t, message, "missing message %s", messageName)
-		gotFields := make(map[string]int32, message.Fields().Len())
-		var gotOneofs map[string][]string
-		for i := 0; i < message.Fields().Len(); i++ {
-			field := message.Fields().Get(i)
-			gotFields[string(field.Name())] = int32(field.Number())
-			if oneof := field.ContainingOneof(); oneof != nil {
-				if gotOneofs == nil {
-					gotOneofs = make(map[string][]string)
-				}
-				gotOneofs[string(oneof.Name())] = append(gotOneofs[string(oneof.Name())], string(field.Name()))
-			}
-		}
-		require.Equalf(t, wantFields, gotFields, "message %s fields changed", messageName)
-		require.Equalf(t, wantOneofs[messageName], gotOneofs, "message %s oneofs changed", messageName)
-	}
+	assertFleetMessageDescriptors(t, file.Messages())
 
 	service := file.Services().ByName("PaprikaService")
 	require.NotNil(t, service)
-	wantRPCs := map[string][2]protoreflect.FullName{
-		"QueryApplications": {"paprika.v1.QueryApplicationsRequest", "paprika.v1.QueryApplicationsResponse"},
-		"QueryFleetMap":     {"paprika.v1.QueryFleetMapRequest", "paprika.v1.QueryFleetMapResponse"},
-		"QueryFleetMatrix":  {"paprika.v1.QueryFleetMatrixRequest", "paprika.v1.QueryFleetMatrixResponse"},
+	for _, wantMethod := range fleetQueryServiceMethods {
+		method := service.Methods().ByName(protoreflect.Name(wantMethod.name))
+		require.NotNilf(t, method, "missing RPC %s", wantMethod.name)
+		assertFleetMethodDescriptor(t, method, wantMethod)
 	}
-	for rpcName, wantTypes := range wantRPCs {
-		method := service.Methods().ByName(protoreflect.Name(rpcName))
-		require.NotNilf(t, method, "missing RPC %s", rpcName)
-		require.Equal(t, wantTypes[0], method.Input().FullName())
-		require.Equal(t, wantTypes[1], method.Output().FullName())
-		require.False(t, method.IsStreamingClient())
-		require.False(t, method.IsStreamingServer())
+}
+
+type fleetFieldDescriptorContract struct {
+	number         protoreflect.FieldNumber
+	kind           protoreflect.Kind
+	cardinality    protoreflect.Cardinality
+	referencedType protoreflect.FullName
+	oneof          protoreflect.Name
+}
+
+var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptorContract{
+	"FleetObjectKey": {
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"FleetFilter": {
+		"projects": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"namespaces": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"clusters": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"stages": {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"health": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetHealth",
+		},
+		"sync": {
+			number: 6, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetSyncState",
+		},
+		"release_states": {
+			number: 7, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetReleaseState",
+		},
+		"rollout_states": {
+			number: 8, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetRolloutState",
+		},
+		"source_types": {
+			number: 9, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetSourceType",
+		},
+	},
+	"StageTargetSummary": {
+		"stable_id": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"stage":     {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"ring":      {number: 3, kind: protoreflect.Int32Kind, cardinality: protoreflect.Optional},
+		"cluster": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cluster_label": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"health": {
+			number: 6, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetHealth",
+		},
+		"cluster_connection": {
+			number: 7, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetConnectionState",
+		},
+		"unmanaged_inline_cluster": {number: 8, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+	},
+	"ApplicationSummary": {
+		"identity": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"project": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"targets": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.StageTargetSummary",
+		},
+		"current_stage": {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"current_cluster": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"current_cluster_label": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"source_type": {
+			number: 7, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSourceType",
+		},
+		"source_revision": {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"health": {
+			number: 9, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetHealth",
+		},
+		"sync": {
+			number: 10, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSyncState",
+		},
+		"drift_count":            {number: 11, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"missing_resource_count": {number: 12, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"release_state": {
+			number: 13, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetReleaseState",
+		},
+		"rollout_state": {
+			number: 14, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetRolloutState",
+		},
+		"resource_count": {number: 15, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"repository": {
+			number: 16, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"repository_connection": {
+			number: 17, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetConnectionState",
+		},
+		"effective_observability_source": {
+			number: 18, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"observability_connection": {
+			number: 19, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetConnectionState",
+		},
+		"blocked_gate_count":      {number: 20, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"last_transition_unix_ms": {number: 21, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"capabilities": {
+			number: 22, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetCapability",
+		},
+	},
+	"FleetFacetBucket": {
+		"dimension": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFacetDimension",
+		},
+		"object": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey", oneof: "key",
+		},
+		"value": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional, oneof: "key"},
+		"label": {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"count": {number: 5, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"FleetHealthBucket": {
+		"health": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetHealth",
+		},
+		"count": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"QueryApplicationsRequest": {
+		"filter": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFilter",
+		},
+		"search": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"sort": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSortField",
+		},
+		"direction": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSortDirection",
+		},
+		"page_size": {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"cursor":    {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"QueryApplicationsResponse": {
+		"applications": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ApplicationSummary",
+		},
+		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"next_cursor":      {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"index_generation": {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"facets": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetFacetBucket",
+		},
+	},
+	"FleetMapNode": {
+		"stable_id": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"kind": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetMapNodeKind",
+		},
+		"label": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"application": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"group_object": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey", oneof: "group_key",
+		},
+		"group_value":            {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional, oneof: "group_key"},
+		"application_count":      {number: 7, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"target_count":           {number: 8, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"health":                 {number: 9, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated, referencedType: "paprika.v1.FleetHealthBucket"},
+		"resource_weight":        {number: 10, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"request_rate_weight":    {number: 11, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"effective_weight":       {number: 12, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"used_resource_fallback": {number: 13, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"children": {
+			number: 14, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetMapNode",
+		},
+	},
+	"QueryFleetMapRequest": {
+		"filter": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFilter",
+		},
+		"search": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"group": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetGroupDimension",
+		},
+		"size_metric": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSizeMetric",
+		},
+	},
+	"QueryFleetMapResponse": {
+		"roots": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetMapNode",
+		},
+		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"index_generation": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"FleetMatrixHeader": {
+		"stable_id": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"label":     {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"object": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey", oneof: "key",
+		},
+		"value": {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional, oneof: "key"},
+	},
+	"FleetMatrixCell": {
+		"row_id":            {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"column_id":         {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"application_count": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"target_count":      {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"health": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetHealthBucket",
+		},
+		"resource_weight":        {number: 6, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"request_rate_weight":    {number: 7, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"used_resource_fallback": {number: 8, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+	},
+	"QueryFleetMatrixRequest": {
+		"filter": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFilter",
+		},
+		"search": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"row_group": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetGroupDimension",
+		},
+		"column_group": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetGroupDimension",
+		},
+		"size_metric": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSizeMetric",
+		},
+	},
+	"QueryFleetMatrixResponse": {
+		"rows": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetMatrixHeader",
+		},
+		"columns": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetMatrixHeader",
+		},
+		"cells": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetMatrixCell",
+		},
+		"total":            {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"index_generation": {number: 5, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+}
+
+func assertFleetMessageDescriptors(t *testing.T, messages protoreflect.MessageDescriptors) {
+	t.Helper()
+	require.Len(t, fleetMessageDescriptorContracts, 15)
+	for messageName, wantFields := range fleetMessageDescriptorContracts {
+		message := messages.ByName(protoreflect.Name(messageName))
+		require.NotNilf(t, message, "missing message %s", messageName)
+		require.Equalf(t, len(wantFields), message.Fields().Len(), "message %s field count changed", messageName)
+		for fieldName, wantField := range wantFields {
+			field := message.Fields().ByName(protoreflect.Name(fieldName))
+			require.NotNilf(t, field, "message %s missing field %s", messageName, fieldName)
+			require.Equalf(t, wantField.number, field.Number(), "message %s field %s number changed", messageName, fieldName)
+			require.Equalf(t, wantField.kind, field.Kind(), "message %s field %s kind changed", messageName, fieldName)
+			require.Equalf(t, wantField.cardinality, field.Cardinality(), "message %s field %s cardinality changed", messageName, fieldName)
+
+			var gotReferencedType protoreflect.FullName
+			if field.Kind() == protoreflect.EnumKind {
+				gotReferencedType = field.Enum().FullName()
+			}
+			if field.Kind() == protoreflect.MessageKind || field.Kind() == protoreflect.GroupKind {
+				gotReferencedType = field.Message().FullName()
+			}
+			require.Equalf(t, wantField.referencedType, gotReferencedType, "message %s field %s referenced type changed", messageName, fieldName)
+
+			var gotOneof protoreflect.Name
+			if oneof := field.ContainingOneof(); oneof != nil {
+				gotOneof = oneof.Name()
+			}
+			require.Equalf(t, wantField.oneof, gotOneof, "message %s field %s oneof changed", messageName, fieldName)
+		}
 	}
 }
 
@@ -209,26 +448,85 @@ func assertLegacyFleetDescriptors(t *testing.T, file protoreflect.FileDescriptor
 		require.Equalf(t, wantHash, gotHash, "legacy message %s descriptor changed", messageName)
 	}
 
-	methods := file.Services().ByName("PaprikaService").Methods()
-	require.GreaterOrEqual(t, methods.Len(), len(legacyFleetServiceMethods)+3)
+	service := file.Services().ByName("PaprikaService")
+	require.NotNil(t, service)
+	methods := service.Methods()
+	require.Len(t, legacyFleetServiceMethods, 37, "snapshot must cover every pre-existing RPC")
+	require.Len(t, fleetQueryServiceMethods, 3, "snapshot must cover every fleet query RPC")
+	require.GreaterOrEqual(t, methods.Len(), len(legacyFleetServiceMethods)+len(fleetQueryServiceMethods))
 	for i, wantMethod := range legacyFleetServiceMethods {
-		require.Equalf(t, wantMethod, string(methods.Get(i).Name()), "legacy service method at index %d changed", i)
+		assertFleetMethodDescriptor(t, methods.Get(i), wantMethod)
 	}
-	for i, wantMethod := range []string{"QueryApplications", "QueryFleetMap", "QueryFleetMatrix"} {
+	for i, wantMethod := range fleetQueryServiceMethods {
 		methodIndex := len(legacyFleetServiceMethods) + i
-		require.Equalf(t, wantMethod, string(methods.Get(methodIndex).Name()), "fleet service method at index %d changed", methodIndex)
+		assertFleetMethodDescriptor(t, methods.Get(methodIndex), wantMethod)
 	}
 }
 
-var legacyFleetServiceMethods = []string{
-	"ListPipelines", "ListReleases", "ListStages", "ListApplications", "ListPolicies",
-	"ListApplicationSets", "GetApplicationSet", "ListNotificationConfigs", "GetApplication",
-	"SyncApplication", "ApproveGate", "ListGateStatus", "RejectGate", "ResolveSource",
-	"Render", "ApplyBundle", "RollbackRelease", "ListRollouts", "GetRollout", "PromoteRollout",
-	"AbortRollout", "ListAnalysisRuns", "GetAnalysisRun", "GetPipeline", "GetArtifact",
-	"ListArtifacts", "RetryStep", "SkipStep", "CancelPipeline", "GetStepLogs", "GetResource",
-	"GetResourceTree", "GetResourceLogs", "GetResourceTreeDetailed", "StreamResourceLogs",
-	"Investigate", "ListInvestigatorPlugins",
+type fleetMethodDescriptorContract struct {
+	name            string
+	input           protoreflect.FullName
+	output          protoreflect.FullName
+	clientStreaming bool
+	serverStreaming bool
+}
+
+func assertFleetMethodDescriptor(t *testing.T, method protoreflect.MethodDescriptor, want fleetMethodDescriptorContract) {
+	t.Helper()
+	require.Equal(t, protoreflect.Name(want.name), method.Name())
+	require.Equalf(t, want.input, method.Input().FullName(), "RPC %s input changed", want.name)
+	require.Equalf(t, want.output, method.Output().FullName(), "RPC %s output changed", want.name)
+	require.Equalf(t, want.clientStreaming, method.IsStreamingClient(), "RPC %s client streaming changed", want.name)
+	require.Equalf(t, want.serverStreaming, method.IsStreamingServer(), "RPC %s server streaming changed", want.name)
+}
+
+var fleetQueryServiceMethods = []fleetMethodDescriptorContract{
+	{name: "QueryApplications", input: "paprika.v1.QueryApplicationsRequest", output: "paprika.v1.QueryApplicationsResponse"},
+	{name: "QueryFleetMap", input: "paprika.v1.QueryFleetMapRequest", output: "paprika.v1.QueryFleetMapResponse"},
+	{name: "QueryFleetMatrix", input: "paprika.v1.QueryFleetMatrixRequest", output: "paprika.v1.QueryFleetMatrixResponse"},
+}
+
+var legacyFleetServiceMethods = []fleetMethodDescriptorContract{
+	{name: "ListPipelines", input: "paprika.v1.ListPipelinesRequest", output: "paprika.v1.ListPipelinesResponse"},
+	{name: "ListReleases", input: "paprika.v1.ListReleasesRequest", output: "paprika.v1.ListReleasesResponse"},
+	{name: "ListStages", input: "paprika.v1.ListStagesRequest", output: "paprika.v1.ListStagesResponse"},
+	{name: "ListApplications", input: "paprika.v1.ListApplicationsRequest", output: "paprika.v1.ListApplicationsResponse"},
+	{name: "ListPolicies", input: "paprika.v1.ListPoliciesRequest", output: "paprika.v1.ListPoliciesResponse"},
+	{name: "ListApplicationSets", input: "paprika.v1.ListApplicationSetsRequest", output: "paprika.v1.ListApplicationSetsResponse"},
+	{name: "GetApplicationSet", input: "paprika.v1.GetApplicationSetRequest", output: "paprika.v1.GetApplicationSetResponse"},
+	{name: "ListNotificationConfigs", input: "paprika.v1.ListNotificationConfigsRequest", output: "paprika.v1.ListNotificationConfigsResponse"},
+	{name: "GetApplication", input: "paprika.v1.GetApplicationRequest", output: "paprika.v1.GetApplicationResponse"},
+	{name: "SyncApplication", input: "paprika.v1.SyncApplicationRequest", output: "paprika.v1.SyncApplicationResponse"},
+	{name: "ApproveGate", input: "paprika.v1.ApproveGateRequest", output: "paprika.v1.ApproveGateResponse"},
+	{name: "ListGateStatus", input: "paprika.v1.ListGateStatusRequest", output: "paprika.v1.ListGateStatusResponse"},
+	{name: "RejectGate", input: "paprika.v1.RejectGateRequest", output: "paprika.v1.RejectGateResponse"},
+	{name: "ResolveSource", input: "paprika.v1.ResolveSourceRequest", output: "paprika.v1.ResolveSourceResponse"},
+	{name: "Render", input: "paprika.v1.RenderRequest", output: "paprika.v1.RenderResponse"},
+	{name: "ApplyBundle", input: "paprika.v1.ApplyBundleRequest", output: "paprika.v1.ApplyBundleResponse"},
+	{name: "RollbackRelease", input: "paprika.v1.RollbackReleaseRequest", output: "paprika.v1.RollbackReleaseResponse"},
+	{name: "ListRollouts", input: "paprika.v1.ListRolloutsRequest", output: "paprika.v1.ListRolloutsResponse"},
+	{name: "GetRollout", input: "paprika.v1.GetRolloutRequest", output: "paprika.v1.GetRolloutResponse"},
+	{name: "PromoteRollout", input: "paprika.v1.PromoteRolloutRequest", output: "paprika.v1.PromoteRolloutResponse"},
+	{name: "AbortRollout", input: "paprika.v1.AbortRolloutRequest", output: "paprika.v1.AbortRolloutResponse"},
+	{name: "ListAnalysisRuns", input: "paprika.v1.ListAnalysisRunsRequest", output: "paprika.v1.ListAnalysisRunsResponse"},
+	{name: "GetAnalysisRun", input: "paprika.v1.GetAnalysisRunRequest", output: "paprika.v1.GetAnalysisRunResponse"},
+	{name: "GetPipeline", input: "paprika.v1.GetPipelineRequest", output: "paprika.v1.GetPipelineResponse"},
+	{name: "GetArtifact", input: "paprika.v1.GetArtifactRequest", output: "paprika.v1.GetArtifactResponse"},
+	{name: "ListArtifacts", input: "paprika.v1.ListArtifactsRequest", output: "paprika.v1.ListArtifactsResponse"},
+	{name: "RetryStep", input: "paprika.v1.RetryStepRequest", output: "paprika.v1.RetryStepResponse"},
+	{name: "SkipStep", input: "paprika.v1.SkipStepRequest", output: "paprika.v1.SkipStepResponse"},
+	{name: "CancelPipeline", input: "paprika.v1.CancelPipelineRequest", output: "paprika.v1.CancelPipelineResponse"},
+	{name: "GetStepLogs", input: "paprika.v1.GetStepLogsRequest", output: "paprika.v1.GetStepLogsResponse"},
+	{name: "GetResource", input: "paprika.v1.GetResourceRequest", output: "paprika.v1.GetResourceResponse"},
+	{name: "GetResourceTree", input: "paprika.v1.GetResourceTreeRequest", output: "paprika.v1.GetResourceTreeResponse"},
+	{name: "GetResourceLogs", input: "paprika.v1.GetResourceLogsRequest", output: "paprika.v1.GetResourceLogsResponse"},
+	{name: "GetResourceTreeDetailed", input: "paprika.v1.GetResourceTreeDetailedRequest", output: "paprika.v1.GetResourceTreeDetailedResponse"},
+	{
+		name: "StreamResourceLogs", input: "paprika.v1.StreamResourceLogsRequest", output: "paprika.v1.LogChunk",
+		serverStreaming: true,
+	},
+	{name: "Investigate", input: "paprika.v1.InvestigateRequest", output: "paprika.v1.InvestigateResponse"},
+	{name: "ListInvestigatorPlugins", input: "paprika.v1.ListInvestigatorPluginsRequest", output: "paprika.v1.ListInvestigatorPluginsResponse"},
 }
 
 var legacyFleetMessageDescriptorHashes = map[string]string{
