@@ -488,7 +488,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.authCfg, clients.interceptor, cfg, setupLog)
+	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.fleetReader, clients.authCfg, clients.interceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
@@ -614,7 +614,7 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	}, nil
 }
 
-func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, fleetReader fleet.Reader, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
 	resolver := governance.NewProjectResolver(apiClient)
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
@@ -623,6 +623,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	if err != nil {
 		return nil, nil, err
 	}
+	opts = append(opts, apiserver.WithFleetIndex(fleetReader))
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()

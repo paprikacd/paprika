@@ -489,6 +489,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	opts := []apiserver.ServerOption{
 		apiserver.WithGovernanceValidator(projectValidator),
 		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
+		apiserver.WithFleetIndex(fleetReader),
 	}
 	if authz != nil {
 		opts = append(opts, apiserver.WithAuthorizer(authz))
