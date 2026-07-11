@@ -626,6 +626,7 @@ func (r *Rebuilder) validateStageOwner(
 	return ownerKey, true, nil
 }
 
+//nolint:cyclop // release validation reconciles both Application and Rollout owner chains.
 func (r *Rebuilder) updateReleaseDependency(
 	ctx context.Context,
 	dependencies *projectionDependencies,
@@ -640,6 +641,9 @@ func (r *Rebuilder) updateReleaseDependency(
 	}
 	if !found {
 		dependencies.releaseOwners = withoutDependency(dependencies.releaseOwners, delta.Key)
+		if oldOwner != (types.NamespacedName{}) {
+			dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+		}
 		return normalizeKeys(affected), false, nil
 	}
 
@@ -660,10 +664,44 @@ func (r *Rebuilder) updateReleaseDependency(
 	affected = append(affected, ownerKey)
 	if app.Status.ReleaseRef != release.Name {
 		dependencies.releaseOwners = withoutDependency(dependencies.releaseOwners, delta.Key)
+		if oldOwner != (types.NamespacedName{}) {
+			dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+		}
 		return normalizeKeys(affected), false, nil
 	}
+	if oldOwner != (types.NamespacedName{}) && oldOwner != ownerKey {
+		dependencies.rolloutOwners = replaceDependencyOwner(dependencies.rolloutOwners, oldOwner, nil)
+	}
 	dependencies.releaseOwners = withDependency(dependencies.releaseOwners, delta.Key, ownerKey)
+	if err := r.reconcileReleaseRolloutDependency(ctx, dependencies, app, release); err != nil {
+		return nil, false, err
+	}
 	return normalizeKeys(affected), false, nil
+}
+
+func (r *Rebuilder) reconcileReleaseRolloutDependency(
+	ctx context.Context,
+	dependencies *projectionDependencies,
+	app *pipelinesv1alpha1.Application,
+	release *pipelinesv1alpha1.Release,
+) error {
+	desired := make(map[types.NamespacedName]struct{})
+	if release.Status.RolloutRef != "" {
+		rolloutKey := types.NamespacedName{Namespace: release.Namespace, Name: release.Status.RolloutRef}
+		rollout, found, err := r.store.GetRollout(ctx, rolloutKey)
+		if err != nil {
+			return safeStoreError(ctx, "rollout")
+		}
+		if found && validRolloutAssociation(rollout, app, release) {
+			desired[rolloutKey] = struct{}{}
+		}
+	}
+	dependencies.rolloutOwners = replaceDependencyOwner(
+		dependencies.rolloutOwners,
+		objectKey(app),
+		desired,
+	)
+	return nil
 }
 
 //nolint:cyclop // rollout validation intentionally walks the complete owner chain.

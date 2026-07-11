@@ -341,6 +341,160 @@ func TestDeltaApplicationRefMovePersistsDependenciesWithoutPublication(t *testin
 	require.Equal(t, ReleaseStateUnspecified, requireSnapshot(t, index).Applications[appID].ReleaseState)
 }
 
+func TestDeltaReleaseRolloutRefMovePersistsDependencyWithoutPublication(t *testing.T) {
+	t.Parallel()
+
+	store, appID, _ := populatedProjectionStore()
+	releaseID := fleetID(appID.Namespace, "release-current")
+	oldRolloutID := fleetID(appID.Namespace, "rollout-current")
+	app := store.application(appID)
+	release := store.release(releaseID)
+	newRollout := projectionRollout(
+		app,
+		release,
+		"rollout-next",
+		"rollout-next-uid",
+		rolloutsv1alpha1.RolloutPhaseProgressing,
+	)
+	store.putRollout(newRollout)
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+	prior := requireSnapshot(t, index)
+	priorReleaseOwners := rebuilder.deps.releaseOwners
+	priorRolloutOwners := rebuilder.deps.rolloutOwners
+
+	store.mutateRelease(releaseID, func(current *pipelinesv1alpha1.Release) {
+		current.Status.RolloutRef = newRollout.Name
+	})
+	result, err := rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+		Kind: ResourceRelease,
+		Key:  releaseID,
+	})
+	require.NoError(t, err)
+	require.False(t, result.Changed, "same-state rollout ref move must not publish")
+	require.Same(t, prior, requireSnapshot(t, index))
+	require.Equal(t, uint64(1), prior.Generation)
+	require.Equal(t, mapIdentity(priorReleaseOwners), mapIdentity(rebuilder.deps.releaseOwners))
+	require.NotEqual(t, mapIdentity(priorRolloutOwners), mapIdentity(rebuilder.deps.rolloutOwners))
+	require.NotContains(t, rebuilder.deps.rolloutOwners, oldRolloutID)
+	require.Equal(t, appID, rebuilder.deps.rolloutOwners[clientKey(newRollout)])
+
+	store.deleteRollout(clientKey(newRollout))
+	result, err = rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+		Kind: ResourceRollout,
+		Key:  clientKey(newRollout),
+	})
+	require.NoError(t, err)
+	require.True(t, result.Changed, "hintless current-rollout delete must reproject its application")
+	snapshot := requireSnapshot(t, index)
+	require.Equal(t, uint64(2), snapshot.Generation)
+	require.Equal(t, RolloutStateUnspecified, snapshot.Applications[appID].RolloutState)
+}
+
+func TestDeltaReleaseRolloutRefClearAndDeleteCleanDependencies(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(*fakeProjectionStore, types.NamespacedName)
+	}{
+		{
+			name: "clear rollout ref",
+			mutate: func(store *fakeProjectionStore, releaseID types.NamespacedName) {
+				store.mutateRelease(releaseID, func(release *pipelinesv1alpha1.Release) {
+					release.Status.RolloutRef = ""
+				})
+			},
+		},
+		{
+			name: "delete release",
+			mutate: func(store *fakeProjectionStore, releaseID types.NamespacedName) {
+				store.deleteRelease(releaseID)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, appID, _ := populatedProjectionStore()
+			releaseID := fleetID(appID.Namespace, "release-current")
+			rolloutID := fleetID(appID.Namespace, "rollout-current")
+			index := NewIndex()
+			rebuilder := NewRebuilder(index, store)
+			_, err := rebuilder.Rebuild(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, appID, rebuilder.deps.rolloutOwners[rolloutID])
+
+			test.mutate(store, releaseID)
+			result, err := rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+				Kind: ResourceRelease,
+				Key:  releaseID,
+			})
+			require.NoError(t, err)
+			require.True(t, result.Changed)
+			require.NotContains(t, rebuilder.deps.rolloutOwners, rolloutID)
+			require.Equal(t, RolloutStateUnspecified, requireSnapshot(t, index).Applications[appID].RolloutState)
+		})
+	}
+}
+
+func TestDeltaReleaseAssociationMoveCleansOldOwnerRolloutDependencies(t *testing.T) {
+	t.Parallel()
+
+	store, oldAppID, _ := populatedProjectionStore()
+	releaseID := fleetID(oldAppID.Namespace, "release-current")
+	oldRolloutID := fleetID(oldAppID.Namespace, "rollout-current")
+	newApp := projectionApplication(oldAppID.Namespace, "payments", "payments-uid")
+	newApp.Spec.Project = "retail"
+	newApp.Status.Health = pipelinesv1alpha1.HealthHealthy
+	newApp.Status.Synced = true
+	newApp.Status.ReleaseRef = releaseID.Name
+	store.putApplication(newApp)
+
+	release := store.release(releaseID)
+	newRollout := projectionRollout(
+		newApp,
+		release,
+		"rollout-payments",
+		"rollout-payments-uid",
+		rolloutsv1alpha1.RolloutPhaseProgressing,
+	)
+	store.putRollout(newRollout)
+	index := NewIndex()
+	rebuilder := NewRebuilder(index, store)
+	_, err := rebuilder.Rebuild(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, oldAppID, rebuilder.deps.rolloutOwners[oldRolloutID])
+
+	store.mutateApplication(oldAppID, func(app *pipelinesv1alpha1.Application) {
+		app.Status.ReleaseRef = ""
+	})
+	store.mutateRelease(releaseID, func(current *pipelinesv1alpha1.Release) {
+		current.Labels[applicationNameLabel] = newApp.Name
+		current.OwnerReferences[0].Name = newApp.Name
+		current.OwnerReferences[0].UID = newApp.UID
+		current.Status.RolloutRef = newRollout.Name
+	})
+	store.mutateRollout(clientKey(newRollout), func(current *rolloutsv1alpha1.Rollout) {
+		current.Labels[applicationNameLabel] = newApp.Name
+	})
+
+	result, err := rebuilder.ApplyDelta(context.Background(), ResourceDelta{
+		Kind: ResourceRelease,
+		Key:  releaseID,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Changed)
+	newAppID := clientKey(newApp)
+	require.Equal(t, newAppID, rebuilder.deps.releaseOwners[releaseID])
+	require.NotContains(t, rebuilder.deps.rolloutOwners, oldRolloutID)
+	require.Equal(t, newAppID, rebuilder.deps.rolloutOwners[clientKey(newRollout)])
+	snapshot := requireSnapshot(t, index)
+	require.Equal(t, RolloutStateUnspecified, snapshot.Applications[oldAppID].RolloutState)
+	require.Equal(t, RolloutStateProgressing, snapshot.Applications[newAppID].RolloutState)
+}
+
 func TestDeltaApplicationDeleteCleansChildDependencies(t *testing.T) {
 	t.Parallel()
 
@@ -862,6 +1016,12 @@ func (s *fakeProjectionStore) application(key types.NamespacedName) *pipelinesv1
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.applications[key].DeepCopy()
+}
+
+func (s *fakeProjectionStore) release(key types.NamespacedName) *pipelinesv1alpha1.Release {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.releases[key].DeepCopy()
 }
 
 func (s *fakeProjectionStore) mutateStage(key types.NamespacedName, mutate func(*pipelinesv1alpha1.Stage)) {
