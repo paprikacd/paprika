@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { useState } from "react"
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest"
+import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel"
 import type { LogChunk } from "@/gen/paprika/v1/api_pb"
@@ -49,6 +50,26 @@ const resource = {
   healthMessage: "All good",
 }
 
+function ResourceDetailHarness() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>
+        Open resource details
+      </button>
+      {open && (
+        <ResourceDetailPanel
+          applicationNamespace="test-ns"
+          applicationName="demo-app"
+          resource={resource}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
 /**
  * Build an async iterable that yields the given items lazily and never
  * completes (until break). Mimics the Connect server-streaming iterable
@@ -89,10 +110,139 @@ function emptyIter(): AsyncIterable<never> {
 }
 
 describe("ResourceDetailPanel", () => {
+  let consoleErrorSpy: MockInstance
+  let consoleWarnSpy: MockInstance
+
   beforeEach(() => {
     vi.clearAllMocks()
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     mockClient.investigate.mockResolvedValue({ summary: "All clear", narrator: "deterministic", findings: [] })
     mockClient.listInvestigatorPlugins.mockResolvedValue({ plugins: [] })
+  })
+
+  afterEach(() => {
+    const consoleErrors = [...consoleErrorSpy.mock.calls]
+    const consoleWarnings = [...consoleWarnSpy.mock.calls]
+
+    consoleErrorSpy.mockRestore()
+    consoleWarnSpy.mockRestore()
+
+    expect(consoleErrors).toEqual([])
+    expect(consoleWarnings).toEqual([])
+  })
+
+  it("renders through a portal as a labelled modal and initially focuses close", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockReturnValue(new Promise(() => {}))
+    render(<ResourceDetailHarness />)
+
+    await user.click(screen.getByRole("button", { name: "Open resource details" }))
+
+    const backdrop = await screen.findByTestId("resource-detail-backdrop")
+    const dialog = screen.getByRole("dialog", {
+      name: "Resource details for Deployment/demo-deploy",
+    })
+    const close = within(dialog).getByRole("button", { name: "Close resource details" })
+    const portal = document.body.querySelector("[data-base-ui-portal]")
+
+    expect(backdrop).toBeInTheDocument()
+    expect(portal).toBeInTheDocument()
+    expect(portal).toContainElement(backdrop)
+    expect(dialog).toHaveAttribute("aria-modal", "true")
+    await waitFor(() => expect(close).toHaveFocus())
+  })
+
+  it("wraps focus and uses Base UI inert marking to recover forced outside focus", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockReturnValue(new Promise(() => {}))
+    render(<ResourceDetailHarness />)
+
+    const opener = screen.getByRole("button", { name: "Open resource details" })
+    await user.click(opener)
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Resource details for Deployment/demo-deploy",
+    })
+    const dialogButtons = within(dialog).getAllByRole("button")
+    const firstButton = dialogButtons[0]
+    const lastButton = dialogButtons[dialogButtons.length - 1]
+    const outsideRoot = opener.parentElement
+
+    expect(outsideRoot).toHaveAttribute("data-base-ui-inert")
+
+    lastButton.focus()
+    await user.tab()
+    expect(firstButton).toHaveFocus()
+
+    await user.tab({ shift: true })
+    expect(lastButton).toHaveFocus()
+
+    opener.focus()
+    expect(opener).toHaveFocus()
+    await user.tab()
+    await waitFor(() => {
+      expect(opener).not.toHaveFocus()
+      expect(dialog).toContainElement(document.activeElement as HTMLElement)
+    })
+  })
+
+  it("closes on Escape, restores opener focus, and removes its portal when unmounted", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockReturnValue(new Promise(() => {}))
+    const { unmount } = render(<ResourceDetailHarness />)
+    const opener = screen.getByRole("button", { name: "Open resource details" })
+    const outsideRoot = opener.parentElement
+
+    await user.click(opener)
+    const dialogName = "Resource details for Deployment/demo-deploy"
+    await screen.findByRole("dialog", { name: dialogName })
+    expect(screen.getByTestId("resource-detail-backdrop")).toBeInTheDocument()
+
+    await user.keyboard("{Escape}")
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument()
+      expect(screen.queryByTestId("resource-detail-backdrop")).not.toBeInTheDocument()
+      expect(outsideRoot).not.toHaveAttribute("data-base-ui-inert")
+      expect(opener).toHaveFocus()
+    })
+
+    await user.click(opener)
+    await screen.findByRole("dialog", { name: dialogName })
+    const reopenedBackdrop = screen.getByTestId("resource-detail-backdrop")
+    const portal = document.body.querySelector("[data-base-ui-portal]")
+
+    expect(portal).toBeInTheDocument()
+    expect(portal).toContainElement(reopenedBackdrop)
+
+    unmount()
+
+    expect(screen.queryByRole("dialog", { name: dialogName })).not.toBeInTheDocument()
+    expect(screen.queryByTestId("resource-detail-backdrop")).not.toBeInTheDocument()
+    expect(portal).not.toBeInTheDocument()
+  })
+
+  it("keeps the existing investigation surface reachable inside the modal subtree", async () => {
+    const user = userEvent.setup()
+    mockClient.getResource.mockReturnValue(new Promise(() => {}))
+    render(<ResourceDetailHarness />)
+
+    await user.click(screen.getByRole("button", { name: "Open resource details" }))
+    const dialog = await screen.findByRole("dialog", {
+      name: "Resource details for Deployment/demo-deploy",
+    })
+
+    await user.click(within(dialog).getByRole("button", { name: "Investigate" }))
+
+    const investigation = await screen.findByTestId("investigation-panel")
+    expect(dialog).toContainElement(investigation)
+    expect(investigation.closest("[data-base-ui-inert]")).toBeNull()
+
+    await user.click(within(investigation).getByRole("button", { name: "Close investigation" }))
+
+    expect(screen.queryByTestId("investigation-panel")).not.toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
   })
 
   it("shows loading state while fetching", () => {
@@ -229,7 +379,7 @@ describe("ResourceDetailPanel", () => {
     })
   })
 
-  it("calls onClose when close button is clicked", async () => {
+  it("calls onClose when the backdrop is clicked", async () => {
     const onClose = vi.fn()
     mockClient.getResource.mockResolvedValue({
       kind: "Deployment",
@@ -244,7 +394,7 @@ describe("ResourceDetailPanel", () => {
       events: [],
     })
 
-    const { container } = render(
+    render(
       <ResourceDetailPanel
         applicationNamespace="test-ns"
         applicationName="demo-app"
@@ -257,8 +407,7 @@ describe("ResourceDetailPanel", () => {
       expect(screen.getByText("Deployment")).toBeInTheDocument()
     })
 
-    const backdrop = container.querySelector(".fixed.inset-0")
-    await userEvent.click(backdrop!)
+    await userEvent.click(screen.getByTestId("resource-detail-backdrop"))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { Dialog } from "@base-ui/react/dialog"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
@@ -42,6 +43,7 @@ export function ResourceDetailPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [investigationOpen, setInvestigationOpen] = useState(false)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -78,13 +80,21 @@ export function ResourceDetailPanel({
   }, [applicationNamespace, applicationName, resource])
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm"
-        onClick={onClose}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
-      />
-      <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl ring-1 ring-foreground/10">
+    <Dialog.Root open modal onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop
+          data-testid="resource-detail-backdrop"
+          className="fixed inset-0 z-50 bg-foreground/20"
+        />
+        <Dialog.Popup
+          aria-modal="true"
+          initialFocus={closeButtonRef}
+          finalFocus
+          className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col border-l border-border bg-card"
+        >
+          <Dialog.Title className="sr-only">
+            Resource details for {resource.kind}/{resource.name}
+          </Dialog.Title>
         {/* Header */}
         <div className="flex items-start justify-between border-b border-border/40 px-6 py-4">
           <div className="min-w-0">
@@ -140,12 +150,13 @@ export function ResourceDetailPanel({
               <Sparkles className="size-3.5" />
               Investigate
             </button>
-            <button
-              onClick={onClose}
+            <Dialog.Close
+              ref={closeButtonRef}
+              aria-label="Close resource details"
               className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
             >
               <X className="size-4" />
-            </button>
+            </Dialog.Close>
           </div>
         </div>
 
@@ -198,16 +209,17 @@ export function ResourceDetailPanel({
             <EventsView events={data.events} />
           )}
         </div>
-      </aside>
-      {investigationOpen && (
-        <InvestigationPanel
-          applicationNamespace={applicationNamespace}
-          applicationName={applicationName}
-          resource={resource}
-          onClose={() => setInvestigationOpen(false)}
-        />
-      )}
-    </>
+        {investigationOpen && (
+          <InvestigationPanel
+            applicationNamespace={applicationNamespace}
+            applicationName={applicationName}
+            resource={resource}
+            onClose={() => setInvestigationOpen(false)}
+          />
+        )}
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 
