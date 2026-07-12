@@ -181,6 +181,61 @@ test("opens a real Application deep link from highest-impact attention", async (
   await expect(page.getByText("Application not found.", { exact: true })).toHaveCount(0)
 })
 
+test("troubleshoots a Deployment from graph and list views using only the keyboard", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== keyboardProject, "keyboard-only coverage")
+
+  await page.goto("/dashboard/application?namespace=team-00&name=checkout-service")
+  await expect(
+    page.getByRole("heading", { level: 1, name: "checkout-service" }),
+  ).toBeVisible()
+  await expect(page.getByText("Managed Resources", { exact: true })).toBeVisible()
+
+  const resourceDetailsName = "Open Deployment checkout-service resource details"
+  const graphDetailsButton = page.getByRole("button", { name: resourceDetailsName })
+  await expect(graphDetailsButton).toBeVisible()
+  await expect(graphDetailsButton).toHaveJSProperty("tagName", "BUTTON")
+  await activate(page, graphDetailsButton, testInfo, "Enter")
+
+  const resourceDetailsDialog = page.getByRole("dialog", {
+    name: "Resource details for Deployment/checkout-service",
+  })
+  await expect(resourceDetailsDialog).toBeVisible()
+
+  const investigateButton = resourceDetailsDialog.getByRole("button", {
+    name: "Investigate",
+    exact: true,
+  })
+  await activate(page, investigateButton, testInfo, "Enter")
+
+  const investigationDialog = page.getByRole("dialog", {
+    name: "Investigation for Deployment/checkout-service",
+  })
+  await expect(investigationDialog).toBeVisible()
+
+  await page.keyboard.press("Escape")
+  await expect(investigationDialog).toBeHidden()
+  await expect(investigateButton).toBeFocused()
+
+  await page.keyboard.press("Escape")
+  await expect(resourceDetailsDialog).toBeHidden()
+  await expect(graphDetailsButton).toBeFocused()
+
+  await activate(page, page.getByRole("button", { name: "List", exact: true }), testInfo)
+  const resourceTable = page.getByRole("table", { name: "Application resources" })
+  await expect(resourceTable).toBeVisible()
+
+  const listDetailsButton = resourceTable.getByRole("button", {
+    name: resourceDetailsName,
+  })
+  await expect(listDetailsButton).toHaveJSProperty("tagName", "BUTTON")
+  await tabTo(page, listDetailsButton)
+  await expect(listDetailsButton).toBeFocused()
+  await page.keyboard.press("Space")
+  await expect(resourceDetailsDialog).toBeVisible()
+})
+
 test("redirects the legacy applications hash to the dedicated inventory", async ({ page }) => {
   await page.goto("/dashboard#applications")
 
