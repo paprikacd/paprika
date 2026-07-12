@@ -62,8 +62,18 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 function RolloutDetail() {
   const searchParams = useSearchParams();
-  const namespace = searchParams.get("namespace") ?? "";
-  const name = searchParams.get("name") ?? "";
+  const explicitNamespace = (searchParams.get("rollout_namespace") ?? "").trim();
+  const explicitName = (searchParams.get("rollout_name") ?? "").trim();
+  const legacyNamespace = (searchParams.get("namespace") ?? "").trim();
+  const legacyName = (searchParams.get("name") ?? "").trim();
+  const hasExplicitIdentity = Boolean(explicitNamespace && explicitName);
+  const hasLegacyIdentity = Boolean(legacyNamespace && legacyName);
+  const namespace = hasExplicitIdentity
+    ? explicitNamespace
+    : hasLegacyIdentity
+      ? legacyNamespace
+      : "";
+  const name = hasExplicitIdentity ? explicitName : hasLegacyIdentity ? legacyName : "";
 
   const [rollout, setRollout] = useState<Rollout | null>(null);
   const [loading, setLoading] = useState(true);

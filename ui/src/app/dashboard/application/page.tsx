@@ -123,8 +123,18 @@ function formatDate(ts?: bigint): string {
 
 function ApplicationDetail() {
   const searchParams = useSearchParams();
-  const namespace = searchParams.get("namespace") ?? "";
-  const name = searchParams.get("name") ?? "";
+  const explicitNamespace = (searchParams.get("application_namespace") ?? "").trim();
+  const explicitName = (searchParams.get("application_name") ?? "").trim();
+  const legacyNamespace = (searchParams.get("namespace") ?? "").trim();
+  const legacyName = (searchParams.get("name") ?? "").trim();
+  const hasExplicitIdentity = Boolean(explicitNamespace && explicitName);
+  const hasLegacyIdentity = Boolean(legacyNamespace && legacyName);
+  const namespace = hasExplicitIdentity
+    ? explicitNamespace
+    : hasLegacyIdentity
+      ? legacyNamespace
+      : "";
+  const name = hasExplicitIdentity ? explicitName : hasLegacyIdentity ? legacyName : "";
 
   const [application, setApplication] = useState<Application | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
