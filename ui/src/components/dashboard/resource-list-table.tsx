@@ -115,6 +115,17 @@ interface ResourceListTableProps {
   }) => void
 }
 
+function selectResource(node: TreeNode, onSelect: ResourceListTableProps["onSelect"]) {
+  onSelect({
+    kind: node.kind,
+    name: node.name,
+    namespace: node.namespace,
+    syncStatus: node.syncStatus || "",
+    health: node.health || "",
+    healthMessage: node.healthMessage || "",
+  })
+}
+
 export function ResourceListTable({ nodes, onSelect }: ResourceListTableProps) {
   const data = useMemo(() => buildTree(nodes), [nodes])
 
@@ -126,12 +137,14 @@ export function ResourceListTable({ nodes, onSelect }: ResourceListTableProps) {
         cell: ({ row }) =>
           row.getCanExpand() ? (
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 row.toggleExpanded()
               }}
-              aria-label={row.getIsExpanded() ? "Collapse" : "Expand"}
-              className="flex size-5 items-center justify-center rounded text-muted-foreground transition-[color,background-color] hover:bg-muted/40 hover:text-foreground"
+              aria-label={`${row.getIsExpanded() ? "Collapse" : "Expand"} children for ${row.original.kind} ${row.original.name}`}
+              aria-expanded={row.getIsExpanded()}
+              className="flex size-5 items-center justify-center rounded text-muted-foreground transition-[color,background-color] hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <ChevronRight
                 className={`size-3.5 transition-transform ${row.getIsExpanded() ? "rotate-90" : ""}`}
@@ -156,7 +169,22 @@ export function ResourceListTable({ nodes, onSelect }: ResourceListTableProps) {
       }),
       columnHelper.accessor("name", {
         header: "Name",
-        cell: (ctx) => <span className="font-mono text-xs">{ctx.getValue()}</span>,
+        cell: (ctx) => {
+          const node = ctx.row.original
+          return (
+            <button
+              type="button"
+              aria-label={`Open ${node.kind} ${node.name} resource details`}
+              onClick={(event) => {
+                event.stopPropagation()
+                selectResource(node, onSelect)
+              }}
+              className="inline-flex rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <span className="font-mono text-xs">{ctx.getValue()}</span>
+            </button>
+          )
+        },
       }),
       columnHelper.accessor("namespace", {
         header: "Namespace",
@@ -189,7 +217,7 @@ export function ResourceListTable({ nodes, onSelect }: ResourceListTableProps) {
         },
       }),
     ],
-    [],
+    [onSelect],
   )
 
   const table = useReactTable({
@@ -211,7 +239,7 @@ export function ResourceListTable({ nodes, onSelect }: ResourceListTableProps) {
 
   return (
     <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
-      <table className="w-full text-sm" data-testid="resource-list-table">
+      <table aria-label="Application resources" className="w-full text-sm" data-testid="resource-list-table">
         <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
@@ -245,16 +273,7 @@ function ResourceRow({
   const n = row.original
   return (
     <tr
-      onClick={() =>
-        onSelect({
-          kind: n.kind,
-          name: n.name,
-          namespace: n.namespace,
-          syncStatus: n.syncStatus || "",
-          health: n.health || "",
-          healthMessage: n.healthMessage || "",
-        })
-      }
+      onClick={() => selectResource(n, onSelect)}
       className="cursor-pointer border-t border-foreground/5 transition-[background-color] hover:bg-muted/30"
       data-testid={`row-${n.kind}-${n.name}`}
     >

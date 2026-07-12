@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ResourceListTable, buildTree, type FlatTreeNode } from "@/components/dashboard/resource-list-table"
 
@@ -68,6 +68,75 @@ describe("buildTree", () => {
 })
 
 describe("ResourceListTable", () => {
+  it("exposes a named resource table with semantic rows and native detail actions", () => {
+    render(<ResourceListTable nodes={flat} onSelect={vi.fn()} />)
+
+    const table = screen.getByRole("table", { name: "Application resources" })
+    const deployRow = within(table).getByTestId("row-Deployment-demo-deploy")
+    const detailsButton = within(deployRow).getByRole("button", {
+      name: "Open Deployment demo-deploy resource details",
+    })
+
+    expect(deployRow.tagName).toBe("TR")
+    expect(deployRow).not.toHaveAttribute("tabindex")
+    expect(detailsButton.tagName).toBe("BUTTON")
+    expect(detailsButton).toHaveAttribute("type", "button")
+  })
+
+  it("selects the resource exactly once per detail action gesture", async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    render(<ResourceListTable nodes={flat} onSelect={onSelect} />)
+    const expander = screen.getByRole("button", {
+      name: "Expand children for Deployment demo-deploy",
+    })
+    const detailsButton = screen.getByRole("button", {
+      name: "Open Deployment demo-deploy resource details",
+    })
+
+    await user.tab()
+    expect(expander).toHaveFocus()
+    await user.tab()
+    expect(detailsButton).toHaveFocus()
+
+    await user.keyboard("{Enter}")
+    expect(onSelect).toHaveBeenCalledTimes(1)
+
+    onSelect.mockClear()
+    await user.keyboard(" ")
+    expect(onSelect).toHaveBeenCalledTimes(1)
+
+    onSelect.mockClear()
+    await user.click(detailsButton)
+    expect(onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it("uses expander keyboard actions only to expand and collapse the tree", async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    render(<ResourceListTable nodes={flat} onSelect={onSelect} />)
+    const expander = screen.getByRole("button", {
+      name: "Expand children for Deployment demo-deploy",
+    })
+
+    expect(expander).toHaveAttribute("aria-expanded", "false")
+    await user.tab()
+    expect(expander).toHaveFocus()
+    await user.keyboard("{Enter}")
+    expect(screen.getByRole("button", {
+      name: "Collapse children for Deployment demo-deploy",
+    })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByTestId("row-ReplicaSet-demo-deploy-abc12")).toBeVisible()
+    expect(onSelect).not.toHaveBeenCalled()
+
+    await user.keyboard(" ")
+    expect(screen.getByRole("button", {
+      name: "Expand children for Deployment demo-deploy",
+    })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByTestId("row-ReplicaSet-demo-deploy-abc12")).not.toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   it("renders root rows by default; children appear after expansion", async () => {
     const user = userEvent.setup()
     render(<ResourceListTable nodes={flat} onSelect={vi.fn()} />)
