@@ -56,7 +56,7 @@ const kindIcons: Record<string, string> = {
   Namespace: "\u{1F3E2}",
 }
 
-function ResourceFlowNode({ data }: { data: Record<string, unknown> }) {
+function ResourceFlowNode({ data, isConnectable }: { data: Record<string, unknown>; isConnectable: boolean }) {
   const kind = data.kind as string
   const name = data.name as string
   const sync = data.syncStatus as string
@@ -66,26 +66,46 @@ function ResourceFlowNode({ data }: { data: Record<string, unknown> }) {
   const syncClass = syncColors[sync] ?? syncColors.Pruned
   const dotClass = healthDot[health] ?? healthDot.Unknown
   const icon = kindIcons[kind] ?? "\u25A1"
+  const selectNode = () => (data.onSelect as (n: unknown) => void)?.(data.node)
 
   return (
-    <div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ring-1 ring-foreground/5 ${syncClass}`}
-      style={{ width: NODE_WIDTH }}
-      onClick={() => (data.onSelect as (n: unknown) => void)?.(data.node)}
-      role="button"
-      tabIndex={0}
-    >
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0" />
-      <span className="shrink-0 text-sm" aria-hidden="true">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-[11px] font-medium">{name}</p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className={`size-1.5 rounded-full ${dotClass}`} />
-          <span className="text-[9px] text-muted-foreground">{kind}</span>
-          {managed && <span className="text-[9px] text-primary">managed</span>}
-        </div>
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0" />
+    <div style={{ width: NODE_WIDTH }}>
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={isConnectable}
+        isConnectableStart={isConnectable}
+        isConnectableEnd={isConnectable}
+        className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0"
+        style={isConnectable ? undefined : { pointerEvents: "auto" }}
+        onClick={isConnectable ? undefined : selectNode}
+      />
+      <button
+        type="button"
+        aria-label={`Open ${kind} ${name} resource details`}
+        className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs ring-1 ring-foreground/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background ${syncClass}`}
+        onClick={selectNode}
+      >
+        <span className="shrink-0 text-sm" aria-hidden="true">{icon}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-[11px] font-medium">{name}</span>
+          <span className="flex items-center gap-1.5 mt-0.5">
+            <span className={`size-1.5 rounded-full ${dotClass}`} />
+            <span className="text-[9px] text-muted-foreground">{kind}</span>
+            {managed && <span className="text-[9px] text-primary">managed</span>}
+          </span>
+        </span>
+      </button>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={isConnectable}
+        isConnectableStart={isConnectable}
+        isConnectableEnd={isConnectable}
+        className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0"
+        style={isConnectable ? undefined : { pointerEvents: "auto" }}
+        onClick={isConnectable ? undefined : selectNode}
+      />
     </div>
   )
 }
@@ -166,6 +186,7 @@ export function ResourceGraph({ nodes, onSelectNode }: ResourceGraphProps) {
         fitView
         nodesDraggable={false}
         nodesConnectable={false}
+        nodesFocusable={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="var(--muted)" gap={16} />
