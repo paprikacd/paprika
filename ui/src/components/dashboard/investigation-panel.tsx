@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { Dialog } from "@base-ui/react/dialog"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
@@ -51,58 +52,106 @@ export function InvestigationPanel({
   const [error, setError] = useState<string | null>(null)
   const [plugins, setPlugins] = useState<string | null>(null)
   const [expandedFindings, setExpandedFindings] = useState<Set<string>>(new Set())
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const requestGenerationRef = useRef(0)
+  const requestControllerRef = useRef<AbortController | null>(null)
 
-  const run = async () => {
+  const run = useCallback(async ({ resetIdentity = false }: { resetIdentity?: boolean } = {}) => {
+    const generation = ++requestGenerationRef.current
+    requestControllerRef.current?.abort()
+    const controller = new AbortController()
+    requestControllerRef.current = controller
+
+    if (resetIdentity) {
+      setData(null)
+      setPlugins(null)
+      setExpandedFindings(new Set())
+    }
     setLoading(true)
     setError(null)
+
+    const isCurrentRequest = () =>
+      requestGenerationRef.current === generation &&
+      requestControllerRef.current === controller &&
+      !controller.signal.aborted
+
     try {
-      const [res] = await Promise.all([
-        client.investigate({
-          applicationNamespace,
-          applicationName,
-          resourceKind: resource.kind,
-          resourceName: resource.name,
-          resourceNamespace: resource.namespace,
-        }),
-        client.listInvestigatorPlugins({}).then((p) => {
-          const grouped: Record<string, string[]> = { source: [], detector: [], narrator: [] }
-          for (const plug of p.plugins) {
-            grouped[plug.type]?.push(plug.name)
-          }
-          setPlugins(`${grouped.detector?.length ?? 0} detectors · ${grouped.source?.length ?? 0} sources`)
-        }),
+      const [res, pluginResponse] = await Promise.all([
+        client.investigate(
+          {
+            applicationNamespace,
+            applicationName,
+            resourceKind: resource.kind,
+            resourceName: resource.name,
+            resourceNamespace: resource.namespace,
+          },
+          { signal: controller.signal },
+        ),
+        client.listInvestigatorPlugins({}, { signal: controller.signal }),
       ])
+
+      if (!isCurrentRequest()) return
+
+      const grouped: Record<string, string[]> = { source: [], detector: [], narrator: [] }
+      for (const plug of pluginResponse.plugins) {
+        grouped[plug.type]?.push(plug.name)
+      }
+      setPlugins(`${grouped.detector?.length ?? 0} detectors · ${grouped.source?.length ?? 0} sources`)
       setData(res)
     } catch (err) {
+      if (!isCurrentRequest()) return
       setError(err instanceof Error ? err.message : "Failed to investigate")
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) {
+        requestControllerRef.current = null
+        setLoading(false)
+      }
     }
-  }
+  }, [applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void run()
+      void run({ resetIdentity: true })
     }, 0)
-    return () => window.clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
+    return () => {
+      window.clearTimeout(timer)
+      requestGenerationRef.current += 1
+      requestControllerRef.current?.abort()
+      requestControllerRef.current = null
+    }
+  }, [run])
 
   const sorted = (data?.findings ?? []).slice().sort((a, b) => {
     return severityRank(severityKey(Number(a.severity))) - severityRank(severityKey(Number(b.severity)))
   })
 
   return (
-    <>
-      <div
-        className="fixed inset-0 z-50 bg-foreground/30 backdrop-blur-sm"
-        onClick={onClose}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
-      />
-      <aside
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl ring-1 ring-foreground/10"
-        data-testid="investigation-panel"
-      >
+    <Dialog.Root open modal onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop
+          forceRender
+          data-testid="investigation-backdrop"
+          className="fixed inset-0 z-[60] bg-foreground/30"
+        />
+        <Dialog.Popup
+          aria-modal="true"
+          initialFocus={closeButtonRef}
+          finalFocus
+          className="fixed right-0 top-0 z-[60] flex h-full w-full max-w-3xl flex-col border-l border-border bg-card"
+          data-testid="investigation-panel"
+        >
+          <Dialog.Title className="sr-only">
+            Investigation for {resource.kind}/{resource.name}
+          </Dialog.Title>
+          <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+            {loading
+              ? "Running investigation"
+              : error
+                ? `Investigation failed: ${error}`
+                : data
+                  ? `Investigation complete${data.summary ? `: ${data.summary}` : ""}`
+                  : ""}
+          </p>
         <div className="flex items-start justify-between border-b border-border/40 px-6 py-4">
           <div>
             <div className="flex items-center gap-2">
@@ -131,21 +180,21 @@ export function InvestigationPanel({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={run}
+              onClick={() => void run()}
               aria-label="Re-run investigation"
               data-testid="investigation-refresh"
-              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground active:scale-[0.96]"
             >
               <RefreshCw className="size-4" />
             </button>
-            <button
-              onClick={onClose}
+            <Dialog.Close
+              ref={closeButtonRef}
               aria-label="Close investigation"
               data-testid="investigation-close"
-              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground active:scale-[0.96]"
             >
               <X className="size-4" />
-            </button>
+            </Dialog.Close>
           </div>
         </div>
 
@@ -223,7 +272,7 @@ export function InvestigationPanel({
                         {f.evidence.map((e, j) => (
                           <li
                             key={j}
-                            className="rounded-md bg-background/60 px-2 py-1 font-mono ring-1 ring-foreground/5"
+                            className="rounded-md border border-border bg-background px-2 py-1 font-mono"
                           >
                             <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
                               {e.source}
@@ -269,8 +318,9 @@ export function InvestigationPanel({
             {data.narrator && ` · narrator: ${data.narrator}`}
           </div>
         )}
-      </aside>
-    </>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

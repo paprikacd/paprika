@@ -223,26 +223,70 @@ describe("ResourceDetailPanel", () => {
     expect(portal).not.toBeInTheDocument()
   })
 
-  it("keeps the existing investigation surface reachable inside the modal subtree", async () => {
+  it("stacks Investigation above Resource details and closes each modal in order", async () => {
     const user = userEvent.setup()
     mockClient.getResource.mockReturnValue(new Promise(() => {}))
-    render(<ResourceDetailHarness />)
+    const { unmount } = render(<ResourceDetailHarness />)
+    const opener = screen.getByRole("button", { name: "Open resource details" })
+    const resourceDialogName = "Resource details for Deployment/demo-deploy"
+    const investigationDialogName = "Investigation for Deployment/demo-deploy"
 
-    await user.click(screen.getByRole("button", { name: "Open resource details" }))
-    const dialog = await screen.findByRole("dialog", {
-      name: "Resource details for Deployment/demo-deploy",
+    await user.click(opener)
+    const resourceDialog = await screen.findByRole("dialog", { name: resourceDialogName })
+    const investigate = within(resourceDialog).getByRole("button", { name: "Investigate" })
+
+    await user.click(investigate)
+
+    const investigationDialog = await screen.findByRole("dialog", {
+      name: investigationDialogName,
+    })
+    expect(resourceDialog).toBeInTheDocument()
+    expect(investigationDialog).toHaveAccessibleName(investigationDialogName)
+    expect(screen.getByTestId("resource-detail-backdrop")).toBeInTheDocument()
+    expect(screen.getByTestId("investigation-backdrop")).toBeInTheDocument()
+
+    await user.keyboard("{Escape}")
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: investigationDialogName })).not.toBeInTheDocument()
+      expect(screen.queryByTestId("investigation-backdrop")).not.toBeInTheDocument()
+      expect(screen.getByRole("dialog", { name: resourceDialogName })).toBeInTheDocument()
+      expect(screen.getByTestId("resource-detail-backdrop")).toBeInTheDocument()
+      expect(investigate).toHaveFocus()
     })
 
-    await user.click(within(dialog).getByRole("button", { name: "Investigate" }))
+    await user.keyboard("{Escape}")
 
-    const investigation = await screen.findByTestId("investigation-panel")
-    expect(dialog).toContainElement(investigation)
-    expect(investigation.closest("[data-base-ui-inert]")).toBeNull()
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: resourceDialogName })).not.toBeInTheDocument()
+      expect(screen.queryByTestId("resource-detail-backdrop")).not.toBeInTheDocument()
+      expect(opener).toHaveFocus()
+    })
 
-    await user.click(within(investigation).getByRole("button", { name: "Close investigation" }))
+    await user.click(opener)
+    const reopenedResourceDialog = await screen.findByRole("dialog", { name: resourceDialogName })
+    await user.click(within(reopenedResourceDialog).getByRole("button", { name: "Investigate" }))
+    await screen.findByRole("dialog", { name: investigationDialogName })
 
-    expect(screen.queryByTestId("investigation-panel")).not.toBeInTheDocument()
-    expect(dialog).toBeInTheDocument()
+    const resourcePortal = screen
+      .getByTestId("resource-detail-backdrop")
+      .closest("[data-base-ui-portal]")
+    const investigationPortal = screen
+      .getByTestId("investigation-backdrop")
+      .closest("[data-base-ui-portal]")
+
+    expect(resourcePortal).toBeInTheDocument()
+    expect(investigationPortal).toBeInTheDocument()
+    expect(investigationPortal).not.toBe(resourcePortal)
+
+    unmount()
+
+    expect(screen.queryByRole("dialog", { name: investigationDialogName })).not.toBeInTheDocument()
+    expect(screen.queryByRole("dialog", { name: resourceDialogName })).not.toBeInTheDocument()
+    expect(screen.queryByTestId("investigation-backdrop")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("resource-detail-backdrop")).not.toBeInTheDocument()
+    expect(investigationPortal).not.toBeInTheDocument()
+    expect(resourcePortal).not.toBeInTheDocument()
   })
 
   it("shows loading state while fetching", () => {
