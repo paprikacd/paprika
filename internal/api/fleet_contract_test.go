@@ -294,6 +294,22 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 			referencedType: "paprika.v1.FleetFacetBucket",
 		},
 	},
+	"QueryReleasesRequest": {
+		"filter": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFilter",
+		},
+		"search":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"page_size":   {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"page_offset": {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"QueryReleasesResponse": {
+		"releases": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.Release",
+		},
+		"total_count": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
 	"FleetMapNode": {
 		"stable_id": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"kind": {
@@ -414,7 +430,7 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 
 func assertFleetMessageDescriptors(t *testing.T, messages protoreflect.MessageDescriptors) {
 	t.Helper()
-	require.Len(t, fleetMessageDescriptorContracts, 15)
+	require.Len(t, fleetMessageDescriptorContracts, 17)
 	for messageName, wantFields := range fleetMessageDescriptorContracts {
 		message := messages.ByName(protoreflect.Name(messageName))
 		require.NotNilf(t, message, "missing message %s", messageName)
@@ -455,12 +471,13 @@ func assertLegacyFleetDescriptors(t *testing.T, file protoreflect.FileDescriptor
 		gotHash := fmt.Sprintf("%x", sha256.Sum256(encoded))
 		require.Equalf(t, wantHash, gotHash, "legacy message %s descriptor changed", messageName)
 	}
+	assertLegacyListReleasesRequestDescriptor(t, file.Messages())
 
 	service := file.Services().ByName("PaprikaService")
 	require.NotNil(t, service)
 	methods := service.Methods()
 	require.Len(t, legacyFleetServiceMethods, 37, "snapshot must cover every pre-existing RPC")
-	require.Len(t, fleetQueryServiceMethods, 3, "snapshot must cover every fleet query RPC")
+	require.Len(t, fleetQueryServiceMethods, 4, "snapshot must cover every fleet query RPC")
 	require.GreaterOrEqual(t, methods.Len(), len(legacyFleetServiceMethods)+len(fleetQueryServiceMethods))
 	for i, wantMethod := range legacyFleetServiceMethods {
 		assertFleetMethodDescriptor(t, methods.Get(i), wantMethod)
@@ -468,6 +485,28 @@ func assertLegacyFleetDescriptors(t *testing.T, file protoreflect.FileDescriptor
 	for i, wantMethod := range fleetQueryServiceMethods {
 		methodIndex := len(legacyFleetServiceMethods) + i
 		assertFleetMethodDescriptor(t, methods.Get(methodIndex), wantMethod)
+	}
+}
+
+func assertLegacyListReleasesRequestDescriptor(t *testing.T, messages protoreflect.MessageDescriptors) {
+	t.Helper()
+	message := messages.ByName("ListReleasesRequest")
+	require.NotNil(t, message, "legacy ListReleasesRequest was removed")
+
+	wantFields := map[string]fleetFieldDescriptorContract{
+		"namespace":        {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"project":          {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"application_name": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"page_size":        {number: 4, kind: protoreflect.Int32Kind, cardinality: protoreflect.Optional},
+		"page_offset":      {number: 5, kind: protoreflect.Int32Kind, cardinality: protoreflect.Optional},
+	}
+	require.Equal(t, len(wantFields), message.Fields().Len(), "legacy ListReleasesRequest field count changed")
+	for fieldName, wantField := range wantFields {
+		field := message.Fields().ByName(protoreflect.Name(fieldName))
+		require.NotNilf(t, field, "legacy ListReleasesRequest missing field %s", fieldName)
+		require.Equalf(t, wantField.number, field.Number(), "legacy ListReleasesRequest field %s number changed", fieldName)
+		require.Equalf(t, wantField.kind, field.Kind(), "legacy ListReleasesRequest field %s kind changed", fieldName)
+		require.Equalf(t, wantField.cardinality, field.Cardinality(), "legacy ListReleasesRequest field %s cardinality changed", fieldName)
 	}
 }
 
@@ -492,6 +531,7 @@ var fleetQueryServiceMethods = []fleetMethodDescriptorContract{
 	{name: "QueryApplications", input: "paprika.v1.QueryApplicationsRequest", output: "paprika.v1.QueryApplicationsResponse"},
 	{name: "QueryFleetMap", input: "paprika.v1.QueryFleetMapRequest", output: "paprika.v1.QueryFleetMapResponse"},
 	{name: "QueryFleetMatrix", input: "paprika.v1.QueryFleetMatrixRequest", output: "paprika.v1.QueryFleetMatrixResponse"},
+	{name: "QueryReleases", input: "paprika.v1.QueryReleasesRequest", output: "paprika.v1.QueryReleasesResponse"},
 }
 
 var legacyFleetServiceMethods = []fleetMethodDescriptorContract{

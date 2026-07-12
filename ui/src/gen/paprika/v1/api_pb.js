@@ -6,6 +6,8 @@
 import { proto3 } from "@bufbuild/protobuf";
 
 /**
+ * buf:lint:ignore ENUM_VALUE_PREFIX
+ *
  * @generated from enum paprika.v1.Severity
  */
 export const Severity = /*@__PURE__*/ proto3.makeEnum(
@@ -2017,6 +2019,30 @@ export const QueryFleetMatrixResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 5, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 6, name: "facets", kind: "message", T: FleetFacetBucket, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryReleasesRequest
+ */
+export const QueryReleasesRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryReleasesRequest",
+  () => [
+    { no: 1, name: "filter", kind: "message", T: FleetFilter },
+    { no: 2, name: "search", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "page_offset", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryReleasesResponse
+ */
+export const QueryReleasesResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryReleasesResponse",
+  () => [
+    { no: 1, name: "releases", kind: "message", T: Release, repeated: true },
+    { no: 2, name: "total_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
   ],
 );
 

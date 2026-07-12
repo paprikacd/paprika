@@ -785,6 +785,7 @@ message GetResourceTreeDetailedResponse {
   repeated ResourceTreeNode nodes = 1;
 }
 
+// buf:lint:ignore ENUM_VALUE_PREFIX
 enum Severity {
   SEVERITY_UNSPECIFIED = 0;
   CRITICAL = 1;
@@ -1122,6 +1123,18 @@ message QueryFleetMatrixResponse {
   repeated FleetFacetBucket facets = 6;
 }
 
+message QueryReleasesRequest {
+  FleetFilter filter = 1;
+  string search = 2;
+  uint32 page_size = 3;
+  uint32 page_offset = 4;
+}
+
+message QueryReleasesResponse {
+  repeated Release releases = 1;
+  uint64 total_count = 2;
+}
+
 service PaprikaService {
   rpc ListPipelines(ListPipelinesRequest) returns (ListPipelinesResponse);
   rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
@@ -1157,10 +1170,12 @@ service PaprikaService {
   rpc GetResourceTree(GetResourceTreeRequest) returns (GetResourceTreeResponse);
   rpc GetResourceLogs(GetResourceLogsRequest) returns (GetResourceLogsResponse);
   rpc GetResourceTreeDetailed(GetResourceTreeDetailedRequest) returns (GetResourceTreeDetailedResponse);
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
   rpc StreamResourceLogs(StreamResourceLogsRequest) returns (stream LogChunk);
   rpc Investigate(InvestigateRequest) returns (InvestigateResponse);
   rpc ListInvestigatorPlugins(ListInvestigatorPluginsRequest) returns (ListInvestigatorPluginsResponse);
   rpc QueryApplications(QueryApplicationsRequest) returns (QueryApplicationsResponse);
   rpc QueryFleetMap(QueryFleetMapRequest) returns (QueryFleetMapResponse);
   rpc QueryFleetMatrix(QueryFleetMatrixRequest) returns (QueryFleetMatrixResponse);
+  rpc QueryReleases(QueryReleasesRequest) returns (QueryReleasesResponse);
 }

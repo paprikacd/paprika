@@ -7,6 +7,8 @@ import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialM
 import { Message, proto3 } from "@bufbuild/protobuf";
 
 /**
+ * buf:lint:ignore ENUM_VALUE_PREFIX
+ *
  * @generated from enum paprika.v1.Severity
  */
 export declare enum Severity {
@@ -6086,5 +6088,73 @@ export declare class QueryFleetMatrixResponse extends Message<QueryFleetMatrixRe
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMatrixResponse;
 
   static equals(a: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined, b: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryReleasesRequest
+ */
+export declare class QueryReleasesRequest extends Message<QueryReleasesRequest> {
+  /**
+   * @generated from field: paprika.v1.FleetFilter filter = 1;
+   */
+  filter?: FleetFilter;
+
+  /**
+   * @generated from field: string search = 2;
+   */
+  search: string;
+
+  /**
+   * @generated from field: uint32 page_size = 3;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: uint32 page_offset = 4;
+   */
+  pageOffset: number;
+
+  constructor(data?: PartialMessage<QueryReleasesRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryReleasesRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryReleasesRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryReleasesRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryReleasesRequest;
+
+  static equals(a: QueryReleasesRequest | PlainMessage<QueryReleasesRequest> | undefined, b: QueryReleasesRequest | PlainMessage<QueryReleasesRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryReleasesResponse
+ */
+export declare class QueryReleasesResponse extends Message<QueryReleasesResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.Release releases = 1;
+   */
+  releases: Release[];
+
+  /**
+   * @generated from field: uint64 total_count = 2;
+   */
+  totalCount: bigint;
+
+  constructor(data?: PartialMessage<QueryReleasesResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryReleasesResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryReleasesResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryReleasesResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryReleasesResponse;
+
+  static equals(a: QueryReleasesResponse | PlainMessage<QueryReleasesResponse> | undefined, b: QueryReleasesResponse | PlainMessage<QueryReleasesResponse> | undefined): boolean;
 }
 

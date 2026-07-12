@@ -108,3 +108,16 @@ func TestListReleases_FiltersByApplicationAndPaginatesNewestFirst(t *testing.T) 
 	require.Equal(t, "checkout-3", resp.Msg.Releases[0].Name)
 	require.Equal(t, "checkout-1", resp.Msg.Releases[1].Name)
 }
+
+func TestQueryReleasesReturnsStableUnimplementedError(t *testing.T) {
+	server := &PaprikaServer{}
+
+	response, err := server.QueryReleases(
+		context.Background(),
+		connect.NewRequest(&paprikav1.QueryReleasesRequest{}),
+	)
+
+	require.Nil(t, response)
+	require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err))
+	require.EqualError(t, err, "unimplemented: release query is not implemented")
+}
