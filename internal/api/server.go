@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -377,70 +376,6 @@ func (s *PaprikaServer) Render(
 		return nil, fmt.Errorf("render template: %w", err)
 	}
 	return connect.NewResponse(&paprikav1.RenderResponse{Manifests: manifests}), nil
-}
-
-// ListReleases returns a list of releases.
-func (s *PaprikaServer) ListReleases(
-	ctx context.Context,
-	req *connect.Request[paprikav1.ListReleasesRequest],
-) (*connect.Response[paprikav1.ListReleasesResponse], error) {
-	started := time.Now()
-	var list pipelinesv1alpha1.ReleaseList
-	opts := []client.ListOption{}
-	if req.Msg.Namespace != nil {
-		opts = append(opts, client.InNamespace(*req.Msg.Namespace))
-	}
-	if err := s.client.List(ctx, &list, opts...); err != nil {
-		recordAPIList(ctx, "releases", started, 0, err)
-		return nil, fmt.Errorf("listing releases: %w", err)
-	}
-	releases := make([]*paprikav1.Release, 0, len(list.Items))
-	for i := range list.Items {
-		rel := &list.Items[i]
-		if !s.releaseMatchesListRequest(ctx, rel, req.Msg) {
-			continue
-		}
-		releases = append(releases, convertRelease(rel))
-	}
-	sortReleasesByNewest(releases)
-	total := len(releases)
-	releases = paginateReleases(releases, req.Msg.PageOffset, req.Msg.PageSize)
-	recordAPIList(ctx, "releases", started, len(releases), nil)
-	return connect.NewResponse(&paprikav1.ListReleasesResponse{Releases: releases, TotalCount: safeInt32(total)}), nil
-}
-
-func (s *PaprikaServer) releaseMatchesListRequest(ctx context.Context, rel *pipelinesv1alpha1.Release, req *paprikav1.ListReleasesRequest) bool {
-	labels := rel.GetLabels()
-	if req.ApplicationName != "" && labels[engine.ApplicationNameLabelKey] != req.ApplicationName {
-		return false
-	}
-	if req.Project != "" && labels[projectLabelKey] != req.Project {
-		return false
-	}
-	return s.authorizeProjectFromLabels(ctx, rel, auth.ResourceReleases)
-}
-
-func sortReleasesByNewest(releases []*paprikav1.Release) {
-	sort.SliceStable(releases, func(i, j int) bool {
-		if releases[i].CreatedAt == releases[j].CreatedAt {
-			return releases[i].Name < releases[j].Name
-		}
-		return releases[i].CreatedAt > releases[j].CreatedAt
-	})
-}
-
-func paginateReleases(releases []*paprikav1.Release, pageOffset, pageSize int32) []*paprikav1.Release {
-	if pageOffset <= 0 && pageSize <= 0 {
-		return releases
-	}
-	total := len(releases)
-	offset := max(0, min(int(pageOffset), total))
-	limit := total
-	if pageSize > 0 {
-		limit = min(int(pageSize), 500)
-	}
-	end := min(offset+limit, total)
-	return releases[offset:end]
 }
 
 // ListStages returns a list of stages.

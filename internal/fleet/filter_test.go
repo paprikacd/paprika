@@ -6,6 +6,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestApplicationFilterActiveDimensionCount(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("projects", "payments")
+	cluster := fleetID("clusters", "production")
+	tests := map[string]struct {
+		filter *ApplicationFilter
+		want   int
+	}{
+		"nil":            {filter: nil, want: 0},
+		"empty":          {filter: &ApplicationFilter{}, want: 0},
+		"projects":       {filter: &ApplicationFilter{Projects: []ProjectKey{project}}, want: 1},
+		"namespaces":     {filter: &ApplicationFilter{Namespaces: []string{"apps"}}, want: 1},
+		"clusters":       {filter: &ApplicationFilter{Clusters: []ClusterKey{cluster}}, want: 1},
+		"stages":         {filter: &ApplicationFilter{Stages: []string{"production"}}, want: 1},
+		"health":         {filter: &ApplicationFilter{Health: []Health{HealthHealthy}}, want: 1},
+		"sync":           {filter: &ApplicationFilter{Sync: []SyncState{SyncStateSynced}}, want: 1},
+		"release states": {filter: &ApplicationFilter{ReleaseStates: []ReleaseState{ReleaseStateComplete}}, want: 1},
+		"rollout states": {filter: &ApplicationFilter{RolloutStates: []RolloutState{RolloutStateHealthy}}, want: 1},
+		"source types":   {filter: &ApplicationFilter{SourceTypes: []SourceType{SourceTypeGit}}, want: 1},
+		"all dimensions": {
+			filter: &ApplicationFilter{
+				Projects:      []ProjectKey{project},
+				Namespaces:    []string{"apps"},
+				Clusters:      []ClusterKey{cluster},
+				Stages:        []string{"production"},
+				Health:        []Health{HealthHealthy},
+				Sync:          []SyncState{SyncStateSynced},
+				ReleaseStates: []ReleaseState{ReleaseStateComplete},
+				RolloutStates: []RolloutState{RolloutStateHealthy},
+				SourceTypes:   []SourceType{SourceTypeGit},
+			},
+			want: 9,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, test.filter.ActiveDimensionCount())
+		})
+	}
+}
+
 func TestFilterUsesOrWithinDimensionsAndAndAcrossDimensions(t *testing.T) {
 	t.Parallel()
 

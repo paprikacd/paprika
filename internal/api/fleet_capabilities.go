@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/fleet"
@@ -50,6 +51,26 @@ func buildFleetQueryScope(
 	principal *auth.Principal,
 	namespaces []string,
 ) (fleet.QueryScope, error) {
+	readScope, err := buildFleetReadQueryScope(ctx, reader, authorizer, principal, namespaces)
+	if err != nil {
+		return fleet.QueryScope{}, err
+	}
+	projects := sortedFleetProjectSet(readScope.Projects)
+	if authorizer == nil {
+		return unrestrictedFleetQueryScope(projects), nil
+	}
+	return authorizedFleetQueryScope(ctx, authorizer, principal, projects)
+}
+
+// buildFleetReadQueryScope derives only project visibility. Read-only callers
+// use this scope without evaluating unrelated write capabilities.
+func buildFleetReadQueryScope(
+	ctx context.Context,
+	reader fleet.Reader,
+	authorizer auth.Authorizer,
+	principal *auth.Principal,
+	namespaces []string,
+) (fleet.QueryScope, error) {
 	if reader == nil {
 		return fleet.QueryScope{}, &fleet.ErrUnavailable{Reason: "fleet reader is not configured"}
 	}
@@ -61,7 +82,7 @@ func buildFleetQueryScope(
 	projectKeys = uniqueFleetProjectKeys(projectKeys)
 
 	if authorizer == nil {
-		return unrestrictedFleetQueryScope(projectKeys), nil
+		return fleetReadQueryScope(projectKeys), nil
 	}
 	if principal == nil {
 		return fleet.QueryScope{}, fmt.Errorf("authorize fleet project scope: missing principal: %w", auth.ErrUnauthorized)
@@ -79,7 +100,32 @@ func buildFleetQueryScope(
 		return fleet.QueryScope{}, fmt.Errorf("authorize fleet project scope: %w", err)
 	}
 	authorizedProjects := intersectFleetProjects(projectKeys, authorized)
-	return authorizedFleetQueryScope(ctx, authorizer, principal, authorizedProjects)
+	return fleetReadQueryScope(authorizedProjects), nil
+}
+
+func fleetReadQueryScope(projects []fleet.ProjectKey) fleet.QueryScope {
+	scope := fleet.QueryScope{
+		Projects:              make(fleet.ProjectSet, len(projects)),
+		CapabilitiesByProject: make(map[fleet.ProjectKey]fleet.CapabilitySet),
+	}
+	for _, project := range projects {
+		scope.Projects[project] = struct{}{}
+	}
+	return scope
+}
+
+func sortedFleetProjectSet(projects fleet.ProjectSet) []fleet.ProjectKey {
+	result := make([]fleet.ProjectKey, 0, len(projects))
+	for project := range projects {
+		result = append(result, project)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Namespace != result[j].Namespace {
+			return result[i].Namespace < result[j].Namespace
+		}
+		return result[i].Name < result[j].Name
+	})
+	return result
 }
 
 func fleetProjectRefs(projects []fleet.ProjectKey) []auth.ProjectRef {

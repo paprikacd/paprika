@@ -102,7 +102,7 @@ func (i *Index) QueryApplications(
 ) (page ApplicationPage, err error) {
 	observation := startFleetQueryObservation(
 		ctx, fleetQueryApplications, paprikametrics.FleetQueryApplications,
-		activeFleetFilterDimensions(&query.Filter),
+		query.Filter.ActiveDimensionCount(),
 	)
 	defer func() { observation.end(err) }()
 
@@ -123,7 +123,7 @@ func (i *Index) QueryApplications(
 func (i *Index) QueryMap(ctx context.Context, scope QueryScope, query FleetMapQuery) (result FleetMap, err error) {
 	observation := startFleetQueryObservation(
 		ctx, fleetQueryMap, paprikametrics.FleetQueryMap,
-		activeFleetFilterDimensions(&query.Filter),
+		query.Filter.ActiveDimensionCount(),
 	)
 	defer func() { observation.end(err) }()
 
@@ -144,7 +144,7 @@ func (i *Index) QueryMap(ctx context.Context, scope QueryScope, query FleetMapQu
 func (i *Index) QueryMatrix(ctx context.Context, scope QueryScope, query FleetMatrixQuery) (result FleetMatrix, err error) {
 	observation := startFleetQueryObservation(
 		ctx, fleetQueryMatrix, paprikametrics.FleetQueryMatrix,
-		activeFleetFilterDimensions(&query.Filter),
+		query.Filter.ActiveDimensionCount(),
 	)
 	defer func() { observation.end(err) }()
 
@@ -246,27 +246,4 @@ func metricCacheOutcome(outcome fleetCacheOutcome) paprikametrics.FleetCacheOutc
 	default:
 		return paprikametrics.FleetCacheOutcome("")
 	}
-}
-
-func activeFleetFilterDimensions(filter *ApplicationFilter) int {
-	if filter == nil {
-		return 0
-	}
-	count := 0
-	for _, active := range [...]bool{
-		len(filter.Projects) > 0,
-		len(filter.Namespaces) > 0,
-		len(filter.Clusters) > 0,
-		len(filter.Stages) > 0,
-		len(filter.Health) > 0,
-		len(filter.Sync) > 0,
-		len(filter.ReleaseStates) > 0,
-		len(filter.RolloutStates) > 0,
-		len(filter.SourceTypes) > 0,
-	} {
-		if active {
-			count++
-		}
-	}
-	return count
 }

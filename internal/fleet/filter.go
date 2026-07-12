@@ -66,6 +66,31 @@ type ApplicationFilter struct {
 	SourceTypes   []SourceType
 }
 
+// ActiveDimensionCount returns how many filter dimensions constrain a query.
+// Multiple values within one dimension still count as one active dimension.
+func (f *ApplicationFilter) ActiveDimensionCount() int {
+	if f == nil {
+		return 0
+	}
+	count := 0
+	for _, active := range [...]bool{
+		len(f.Projects) > 0,
+		len(f.Namespaces) > 0,
+		len(f.Clusters) > 0,
+		len(f.Stages) > 0,
+		len(f.Health) > 0,
+		len(f.Sync) > 0,
+		len(f.ReleaseStates) > 0,
+		len(f.RolloutStates) > 0,
+		len(f.SourceTypes) > 0,
+	} {
+		if active {
+			count++
+		}
+	}
+	return count
+}
+
 // Normalized returns a deterministically sorted and de-duplicated copy.
 func (f *ApplicationFilter) Normalized() ApplicationFilter {
 	return ApplicationFilter{

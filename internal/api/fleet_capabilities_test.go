@@ -99,6 +99,33 @@ func TestFleetCapabilitiesIntersectsAuthorizedProjectsByFullIdentity(t *testing.
 	require.Len(t, authorizer.authorizeCalls, 3)
 }
 
+func TestFleetReadQueryScopeDoesNotAuthorizeWriteCapabilities(t *testing.T) {
+	t.Parallel()
+
+	project := fleet.ProjectKey{Namespace: "tenant-a", Name: "payments"}
+	backendErr := errors.New("write authorization backend unavailable")
+	authorizer := &fleetScopeAuthorizer{
+		authorized: []auth.ProjectRef{{Namespace: project.Namespace, Name: project.Name}},
+		authorize: func(fleetPermissionCall) error {
+			return backendErr
+		},
+	}
+
+	scope, err := buildFleetReadQueryScope(
+		context.Background(),
+		&fleetScopeReader{projects: []fleet.ProjectKey{project}},
+		authorizer,
+		&auth.Principal{Subject: "alice"},
+		nil,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, fleet.ProjectSet{project: {}}, scope.Projects)
+	require.Empty(t, scope.CapabilitiesByProject)
+	require.Len(t, authorizer.authorizedCalls, 1)
+	require.Empty(t, authorizer.authorizeCalls)
+}
+
 func TestFleetCapabilitiesRemainNamespacedAcrossMixedGrants(t *testing.T) {
 	t.Parallel()
 

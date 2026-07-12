@@ -60,6 +60,35 @@ func TestNormalizeSearchCountsRawUnicodeRunes(t *testing.T) {
 	require.Equal(t, MaxSearchRunes, invalid.Maximum)
 }
 
+func TestNormalizeSearchDocumentDoesNotApplyCallerLimit(t *testing.T) {
+	t.Parallel()
+
+	raw := strings.Repeat("Ｆ", MaxSearchRunes+1) + "---ＭＥＴＡ"
+
+	require.Equal(t, strings.Repeat("f", MaxSearchRunes+1)+" meta", NormalizeSearchDocument(raw))
+
+	_, err := NormalizeSearch(raw)
+	require.Error(t, err)
+	var invalid *InvalidSearchError
+	require.ErrorAs(t, err, &invalid)
+}
+
+func TestNormalizeSearchDocumentFieldsReturnsPrimaryViewIntoCombinedDocument(t *testing.T) {
+	t.Parallel()
+
+	primary, document := NormalizeSearchDocumentFields(
+		"ＦＯＯ＿ＢＡＲ",
+		"TEAM.NS",
+		"Checkout_App",
+		"Deploy-Pipe",
+	)
+
+	require.Equal(t, "foo bar", primary)
+	require.Equal(t, "foo bar team ns checkout app deploy pipe", document)
+	require.True(t, strings.HasPrefix(document, primary+" "))
+	require.NotContains(t, document, "\x00", "queryable control characters must not encode field boundaries")
+}
+
 func TestSearchRanksExactPrefixSubstringThenTrigram(t *testing.T) {
 	t.Parallel()
 

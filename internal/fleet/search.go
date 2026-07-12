@@ -67,18 +67,51 @@ func NormalizeSearch(raw string) (string, error) {
 	if runeCount > MaxSearchRunes {
 		return "", &InvalidSearchError{RuneCount: runeCount, Maximum: MaxSearchRunes}
 	}
-	return normalizeText(raw), nil
+	return NormalizeSearchDocument(raw), nil
+}
+
+// NormalizeSearchDocument applies the same searchable text folding as
+// NormalizeSearch without imposing the caller-input limit on stored metadata.
+func NormalizeSearchDocument(raw string) string {
+	return normalizeText(raw)
+}
+
+// NormalizeSearchDocumentFields folds a primary field and additional fields
+// into one searchable document. The primary result is a zero-allocation view
+// into that document. Whitespace boundaries cannot appear in query terms and
+// therefore prevent matches spanning fields without adding searchable bytes.
+func NormalizeSearchDocumentFields(primary string, additional ...string) (normalizedPrimary, document string) {
+	capacity := len(primary) + len(additional)
+	for _, field := range additional {
+		capacity += len(field)
+	}
+	var builder strings.Builder
+	builder.Grow(capacity)
+	appendNormalizedText(&builder, primary)
+	primaryEnd := builder.Len()
+	for _, field := range additional {
+		builder.WriteByte(' ')
+		appendNormalizedText(&builder, field)
+	}
+	document = builder.String()
+	return document[:primaryEnd], document
 }
 
 func normalizeText(raw string) string {
-	normalized := norm.NFKC.String(raw)
 	var builder strings.Builder
-	builder.Grow(len(normalized))
+	builder.Grow(len(raw))
+	appendNormalizedText(&builder, raw)
+	return builder.String()
+}
+
+func appendNormalizedText(builder *strings.Builder, raw string) {
+	normalized := norm.NFKC.String(raw)
+	fieldStart := builder.Len()
 	pendingSeparator := false
 
 	for _, r := range normalized {
 		if isSearchSeparator(r) {
-			if builder.Len() > 0 {
+			if builder.Len() > fieldStart {
 				pendingSeparator = true
 			}
 			continue
@@ -89,7 +122,6 @@ func normalizeText(raw string) string {
 		}
 		builder.WriteRune(unicode.ToLower(r))
 	}
-	return builder.String()
 }
 
 func isSearchSeparator(r rune) bool {
