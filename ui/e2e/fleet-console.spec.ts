@@ -181,6 +181,71 @@ test("opens a real Application deep link from highest-impact attention", async (
   await expect(page.getByText("Application not found.", { exact: true })).toHaveCount(0)
 })
 
+test("discovers complete releases from command search and migrates legacy scope", async ({
+  page,
+}, testInfo) => {
+  const releaseName = "application-00246-release-v1"
+  const releaseNamespace = "team-06"
+
+  await page.goto("/dashboard/")
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Cluster command center" }),
+  ).toBeVisible()
+
+  const search = page.getByRole("searchbox", { name: "Search operations" })
+  await enterText(page, search, releaseName, testInfo)
+
+  const releaseResult = page.getByRole("link", {
+    name: new RegExp(`^Release ${releaseName}`),
+  })
+  await expect(releaseResult).toBeVisible()
+
+  const href = await releaseResult.getAttribute("href")
+  expect(href).toBeTruthy()
+  const destination = new URL(href!, baseURL)
+  expect(destination.pathname).toBe("/dashboard/releases")
+  expect(destination.searchParams.get("q")).toBe(releaseName)
+  expect(destination.searchParams.get("namespace")).toBe(releaseNamespace)
+  expect(destination.hash).toBe("")
+
+  await activate(page, releaseResult, testInfo)
+  await expect(page.getByRole("heading", { level: 1, name: "Releases" })).toBeVisible()
+  await expect(page.getByText(releaseName, { exact: true })).toBeVisible()
+  await expect.poll(() => releaseURLState(page)).toEqual({
+    pathname: "/dashboard/releases/",
+    project: null,
+    cluster: null,
+    stage: null,
+    namespace: releaseNamespace,
+    q: releaseName,
+    hash: "",
+  })
+
+  const migrations: string[] = []
+  page.on("framenavigated", (frame) => {
+    if (frame !== page.mainFrame()) return
+    const url = new URL(frame.url())
+    if (url.pathname === "/dashboard/releases/" && url.hash === "") {
+      migrations.push(url.toString())
+    }
+  })
+
+  await page.goto(
+    "/dashboard/?project=team-06%2Fcommerce&cluster=team-06%2Fdelivery-unhealthy&stage=production&namespace=team-06#releases",
+  )
+  await expect(page.getByRole("heading", { level: 1, name: "Releases" })).toBeVisible()
+  await expect.poll(() => releaseURLState(page)).toEqual({
+    pathname: "/dashboard/releases/",
+    project: "team-06/commerce",
+    cluster: "team-06/delivery-unhealthy",
+    stage: "production",
+    namespace: releaseNamespace,
+    q: null,
+    hash: "",
+  })
+  expect(migrations).toHaveLength(1)
+})
+
 test("troubleshoots a Deployment from graph and list views using only the keyboard", async ({
   page,
 }, testInfo) => {
@@ -289,6 +354,19 @@ function queryValue(page: Page, key: string) {
 
 function queryValues(page: Page, key: string) {
   return new URL(page.url()).searchParams.getAll(key)
+}
+
+function releaseURLState(page: Page) {
+  const url = new URL(page.url())
+  return {
+    pathname: url.pathname,
+    project: url.searchParams.get("project"),
+    cluster: url.searchParams.get("cluster"),
+    stage: url.searchParams.get("stage"),
+    namespace: url.searchParams.get("namespace"),
+    q: url.searchParams.get("q"),
+    hash: url.hash,
+  }
 }
 
 async function expectQueryState(page: Page, expected: Record<string, string | null>) {
