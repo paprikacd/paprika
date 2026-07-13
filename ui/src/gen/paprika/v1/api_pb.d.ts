@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
+import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage, Timestamp } from "@bufbuild/protobuf";
 import { Message, proto3 } from "@bufbuild/protobuf";
 
 /**
@@ -361,6 +361,11 @@ export declare enum FleetGroupDimension {
    * @generated from enum value: FLEET_GROUP_DIMENSION_HEALTH = 4;
    */
   HEALTH = 4,
+
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_NAMESPACE = 5;
+   */
+  NAMESPACE = 5,
 }
 
 /**
@@ -5626,6 +5631,80 @@ export declare class FleetHealthBucket extends Message<FleetHealthBucket> {
 }
 
 /**
+ * @generated from message paprika.v1.FleetMapApplicationMetadata
+ */
+export declare class FleetMapApplicationMetadata extends Message<FleetMapApplicationMetadata> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey project = 1;
+   */
+  project?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey current_cluster = 2;
+   */
+  currentCluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: string current_stage = 3;
+   */
+  currentStage: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetSyncState sync = 4;
+   */
+  sync: FleetSyncState;
+
+  /**
+   * @generated from field: paprika.v1.FleetReleaseState release = 5;
+   */
+  release: FleetReleaseState;
+
+  /**
+   * @generated from field: paprika.v1.FleetRolloutState rollout = 6;
+   */
+  rollout: FleetRolloutState;
+
+  /**
+   * @generated from field: uint64 drifted_resources = 7;
+   */
+  driftedResources: bigint;
+
+  /**
+   * @generated from field: uint64 missing_resources = 8;
+   */
+  missingResources: bigint;
+
+  /**
+   * @generated from field: uint64 managed_resources = 9;
+   */
+  managedResources: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_transition = 10;
+   */
+  lastTransition?: Timestamp;
+
+  /**
+   * @generated from field: string issue_summary = 11;
+   */
+  issueSummary: string;
+
+  constructor(data?: PartialMessage<FleetMapApplicationMetadata>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetMapApplicationMetadata";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetMapApplicationMetadata;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetMapApplicationMetadata;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetMapApplicationMetadata;
+
+  static equals(a: FleetMapApplicationMetadata | PlainMessage<FleetMapApplicationMetadata> | undefined, b: FleetMapApplicationMetadata | PlainMessage<FleetMapApplicationMetadata> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export declare class QueryApplicationsRequest extends Message<QueryApplicationsRequest> {
@@ -5798,6 +5877,11 @@ export declare class FleetMapNode extends Message<FleetMapNode> {
    * @generated from field: repeated paprika.v1.FleetMapNode children = 14;
    */
   children: FleetMapNode[];
+
+  /**
+   * @generated from field: paprika.v1.FleetMapApplicationMetadata application_metadata = 15;
+   */
+  applicationMetadata?: FleetMapApplicationMetadata;
 
   constructor(data?: PartialMessage<FleetMapNode>);
 

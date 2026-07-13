@@ -70,6 +70,113 @@ func TestFleetMapDefaultsAuthorizeAndAggregateDeterministically(t *testing.T) {
 	require.NotContains(t, mapNodeIDs(result.Roots), "g:project:private/payments")
 }
 
+func TestFleetMapNamespaceGroupingIsCompleteAndCarriesCompactApplicationMetadata(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("projects", "payments")
+	cluster := fleetID("clusters", "west")
+	checkout := ApplicationSummary{
+		Identity: fleetID("apps", "checkout"), Project: project,
+		Targets:      []StageTargetSummary{{StableID: "checkout-prod", Stage: "prod", Cluster: cluster}},
+		CurrentStage: "prod", CurrentCluster: cluster,
+		Health: HealthDegraded, Sync: SyncStateOutOfSync,
+		DriftCount: 3, MissingResourceCount: 2, ResourceCount: 17,
+		ReleaseState: ReleaseStateVerifying, RolloutState: RolloutStateProgressing,
+		LastTransitionUnixMS: 1_752_000_000_123,
+	}
+	worker := ApplicationSummary{
+		Identity: fleetID("apps", "worker"), Project: project,
+		Health: HealthHealthy, ResourceCount: 4,
+	}
+	api := ApplicationSummary{
+		Identity: fleetID("services", "api"), Project: project,
+		Health: HealthProgressing, ResourceCount: 6,
+	}
+	snapshot := newQuerySnapshot(t, api, worker, checkout)
+
+	result, err := snapshot.QueryMap(
+		QueryScope{Projects: ProjectSet{project: {}}},
+		FleetMapQuery{Group: GroupDimensionNamespace},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"g:namespace:value:apps",
+		"g:namespace:value:services",
+	}, mapNodeIDs(result.Roots))
+	require.Equal(t, []string{"apps", "services"}, []string{
+		result.Roots[0].GroupValue,
+		result.Roots[1].GroupValue,
+	})
+
+	wantStableIDs := map[string]int{
+		"a:apps/checkout": 0,
+		"a:apps/worker":   0,
+		"a:services/api":  0,
+	}
+	var checkoutLeaf *FleetMapNode
+	for i := range result.Roots {
+		root := &result.Roots[i]
+		require.Nil(t, root.ApplicationMetadata, "group nodes must remain compact aggregates")
+		for j := range root.Children {
+			leaf := &root.Children[j]
+			wantStableIDs[leaf.StableID]++
+			if leaf.StableID == "a:apps/checkout" {
+				checkoutLeaf = leaf
+			}
+		}
+	}
+	require.Equal(t, map[string]int{
+		"a:apps/checkout": 1,
+		"a:apps/worker":   1,
+		"a:services/api":  1,
+	}, wantStableIDs, "map leaves must be the exact stable-ID multiset of authorized Applications")
+	require.NotNil(t, checkoutLeaf)
+	require.Equal(t, &FleetMapApplicationMetadata{
+		Project: project, CurrentCluster: cluster, CurrentStage: "prod",
+		Sync: SyncStateOutOfSync, Release: ReleaseStateVerifying, Rollout: RolloutStateProgressing,
+		DriftedResources: 3, MissingResources: 2, ManagedResources: 17,
+		LastTransitionUnixMS: 1_752_000_000_123,
+	}, checkoutLeaf.ApplicationMetadata)
+}
+
+func TestFleetMapMissingResourcesOverrideOnlyBaselineHealth(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("projects", "payments")
+	applications := []ApplicationSummary{
+		{Identity: fleetID("apps", "healthy"), Project: project, Health: HealthHealthy, MissingResourceCount: 1},
+		{Identity: fleetID("apps", "unknown"), Project: project, Health: HealthUnknown, MissingResourceCount: 2},
+		{Identity: fleetID("apps", "progressing"), Project: project, Health: HealthProgressing, MissingResourceCount: 3},
+		{Identity: fleetID("apps", "degraded"), Project: project, Health: HealthDegraded, MissingResourceCount: 4},
+		{Identity: fleetID("apps", "failed"), Project: project, Health: HealthFailed, MissingResourceCount: 5},
+	}
+	snapshot := newQuerySnapshot(t, applications...)
+
+	result, err := snapshot.QueryMap(
+		QueryScope{Projects: ProjectSet{project: {}}},
+		FleetMapQuery{},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []HealthBucket{
+		{Health: HealthProgressing, Count: 1},
+		{Health: HealthDegraded, Count: 1},
+		{Health: HealthFailed, Count: 1},
+		{Health: HealthMissing, Count: 2},
+	}, result.Roots[0].Health)
+
+	wantHealth := map[string]Health{
+		"a:apps/healthy": HealthMissing, "a:apps/unknown": HealthMissing,
+		"a:apps/progressing": HealthProgressing, "a:apps/degraded": HealthDegraded,
+		"a:apps/failed": HealthFailed,
+	}
+	for i := range result.Roots[0].Children {
+		leaf := &result.Roots[0].Children[i]
+		require.Equal(t, []HealthBucket{{Health: wantHealth[leaf.StableID], Count: 1}}, leaf.Health)
+	}
+}
+
 func TestFleetMapCarriesAuthorizedSelfExcludingFacetsForItsSearch(t *testing.T) {
 	t.Parallel()
 

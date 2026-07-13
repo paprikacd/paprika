@@ -100,6 +100,60 @@ func TestFleetMatrixProjectByHealthContributesOncePerApplication(t *testing.T) {
 	}, result.Cells)
 }
 
+func TestFleetMatrixNamespaceCanBeEitherAxis(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("team", "payments")
+	apps := ApplicationSummary{
+		Identity: fleetID("apps", "checkout"), Project: project,
+		Health: HealthHealthy, ResourceCount: 3,
+	}
+	services := ApplicationSummary{
+		Identity: fleetID("services", "worker"), Project: project,
+		Health: HealthDegraded, ResourceCount: 5,
+	}
+	snapshot := newQuerySnapshot(t, services, apps)
+	scope := QueryScope{Projects: ProjectSet{project: {}}}
+
+	namespaceRows, err := snapshot.QueryMatrix(scope, FleetMatrixQuery{
+		RowGroup: GroupDimensionNamespace, ColumnGroup: GroupDimensionHealth,
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []FleetMatrixHeader{
+		{StableID: "g:namespace:value:apps", Label: "apps", Value: "apps"},
+		{StableID: "g:namespace:value:services", Label: "services", Value: "services"},
+	}, namespaceRows.Rows)
+	require.Equal(t, []FleetMatrixCell{
+		{
+			RowID: "g:namespace:value:apps", ColumnID: "g:health:healthy",
+			ApplicationCount: 1, Health: []HealthBucket{{Health: HealthHealthy, Count: 1}}, ResourceWeight: 3,
+		},
+		{
+			RowID: "g:namespace:value:services", ColumnID: "g:health:degraded",
+			ApplicationCount: 1, Health: []HealthBucket{{Health: HealthDegraded, Count: 1}}, ResourceWeight: 5,
+		},
+	}, namespaceRows.Cells)
+
+	namespaceColumns, err := snapshot.QueryMatrix(scope, FleetMatrixQuery{
+		RowGroup: GroupDimensionHealth, ColumnGroup: GroupDimensionNamespace,
+	}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []FleetMatrixHeader{
+		{StableID: "g:namespace:value:apps", Label: "apps", Value: "apps"},
+		{StableID: "g:namespace:value:services", Label: "services", Value: "services"},
+	}, namespaceColumns.Columns)
+	require.Equal(t, []FleetMatrixCell{
+		{
+			RowID: "g:health:healthy", ColumnID: "g:namespace:value:apps",
+			ApplicationCount: 1, Health: []HealthBucket{{Health: HealthHealthy, Count: 1}}, ResourceWeight: 3,
+		},
+		{
+			RowID: "g:health:degraded", ColumnID: "g:namespace:value:services",
+			ApplicationCount: 1, Health: []HealthBucket{{Health: HealthDegraded, Count: 1}}, ResourceWeight: 5,
+		},
+	}, namespaceColumns.Cells)
+}
+
 func TestFleetMatrixStageByClusterUsesOnlyActualTargets(t *testing.T) {
 	t.Parallel()
 

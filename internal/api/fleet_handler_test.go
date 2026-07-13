@@ -131,6 +131,16 @@ func TestFleetValidation(t *testing.T) {
 			},
 		},
 		{
+			name:     "map accepts namespace group",
+			wantCode: connect.CodeUnavailable,
+			call: func(_ *testing.T, server *PaprikaServer) error {
+				_, err := server.QueryFleetMap(context.Background(), connect.NewRequest(&paprikav1.QueryFleetMapRequest{
+					Group: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE,
+				}))
+				return err
+			},
+		},
+		{
 			name:     "map rejects unknown group",
 			wantCode: connect.CodeInvalidArgument,
 			call: func(_ *testing.T, server *PaprikaServer) error {
@@ -167,6 +177,17 @@ func TestFleetValidation(t *testing.T) {
 				_, err := server.QueryFleetMatrix(context.Background(), connect.NewRequest(&paprikav1.QueryFleetMatrixRequest{
 					RowGroup:    paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_PROJECT,
 					ColumnGroup: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_CLUSTER,
+				}))
+				return err
+			},
+		},
+		{
+			name:     "matrix accepts namespace as an axis",
+			wantCode: connect.CodeUnavailable,
+			call: func(_ *testing.T, server *PaprikaServer) error {
+				_, err := server.QueryFleetMatrix(context.Background(), connect.NewRequest(&paprikav1.QueryFleetMatrixRequest{
+					RowGroup:    paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE,
+					ColumnGroup: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_HEALTH,
 				}))
 				return err
 			},
@@ -445,7 +466,7 @@ func TestQueryApplicationsServesConvertedFleetPage(t *testing.T) {
 	require.Zero(t, reader.checkReadyCalls)
 }
 
-func TestQueryFleetMapServesConvertedAggregationWithDefaults(t *testing.T) {
+func TestQueryFleetMapServesNamespaceAggregationWithCompactMetadata(t *testing.T) {
 	t.Parallel()
 
 	project := types.NamespacedName{Namespace: "apps", Name: "retail"}
@@ -464,6 +485,13 @@ func TestQueryFleetMapServesConvertedAggregationWithDefaults(t *testing.T) {
 					Label: "checkout", Application: application, GroupValue: "degraded",
 					ApplicationCount: 1, TargetCount: 2, ResourceWeight: 12,
 					RequestRateWeight: 4.5, EffectiveWeight: 12, UsedResourceFallback: true,
+					ApplicationMetadata: &fleet.FleetMapApplicationMetadata{
+						Project: project, CurrentCluster: types.NamespacedName{Namespace: "clusters", Name: "west"},
+						CurrentStage: "production", Sync: fleet.SyncStateOutOfSync,
+						Release: fleet.ReleaseStateVerifying, Rollout: fleet.RolloutStateProgressing,
+						DriftedResources: 3, MissingResources: 2, ManagedResources: 12,
+						LastTransitionUnixMS: 1_752_000_000_123,
+					},
 				}},
 			}},
 			Total: 1, Generation: 73,
@@ -477,25 +505,42 @@ func TestQueryFleetMapServesConvertedAggregationWithDefaults(t *testing.T) {
 
 	response, err := server.QueryFleetMap(context.Background(), connect.NewRequest(&paprikav1.QueryFleetMapRequest{
 		Filter: &paprikav1.FleetFilter{Namespaces: []string{"apps"}}, Search: "checkout",
+		Group: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE,
 	}))
 	require.NoError(t, err)
 	require.Equal(t, []string{"apps"}, reader.mapQuery.Filter.Namespaces)
 	require.Equal(t, "checkout", reader.mapQuery.Search)
-	require.Equal(t, fleet.GroupDimensionProject, reader.mapQuery.Group)
+	require.Equal(t, fleet.GroupDimensionNamespace, reader.mapQuery.Group)
 	require.Equal(t, fleet.SizeMetricResourceCount, reader.mapQuery.SizeMetric)
 	require.Equal(t, uint64(73), response.Msg.IndexGeneration)
 	require.Equal(t, uint64(1), response.Msg.Total)
 	require.Len(t, response.Msg.Roots, 1)
 	root := response.Msg.Roots[0]
 	require.Equal(t, paprikav1.FleetMapNodeKind_FLEET_MAP_NODE_KIND_GROUP, root.Kind)
+	require.Nil(t, root.ApplicationMetadata, "aggregate nodes without metadata must remain backward-compatible")
 	require.Equal(t, project.Name, root.GetGroupObject().Name)
 	require.Equal(t, paprikav1.FleetHealth_FLEET_HEALTH_DEGRADED, root.Health[0].Health)
 	require.Equal(t, 4.5, root.RequestRateWeight)
 	require.Equal(t, float64(12), root.EffectiveWeight)
 	require.True(t, root.UsedResourceFallback)
 	require.Len(t, root.Children, 1)
-	require.Equal(t, application.Name, root.Children[0].Application.Name)
-	require.Equal(t, "degraded", root.Children[0].GetGroupValue())
+	child := root.Children[0]
+	require.Equal(t, application.Name, child.Application.Name)
+	require.Equal(t, "degraded", child.GetGroupValue())
+	require.NotNil(t, child.ApplicationMetadata)
+	require.Equal(t, project.Namespace, child.ApplicationMetadata.Project.Namespace)
+	require.Equal(t, project.Name, child.ApplicationMetadata.Project.Name)
+	require.Equal(t, "clusters", child.ApplicationMetadata.CurrentCluster.Namespace)
+	require.Equal(t, "west", child.ApplicationMetadata.CurrentCluster.Name)
+	require.Equal(t, "production", child.ApplicationMetadata.CurrentStage)
+	require.Equal(t, paprikav1.FleetSyncState_FLEET_SYNC_STATE_OUT_OF_SYNC, child.ApplicationMetadata.Sync)
+	require.Equal(t, paprikav1.FleetReleaseState_FLEET_RELEASE_STATE_VERIFYING, child.ApplicationMetadata.Release)
+	require.Equal(t, paprikav1.FleetRolloutState_FLEET_ROLLOUT_STATE_PROGRESSING, child.ApplicationMetadata.Rollout)
+	require.Equal(t, uint64(3), child.ApplicationMetadata.DriftedResources)
+	require.Equal(t, uint64(2), child.ApplicationMetadata.MissingResources)
+	require.Equal(t, uint64(12), child.ApplicationMetadata.ManagedResources)
+	require.Equal(t, int64(1_752_000_000_123), child.ApplicationMetadata.LastTransition.AsTime().UnixMilli())
+	require.Empty(t, child.ApplicationMetadata.IssueSummary)
 	require.Len(t, response.Msg.Facets, 1)
 	require.Equal(t, project.Name, response.Msg.Facets[0].GetObject().Name)
 	require.Zero(t, reader.checkReadyCalls)

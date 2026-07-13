@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
@@ -515,6 +517,8 @@ func fleetGroupDimensionFromProto(value paprikav1.FleetGroupDimension) fleet.Gro
 		return fleet.GroupDimensionStage
 	case paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_HEALTH:
 		return fleet.GroupDimensionHealth
+	case paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE:
+		return fleet.GroupDimensionNamespace
 	default:
 		return fleet.GroupDimensionUnspecified
 	}
@@ -631,6 +635,9 @@ func fleetMapNodeToProto(node *fleet.FleetMapNode) *paprikav1.FleetMapNode {
 		UsedResourceFallback: node.UsedResourceFallback,
 		Children:             make([]*paprikav1.FleetMapNode, 0, len(node.Children)),
 	}
+	if node.ApplicationMetadata != nil {
+		converted.ApplicationMetadata = fleetMapApplicationMetadataToProto(node.ApplicationMetadata)
+	}
 	if node.GroupObject != (types.NamespacedName{}) {
 		converted.GroupKey = &paprikav1.FleetMapNode_GroupObject{
 			GroupObject: fleetObjectKeyToProto(node.GroupObject),
@@ -640,6 +647,27 @@ func fleetMapNodeToProto(node *fleet.FleetMapNode) *paprikav1.FleetMapNode {
 	}
 	for i := range node.Children {
 		converted.Children = append(converted.Children, fleetMapNodeToProto(&node.Children[i]))
+	}
+	return converted
+}
+
+func fleetMapApplicationMetadataToProto(
+	metadata *fleet.FleetMapApplicationMetadata,
+) *paprikav1.FleetMapApplicationMetadata {
+	converted := &paprikav1.FleetMapApplicationMetadata{
+		Project:          fleetObjectKeyToProto(metadata.Project),
+		CurrentCluster:   fleetObjectKeyToProto(metadata.CurrentCluster),
+		CurrentStage:     metadata.CurrentStage,
+		Sync:             fleetSyncToProto(metadata.Sync),
+		Release:          fleetReleaseToProto(metadata.Release),
+		Rollout:          fleetRolloutToProto(metadata.Rollout),
+		DriftedResources: metadata.DriftedResources,
+		MissingResources: metadata.MissingResources,
+		ManagedResources: metadata.ManagedResources,
+		IssueSummary:     metadata.IssueSummary,
+	}
+	if metadata.LastTransitionUnixMS != 0 {
+		converted.LastTransition = timestamppb.New(time.UnixMilli(metadata.LastTransitionUnixMS))
 	}
 	return converted
 }
@@ -1085,7 +1113,8 @@ func validFleetGroupDimension(value paprikav1.FleetGroupDimension, allowUnspecif
 	case paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_PROJECT,
 		paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_CLUSTER,
 		paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_STAGE,
-		paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_HEALTH:
+		paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_HEALTH,
+		paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE:
 		return true
 	default:
 		return false

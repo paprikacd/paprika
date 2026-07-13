@@ -20,6 +20,7 @@ const (
 	GroupDimensionCluster     GroupDimension = 2
 	GroupDimensionStage       GroupDimension = 3
 	GroupDimensionHealth      GroupDimension = 4
+	GroupDimensionNamespace   GroupDimension = 5
 )
 
 // SizeMetric selects the effective visual weight of a map or matrix result.
@@ -88,6 +89,24 @@ type FleetMapNode struct {
 	EffectiveWeight      float64
 	UsedResourceFallback bool
 	Children             []FleetMapNode
+	ApplicationMetadata  *FleetMapApplicationMetadata
+}
+
+// FleetMapApplicationMetadata is the compact projected record attached only
+// to application leaves. It deliberately contains no capabilities or raw
+// provider/Kubernetes data.
+type FleetMapApplicationMetadata struct {
+	Project              ProjectKey
+	CurrentCluster       ClusterKey
+	CurrentStage         string
+	Sync                 SyncState
+	Release              ReleaseState
+	Rollout              RolloutState
+	DriftedResources     uint64
+	MissingResources     uint64
+	ManagedResources     uint64
+	LastTransitionUnixMS int64
+	IssueSummary         string
 }
 
 // FleetMap is one authorized result over one immutable snapshot generation.
@@ -177,7 +196,7 @@ func normalizeGroupDimension(dimension GroupDimension) (GroupDimension, error) {
 	if dimension == GroupDimensionUnspecified {
 		return GroupDimensionProject, nil
 	}
-	if dimension < GroupDimensionProject || dimension > GroupDimensionHealth {
+	if dimension < GroupDimensionProject || dimension > GroupDimensionNamespace {
 		return GroupDimensionUnspecified, errors.New("invalid fleet group dimension")
 	}
 	return dimension, nil
@@ -206,15 +225,29 @@ func (s *Snapshot) mapKey(
 	case GroupDimensionStage:
 		return mapStageKey(current)
 	case GroupDimensionHealth:
-		health := normalizedAggregateHealth(application.Health)
+		health := projectedApplicationHealth(application)
 		value := healthValue(health)
 		return scalarMapGroupKey(dimension, value, value, value, uint8(health))
+	case GroupDimensionNamespace:
+		return mapNamespaceKey(application.Identity.Namespace)
 	case GroupDimensionUnspecified:
 		// normalizeGroupDimension prevents this case.
 		return mapGroupKey{}
 	default:
 		return mapGroupKey{}
 	}
+}
+
+func mapNamespaceKey(namespace string) mapGroupKey {
+	if namespace == "" {
+		return scalarMapGroupKey(
+			GroupDimensionNamespace, "unassigned", "unassigned", "Unassigned", 0,
+		)
+	}
+	return scalarMapGroupKey(
+		GroupDimensionNamespace,
+		"value:"+canonicalComponent(namespace), namespace, namespace, 0,
+	)
 }
 
 func (s *Snapshot) mapClusterKey(current *StageTargetSummary) mapGroupKey {
@@ -290,8 +323,17 @@ func applicationMapLeaf(
 		Application:      application.Identity,
 		ApplicationCount: 1,
 		TargetCount:      uint64(len(targets)),
-		Health:           []HealthBucket{{Health: normalizedAggregateHealth(application.Health), Count: 1}},
+		Health:           []HealthBucket{{Health: projectedApplicationHealth(application), Count: 1}},
 		ResourceWeight:   uint64(application.ResourceCount),
+		ApplicationMetadata: &FleetMapApplicationMetadata{
+			Project: application.Project, CurrentCluster: application.CurrentCluster,
+			CurrentStage: application.CurrentStage, Sync: application.Sync,
+			Release: application.ReleaseState, Rollout: application.RolloutState,
+			DriftedResources:     uint64(application.DriftCount),
+			MissingResources:     uint64(application.MissingResourceCount),
+			ManagedResources:     uint64(application.ResourceCount),
+			LastTransitionUnixMS: application.LastTransitionUnixMS,
+		},
 	}
 	if sizeMetric == SizeMetricResourceCount {
 		leaf.EffectiveWeight = float64(leaf.ResourceWeight)
@@ -541,6 +583,21 @@ func normalizedAggregateHealth(health Health) Health {
 	return health
 }
 
+func projectedApplicationHealth(application *ApplicationSummary) Health {
+	health := normalizedAggregateHealth(application.Health)
+	if application.MissingResourceCount == 0 {
+		return health
+	}
+	switch health {
+	case HealthProgressing, HealthDegraded, HealthFailed:
+		return health
+	case HealthUnspecified, HealthHealthy, HealthUnknown, HealthMissing:
+		return HealthMissing
+	default:
+		return HealthMissing
+	}
+}
+
 func healthValue(health Health) string {
 	if value := canonicalHealth(normalizedAggregateHealth(health)); value != "" {
 		return value
@@ -558,6 +615,8 @@ func groupDimensionValue(dimension GroupDimension) string {
 		return "stage"
 	case GroupDimensionHealth:
 		return "health"
+	case GroupDimensionNamespace:
+		return "namespace"
 	case GroupDimensionUnspecified:
 		return "unspecified"
 	default:

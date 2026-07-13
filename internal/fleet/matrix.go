@@ -152,8 +152,8 @@ func (s *Snapshot) QueryMatrix(
 }
 
 func validateMatrixAxes(row, column GroupDimension) error {
-	if row < GroupDimensionProject || row > GroupDimensionHealth ||
-		column < GroupDimensionProject || column > GroupDimensionHealth ||
+	if row < GroupDimensionProject || row > GroupDimensionNamespace ||
+		column < GroupDimensionProject || column > GroupDimensionNamespace ||
 		row == column {
 		return &ErrInvalidMatrixAxes{Row: row, Column: column}
 	}

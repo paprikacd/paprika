@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package paprika.v1;
 
+import "google/protobuf/timestamp.proto";
+
 option go_package = "github.com/benebsworth/paprika/internal/api/paprika/v1";
 
 message Step {
@@ -925,6 +927,7 @@ enum FleetGroupDimension {
   FLEET_GROUP_DIMENSION_CLUSTER = 2;
   FLEET_GROUP_DIMENSION_STAGE = 3;
   FLEET_GROUP_DIMENSION_HEALTH = 4;
+  FLEET_GROUP_DIMENSION_NAMESPACE = 5;
 }
 
 enum FleetSizeMetric {
@@ -1036,6 +1039,20 @@ message FleetHealthBucket {
   uint64 count = 2;
 }
 
+message FleetMapApplicationMetadata {
+  FleetObjectKey project = 1;
+  FleetObjectKey current_cluster = 2;
+  string current_stage = 3;
+  FleetSyncState sync = 4;
+  FleetReleaseState release = 5;
+  FleetRolloutState rollout = 6;
+  uint64 drifted_resources = 7;
+  uint64 missing_resources = 8;
+  uint64 managed_resources = 9;
+  google.protobuf.Timestamp last_transition = 10;
+  string issue_summary = 11;
+}
+
 message QueryApplicationsRequest {
   FleetFilter filter = 1;
   string search = 2;
@@ -1070,6 +1087,7 @@ message FleetMapNode {
   double effective_weight = 12;
   bool used_resource_fallback = 13;
   repeated FleetMapNode children = 14;
+  FleetMapApplicationMetadata application_metadata = 15;
 }
 
 message QueryFleetMapRequest {

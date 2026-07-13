@@ -13,6 +13,7 @@ import {
   FleetGroupDimension as FleetGroupDimensionProto,
   FleetHealth as FleetHealthProto,
   FleetHealthBucket as FleetHealthBucketMessage,
+  type FleetMapApplicationMetadata as FleetMapApplicationMetadataMessage,
   FleetMapNode as FleetMapNodeMessage,
   FleetMapNodeKind as FleetMapNodeKindProto,
   FleetMatrixCell as FleetMatrixCellMessage,
@@ -131,6 +132,20 @@ export interface FleetHealthBucket {
   count: bigint
 }
 
+export interface FleetMapApplicationMetadata {
+  project?: NamespacedKey
+  currentCluster?: NamespacedKey
+  currentStage: string
+  sync: FleetSyncStatus
+  release: FleetReleaseStatus
+  rollout: FleetRolloutStatus
+  driftedResources: bigint
+  missingResources: bigint
+  managedResources: bigint
+  lastTransitionUnixMs?: bigint
+  issueSummary?: string
+}
+
 export interface FleetMapNode {
   stableId: string
   kind: "group" | "application" | "unspecified"
@@ -146,6 +161,7 @@ export interface FleetMapNode {
   effectiveWeight: number
   usedResourceFallback: boolean
   children: FleetMapNode[]
+  applicationMetadata?: FleetMapApplicationMetadata
 }
 
 export interface FleetMapResult {
@@ -439,7 +455,7 @@ function toSortDirection(value: FleetQueryState["direction"]): FleetSortDirectio
   return value === "desc" ? FleetSortDirectionProto.DESC : FleetSortDirectionProto.ASC
 }
 
-function toGroupDimension(value: FleetGroup): FleetGroupDimensionProto {
+function toGroupDimension(value: FleetGroup | "namespace"): FleetGroupDimensionProto {
   switch (value) {
     case "project":
       return FleetGroupDimensionProto.PROJECT
@@ -449,6 +465,8 @@ function toGroupDimension(value: FleetGroup): FleetGroupDimensionProto {
       return FleetGroupDimensionProto.STAGE
     case "health":
       return FleetGroupDimensionProto.HEALTH
+    case "namespace":
+      return FleetGroupDimensionProto.NAMESPACE
   }
 }
 
@@ -529,6 +547,30 @@ function fromMapNode(message: FleetMapNodeMessage): FleetMapNode {
     effectiveWeight: message.effectiveWeight,
     usedResourceFallback: message.usedResourceFallback,
     children: message.children.map(fromMapNode),
+    applicationMetadata: message.applicationMetadata
+      ? fromMapApplicationMetadata(message.applicationMetadata)
+      : undefined,
+  }
+}
+
+function fromMapApplicationMetadata(
+  message: FleetMapApplicationMetadataMessage,
+): FleetMapApplicationMetadata {
+  return {
+    project: fromObjectKey(message.project),
+    currentCluster: fromObjectKey(message.currentCluster),
+    currentStage: message.currentStage,
+    sync: fromSync(message.sync),
+    release: fromRelease(message.release),
+    rollout: fromRollout(message.rollout),
+    driftedResources: message.driftedResources,
+    missingResources: message.missingResources,
+    managedResources: message.managedResources,
+    lastTransitionUnixMs: message.lastTransition
+      ? message.lastTransition.seconds * BigInt(1_000) +
+        BigInt(Math.trunc(message.lastTransition.nanos / 1_000_000))
+      : undefined,
+    issueSummary: message.issueSummary || undefined,
   }
 }
 

@@ -7,6 +7,8 @@ import {
   FleetFacetDimension,
   FleetGroupDimension,
   FleetHealth,
+  FleetMapApplicationMetadata,
+  FleetMapNode,
   FleetObjectKey,
   FleetReleaseState,
   FleetRolloutState,
@@ -114,6 +116,18 @@ describe("fleet protobuf boundary", () => {
       columnGroup: FleetGroupDimension.HEALTH,
       sizeMetric: FleetSizeMetric.REQUEST_RATE,
     })
+
+    const namespaceState = {
+      ...state,
+      group: "namespace",
+      rows: "namespace",
+    } as unknown as FleetQueryState
+    expect(toQueryFleetMapRequest(namespaceState).group).toBe(
+      FleetGroupDimension.NAMESPACE,
+    )
+    expect(toQueryFleetMatrixRequest(namespaceState).rowGroup).toBe(
+      FleetGroupDimension.NAMESPACE,
+    )
   })
 
   it("maps generated responses to plain internal values without losing bigint counts", () => {
@@ -193,5 +207,54 @@ describe("fleet protobuf boundary", () => {
       },
     ])
     expect(matrix.facets).toEqual(map.facets)
+  })
+
+  it("maps optional compact application metadata without changing legacy nodes", () => {
+    const response = new QueryFleetMapResponse({
+      roots: [
+        new FleetMapNode({
+          stableId: "g:namespace:value:apps",
+          children: [
+            new FleetMapNode({
+              stableId: "a:apps/checkout",
+              application: new FleetObjectKey({ namespace: "apps", name: "checkout" }),
+              applicationMetadata: new FleetMapApplicationMetadata({
+                project: new FleetObjectKey({ namespace: "tenant", name: "payments" }),
+                currentCluster: new FleetObjectKey({ namespace: "clusters", name: "west" }),
+                currentStage: "production",
+                sync: FleetSyncState.OUT_OF_SYNC,
+                release: FleetReleaseState.VERIFYING,
+                rollout: FleetRolloutState.PROGRESSING,
+                driftedResources: BigInt(3),
+                missingResources: BigInt(2),
+                managedResources: BigInt(12),
+                lastTransition: {
+                  seconds: BigInt(1_752_000_000),
+                  nanos: 123_000_000,
+                },
+                issueSummary: "2 resources missing",
+              }),
+            }),
+            new FleetMapNode({ stableId: "a:apps/legacy" }),
+          ],
+        }),
+      ],
+    })
+
+    const result = fromQueryFleetMapResponse(response)
+    expect(result.roots[0].children[0].applicationMetadata).toEqual({
+      project: { namespace: "tenant", name: "payments" },
+      currentCluster: { namespace: "clusters", name: "west" },
+      currentStage: "production",
+      sync: "out_of_sync",
+      release: "verifying",
+      rollout: "progressing",
+      driftedResources: BigInt(3),
+      missingResources: BigInt(2),
+      managedResources: BigInt(12),
+      lastTransitionUnixMs: BigInt(1_752_000_000_123),
+      issueSummary: "2 resources missing",
+    })
+    expect(result.roots[0].children[1].applicationMetadata).toBeUndefined()
   })
 })

@@ -64,7 +64,7 @@ func TestFleetDescriptor(t *testing.T) {
 		"FleetGroupDimension": {
 			"FLEET_GROUP_DIMENSION_UNSPECIFIED": 0, "FLEET_GROUP_DIMENSION_PROJECT": 1,
 			"FLEET_GROUP_DIMENSION_CLUSTER": 2, "FLEET_GROUP_DIMENSION_STAGE": 3,
-			"FLEET_GROUP_DIMENSION_HEALTH": 4,
+			"FLEET_GROUP_DIMENSION_HEALTH": 4, "FLEET_GROUP_DIMENSION_NAMESPACE": 5,
 		},
 		"FleetSizeMetric": {
 			"FLEET_SIZE_METRIC_UNSPECIFIED": 0, "FLEET_SIZE_METRIC_RESOURCE_COUNT": 1,
@@ -264,6 +264,37 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 		},
 		"count": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
 	},
+	"FleetMapApplicationMetadata": {
+		"project": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"current_cluster": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"current_stage": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"sync": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSyncState",
+		},
+		"release": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetReleaseState",
+		},
+		"rollout": {
+			number: 6, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetRolloutState",
+		},
+		"drifted_resources": {number: 7, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"missing_resources": {number: 8, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"managed_resources": {number: 9, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"last_transition": {
+			number: 10, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "google.protobuf.Timestamp",
+		},
+		"issue_summary": {number: 11, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
 	"QueryApplicationsRequest": {
 		"filter": {
 			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
@@ -336,6 +367,10 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 		"children": {
 			number: 14, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
 			referencedType: "paprika.v1.FleetMapNode",
+		},
+		"application_metadata": {
+			number: 15, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetMapApplicationMetadata",
 		},
 	},
 	"QueryFleetMapRequest": {
@@ -430,7 +465,7 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 
 func assertFleetMessageDescriptors(t *testing.T, messages protoreflect.MessageDescriptors) {
 	t.Helper()
-	require.Len(t, fleetMessageDescriptorContracts, 17)
+	require.Len(t, fleetMessageDescriptorContracts, 18)
 	for messageName, wantFields := range fleetMessageDescriptorContracts {
 		message := messages.ByName(protoreflect.Name(messageName))
 		require.NotNilf(t, message, "missing message %s", messageName)

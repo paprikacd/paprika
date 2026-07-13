@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { proto3 } from "@bufbuild/protobuf";
+import { proto3, Timestamp } from "@bufbuild/protobuf";
 
 /**
  * buf:lint:ignore ENUM_VALUE_PREFIX
@@ -147,6 +147,7 @@ export const FleetGroupDimension = /*@__PURE__*/ proto3.makeEnum(
     {no: 2, name: "FLEET_GROUP_DIMENSION_CLUSTER", localName: "CLUSTER"},
     {no: 3, name: "FLEET_GROUP_DIMENSION_STAGE", localName: "STAGE"},
     {no: 4, name: "FLEET_GROUP_DIMENSION_HEALTH", localName: "HEALTH"},
+    {no: 5, name: "FLEET_GROUP_DIMENSION_NAMESPACE", localName: "NAMESPACE"},
   ],
 );
 
@@ -1886,6 +1887,26 @@ export const FleetHealthBucket = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.FleetMapApplicationMetadata
+ */
+export const FleetMapApplicationMetadata = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetMapApplicationMetadata",
+  () => [
+    { no: 1, name: "project", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "current_cluster", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "current_stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "sync", kind: "enum", T: proto3.getEnumType(FleetSyncState) },
+    { no: 5, name: "release", kind: "enum", T: proto3.getEnumType(FleetReleaseState) },
+    { no: 6, name: "rollout", kind: "enum", T: proto3.getEnumType(FleetRolloutState) },
+    { no: 7, name: "drifted_resources", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 8, name: "missing_resources", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 9, name: "managed_resources", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 10, name: "last_transition", kind: "message", T: Timestamp },
+    { no: 11, name: "issue_summary", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export const QueryApplicationsRequest = /*@__PURE__*/ proto3.makeMessageType(
@@ -1934,6 +1955,7 @@ export const FleetMapNode = /*@__PURE__*/ proto3.makeMessageType(
     { no: 12, name: "effective_weight", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
     { no: 13, name: "used_resource_fallback", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
     { no: 14, name: "children", kind: "message", T: FleetMapNode, repeated: true },
+    { no: 15, name: "application_metadata", kind: "message", T: FleetMapApplicationMetadata },
   ],
 );
 
