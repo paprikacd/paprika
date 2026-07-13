@@ -2,6 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useRef } from "react"
 
 import type {
@@ -14,6 +15,7 @@ import type {
   FleetFocusTarget,
 } from "@/lib/fleet-focus"
 import type { NamespacedKey } from "@/lib/fleet-query"
+import { applicationURL } from "@/lib/release-query"
 import { cn } from "@/lib/utils"
 
 export interface ApplicationCollectionProps {
@@ -29,6 +31,7 @@ export interface ApplicationCollectionProps {
 }
 
 export function ApplicationTable(props: ApplicationCollectionProps) {
+  const searchParams = useSearchParams()
   const scrollRef = useRef<HTMLDivElement>(null)
   const rowTargets = useRef(new Map<string, HTMLElement>())
   const virtualizer = useVirtualizer({
@@ -77,11 +80,11 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
             className="sr-only min-h-11 grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 px-4 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:px-6 xl:not-sr-only xl:grid"
           >
             <span role="columnheader" aria-colindex={1}>Application</span>
-            <span role="columnheader" aria-colindex={2}>Target / stage</span>
-            <span role="columnheader" aria-colindex={3}>Health status</span>
-            <span role="columnheader" aria-colindex={4}>Sync status</span>
-            <span role="columnheader" aria-colindex={5}>Resource count</span>
-            <span role="columnheader" aria-colindex={6}>Authorized actions</span>
+            <span role="columnheader" aria-colindex={2}>Target</span>
+            <span role="columnheader" aria-colindex={3}>Health</span>
+            <span role="columnheader" aria-colindex={4}>Sync</span>
+            <span role="columnheader" aria-colindex={5}>Resources</span>
+            <span role="columnheader" aria-colindex={6}>Actions</span>
           </div>
         </div>
 
@@ -204,7 +207,7 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                   {identity ? (
                     <span className="flex flex-wrap items-center gap-1.5">
                       <Link
-                        href={applicationDetailHref(identity)}
+                        href={applicationURL(searchParams, identity)}
                         aria-label={`Open application ${identityKey(identity)}`}
                         className="inline-flex min-h-11 items-center rounded-md border border-border bg-background px-2.5 text-[0.6875rem] font-semibold text-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
@@ -356,14 +359,6 @@ export function applicationKey(application: FleetApplicationSummary, index: numb
 
 export function identityKey(identity: FleetApplicationIdentity): string {
   return `${identity.namespace}/${identity.name}`
-}
-
-export function applicationDetailHref(identity: FleetApplicationIdentity): string {
-  const params = new URLSearchParams({
-    application_namespace: identity.namespace,
-    application_name: identity.name,
-  })
-  return `/dashboard/application?${params.toString()}`
 }
 
 export function releaseFocusOwnership(

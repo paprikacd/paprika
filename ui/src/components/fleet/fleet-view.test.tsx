@@ -353,12 +353,22 @@ describe("FleetView application presentations", () => {
     render(<FleetView />)
 
     const table = screen.getByRole("table", { name: "Applications" })
-    const header = screen.getByRole("row", { name: /authorized actions/i })
+    const header = screen.getByRole("row", {
+      name: "Application Target Health Sync Resources Actions",
+    })
     const checkout = screen.getByRole("row", { name: /apps\/checkout/i })
     const payments = screen.getByRole("row", { name: /apps\/payments/i })
     expect(table).toHaveAttribute("aria-rowcount", "201")
     expect(table).toHaveAttribute("aria-colcount", "6")
     expect(header).toHaveAttribute("aria-rowindex", "1")
+    expect(within(header).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Application",
+      "Target",
+      "Health",
+      "Sync",
+      "Resources",
+      "Actions",
+    ])
     expect(checkout).toHaveAttribute("aria-rowindex", "2")
     expect(payments).toHaveAttribute("aria-rowindex", "3")
   })
@@ -454,22 +464,45 @@ describe("FleetView application presentations", () => {
   })
 
   it("keeps each compact application row in one DOM subtree with named facts and drill-down", () => {
-    navigation.params = new URLSearchParams("view=table")
-    const apps = applicationsData([
-      application("delivery", "checkout", {
-        health: "degraded",
-        sync: "out_of_sync",
-        resourceCount: 42,
-        capabilities: [
-          "application_sync",
-          "release_rollback",
-          "gate_approve",
-          "pipeline_retry",
-        ],
-      }),
-    ])
+    navigation.params = new URLSearchParams(
+      "project=team-b%2Fpayments&project=team-a%2Fcheckout" +
+        "&cluster=platform%2Fstaging&cluster=platform%2Fprod" +
+        "&stage=production&stage=canary&namespace=platform&namespace=apps" +
+        "&view=table&health=degraded&name=legacy-name",
+    )
+    const scopedFacets = [
+      facet("project", "team-a/checkout", BigInt(1)),
+      facet("project", "team-b/payments", BigInt(1)),
+      facet("cluster", "platform/prod", BigInt(1)),
+      facet("cluster", "platform/staging", BigInt(1)),
+      facet("stage", "canary", BigInt(1)),
+      facet("stage", "production", BigInt(1)),
+      facet("namespace", "apps", BigInt(1)),
+      facet("namespace", "platform", BigInt(1)),
+    ]
+    const apps = applicationsData(
+      [
+        application("delivery", "checkout", {
+          health: "degraded",
+          sync: "out_of_sync",
+          resourceCount: 42,
+          capabilities: [
+            "application_sync",
+            "release_rollback",
+            "gate_approve",
+            "pipeline_retry",
+          ],
+        }),
+      ],
+      scopedFacets,
+    )
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+      fleetResult(state, {
+        status: "ready",
+        currentData: apps,
+        displayData: apps,
+        applicationFacets: scopedFacets,
+      }),
     )
     render(<FleetView />)
 
@@ -494,8 +527,13 @@ describe("FleetView application presentations", () => {
     })
     expect(open).toHaveAttribute(
       "href",
-      "/dashboard/application?application_namespace=delivery&application_name=checkout",
+      "/dashboard/application?project=team-a%2Fcheckout&project=team-b%2Fpayments" +
+        "&cluster=platform%2Fprod&cluster=platform%2Fstaging" +
+        "&stage=canary&stage=production&namespace=apps&namespace=platform" +
+        "&application_namespace=delivery&application_name=checkout",
     )
+    expect(new URL(open.getAttribute("href")!, "http://localhost").searchParams.has("name")).toBe(false)
+    navigation.replace.mockClear()
     open.focus()
     fireEvent.keyDown(open, { key: "Enter" })
     expect(open).toHaveFocus()

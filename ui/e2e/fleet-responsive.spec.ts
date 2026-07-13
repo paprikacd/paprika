@@ -544,6 +544,7 @@ async function expectLateTableDrillDown(
     name: `Open application ${identity}`,
     exact: true,
   })
+  const sharedNamespaceScope = new URL(page.url()).searchParams.getAll("namespace")
   await expectVisibleInside(
     page,
     drillDown,
@@ -560,13 +561,21 @@ async function expectLateTableDrillDown(
         const url = new URL(page.url())
         return {
           pathname: url.pathname,
-          namespace: url.searchParams.get("namespace"),
-          name: url.searchParams.get("name"),
+          applicationNamespace: url.searchParams.get("application_namespace"),
+          applicationName: url.searchParams.get("application_name"),
+          sharedNamespaceScope: url.searchParams.getAll("namespace"),
+          legacyName: url.searchParams.get("name"),
         }
       },
       { message: `${presentation} Enter drill-down must navigate to application detail` },
     )
-    .toEqual({ pathname: "/dashboard/application", namespace, name })
+    .toEqual({
+      pathname: "/dashboard/application",
+      applicationNamespace: namespace,
+      applicationName: name,
+      sharedNamespaceScope,
+      legacyName: null,
+    })
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible()
 }
 
