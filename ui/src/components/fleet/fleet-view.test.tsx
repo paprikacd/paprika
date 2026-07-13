@@ -583,6 +583,10 @@ describe("FleetView application presentations", () => {
     expect(table).toHaveAttribute("aria-rowcount", "201")
     expect(table).toHaveAttribute("aria-colcount", "6")
     expect(header).toHaveAttribute("aria-rowindex", "1")
+    expect(header.parentElement).toHaveClass("hidden", "xl:block")
+    expect(header).toHaveClass("px-4", "sm:px-6", "xl:grid")
+    expect(header).not.toHaveClass("sr-only")
+    expect(header).not.toHaveClass("xl:not-sr-only")
     expect(within(header).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
       "Application",
       "Target",

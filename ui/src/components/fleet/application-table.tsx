@@ -73,11 +73,11 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
         aria-colcount={6}
         className="h-[min(62vh,42rem)] min-h-80 overflow-auto border-b border-border bg-background"
       >
-        <div className="sticky top-0 z-10 h-px overflow-hidden border-0 bg-card xl:h-auto xl:overflow-visible xl:border-b xl:border-border">
+        <div className="sticky top-0 z-10 hidden border-b border-border bg-card xl:block">
           <div
             role="row"
             aria-rowindex={1}
-            className="sr-only min-h-11 grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 px-4 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:px-6 xl:not-sr-only xl:grid"
+            className="min-h-11 grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 px-4 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:px-6 xl:grid"
           >
             <span role="columnheader" aria-colindex={1}>Application</span>
             <span role="columnheader" aria-colindex={2}>Target</span>
