@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react"
 import Link from "next/link"
 import type {
   Application,
@@ -24,6 +24,7 @@ import {
   Shield,
   Workflow,
 } from "lucide-react"
+import { parseReleaseQuery, releaseURL } from "@/lib/release-query"
 
 const RECENT_SEARCHES_KEY = "paprika-dashboard-recent-searches"
 const MAX_RECENT_SEARCHES = 5
@@ -43,6 +44,8 @@ interface DashboardCommandCenterProps {
   applicationSets: ApplicationSet[]
   policies: Policy[]
   loading?: boolean
+  searchReleases?: (query: string, signal: AbortSignal) => Promise<Release[]>
+  releaseQuery?: string
 }
 
 interface SearchItem {
@@ -110,6 +113,14 @@ function namespacedDetailHref(base: string, item: { namespace?: string; name: st
   return `${base}?namespace=${encodeURIComponent(item.namespace)}&name=${encodeURIComponent(item.name)}`
 }
 
+function releaseResultHref(releaseQuery: string, release: Pick<Release, "name" | "namespace">) {
+  const scope = parseReleaseQuery(releaseQuery).state
+  const namespaces = release.namespace
+    ? [...scope.namespaces, release.namespace]
+    : scope.namespaces
+  return releaseURL(scope, { namespaces, q: release.name })
+}
+
 function compactParts(parts: Array<string | number | boolean | undefined | null>) {
   return parts
     .filter((part) => part !== undefined && part !== null && part !== "" && part !== false)
@@ -171,7 +182,8 @@ function buildSearchItems({
   rollouts,
   applicationSets,
   policies,
-}: Omit<DashboardCommandCenterProps, "loading">): SearchItem[] {
+  releaseQuery = "",
+}: Omit<DashboardCommandCenterProps, "loading" | "searchReleases">): SearchItem[] {
   const items: SearchItem[] = []
 
   for (const application of applications) {
@@ -226,9 +238,6 @@ function buildSearchItems({
   }
 
   for (const release of releases) {
-    const applicationHref = release.application
-      ? `/dashboard/application?namespace=${encodeURIComponent(release.namespace)}&name=${encodeURIComponent(release.application)}`
-      : "#releases"
     items.push({
       id: `release:${release.namespace}/${release.name}`,
       kind: "Release",
@@ -242,7 +251,7 @@ function buildSearchItems({
         release.application && `app ${release.application}`,
         release.target,
       ]).join(" - "),
-      href: applicationHref,
+      href: releaseResultHref(releaseQuery, release),
       tokens: compactParts([
         "release",
         release.name,
@@ -414,10 +423,23 @@ export function DashboardCommandCenter({
   applicationSets,
   policies,
   loading = false,
+  searchReleases,
+  releaseQuery = "",
 }: DashboardCommandCenterProps) {
   const [query, setQuery] = useState("")
   const [recentSearches, setRecentSearches] = useState<string[]>([])
   const [healthFilter, setHealthFilter] = useState<HealthFilter>("All")
+  const releaseSearchContext = useMemo(
+    () => ({ releaseQuery, searchReleases }),
+    [releaseQuery, searchReleases],
+  )
+  const [remoteReleaseResult, setRemoteReleaseResult] = useState<{
+    context: typeof releaseSearchContext | null
+    query: string
+    releases: Release[]
+    failed: boolean
+  }>({ context: null, query: "", releases: [], failed: false })
+  const releaseRequestGeneration = useRef(0)
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -428,21 +450,105 @@ export function DashboardCommandCenter({
     })
   }, [])
 
-  const searchItems = useMemo(
-    () => buildSearchItems({ applications, pipelines, releases, rollouts, applicationSets, policies }),
-    [applications, pipelines, releases, rollouts, applicationSets, policies],
+  const normalizedQuery = normalize(query)
+  const trimmedQuery = query.trim()
+  const updateQuery = useCallback(
+    (value: string) => {
+      if (value.trim() !== trimmedQuery) {
+        setRemoteReleaseResult({ context: null, query: "", releases: [], failed: false })
+      }
+      setQuery(value)
+    },
+    [trimmedQuery],
   )
 
-  const normalizedQuery = normalize(query)
+  useEffect(() => {
+    const generation = ++releaseRequestGeneration.current
+    if (!searchReleases || !trimmedQuery) return
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void searchReleases(trimmedQuery, controller.signal).then(
+        (nextReleases) => {
+          if (controller.signal.aborted || releaseRequestGeneration.current !== generation) return
+          setRemoteReleaseResult({
+            context: releaseSearchContext,
+            query: trimmedQuery,
+            releases: nextReleases,
+            failed: false,
+          })
+        },
+        () => {
+          if (controller.signal.aborted || releaseRequestGeneration.current !== generation) return
+          setRemoteReleaseResult({
+            context: releaseSearchContext,
+            query: trimmedQuery,
+            releases: [],
+            failed: true,
+          })
+        },
+      )
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [releaseSearchContext, searchReleases, trimmedQuery])
+
+  const visibleRemoteReleases = useMemo(
+    () =>
+      remoteReleaseResult.context === releaseSearchContext &&
+      remoteReleaseResult.query === trimmedQuery &&
+      !remoteReleaseResult.failed
+        ? remoteReleaseResult.releases
+        : [],
+    [releaseSearchContext, remoteReleaseResult, trimmedQuery],
+  )
+  const visibleReleaseSearchState =
+    !searchReleases || !trimmedQuery
+      ? "idle"
+      : remoteReleaseResult.context !== releaseSearchContext ||
+          remoteReleaseResult.query !== trimmedQuery
+        ? "searching"
+        : remoteReleaseResult.failed
+          ? "error"
+          : "idle"
+  const mergedReleases = useMemo(() => {
+    const byIdentity = new Map<string, Release>()
+    for (const release of releases) {
+      byIdentity.set(`${release.namespace}/${release.name}`, release)
+    }
+    for (const release of visibleRemoteReleases) {
+      byIdentity.set(`${release.namespace}/${release.name}`, release)
+    }
+    return Array.from(byIdentity.values())
+  }, [releases, visibleRemoteReleases])
+  const searchItems = useMemo(
+    () =>
+      buildSearchItems({
+        applications,
+        pipelines,
+        releases: mergedReleases,
+        rollouts,
+        applicationSets,
+        policies,
+        releaseQuery,
+      }),
+    [applications, pipelines, mergedReleases, rollouts, applicationSets, policies, releaseQuery],
+  )
+
   const searchResults = useMemo(() => {
     if (!normalizedQuery) return []
     const terms = normalizedQuery.split(/\s+/).filter(Boolean)
     return searchItems
       .filter((item) => terms.every((term) => item.tokens.includes(term)))
       .sort((a, b) => {
-        const aStarts = normalize(a.name).startsWith(normalizedQuery) ? 0 : 1
-        const bStarts = normalize(b.name).startsWith(normalizedQuery) ? 0 : 1
-        return aStarts - bStarts || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)
+        const aName = normalize(a.name)
+        const bName = normalize(b.name)
+        const aRank = aName === normalizedQuery ? 0 : aName.startsWith(normalizedQuery) ? 1 : 2
+        const bRank = bName === normalizedQuery ? 0 : bName.startsWith(normalizedQuery) ? 1 : 2
+        return aRank - bRank || a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)
       })
       .slice(0, MAX_SEARCH_RESULTS)
   }, [normalizedQuery, searchItems])
@@ -525,7 +631,7 @@ export function DashboardCommandCenter({
               aria-label="Search operations"
               role="searchbox"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => updateQuery(event.target.value)}
               placeholder="Search apps, releases, rollouts, pipelines, policies..."
               className="h-14 w-full rounded-xl border border-border bg-background pl-10 pr-4 font-mono text-base outline-none transition-[border-color,box-shadow] placeholder:font-sans placeholder:text-muted-foreground focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
             />
@@ -544,7 +650,7 @@ export function DashboardCommandCenter({
                   key={recent}
                   type="button"
                   aria-label={`Recent search ${recent}`}
-                  onClick={() => setQuery(recent)}
+                  onClick={() => updateQuery(recent)}
                   className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                 >
                   {recent}
@@ -552,6 +658,14 @@ export function DashboardCommandCenter({
               ))
             )}
           </div>
+
+          {visibleReleaseSearchState !== "idle" ? (
+            <p role="status" aria-live="polite" className="mt-3 text-xs text-muted-foreground">
+              {visibleReleaseSearchState === "searching"
+                ? "Searching releases…"
+                : "Release search unavailable"}
+            </p>
+          ) : null}
 
           <div className="mt-5">
             <div className="mb-2 flex items-center justify-between gap-3">

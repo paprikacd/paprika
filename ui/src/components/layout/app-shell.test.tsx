@@ -1,3 +1,4 @@
+import { StrictMode } from "react"
 import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -6,6 +7,7 @@ const navigation = vi.hoisted(() => {
   const replace = vi.fn()
   return {
     pathname: "/dashboard",
+    query: "",
     replace,
     router: { replace },
   }
@@ -20,6 +22,7 @@ const authState = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => navigation.router,
+  useSearchParams: () => new URLSearchParams(navigation.query),
 }))
 
 vi.mock("@/lib/auth-context", () => ({
@@ -32,6 +35,7 @@ import { Nav } from "@/components/layout/nav"
 describe("AppShell navigation", () => {
   beforeEach(() => {
     navigation.pathname = "/dashboard"
+    navigation.query = ""
     navigation.replace.mockReset()
     authState.user = null
     authState.isLoading = false
@@ -50,7 +54,7 @@ describe("AppShell navigation", () => {
       ["Overview", "/dashboard"],
       ["Applications", "/dashboard/applications"],
       ["Pipelines", "/dashboard#pipelines"],
-      ["Releases", "/dashboard#releases"],
+      ["Releases", "/dashboard/releases"],
       ["Rollouts", "/dashboard/rollouts"],
     ])
     for (const [label, href] of destinations) {
@@ -230,10 +234,99 @@ describe("AppShell navigation", () => {
     })
   })
 
+  it("links Releases to the dedicated route with repeated scope parameters only", () => {
+    navigation.pathname = "/dashboard/releases"
+    navigation.query =
+      "project=team%2Fpayments&project=team%2Fplatform&cluster=platform%2Fprod" +
+      "&cluster=platform%2Fcanary&stage=production&stage=canary&namespace=apps" +
+      "&namespace=platform&q=dashboard-search&view=queue&group=health&selected=apps%2Fcheckout"
+    window.history.replaceState({}, "", `/dashboard/releases?${navigation.query}`)
+
+    render(<AppShell>Release inventory</AppShell>)
+
+    expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
+      "href",
+      "/dashboard/releases?project=team%2Fpayments&project=team%2Fplatform" +
+        "&cluster=platform%2Fcanary&cluster=platform%2Fprod&stage=canary&stage=production" +
+        "&namespace=apps&namespace=platform",
+    )
+    expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    )
+  })
+
+  it.each([
+    { pathname: "/dashboard", url: "/dashboard#releases" },
+    { pathname: "/dashboard/", url: "/dashboard/#releases" },
+  ])("migrates $url once to the scoped release route under Strict Mode", async ({ pathname, url }) => {
+    navigation.pathname = pathname
+    navigation.query =
+      "project=team%2Fpayments&project=team%2Fplatform&cluster=platform%2Fprod" +
+      "&stage=production&namespace=apps&namespace=platform&view=matrix&selected=apps%2Fcheckout"
+    window.history.replaceState({}, "", `${url.split("#")[0]}?${navigation.query}#releases`)
+
+    render(
+      <StrictMode>
+        <AppShell>Fleet content</AppShell>
+      </StrictMode>,
+    )
+
+    await waitFor(() => {
+      expect(navigation.replace).toHaveBeenCalledTimes(1)
+      expect(navigation.replace).toHaveBeenCalledWith(
+        "/dashboard/releases?project=team%2Fpayments&project=team%2Fplatform" +
+          "&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform",
+      )
+    })
+  })
+
+  it("migrates the same legacy release URL once again after leaving and returning", async () => {
+    navigation.pathname = "/dashboard"
+    navigation.query = "namespace=apps"
+    window.history.replaceState({}, "", "/dashboard?namespace=apps#releases")
+    const view = () => (
+      <StrictMode>
+        <AppShell>Fleet content</AppShell>
+      </StrictMode>
+    )
+    const { rerender } = render(view())
+
+    await waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      navigation.pathname = "/dashboard/releases"
+      window.history.replaceState({}, "", "/dashboard/releases?namespace=apps")
+      window.dispatchEvent(new HashChangeEvent("hashchange"))
+      rerender(view())
+    })
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      )
+    })
+
+    act(() => {
+      navigation.pathname = "/dashboard"
+      window.history.replaceState({}, "", "/dashboard?namespace=apps#releases")
+      window.dispatchEvent(new HashChangeEvent("hashchange"))
+      rerender(view())
+    })
+
+    await waitFor(() => {
+      expect(navigation.replace).toHaveBeenCalledTimes(2)
+      expect(navigation.replace).toHaveBeenNthCalledWith(
+        2,
+        "/dashboard/releases?namespace=apps",
+      )
+    })
+  })
+
   it.each([
     { label: "Overview", pathname: "/dashboard/", hash: "" },
     { label: "Pipelines", pathname: "/dashboard/", hash: "#pipelines" },
-    { label: "Releases", pathname: "/dashboard/", hash: "#releases" },
+    { label: "Releases", pathname: "/dashboard/releases/", hash: "" },
   ])("marks $label active for static-export dashboard URLs", async ({ label, pathname, hash }) => {
     navigation.pathname = pathname
     window.history.replaceState({}, "", `${pathname}${hash}`)

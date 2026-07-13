@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 const mockClient = vi.hoisted(() => ({
   listPipelines: vi.fn().mockResolvedValue({ pipelines: [] }),
   listReleases: vi.fn().mockResolvedValue({ releases: [] }),
+  queryReleases: vi.fn().mockResolvedValue({ releases: [], totalCount: 0n }),
   listApplications: vi.fn().mockResolvedValue({ applications: [] }),
   listApplicationSets: vi.fn().mockResolvedValue({ applicationsets: [] }),
   listPolicies: vi.fn().mockResolvedValue({ policies: [] }),
@@ -80,6 +81,7 @@ async function flushRefresh() {
 function resetSuccessfulResponses() {
   mockClient.listPipelines.mockResolvedValue({ pipelines: [] })
   mockClient.listReleases.mockResolvedValue({ releases: [] })
+  mockClient.queryReleases.mockResolvedValue({ releases: [], totalCount: 0n })
   mockClient.listApplications.mockResolvedValue({ applications: [] })
   mockClient.listApplicationSets.mockResolvedValue({ applicationsets: [] })
   mockClient.listPolicies.mockResolvedValue({ policies: [] })
@@ -89,7 +91,6 @@ function resetSuccessfulResponses() {
 function boundedLegacyMethods() {
   return [
     mockClient.listPipelines,
-    mockClient.listReleases,
     mockClient.listApplicationSets,
     mockClient.listPolicies,
     mockClient.listRollouts,
@@ -134,6 +135,8 @@ describe("Dashboard bounded refresh", () => {
     for (const method of boundedLegacyMethods()) {
       expect(method).toHaveBeenCalledTimes(1)
     }
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
     expect(mockClient.listApplications).not.toHaveBeenCalled()
     expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
     expect(eventSource).not.toHaveBeenCalled()
@@ -147,6 +150,8 @@ describe("Dashboard bounded refresh", () => {
     for (const method of boundedLegacyMethods()) {
       expect(method).toHaveBeenCalledTimes(1)
     }
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
     expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
   })
 
@@ -200,6 +205,8 @@ describe("Dashboard bounded refresh", () => {
     await flushRefresh()
 
     expect(mockReportRequestOutcome).toHaveBeenLastCalledWith(true)
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
   })
 
   it("carries shared URL scope into the fleet query and overview links", async () => {
@@ -225,6 +232,79 @@ describe("Dashboard bounded refresh", () => {
       "href",
       expect.stringContaining("stage=production"),
     )
+  })
+
+  it("queries releases only after command search with the full current FleetFilter and request signal", async () => {
+    navigation.query =
+      "project=tenant%2Fretail&cluster=platform%2Fomega&stage=production&namespace=apps" +
+      "&health=healthy&sync=out_of_sync&release=canarying&rollout=progressing&source=git" +
+      "&q=fleet-search&view=queue"
+    mockClient.queryReleases.mockResolvedValue({
+      releases: [
+        {
+          name: "checkout-release-v42",
+          namespace: "apps",
+          phase: "Canarying",
+          application: "checkout",
+          pipeline: "delivery",
+          target: "production",
+          currentStage: "production",
+        },
+      ],
+      totalCount: 1n,
+    })
+    renderDashboard()
+    await flushRefresh()
+
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole("searchbox", { name: /search operations/i }), {
+      target: { value: "checkout-release-v42" },
+    })
+    await act(async () => vi.advanceTimersByTimeAsync(249))
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
+    await act(async () => {
+      vi.advanceTimersByTime(1)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockClient.queryReleases).toHaveBeenCalledTimes(1)
+    const [request, options] = mockClient.queryReleases.mock.calls[0]
+    expect(request).toMatchObject({
+      search: "checkout-release-v42",
+      pageSize: 8,
+      pageOffset: 0,
+      filter: {
+        projects: [{ namespace: "tenant", name: "retail" }],
+        clusters: [{ namespace: "platform", name: "omega" }],
+        stages: ["production"],
+        namespaces: ["apps"],
+        health: [1],
+        sync: [2],
+        releaseStates: [3],
+        rolloutStates: [2],
+        sourceTypes: [1],
+      },
+    })
+    expect(options.signal).toBeInstanceOf(AbortSignal)
+    expect(
+      screen.getByRole("link", { name: /Release checkout-release-v42/i }),
+    ).toHaveAttribute(
+      "href",
+      "/dashboard/releases?project=tenant%2Fretail&cluster=platform%2Fomega" +
+        "&stage=production&namespace=apps&q=checkout-release-v42",
+    )
+  })
+
+  it("never performs a release RPC during immediate or periodic refresh", async () => {
+    renderDashboard()
+    await flushRefresh()
+
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.queryReleases).not.toHaveBeenCalled()
   })
 
   it("keeps application search, health tiles, and drill-downs on the bounded fleet window", async () => {

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   Activity,
   Boxes,
@@ -16,9 +16,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 
 import { useAuth } from "@/lib/auth-context"
+import { releaseURL } from "@/lib/release-query"
 import { cn } from "@/lib/utils"
 
 interface NavigationItem {
@@ -45,7 +46,7 @@ const navigationSections: NavigationSection[] = [
     label: "Delivery",
     items: [
       { label: "Pipelines", href: "/dashboard#pipelines", icon: GitBranch },
-      { label: "Releases", href: "/dashboard#releases", icon: Package },
+      { label: "Releases", href: "/dashboard/releases", icon: Package },
       { label: "Rollouts", href: "/dashboard/rollouts", icon: Boxes },
     ],
   },
@@ -163,11 +164,23 @@ export function Sidebar() {
   }, [drawerOpen])
 
   const navigation = (
-    <SidebarNavigation
-      pathname={pathname}
-      hash={hash}
-      onNavigate={() => setDrawerOpen(false)}
-    />
+    <Suspense
+      fallback={
+        <SidebarNavigation
+          pathname={pathname}
+          hash={hash}
+          releaseHref="/dashboard/releases"
+          onNavigate={() => setDrawerOpen(false)}
+        />
+      }
+    >
+      <ScopedSidebarNavigation
+        pathname={pathname}
+        hash={hash}
+        router={router}
+        onNavigate={() => setDrawerOpen(false)}
+      />
+    </Suspense>
   )
 
   return (
@@ -240,6 +253,43 @@ export function Sidebar() {
   )
 }
 
+function ScopedSidebarNavigation({
+  pathname,
+  hash,
+  router,
+  onNavigate,
+}: {
+  pathname: string
+  hash: string
+  router: ReturnType<typeof useRouter>
+  onNavigate: () => void
+}) {
+  const searchParams = useSearchParams()
+  const rawQuery = searchParams.toString()
+  const releaseHref = releaseURL(rawQuery, { q: "" })
+  const migratedReleaseHash = useRef("")
+
+  useEffect(() => {
+    if (pathname !== "/dashboard" || hash !== "#releases") {
+      migratedReleaseHash.current = ""
+      return
+    }
+    const migration = `${pathname}?${rawQuery}${hash}`
+    if (migratedReleaseHash.current === migration) return
+    migratedReleaseHash.current = migration
+    router.replace(releaseHref)
+  }, [hash, pathname, rawQuery, releaseHref, router])
+
+  return (
+    <SidebarNavigation
+      pathname={pathname}
+      hash={hash}
+      releaseHref={releaseHref}
+      onNavigate={onNavigate}
+    />
+  )
+}
+
 function normalizeDashboardPathname(pathname: string) {
   if (pathname === "/") return pathname
   return pathname.replace(/\/+$/, "")
@@ -269,10 +319,12 @@ function makeElementsInert(elements: Array<HTMLElement | null>) {
 function SidebarNavigation({
   pathname,
   hash,
+  releaseHref,
   onNavigate,
 }: {
   pathname: string
   hash: string
+  releaseHref: string
   onNavigate: () => void
 }) {
   return (
@@ -290,7 +342,7 @@ function SidebarNavigation({
               {section.items.map((item) => (
                 <SidebarItem
                   key={item.label}
-                  item={item}
+                  item={item.label === "Releases" ? { ...item, href: releaseHref } : item}
                   active={isNavigationItemActive(item, pathname, hash)}
                   onNavigate={onNavigate}
                 />
@@ -361,7 +413,7 @@ function isNavigationItemActive(item: NavigationItem, pathname: string, hash: st
     case "Pipelines":
       return pathname.startsWith("/dashboard/pipelines") || (pathname === "/dashboard" && hash === "#pipelines")
     case "Releases":
-      return pathname === "/dashboard" && hash === "#releases"
+      return pathname.startsWith("/dashboard/releases")
     case "Rollouts":
       return pathname.startsWith("/dashboard/rollouts")
     default:

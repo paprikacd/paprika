@@ -7,7 +7,16 @@ import { motion } from "framer-motion"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
-import { Application } from "@/gen/paprika/v1/api_pb"
+import {
+  Application,
+  FleetFilter,
+  FleetHealth as FleetHealthProto,
+  FleetObjectKey,
+  FleetReleaseState as FleetReleaseStateProto,
+  FleetRolloutState as FleetRolloutStateProto,
+  FleetSourceType as FleetSourceTypeProto,
+  FleetSyncState as FleetSyncStateProto,
+} from "@/gen/paprika/v1/api_pb"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
 import type { Rollout } from "@/gen/paprika/v1/api_pb"
@@ -20,7 +29,12 @@ import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
 import { useFleetRefresh, useSingleFlightRefresh } from "@/lib/fleet-refresh"
-import { mergeFleetQuery, parseFleetQuery, serializeFleetQuery } from "@/lib/fleet-query"
+import {
+  mergeFleetQuery,
+  parseFleetQuery,
+  serializeFleetQuery,
+  type FleetQueryState,
+} from "@/lib/fleet-query"
 import { useFleetData } from "@/lib/use-fleet-data"
 import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { ToastStack } from "@/components/notifications/toast-stack"
@@ -38,7 +52,68 @@ import {
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
-const DASHBOARD_RELEASE_SEARCH_LIMIT = 100
+const EMPTY_RELEASES: Release[] = []
+
+const healthValues = {
+  healthy: FleetHealthProto.HEALTHY,
+  progressing: FleetHealthProto.PROGRESSING,
+  degraded: FleetHealthProto.DEGRADED,
+  failed: FleetHealthProto.FAILED,
+  unknown: FleetHealthProto.UNKNOWN,
+  missing: FleetHealthProto.MISSING,
+} satisfies Record<FleetQueryState["health"][number], FleetHealthProto>
+
+const syncValues = {
+  synced: FleetSyncStateProto.SYNCED,
+  out_of_sync: FleetSyncStateProto.OUT_OF_SYNC,
+  unknown: FleetSyncStateProto.UNKNOWN,
+} satisfies Record<FleetQueryState["sync"][number], FleetSyncStateProto>
+
+const releaseValues = {
+  pending: FleetReleaseStateProto.PENDING,
+  promoting: FleetReleaseStateProto.PROMOTING,
+  canarying: FleetReleaseStateProto.CANARYING,
+  verifying: FleetReleaseStateProto.VERIFYING,
+  complete: FleetReleaseStateProto.COMPLETE,
+  failed: FleetReleaseStateProto.FAILED,
+  rolled_back: FleetReleaseStateProto.ROLLED_BACK,
+  superseded: FleetReleaseStateProto.SUPERSEDED,
+  awaiting_approval: FleetReleaseStateProto.AWAITING_APPROVAL,
+} satisfies Record<FleetQueryState["release"][number], FleetReleaseStateProto>
+
+const rolloutValues = {
+  pending: FleetRolloutStateProto.PENDING,
+  progressing: FleetRolloutStateProto.PROGRESSING,
+  paused: FleetRolloutStateProto.PAUSED,
+  healthy: FleetRolloutStateProto.HEALTHY,
+  degraded: FleetRolloutStateProto.DEGRADED,
+  failed: FleetRolloutStateProto.FAILED,
+  rolled_back: FleetRolloutStateProto.ROLLED_BACK,
+  aborted: FleetRolloutStateProto.ABORTED,
+} satisfies Record<FleetQueryState["rollout"][number], FleetRolloutStateProto>
+
+const sourceValues = {
+  git: FleetSourceTypeProto.GIT,
+  helm: FleetSourceTypeProto.HELM,
+  kustomize: FleetSourceTypeProto.KUSTOMIZE,
+  s3: FleetSourceTypeProto.S3,
+  oci: FleetSourceTypeProto.OCI,
+  inline: FleetSourceTypeProto.INLINE,
+} satisfies Record<FleetQueryState["sources"][number], FleetSourceTypeProto>
+
+function dashboardReleaseFilter(state: FleetQueryState): FleetFilter {
+  return new FleetFilter({
+    projects: state.projects.map((project) => new FleetObjectKey(project)),
+    clusters: state.clusters.map((cluster) => new FleetObjectKey(cluster)),
+    stages: [...state.stages],
+    namespaces: [...state.namespaces],
+    health: state.health.map((value) => healthValues[value]),
+    sync: state.sync.map((value) => syncValues[value]),
+    releaseStates: state.release.map((value) => releaseValues[value]),
+    rolloutStates: state.rollout.map((value) => rolloutValues[value]),
+    sourceTypes: state.sources.map((value) => sourceValues[value]),
+  })
+}
 
 const StatCard = memo(function StatCard({
   icon: Icon,
@@ -156,7 +231,6 @@ function DashboardContent() {
   const fleet = useFleetData(overviewFleetState)
   const refreshFleet = fleet.refresh
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
-  const [releases, setReleases] = useState<Release[]>([])
   const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
   const [rollouts, setRollouts] = useState<Rollout[]>([])
@@ -166,9 +240,8 @@ function DashboardContent() {
 
   const fetchData = useCallback(async () => {
     setErrors({})
-    const [pr, rr, asr, por, ror] = await Promise.allSettled([
+    const [pr, asr, por, ror] = await Promise.allSettled([
       client.listPipelines({}),
-      client.listReleases({ pageSize: DASHBOARD_RELEASE_SEARCH_LIMIT }),
       client.listApplicationSets({}),
       client.listPolicies({}),
       client.listRollouts({}),
@@ -181,13 +254,6 @@ function DashboardContent() {
       anySuccess = true
     } else {
       next.pipelines = pr.reason?.message ?? "Failed to load pipelines"
-    }
-
-    if (rr.status === "fulfilled") {
-      setReleases(rr.value.releases)
-      anySuccess = true
-    } else {
-      next.releases = rr.reason?.message ?? "Failed to load releases"
     }
 
     if (asr.status === "fulfilled") {
@@ -229,6 +295,22 @@ function DashboardContent() {
       () => reportRequestOutcome(false),
     )
   }, [refreshDashboard, reportRequestOutcome])
+
+  const searchReleases = useCallback(
+    async (query: string, signal: AbortSignal): Promise<Release[]> => {
+      const response = await client.queryReleases(
+        {
+          filter: dashboardReleaseFilter(sharedFleetState),
+          search: query,
+          pageSize: 8,
+          pageOffset: 0,
+        },
+        { signal },
+      )
+      return response.releases.slice(0, 8)
+    },
+    [sharedFleetState],
+  )
 
   const runningCount = pipelines.filter((p) => p.phase === "Running").length
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
@@ -274,11 +356,13 @@ function DashboardContent() {
             applications={commandApplications}
             applicationTotal={fleetApplications?.total}
             pipelines={pipelines}
-            releases={releases}
+            releases={EMPTY_RELEASES}
             rollouts={rollouts}
             applicationSets={applicationSets}
             policies={policies}
             loading={loading}
+            searchReleases={searchReleases}
+            releaseQuery={rawQuery}
           />
         </motion.div>
 
