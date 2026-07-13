@@ -22,6 +22,11 @@ import {
   retainTreemapSelection,
   type TreemapNavigationKey,
 } from "@/components/fleet/treemap-navigation"
+import {
+  createTreemapHealthLegend,
+  fitTreemapLabel,
+  TREEMAP_HEALTH_PRESENTATION,
+} from "@/components/fleet/treemap-presentation"
 import type {
   FleetHealthStatus,
   FleetMapResult,
@@ -42,12 +47,12 @@ const HEALTH_STYLE: Record<
   FleetHealthStatus,
   { fill: string; border: string; glyph: string; label: string }
 > = {
-  healthy: { fill: "#273126", border: "#70906a", glyph: "✓", label: "Healthy" },
-  progressing: { fill: "#332e22", border: "#b8904b", glyph: "↻", label: "Progressing" },
-  degraded: { fill: "#382922", border: "#c77752", glyph: "!", label: "Degraded" },
-  failed: { fill: "#382324", border: "#bd5c5c", glyph: "×", label: "Failed" },
-  unknown: { fill: "#2b2926", border: "#827b73", glyph: "?", label: "Unknown" },
-  missing: { fill: "#292623", border: "#776f67", glyph: "∅", label: "Missing" },
+  healthy: { fill: "#273126", border: "#70906a", ...TREEMAP_HEALTH_PRESENTATION.healthy },
+  progressing: { fill: "#332e22", border: "#b8904b", ...TREEMAP_HEALTH_PRESENTATION.progressing },
+  degraded: { fill: "#382922", border: "#c77752", ...TREEMAP_HEALTH_PRESENTATION.degraded },
+  failed: { fill: "#382324", border: "#bd5c5c", ...TREEMAP_HEALTH_PRESENTATION.failed },
+  unknown: { fill: "#2b2926", border: "#827b73", ...TREEMAP_HEALTH_PRESENTATION.unknown },
+  missing: { fill: "#292623", border: "#776f67", ...TREEMAP_HEALTH_PRESENTATION.missing },
   unspecified: { fill: "#292724", border: "#716b64", glyph: "·", label: "Unspecified" },
 }
 
@@ -108,6 +113,10 @@ export function FleetTreemap({
     layout.rectangles.find(
       (rectangle) => rectangle.stableId === effectiveActiveId,
     ) ?? null
+  const legend = useMemo(
+    () => createTreemapHealthLegend(layout.scope.roots),
+    [layout.scope.roots],
+  )
 
   useEffect(() => {
     const controller = controllerRef.current
@@ -271,6 +280,26 @@ export function FleetTreemap({
         </p>
       </div>
 
+      {legend.length > 0 ? (
+        <ul
+          aria-label="Treemap health legend"
+          className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"
+        >
+          {legend.map((entry) => (
+            <li key={entry.health} className="inline-flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
+                data-health-glyph={entry.health}
+                className="inline-flex size-5 items-center justify-center border border-current font-mono text-[0.6875rem] font-bold leading-none text-foreground"
+              >
+                {entry.glyph}
+              </span>
+              <span>{entry.label}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       {layout.scope.breadcrumbs.length > 0 ? (
         <p className="mt-3 font-mono text-xs text-muted-foreground">
           Scope / {layout.scope.breadcrumbs.map((node) => node.label).join(" / ")}
@@ -329,7 +358,7 @@ export function FleetTreemap({
           id="fleet-treemap-instructions"
           className="text-xs leading-5 text-muted-foreground sm:max-w-md sm:text-right"
         >
-          Use arrows, Home, and End to navigate. Table presentation is the complete semantic equivalent.
+          Tap or click a cell. For keyboard navigation, use arrows, Home, and End. Table presentation is the complete semantic equivalent.
         </p>
       </div>
     </section>
@@ -377,19 +406,23 @@ function drawTreemap(
         ? "600 10px ui-monospace, SFMono-Regular, monospace"
         : "600 12px Instrument Sans, ui-sans-serif, sans-serif"
       context.textBaseline = "alphabetic"
-      context.fillText(
+      const fittedLabel = fitTreemapLabel(
         isGroup ? `▦ ${rectangle.node.label}` : `${style.glyph} ${rectangle.node.label}`,
-        rectangle.x + 8,
-        labelY,
+        rectangle.width,
+        16,
+        (label) => context.measureText(label).width,
       )
+      if (fittedLabel) context.fillText(fittedLabel, rectangle.x + 8, labelY)
       if (!isGroup && rectangle.width >= 110 && rectangle.height >= 38) {
         context.fillStyle = "#b8b0a7"
         context.font = "10px ui-monospace, SFMono-Regular, monospace"
-        context.fillText(
+        const fittedDetail = fitTreemapLabel(
           `${style.label} · ${rectangle.node.targetCount.toString()} target${rectangle.node.targetCount === BigInt(1) ? "" : "s"}`,
-          rectangle.x + 8,
-          labelY + 16,
+          rectangle.width,
+          16,
+          (label) => context.measureText(label).width,
         )
+        if (fittedDetail) context.fillText(fittedDetail, rectangle.x + 8, labelY + 16)
       }
       context.restore()
     }
