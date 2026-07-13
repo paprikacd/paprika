@@ -63,11 +63,33 @@ export type FleetSort = (typeof FLEET_SORT_VALUES)[number]
 export const FLEET_DIRECTION_VALUES = ["asc", "desc"] as const
 export type FleetDirection = (typeof FLEET_DIRECTION_VALUES)[number]
 
-export const FLEET_VIEW_VALUES = ["treemap", "matrix", "table", "queue"] as const
-export type FleetView = (typeof FLEET_VIEW_VALUES)[number]
+export type FleetView = "heatmap" | "treemap" | "matrix" | "table" | "queue"
+export const FLEET_VIEW_VALUES = [
+  "heatmap",
+  "treemap",
+  "matrix",
+  "table",
+  "queue",
+] as const satisfies readonly FleetView[]
 
-export const FLEET_GROUP_VALUES = ["project", "cluster", "stage", "health"] as const
-export type FleetGroup = (typeof FLEET_GROUP_VALUES)[number]
+export type FleetDensity = "auto" | "compact" | "comfortable"
+export const FLEET_DENSITY_VALUES = [
+  "auto",
+  "compact",
+  "comfortable",
+] as const satisfies readonly FleetDensity[]
+
+export type FleetLabelMode = "auto" | "all" | "none"
+export const FLEET_LABEL_MODE_VALUES = ["auto", "all", "none"] as const satisfies readonly FleetLabelMode[]
+
+export type FleetGroup = "project" | "cluster" | "stage" | "namespace" | "health"
+export const FLEET_GROUP_VALUES = [
+  "project",
+  "cluster",
+  "stage",
+  "namespace",
+  "health",
+] as const satisfies readonly FleetGroup[]
 
 export const FLEET_SIZE_VALUES = ["resource_count", "request_rate"] as const
 export type FleetSize = (typeof FLEET_SIZE_VALUES)[number]
@@ -93,12 +115,30 @@ export interface FleetQueryState {
   rows: FleetGroup
   columns: FleetGroup
   size: FleetSize
+  density: FleetDensity
+  labels: FleetLabelMode
   zoom: string
   selected: NamespacedKey | null
   range: FleetRange
 }
 
 export type FleetQueryPatch = Partial<FleetQueryState>
+
+export type FleetQueryDefaults = Partial<
+  Pick<
+    FleetQueryState,
+    | "sort"
+    | "direction"
+    | "view"
+    | "group"
+    | "rows"
+    | "columns"
+    | "size"
+    | "density"
+    | "labels"
+    | "range"
+  >
+>
 
 export type FleetQueryField =
   | "project"
@@ -117,6 +157,8 @@ export type FleetQueryField =
   | "rows"
   | "columns"
   | "size"
+  | "density"
+  | "labels"
   | "selected"
   | "range"
 
@@ -162,6 +204,8 @@ export const DEFAULT_FLEET_QUERY: FleetQueryState = {
   rows: "project",
   columns: "cluster",
   size: "resource_count",
+  density: "auto",
+  labels: "auto",
   zoom: "",
   selected: null,
   range: "2h",
@@ -174,8 +218,12 @@ interface QueryParameters {
 
 const dnsLabel = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
 
-export function parseFleetQuery(input: string | QueryParameters): ParsedFleetQuery {
+export function parseFleetQuery(
+  input: string | QueryParameters,
+  defaultOverrides: FleetQueryDefaults = {},
+): ParsedFleetQuery {
   const parameters = typeof input === "string" ? new URLSearchParams(input) : input
+  const defaults = defaultFleetQuery(defaultOverrides)
   const notices: FleetQueryNotice[] = []
   const projects = parseNamespacedValues(parameters, "project", notices)
   const clusters = parseNamespacedValues(parameters, "cluster", notices)
@@ -187,45 +235,66 @@ export function parseFleetQuery(input: string | QueryParameters): ParsedFleetQue
   const rollout = parseEnumValues(parameters, "rollout", FLEET_ROLLOUT_VALUES, notices)
   const sources = parseEnumValues(parameters, "source", FLEET_SOURCE_VALUES, notices)
 
-  const state = canonicalizeFleetQuery({
-    projects,
-    clusters,
-    stages,
-    namespaces,
-    health,
-    sync,
-    release,
-    rollout,
-    sources,
-    q: lastTrimmed(parameters, "q"),
-    sort: parseScalarEnum(parameters, "sort", FLEET_SORT_VALUES, DEFAULT_FLEET_QUERY.sort, notices),
-    direction: parseScalarEnum(
-      parameters,
-      "direction",
-      FLEET_DIRECTION_VALUES,
-      DEFAULT_FLEET_QUERY.direction,
-      notices,
-    ),
-    view: parseScalarEnum(parameters, "view", FLEET_VIEW_VALUES, DEFAULT_FLEET_QUERY.view, notices),
-    group: parseScalarEnum(parameters, "group", FLEET_GROUP_VALUES, DEFAULT_FLEET_QUERY.group, notices),
-    rows: parseScalarEnum(parameters, "rows", FLEET_GROUP_VALUES, DEFAULT_FLEET_QUERY.rows, notices),
-    columns: parseScalarEnum(
-      parameters,
-      "columns",
-      FLEET_GROUP_VALUES,
-      DEFAULT_FLEET_QUERY.columns,
-      notices,
-    ),
-    size: parseScalarEnum(parameters, "size", FLEET_SIZE_VALUES, DEFAULT_FLEET_QUERY.size, notices),
-    zoom: lastTrimmed(parameters, "zoom"),
-    selected: parseSelected(parameters, notices),
-    range: parseScalarEnum(parameters, "range", FLEET_RANGE_VALUES, DEFAULT_FLEET_QUERY.range, notices),
-  })
+  const state = canonicalizeFleetQuery(
+    {
+      projects,
+      clusters,
+      stages,
+      namespaces,
+      health,
+      sync,
+      release,
+      rollout,
+      sources,
+      q: lastTrimmed(parameters, "q"),
+      sort: parseScalarEnum(parameters, "sort", FLEET_SORT_VALUES, defaults.sort, notices),
+      direction: parseScalarEnum(
+        parameters,
+        "direction",
+        FLEET_DIRECTION_VALUES,
+        defaults.direction,
+        notices,
+      ),
+      view: parseScalarEnum(parameters, "view", FLEET_VIEW_VALUES, defaults.view, notices),
+      group: parseScalarEnum(parameters, "group", FLEET_GROUP_VALUES, defaults.group, notices),
+      rows: parseScalarEnum(parameters, "rows", FLEET_GROUP_VALUES, defaults.rows, notices),
+      columns: parseScalarEnum(
+        parameters,
+        "columns",
+        FLEET_GROUP_VALUES,
+        defaults.columns,
+        notices,
+      ),
+      size: parseScalarEnum(parameters, "size", FLEET_SIZE_VALUES, defaults.size, notices),
+      density: parseScalarEnum(
+        parameters,
+        "density",
+        FLEET_DENSITY_VALUES,
+        defaults.density,
+        notices,
+      ),
+      labels: parseScalarEnum(
+        parameters,
+        "labels",
+        FLEET_LABEL_MODE_VALUES,
+        defaults.labels,
+        notices,
+      ),
+      zoom: lastTrimmed(parameters, "zoom"),
+      selected: parseSelected(parameters, notices),
+      range: parseScalarEnum(parameters, "range", FLEET_RANGE_VALUES, defaults.range, notices),
+    },
+    defaults,
+  )
   return { state, notices }
 }
 
-export function serializeFleetQuery(input: FleetQueryState): URLSearchParams {
-  const state = canonicalizeFleetQuery(input)
+export function serializeFleetQuery(
+  input: FleetQueryState,
+  defaultOverrides: FleetQueryDefaults = {},
+): URLSearchParams {
+  const defaults = defaultFleetQuery(defaultOverrides)
+  const state = canonicalizeFleetQuery(input, defaults)
   const parameters = new URLSearchParams()
   appendNamespaced(parameters, "project", state.projects)
   appendNamespaced(parameters, "cluster", state.clusters)
@@ -236,17 +305,19 @@ export function serializeFleetQuery(input: FleetQueryState): URLSearchParams {
   appendValues(parameters, "release", state.release)
   appendValues(parameters, "rollout", state.rollout)
   appendValues(parameters, "source", state.sources)
-  appendNonDefault(parameters, "q", state.q, DEFAULT_FLEET_QUERY.q)
-  appendNonDefault(parameters, "sort", state.sort, DEFAULT_FLEET_QUERY.sort)
-  appendNonDefault(parameters, "direction", state.direction, DEFAULT_FLEET_QUERY.direction)
-  appendNonDefault(parameters, "view", state.view, DEFAULT_FLEET_QUERY.view)
-  appendNonDefault(parameters, "group", state.group, DEFAULT_FLEET_QUERY.group)
-  appendNonDefault(parameters, "rows", state.rows, DEFAULT_FLEET_QUERY.rows)
-  appendNonDefault(parameters, "columns", state.columns, DEFAULT_FLEET_QUERY.columns)
-  appendNonDefault(parameters, "size", state.size, DEFAULT_FLEET_QUERY.size)
-  appendNonDefault(parameters, "zoom", state.zoom, DEFAULT_FLEET_QUERY.zoom)
+  appendNonDefault(parameters, "q", state.q, defaults.q)
+  appendNonDefault(parameters, "sort", state.sort, defaults.sort)
+  appendNonDefault(parameters, "direction", state.direction, defaults.direction)
+  appendNonDefault(parameters, "view", state.view, defaults.view)
+  appendNonDefault(parameters, "group", state.group, defaults.group)
+  appendNonDefault(parameters, "rows", state.rows, defaults.rows)
+  appendNonDefault(parameters, "columns", state.columns, defaults.columns)
+  appendNonDefault(parameters, "size", state.size, defaults.size)
+  appendNonDefault(parameters, "density", state.density, defaults.density)
+  appendNonDefault(parameters, "labels", state.labels, defaults.labels)
+  appendNonDefault(parameters, "zoom", state.zoom, defaults.zoom)
   if (state.selected) parameters.set("selected", namespacedKey(state.selected))
-  appendNonDefault(parameters, "range", state.range, DEFAULT_FLEET_QUERY.range)
+  appendNonDefault(parameters, "range", state.range, defaults.range)
   return parameters
 }
 
@@ -275,9 +346,10 @@ export function reconcileFleetQuery(
   }
 }
 
-function defaultFleetQuery(): FleetQueryState {
+function defaultFleetQuery(overrides: FleetQueryDefaults = {}): FleetQueryState {
   return {
     ...DEFAULT_FLEET_QUERY,
+    ...overrides,
     projects: [],
     clusters: [],
     stages: [],
@@ -291,8 +363,10 @@ function defaultFleetQuery(): FleetQueryState {
   }
 }
 
-function canonicalizeFleetQuery(input: FleetQueryState): FleetQueryState {
-  const defaults = defaultFleetQuery()
+function canonicalizeFleetQuery(
+  input: FleetQueryState,
+  defaults: FleetQueryState = defaultFleetQuery(),
+): FleetQueryState {
   return {
     projects: canonicalNamespaced(input.projects),
     clusters: canonicalNamespaced(input.clusters),
@@ -311,6 +385,8 @@ function canonicalizeFleetQuery(input: FleetQueryState): FleetQueryState {
     rows: oneOf(input.rows, FLEET_GROUP_VALUES) ? input.rows : defaults.rows,
     columns: oneOf(input.columns, FLEET_GROUP_VALUES) ? input.columns : defaults.columns,
     size: oneOf(input.size, FLEET_SIZE_VALUES) ? input.size : defaults.size,
+    density: oneOf(input.density, FLEET_DENSITY_VALUES) ? input.density : defaults.density,
+    labels: oneOf(input.labels, FLEET_LABEL_MODE_VALUES) ? input.labels : defaults.labels,
     zoom: input.zoom.trim(),
     selected: input.selected && validNamespacedKey(input.selected) ? { ...input.selected } : null,
     range: oneOf(input.range, FLEET_RANGE_VALUES) ? input.range : defaults.range,
@@ -363,7 +439,19 @@ function parseEnumValues<const T extends readonly string[]>(
 
 function parseScalarEnum<const T extends readonly string[]>(
   parameters: QueryParameters,
-  field: Extract<FleetQueryField, "sort" | "direction" | "view" | "group" | "rows" | "columns" | "size" | "range">,
+  field: Extract<
+    FleetQueryField,
+    | "sort"
+    | "direction"
+    | "view"
+    | "group"
+    | "rows"
+    | "columns"
+    | "size"
+    | "density"
+    | "labels"
+    | "range"
+  >,
   allowed: T,
   fallback: T[number],
   notices: FleetQueryNotice[],

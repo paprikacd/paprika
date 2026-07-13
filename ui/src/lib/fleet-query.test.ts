@@ -6,6 +6,9 @@ import {
   parseFleetQuery,
   reconcileFleetQuery,
   serializeFleetQuery,
+  type FleetDensity,
+  type FleetLabelMode,
+  type FleetQueryDefaults,
   type FleetQueryState,
 } from "@/lib/fleet-query"
 
@@ -22,7 +25,7 @@ describe("fleet query URL codec", () => {
         { namespace: "platform", name: "eu" },
       ],
       stages: ["prod", "dev", "dev"],
-      namespaces: ["platform", "apps"],
+      namespaces: ["platform", "apps", "apps"],
       health: ["healthy", "degraded", "healthy"],
       sync: ["synced", "out_of_sync"],
       release: ["failed", "awaiting_approval"],
@@ -31,11 +34,13 @@ describe("fleet query URL codec", () => {
       q: "  payments api  ",
       sort: "impact",
       direction: "desc",
-      view: "matrix",
-      group: "cluster",
+      view: "heatmap",
+      group: "namespace",
       rows: "stage",
       columns: "health",
       size: "request_rate",
+      density: "compact",
+      labels: "all",
       zoom: "g:project:a/payments",
       selected: { namespace: "apps", name: "payments-api" },
       range: "24h",
@@ -50,8 +55,9 @@ describe("fleet query URL codec", () => {
         "&health=degraded&health=healthy&sync=out_of_sync&sync=synced" +
         "&release=awaiting_approval&release=failed" +
         "&rollout=paused&rollout=progressing&source=git&source=oci" +
-        "&q=payments+api&sort=impact&direction=desc&view=matrix" +
-        "&group=cluster&rows=stage&columns=health&size=request_rate" +
+        "&q=payments+api&sort=impact&direction=desc&view=heatmap" +
+        "&group=namespace&rows=stage&columns=health&size=request_rate" +
+        "&density=compact&labels=all" +
         "&zoom=g%3Aproject%3Aa%2Fpayments&selected=apps%2Fpayments-api&range=24h",
     )
     expect(parseFleetQuery(serialized)).toEqual({
@@ -88,13 +94,41 @@ describe("fleet query URL codec", () => {
     expect(second.state.projects).not.toBe(first.state.projects)
   })
 
+  it("keeps route-specific view defaults independent while omitting each route's default", () => {
+    const overviewDefaults = { view: "heatmap" } satisfies FleetQueryDefaults
+
+    const applications = parseFleetQuery("")
+    const overview = parseFleetQuery("", overviewDefaults)
+
+    expect(applications.state.view).toBe("treemap")
+    expect(overview.state.view).toBe("heatmap")
+    expect(serializeFleetQuery(applications.state).toString()).toBe("")
+    expect(serializeFleetQuery(overview.state, overviewDefaults).toString()).toBe("")
+    expect(serializeFleetQuery(applications.state, overviewDefaults).toString()).toBe("view=treemap")
+    expect(serializeFleetQuery(overview.state).toString()).toBe("view=heatmap")
+  })
+
+  it.each<[FleetDensity, FleetLabelMode, string]>([
+    ["auto", "auto", ""],
+    ["compact", "all", "density=compact&labels=all"],
+    ["comfortable", "none", "density=comfortable&labels=none"],
+  ])("round-trips density=%s and labels=%s", (density, labels, expected) => {
+    const state: FleetQueryState = { ...DEFAULT_FLEET_QUERY, density, labels }
+
+    const serialized = serializeFleetQuery(state)
+
+    expect(serialized.toString()).toBe(expected)
+    expect(parseFleetQuery(serialized)).toEqual({ state, notices: [] })
+  })
+
   it("drops malformed namespaced keys and unknown enum values with notices", () => {
     const parsed = parseFleetQuery(
       "project=broken&project=tenant%2Fpayments&project=tenant%2Ftoo%2Fdeep" +
         "&cluster=UPPER%2Feu&health=burning&health=healthy&sync=drifting" +
         "&release=complete&rollout=stuck&source=gitlab&sort=random" +
-        "&direction=sideways&view=graph&group=namespace&rows=source" +
-        "&columns=release&size=pods&selected=broken&range=forever",
+        "&direction=sideways&view=graph&group=workload&rows=source" +
+        "&columns=release&size=pods&density=spacious&labels=some" +
+        "&selected=broken&range=forever",
     )
 
     expect(parsed.state).toEqual({
@@ -114,10 +148,12 @@ describe("fleet query URL codec", () => {
       { field: "sort", value: "random", reason: "invalid" },
       { field: "direction", value: "sideways", reason: "invalid" },
       { field: "view", value: "graph", reason: "invalid" },
-      { field: "group", value: "namespace", reason: "invalid" },
+      { field: "group", value: "workload", reason: "invalid" },
       { field: "rows", value: "source", reason: "invalid" },
       { field: "columns", value: "release", reason: "invalid" },
       { field: "size", value: "pods", reason: "invalid" },
+      { field: "density", value: "spacious", reason: "invalid" },
+      { field: "labels", value: "some", reason: "invalid" },
       { field: "selected", value: "broken", reason: "invalid" },
       { field: "range", value: "forever", reason: "invalid" },
     ])

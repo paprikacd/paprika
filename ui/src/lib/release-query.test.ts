@@ -15,9 +15,11 @@ import {
 describe("release query URL codec", () => {
   it("canonicalizes shared scope through the fleet codec and drops presentation state", () => {
     const parsed = parseReleaseQuery(
-      "namespace=platform&project=z%2Fcheckout&view=matrix&cluster=platform%2Fus" +
+      "namespace=platform&project=z%2Fcheckout&view=heatmap&cluster=platform%2Fus" +
         "&project=a%2Fpayments&stage=prod&namespace=apps&project=a%2Fpayments" +
-        "&cluster=platform%2Feu&selected=apps%2Fcheckout&q=%20payments%20&page=2",
+        "&cluster=platform%2Feu&stage=dev&namespace=apps&cluster=platform%2Fus" +
+        "&stage=prod&group=namespace&density=compact&labels=all" +
+        "&selected=apps%2Fcheckout&q=%20payments%20&page=2",
     )
 
     expect(parsed).toEqual({
@@ -30,7 +32,7 @@ describe("release query URL codec", () => {
           { namespace: "platform", name: "eu" },
           { namespace: "platform", name: "us" },
         ],
-        stages: ["prod"],
+        stages: ["dev", "prod"],
         namespaces: ["apps", "platform"],
         q: "payments",
         page: 2,
@@ -40,7 +42,7 @@ describe("release query URL codec", () => {
     expect(serializeReleaseQuery(parsed.state).toString()).toBe(
       "project=a%2Fpayments&project=z%2Fcheckout" +
         "&cluster=platform%2Feu&cluster=platform%2Fus" +
-        "&stage=prod&namespace=apps&namespace=platform&q=payments&page=2",
+        "&stage=dev&stage=prod&namespace=apps&namespace=platform&q=payments&page=2",
     )
   })
 
