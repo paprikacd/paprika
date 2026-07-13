@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { StrictMode } from "react"
 import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
@@ -32,6 +34,18 @@ vi.mock("@/lib/auth-context", () => ({
 import { AppShell } from "@/components/layout/app-shell"
 import { Nav } from "@/components/layout/nav"
 
+const uiRoot = process.cwd().endsWith(`${path.sep}ui`)
+  ? process.cwd()
+  : path.resolve(process.cwd(), "ui")
+
+function cssRule(selector: string) {
+  const css = readFileSync(path.join(uiRoot, "src/app/globals.css"), "utf8")
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const match = css.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))
+  expect(match, `missing ${selector} rule`).not.toBeNull()
+  return match?.[1] ?? ""
+}
+
 describe("AppShell navigation", () => {
   beforeEach(() => {
     navigation.pathname = "/dashboard"
@@ -65,17 +79,47 @@ describe("AppShell navigation", () => {
 
     const main = screen.getByRole("main")
     expect(main).toHaveAttribute("id", "dashboard-main")
-    expect(screen.getByRole("link", { name: "Skip to fleet content" })).toHaveAttribute(
-      "href",
-      "#dashboard-main",
-    )
-    expect(screen.getByRole("link", { name: "Skip to fleet content" })).toHaveClass(
+  })
+
+  it("uses one explicit skip-link hook with a fixed clipped and focus-visible contract", () => {
+    render(<AppShell>Fleet content</AppShell>)
+
+    const skipLink = screen.getByRole("link", { name: "Skip to fleet content" })
+    const main = screen.getByRole("main")
+    expect(skipLink).toHaveAttribute("href", "#dashboard-main")
+    expect(main).not.toHaveClass("outline-none")
+    expect(skipLink.className.split(/\s+/)).toEqual([
+      "dashboard-skip-link",
       "bg-primary",
+      "px-4",
+      "py-3",
+      "text-sm",
+      "font-semibold",
       "text-background",
-    )
-    expect(screen.getByRole("link", { name: "Skip to fleet content" })).not.toHaveClass(
-      "text-primary-foreground",
-    )
+    ])
+    expect(skipLink.className).not.toMatch(/(?:^|\s)sr-only(?:\s|$)/)
+    expect(skipLink.className).not.toContain("focus:not-sr-only")
+
+    const hiddenRule = cssRule(".dashboard-skip-link")
+    expect(hiddenRule).toMatch(/position:\s*fixed\s*;/)
+    expect(hiddenRule).toMatch(/left:\s*1rem\s*;/)
+    expect(hiddenRule).toMatch(/top:\s*1rem\s*;/)
+    expect(hiddenRule).toMatch(/z-index:\s*100\s*;/)
+    expect(hiddenRule).toMatch(/width:\s*1px\s*;/)
+    expect(hiddenRule).toMatch(/height:\s*1px\s*;/)
+    expect(hiddenRule).toMatch(/overflow:\s*hidden\s*;/)
+    expect(hiddenRule).toMatch(/white-space:\s*nowrap\s*;/)
+    expect(hiddenRule).toMatch(/clip-path:\s*inset\(50%\)\s*;/)
+
+    const focusRule = cssRule(".dashboard-skip-link:focus-visible")
+    expect(focusRule).toMatch(/display:\s*flex\s*;/)
+    expect(focusRule).toMatch(/align-items:\s*center\s*;/)
+    expect(focusRule).toMatch(/width:\s*auto\s*;/)
+    expect(focusRule).toMatch(/height:\s*auto\s*;/)
+    expect(focusRule).toMatch(/min-height:\s*44px\s*;/)
+    expect(focusRule).toMatch(/overflow:\s*visible\s*;/)
+    expect(focusRule).toMatch(/white-space:\s*normal\s*;/)
+    expect(focusRule).toMatch(/clip-path:\s*inset\(0\)\s*;/)
   })
 
   it("preserves authenticated identity and logout in the dashboard shell", async () => {

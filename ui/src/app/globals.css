@@ -195,6 +195,31 @@
   }
 }
 
+/* Keep skip navigation in a stable viewport position without relying on
+   conflicting screen-reader-only utilities in the compiled stylesheet. */
+.dashboard-skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.dashboard-skip-link:focus-visible {
+  display: flex;
+  align-items: center;
+  width: auto;
+  height: auto;
+  min-height: 44px;
+  overflow: visible;
+  white-space: normal;
+  clip-path: inset(0);
+}
+
 /* ── Reduced motion ────────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

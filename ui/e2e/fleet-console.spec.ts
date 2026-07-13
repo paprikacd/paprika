@@ -67,6 +67,46 @@ test("serves the compiled shell with exact links and disabled placeholders", asy
   }
 })
 
+test("keeps the focused skip link fixed and operable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 })
+  await page.goto("/dashboard/")
+
+  const skipLink = page.getByRole("link", { name: "Skip to fleet content" })
+  await page.keyboard.press("Tab")
+  await expect(skipLink).toBeFocused()
+  await expect(skipLink).toBeVisible()
+  await expect(skipLink).toHaveCSS("position", "fixed")
+  await expect(skipLink).toHaveCSS("clip-path", "inset(0px)")
+
+  const box = await skipLink.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.height).toBeGreaterThanOrEqual(44)
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.y).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  )
+  expect(box!.y + box!.height).toBeLessThanOrEqual(
+    page.viewportSize()!.height,
+  )
+
+  await page.keyboard.press("Enter")
+  const main = page.locator("#dashboard-main")
+  await expect(main).toBeFocused()
+  const outline = await main.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      color: style.outlineColor,
+      style: style.outlineStyle,
+      width: Number.parseFloat(style.outlineWidth),
+    }
+  })
+  expect(outline.style).toBe("solid")
+  expect(outline.width).toBeGreaterThanOrEqual(2)
+  expect(outline.color).not.toBe("transparent")
+  expect(outline.color).not.toBe("rgba(0, 0, 0, 0)")
+})
+
 test("applies a namespaced project facet and typo-tolerant application search", async ({
   page,
 }, testInfo) => {
