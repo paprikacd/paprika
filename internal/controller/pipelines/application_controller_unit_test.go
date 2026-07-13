@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -1388,4 +1389,318 @@ func TestApplicationReconciler_handleAnalysisFailure_rollback(t *testing.T) {
 	if _, ok := updated.Annotations[rollbackAnnotation]; !ok {
 		t.Errorf("expected release to have rollback annotation")
 	}
+}
+
+func TestApplicationReconciler_setApplicationPhase_UpsertsConditionsByType(t *testing.T) {
+	t.Parallel()
+
+	r := &ApplicationReconciler{}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "cycling-app", Namespace: "default"},
+	}
+
+	// A thrashing release once appended thousands of conditions (one per phase
+	// transition) and grew the Application object to hundreds of KB. Cycling
+	// through phases many times must keep one condition per type.
+	for i := 0; i < 200; i++ {
+		phase := pipelinesv1alpha1.ApplicationPromoting
+		reason := "ReleasePromoting"
+		if i%2 == 1 {
+			phase = pipelinesv1alpha1.ApplicationCanarying
+			reason = "ReleaseCanarying"
+		}
+		r.setApplicationPhase(context.Background(), app, phase, reason, "cycling")
+	}
+
+	if len(app.Status.Conditions) != 2 {
+		t.Fatalf("expected one condition per phase type (2), got %d", len(app.Status.Conditions))
+	}
+}
+
+func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	isController := true
+	owner := metav1.OwnerReference{
+		APIVersion: "pipelines.paprika.io/v1alpha1",
+		Kind:       "Application",
+		Name:       "demo-app",
+		UID:        types.UID("uid-1"),
+		Controller: &isController,
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "demo-app-dev",
+			Namespace:       "default",
+			Labels:          map[string]string{"app": "demo"},
+			OwnerReferences: []metav1.OwnerReference{owner},
+		},
+		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{"demo-app-template"}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stage).Build()
+	r := &ApplicationReconciler{client: c}
+
+	var existing pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &existing); err != nil {
+		t.Fatalf("get stage: %v", err)
+	}
+	rvBefore := existing.ResourceVersion
+
+	expected := stage.DeepCopy()
+	if err := r.updateStage(ctx, &existing, expected, stage.Name); err != nil {
+		t.Fatalf("updateStage (no-op) returned error: %v", err)
+	}
+	var after pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &after); err != nil {
+		t.Fatalf("get stage after no-op: %v", err)
+	}
+	if after.ResourceVersion != rvBefore {
+		t.Fatalf("no-op updateStage still wrote the object: rv %s -> %s", rvBefore, after.ResourceVersion)
+	}
+
+	expected.Spec.Ring = 2
+	if err := r.updateStage(ctx, &after, expected, stage.Name); err != nil {
+		t.Fatalf("updateStage (real change) returned error: %v", err)
+	}
+	var changed pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &changed); err != nil {
+		t.Fatalf("get stage after change: %v", err)
+	}
+	if changed.ResourceVersion == rvBefore {
+		t.Fatal("real spec change did not write the object")
+	}
+	if changed.Spec.Ring != 2 {
+		t.Fatalf("expected ring 2 after update, got %d", changed.Spec.Ring)
+	}
+}
+
+func TestApplicationReconciler_handleActiveRelease_RecordsDeployedRevision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "rev-app-release-abc123",
+			Namespace:   "default",
+			Annotations: map[string]string{sourceRevisionAnnotation: "deadbeefcafe"},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "rev-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationVerifying,
+			ReleaseRef: release.Name,
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+	r := &ApplicationReconciler{client: c}
+
+	stage := &app.Spec.Stages[0]
+	if _, err := r.handleActiveRelease(ctx, app, stage, pipelinesv1alpha1.ReleaseComplete); err != nil {
+		t.Fatalf("handleActiveRelease returned error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.Revision != "deadbeefcafe" {
+		t.Fatalf("expected status.revision to record the deployed release revision, got %q", updated.Status.Revision)
+	}
+}
+
+// (e) The auto-retry cap binds only while the source hash is unchanged: a new
+// source hash (new commit => new release identity) resets the budget.
+func TestReleaseAutoRetriesExhausted(t *testing.T) {
+	t.Parallel()
+	app := &pipelinesv1alpha1.Application{
+		Status: pipelinesv1alpha1.ApplicationStatus{SourceHash: "hash-A"},
+	}
+	mk := func(count int, hash string) *pipelinesv1alpha1.Release {
+		return &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				autoRetryCountAnnotation: strconv.Itoa(count),
+				sourceHashAnnotation:     hash,
+			}},
+		}
+	}
+	tests := []struct {
+		name    string
+		release *pipelinesv1alpha1.Release
+		want    bool
+	}{
+		{"below cap, same hash", mk(0, "hash-A"), false},
+		{"one below cap, same hash", mk(maxReleaseAutoRetries-1, "hash-A"), false},
+		{"at cap, same hash", mk(maxReleaseAutoRetries, "hash-A"), true},
+		{"above cap, same hash", mk(maxReleaseAutoRetries+2, "hash-A"), true},
+		{"at cap, new source hash resets", mk(maxReleaseAutoRetries, "hash-B"), false},
+		{"malformed count treated as zero", mk(0, "hash-A"), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := releaseAutoRetriesExhausted(app, tc.release); got != tc.want {
+				t.Fatalf("releaseAutoRetriesExhausted = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// (d) Once the automatic retry budget is spent for the current source hash, the
+// controller stops recreating the failing release, leaves it terminal, and
+// surfaces ReleaseRetriesExhausted instead of thrashing create->adopt->resync.
+func TestApplicationReconciler_handleHealthyPhase_holdsExhaustedRelease(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "exhausted-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://example.com/repo.git",
+				Revision: "main",
+				Path:     ".",
+			},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationHealthy,
+			ReleaseRef:     "exhausted-app-release",
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "exhausted-app-release",
+			Namespace: "default",
+			Annotations: map[string]string{
+				autoRetryCountAnnotation: strconv.Itoa(maxReleaseAutoRetries),
+				sourceHashAnnotation:     "same-source-hash",
+			},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseRolledBack},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(app, release).
+		Build()
+	r := &ApplicationReconciler{
+		client: c,
+		Scheme: scheme,
+		// Renderer returns the SAME hash => no source change => the cap holds.
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "same-source-hash",
+			Revision: "same-source-revision",
+		}},
+	}
+
+	if _, err := r.handleHealthyPhase(ctx, app); err != nil {
+		t.Fatalf("handleHealthyPhase failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	// The failing release is NOT superseded/recreated: ReleaseRef still points
+	// at it (a replacement flow would clear ReleaseRef).
+	if updated.Status.ReleaseRef != "exhausted-app-release" {
+		t.Fatalf("releaseRef = %q, want it held at exhausted-app-release", updated.Status.ReleaseRef)
+	}
+	if cond := meta.FindStatusCondition(updated.Status.Conditions, releaseRetriesExhaustedCondition); cond == nil || cond.Status != metav1.ConditionTrue {
+		t.Fatalf("want %s=True condition, got %+v", releaseRetriesExhaustedCondition, cond)
+	}
+
+	// The terminal release must remain terminal (not resynced to Pending).
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: release.Name, Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseRolledBack {
+		t.Fatalf("release phase = %s, want it left RolledBack (not resurrected)", updatedRelease.Status.Phase)
+	}
+}
+
+// The auto-retry counter increments on automatic resurrections and resets on
+// operator-requested (manual) syncs — the accounting the cap depends on.
+func TestApplicationReconciler_requestReleaseResync_countsAutomaticResetsManual(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	newReconciler := func(release *pipelinesv1alpha1.Release) (*ApplicationReconciler, client.Client) {
+		c := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(release).
+			WithStatusSubresource(release).
+			Build()
+		return &ApplicationReconciler{client: c, Scheme: scheme}, c
+	}
+
+	t.Run("automatic increments", func(t *testing.T) {
+		t.Parallel()
+		release := &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "r", Namespace: "default",
+				Annotations: map[string]string{autoRetryCountAnnotation: "1"},
+			},
+			Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseRolledBack},
+		}
+		r, c := newReconciler(release)
+		if err := r.requestReleaseResync(ctx, "default", "r", releaseResyncAutomatic); err != nil {
+			t.Fatalf("requestReleaseResync: %v", err)
+		}
+		var got pipelinesv1alpha1.Release
+		if err := c.Get(ctx, client.ObjectKey{Name: "r", Namespace: "default"}, &got); err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Annotations[autoRetryCountAnnotation] != "2" {
+			t.Fatalf("count = %q, want 2", got.Annotations[autoRetryCountAnnotation])
+		}
+	})
+
+	t.Run("manual resets", func(t *testing.T) {
+		t.Parallel()
+		release := &pipelinesv1alpha1.Release{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "r2", Namespace: "default",
+				Annotations: map[string]string{autoRetryCountAnnotation: "3"},
+			},
+			Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseRolledBack},
+		}
+		r, c := newReconciler(release)
+		if err := r.requestReleaseResync(ctx, "default", "r2", releaseResyncManual); err != nil {
+			t.Fatalf("requestReleaseResync: %v", err)
+		}
+		var got pipelinesv1alpha1.Release
+		if err := c.Get(ctx, client.ObjectKey{Name: "r2", Namespace: "default"}, &got); err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if _, ok := got.Annotations[autoRetryCountAnnotation]; ok {
+			t.Fatalf("count annotation still present after manual sync: %q", got.Annotations[autoRetryCountAnnotation])
+		}
+	})
 }

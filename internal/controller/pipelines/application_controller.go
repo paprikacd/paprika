@@ -12,6 +12,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,6 +61,33 @@ const (
 	sourceHashAnnotation     = "paprika.io/source-hash"
 	sourceRevisionAnnotation = "paprika.io/source-revision"
 	maxKubernetesNameLength  = 63
+
+	// autoRetryCountAnnotation tracks, on a Release, how many times the
+	// controller has AUTOMATICALLY resurrected it (terminal -> resync) for the
+	// same source hash. Manual syncs (paprika.io/manual-sync) reset it, and a
+	// successful completion clears it. Operators may also delete the
+	// annotation directly to re-arm automatic retries.
+	autoRetryCountAnnotation = "paprika.io/auto-retry-count"
+
+	// maxReleaseAutoRetries caps automatic resurrections of a failing release
+	// for the same source hash. Once reached the release is left terminal and
+	// the Application gets a ReleaseRetriesExhausted condition until the
+	// source hash changes or a manual sync is requested.
+	maxReleaseAutoRetries = 3
+
+	// releaseRetriesExhaustedCondition is the Application condition type set
+	// when the automatic retry budget for the active release is used up.
+	releaseRetriesExhaustedCondition = "ReleaseRetriesExhausted"
+)
+
+// releaseResyncOrigin distinguishes automatic release resurrections (which
+// count toward the auto-retry cap) from operator-requested ones (which reset
+// it).
+type releaseResyncOrigin string
+
+const (
+	releaseResyncAutomatic releaseResyncOrigin = "automatic"
+	releaseResyncManual    releaseResyncOrigin = "manual"
 )
 
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
@@ -116,6 +144,7 @@ func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
@@ -599,7 +628,10 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
 		}
-	} else {
+	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
+		// Skip no-op updates: every Update round-trips through the in-process
+		// admission webhooks, and doing it unconditionally on each reconcile
+		// starves the webhook server under load.
 		existing.Spec = expected.Spec
 		if len(existing.Labels) == 0 {
 			existing.Labels = make(map[string]string)
@@ -615,6 +647,20 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	app.Status.TemplateRef = templateName
 	app.Status.Synced = true
 	return nil
+}
+
+// specOrLabelsChanged reports whether converging existing to expected would
+// actually change the object (spec differs, or expected labels are missing).
+func specOrLabelsChanged(existingSpec, expectedSpec any, existingLabels, expectedLabels map[string]string) bool {
+	if !equality.Semantic.DeepEqual(existingSpec, expectedSpec) {
+		return true
+	}
+	for k, v := range expectedLabels {
+		if existingLabels[k] != v {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *paprikav1.Application) error {
@@ -663,7 +709,7 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create pipeline: %w", err)
 		}
-	} else {
+	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
 		existing.Spec = expected.Spec
 		if len(existing.Labels) == 0 {
 			existing.Labels = make(map[string]string)
@@ -767,8 +813,13 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 }
 
 func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expected *paprikav1.Stage, stageName string) error {
+	ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
 	if err := updateStageApplicationOwner(existing, expected); err != nil {
 		return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
+	}
+	if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
+		equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+		return nil
 	}
 	existing.Spec = expected.Spec
 	if len(existing.Labels) == 0 {
@@ -912,6 +963,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	return ctrl.Result{}, nil
 }
 
+//nolint:cyclop,nestif // adoption branches on terminal phase, retry-budget exhaustion, and manual override.
 func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, releaseName string) (ctrl.Result, error) {
 	var release paprikav1.Release
 	if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: app.Namespace}, &release); err != nil {
@@ -920,7 +972,27 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 
 	app.Status.ReleaseRef = releaseName
 	if applicationReleasePhaseTerminal(release.Status.Phase) {
-		if err := r.requestReleaseResync(ctx, app.Namespace, releaseName); err != nil {
+		manual := manualSyncRequested(app)
+		if !manual && releaseAutoRetriesExhausted(app, &release) {
+			// Retry cap backstop: do NOT resurrect the release again. Leave it
+			// terminal, surface the condition, and park the app in the
+			// replacement flow (whose gate keeps polling the source) instead
+			// of thrashing create->adopt->resync forever.
+			log.FromContext(ctx).Info("Release auto-retry budget exhausted; not resyncing terminal release",
+				"release", releaseName, "retries", releaseAutoRetryCount(&release))
+			setReleaseRetriesExhaustedCondition(app, &release)
+			r.setApplicationPhase(ctx, app, paprikav1.ApplicationRolledBack, releaseRetriesExhaustedCondition,
+				"release retry budget exhausted; waiting for a source change or manual sync")
+			if err := r.patchAppStatus(ctx, app); err != nil {
+				return ctrl.Result{}, fmt.Errorf("patch application status after retry exhaustion: %w", err)
+			}
+			return ctrl.Result{RequeueAfter: time.Minute}, nil
+		}
+		origin := releaseResyncAutomatic
+		if manual {
+			origin = releaseResyncManual
+		}
+		if err := r.requestReleaseResync(ctx, app.Namespace, releaseName, origin); err != nil {
 			return ctrl.Result{}, err
 		}
 		r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, "ReleaseResync", "existing terminal release was marked for resync")
@@ -960,6 +1032,17 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 	mapping, ok := phaseMap[phase]
 	if !ok {
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+
+	// Surface the deployed revision (the kubectl REVISION printer column reads
+	// status.revision, which nothing populated before). The completed
+	// release's source-revision annotation is the revision actually live.
+	if phase == paprikav1.ReleaseComplete {
+		if release := r.getCurrentRelease(ctx, app); release != nil {
+			if rev := release.Annotations[sourceRevisionAnnotation]; rev != "" {
+				app.Status.Revision = rev
+			}
+		}
 	}
 
 	msg := mapping.reason + " on stage " + targetStage.Name
@@ -1118,16 +1201,24 @@ func truncateKubernetesName(name string) string {
 }
 
 func (r *ApplicationReconciler) getCurrentReleasePhase(ctx context.Context, app *paprikav1.Application) paprikav1.ReleasePhase {
-	if app.Status.ReleaseRef == "" {
+	release := r.getCurrentRelease(ctx, app)
+	if release == nil {
 		return ""
+	}
+	return release.Status.Phase
+}
+
+func (r *ApplicationReconciler) getCurrentRelease(ctx context.Context, app *paprikav1.Application) *paprikav1.Release {
+	if app.Status.ReleaseRef == "" {
+		return nil
 	}
 
 	var release paprikav1.Release
 	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
-		return ""
+		return nil
 	}
 
-	return release.Status.Phase
+	return &release
 }
 
 func (r *ApplicationReconciler) getPipelinePhase(ctx context.Context, app *paprikav1.Application) paprikav1.PipelinePhase {
@@ -1162,7 +1253,11 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 	previousPhase := app.Status.Phase
 	app.Status.Phase = phase
 	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
-	app.Status.Conditions = append(app.Status.Conditions, metav1.Condition{
+	// Upsert by condition type (like every other controller here) instead of
+	// appending: a thrashing release once appended 3.7k conditions and grew
+	// the Application object to 641KB, slowing every status write and starving
+	// the in-process admission webhooks.
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
 		Type:               string(phase),
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
@@ -1635,6 +1730,8 @@ func (r *ApplicationReconciler) getTargetStage(app *paprikav1.Application) strin
 }
 
 // SetupWithManager sets up the controller with the Manager.
+//
+//nolint:cyclop,nestif // healthy-phase reconcile branches on release phase, retry-budget exhaustion, and source polling.
 func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
@@ -1642,13 +1739,28 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 
 	if app.Status.ReleaseRef != "" {
 		phase := r.getCurrentReleasePhase(ctx, app)
-		if phase == paprikav1.ReleaseSuperseded {
-			log.Info("Active release is superseded, creating replacement release", "release", app.Status.ReleaseRef)
-			return r.startNewReleaseFlow(ctx, app, false, "ReleaseSuperseded", "active release was superseded, creating a replacement")
-		}
-		if phase == paprikav1.ReleaseRolledBack {
+		if phase == paprikav1.ReleaseSuperseded || phase == paprikav1.ReleaseRolledBack {
+			if release := r.getCurrentRelease(ctx, app); release != nil &&
+				!manualSyncRequested(app) && releaseAutoRetriesExhausted(app, release) {
+				// Retry cap: stop recreating the failing release. Leave it
+				// terminal (RolledBack/Failed stays visible), surface the
+				// condition, and keep watching the source: a new source hash
+				// yields a new release identity with a fresh retry budget,
+				// and paprika.io/manual-sync bypasses the cap.
+				return r.holdExhaustedRelease(ctx, app, release)
+			}
+			if phase == paprikav1.ReleaseSuperseded {
+				log.Info("Active release is superseded, creating replacement release", "release", app.Status.ReleaseRef)
+				return r.startNewReleaseFlow(ctx, app, false, "ReleaseSuperseded", "active release was superseded, creating a replacement")
+			}
 			log.Info("Active release is rolled back, creating replacement release", "release", app.Status.ReleaseRef)
 			return r.startNewReleaseFlow(ctx, app, false, "ReleaseRolledBack", "active release was rolled back, creating a replacement")
+		}
+		// Recovery edge: if an operator resurrected the release directly (e.g.
+		// kubectl-annotating paprika.io/resync on the Release) and it went on
+		// to complete, reflect that instead of staying parked in RolledBack.
+		if phase == paprikav1.ReleaseComplete && app.Status.Phase != paprikav1.ApplicationHealthy {
+			r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
 		}
 	}
 
@@ -1694,6 +1806,39 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 	return ctrl.Result{RequeueAfter: pollInterval}, nil
 }
 
+// holdExhaustedRelease is the rest state for an application whose active
+// release used up its automatic retry budget. It does not supersede or
+// resurrect the terminal release; it keeps polling the source so a new commit
+// (new source hash => new release identity => fresh retry budget) starts a
+// normal replacement flow, and surfaces ReleaseRetriesExhausted so operators
+// know a manual sync (paprika.io/manual-sync) is the other way out.
+func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *paprikav1.Application, release *paprikav1.Release) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
+		"release", release.Name, "retries", releaseAutoRetryCount(release))
+
+	pollInterval := defaultRequeue
+	if app.Spec.Source.PollInterval != "" {
+		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
+			pollInterval = d
+		}
+	}
+
+	sourceChanged, err := r.checkSourceChanged(ctx, app)
+	if err != nil {
+		logger.Error(err, "Failed to check source changes while retry budget exhausted")
+	} else if sourceChanged {
+		logger.Info("Source change detected after retry exhaustion, starting a fresh release flow", "app", app.Name)
+		return r.startNewReleaseFlow(ctx, app, false, "SourceChanged", "source hash changed after retry exhaustion, creating a new release")
+	}
+
+	setReleaseRetriesExhaustedCondition(app, release)
+	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+		logger.Error(patchErr, "Failed to patch application status while holding exhausted release")
+	}
+	return ctrl.Result{RequeueAfter: pollInterval}, nil
+}
+
 func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *paprikav1.Application, manual bool, reason, message string) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	targetStage := r.getTargetStage(app)
@@ -1708,6 +1853,7 @@ func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *pa
 	}
 
 	r.setSyncWindowCondition(app, metav1.ConditionTrue, "Allowed", "Source change within sync window")
+	clearReleaseRetriesExhaustedCondition(app)
 	if err := r.supersedeCurrentRelease(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("supersede current release: %w", err)
 	}
@@ -1725,13 +1871,15 @@ func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context,
 	if app.Status.ReleaseRef == "" {
 		return nil
 	}
-	if err := r.requestReleaseResync(ctx, app.Namespace, app.Status.ReleaseRef); err != nil {
+	// Only handleSyncTrigger's manual-override path reaches this helper, so
+	// the resync is operator-requested: it resets the auto-retry counter.
+	if err := r.requestReleaseResync(ctx, app.Namespace, app.Status.ReleaseRef, releaseResyncManual); err != nil {
 		return fmt.Errorf("request current release resync: %w", err)
 	}
 	return nil
 }
 
-func (r *ApplicationReconciler) requestReleaseResync(ctx context.Context, namespace, releaseName string) error {
+func (r *ApplicationReconciler) requestReleaseResync(ctx context.Context, namespace, releaseName string, origin releaseResyncOrigin) error {
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var release paprikav1.Release
 		if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: namespace}, &release); err != nil {
@@ -1745,6 +1893,16 @@ func (r *ApplicationReconciler) requestReleaseResync(ctx context.Context, namesp
 		}
 		release.Annotations[resyncAnnotation] = strconv.FormatInt(r.currentTime().Unix(), 10)
 		delete(release.Annotations, rollbackAnnotation)
+		// Retry accounting: automatic resurrections increment the counter
+		// (cleared again when the release completes); manual syncs reset it.
+		// A human annotating paprika.io/resync directly on the Release never
+		// passes through here, so it neither counts nor resets — it simply
+		// bypasses the cap for that one run.
+		if origin == releaseResyncManual {
+			delete(release.Annotations, autoRetryCountAnnotation)
+		} else {
+			release.Annotations[autoRetryCountAnnotation] = strconv.Itoa(releaseAutoRetryCount(&release) + 1)
+		}
 		if err := r.client.Update(ctx, &release); err != nil {
 			return fmt.Errorf("update release resync annotation: %w", err)
 		}
@@ -1753,6 +1911,64 @@ func (r *ApplicationReconciler) requestReleaseResync(ctx context.Context, namesp
 		return fmt.Errorf("request release resync: %w", err)
 	}
 	return nil
+}
+
+// releaseAutoRetryCount parses the auto-retry counter annotation, treating a
+// missing or malformed value as zero.
+func releaseAutoRetryCount(release *paprikav1.Release) int {
+	count, err := strconv.Atoi(release.Annotations[autoRetryCountAnnotation])
+	if err != nil || count < 0 {
+		return 0
+	}
+	return count
+}
+
+// manualSyncRequested reports whether the operator has requested a manual
+// sync on the Application, which bypasses (and resets) the auto-retry cap.
+func manualSyncRequested(app *paprikav1.Application) bool {
+	return app.Annotations[manualSyncAnnotation] != ""
+}
+
+// releaseAutoRetriesExhausted reports whether the release has used up its
+// automatic retry budget for the application's CURRENT source hash. A new
+// source hash produces a new release identity (and a fresh counter), so the
+// cap only binds while the failing source is unchanged.
+func releaseAutoRetriesExhausted(app *paprikav1.Application, release *paprikav1.Release) bool {
+	if releaseAutoRetryCount(release) < maxReleaseAutoRetries {
+		return false
+	}
+	return release.Annotations[sourceHashAnnotation] == app.Status.SourceHash
+}
+
+// setReleaseRetriesExhaustedCondition records on the Application that the
+// active release's automatic retry budget is spent and tells the operator how
+// to proceed.
+func setReleaseRetriesExhaustedCondition(app *paprikav1.Application, release *paprikav1.Release) {
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:   releaseRetriesExhaustedCondition,
+		Status: metav1.ConditionTrue,
+		Reason: "AutoRetryLimitReached",
+		Message: fmt.Sprintf(
+			"release %s failed %d automatic retries for source hash %q; fix the source and push a new revision, or annotate the Application with %s to retry manually",
+			release.Name, releaseAutoRetryCount(release), app.Status.SourceHash, manualSyncAnnotation),
+		LastTransitionTime: metav1.Now(),
+	})
+}
+
+// clearReleaseRetriesExhaustedCondition flips the exhausted condition to False
+// when a new release flow starts (new source, changed parameters, or manual
+// sync).
+func clearReleaseRetriesExhaustedCondition(app *paprikav1.Application) {
+	if meta.FindStatusCondition(app.Status.Conditions, releaseRetriesExhaustedCondition) == nil {
+		return
+	}
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type:               releaseRetriesExhaustedCondition,
+		Status:             metav1.ConditionFalse,
+		Reason:             "NewReleaseFlow",
+		Message:            "a new release flow was started",
+		LastTransitionTime: metav1.Now(),
+	})
 }
 
 func (r *ApplicationReconciler) supersedeCurrentRelease(ctx context.Context, app *paprikav1.Application) error {

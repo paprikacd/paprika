@@ -330,6 +330,13 @@ func (r *ReleaseReconciler) handleResyncAnnotation(ctx context.Context, release 
 	if r.isReleaseTerminal(release) {
 		oldPhase := release.Status.Phase
 		release.Status.Phase = paprikav1.ReleasePending
+		// Reset canary progress so the re-run starts the canary from step 0.
+		// Stale CanaryStepIndex/CanaryStepStartedAt from the previous run
+		// would otherwise skip canary steps and instantly trip the progress
+		// deadline on the resurrected release.
+		release.Status.CanaryWeight = 0
+		release.Status.CanaryStepIndex = 0
+		release.Status.CanaryStepStartedAt = nil
 		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 			*result = resultError
 			return ctrl.Result{}, true, fmt.Errorf("resetting release phase to pending: %w", err)
@@ -664,6 +671,16 @@ func (r *ReleaseReconciler) completeRelease(ctx context.Context, release *paprik
 	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release complete: %w", err)
+	}
+	// The auto-retry cap counts CONSECUTIVE failed automatic re-runs: a
+	// successful completion clears the counter so future legitimate resyncs
+	// (self-heal, inline updates) start from a clean slate. Best-effort.
+	if _, ok := release.Annotations[autoRetryCountAnnotation]; ok {
+		patch := client.MergeFrom(release.DeepCopy())
+		delete(release.Annotations, autoRetryCountAnnotation)
+		if err := r.client.Patch(ctx, release, patch); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to clear auto-retry counter on completed release", "release", release.Name)
+		}
 	}
 	return ctrl.Result{}, nil
 }
@@ -1325,9 +1342,19 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 
 	force := opts != nil && opts.Force
 	_, err = ri.Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: force})
+	if apierrors.IsConflict(err) && !force {
+		// A field-manager conflict means the object was mutated out-of-band
+		// (kubectl apply/set/edit take field ownership away from us). Git is
+		// the owner of record for rendered resources, so reclaim ownership:
+		// without this a single manual kubectl touch wedges every subsequent
+		// apply and the release loops forever while drift never converges.
+		log.Info("Apply conflict, retrying with force to reclaim field ownership",
+			"kind", kind, "name", name, "namespace", targetNamespace, "conflict", err.Error())
+		_, err = ri.Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: true})
+	}
 	if err != nil {
 		log.Error(err, "Failed to apply resource", "kind", kind, "name", name)
-		return false, nil
+		return false, fmt.Errorf("apply %s %s/%s: %w", kind, targetNamespace, name, err)
 	}
 	return true, nil
 }
@@ -2148,6 +2175,14 @@ func (r *ReleaseReconciler) reconcileCanary(ctx context.Context, release *paprik
 		return requeue, nil
 	}
 
+	// Workload readiness gate: do not advance to the next step until the
+	// workloads applied at the previous step have converged on the target
+	// cluster. Waiting reconciles requeue WITHOUT touching CanaryStepIndex or
+	// CanaryStepStartedAt; exceeding the progress deadline fails the release.
+	if res, blocked, err := r.gateCanaryAdvance(ctx, release, &stage, canaryCfg, result); blocked || err != nil {
+		return res, err
+	}
+
 	currentWeight := canaryCfg.Steps[stepIdx]
 	log.Info("Canary step", "release", release.Name, "step", stepIdx, "weight", currentWeight)
 	metrics.CanaryStepTotal.WithLabelValues(release.Name, release.Namespace, stage.Name).Inc()
@@ -2175,16 +2210,19 @@ func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *papr
 
 	release.Status.CanaryWeight = currentWeight
 	release.Status.CanaryStepIndex = stepIdx + 1
-	now := metav1.Now()
+	now := metav1.NewTime(r.now())
 	release.Status.CanaryStepStartedAt = &now
 
-	if r.canPromoteCanary(stepIdx, canaryCfg.Steps, currentWeight) {
-		return r.handleCanaryPromotion(ctx, release, stage, result)
-	}
-
+	// Persist the step advance BEFORE any promotion attempt: the promotion
+	// readiness gate may requeue without another status write, and the
+	// progress deadline is anchored on the persisted CanaryStepStartedAt.
 	if err := r.patchReleaseStatus(ctx, release, release.Status.Phase); err != nil {
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update canary status: %w", err)
+	}
+
+	if r.canPromoteCanary(stepIdx, canaryCfg.Steps, currentWeight) {
+		return r.handleCanaryPromotion(ctx, release, stage, result)
 	}
 
 	return ctrl.Result{RequeueAfter: r.getCanaryInterval(canaryCfg)}, nil
@@ -2294,6 +2332,15 @@ func (r *ReleaseReconciler) handleAnalysisRollback(ctx context.Context, release 
 
 func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, result *string) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	// Workload readiness gate: never promote to Verifying/Complete while the
+	// final canary step's workloads have not converged. An unpullable image or
+	// crash-looping rollout blocks here until the progress deadline fails the
+	// release (and OnFailure=rollback restores the previous good release).
+	if res, blocked, err := r.gateCanaryAdvance(ctx, release, stage, stage.Spec.Canary, result); blocked || err != nil {
+		return res, err
+	}
+
 	oldPhase := release.Status.Phase
 	if err := r.promoteCanary(ctx, release, stage); err != nil {
 		if errors.Is(err, errConftestBlocked) {
