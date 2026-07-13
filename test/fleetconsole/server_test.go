@@ -221,6 +221,13 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 
 	client := v1connect.NewPaprikaServiceClient(httpClient, baseURL)
 	assertRealFleetQueries(t, client)
+	policies, err := client.ListPolicies(t.Context(), connect.NewRequest(&paprikav1.ListPoliciesRequest{}))
+	if err != nil {
+		t.Fatalf("ListPolicies: %v", err)
+	}
+	if len(policies.Msg.GetPolicies()) != 0 {
+		t.Fatalf("ListPolicies returned %d policies, want 0", len(policies.Msg.GetPolicies()))
+	}
 	assertEventsDisabled(t, httpClient, baseURL)
 	stopServer()
 }

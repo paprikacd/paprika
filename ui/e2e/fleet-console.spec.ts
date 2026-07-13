@@ -67,6 +67,23 @@ test("serves the compiled shell with exact links and disabled placeholders", asy
   }
 })
 
+test("loads empty policies through the real fixture", async ({ page }) => {
+  const policyResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+      "/paprika.v1.PaprikaService/ListPolicies",
+  )
+
+  await page.goto("/dashboard/")
+
+  const response = await policyResponse
+  const body = await response.json()
+  expect(response.status(), `ListPolicies response: ${JSON.stringify(body)}`).toBe(200)
+  expect(body).toEqual({})
+  await expect(page.getByText("No policies yet", { exact: true })).toBeVisible()
+  await expect(page.getByText(/failed to load policies/i)).toHaveCount(0)
+})
+
 test("keeps the focused skip link fixed and operable", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto("/dashboard/")

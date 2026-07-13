@@ -16,6 +16,7 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
@@ -86,6 +87,7 @@ func newFixtureScheme() (*runtime.Scheme, error) {
 		{name: "client-go", add: clientgoscheme.AddToScheme},
 		{name: "pipelines", add: pipelinesv1alpha1.AddToScheme},
 		{name: "core", add: corev1alpha1.AddToScheme},
+		{name: "policy", add: policyv1alpha1.AddToScheme},
 		{name: "rollouts", add: rolloutsv1alpha1.AddToScheme},
 		{name: "clusters", add: clustersv1alpha1.AddToScheme},
 	}

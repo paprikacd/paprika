@@ -15,9 +15,21 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
+
+func TestFixtureSchemeRegistersPolicyList(t *testing.T) {
+	t.Parallel()
+
+	scheme, err := newFixtureScheme()
+	require.NoError(t, err)
+
+	object, err := scheme.New(policyv1alpha1.SchemeGroupVersion.WithKind("PolicyList"))
+	require.NoError(t, err)
+	require.IsType(t, &policyv1alpha1.PolicyList{}, object)
+}
 
 func TestSeedFixtureRejectsUnsafeApplicationCounts(t *testing.T) {
 	t.Parallel()
