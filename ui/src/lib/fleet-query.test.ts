@@ -108,6 +108,82 @@ describe("fleet query URL codec", () => {
     expect(serializeFleetQuery(overview.state).toString()).toBe("view=heatmap")
   })
 
+  it("falls back field by field when raw JavaScript supplies malformed defaults", () => {
+    const rawDefaults = {
+      sort: "random",
+      direction: "sideways",
+      view: "graph",
+      group: "workload",
+      rows: "source",
+      columns: "release",
+      size: "pods",
+      density: "spacious",
+      labels: "some",
+      range: "forever",
+    } as unknown as FleetQueryDefaults
+
+    expect(parseFleetQuery("", rawDefaults)).toEqual({
+      state: DEFAULT_FLEET_QUERY,
+      notices: [],
+    })
+  })
+
+  it("does not let explicit undefined overrides erase global defaults", () => {
+    const rawDefaults = {
+      view: undefined,
+      density: undefined,
+      labels: undefined,
+    } as unknown as FleetQueryDefaults
+
+    expect(parseFleetQuery("", rawDefaults)).toEqual({
+      state: DEFAULT_FLEET_QUERY,
+      notices: [],
+    })
+  })
+
+  it("notices invalid URL values and uses valid global fallbacks despite malformed overrides", () => {
+    const rawDefaults = {
+      view: "graph",
+      density: "spacious",
+      labels: "some",
+    } as unknown as FleetQueryDefaults
+
+    const parsed = parseFleetQuery("view=&density=wide&labels=some", rawDefaults)
+
+    expect(parsed.state).toEqual(DEFAULT_FLEET_QUERY)
+    expect(parsed.notices.map(({ field, value, reason }) => ({ field, value, reason }))).toEqual([
+      { field: "view", value: "", reason: "invalid" },
+      { field: "density", value: "wide", reason: "invalid" },
+      { field: "labels", value: "some", reason: "invalid" },
+    ])
+  })
+
+  it("ignores unknown raw override keys without discarding valid overrides", () => {
+    const rawDefaults = {
+      view: "heatmap",
+      experimentalLayout: "spiral",
+    } as unknown as FleetQueryDefaults
+
+    const parsed = parseFleetQuery("", rawDefaults)
+
+    expect(parsed).toEqual({
+      state: { ...DEFAULT_FLEET_QUERY, view: "heatmap" },
+      notices: [],
+    })
+    expect(parsed.state).not.toHaveProperty("experimentalLayout")
+    expect(serializeFleetQuery(parsed.state, rawDefaults).toString()).toBe("")
+  })
+
+  it("does not serialize global values merely because a raw override is invalid", () => {
+    const rawDefaults = {
+      view: "graph",
+      density: "spacious",
+      labels: "some",
+    } as unknown as FleetQueryDefaults
+
+    expect(serializeFleetQuery(DEFAULT_FLEET_QUERY, rawDefaults).toString()).toBe("")
+  })
+
   it.each<[FleetDensity, FleetLabelMode, string]>([
     ["auto", "auto", ""],
     ["compact", "all", "density=compact&labels=all"],

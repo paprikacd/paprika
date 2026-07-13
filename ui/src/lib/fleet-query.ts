@@ -346,10 +346,28 @@ export function reconcileFleetQuery(
   }
 }
 
-function defaultFleetQuery(overrides: FleetQueryDefaults = {}): FleetQueryState {
+function defaultFleetQuery(overrides: unknown = {}): FleetQueryState {
+  const values =
+    typeof overrides === "object" && overrides !== null
+      ? (overrides as Record<string, unknown>)
+      : {}
+
   return {
     ...DEFAULT_FLEET_QUERY,
-    ...overrides,
+    sort: validDefault(values.sort, FLEET_SORT_VALUES, DEFAULT_FLEET_QUERY.sort),
+    direction: validDefault(
+      values.direction,
+      FLEET_DIRECTION_VALUES,
+      DEFAULT_FLEET_QUERY.direction,
+    ),
+    view: validDefault(values.view, FLEET_VIEW_VALUES, DEFAULT_FLEET_QUERY.view),
+    group: validDefault(values.group, FLEET_GROUP_VALUES, DEFAULT_FLEET_QUERY.group),
+    rows: validDefault(values.rows, FLEET_GROUP_VALUES, DEFAULT_FLEET_QUERY.rows),
+    columns: validDefault(values.columns, FLEET_GROUP_VALUES, DEFAULT_FLEET_QUERY.columns),
+    size: validDefault(values.size, FLEET_SIZE_VALUES, DEFAULT_FLEET_QUERY.size),
+    density: validDefault(values.density, FLEET_DENSITY_VALUES, DEFAULT_FLEET_QUERY.density),
+    labels: validDefault(values.labels, FLEET_LABEL_MODE_VALUES, DEFAULT_FLEET_QUERY.labels),
+    range: validDefault(values.range, FLEET_RANGE_VALUES, DEFAULT_FLEET_QUERY.range),
     projects: [],
     clusters: [],
     stages: [],
@@ -361,6 +379,14 @@ function defaultFleetQuery(overrides: FleetQueryDefaults = {}): FleetQueryState 
     sources: [],
     selected: null,
   }
+}
+
+function validDefault<const T extends readonly string[]>(
+  value: unknown,
+  allowed: T,
+  fallback: T[number],
+): T[number] {
+  return typeof value === "string" && oneOf(value, allowed) ? value : fallback
 }
 
 function canonicalizeFleetQuery(
