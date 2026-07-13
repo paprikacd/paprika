@@ -48,7 +48,7 @@ test("serves the compiled shell with exact links and disabled placeholders", asy
     ["Overview", "/dashboard/"],
     ["Applications", "/dashboard/applications/"],
     ["Pipelines", "/dashboard/#pipelines"],
-    ["Releases", "/dashboard/#releases"],
+    ["Releases", "/dashboard/releases/"],
     ["Rollouts", "/dashboard/rollouts/"],
   ] as const
 
@@ -203,7 +203,7 @@ test("discovers complete releases from command search and migrates legacy scope"
   const href = await releaseResult.getAttribute("href")
   expect(href).toBeTruthy()
   const destination = new URL(href!, baseURL)
-  expect(destination.pathname).toBe("/dashboard/releases")
+  expect(destination.pathname).toBe("/dashboard/releases/")
   expect(destination.searchParams.get("q")).toBe(releaseName)
   expect(destination.searchParams.get("namespace")).toBe(releaseNamespace)
   expect(destination.hash).toBe("")
