@@ -431,41 +431,41 @@ async function expectCompleteOperationalRow(
     },
     {
       description: `${expected.surface} target`,
-      locator: row.getByLabel("Target", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Target", expected.target)),
       text: expected.target,
     },
     {
       description: `${expected.surface} stage`,
-      locator: row.getByLabel("Stage", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Stage", expected.stage)),
       text: expected.stage,
     },
     {
       description: `${expected.surface} health`,
-      locator: row.getByLabel("Health status", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Health status", expected.health)),
       text: expected.health,
     },
     {
       description: `${expected.surface} sync`,
-      locator: row.getByLabel("Sync status", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Sync status", expected.sync)),
       text: expected.sync,
     },
     {
       description: `${expected.surface} resources`,
-      locator: row.getByLabel("Resource count", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Resource count", expected.resources)),
       text: expected.resources,
     },
   ]
   if (expected.rank) {
     factElements.push({
       description: `${expected.surface} rank`,
-      locator: row.getByLabel("Queue rank", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Queue rank", expected.rank)),
       text: expected.rank,
     })
   }
   if (expected.reason) {
     factElements.push({
       description: `${expected.surface} severity reason`,
-      locator: row.getByLabel("Attention reason", { exact: true }),
+      locator: row.getByLabel(accessibleFactName("Attention reason", expected.reason)),
       text: expected.reason,
     })
   }
@@ -920,6 +920,14 @@ async function inspectRenderedVisibility(
     }
     return { violations }
   })
+}
+
+function accessibleFactName(label: string, value: string) {
+  return new RegExp(`^${escapeRegExp(label)}\\s+${escapeRegExp(value)}$`, "i")
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function expectBoxInside(
