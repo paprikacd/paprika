@@ -1,6 +1,7 @@
 "use client"
 
 import { useVirtualizer } from "@tanstack/react-virtual"
+import Link from "next/link"
 import { useCallback, useEffect, useRef } from "react"
 
 import type {
@@ -62,30 +63,31 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
     <section aria-label="Application inventory" className="min-w-0">
       <div
         ref={scrollRef}
+        data-testid="application-table-scroll"
         role="table"
         aria-label="Applications"
         aria-rowcount={Number(props.total) + 1}
         aria-colcount={6}
         className="h-[min(62vh,42rem)] min-h-80 overflow-auto border-b border-border bg-background"
       >
-        <div className="sticky top-0 z-10 min-w-[58rem] border-b border-border bg-card">
+        <div className="sticky top-0 z-10 h-px overflow-hidden border-0 bg-card xl:h-auto xl:overflow-visible xl:border-b xl:border-border">
           <div
             role="row"
             aria-rowindex={1}
-            className="grid min-h-11 grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 px-4 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:px-6"
+            className="sr-only min-h-11 grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 px-4 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground sm:px-6 xl:not-sr-only xl:grid"
           >
             <span role="columnheader" aria-colindex={1}>Application</span>
-            <span role="columnheader" aria-colindex={2}>Target</span>
-            <span role="columnheader" aria-colindex={3}>Health</span>
-            <span role="columnheader" aria-colindex={4}>Sync</span>
-            <span role="columnheader" aria-colindex={5}>Resources</span>
+            <span role="columnheader" aria-colindex={2}>Target / stage</span>
+            <span role="columnheader" aria-colindex={3}>Health status</span>
+            <span role="columnheader" aria-colindex={4}>Sync status</span>
+            <span role="columnheader" aria-colindex={5}>Resource count</span>
             <span role="columnheader" aria-colindex={6}>Authorized actions</span>
           </div>
         </div>
 
         <div
           role="rowgroup"
-          className="relative min-w-[58rem]"
+          className="relative"
           style={{ height: `${virtualizer.getTotalSize()}px` }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -105,6 +107,9 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                 }}
                 data-index={virtualRow.index}
                 data-row-key={key}
+                data-testid={identity
+                  ? `application-row-${identity.namespace}-${identity.name}`
+                  : `application-row-identity-unavailable-${virtualRow.index}`}
                 data-virtual-start={virtualRow.start}
                 role="row"
                 aria-rowindex={virtualRow.index + 2}
@@ -124,10 +129,10 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                   event.preventDefault()
                   props.onSelectApplication(identity)
                 }}
-                className="absolute left-0 top-0 grid w-full grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)] items-center gap-3 border-b border-border/70 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/50 focus-visible:bg-muted sm:px-6"
+                className="absolute left-0 top-0 grid w-full grid-cols-6 items-center gap-x-3 gap-y-3 border-b border-border/70 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/50 focus-visible:bg-muted sm:px-6 xl:grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)]"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                <span role="cell" aria-colindex={1} className="min-w-0">
+                <span role="cell" aria-colindex={1} className="col-span-6 min-w-0 xl:col-span-1">
                   <strong className="block truncate font-semibold text-foreground">
                     {identity?.name || "Unnamed application"}
                   </strong>
@@ -135,25 +140,81 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                     {identity ? `${identity.namespace}/${identity.name}` : "Identity unavailable"}
                   </span>
                 </span>
-                <span role="cell" aria-colindex={2} className="min-w-0">
-                  <span className="block truncate text-foreground">
-                    {application.currentClusterLabel || "No target"}
+                <span role="cell" aria-colindex={2} className="col-span-6 min-w-0 xl:col-span-1">
+                  <span aria-label="Target" className="block min-w-0">
+                    <span className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      Target
+                    </span>
+                    <span className="block truncate text-foreground">
+                      {application.currentClusterLabel || "No target"}
+                    </span>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {application.currentStage || "Stage unknown"}
+                  <span aria-label="Stage" className="mt-1 block min-w-0">
+                    <span className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      Stage
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {application.currentStage || "Stage unknown"}
+                    </span>
                   </span>
                 </span>
-                <span role="cell" aria-colindex={3}><StatusLabel value={application.health} /></span>
-                <span role="cell" aria-colindex={4}><StatusLabel value={application.sync} /></span>
-                <span role="cell" aria-colindex={5} className="font-mono text-xs tabular-nums text-foreground">
-                  {application.resourceCount.toLocaleString()}
+                <span
+                  role="cell"
+                  aria-colindex={3}
+                  aria-label="Health status"
+                  className="col-span-2 flex min-w-0 flex-col gap-1 xl:col-span-1 xl:block"
+                >
+                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Health status
+                  </span>
+                  <StatusLabel value={application.health} />
                 </span>
-                <span role="cell" aria-colindex={6} onClick={(event) => event.stopPropagation()}>
+                <span
+                  role="cell"
+                  aria-colindex={4}
+                  aria-label="Sync status"
+                  className="col-span-2 flex min-w-0 flex-col gap-1 xl:col-span-1 xl:block"
+                >
+                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Sync status
+                  </span>
+                  <StatusLabel value={application.sync} />
+                </span>
+                <span
+                  role="cell"
+                  aria-colindex={5}
+                  aria-label="Resource count"
+                  className="col-span-2 flex min-w-0 flex-col gap-1 font-mono text-xs tabular-nums text-foreground xl:col-span-1 xl:block"
+                >
+                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    Resource count
+                  </span>
+                  <span>{application.resourceCount.toLocaleString()}</span>
+                </span>
+                <span
+                  role="cell"
+                  aria-colindex={6}
+                  className="col-span-6 min-w-0 xl:col-span-1"
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <span className="mb-1 block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only">
+                    Authorized actions
+                  </span>
                   {identity ? (
-                    <ApplicationCapabilityActions
-                      identity={identity}
-                      capabilities={application.capabilities}
-                    />
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <Link
+                        href={applicationDetailHref(identity)}
+                        aria-label={`Open application ${identityKey(identity)}`}
+                        className="inline-flex min-h-11 items-center rounded-md border border-border bg-background px-2.5 text-[0.6875rem] font-semibold text-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Open
+                      </Link>
+                      <ApplicationCapabilityActions
+                        identity={identity}
+                        capabilities={application.capabilities}
+                      />
+                    </span>
                   ) : null}
                 </span>
               </div>
@@ -295,6 +356,14 @@ export function applicationKey(application: FleetApplicationSummary, index: numb
 
 export function identityKey(identity: FleetApplicationIdentity): string {
   return `${identity.namespace}/${identity.name}`
+}
+
+export function applicationDetailHref(identity: FleetApplicationIdentity): string {
+  const params = new URLSearchParams({
+    application_namespace: identity.namespace,
+    application_name: identity.name,
+  })
+  return `/dashboard/application?${params.toString()}`
 }
 
 export function releaseFocusOwnership(

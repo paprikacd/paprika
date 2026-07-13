@@ -453,6 +453,58 @@ describe("FleetView application presentations", () => {
     expect(within(readOnlyRow).queryByRole("button")).not.toBeInTheDocument()
   })
 
+  it("keeps each compact application row in one DOM subtree with named facts and drill-down", () => {
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([
+      application("delivery", "checkout", {
+        health: "degraded",
+        sync: "out_of_sync",
+        resourceCount: 42,
+        capabilities: [
+          "application_sync",
+          "release_rollback",
+          "gate_approve",
+          "pipeline_retry",
+        ],
+      }),
+    ])
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    )
+    render(<FleetView />)
+
+    const scroll = screen.getByTestId("application-table-scroll")
+    const rows = within(scroll).getAllByTestId("application-row-delivery-checkout")
+    expect(rows).toHaveLength(1)
+
+    const row = rows[0]
+    expect(row).toHaveTextContent("delivery/checkout")
+    expect(within(row).getByLabelText("Target")).toHaveTextContent("omega")
+    expect(within(row).getByLabelText("Stage")).toHaveTextContent("production")
+    expect(within(row).getByLabelText("Health status")).toHaveTextContent("degraded")
+    expect(within(row).getByLabelText("Sync status")).toHaveTextContent("out of sync")
+    expect(within(row).getByLabelText("Resource count")).toHaveTextContent("42")
+    expect(within(row).getByRole("button", { name: "Sync delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Rollback delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Approve gate for delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Retry pipeline for delivery/checkout" })).toBeDisabled()
+
+    const open = within(row).getByRole("link", {
+      name: "Open application delivery/checkout",
+    })
+    expect(open).toHaveAttribute(
+      "href",
+      "/dashboard/application?application_namespace=delivery&application_name=checkout",
+    )
+    open.focus()
+    fireEvent.keyDown(open, { key: "Enter" })
+    expect(open).toHaveFocus()
+    expect(navigation.replace).not.toHaveBeenCalled()
+
+    expect(scroll).not.toHaveClass("min-w-[58rem]")
+    expect(row).toHaveClass("xl:grid-cols-[minmax(15rem,1.5fr)_minmax(9rem,1fr)_8rem_8rem_7rem_minmax(10rem,1fr)]")
+  })
+
   it("restores focus by identity and falls back to the heading with one removal announcement", async () => {
     navigation.params = new URLSearchParams("view=table")
     let apps = applicationsData([
