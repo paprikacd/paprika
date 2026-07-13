@@ -41,6 +41,8 @@ const matrixRowFixtures = [
 
 const FACT_MINIMUM = { width: 4, height: 4 } as const
 const ACTION_MINIMUM = { width: 24, height: 20 } as const
+const scopedTableNamespaces = ["team-00", "team-01", "team-02", "team-03"]
+const scopedTableTotal = 84
 
 test.beforeEach(async ({ request }) => {
   await expectFixtureReady(request)
@@ -195,7 +197,12 @@ for (const viewport of responsiveViewports) {
     page,
   }) => {
     await page.setViewportSize(viewport)
-    await openFleetPresentation(page, "table")
+    await openFleetPresentation(
+      page,
+      "table",
+      { namespace: scopedTableNamespaces },
+      scopedTableTotal,
+    )
     await expectLateTableDrillDown(
       page,
       page.getByTestId("application-table-scroll"),
@@ -271,10 +278,17 @@ async function expectFixtureReady(request: APIRequestContext) {
 async function openFleetPresentation(
   page: Page,
   view: "treemap" | "matrix" | "table" | "queue",
-  query: Readonly<Record<string, string>> = {},
+  query: Readonly<Record<string, string | readonly string[]>> = {},
   expectedTotal = 250,
 ) {
-  const parameters = new URLSearchParams({ view, ...query })
+  const parameters = new URLSearchParams({ view })
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value === "string") {
+      parameters.set(key, value)
+      continue
+    }
+    for (const item of value) parameters.append(key, item)
+  }
   await page.goto(`/dashboard/applications?${parameters.toString()}`)
   await expect(page.getByRole("heading", { level: 1, name: "Applications" })).toBeVisible()
   await expect(
@@ -283,7 +297,7 @@ async function openFleetPresentation(
   ).toBeVisible()
   if (view === "table" || view === "queue") {
     await expect(page.getByTestId("fleet-load-more-sentinel")).toContainText(
-      "100 loaded / 250 indexed",
+      `${Math.min(100, expectedTotal)} loaded / ${expectedTotal} indexed`,
     )
   }
 }
@@ -545,6 +559,10 @@ async function expectLateTableDrillDown(
     exact: true,
   })
   const sharedNamespaceScope = new URL(page.url()).searchParams.getAll("namespace")
+  expect(
+    sharedNamespaceScope,
+    `${presentation} must begin with a non-vacuous repeated shared namespace scope`,
+  ).toEqual(scopedTableNamespaces)
   await expectVisibleInside(
     page,
     drillDown,
