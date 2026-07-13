@@ -84,7 +84,7 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
             <span role="columnheader" aria-colindex={3}>Health</span>
             <span role="columnheader" aria-colindex={4}>Sync</span>
             <span role="columnheader" aria-colindex={5}>Resources</span>
-            <span role="columnheader" aria-colindex={6}>Actions</span>
+            <span role="columnheader" aria-colindex={6}>Authorized actions</span>
           </div>
         </div>
 

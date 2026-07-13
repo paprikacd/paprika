@@ -354,7 +354,7 @@ describe("FleetView application presentations", () => {
 
     const table = screen.getByRole("table", { name: "Applications" })
     const header = screen.getByRole("row", {
-      name: "Application Target Health Sync Resources Actions",
+      name: "Application Target Health Sync Resources Authorized actions",
     })
     const checkout = screen.getByRole("row", { name: /apps\/checkout/i })
     const payments = screen.getByRole("row", { name: /apps\/payments/i })
@@ -367,7 +367,7 @@ describe("FleetView application presentations", () => {
       "Health",
       "Sync",
       "Resources",
-      "Actions",
+      "Authorized actions",
     ])
     expect(checkout).toHaveAttribute("aria-rowindex", "2")
     expect(payments).toHaveAttribute("aria-rowindex", "3")
