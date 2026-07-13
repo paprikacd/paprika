@@ -1325,9 +1325,19 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 
 	force := opts != nil && opts.Force
 	_, err = ri.Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: force})
+	if apierrors.IsConflict(err) && !force {
+		// A field-manager conflict means the object was mutated out-of-band
+		// (kubectl apply/set/edit take field ownership away from us). Git is
+		// the owner of record for rendered resources, so reclaim ownership:
+		// without this a single manual kubectl touch wedges every subsequent
+		// apply and the release loops forever while drift never converges.
+		log.Info("Apply conflict, retrying with force to reclaim field ownership",
+			"kind", kind, "name", name, "namespace", targetNamespace, "conflict", err.Error())
+		_, err = ri.Apply(ctx, name, unstructuredObj, metav1.ApplyOptions{FieldManager: "paprika", Force: true})
+	}
 	if err != nil {
 		log.Error(err, "Failed to apply resource", "kind", kind, "name", name)
-		return false, nil
+		return false, fmt.Errorf("apply %s %s/%s: %w", kind, targetNamespace, name, err)
 	}
 	return true, nil
 }

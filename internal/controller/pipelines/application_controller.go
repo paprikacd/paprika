@@ -12,6 +12,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,6 +117,7 @@ func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=releases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core.paprika.io,resources=appprojects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=artifacts,verbs=get;list;watch
 
@@ -599,7 +601,10 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
 		}
-	} else {
+	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
+		// Skip no-op updates: every Update round-trips through the in-process
+		// admission webhooks, and doing it unconditionally on each reconcile
+		// starves the webhook server under load.
 		existing.Spec = expected.Spec
 		if len(existing.Labels) == 0 {
 			existing.Labels = make(map[string]string)
@@ -615,6 +620,20 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	app.Status.TemplateRef = templateName
 	app.Status.Synced = true
 	return nil
+}
+
+// specOrLabelsChanged reports whether converging existing to expected would
+// actually change the object (spec differs, or expected labels are missing).
+func specOrLabelsChanged(existingSpec, expectedSpec any, existingLabels, expectedLabels map[string]string) bool {
+	if !equality.Semantic.DeepEqual(existingSpec, expectedSpec) {
+		return true
+	}
+	for k, v := range expectedLabels {
+		if existingLabels[k] != v {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *paprikav1.Application) error {
@@ -663,7 +682,7 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create pipeline: %w", err)
 		}
-	} else {
+	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
 		existing.Spec = expected.Spec
 		if len(existing.Labels) == 0 {
 			existing.Labels = make(map[string]string)
@@ -767,8 +786,13 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 }
 
 func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expected *paprikav1.Stage, stageName string) error {
+	ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
 	if err := updateStageApplicationOwner(existing, expected); err != nil {
 		return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
+	}
+	if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
+		equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+		return nil
 	}
 	existing.Spec = expected.Spec
 	if len(existing.Labels) == 0 {
@@ -962,6 +986,17 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
+	// Surface the deployed revision (the kubectl REVISION printer column reads
+	// status.revision, which nothing populated before). The completed
+	// release's source-revision annotation is the revision actually live.
+	if phase == paprikav1.ReleaseComplete {
+		if release := r.getCurrentRelease(ctx, app); release != nil {
+			if rev := release.Annotations[sourceRevisionAnnotation]; rev != "" {
+				app.Status.Revision = rev
+			}
+		}
+	}
+
 	msg := mapping.reason + " on stage " + targetStage.Name
 	r.updatePhase(ctx, app, mapping.appPhase, mapping.reason, msg)
 
@@ -1118,16 +1153,24 @@ func truncateKubernetesName(name string) string {
 }
 
 func (r *ApplicationReconciler) getCurrentReleasePhase(ctx context.Context, app *paprikav1.Application) paprikav1.ReleasePhase {
-	if app.Status.ReleaseRef == "" {
+	release := r.getCurrentRelease(ctx, app)
+	if release == nil {
 		return ""
+	}
+	return release.Status.Phase
+}
+
+func (r *ApplicationReconciler) getCurrentRelease(ctx context.Context, app *paprikav1.Application) *paprikav1.Release {
+	if app.Status.ReleaseRef == "" {
+		return nil
 	}
 
 	var release paprikav1.Release
 	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
-		return ""
+		return nil
 	}
 
-	return release.Status.Phase
+	return &release
 }
 
 func (r *ApplicationReconciler) getPipelinePhase(ctx context.Context, app *paprikav1.Application) paprikav1.PipelinePhase {
@@ -1162,7 +1205,11 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 	previousPhase := app.Status.Phase
 	app.Status.Phase = phase
 	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
-	app.Status.Conditions = append(app.Status.Conditions, metav1.Condition{
+	// Upsert by condition type (like every other controller here) instead of
+	// appending: a thrashing release once appended 3.7k conditions and grew
+	// the Application object to 641KB, slowing every status write and starving
+	// the in-process admission webhooks.
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
 		Type:               string(phase),
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),

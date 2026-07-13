@@ -1389,3 +1389,136 @@ func TestApplicationReconciler_handleAnalysisFailure_rollback(t *testing.T) {
 		t.Errorf("expected release to have rollback annotation")
 	}
 }
+
+func TestApplicationReconciler_setApplicationPhase_UpsertsConditionsByType(t *testing.T) {
+	t.Parallel()
+
+	r := &ApplicationReconciler{}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "cycling-app", Namespace: "default"},
+	}
+
+	// A thrashing release once appended thousands of conditions (one per phase
+	// transition) and grew the Application object to hundreds of KB. Cycling
+	// through phases many times must keep one condition per type.
+	for i := 0; i < 200; i++ {
+		phase := pipelinesv1alpha1.ApplicationPromoting
+		reason := "ReleasePromoting"
+		if i%2 == 1 {
+			phase = pipelinesv1alpha1.ApplicationCanarying
+			reason = "ReleaseCanarying"
+		}
+		r.setApplicationPhase(context.Background(), app, phase, reason, "cycling")
+	}
+
+	if len(app.Status.Conditions) != 2 {
+		t.Fatalf("expected one condition per phase type (2), got %d", len(app.Status.Conditions))
+	}
+}
+
+func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	isController := true
+	owner := metav1.OwnerReference{
+		APIVersion: "pipelines.paprika.io/v1alpha1",
+		Kind:       "Application",
+		Name:       "demo-app",
+		UID:        types.UID("uid-1"),
+		Controller: &isController,
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "demo-app-dev",
+			Namespace:       "default",
+			Labels:          map[string]string{"app": "demo"},
+			OwnerReferences: []metav1.OwnerReference{owner},
+		},
+		Spec: pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{"demo-app-template"}},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stage).Build()
+	r := &ApplicationReconciler{client: c}
+
+	var existing pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &existing); err != nil {
+		t.Fatalf("get stage: %v", err)
+	}
+	rvBefore := existing.ResourceVersion
+
+	expected := stage.DeepCopy()
+	if err := r.updateStage(ctx, &existing, expected, stage.Name); err != nil {
+		t.Fatalf("updateStage (no-op) returned error: %v", err)
+	}
+	var after pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &after); err != nil {
+		t.Fatalf("get stage after no-op: %v", err)
+	}
+	if after.ResourceVersion != rvBefore {
+		t.Fatalf("no-op updateStage still wrote the object: rv %s -> %s", rvBefore, after.ResourceVersion)
+	}
+
+	expected.Spec.Ring = 2
+	if err := r.updateStage(ctx, &after, expected, stage.Name); err != nil {
+		t.Fatalf("updateStage (real change) returned error: %v", err)
+	}
+	var changed pipelinesv1alpha1.Stage
+	if err := c.Get(ctx, client.ObjectKey{Name: stage.Name, Namespace: stage.Namespace}, &changed); err != nil {
+		t.Fatalf("get stage after change: %v", err)
+	}
+	if changed.ResourceVersion == rvBefore {
+		t.Fatal("real spec change did not write the object")
+	}
+	if changed.Spec.Ring != 2 {
+		t.Fatalf("expected ring 2 after update, got %d", changed.Spec.Ring)
+	}
+}
+
+func TestApplicationReconciler_handleActiveRelease_RecordsDeployedRevision(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "rev-app-release-abc123",
+			Namespace:   "default",
+			Annotations: map[string]string{sourceRevisionAnnotation: "deadbeefcafe"},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseComplete},
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "rev-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "dev", Ring: 1}},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:      pipelinesv1alpha1.ApplicationVerifying,
+			ReleaseRef: release.Name,
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}, &pipelinesv1alpha1.Release{}).
+		Build()
+	r := &ApplicationReconciler{client: c}
+
+	stage := &app.Spec.Stages[0]
+	if _, err := r.handleActiveRelease(ctx, app, stage, pipelinesv1alpha1.ReleaseComplete); err != nil {
+		t.Fatalf("handleActiveRelease returned error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if updated.Status.Revision != "deadbeefcafe" {
+		t.Fatalf("expected status.revision to record the deployed release revision, got %q", updated.Status.Revision)
+	}
+}
