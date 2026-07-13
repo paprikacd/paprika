@@ -120,17 +120,20 @@ function makeRelease(name: string, namespace = "team-06", phase = "Complete") {
 function renderCommandCenter({
   initialApplications = applications,
   initialReleases = releases,
+  applicationTotal,
   searchReleases,
   releaseQuery = "",
 }: {
   initialApplications?: Application[]
   initialReleases?: Release[]
+  applicationTotal?: bigint
   searchReleases?: (query: string, signal: AbortSignal) => Promise<Release[]>
   releaseQuery?: string
 } = {}) {
   return render(
     <DashboardCommandCenter
       applications={initialApplications}
+      applicationTotal={applicationTotal}
       pipelines={pipelines}
       releases={initialReleases}
       rollouts={rollouts}
@@ -188,8 +191,18 @@ describe("DashboardCommandCenter", () => {
 
     expect(screen.getByRole("link", { name: /checkout-api Degraded/i })).toBeInTheDocument()
     expect(screen.queryByRole("link", { name: /ledger-worker Healthy/i })).not.toBeInTheDocument()
-    expect(screen.getByText("prod")).toBeInTheDocument()
+    expect(screen.getByText("ns/prod")).toBeInTheDocument()
     expect(screen.getByText(/1 pod crash looping/i)).toBeInTheDocument()
+  })
+
+  it("integrates the bounded health map with the indexed application total", () => {
+    renderCommandCenter({ applicationTotal: 250n })
+
+    expect(screen.getByText("3 of 3 loaded · 250 indexed")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "View all applications as treemap" })).toHaveAttribute(
+      "href",
+      "/dashboard/applications?view=treemap",
+    )
   })
 
   it("waits the full 250ms before finding a release outside the initial dashboard data", async () => {
