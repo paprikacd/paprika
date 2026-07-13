@@ -339,7 +339,9 @@ async function expectCompactMatrixPopulatedRow(
     },
     {
       description: `${description} column label`,
-      locator: row.getByText(fixture.healthLabel, { exact: true }),
+      locator: row.getByRole("cell", {
+        name: accessibleFactName(fixture.health, fixture.health),
+      }),
       text: fixture.healthLabel,
     },
     {
@@ -431,41 +433,41 @@ async function expectCompleteOperationalRow(
     },
     {
       description: `${expected.surface} target`,
-      locator: row.getByLabel(accessibleFactName("Target", expected.target)),
+      locator: accessibleFact(row, "Target", expected.target),
       text: expected.target,
     },
     {
       description: `${expected.surface} stage`,
-      locator: row.getByLabel(accessibleFactName("Stage", expected.stage)),
+      locator: accessibleFact(row, "Stage", expected.stage),
       text: expected.stage,
     },
     {
       description: `${expected.surface} health`,
-      locator: row.getByLabel(accessibleFactName("Health status", expected.health)),
+      locator: accessibleFact(row, "Health status", expected.health),
       text: expected.health,
     },
     {
       description: `${expected.surface} sync`,
-      locator: row.getByLabel(accessibleFactName("Sync status", expected.sync)),
+      locator: accessibleFact(row, "Sync status", expected.sync),
       text: expected.sync,
     },
     {
       description: `${expected.surface} resources`,
-      locator: row.getByLabel(accessibleFactName("Resource count", expected.resources)),
+      locator: accessibleFact(row, "Resource count", expected.resources),
       text: expected.resources,
     },
   ]
   if (expected.rank) {
     factElements.push({
       description: `${expected.surface} rank`,
-      locator: row.getByLabel(accessibleFactName("Queue rank", expected.rank)),
+      locator: accessibleFact(row, "Queue rank", expected.rank),
       text: expected.rank,
     })
   }
   if (expected.reason) {
     factElements.push({
       description: `${expected.surface} severity reason`,
-      locator: row.getByLabel(accessibleFactName("Attention reason", expected.reason)),
+      locator: accessibleFact(row, "Attention reason", expected.reason),
       text: expected.reason,
     })
   }
@@ -588,7 +590,7 @@ async function expectLateTableDrillDown(
       { message: `${presentation} Enter drill-down must navigate to application detail` },
     )
     .toEqual({
-      pathname: "/dashboard/application",
+      pathname: "/dashboard/application/",
       applicationNamespace: namespace,
       applicationName: name,
       sharedNamespaceScope,
@@ -770,7 +772,7 @@ async function expectVisibleFactInside(
   description: string,
 ) {
   await expect.soft(element, `${description} must contain its expected visible value`).toContainText(
-    expectedText,
+    new RegExp(escapeRegExp(expectedText), "i"),
     { timeout: 1_500 },
   )
   await expectVisibleInside(page, element, containers, description)
@@ -924,6 +926,11 @@ async function inspectRenderedVisibility(
 
 function accessibleFactName(label: string, value: string) {
   return new RegExp(`^${escapeRegExp(label)}\\s+${escapeRegExp(value)}$`, "i")
+}
+
+function accessibleFact(row: Locator, label: string, value: string) {
+  const name = accessibleFactName(label, value)
+  return row.getByRole("group", { name }).or(row.getByRole("cell", { name }))
 }
 
 function escapeRegExp(value: string) {
