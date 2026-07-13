@@ -271,7 +271,7 @@ function SearchResult({ item, onSelect }: { item: SearchItem; onSelect: () => vo
         href={item.href}
         onClick={onSelect}
         aria-label={`${item.kind} ${item.name}${item.status ? ` ${item.status}` : ""}`}
-        className="group flex min-h-14 items-center gap-3 rounded-lg px-3 py-2 ring-1 ring-transparent transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="group flex min-h-14 items-center gap-3 rounded-lg px-3 py-2 ring-1 ring-transparent transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background ring-1 ring-foreground/10">
           <Icon className="size-4 text-primary" aria-hidden={true} />
@@ -488,7 +488,7 @@ export function DashboardCommandCenter({
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               placeholder="Search apps, releases, rollouts, pipelines, policies..."
-              className="h-14 w-full rounded-xl border border-border bg-background pl-10 pr-4 font-mono text-base outline-none transition-[border-color,box-shadow] placeholder:font-sans placeholder:text-muted-foreground focus:border-primary/60 focus:ring-4 focus:ring-primary/10"
+              className="h-14 w-full rounded-xl border border-border bg-background pl-10 pr-4 font-mono text-base outline-none transition-[border-color,box-shadow] placeholder:font-sans placeholder:text-muted-foreground focus:border-ring focus:ring-4 focus:ring-ring"
             />
           </div>
 
@@ -506,7 +506,7 @@ export function DashboardCommandCenter({
                   type="button"
                   aria-label={`Recent search ${recent}`}
                   onClick={() => updateQuery(recent)}
-                  className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {recent}
                 </button>
