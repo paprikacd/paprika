@@ -340,6 +340,228 @@ describe("FleetView application presentations", () => {
     expect(items[1]).toHaveAttribute("aria-posinset", "2")
   })
 
+  it("keeps each compact attention item in one named, keyboard-selectable DOM row", () => {
+    navigation.params = new URLSearchParams("view=queue&sort=impact&direction=desc")
+    const apps = applicationsData(
+      [
+        application("delivery", "checkout", {
+          currentClusterLabel: "omega",
+          currentStage: "canary",
+          health: "failed",
+          sync: "out_of_sync",
+          driftCount: 7,
+          resourceCount: 42,
+          blockedGateCount: 2,
+          capabilities: [
+            "application_sync",
+            "release_rollback",
+            "gate_approve",
+            "pipeline_retry",
+          ],
+        }),
+        application("platform", "orders", { health: "degraded" }),
+      ],
+      [],
+      "",
+      "queue",
+    )
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    )
+    render(<FleetView />)
+
+    const scroll = screen.getByTestId("attention-queue-scroll")
+    expect(within(scroll).getAllByTestId("attention-row-delivery-checkout")).toHaveLength(1)
+    expect(within(scroll).getAllByTestId("attention-row-platform-orders")).toHaveLength(1)
+    const fallbackRow = within(scroll).getByTestId("attention-row-platform-orders")
+    const fallbackReason = within(fallbackRow).getByRole("group", {
+      name: "Attention reason Degraded health",
+    })
+    expect(fallbackReason).toHaveTextContent("Degraded health")
+
+    const row = within(scroll).getByTestId("attention-row-delivery-checkout")
+    expect(row).toHaveTextContent("delivery/checkout")
+    expect(row).toHaveAttribute("tabindex", "0")
+    const rank = within(row).getByRole("group", { name: "Queue rank 01" })
+    const reason = within(row).getByRole("group", {
+      name: "Attention reason Failed health",
+    })
+    const target = within(row).getByRole("group", { name: "Target omega" })
+    const stage = within(row).getByRole("group", { name: "Stage canary" })
+    const health = within(row).getByRole("group", { name: "Health status failed" })
+    const sync = within(row).getByRole("group", { name: "Sync status out of sync" })
+    const resources = within(row).getByRole("group", { name: "Resource count 42" })
+    const drift = within(row).getByRole("group", { name: "Drift count 7" })
+    const blocked = within(row).getByRole("group", { name: "Blocked gate count 2" })
+    expect(within(rank).getByText("Queue rank")).toHaveClass("xl:sr-only")
+    expect(within(reason).getByText("Attention reason")).toHaveClass("xl:sr-only")
+    expect(within(target).getByText("Target")).toHaveClass("xl:sr-only")
+    expect(within(stage).getByText("Stage")).toHaveClass("xl:sr-only")
+    expect(within(health).getByText("Health status")).toHaveClass("xl:sr-only")
+    expect(within(sync).getByText("Sync status")).toHaveClass("xl:sr-only")
+    expect(within(resources).getByText("Resource count")).toHaveClass("xl:sr-only")
+    expect(within(drift).getByText("Drift count")).toHaveClass("xl:sr-only")
+    expect(within(blocked).getByText("Blocked gate count")).toHaveClass("xl:sr-only")
+    expect(within(row).getByText("Authorized actions")).toHaveClass("xl:sr-only")
+
+    const factIds = Array.from(scroll.querySelectorAll<HTMLElement>('[id^="attention-fact-"]'))
+      .map((element) => element.id)
+    expect(new Set(factIds).size).toBe(factIds.length)
+    expect(within(row).queryByRole("link")).not.toBeInTheDocument()
+    expect(within(row).getByRole("button", { name: "Sync delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Rollback delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Approve gate for delivery/checkout" })).toBeDisabled()
+    expect(within(row).getByRole("button", { name: "Retry pipeline for delivery/checkout" })).toBeDisabled()
+    expect(
+      scroll.querySelectorAll('[tabindex="0"], a[href], button:not(:disabled)'),
+    ).toHaveLength(2)
+    expect(row).toHaveClass(
+      "xl:grid-cols-[3rem_minmax(16rem,1fr)_minmax(12rem,0.8fr)_minmax(10rem,1fr)]",
+    )
+
+    row.focus()
+    navigation.replace.mockClear()
+    fireEvent.keyDown(row, { key: "Enter" })
+    expect(row).toHaveFocus()
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      "/dashboard/applications?sort=impact&direction=desc&view=queue&selected=delivery%2Fcheckout",
+      { scroll: false },
+    )
+
+    navigation.replace.mockClear()
+    fireEvent.keyDown(row, { key: " " })
+    expect(row).toHaveFocus()
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      "/dashboard/applications?sort=impact&direction=desc&view=queue&selected=delivery%2Fcheckout",
+      { scroll: false },
+    )
+  })
+
+  it.each<{
+    caseName: string
+    overrides: Partial<FleetApplicationSummary>
+    expected: string
+  }>([
+    {
+      caseName: "failed health before gates",
+      overrides: { health: "failed", blockedGateCount: 3 },
+      expected: "Failed health",
+    },
+    {
+      caseName: "degraded health before gates",
+      overrides: { health: "degraded", blockedGateCount: 3 },
+      expected: "Degraded health",
+    },
+    {
+      caseName: "missing health before gates",
+      overrides: { health: "missing", blockedGateCount: 3 },
+      expected: "Missing health",
+    },
+    {
+      caseName: "progressing health before gates",
+      overrides: { health: "progressing", blockedGateCount: 3 },
+      expected: "Progressing health",
+    },
+    {
+      caseName: "unknown health before gates",
+      overrides: { health: "unknown", blockedGateCount: 3 },
+      expected: "Unknown health",
+    },
+    {
+      caseName: "unspecified health before gates",
+      overrides: { health: "unspecified", blockedGateCount: 3 },
+      expected: "Unspecified health",
+    },
+    {
+      caseName: "blocked gates after healthy health",
+      overrides: { health: "healthy", blockedGateCount: 3 },
+      expected: "3 blocked gates",
+    },
+    {
+      caseName: "pending release",
+      overrides: { health: "healthy", releaseState: "pending" },
+      expected: "Active release pending",
+    },
+    {
+      caseName: "promoting release",
+      overrides: { health: "healthy", releaseState: "promoting" },
+      expected: "Active release promoting",
+    },
+    {
+      caseName: "canarying release",
+      overrides: { health: "healthy", releaseState: "canarying" },
+      expected: "Active release canarying",
+    },
+    {
+      caseName: "verifying release",
+      overrides: { health: "healthy", releaseState: "verifying" },
+      expected: "Active release verifying",
+    },
+    {
+      caseName: "release awaiting approval",
+      overrides: { health: "healthy", releaseState: "awaiting_approval" },
+      expected: "Active release awaiting approval",
+    },
+    {
+      caseName: "pending rollout",
+      overrides: { health: "healthy", releaseState: "complete", rolloutState: "pending" },
+      expected: "Active rollout pending",
+    },
+    {
+      caseName: "progressing rollout",
+      overrides: { health: "healthy", releaseState: "complete", rolloutState: "progressing" },
+      expected: "Active rollout progressing",
+    },
+    {
+      caseName: "paused rollout",
+      overrides: { health: "healthy", releaseState: "complete", rolloutState: "paused" },
+      expected: "Active rollout paused",
+    },
+    {
+      caseName: "release before rollout when both are active",
+      overrides: { health: "healthy", releaseState: "verifying", rolloutState: "paused" },
+      expected: "Active release verifying",
+    },
+    {
+      caseName: "neutral when only non-impact signals are present",
+      overrides: {
+        health: "healthy",
+        sync: "out_of_sync",
+        releaseState: "failed",
+        rolloutState: "degraded",
+        repositoryConnection: "unhealthy",
+        observabilityConnection: "disabled",
+        targets: [{
+          stableId: "target:omega",
+          stage: "production",
+          ring: 0,
+          clusterLabel: "omega",
+          health: "failed",
+          clusterConnection: "unhealthy",
+          unmanagedInlineCluster: false,
+        }],
+      },
+      expected: "No active attention signal",
+    },
+  ])("describes $caseName using backend impact precedence", ({ overrides, expected }) => {
+    navigation.params = new URLSearchParams("view=queue&sort=impact&direction=desc")
+    const apps = applicationsData(
+      [application("apps", "signal", overrides)],
+      [],
+      "",
+      "queue",
+    )
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    )
+    render(<FleetView />)
+
+    const row = screen.getByTestId("attention-row-apps-signal")
+    expect(within(row).getByRole("group", {
+      name: `Attention reason ${expected}`,
+    })).toHaveTextContent(expected)
+  })
+
   it("reports virtual table positions against the complete result set", () => {
     navigation.params = new URLSearchParams("view=table")
     const apps = applicationsData([
