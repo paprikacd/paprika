@@ -493,6 +493,7 @@ describe("FleetView application presentations", () => {
             "pipeline_retry",
           ],
         }),
+        application("platform", "orders"),
       ],
       scopedFacets,
     )
@@ -512,11 +513,20 @@ describe("FleetView application presentations", () => {
 
     const row = rows[0]
     expect(row).toHaveTextContent("delivery/checkout")
-    expect(within(row).getByLabelText("Target")).toHaveTextContent("omega")
-    expect(within(row).getByLabelText("Stage")).toHaveTextContent("production")
-    expect(within(row).getByLabelText("Health status")).toHaveTextContent("degraded")
-    expect(within(row).getByLabelText("Sync status")).toHaveTextContent("out of sync")
-    expect(within(row).getByLabelText("Resource count")).toHaveTextContent("42")
+    const target = within(row).getByRole("group", { name: "Target omega" })
+    const stage = within(row).getByRole("group", { name: "Stage production" })
+    const health = within(row).getByRole("cell", { name: "Health status degraded" })
+    const sync = within(row).getByRole("cell", { name: "Sync status out of sync" })
+    const resources = within(row).getByRole("cell", { name: "Resource count 42" })
+    expect(within(target).getByText("Target")).toHaveClass("xl:sr-only")
+    expect(within(stage).getByText("Stage")).toHaveClass("xl:sr-only")
+    expect(within(health).getByText("Health status")).toHaveClass("xl:sr-only")
+    expect(within(sync).getByText("Sync status")).toHaveClass("xl:sr-only")
+    expect(within(resources).getByText("Resource count")).toHaveClass("xl:sr-only")
+    expect(within(row).getByText("Authorized actions")).toHaveClass("xl:sr-only")
+    const factIds = Array.from(scroll.querySelectorAll<HTMLElement>('[id^="application-fact-"]'))
+      .map((element) => element.id)
+    expect(new Set(factIds).size).toBe(factIds.length)
     expect(within(row).getByRole("button", { name: "Sync delivery/checkout" })).toBeDisabled()
     expect(within(row).getByRole("button", { name: "Rollback delivery/checkout" })).toBeDisabled()
     expect(within(row).getByRole("button", { name: "Approve gate for delivery/checkout" })).toBeDisabled()

@@ -97,6 +97,9 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
             const application = props.applications[virtualRow.index]
             const identity = application.identity
             const key = applicationKey(application, virtualRow.index)
+            const factIdPrefix = identity
+              ? `application-fact-${virtualRow.index}-${identity.namespace}-${identity.name}`
+              : `application-fact-${virtualRow.index}-identity-unavailable`
             return (
               <div
                 key={key}
@@ -144,19 +147,39 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                   </span>
                 </span>
                 <span role="cell" aria-colindex={2} className="col-span-6 min-w-0 xl:col-span-1">
-                  <span aria-label="Target" className="block min-w-0">
-                    <span className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span
+                    role="group"
+                    aria-labelledby={`${factIdPrefix}-target-label ${factIdPrefix}-target-value`}
+                    className="block min-w-0"
+                  >
+                    <span
+                      id={`${factIdPrefix}-target-label`}
+                      className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only"
+                    >
                       Target
                     </span>
-                    <span className="block truncate text-foreground">
+                    <span
+                      id={`${factIdPrefix}-target-value`}
+                      className="block truncate text-foreground"
+                    >
                       {application.currentClusterLabel || "No target"}
                     </span>
                   </span>
-                  <span aria-label="Stage" className="mt-1 block min-w-0">
-                    <span className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span
+                    role="group"
+                    aria-labelledby={`${factIdPrefix}-stage-label ${factIdPrefix}-stage-value`}
+                    className="mt-1 block min-w-0"
+                  >
+                    <span
+                      id={`${factIdPrefix}-stage-label`}
+                      className="block font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only"
+                    >
                       Stage
                     </span>
-                    <span className="block truncate text-xs text-muted-foreground">
+                    <span
+                      id={`${factIdPrefix}-stage-value`}
+                      className="block truncate text-xs text-muted-foreground"
+                    >
                       {application.currentStage || "Stage unknown"}
                     </span>
                   </span>
@@ -164,35 +187,46 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                 <span
                   role="cell"
                   aria-colindex={3}
-                  aria-label="Health status"
+                  aria-labelledby={`${factIdPrefix}-health-label ${factIdPrefix}-health-value`}
                   className="col-span-2 flex min-w-0 flex-col gap-1 xl:col-span-1 xl:block"
                 >
-                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span
+                    id={`${factIdPrefix}-health-label`}
+                    className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only"
+                  >
                     Health status
                   </span>
-                  <StatusLabel value={application.health} />
+                  <StatusLabel id={`${factIdPrefix}-health-value`} value={application.health} />
                 </span>
                 <span
                   role="cell"
                   aria-colindex={4}
-                  aria-label="Sync status"
+                  aria-labelledby={`${factIdPrefix}-sync-label ${factIdPrefix}-sync-value`}
                   className="col-span-2 flex min-w-0 flex-col gap-1 xl:col-span-1 xl:block"
                 >
-                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span
+                    id={`${factIdPrefix}-sync-label`}
+                    className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only"
+                  >
                     Sync status
                   </span>
-                  <StatusLabel value={application.sync} />
+                  <StatusLabel id={`${factIdPrefix}-sync-value`} value={application.sync} />
                 </span>
                 <span
                   role="cell"
                   aria-colindex={5}
-                  aria-label="Resource count"
+                  aria-labelledby={`${factIdPrefix}-resources-label ${factIdPrefix}-resources-value`}
                   className="col-span-2 flex min-w-0 flex-col gap-1 font-mono text-xs tabular-nums text-foreground xl:col-span-1 xl:block"
                 >
-                  <span className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <span
+                    id={`${factIdPrefix}-resources-label`}
+                    className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground xl:sr-only"
+                  >
                     Resource count
                   </span>
-                  <span>{application.resourceCount.toLocaleString()}</span>
+                  <span id={`${factIdPrefix}-resources-value`}>
+                    {application.resourceCount.toLocaleString()}
+                  </span>
                 </span>
                 <span
                   role="cell"
@@ -398,11 +432,12 @@ export function observeMeasuredElementRect(
   return () => observer.disconnect()
 }
 
-function StatusLabel({ value }: { value: string }) {
+function StatusLabel({ id, value }: { id?: string; value: string }) {
   const danger = value === "failed" || value === "degraded" || value === "out_of_sync"
   const healthy = value === "healthy" || value === "synced" || value === "complete"
   return (
     <span
+      id={id}
       className={cn(
         "inline-flex min-h-6 items-center rounded-sm border px-2 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em]",
         danger && "border-destructive/40 bg-destructive/10 text-destructive",
