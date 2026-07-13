@@ -192,7 +192,7 @@ func (s *Snapshot) aggregateMatrixTargets(
 			seenApplicationCells[key] = struct{}{}
 		}
 		cell.targetCount++
-		cell.health[normalizedAggregateHealth(target.Health)]++
+		cell.health[projectedMatrixHealth(application, target, true)]++
 		cell.resourceWeight += uint64(application.ResourceCount)
 		addMatrixTargetWeight(cell, application, target, sizeMetric, weights)
 	}
@@ -217,7 +217,7 @@ func (s *Snapshot) aggregateMatrixApplication(
 	cell := matrixAccumulator(cells, &key)
 	cell.applicationCount++
 	cell.targetCount += uint64(len(targets))
-	cell.health[normalizedAggregateHealth(application.Health)]++
+	cell.health[projectedMatrixHealth(application, nil, false)]++
 	cell.resourceWeight += uint64(application.ResourceCount)
 	if sizeMetric != SizeMetricRequestRate {
 		return
@@ -239,13 +239,14 @@ func (s *Snapshot) matrixAxis(
 	target *StageTargetSummary,
 	targetMode bool,
 ) (key matrixAxisKey, label string) {
-	axisApplication := application
-	if targetMode && dimension == GroupDimensionHealth && target != nil {
-		projected := *application
-		projected.Health = normalizedAggregateHealth(target.Health)
-		axisApplication = &projected
+	var group mapGroupKey
+	if dimension == GroupDimensionHealth {
+		health := projectedMatrixHealth(application, target, targetMode)
+		value := healthValue(health)
+		group = scalarMapGroupKey(dimension, value, value, value, uint8(health))
+	} else {
+		group = s.mapKey(dimension, application, target)
 	}
-	group := s.mapKey(dimension, axisApplication, target)
 	return matrixAxisKey{
 		dimension: group.dimension,
 		object:    group.object,
@@ -253,6 +254,17 @@ func (s *Snapshot) matrixAxis(
 		canonical: group.canonical,
 		order:     group.order,
 	}, group.label
+}
+
+func projectedMatrixHealth(
+	application *ApplicationSummary,
+	target *StageTargetSummary,
+	targetMode bool,
+) Health {
+	if targetMode && target != nil {
+		return normalizedAggregateHealth(target.Health)
+	}
+	return projectedApplicationHealth(application)
 }
 
 func rememberMatrixLabel(labels map[matrixAxisKey]string, key *matrixAxisKey, candidate string) {

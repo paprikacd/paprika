@@ -154,6 +154,71 @@ func TestFleetMatrixNamespaceCanBeEitherAxis(t *testing.T) {
 	}, namespaceColumns.Cells)
 }
 
+func TestFleetMatrixApplicationHealthAxisUsesProjectedMissingHealth(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("team", "payments")
+	app := ApplicationSummary{
+		Identity: fleetID("apps", "checkout"), Project: project,
+		Health: HealthHealthy, MissingResourceCount: 2, ResourceCount: 3,
+	}
+	snapshot := newQuerySnapshot(t, app)
+
+	result, err := snapshot.QueryMatrix(
+		QueryScope{Projects: ProjectSet{project: {}}},
+		FleetMatrixQuery{RowGroup: GroupDimensionNamespace, ColumnGroup: GroupDimensionHealth},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []FleetMatrixHeader{{
+		StableID: "g:health:missing", Label: "missing", Value: "missing",
+	}}, result.Columns)
+	require.Equal(t, []FleetMatrixCell{{
+		RowID: "g:namespace:value:apps", ColumnID: "g:health:missing",
+		ApplicationCount: 1,
+		Health:           []HealthBucket{{Health: HealthMissing, Count: 1}},
+		ResourceWeight:   3,
+	}}, result.Cells)
+}
+
+func TestFleetMatrixTargetHealthIgnoresApplicationMissingResources(t *testing.T) {
+	t.Parallel()
+
+	project := fleetID("team", "payments")
+	app := ApplicationSummary{
+		Identity: fleetID("apps", "checkout"), Project: project,
+		Health: HealthHealthy, MissingResourceCount: 2, ResourceCount: 4,
+		Targets: []StageTargetSummary{
+			{StableID: "prod", Stage: "prod", Health: HealthHealthy},
+			{StableID: "dev", Stage: "dev", Health: HealthUnknown},
+		},
+	}
+	snapshot := newQuerySnapshot(t, app)
+
+	result, err := snapshot.QueryMatrix(
+		QueryScope{Projects: ProjectSet{project: {}}},
+		FleetMatrixQuery{RowGroup: GroupDimensionStage, ColumnGroup: GroupDimensionHealth},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []FleetMatrixHeader{
+		{StableID: "g:health:healthy", Label: "healthy", Value: "healthy"},
+		{StableID: "g:health:unknown", Label: "unknown", Value: "unknown"},
+	}, result.Columns)
+	require.Equal(t, []FleetMatrixCell{
+		{
+			RowID: "g:stage:value:dev", ColumnID: "g:health:unknown",
+			ApplicationCount: 1, TargetCount: 1,
+			Health: []HealthBucket{{Health: HealthUnknown, Count: 1}}, ResourceWeight: 4,
+		},
+		{
+			RowID: "g:stage:value:prod", ColumnID: "g:health:healthy",
+			ApplicationCount: 1, TargetCount: 1,
+			Health: []HealthBucket{{Health: HealthHealthy, Count: 1}}, ResourceWeight: 4,
+		},
+	}, result.Cells)
+}
+
 func TestFleetMatrixStageByClusterUsesOnlyActualTargets(t *testing.T) {
 	t.Parallel()
 
