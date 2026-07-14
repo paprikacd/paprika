@@ -414,7 +414,7 @@ function canonicalizeFleetQuery(
     density: oneOf(input.density, FLEET_DENSITY_VALUES) ? input.density : defaults.density,
     labels: oneOf(input.labels, FLEET_LABEL_MODE_VALUES) ? input.labels : defaults.labels,
     zoom: input.zoom.trim(),
-    selected: input.selected && validNamespacedKey(input.selected) ? { ...input.selected } : null,
+    selected: input.selected && isValidNamespacedKey(input.selected) ? { ...input.selected } : null,
     range: oneOf(input.range, FLEET_RANGE_VALUES) ? input.range : defaults.range,
   }
 }
@@ -507,10 +507,10 @@ function parseNamespacedKey(value: string): NamespacedKey | null {
   if (parts.length !== 2) return null
   const [namespace, name] = parts
   const key = { namespace, name }
-  return validNamespacedKey(key) ? key : null
+  return isValidNamespacedKey(key) ? key : null
 }
 
-function validNamespacedKey(value: NamespacedKey): boolean {
+export function isValidNamespacedKey(value: NamespacedKey): boolean {
   return (
     value.namespace.length > 0 &&
     value.namespace.length <= 63 &&
@@ -524,7 +524,7 @@ function validNamespacedKey(value: NamespacedKey): boolean {
 function canonicalNamespaced(values: readonly NamespacedKey[]): NamespacedKey[] {
   const unique = new Map<string, NamespacedKey>()
   for (const value of values) {
-    if (validNamespacedKey(value)) unique.set(namespacedKey(value), { ...value })
+    if (isValidNamespacedKey(value)) unique.set(namespacedKey(value), { ...value })
   }
   return [...unique.entries()]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))

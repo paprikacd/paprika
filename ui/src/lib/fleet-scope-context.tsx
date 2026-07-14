@@ -5,7 +5,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -19,7 +21,10 @@ import {
   type FleetIdentityAmbiguity,
 } from "@/lib/fleet-navigation"
 import {
+  isValidNamespacedKey,
+  mergeFleetQuery,
   parseFleetQuery,
+  serializeFleetQuery,
   type FleetQueryNotice,
   type FleetQueryPatch,
   type FleetQueryState,
@@ -68,6 +73,39 @@ interface MutationFailure {
   error: FleetIdentityAmbiguity
 }
 
+interface PendingNavigation {
+  observedRouteKey: string
+  params: URLSearchParams
+  semanticState: FleetQueryState
+  issuedRouteKeys: Set<string>
+  latestIssuedRouteKey: string | null
+}
+
+const FLEET_OWNED_QUERY_KEYS = [
+  "project",
+  "cluster",
+  "stage",
+  "namespace",
+  "health",
+  "sync",
+  "release",
+  "rollout",
+  "source",
+  "q",
+  "sort",
+  "direction",
+  "view",
+  "group",
+  "rows",
+  "columns",
+  "size",
+  "density",
+  "labels",
+  "zoom",
+  "selected",
+  "range",
+] as const
+
 const FleetScopeContext = createContext<FleetScopeContextValue | undefined>(
   undefined,
 )
@@ -78,6 +116,22 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
   const searchParams = useSearchParams()
   const rawQuery = searchParams.toString()
   const parsed = useMemo(() => parseFleetQuery(rawQuery), [rawQuery])
+  const routeKey = navigationRouteKey(pathname, rawQuery)
+  const pendingNavigation = useRef<PendingNavigation>({
+    observedRouteKey: routeKey,
+    params: new URLSearchParams(rawQuery),
+    semanticState: parsed.state,
+    issuedRouteKeys: new Set(),
+    latestIssuedRouteKey: null,
+  })
+  useLayoutEffect(() => {
+    synchronizePendingNavigation(
+      pendingNavigation.current,
+      pathname,
+      rawQuery,
+      parsed.state,
+    )
+  }, [parsed.state, pathname, rawQuery])
   const scope = useMemo<FleetScope>(
     () => ({
       projects: parsed.state.projects,
@@ -110,13 +164,20 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
     () => buildScopeFacets(scope, authoritativeFacets),
     [authoritativeFacets, scope],
   )
-  const routeKey = `${pathname}?${rawQuery}`
   const mutationError =
     mutationFailure?.routeKey === routeKey ? mutationFailure.error : null
 
   const applyPatch = useCallback(
     (patch: FleetQueryPatch, scopeChanged: boolean): boolean => {
-      let current = new URLSearchParams(rawQuery)
+      const navigation = pendingNavigation.current
+      synchronizePendingNavigation(
+        navigation,
+        pathname,
+        rawQuery,
+        parsed.state,
+      )
+
+      let current = new URLSearchParams(navigation.params)
       if (scopeChanged) {
         const detailKind = detailKindForPath(pathname)
         if (detailKind) {
@@ -129,13 +190,29 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const next = patchFleetSearchParams(current, patch, { scopeChanged })
+      const semanticPatch = scopeChanged
+        ? { ...patch, selected: null, zoom: "" }
+        : patch
+      const nextState = mergeFleetQuery(
+        navigation.semanticState,
+        semanticPatch,
+      )
+      let next = canonicalFleetSearchParams(current, nextState)
+      if (scopeChanged) {
+        next = patchFleetSearchParams(next, {}, { scopeChanged: true })
+      }
       const hash = typeof window === "undefined" ? "" : window.location.hash
+      const nextRouteKey = navigationRouteKey(pathname, next.toString())
+
+      navigation.params = new URLSearchParams(next)
+      navigation.semanticState = nextState
+      navigation.issuedRouteKeys.add(nextRouteKey)
+      navigation.latestIssuedRouteKey = nextRouteKey
       setMutationFailure(undefined)
       router.replace(fleetHref(`${pathname}${hash}`, next), { scroll: false })
       return true
     },
-    [pathname, rawQuery, routeKey, router],
+    [parsed.state, pathname, rawQuery, routeKey, router],
   )
 
   const patchQuery = useCallback(
@@ -228,11 +305,12 @@ function buildScopeFacets(
 
 function fromFacetBucket(facet: FleetFacetBucket): FleetScopeFacet | undefined {
   if (facet.dimension === "project" || facet.dimension === "cluster") {
-    if (!facet.object?.namespace.trim() || !facet.object.name.trim()) return undefined
+    if (!facet.object) return undefined
     const object = {
       namespace: facet.object.namespace.trim(),
       name: facet.object.name.trim(),
     }
+    if (!isValidNamespacedKey(object)) return undefined
     const id = objectId(object)
     return {
       dimension: facet.dimension,
@@ -335,4 +413,47 @@ function scopeDimensionOrder(dimension: FleetScopeDimension): number {
     case "namespace":
       return 3
   }
+}
+
+function synchronizePendingNavigation(
+  navigation: PendingNavigation,
+  pathname: string,
+  rawQuery: string,
+  semanticState: FleetQueryState,
+): void {
+  const observedRouteKey = navigationRouteKey(pathname, rawQuery)
+  if (navigation.observedRouteKey === observedRouteKey) return
+
+  navigation.observedRouteKey = observedRouteKey
+  if (navigation.issuedRouteKeys.has(observedRouteKey)) {
+    navigation.issuedRouteKeys.delete(observedRouteKey)
+    if (navigation.latestIssuedRouteKey !== observedRouteKey) return
+
+    navigation.params = new URLSearchParams(rawQuery)
+    navigation.semanticState = semanticState
+    navigation.issuedRouteKeys.clear()
+    navigation.latestIssuedRouteKey = null
+    return
+  }
+
+  navigation.params = new URLSearchParams(rawQuery)
+  navigation.semanticState = semanticState
+  navigation.issuedRouteKeys.clear()
+  navigation.latestIssuedRouteKey = null
+}
+
+function canonicalFleetSearchParams(
+  current: URLSearchParams,
+  state: FleetQueryState,
+): URLSearchParams {
+  const result = new URLSearchParams(current)
+  for (const key of FLEET_OWNED_QUERY_KEYS) result.delete(key)
+  for (const [key, value] of serializeFleetQuery(state)) {
+    result.append(key, value)
+  }
+  return result
+}
+
+function navigationRouteKey(pathname: string, rawQuery: string): string {
+  return `${pathname}?${rawQuery}`
 }

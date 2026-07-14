@@ -72,8 +72,8 @@ export function FleetView() {
 
   useEffect(() => {
     if (!derivedQueryNotice) return
-    // The notice explains an automatic URL correction and must survive the
-    // resulting navigation until the operator explicitly dismisses it.
+    // Keep the discarded-input notice visible across a later canonical
+    // navigation until the operator explicitly dismisses it.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQueryNotice((current) =>
       current === derivedQueryNotice ? current : derivedQueryNotice,

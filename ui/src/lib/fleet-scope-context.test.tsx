@@ -115,6 +115,30 @@ function ScopeProbe() {
       </button>
       <button
         type="button"
+        onClick={() => {
+          fleetScope.patchQuery({ health: ["degraded"] })
+          fleetScope.patchQuery({ view: "table" })
+        }}
+      >
+        Apply rapid query patches
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          fleetScope.patchQuery({ q: "payments" })
+          fleetScope.patchScope({ namespaces: ["replacement"] })
+        }}
+      >
+        Apply rapid query and scope patches
+      </button>
+      <button
+        type="button"
+        onClick={() => fleetScope.patchQuery({ q: "checkout" })}
+      >
+        Set search
+      </button>
+      <button
+        type="button"
         onClick={() => void fleetScope.retry().catch(() => undefined)}
       >
         Retry facets
@@ -333,6 +357,272 @@ describe("FleetScopeProvider", () => {
     expect(navigation.replace).not.toHaveBeenCalled()
   })
 
+  it("composes two query patches issued before the router rerenders", async () => {
+    const user = userEvent.setup()
+    navigation.query = "namespace=apps&unknown=kept"
+
+    renderProvider()
+    await user.click(
+      screen.getByRole("button", { name: "Apply rapid query patches" }),
+    )
+
+    expect(navigation.replace).toHaveBeenCalledTimes(2)
+    const first = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
+    )
+    const second = new URL(
+      navigation.replace.mock.calls[1][0],
+      "https://paprika.test",
+    )
+    expect(first.searchParams.getAll("health")).toEqual(["degraded"])
+    expect(first.searchParams.get("view")).toBeNull()
+    expect(second.searchParams.getAll("health")).toEqual(["degraded"])
+    expect(second.searchParams.get("view")).toBe("table")
+    expect(second.searchParams.get("namespace")).toBe("apps")
+    expect(second.searchParams.get("unknown")).toBe("kept")
+  })
+
+  it("composes a query patch into an immediate scope patch", async () => {
+    const user = userEvent.setup()
+    navigation.query =
+      "namespace=apps&page=4&cursor=next&selected=apps%2Fcheckout" +
+      "&zoom=project%3Ateam%2Fpayments&unknown=one&unknown=two"
+
+    renderProvider()
+    await user.click(
+      screen.getByRole("button", {
+        name: "Apply rapid query and scope patches",
+      }),
+    )
+
+    expect(navigation.replace).toHaveBeenCalledTimes(2)
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.get("q")).toBe("payments")
+    expect(destination.searchParams.getAll("namespace")).toEqual([
+      "replacement",
+    ])
+    expect(destination.searchParams.getAll("unknown")).toEqual(["one", "two"])
+    for (const transient of ["page", "cursor", "selected", "zoom"]) {
+      expect(destination.searchParams.has(transient)).toBe(false)
+    }
+  })
+
+  it("keeps the latest pending query when an intermediate issued URL is observed", async () => {
+    const user = userEvent.setup()
+    navigation.query = "namespace=apps"
+    const { queryClient, rerender } = renderProvider()
+
+    await user.click(
+      screen.getByRole("button", { name: "Apply rapid query patches" }),
+    )
+    const intermediate = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
+    )
+    navigation.query = intermediate.searchParams.toString()
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <FleetScopeProvider>
+          <ScopeProbe />
+        </FleetScopeProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Set search" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.getAll("health")).toEqual(["degraded"])
+    expect(destination.searchParams.get("view")).toBe("table")
+    expect(destination.searchParams.get("q")).toBe("checkout")
+  })
+
+  it("resets pending mutations when an external route query is observed", async () => {
+    const user = userEvent.setup()
+    navigation.query = "namespace=apps&unknown=initial"
+    const { queryClient, rerender } = renderProvider()
+
+    await user.click(
+      screen.getByRole("button", { name: "Apply rapid query patches" }),
+    )
+    navigation.query = "namespace=external&unknown=external"
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <FleetScopeProvider>
+          <ScopeProbe />
+        </FleetScopeProvider>
+      </QueryClientProvider>,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Set search" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.get("namespace")).toBe("external")
+    expect(destination.searchParams.get("unknown")).toBe("external")
+    expect(destination.searchParams.get("q")).toBe("checkout")
+    expect(destination.searchParams.has("health")).toBe(false)
+    expect(destination.searchParams.has("view")).toBe(false)
+  })
+
+  it("records issued renders so returning externally to the original query resets pending state", async () => {
+    const user = userEvent.setup()
+    const originalQuery = "namespace=apps&unknown=original"
+    navigation.query = originalQuery
+    const { queryClient, rerender } = renderProvider()
+    const provider = () => (
+      <QueryClientProvider client={queryClient}>
+        <FleetScopeProvider>
+          <ScopeProbe />
+        </FleetScopeProvider>
+      </QueryClientProvider>
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "Apply rapid query patches" }),
+    )
+    const intermediate = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
+    )
+
+    navigation.query = intermediate.searchParams.toString()
+    rerender(provider())
+    navigation.query = originalQuery
+    rerender(provider())
+    await user.click(screen.getByRole("button", { name: "Set search" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.get("namespace")).toBe("apps")
+    expect(destination.searchParams.get("unknown")).toBe("original")
+    expect(destination.searchParams.get("q")).toBe("checkout")
+    expect(destination.searchParams.has("health")).toBe(false)
+    expect(destination.searchParams.has("view")).toBe(false)
+  })
+
+  it("canonicalizes every fleet-owned key on mutation without losing route context", async () => {
+    const user = userEvent.setup()
+    navigation.pathname = "/dashboard/application"
+    navigation.query =
+      "health=broken&health=degraded&health=degraded&view=treemap&sort=name&direction=asc" +
+      "&density=auto&labels=auto&range=2h&page=4&cursor=next" +
+      "&selected=apps%2Fcheckout&zoom=project%3Ateam%2Fpayments" +
+      "&application_namespace=apps&application_name=checkout&tab=events" +
+      "&unknown=one&unknown=two"
+    window.history.replaceState(
+      {},
+      "",
+      `/dashboard/application?${navigation.query}#resources`,
+    )
+
+    renderProvider()
+    await user.click(screen.getByRole("button", { name: "Set search" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.getAll("health")).toEqual(["degraded"])
+    for (const defaultKey of [
+      "view",
+      "sort",
+      "direction",
+      "density",
+      "labels",
+      "range",
+    ]) {
+      expect(destination.searchParams.has(defaultKey)).toBe(false)
+    }
+    expect(destination.searchParams.get("q")).toBe("checkout")
+    expect(destination.searchParams.get("page")).toBe("4")
+    expect(destination.searchParams.get("cursor")).toBe("next")
+    expect(destination.searchParams.get("selected")).toBe("apps/checkout")
+    expect(destination.searchParams.get("zoom")).toBe(
+      "project:team/payments",
+    )
+    expect(destination.searchParams.get("application_namespace")).toBe("apps")
+    expect(destination.searchParams.get("application_name")).toBe("checkout")
+    expect(destination.searchParams.get("tab")).toBe("events")
+    expect(destination.searchParams.getAll("unknown")).toEqual(["one", "two"])
+    expect(destination.hash).toBe("#resources")
+  })
+
+  it("rejects malformed project and cluster facet identities", async () => {
+    fleetRpc.queryFleetMap.mockResolvedValue(
+      mapResult([
+        {
+          dimension: "project",
+          object: { namespace: "team", name: "payments.api" },
+          label: "Valid project",
+          count: BigInt(1),
+        },
+        {
+          dimension: "project",
+          object: { namespace: "Team", name: "payments" },
+          label: "Uppercase namespace",
+          count: BigInt(1),
+        },
+        {
+          dimension: "cluster",
+          object: { namespace: "platform", name: "Prod" },
+          label: "Uppercase name",
+          count: BigInt(1),
+        },
+        {
+          dimension: "cluster",
+          object: { namespace: "platform", name: "prod_cluster" },
+          label: "Invalid characters",
+          count: BigInt(1),
+        },
+        {
+          dimension: "project",
+          object: { namespace: "n".repeat(64), name: "payments" },
+          label: "Overlong namespace",
+          count: BigInt(1),
+        },
+        {
+          dimension: "cluster",
+          object: { namespace: "platform", name: "n".repeat(254) },
+          label: "Overlong name",
+          count: BigInt(1),
+        },
+        {
+          dimension: "cluster",
+          object: { namespace: "", name: "prod" },
+          label: "Empty namespace",
+          count: BigInt(1),
+        },
+      ]),
+    )
+
+    renderProvider()
+
+    await waitFor(() =>
+      expect(screen.getByText("Valid project")).toBeInTheDocument(),
+    )
+    for (const invalidLabel of [
+      "Uppercase namespace",
+      "Uppercase name",
+      "Invalid characters",
+      "Overlong namespace",
+      "Overlong name",
+      "Empty namespace",
+    ]) {
+      expect(screen.queryByText(invalidLabel)).not.toBeInTheDocument()
+    }
+  })
+
   it("patches scope losslessly, clears only invalidated transients, and retains the current hash", async () => {
     const user = userEvent.setup()
     navigation.pathname = "/dashboard/application"
@@ -350,12 +640,24 @@ describe("FleetScopeProvider", () => {
     await user.click(screen.getByRole("button", { name: "Change project" }))
 
     expect(navigation.replace).toHaveBeenCalledOnce()
-    expect(navigation.replace).toHaveBeenCalledWith(
-      "/dashboard/application?namespace=legacy&q=payments&view=heatmap" +
-        "&application_namespace=apps&application_name=checkout&tab=events&unknown=kept" +
-        "&project=team%2Fnext#resources",
-      { scroll: false },
+    expect(navigation.replace.mock.calls[0][1]).toEqual({ scroll: false })
+    const destination = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
     )
+    expect(destination.pathname).toBe("/dashboard/application")
+    expect(destination.searchParams.get("project")).toBe("team/next")
+    expect(destination.searchParams.get("namespace")).toBe("legacy")
+    expect(destination.searchParams.get("q")).toBe("payments")
+    expect(destination.searchParams.get("view")).toBe("heatmap")
+    expect(destination.searchParams.get("application_namespace")).toBe("apps")
+    expect(destination.searchParams.get("application_name")).toBe("checkout")
+    expect(destination.searchParams.get("tab")).toBe("events")
+    expect(destination.searchParams.get("unknown")).toBe("kept")
+    expect(destination.hash).toBe("#resources")
+    for (const transient of ["page", "cursor", "selected", "zoom"]) {
+      expect(destination.searchParams.has(transient)).toBe(false)
+    }
   })
 
   it("migrates an unambiguous legacy detail identity before replacing fleet namespaces", async () => {

@@ -11,6 +11,8 @@ const navigation = vi.hoisted(() => {
   return {
     pathname: "/dashboard",
     query: "",
+    suspendSearchParams: false,
+    searchParamsSuspension: new Promise<never>(() => undefined),
     replace,
     router: { replace },
   }
@@ -29,7 +31,10 @@ const fleetRpc = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => navigation.router,
-  useSearchParams: () => new URLSearchParams(navigation.query),
+  useSearchParams: () => {
+    if (navigation.suspendSearchParams) throw navigation.searchParamsSuspension
+    return new URLSearchParams(navigation.query)
+  },
 }))
 
 vi.mock("@/lib/auth-context", () => ({
@@ -94,6 +99,7 @@ describe("AppShell navigation", () => {
   beforeEach(() => {
     navigation.pathname = "/dashboard"
     navigation.query = ""
+    navigation.suspendSearchParams = false
     navigation.replace.mockReset()
     authState.user = null
     authState.isLoading = false
@@ -152,6 +158,31 @@ describe("AppShell navigation", () => {
     expect(
       queryClient.getQueryCache().findAll({ queryKey: ["fleet", "map"] }),
     ).toHaveLength(1)
+  })
+
+  it("keeps the navigable dashboard shell visible while fleet scope suspends", () => {
+    navigation.suspendSearchParams = true
+
+    renderShell(<AppShell>Fleet content</AppShell>)
+
+    expect(
+      screen.getByRole("link", { name: "Skip to fleet content" }),
+    ).toHaveAttribute("href", "#dashboard-main")
+    expect(
+      screen.getAllByRole("link", { name: "Paprika operations overview" }),
+    ).not.toHaveLength(0)
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+      "href",
+      "/dashboard",
+    )
+    expect(
+      screen.getByRole("region", { name: "Current fleet scope" }),
+    ).toHaveTextContent("All projects")
+    expect(screen.getByRole("main")).toHaveAttribute("id", "dashboard-main")
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading fleet scope…",
+    )
+    expect(screen.queryByText("Fleet content")).not.toBeInTheDocument()
   })
 
   it("uses one explicit skip-link hook with a fixed clipped and focus-visible contract", () => {

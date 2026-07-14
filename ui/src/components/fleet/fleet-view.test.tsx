@@ -141,18 +141,33 @@ describe("FleetView URL state", () => {
     expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
   })
 
-  it("shows parse notices without reconstructing or replacing the route URL", () => {
-    navigation.params = new URLSearchParams("health=broken&unknown=kept")
-    render(<FleetView />)
+  it("shows a parse notice before the next mutation provides a canonical route", () => {
+    navigation.params = new URLSearchParams(
+      "health=broken&view=treemap&unknown=kept",
+    )
+    const { rerender } = render(<FleetView />)
 
     expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
       "Dropped invalid health value “broken”.",
     )
     expect(mockPatchQuery).not.toHaveBeenCalled()
     expect(navigation.replace).not.toHaveBeenCalled()
-    const dismiss = screen.getByRole("button", { name: "Dismiss fleet query notice" })
-    expect(dismiss).toHaveClass("min-h-11")
-    fireEvent.click(dismiss)
+
+    fireEvent.click(screen.getByRole("button", { name: "Show Table view" }))
+    expect(mockPatchQuery).toHaveBeenCalledWith({
+      view: "table",
+      sort: "name",
+      direction: "asc",
+    })
+
+    navigation.params = new URLSearchParams("view=table&unknown=kept")
+    rerender(<FleetView />)
+    expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
+      "Dropped invalid health value “broken”.",
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss fleet query notice" }),
+    )
     expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
   })
 

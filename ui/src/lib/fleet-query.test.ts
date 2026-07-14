@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import * as fleetQueryModule from "@/lib/fleet-query"
 import {
   DEFAULT_FLEET_QUERY,
   mergeFleetQuery,
@@ -234,6 +235,34 @@ describe("fleet query URL codec", () => {
       { field: "range", value: "forever", reason: "invalid" },
     ])
     expect(parsed.notices.every((notice) => notice.message.length > 0)).toBe(true)
+  })
+
+  it("exports one shared Kubernetes namespaced-key validator", () => {
+    const validator = (
+      fleetQueryModule as typeof fleetQueryModule & {
+        isValidNamespacedKey?: (value: {
+          namespace: string
+          name: string
+        }) => boolean
+      }
+    ).isValidNamespacedKey
+
+    expect(validator).toBeTypeOf("function")
+    if (!validator) return
+
+    expect(validator({ namespace: "team", name: "payments.api" })).toBe(true)
+    for (const invalid of [
+      { namespace: "", name: "payments" },
+      { namespace: "Team", name: "payments" },
+      { namespace: "n".repeat(64), name: "payments" },
+      { namespace: "team", name: "" },
+      { namespace: "team", name: "Payments" },
+      { namespace: "team", name: "payments_api" },
+      { namespace: "team", name: "n".repeat(254) },
+      { namespace: "team", name: `${"n".repeat(64)}.api` },
+    ]) {
+      expect(validator(invalid)).toBe(false)
+    }
   })
 
   it("merges presentation changes without losing unrelated scope or filters", () => {
