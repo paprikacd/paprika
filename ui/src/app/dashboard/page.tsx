@@ -1,6 +1,7 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
+import { fleetDetailHref, fleetHref } from "@/lib/fleet-navigation"
 import { useState, memo, Component, Suspense, type ReactNode, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
@@ -342,6 +343,7 @@ function DashboardContent() {
             selectedHealth={overviewFleetState.health}
             selectedRelease={overviewFleetState.release}
             selectedRollout={overviewFleetState.rollout}
+            query={rawQuery}
           />
         ) : null}
 
@@ -400,7 +402,7 @@ function DashboardContent() {
             {loading
               ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
               : pipelines.map((p) => (
-                  <PipelineCard key={`${p.namespace}/${p.name}`} pipeline={p} />
+                  <PipelineCard key={`${p.namespace}/${p.name}`} pipeline={p} query={rawQuery} />
                 ))}
             {!loading && pipelines.length === 0 && !errors.pipelines && (
               <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
@@ -432,7 +434,7 @@ function DashboardContent() {
             </div>
             {applicationSets.length > 0 && (
               <Link
-                href="/dashboard/applicationsets"
+                href={fleetHref("/dashboard/applicationsets", new URLSearchParams(rawQuery))}
                 className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
               >
                 View all <ArrowUpRight className="size-3" />
@@ -444,7 +446,7 @@ function DashboardContent() {
             {loading
               ? [1, 2].map((i) => <SkeletonCard key={i} />)
               : applicationSets.map((set) => {
-                  const detailHref = `/dashboard/applicationsets/detail?namespace=${encodeURIComponent(set.namespace)}&name=${encodeURIComponent(set.name)}`
+                  const detailHref = fleetDetailHref("applicationset", set, new URLSearchParams(rawQuery))
                   return (
                     <div key={`${set.namespace}/${set.name}`} className="rounded-xl bg-card p-4 ring-1 ring-foreground/10 transition-[box-shadow] hover:shadow-lg hover:shadow-foreground/5">
                       <div className="flex items-start justify-between gap-2">

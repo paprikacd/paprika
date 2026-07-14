@@ -62,14 +62,15 @@ describe("AppShell navigation", () => {
   })
 
   it("renders every working destination with its exact route", () => {
+    navigation.query = "namespace=apps&view=heatmap&unknown=kept"
     render(<AppShell>Fleet content</AppShell>)
 
     const destinations = new Map([
-      ["Overview", "/dashboard"],
-      ["Applications", "/dashboard/applications"],
-      ["Pipelines", "/dashboard#pipelines"],
-      ["Releases", "/dashboard/releases"],
-      ["Rollouts", "/dashboard/rollouts"],
+      ["Overview", "/dashboard?namespace=apps&view=heatmap&unknown=kept"],
+      ["Applications", "/dashboard/applications?namespace=apps&view=heatmap&unknown=kept"],
+      ["Pipelines", "/dashboard?namespace=apps&view=heatmap&unknown=kept#pipelines"],
+      ["Releases", "/dashboard/releases?namespace=apps&view=heatmap&unknown=kept"],
+      ["Rollouts", "/dashboard/rollouts?namespace=apps&view=heatmap&unknown=kept"],
     ])
     for (const [label, href] of destinations) {
       const link = screen.getByRole("link", { name: label })
@@ -278,12 +279,12 @@ describe("AppShell navigation", () => {
     })
   })
 
-  it("links Releases to the dedicated route with repeated scope parameters only", () => {
+  it("links Releases to the dedicated route without losing presentation or unknown parameters", () => {
     navigation.pathname = "/dashboard/releases"
     navigation.query =
       "project=team%2Fpayments&project=team%2Fplatform&cluster=platform%2Fprod" +
       "&cluster=platform%2Fcanary&stage=production&stage=canary&namespace=apps" +
-      "&namespace=platform&q=dashboard-search&view=queue&group=health&selected=apps%2Fcheckout"
+      "&namespace=platform&q=dashboard-search&view=queue&group=health&selected=apps%2Fcheckout&unknown=kept"
     window.history.replaceState({}, "", `/dashboard/releases?${navigation.query}`)
 
     render(<AppShell>Release inventory</AppShell>)
@@ -291,8 +292,9 @@ describe("AppShell navigation", () => {
     expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
       "href",
       "/dashboard/releases?project=team%2Fpayments&project=team%2Fplatform" +
-        "&cluster=platform%2Fcanary&cluster=platform%2Fprod&stage=canary&stage=production" +
-        "&namespace=apps&namespace=platform",
+        "&cluster=platform%2Fprod&cluster=platform%2Fcanary&stage=production&stage=canary" +
+        "&namespace=apps&namespace=platform&q=dashboard-search&view=queue&group=health" +
+        "&selected=apps%2Fcheckout&unknown=kept",
     )
     expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
       "aria-current",
@@ -320,7 +322,8 @@ describe("AppShell navigation", () => {
       expect(navigation.replace).toHaveBeenCalledTimes(1)
       expect(navigation.replace).toHaveBeenCalledWith(
         "/dashboard/releases?project=team%2Fpayments&project=team%2Fplatform" +
-          "&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform",
+          "&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform" +
+          "&view=matrix&selected=apps%2Fcheckout",
       )
     })
   })

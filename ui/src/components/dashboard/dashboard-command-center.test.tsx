@@ -157,7 +157,7 @@ describe("DashboardCommandCenter", () => {
 
   it("searches across cluster objects and remembers selected searches", async () => {
     const user = userEvent.setup()
-    renderCommandCenter()
+    renderCommandCenter({ releaseQuery: "namespace=platform&view=heatmap&unknown=kept" })
 
     expect(screen.getByRole("heading", { name: /cluster command center/i })).toBeInTheDocument()
 
@@ -166,7 +166,7 @@ describe("DashboardCommandCenter", () => {
     const results = screen.getByRole("list", { name: /search results/i })
     expect(within(results).getByRole("link", { name: /Application checkout-api/i })).toHaveAttribute(
       "href",
-      "/dashboard/application?namespace=prod&name=checkout-api",
+      "/dashboard/application?namespace=platform&view=heatmap&unknown=kept&application_namespace=prod&application_name=checkout-api",
     )
     expect(within(results).getByRole("link", { name: /Pipeline checkout-build/i })).toBeInTheDocument()
     expect(within(results).getByRole("link", { name: /Rollout checkout-api-rollout/i })).toBeInTheDocument()
@@ -179,11 +179,11 @@ describe("DashboardCommandCenter", () => {
 
   it("filters the app health heatmap and links tiles to app drilldown", async () => {
     const user = userEvent.setup()
-    renderCommandCenter()
+    renderCommandCenter({ releaseQuery: "namespace=platform&unknown=kept" })
 
     expect(screen.getByRole("link", { name: /checkout-api Degraded/i })).toHaveAttribute(
       "href",
-      "/dashboard/application?namespace=prod&name=checkout-api",
+      "/dashboard/application?namespace=platform&unknown=kept&application_namespace=prod&application_name=checkout-api",
     )
     expect(screen.getByRole("link", { name: /ledger-worker Healthy/i })).toBeInTheDocument()
 
@@ -236,7 +236,7 @@ describe("DashboardCommandCenter", () => {
       screen.getByRole("link", { name: /Release application-00246-release-v1/i }),
     ).toHaveAttribute(
       "href",
-      "/dashboard/releases?namespace=team-06&q=application-00246-release-v1",
+      "/dashboard/releases?view=queue&namespace=team-06&q=application-00246-release-v1",
     )
   })
 
@@ -402,8 +402,8 @@ describe("DashboardCommandCenter", () => {
       .getAllByRole("link", { name: /Release scoped-release/i })
       .map((link) => link.getAttribute("href"))
     expect(hrefs).toEqual([
-      "/dashboard/releases?namespace=apps&namespace=platform&q=scoped-release",
-      "/dashboard/releases?namespace=apps&namespace=platform&namespace=team-06&q=scoped-release",
+      "/dashboard/releases?view=queue&namespace=platform&namespace=apps&q=scoped-release",
+      "/dashboard/releases?view=queue&namespace=platform&namespace=apps&namespace=team-06&q=scoped-release",
     ])
   })
 

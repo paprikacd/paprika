@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ChevronLeft, Loader2 } from "lucide-react"
 
@@ -17,6 +17,11 @@ import { StepDetailPanel } from "@/components/dashboard/step-detail-panel"
 import { useConnection } from "@/lib/connection-context"
 import { usePipelineRefresh } from "@/lib/pipeline-refresh"
 import { useStepArtifacts } from "@/lib/use-step-artifacts"
+import {
+  fleetHref,
+  migrateLegacyDetailIdentity,
+  readFleetDetailIdentity,
+} from "@/lib/fleet-navigation"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
@@ -32,8 +37,27 @@ export default function PipelineDetailPage() {
 function PipelineDetail() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const namespace = searchParams.get("namespace") ?? ""
-  const name = searchParams.get("name") ?? ""
+  const rawQuery = searchParams.toString()
+  const parameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery])
+  const detailIdentity = useMemo(
+    () => readFleetDetailIdentity("pipeline", parameters),
+    [parameters],
+  )
+  const namespace = detailIdentity.status === "resolved" ? detailIdentity.identity.namespace : ""
+  const name = detailIdentity.status === "resolved" ? detailIdentity.identity.name : ""
+  const dashboardHref = fleetHref("/dashboard", parameters)
+  const migratedHref = useMemo(() => {
+    const migrated = migrateLegacyDetailIdentity("pipeline", parameters)
+    if (!(migrated instanceof URLSearchParams) || migrated.toString() === rawQuery) return ""
+    return fleetHref("/dashboard/pipelines/detail", migrated)
+  }, [parameters, rawQuery])
+  const replacedMigration = useRef("")
+
+  useEffect(() => {
+    if (!migratedHref || replacedMigration.current === migratedHref) return
+    replacedMigration.current = migratedHref
+    router.replace(migratedHref)
+  }, [migratedHref, router])
 
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)
   const [selectedStep, setSelectedStep] = useState<string | null>(null)
@@ -119,11 +143,22 @@ function PipelineDetail() {
     }
   }, [name, namespace, fetchPipeline])
 
+  if (detailIdentity.status === "ambiguous") {
+    return (
+      <div className="mx-auto max-w-4xl space-y-4 py-8 text-center">
+        <p role="alert" className="text-destructive">
+          Ambiguous pipeline identity. Choose one pipeline from the fleet view.
+        </p>
+        <Button variant="outline" onClick={() => router.push(dashboardHref)}>Back to Dashboard</Button>
+      </div>
+    )
+  }
+
   if (!namespace || !name) {
     return (
       <div className="mx-auto max-w-4xl py-8 text-center">
         <p className="text-muted-foreground">Missing namespace or name parameters</p>
-        <Button variant="outline" className="mt-4" onClick={() => router.push("/dashboard")}>
+        <Button variant="outline" className="mt-4" onClick={() => router.push(dashboardHref)}>
           Back to Dashboard
         </Button>
       </div>
@@ -161,7 +196,7 @@ function PipelineDetail() {
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/dashboard")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(dashboardHref)}>
             <ChevronLeft className="size-4" />
           </Button>
           <div>

@@ -3,6 +3,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { CheckCircle2, Circle, Loader2, XCircle } from "lucide-react"
 import { useEffect, useState } from "react"
+import Link from "next/link"
+import { fleetDetailHref } from "@/lib/fleet-navigation"
 
 function StepIcon({ phase }: { phase?: string }) {
   switch (phase) {
@@ -39,7 +41,7 @@ function TimeAgo({ time }: { time?: bigint }) {
   )
 }
 
-export function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
+export function PipelineCard({ pipeline, query = "" }: { pipeline: Pipeline; query?: string }) {
   const stepCount = pipeline.steps.length
   const statuses = pipeline.stepStatuses
   const doneSteps = statuses.filter(
@@ -53,12 +55,13 @@ export function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
     completedAt && startedAt
       ? Math.round(Number(completedAt) - Number(startedAt))
       : null
+  const detailHref = fleetDetailHref("pipeline", pipeline, new URLSearchParams(query))
 
   return (
     <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
+          <Link href={detailHref} className="min-w-0 flex-1" aria-label={`Open pipeline ${pipeline.name}`}>
             <h3 className="truncate font-mono text-sm font-medium">
               {pipeline.name}
             </h3>
@@ -77,7 +80,7 @@ export function PipelineCard({ pipeline }: { pipeline: Pipeline }) {
                 </>
               )}
             </p>
-          </div>
+          </Link>
           <StatusBadge status={pipeline.phase} />
         </div>
 

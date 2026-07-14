@@ -16,11 +16,8 @@ import {
 import type { PolicyResult, Release } from "@/gen/paprika/v1/api_pb"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  applicationURL,
-  rolloutURL,
-  type ReleaseQueryState,
-} from "@/lib/release-query"
+import { serializeReleaseQuery, type ReleaseQueryState } from "@/lib/release-query"
+import { fleetDetailHref } from "@/lib/fleet-navigation"
 
 type ReleaseQueryInput = string | URLSearchParams | ReleaseQueryState
 
@@ -140,10 +137,10 @@ function ReleaseItem({ release, query }: { release: Release; query: ReleaseQuery
           {release.application && (
             <Link
               className="inline-flex min-w-0 items-center gap-2 rounded-md border border-border/70 px-3 py-2 font-mono hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href={applicationURL(query, {
+              href={fleetDetailHref("application", {
                 namespace: release.namespace,
                 name: release.application,
-              })}
+              }, releaseQueryParameters(query))}
               aria-label={`Open application ${release.application}`}
             >
               <ArrowRight className="size-3.5 shrink-0" aria-hidden="true" />
@@ -153,10 +150,10 @@ function ReleaseItem({ release, query }: { release: Release; query: ReleaseQuery
           {release.rolloutRef && (
             <Link
               className="inline-flex min-w-0 items-center gap-2 rounded-md border border-border/70 px-3 py-2 font-mono hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              href={rolloutURL(query, {
+              href={fleetDetailHref("rollout", {
                 namespace: release.namespace,
                 name: release.rolloutRef,
-              })}
+              }, releaseQueryParameters(query))}
               aria-label={`Open rollout ${release.rolloutRef}`}
             >
               <Boxes className="size-3.5 shrink-0" aria-hidden="true" />
@@ -189,6 +186,12 @@ function ReleaseItem({ release, query }: { release: Release; query: ReleaseQuery
       </article>
     </li>
   )
+}
+
+function releaseQueryParameters(query: ReleaseQueryInput): URLSearchParams {
+  if (typeof query === "string") return new URLSearchParams(query)
+  if (query instanceof URLSearchParams) return new URLSearchParams(query)
+  return serializeReleaseQuery(query)
 }
 
 function LoadingSkeleton() {

@@ -23,7 +23,7 @@ import {
   Shield,
   Workflow,
 } from "lucide-react"
-import { parseReleaseQuery, releaseURL } from "@/lib/release-query"
+import { fleetDetailHref, fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
 import {
   DashboardHealthMap,
   getApplicationHealth,
@@ -63,21 +63,15 @@ interface SearchItem {
   Icon: IconComponent
 }
 
-function appHref(application: Pick<Application, "namespace" | "name">) {
-  return `/dashboard/application?namespace=${encodeURIComponent(application.namespace)}&name=${encodeURIComponent(application.name)}`
-}
-
-function namespacedDetailHref(base: string, item: { namespace?: string; name: string }) {
-  if (!item.namespace) return base
-  return `${base}?namespace=${encodeURIComponent(item.namespace)}&name=${encodeURIComponent(item.name)}`
-}
-
 function releaseResultHref(releaseQuery: string, release: Pick<Release, "name" | "namespace">) {
-  const scope = parseReleaseQuery(releaseQuery).state
+  const current = new URLSearchParams(releaseQuery)
   const namespaces = release.namespace
-    ? [...scope.namespaces, release.namespace]
-    : scope.namespaces
-  return releaseURL(scope, { namespaces, q: release.name })
+    ? [...new Set([...current.getAll("namespace"), release.namespace])]
+    : [...new Set(current.getAll("namespace"))]
+  return fleetHref(
+    "/dashboard/releases",
+    patchFleetSearchParams(current, { namespaces, q: release.name }, { scopeChanged: true }),
+  )
 }
 
 function compactParts(parts: Array<string | number | boolean | undefined | null>) {
@@ -131,7 +125,7 @@ function buildSearchItems({
         application.currentStage && `stage ${application.currentStage}`,
         issue,
       ]).join(" - "),
-      href: appHref(application),
+      href: fleetDetailHref("application", application, new URLSearchParams(releaseQuery)),
       tokens: tokenParts.join(" ").toLowerCase(),
       Icon: Workflow,
     })
@@ -146,7 +140,9 @@ function buildSearchItems({
       namespace: pipeline.namespace,
       status: pipeline.phase,
       detail: compactParts([`ns/${pipeline.namespace}`, pipeline.phase, stepCount && `${stepCount} steps`]).join(" - "),
-      href: namespacedDetailHref("/dashboard/pipelines/detail", pipeline),
+      href: pipeline.namespace
+        ? fleetDetailHref("pipeline", pipeline, new URLSearchParams(releaseQuery))
+        : fleetHref("/dashboard/pipelines/detail", new URLSearchParams(releaseQuery)),
       tokens: compactParts(["pipeline", pipeline.name, pipeline.namespace, pipeline.phase, stepCount]).join(" ").toLowerCase(),
       Icon: GitBranch,
     })
@@ -195,7 +191,9 @@ function buildSearchItems({
         rollout.currentWeight > 0 && `${rollout.currentWeight}% traffic`,
         rollout.message,
       ]).join(" - "),
-      href: namespacedDetailHref("/dashboard/rollouts/detail", rollout),
+      href: rollout.namespace
+        ? fleetDetailHref("rollout", rollout, new URLSearchParams(releaseQuery))
+        : fleetHref("/dashboard/rollouts/detail", new URLSearchParams(releaseQuery)),
       tokens: compactParts([
         "rollout",
         rollout.name,
@@ -222,7 +220,9 @@ function buildSearchItems({
         applicationSet.phase,
         `${applicationSet.applications} app${applicationSet.applications === 1 ? "" : "s"}`,
       ]).join(" - "),
-      href: namespacedDetailHref("/dashboard/applicationsets/detail", applicationSet),
+      href: applicationSet.namespace
+        ? fleetDetailHref("applicationset", applicationSet, new URLSearchParams(releaseQuery))
+        : fleetHref("/dashboard/applicationsets/detail", new URLSearchParams(releaseQuery)),
       tokens: compactParts([
         "application set",
         "applicationset",

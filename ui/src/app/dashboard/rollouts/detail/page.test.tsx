@@ -7,9 +7,11 @@ const mockClient = vi.hoisted(() => ({
   abortRollout: vi.fn(),
 }))
 const query = vi.hoisted(() => ({ value: "namespace=legacy&name=rollout" }))
+const replace = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(query.value),
+  useRouter: () => ({ replace }),
 }))
 
 vi.mock("@connectrpc/connect", () => ({
@@ -29,7 +31,7 @@ describe("RolloutDetailPage identity", () => {
 
   it("prefers explicit rollout identity and preserves repeated shared namespace scope", async () => {
     query.value =
-      "namespace=apps&namespace=platform&rollout_namespace=%20delivery%20&rollout_name=%20checkout-rollout%20"
+      "namespace=apps&namespace=platform&rollout_namespace=%20delivery%20&rollout_name=%20checkout-rollout%20&unknown=kept"
 
     render(<RolloutDetailPage />)
 
@@ -40,27 +42,30 @@ describe("RolloutDetailPage identity", () => {
       })
     })
     expect(query.value).toContain("namespace=apps&namespace=platform")
+    expect(replace).not.toHaveBeenCalled()
   })
 
   it("falls back to legacy namespace and name links", async () => {
-    query.value = "namespace=%20legacy%20&name=%20rollout%20"
+    query.value = "namespace=legacy&name=rollout&unknown=kept"
 
     render(<RolloutDetailPage />)
 
     await waitFor(() => {
       expect(mockClient.getRollout).toHaveBeenCalledWith({ namespace: "legacy", name: "rollout" })
     })
+    expect(replace).toHaveBeenCalledWith(
+      "/dashboard/rollouts/detail?namespace=legacy&unknown=kept&rollout_namespace=legacy&rollout_name=rollout",
+    )
   })
 
-  it("falls back to a complete legacy pair when either explicit rollout value is blank", async () => {
+  it("fails closed when an explicit rollout identity is incomplete", async () => {
     query.value =
       "rollout_namespace=delivery&rollout_name=%20&namespace=legacy&name=rollout"
 
     render(<RolloutDetailPage />)
 
-    await waitFor(() => {
-      expect(mockClient.getRollout).toHaveBeenCalledWith({ namespace: "legacy", name: "rollout" })
-    })
+    await waitFor(() => expect(mockClient.getRollout).not.toHaveBeenCalled())
+    expect(replace).not.toHaveBeenCalled()
   })
 
   it("does not query with an incomplete legacy rollout identity pair", async () => {
@@ -68,5 +73,12 @@ describe("RolloutDetailPage identity", () => {
 
     render(<RolloutDetailPage />)
     await waitFor(() => expect(mockClient.getRollout).not.toHaveBeenCalled())
+  })
+
+  it("renders ambiguity for repeated legacy namespace scope", async () => {
+    query.value = "namespace=apps&namespace=platform&name=rollout&unknown=kept"
+    const { getByText } = render(<RolloutDetailPage />)
+    expect(getByText(/ambiguous rollout identity/i)).toBeInTheDocument()
+    expect(mockClient.getRollout).not.toHaveBeenCalled()
   })
 })

@@ -10,9 +10,11 @@ const mockClient = vi.hoisted(() => ({
 
 const reportRequestOutcome = vi.hoisted(() => vi.fn())
 const query = vi.hoisted(() => ({ value: "namespace=ns&name=app" }))
+const replace = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(query.value),
+  useRouter: () => ({ replace }),
 }))
 
 vi.mock("@connectrpc/connect", () => ({
@@ -39,6 +41,7 @@ describe("ApplicationDetailPage safe refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     query.value = "namespace=ns&name=app"
+    replace.mockReset()
     mockClient.getApplication.mockResolvedValue({ application: undefined })
     mockClient.listReleases.mockResolvedValue({ releases: [] })
     mockClient.getResourceTree.mockResolvedValue({ nodes: [] })
@@ -68,7 +71,7 @@ describe("ApplicationDetailPage safe refresh", () => {
 
   it("prefers explicit application identity without consuming repeated shared namespace scope", async () => {
     query.value =
-      "namespace=apps&namespace=platform&application_namespace=%20delivery%20&application_name=%20checkout%20"
+      "namespace=apps&namespace=platform&application_namespace=%20delivery%20&application_name=%20checkout%20&unknown=kept"
 
     render(<ApplicationDetailPage />)
 
@@ -80,27 +83,35 @@ describe("ApplicationDetailPage safe refresh", () => {
       })
     })
     expect(query.value).toContain("namespace=apps&namespace=platform")
+    expect(screen.getByRole("link", { name: /dashboard/i })).toHaveAttribute(
+      "href",
+      "/dashboard?namespace=apps&namespace=platform&application_namespace=+delivery+&application_name=+checkout+&unknown=kept",
+    )
+    expect(replace).not.toHaveBeenCalled()
   })
 
   it("falls back to the legacy namespace and name pair", async () => {
-    query.value = "namespace=%20legacy%20&name=%20payments%20"
+    query.value = "namespace=legacy&name=payments&unknown=kept"
 
     render(<ApplicationDetailPage />)
 
     await waitFor(() => {
       expect(mockClient.getApplication).toHaveBeenCalledWith({ namespace: "legacy", name: "payments" })
     })
+    expect(replace).toHaveBeenCalledWith(
+      "/dashboard/application?namespace=legacy&unknown=kept&application_namespace=legacy&application_name=payments",
+    )
   })
 
-  it("falls back to a complete legacy pair when either explicit identity value is blank", async () => {
+  it("fails closed when an explicit application identity is incomplete", async () => {
     query.value =
       "application_namespace=%20&application_name=ignored&namespace=legacy&name=payments"
 
     render(<ApplicationDetailPage />)
 
-    await waitFor(() => {
-      expect(mockClient.getApplication).toHaveBeenCalledWith({ namespace: "legacy", name: "payments" })
-    })
+    await act(async () => Promise.resolve())
+    expect(mockClient.getApplication).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
   })
 
   it("does not query with an incomplete legacy identity pair", async () => {
@@ -111,5 +122,15 @@ describe("ApplicationDetailPage safe refresh", () => {
 
     expect(mockClient.getApplication).not.toHaveBeenCalled()
     expect(mockClient.listReleases).not.toHaveBeenCalled()
+  })
+
+  it("renders ambiguity instead of guessing between repeated legacy namespaces", async () => {
+    query.value = "namespace=apps&namespace=platform&name=checkout&unknown=kept"
+
+    render(<ApplicationDetailPage />)
+
+    expect(await screen.findByText(/ambiguous application identity/i)).toBeInTheDocument()
+    expect(mockClient.getApplication).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
   })
 })

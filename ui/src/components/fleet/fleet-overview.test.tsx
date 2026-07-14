@@ -132,7 +132,12 @@ describe("FleetOverview", () => {
     ]
 
     render(
-      <FleetOverview applications={applications} facets={[]} total={BigInt(3)} />,
+      <FleetOverview
+        applications={applications}
+        facets={[]}
+        total={BigInt(3)}
+        query="namespace=platform&view=queue&unknown=kept"
+      />,
     )
 
     expect(screen.getByLabelText("Observability failures")).toHaveTextContent("0")
@@ -142,10 +147,12 @@ describe("FleetOverview", () => {
       expect.stringContaining("checkout"),
       expect.stringContaining("catalog"),
     ])
-    expect(links[0]).toHaveAttribute(
-      "href",
-      "/dashboard/application?namespace=apps&name=checkout",
-    )
+    const detail = new URL(links[0].getAttribute("href")!, "https://paprika.test")
+    expect(detail.searchParams.get("namespace")).toBe("platform")
+    expect(detail.searchParams.get("view")).toBe("queue")
+    expect(detail.searchParams.get("unknown")).toBe("kept")
+    expect(detail.searchParams.get("application_namespace")).toBe("apps")
+    expect(detail.searchParams.get("application_name")).toBe("checkout")
     expect(within(attention).queryByText("healthy-service")).not.toBeInTheDocument()
   })
 

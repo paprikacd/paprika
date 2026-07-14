@@ -105,7 +105,7 @@ describe("DashboardHealthMap", () => {
     )
   })
 
-  it("preserves the complete canonical fleet query while clearing stale detail state", () => {
+  it("preserves the complete lossless fleet query while clearing stale detail state", () => {
     render(
       <DashboardHealthMap
         applications={rankedApplications}
@@ -137,6 +137,7 @@ describe("DashboardHealthMap", () => {
           "selected=apps%2Fcheckout",
           "zoom=project%3Aalpha",
           "range=24h",
+          "unknown=kept",
         ].join("&")}
       />,
     )
@@ -144,31 +145,28 @@ describe("DashboardHealthMap", () => {
     const href = screen.getByRole("link", { name: "View all applications as treemap" }).getAttribute("href")!
     const url = new URL(href, "https://paprika.invalid")
     expect(url.pathname).toBe("/dashboard/applications")
-    expect([...url.searchParams]).toEqual([
-      ["project", "alpha/core"],
-      ["project", "zeta/payments"],
-      ["cluster", "ops/prod"],
-      ["stage", "canary"],
-      ["stage", "production"],
-      ["namespace", "apps"],
-      ["namespace", "platform"],
-      ["health", "degraded"],
-      ["health", "healthy"],
-      ["sync", "out_of_sync"],
-      ["sync", "synced"],
-      ["release", "complete"],
-      ["release", "failed"],
-      ["rollout", "degraded"],
-      ["rollout", "healthy"],
-      ["source", "git"],
-      ["source", "helm"],
-      ["q", "checkout"],
-      ["group", "cluster"],
-      ["size", "request_rate"],
-      ["range", "24h"],
-      ["view", "treemap"],
+    expect(url.searchParams.getAll("project")).toEqual([
+      "zeta/payments",
+      "alpha/core",
+      "zeta/payments",
     ])
+    expect(url.searchParams.getAll("stage")).toEqual(["production", "canary", "production"])
+    expect(url.searchParams.getAll("namespace")).toEqual(["platform", "apps"])
+    expect(url.searchParams.getAll("health")).toEqual(["healthy", "degraded"])
+    expect(url.searchParams.getAll("source")).toEqual(["helm", "git"])
+    expect(url.searchParams.get("q")).toBe("checkout")
+    expect(url.searchParams.get("group")).toBe("cluster")
+    expect(url.searchParams.get("size")).toBe("request_rate")
+    expect(url.searchParams.get("range")).toBe("24h")
+    expect(url.searchParams.get("view")).toBe("treemap")
+    expect(url.searchParams.get("unknown")).toBe("kept")
     expect(url.searchParams.has("selected")).toBe(false)
     expect(url.searchParams.has("zoom")).toBe(false)
+
+    const application = screen.getAllByRole("link", { name: /Degraded in team-/i })[0]
+    const detail = new URL(application.getAttribute("href")!, "https://paprika.invalid")
+    expect(detail.searchParams.get("unknown")).toBe("kept")
+    expect(detail.searchParams.get("application_namespace")).toMatch(/^team-/)
+    expect(detail.searchParams.get("application_name")).toBeTruthy()
   })
 })

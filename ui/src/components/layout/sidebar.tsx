@@ -16,10 +16,10 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 
 import { useAuth } from "@/lib/auth-context"
-import { releaseURL } from "@/lib/release-query"
+import { fleetHref } from "@/lib/fleet-navigation"
 import { cn } from "@/lib/utils"
 
 interface NavigationItem {
@@ -85,12 +85,6 @@ export function Sidebar() {
     window.addEventListener("hashchange", updateHash)
     return () => window.removeEventListener("hashchange", updateHash)
   }, [])
-
-  useEffect(() => {
-    if (pathname === "/dashboard" && hash === "#applications") {
-      router.replace("/dashboard/applications")
-    }
-  }, [hash, pathname, router])
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return
@@ -190,7 +184,7 @@ export function Sidebar() {
         data-dashboard-mobile-header
         className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-sidebar-border bg-sidebar px-3 lg:hidden"
       >
-        <MobileBrand />
+        <Suspense fallback={<MobileBrand href="/dashboard" />}><ScopedBrand mobile /></Suspense>
         <button
           ref={triggerRef}
           type="button"
@@ -209,7 +203,7 @@ export function Sidebar() {
         data-dashboard-desktop-sidebar
         className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex"
       >
-        <SidebarBrand />
+        <Suspense fallback={<SidebarBrand href="/dashboard" />}><ScopedBrand /></Suspense>
         {navigation}
         <SidebarFootnote />
       </aside>
@@ -233,7 +227,7 @@ export function Sidebar() {
             className="relative flex h-dvh w-[min(20rem,calc(100vw-3rem))] flex-col border-r border-sidebar-border bg-sidebar animate-in slide-in-from-left duration-300"
           >
             <div className="flex h-14 items-center justify-between border-b border-sidebar-border px-3">
-              <MobileBrand />
+              <Suspense fallback={<MobileBrand href="/dashboard" />}><ScopedBrand mobile /></Suspense>
               <button
                 ref={closeRef}
                 type="button"
@@ -266,25 +260,31 @@ function ScopedSidebarNavigation({
 }) {
   const searchParams = useSearchParams()
   const rawQuery = searchParams.toString()
-  const releaseHref = releaseURL(rawQuery, { q: "" })
-  const migratedReleaseHash = useRef("")
+  const current = useMemo(() => new URLSearchParams(rawQuery), [rawQuery])
+  const releaseHref = fleetHref("/dashboard/releases", current)
+  const migratedLegacyHash = useRef("")
 
   useEffect(() => {
-    if (pathname !== "/dashboard" || hash !== "#releases") {
-      migratedReleaseHash.current = ""
+    if (pathname !== "/dashboard" || !["#applications", "#releases"].includes(hash)) {
+      migratedLegacyHash.current = ""
       return
     }
     const migration = `${pathname}?${rawQuery}${hash}`
-    if (migratedReleaseHash.current === migration) return
-    migratedReleaseHash.current = migration
-    router.replace(releaseHref)
-  }, [hash, pathname, rawQuery, releaseHref, router])
+    if (migratedLegacyHash.current === migration) return
+    migratedLegacyHash.current = migration
+    router.replace(
+      hash === "#applications"
+        ? fleetHref("/dashboard/applications", current)
+        : releaseHref,
+    )
+  }, [current, hash, pathname, rawQuery, releaseHref, router])
 
   return (
     <SidebarNavigation
       pathname={pathname}
       hash={hash}
       releaseHref={releaseHref}
+      query={rawQuery}
       onNavigate={onNavigate}
     />
   )
@@ -320,11 +320,13 @@ function SidebarNavigation({
   pathname,
   hash,
   releaseHref,
+  query = "",
   onNavigate,
 }: {
   pathname: string
   hash: string
   releaseHref: string
+  query?: string
   onNavigate: () => void
 }) {
   return (
@@ -342,7 +344,13 @@ function SidebarNavigation({
               {section.items.map((item) => (
                 <SidebarItem
                   key={item.label}
-                  item={item.label === "Releases" ? { ...item, href: releaseHref } : item}
+                  item={
+                    item.label === "Releases"
+                      ? { ...item, href: releaseHref }
+                      : item.href
+                        ? { ...item, href: fleetHref(item.href, new URLSearchParams(query)) }
+                        : item
+                  }
                   active={isNavigationItemActive(item, pathname, hash)}
                   onNavigate={onNavigate}
                 />
@@ -421,10 +429,16 @@ function isNavigationItemActive(item: NavigationItem, pathname: string, hash: st
   }
 }
 
-function SidebarBrand() {
+function ScopedBrand({ mobile = false }: { mobile?: boolean }) {
+  const searchParams = useSearchParams()
+  const href = fleetHref("/dashboard", searchParams)
+  return mobile ? <MobileBrand href={href} /> : <SidebarBrand href={href} />
+}
+
+function SidebarBrand({ href }: { href: string }) {
   return (
     <div className="flex h-16 items-center border-b border-sidebar-border px-5">
-      <Link href="/dashboard" className="flex min-h-11 items-center gap-3" aria-label="Paprika operations overview">
+      <Link href={href} className="flex min-h-11 items-center gap-3" aria-label="Paprika operations overview">
         <BrandMark />
         <span>
           <span className="block text-sm font-semibold tracking-tight text-sidebar-foreground">Paprika</span>
@@ -437,9 +451,9 @@ function SidebarBrand() {
   )
 }
 
-function MobileBrand() {
+function MobileBrand({ href }: { href: string }) {
   return (
-    <Link href="/dashboard" className="flex min-h-11 items-center gap-2.5" aria-label="Paprika operations overview">
+    <Link href={href} className="flex min-h-11 items-center gap-2.5" aria-label="Paprika operations overview">
       <BrandMark />
       <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">Paprika</span>
     </Link>

@@ -64,7 +64,7 @@ describe("ReleasesPage", () => {
   it("queries the scoped second page and renders exact results with real scoped pagination links", async () => {
     query.value =
       "project=team%2Fpayments&cluster=platform%2Fprod&stage=production" +
-      "&namespace=apps&namespace=platform&q=checkout&page=2"
+      "&namespace=apps&namespace=platform&q=checkout&page=2&unknown=kept"
     mockClient.queryReleases.mockResolvedValue({
       releases: [release("checkout-v42")],
       totalCount: 49n,
@@ -101,6 +101,10 @@ describe("ReleasesPage", () => {
       "/dashboard/releases?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout&page=3",
     )
     expect(screen.getByText(/Page 2 of 3/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+      "href",
+      "/dashboard?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout&page=2&unknown=kept",
+    )
   })
 
   it("canonicalizes invalid pages and resets pagination after a 250ms debounced search change", async () => {

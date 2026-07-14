@@ -39,7 +39,7 @@ describe("ReleaseGrid", () => {
     const { container } = render(
       <ReleaseGrid
         releases={releases}
-        query="namespace=apps&namespace=platform&project=team%2Fpayments&q=demo&page=3"
+        query="namespace=apps&namespace=platform&project=team%2Fpayments&q=demo&page=3&unknown=kept&tab=evidence"
       />,
     )
 
@@ -55,11 +55,11 @@ describe("ReleaseGrid", () => {
     expect(screen.getByText("Canarying")).toHaveClass("text-primary")
     expect(screen.getByRole("link", { name: "Open application demo-app" })).toHaveAttribute(
       "href",
-      "/dashboard/application?project=team%2Fpayments&namespace=apps&namespace=platform&application_namespace=apps&application_name=demo-app",
+      "/dashboard/application?namespace=apps&namespace=platform&project=team%2Fpayments&q=demo&page=3&unknown=kept&tab=evidence&application_namespace=apps&application_name=demo-app",
     )
     expect(screen.getByRole("link", { name: "Open rollout demo-rollout" })).toHaveAttribute(
       "href",
-      "/dashboard/rollouts/detail?project=team%2Fpayments&namespace=apps&namespace=platform&rollout_namespace=apps&rollout_name=demo-rollout",
+      "/dashboard/rollouts/detail?namespace=apps&namespace=platform&project=team%2Fpayments&q=demo&page=3&unknown=kept&tab=evidence&rollout_namespace=apps&rollout_name=demo-rollout",
     )
     expect(screen.queryByRole("button", { name: /rollback/i })).not.toBeInTheDocument()
     expect(screen.getByRole("list", { name: "Releases" }).className).not.toMatch(/min-w-/)

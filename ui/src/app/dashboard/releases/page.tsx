@@ -21,6 +21,7 @@ import {
   type ReleaseQueryState,
 } from "@/lib/release-query"
 import { createTransport } from "@/lib/transport"
+import { fleetHref } from "@/lib/fleet-navigation"
 
 const client = createPromiseClient(PaprikaService, createTransport())
 const MAX_QUERYABLE_PAGE = Math.floor(RELEASE_MAX_OFFSET / RELEASE_PAGE_SIZE) + 1
@@ -210,7 +211,7 @@ function ReleasesContent() {
   return (
     <main className="mx-auto max-w-[100rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8">
       <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Link href="/dashboard" className="hover:text-foreground">
+        <Link href={fleetHref("/dashboard", new URLSearchParams(rawQuery))} className="hover:text-foreground">
           Dashboard
         </Link>
         <ChevronRight className="size-3.5" aria-hidden="true" />
@@ -243,7 +244,7 @@ function ReleasesContent() {
 
       <ReleaseGrid
         releases={data.releases}
-        query={state}
+        query={rawQuery}
         loading={loading}
         search={state.q}
         error={error}

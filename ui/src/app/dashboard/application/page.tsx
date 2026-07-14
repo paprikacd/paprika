@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createTransport } from "@/lib/transport";
 import {
@@ -54,6 +54,11 @@ import { SyncDiffWorkbench } from "@/components/dashboard/sync-diff-workbench";
 import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history";
 import { useConnection } from "@/lib/connection-context";
 import { useFocusedRefresh } from "@/lib/fleet-refresh";
+import {
+  fleetHref,
+  migrateLegacyDetailIdentity,
+  readFleetDetailIdentity,
+} from "@/lib/fleet-navigation";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, InvestigateResponse, Release } from "@/gen/paprika/v1/api_pb";
@@ -123,18 +128,27 @@ function formatDate(ts?: bigint): string {
 
 function ApplicationDetail() {
   const searchParams = useSearchParams();
-  const explicitNamespace = (searchParams.get("application_namespace") ?? "").trim();
-  const explicitName = (searchParams.get("application_name") ?? "").trim();
-  const legacyNamespace = (searchParams.get("namespace") ?? "").trim();
-  const legacyName = (searchParams.get("name") ?? "").trim();
-  const hasExplicitIdentity = Boolean(explicitNamespace && explicitName);
-  const hasLegacyIdentity = Boolean(legacyNamespace && legacyName);
-  const namespace = hasExplicitIdentity
-    ? explicitNamespace
-    : hasLegacyIdentity
-      ? legacyNamespace
-      : "";
-  const name = hasExplicitIdentity ? explicitName : hasLegacyIdentity ? legacyName : "";
+  const router = useRouter();
+  const rawQuery = searchParams.toString();
+  const parameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery]);
+  const detailIdentity = useMemo(
+    () => readFleetDetailIdentity("application", parameters),
+    [parameters],
+  );
+  const namespace = detailIdentity.status === "resolved" ? detailIdentity.identity.namespace : "";
+  const name = detailIdentity.status === "resolved" ? detailIdentity.identity.name : "";
+  const migratedHref = useMemo(() => {
+    const migrated = migrateLegacyDetailIdentity("application", parameters);
+    if (!(migrated instanceof URLSearchParams) || migrated.toString() === rawQuery) return "";
+    return fleetHref("/dashboard/application", migrated);
+  }, [parameters, rawQuery]);
+  const replacedMigration = useRef("");
+
+  useEffect(() => {
+    if (!migratedHref || replacedMigration.current === migratedHref) return;
+    replacedMigration.current = migratedHref;
+    router.replace(migratedHref);
+  }, [migratedHref, router]);
 
   const [application, setApplication] = useState<Application | null>(null);
   const [releases, setReleases] = useState<Release[]>([]);
@@ -261,11 +275,24 @@ function ApplicationDetail() {
   const pageTitle = application?.name ?? name;
   const pageNamespace = application?.namespace ?? namespace;
 
+  if (detailIdentity.status === "ambiguous") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Ambiguous application identity. Choose one application from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard", parameters)} className="text-primary hover:underline">
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          href="/dashboard"
+          href={fleetHref("/dashboard", parameters)}
           className="flex items-center gap-1 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />

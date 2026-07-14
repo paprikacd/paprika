@@ -238,7 +238,7 @@ describe("Dashboard bounded refresh", () => {
     navigation.query =
       "project=tenant%2Fretail&cluster=platform%2Fomega&stage=production&namespace=apps" +
       "&health=healthy&sync=out_of_sync&release=canarying&rollout=progressing&source=git" +
-      "&q=fleet-search&view=queue"
+      "&q=fleet-search&view=queue&unknown=kept"
     mockClient.queryReleases.mockResolvedValue({
       releases: [
         {
@@ -293,7 +293,9 @@ describe("Dashboard bounded refresh", () => {
     ).toHaveAttribute(
       "href",
       "/dashboard/releases?project=tenant%2Fretail&cluster=platform%2Fomega" +
-        "&stage=production&namespace=apps&q=checkout-release-v42",
+        "&stage=production&health=healthy&sync=out_of_sync&release=canarying" +
+        "&rollout=progressing&source=git&view=queue&unknown=kept&namespace=apps" +
+        "&q=checkout-release-v42",
     )
   })
 
@@ -308,6 +310,7 @@ describe("Dashboard bounded refresh", () => {
   })
 
   it("keeps application search, health tiles, and drill-downs on the bounded fleet window", async () => {
+    navigation.query = "namespace=platform&view=heatmap&unknown=kept"
     fleetMocks.displayData.total = BigInt(1)
     fleetMocks.displayData.applications = [
       {
@@ -338,7 +341,7 @@ describe("Dashboard bounded refresh", () => {
 
     expect(screen.getByRole("link", { name: /checkout/i })).toHaveAttribute(
       "href",
-      "/dashboard/application?namespace=apps&name=checkout",
+      "/dashboard/application?namespace=platform&view=heatmap&unknown=kept&application_namespace=apps&application_name=checkout",
     )
     expect(screen.getByText("1/1 apps loaded")).toBeInTheDocument()
   })

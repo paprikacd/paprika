@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createTransport } from "@/lib/transport";
 import {
@@ -19,6 +19,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { ApplicationSet } from "@/gen/paprika/v1/api_pb";
+import {
+  fleetHref,
+  migrateLegacyDetailIdentity,
+  readFleetDetailIdentity,
+} from "@/lib/fleet-navigation";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -41,8 +46,27 @@ function SkeletonCard() {
 
 function ApplicationSetDetail() {
   const searchParams = useSearchParams();
-  const namespace = searchParams.get("namespace") ?? "";
-  const name = searchParams.get("name") ?? "";
+  const router = useRouter();
+  const rawQuery = searchParams.toString();
+  const parameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery]);
+  const detailIdentity = useMemo(
+    () => readFleetDetailIdentity("applicationset", parameters),
+    [parameters],
+  );
+  const namespace = detailIdentity.status === "resolved" ? detailIdentity.identity.namespace : "";
+  const name = detailIdentity.status === "resolved" ? detailIdentity.identity.name : "";
+  const migratedHref = useMemo(() => {
+    const migrated = migrateLegacyDetailIdentity("applicationset", parameters);
+    if (!(migrated instanceof URLSearchParams) || migrated.toString() === rawQuery) return "";
+    return fleetHref("/dashboard/applicationsets/detail", migrated);
+  }, [parameters, rawQuery]);
+  const replacedMigration = useRef("");
+
+  useEffect(() => {
+    if (!migratedHref || replacedMigration.current === migratedHref) return;
+    replacedMigration.current = migratedHref;
+    router.replace(migratedHref);
+  }, [migratedHref, router]);
 
   const [set, setSet] = useState<ApplicationSet | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,11 +95,24 @@ function ApplicationSetDetail() {
   const pageTitle = set?.name ?? name;
   const pageNamespace = set?.namespace ?? namespace;
 
+  if (detailIdentity.status === "ambiguous") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Ambiguous application set identity. Choose one application set from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard/applicationsets", parameters)} className="text-primary hover:underline">
+          Back to Application Sets
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          href="/dashboard"
+          href={fleetHref("/dashboard", parameters)}
           className="flex items-center gap-1 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -83,7 +120,7 @@ function ApplicationSetDetail() {
         </Link>
         <ChevronRight className="h-4 w-4" />
         <Link
-          href="/dashboard/applicationsets"
+          href={fleetHref("/dashboard/applicationsets", parameters)}
           className="hover:text-foreground"
         >
           Application Sets

@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { fleetDetailHref, fleetHref } from "@/lib/fleet-navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createTransport } from "@/lib/transport";
 import {
@@ -130,7 +131,7 @@ function RolloutsList() {
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/dashboard" className="flex items-center gap-1 hover:text-foreground">
+        <Link href={fleetHref("/dashboard", searchParams)} className="flex items-center gap-1 hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Dashboard
         </Link>
@@ -215,9 +216,7 @@ function RolloutsList() {
                     <TableRow key={`${ro.namespace}/${ro.name}`}>
                       <TableCell className="font-medium">
                         <Link
-                          href={`/dashboard/rollouts/detail?namespace=${encodeURIComponent(
-                            ro.namespace,
-                          )}&name=${encodeURIComponent(ro.name)}`}
+                          href={fleetDetailHref("rollout", ro, searchParams)}
                           className="hover:underline"
                         >
                           {ro.name}

@@ -12,6 +12,7 @@ import {
   CheckCircle2, AlertCircle, Loader2, Heart, XCircle,
   Clock, Activity, ArrowRight, Target, AlertTriangle, Container,
 } from "lucide-react"
+import { fleetDetailHref } from "@/lib/fleet-navigation"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
@@ -456,9 +457,9 @@ function PolicySummary({ results }: { results?: PolicyResult[] }) {
   )
 }
 
-export function ApplicationCard({ application, release, onSynced }: { application: Application; release?: Release; onSynced?: () => void }) {
+export function ApplicationCard({ application, release, onSynced, query = "" }: { application: Application; release?: Release; onSynced?: () => void; query?: string }) {
   const hasHealthChecks = application.healthChecks && application.healthChecks.length > 0
-  const detailHref = `/dashboard/application?namespace=${encodeURIComponent(application.namespace)}&name=${encodeURIComponent(application.name)}`
+  const detailHref = fleetDetailHref("application", application, new URLSearchParams(query))
 
   return (
     <Card className="group transition-all duration-200 hover:ring-primary/30 hover:shadow-lg hover:shadow-primary/5">

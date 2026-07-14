@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createTransport } from "@/lib/transport";
 import {
@@ -19,6 +20,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { ApplicationSet } from "@/gen/paprika/v1/api_pb";
+import { fleetDetailHref, fleetHref } from "@/lib/fleet-navigation";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -40,6 +42,7 @@ function SkeletonCard() {
 }
 
 function ApplicationSetList() {
+  const searchParams = useSearchParams();
   const [sets, setSets] = useState<ApplicationSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +70,7 @@ function ApplicationSetList() {
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          href="/dashboard"
+          href={fleetHref("/dashboard", searchParams)}
           className="flex items-center gap-1 hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -117,7 +120,7 @@ function ApplicationSetList() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {sets.map((set) => {
-            const detailHref = `/dashboard/applicationsets/detail?namespace=${encodeURIComponent(set.namespace)}&name=${encodeURIComponent(set.name)}`;
+            const detailHref = fleetDetailHref("applicationset", set, searchParams);
             return (
               <Card
                 key={`${set.namespace}/${set.name}`}

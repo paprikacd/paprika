@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import Link from "next/link"
 import { ArrowUpRight, Clock3, Workflow } from "lucide-react"
 import type { Application } from "@/gen/paprika/v1/api_pb"
-import { mergeFleetQuery, parseFleetQuery, serializeFleetQuery } from "@/lib/fleet-query"
+import { fleetDetailHref, fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
 
 const PREVIEW_LIMIT = 8
 const RESULTS_ID = "dashboard-health-map-results"
@@ -110,28 +110,21 @@ export function getApplicationIssue(application: Application) {
   return ""
 }
 
-function applicationHref(application: Pick<Application, "namespace" | "name">) {
-  return `/dashboard/application?namespace=${encodeURIComponent(application.namespace)}&name=${encodeURIComponent(application.name)}`
-}
-
 function statusCount(applications: Application[], filter: HealthFilter) {
   if (filter === "All") return applications.length
   return applications.filter((application) => getApplicationHealth(application) === filter).length
 }
 
 function applicationsTreemapHref(fleetQuery: string) {
-  const current = parseFleetQuery(fleetQuery).state
-  const treemap = mergeFleetQuery(current, {
+  const treemap = patchFleetSearchParams(new URLSearchParams(fleetQuery), {
     selected: null,
     view: "treemap",
     zoom: "",
   })
-  const parameters = serializeFleetQuery(treemap)
-  parameters.set("view", "treemap")
-  return `/dashboard/applications?${parameters.toString()}`
+  return fleetHref("/dashboard/applications", treemap)
 }
 
-function HealthMapTile({ application }: { application: Application }) {
+function HealthMapTile({ application, fleetQuery }: { application: Application; fleetQuery: string }) {
   const health = getApplicationHealth(application)
   const issue = getApplicationIssue(application)
   const style = healthStyles[health]
@@ -139,7 +132,7 @@ function HealthMapTile({ application }: { application: Application }) {
 
   return (
     <Link
-      href={applicationHref(application)}
+      href={fleetDetailHref("application", application, new URLSearchParams(fleetQuery))}
       aria-label={`${application.name} ${health} in ${application.namespace}`}
       className={`group flex min-h-24 flex-col justify-between rounded-lg p-3 ring-1 transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${style.tile} ${style.ring}`}
     >
@@ -248,7 +241,7 @@ export function DashboardHealthMap({
           >
             {visibleApplications.map((application) => (
               <li key={`${application.namespace}/${application.name}`}>
-                <HealthMapTile application={application} />
+                <HealthMapTile application={application} fleetQuery={fleetQuery} />
               </li>
             ))}
           </ul>

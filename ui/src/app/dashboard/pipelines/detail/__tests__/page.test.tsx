@@ -12,10 +12,12 @@ const mockClient = vi.hoisted(() => ({
 }))
 
 const mockPush = vi.hoisted(() => vi.fn())
+const mockReplace = vi.hoisted(() => vi.fn())
+const query = vi.hoisted(() => ({ value: "namespace=ns&name=pipe" }))
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mockPush }),
-  useSearchParams: () => new URLSearchParams("namespace=ns&name=pipe"),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  useSearchParams: () => new URLSearchParams(query.value),
 }))
 
 vi.mock("@connectrpc/connect-web", () => ({
@@ -56,6 +58,7 @@ describe("PipelineDetailPage safe refresh", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    query.value = "pipeline_namespace=ns&pipeline_name=pipe&namespace=apps&unknown=kept"
     mockClient.getPipeline.mockResolvedValue({
       pipeline: makePipeline([
         { name: "build-image", kind: "oci", phase: "Ready", producingStep: "build" },
@@ -84,6 +87,23 @@ describe("PipelineDetailPage safe refresh", () => {
     await waitFor(() => {
       expect(mockClient.getPipeline).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it("migrates a single legacy identity once and retains unknown scope", async () => {
+    query.value = "namespace=ns&name=pipe&unknown=kept"
+    render(<PipelineDetailPage />)
+
+    await waitFor(() => expect(mockClient.getPipeline).toHaveBeenCalledWith({ namespace: "ns", name: "pipe" }))
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/dashboard/pipelines/detail?namespace=ns&unknown=kept&pipeline_namespace=ns&pipeline_name=pipe",
+    )
+  })
+
+  it("does not query an ambiguous legacy identity", async () => {
+    query.value = "namespace=apps&namespace=platform&name=pipe&unknown=kept"
+    render(<PipelineDetailPage />)
+    expect(await screen.findByText(/ambiguous pipeline identity/i)).toBeInTheDocument()
+    expect(mockClient.getPipeline).not.toHaveBeenCalled()
   })
 
   it("renders a Pipeline Artifacts section for artifacts without a producingStep", async () => {

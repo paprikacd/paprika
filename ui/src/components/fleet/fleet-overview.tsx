@@ -7,6 +7,7 @@ import type {
   FleetHealthStatus,
 } from "@/lib/fleet-client"
 import type { FleetHealth, FleetRelease, FleetRollout } from "@/lib/fleet-query"
+import { fleetDetailHref } from "@/lib/fleet-navigation"
 
 export interface FleetOverviewProps {
   applications: readonly FleetApplicationSummary[]
@@ -17,6 +18,7 @@ export interface FleetOverviewProps {
   selectedHealth?: readonly FleetHealth[]
   selectedRelease?: readonly FleetRelease[]
   selectedRollout?: readonly FleetRollout[]
+  query?: string
 }
 
 const healthOrder: readonly FleetHealthStatus[] = [
@@ -58,6 +60,7 @@ export function FleetOverview({
   selectedHealth = [],
   selectedRelease = [],
   selectedRollout = [],
+  query = "",
 }: FleetOverviewProps) {
   const summary = summarizeOverview(applications, facets, {
     health: selectedHealth,
@@ -172,14 +175,10 @@ export function FleetOverview({
           <ol className="divide-y divide-border">
             {summary.attention.map((application, index) => {
               const identity = application.identity!
-              const query = new URLSearchParams({
-                namespace: identity.namespace,
-                name: identity.name,
-              })
               return (
                 <li key={`${identity.namespace}/${identity.name}`}>
                   <Link
-                    href={`/dashboard/application?${query.toString()}`}
+                    href={fleetDetailHref("application", identity, new URLSearchParams(query))}
                     className="grid min-h-16 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/50 sm:px-5"
                   >
                     <span aria-hidden="true" className="font-mono text-sm font-semibold tabular-nums text-primary">

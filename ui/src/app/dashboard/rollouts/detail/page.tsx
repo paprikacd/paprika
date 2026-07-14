@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createTransport } from "@/lib/transport";
 import {
@@ -30,6 +30,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Rollout } from "@/gen/paprika/v1/api_pb";
 import { RolloutDebugPanel } from "@/components/dashboard/rollout-debug-panel";
+import {
+  fleetHref,
+  migrateLegacyDetailIdentity,
+  readFleetDetailIdentity,
+} from "@/lib/fleet-navigation";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -62,18 +67,27 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 function RolloutDetail() {
   const searchParams = useSearchParams();
-  const explicitNamespace = (searchParams.get("rollout_namespace") ?? "").trim();
-  const explicitName = (searchParams.get("rollout_name") ?? "").trim();
-  const legacyNamespace = (searchParams.get("namespace") ?? "").trim();
-  const legacyName = (searchParams.get("name") ?? "").trim();
-  const hasExplicitIdentity = Boolean(explicitNamespace && explicitName);
-  const hasLegacyIdentity = Boolean(legacyNamespace && legacyName);
-  const namespace = hasExplicitIdentity
-    ? explicitNamespace
-    : hasLegacyIdentity
-      ? legacyNamespace
-      : "";
-  const name = hasExplicitIdentity ? explicitName : hasLegacyIdentity ? legacyName : "";
+  const router = useRouter();
+  const rawQuery = searchParams.toString();
+  const parameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery]);
+  const detailIdentity = useMemo(
+    () => readFleetDetailIdentity("rollout", parameters),
+    [parameters],
+  );
+  const namespace = detailIdentity.status === "resolved" ? detailIdentity.identity.namespace : "";
+  const name = detailIdentity.status === "resolved" ? detailIdentity.identity.name : "";
+  const migratedHref = useMemo(() => {
+    const migrated = migrateLegacyDetailIdentity("rollout", parameters);
+    if (!(migrated instanceof URLSearchParams) || migrated.toString() === rawQuery) return "";
+    return fleetHref("/dashboard/rollouts/detail", migrated);
+  }, [parameters, rawQuery]);
+  const replacedMigration = useRef("");
+
+  useEffect(() => {
+    if (!migratedHref || replacedMigration.current === migratedHref) return;
+    replacedMigration.current = migratedHref;
+    router.replace(migratedHref);
+  }, [migratedHref, router]);
 
   const [rollout, setRollout] = useState<Rollout | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,15 +147,28 @@ function RolloutDetail() {
   const pageTitle = rollout?.name ?? name;
   const pageNamespace = rollout?.namespace ?? namespace;
 
+  if (detailIdentity.status === "ambiguous") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Ambiguous rollout identity. Choose one rollout from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard/rollouts", parameters)} className="text-primary hover:underline">
+          Back to Rollouts
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/dashboard" className="flex items-center gap-1 hover:text-foreground">
+        <Link href={fleetHref("/dashboard", parameters)} className="flex items-center gap-1 hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Dashboard
         </Link>
         <ChevronRight className="h-4 w-4" />
-        <Link href="/dashboard/rollouts" className="hover:text-foreground">
+        <Link href={fleetHref("/dashboard/rollouts", parameters)} className="hover:text-foreground">
           Rollouts
         </Link>
         <ChevronRight className="h-4 w-4" />
