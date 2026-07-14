@@ -24,6 +24,7 @@ import (
 const (
 	fixtureNamespaceCount   = 12
 	fixtureApplicationLabel = "app.paprika.io/name"
+	fixtureProjectLabel     = "app.paprika.io/project"
 )
 
 var fixtureEpoch = time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -101,7 +102,7 @@ func newFixtureScheme() (*runtime.Scheme, error) {
 
 func fixtureObjects(applicationCount int) []client.Object {
 	namespaceCount := min(applicationCount, fixtureNamespaceCount)
-	objects := make([]client.Object, 0, applicationCount*4+namespaceCount*8)
+	objects := make([]client.Object, 0, applicationCount*5+namespaceCount*8)
 	seenNamespaces := make(map[string]struct{}, namespaceCount)
 	seenProjects := make(map[types.NamespacedName]struct{}, namespaceCount*4)
 
@@ -119,10 +120,11 @@ func fixtureObjects(applicationCount int) []client.Object {
 		}
 
 		application := fixtureApplication(index, namespace, &state)
+		pipeline := fixturePipeline(application, &state)
 		stage := fixtureStage(application, &state)
 		release := fixtureRelease(application, &state)
 		rollout := fixtureRollout(application, release, &state)
-		objects = append(objects, application, stage, release, rollout)
+		objects = append(objects, pipeline, application, stage, release, rollout)
 	}
 	return objects
 }
@@ -134,51 +136,83 @@ type fixtureState struct {
 	health        pipelinesv1alpha1.HealthStatus
 	synced        bool
 	driftCount    int
-	stage         string
+	stageName     string
+	stagePhase    string
 	release       pipelinesv1alpha1.ReleasePhase
 	rollout       rolloutsv1alpha1.RolloutPhase
+	pipeline      pipelinesv1alpha1.PipelinePhase
 	repository    string
 	cluster       string
+	missing       bool
 	blockedByGate bool
 }
 
 func fixtureStateFor(index int) fixtureState {
-	switch index % 5 {
+	switch index % 8 {
 	case 0:
 		return fixtureState{
 			project: "payments", sourceType: pipelinesv1alpha1.SourceTypeGit,
 			application: pipelinesv1alpha1.ApplicationHealthy, health: pipelinesv1alpha1.HealthHealthy,
-			synced: true, stage: "Healthy", release: pipelinesv1alpha1.ReleaseComplete,
+			synced: true, stageName: "production", stagePhase: "Healthy", release: pipelinesv1alpha1.ReleaseComplete,
 			rollout: rolloutsv1alpha1.RolloutPhaseHealthy, repository: "source-primary", cluster: "delivery-primary",
+			pipeline: pipelinesv1alpha1.PipelineSucceeded,
 		}
 	case 1:
 		return fixtureState{
 			project: "commerce", sourceType: pipelinesv1alpha1.SourceTypeHelm,
 			application: pipelinesv1alpha1.ApplicationDegraded, health: pipelinesv1alpha1.HealthDegraded,
-			stage: "Degraded", release: pipelinesv1alpha1.ReleaseFailed,
+			stageName: "production", stagePhase: "Degraded", release: pipelinesv1alpha1.ReleaseFailed,
 			rollout: rolloutsv1alpha1.RolloutPhaseDegraded, repository: "source-unhealthy", cluster: "delivery-unhealthy",
+			pipeline: pipelinesv1alpha1.PipelineFailed,
 		}
 	case 2:
 		return fixtureState{
 			project: "fulfillment", sourceType: pipelinesv1alpha1.SourceTypeKustomize,
 			application: pipelinesv1alpha1.ApplicationHealthy, health: pipelinesv1alpha1.HealthHealthy,
-			driftCount: 3, stage: "Healthy", release: pipelinesv1alpha1.ReleaseComplete,
+			driftCount: 3, stageName: "production", stagePhase: "Healthy", release: pipelinesv1alpha1.ReleaseComplete,
 			rollout: rolloutsv1alpha1.RolloutPhaseHealthy, repository: "source-primary", cluster: "delivery-primary",
+			pipeline: pipelinesv1alpha1.PipelineSucceeded,
 		}
 	case 3:
 		return fixtureState{
 			project: "platform", sourceType: pipelinesv1alpha1.SourceTypeOCI,
 			application: pipelinesv1alpha1.ApplicationPromoting, health: pipelinesv1alpha1.HealthProgressing,
-			synced: true, stage: "Progressing", release: pipelinesv1alpha1.ReleasePromoting,
+			synced: true, stageName: "production", stagePhase: "Progressing", release: pipelinesv1alpha1.ReleasePromoting,
 			rollout: rolloutsv1alpha1.RolloutPhaseProgressing, repository: "source-primary", cluster: "delivery-primary",
+			pipeline: pipelinesv1alpha1.PipelineRunning,
 		}
-	default:
+	case 4:
 		return fixtureState{
 			project: "payments", sourceType: pipelinesv1alpha1.SourceTypeS3,
 			application: pipelinesv1alpha1.ApplicationPromoting, health: pipelinesv1alpha1.HealthProgressing,
-			synced: true, stage: "Pending", release: pipelinesv1alpha1.ReleaseAwaitingApproval,
+			synced: true, stageName: "production", stagePhase: "Pending", release: pipelinesv1alpha1.ReleaseAwaitingApproval,
 			rollout: rolloutsv1alpha1.RolloutPhasePaused, repository: "source-primary", cluster: "delivery-primary",
+			pipeline:      pipelinesv1alpha1.PipelineRunning,
 			blockedByGate: true,
+		}
+	case 5:
+		return fixtureState{
+			project: "security", sourceType: pipelinesv1alpha1.SourceTypeGit,
+			application: pipelinesv1alpha1.ApplicationFailed,
+			stageName:   "staging", stagePhase: "Failed", release: pipelinesv1alpha1.ReleaseFailed,
+			rollout: rolloutsv1alpha1.RolloutPhaseFailed, repository: "source-unhealthy", cluster: "delivery-unhealthy",
+			pipeline: pipelinesv1alpha1.PipelineFailed,
+		}
+	case 6:
+		return fixtureState{
+			project: "insights", sourceType: pipelinesv1alpha1.SourceTypeHelm,
+			application: pipelinesv1alpha1.ApplicationPending, health: pipelinesv1alpha1.HealthUnknown,
+			stageName: "development", stagePhase: "Pending", release: pipelinesv1alpha1.ReleasePending,
+			rollout: rolloutsv1alpha1.RolloutPhasePending, repository: "source-primary", cluster: "delivery-primary",
+			pipeline: pipelinesv1alpha1.PipelineRunning,
+		}
+	default:
+		return fixtureState{
+			project: "commerce", sourceType: pipelinesv1alpha1.SourceTypeKustomize,
+			application: pipelinesv1alpha1.ApplicationHealthy, health: pipelinesv1alpha1.HealthHealthy,
+			stageName: "qa", stagePhase: "Healthy", release: pipelinesv1alpha1.ReleaseComplete,
+			rollout: rolloutsv1alpha1.RolloutPhaseHealthy, repository: "source-primary", cluster: "delivery-primary",
+			pipeline: pipelinesv1alpha1.PipelineSucceeded, missing: true,
 		}
 	}
 }
@@ -197,6 +231,7 @@ func fixtureApplicationName(index int) string {
 func fixtureApplication(index int, namespace string, state *fixtureState) *pipelinesv1alpha1.Application {
 	name := fixtureApplicationName(index)
 	releaseName := name + "-release-v1"
+	repositoryURL := "https://example.invalid/" + state.project + "/" + name + ".git"
 	transitioned := metav1.NewTime(fixtureEpoch.Add(time.Duration(index) * time.Minute))
 	resources := fixtureResources(name, namespace, state)
 	application := &pipelinesv1alpha1.Application{
@@ -208,39 +243,37 @@ func fixtureApplication(index int, namespace string, state *fixtureState) *pipel
 			Namespace:         namespace,
 			Name:              name,
 			UID:               types.UID(fmt.Sprintf("fixture-application-%06d", index)),
+			Generation:        1,
 			CreationTimestamp: metav1.NewTime(fixtureEpoch.Add(-time.Duration(index+1) * time.Hour)),
+			Labels:            map[string]string{fixtureProjectLabel: state.project},
 		},
 		Spec: pipelinesv1alpha1.ApplicationSpec{
 			Project: state.project,
 			Source: pipelinesv1alpha1.ApplicationSource{
 				Type:     state.sourceType,
 				RepoRef:  state.repository,
-				RepoURL:  "https://example.invalid/" + state.project + "/" + name + ".git",
+				RepoURL:  repositoryURL,
 				Revision: "main",
 				Path:     "deploy",
 			},
-			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{{
-				Name: "production",
-				Ring: 3,
-				Cluster: pipelinesv1alpha1.ClusterRef{
-					Name: state.cluster,
-				},
-			}},
+			Build:      fixtureApplicationBuild(repositoryURL),
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{fixturePromotionStage(state)},
 			Strategy:   pipelinesv1alpha1.StrategyRolling,
 			SyncPolicy: pipelinesv1alpha1.SyncAuto,
 		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			ObservedGeneration: 1,
 			Phase:              state.application,
-			CurrentStage:       "production",
+			CurrentStage:       state.stageName,
 			Stages: []pipelinesv1alpha1.ApplicationStageStatus{{
-				Name: "production", Ring: 3, Phase: state.stage, Release: releaseName,
+				Name: state.stageName, Ring: 3, Phase: state.stagePhase, Release: releaseName,
 				Revision: fmt.Sprintf("fixture-%05d", index), UpdatedAt: &transitioned,
 			}},
 			Synced:         state.synced,
 			Revision:       fmt.Sprintf("fixture-%05d", index),
 			SourceRevision: fmt.Sprintf("fixture-%05d", index),
-			StageRefs:      []string{name + "-production"},
+			PipelineRef:    name + "-pipeline",
+			StageRefs:      []string{name + "-" + state.stageName},
 			ReleaseRef:     releaseName,
 			Health:         state.health,
 			Resources:      resources,
@@ -253,11 +286,41 @@ func fixtureApplication(index int, namespace string, state *fixtureState) *pipel
 	}
 	if state.blockedByGate {
 		application.Status.Gates = []pipelinesv1alpha1.GateStatus{{
-			Name: "production-approval", Stage: "production",
+			Name: state.stageName + "-approval", Stage: state.stageName,
 			Type: pipelinesv1alpha1.ApprovalGateTypeManual, Status: pipelinesv1alpha1.GateStatusPending,
 		}}
 	}
 	return application
+}
+
+func fixtureApplicationBuild(repositoryURL string) *pipelinesv1alpha1.ApplicationBuildSpec {
+	return &pipelinesv1alpha1.ApplicationBuildSpec{
+		MaxParallel: 1,
+		Sources: []pipelinesv1alpha1.Source{{
+			Type: "git", URL: repositoryURL,
+		}},
+		Steps: []pipelinesv1alpha1.ApplicationBuildStep{{
+			Name: "build", Image: "ghcr.io/paprikacd/fixture-builder:v1", Script: "build-fixture",
+		}},
+	}
+}
+
+func fixturePromotionStage(state *fixtureState) pipelinesv1alpha1.ApplicationPromotionStage {
+	stage := pipelinesv1alpha1.ApplicationPromotionStage{
+		Name: state.stageName,
+		Ring: 3,
+		Cluster: pipelinesv1alpha1.ClusterRef{
+			Name: state.cluster,
+		},
+		RolloutStrategy: &rolloutsv1alpha1.RolloutStrategy{Type: "Rolling"},
+	}
+	if state.blockedByGate {
+		stage.ApprovalGates = []pipelinesv1alpha1.ApprovalGate{{
+			Name: state.stageName + "-approval", Stage: state.stageName,
+			Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true,
+		}}
+	}
+	return stage
 }
 
 func fixtureResources(
@@ -265,7 +328,7 @@ func fixtureResources(
 	state *fixtureState,
 ) []pipelinesv1alpha1.ResourceSync {
 	status := "Synced"
-	if state.health == pipelinesv1alpha1.HealthDegraded {
+	if state.missing || state.health == pipelinesv1alpha1.HealthDegraded {
 		status = "Missing"
 	} else if state.driftCount > 0 {
 		status = "OutOfSync"
@@ -280,6 +343,66 @@ func fixtureResources(
 		)
 	}
 	return resources
+}
+
+func fixturePipeline(
+	application *pipelinesv1alpha1.Application,
+	state *fixtureState,
+) *pipelinesv1alpha1.Pipeline {
+	executedAt := application.Status.Conditions[0].LastTransitionTime
+	stepPhase := pipelinesv1alpha1.StepPending
+	switch state.pipeline {
+	case pipelinesv1alpha1.PipelineRunning:
+		stepPhase = pipelinesv1alpha1.StepRunning
+	case pipelinesv1alpha1.PipelineSucceeded:
+		stepPhase = pipelinesv1alpha1.StepSucceeded
+	case pipelinesv1alpha1.PipelineFailed:
+		stepPhase = pipelinesv1alpha1.StepFailed
+	case pipelinesv1alpha1.PipelineCancelled:
+		stepPhase = pipelinesv1alpha1.StepCancelled
+	}
+	return &pipelinesv1alpha1.Pipeline{
+		TypeMeta: metav1.TypeMeta{APIVersion: pipelinesv1alpha1.GroupVersion.String(), Kind: "Pipeline"},
+		ObjectMeta: fixtureChildMetadata(
+			application.Namespace,
+			application.Status.PipelineRef,
+			types.UID("fixture-pipeline-"+string(application.UID)),
+			application.Name,
+			application.Spec.Project,
+			application.CreationTimestamp,
+			controllerOwner("Application", application.Name, application.UID),
+		),
+		Spec: fixturePipelineSpec(application.Spec.Build),
+		Status: pipelinesv1alpha1.PipelineStatus{
+			ObservedGeneration: 1,
+			Phase:              state.pipeline,
+			StepStatuses: []pipelinesv1alpha1.StepStatus{{
+				Name: "build", Phase: stepPhase, StartedAt: &executedAt,
+			}},
+			LastExecutionTime: &executedAt,
+			LastExecutionID:   "fixture-" + string(application.UID),
+		},
+	}
+}
+
+func fixturePipelineSpec(build *pipelinesv1alpha1.ApplicationBuildSpec) pipelinesv1alpha1.PipelineSpec {
+	if build == nil {
+		return pipelinesv1alpha1.PipelineSpec{}
+	}
+	steps := make([]pipelinesv1alpha1.PipelineStep, 0, len(build.Steps))
+	for index := range build.Steps {
+		step := &build.Steps[index]
+		steps = append(steps, pipelinesv1alpha1.PipelineStep{
+			Name: step.Name, Image: step.Image, Script: step.Script,
+			Depends: append([]string(nil), step.Depends...), Timeout: step.Timeout, Retry: step.Retry,
+		})
+	}
+	return pipelinesv1alpha1.PipelineSpec{
+		MaxParallel: build.MaxParallel,
+		Sources:     append([]pipelinesv1alpha1.Source(nil), build.Sources...),
+		Steps:       steps,
+		Artifacts:   append([]pipelinesv1alpha1.PipelineOutput(nil), build.Artifacts...),
+	}
 }
 
 func conditionStatus(state *fixtureState) metav1.ConditionStatus {
@@ -299,19 +422,30 @@ func fixtureStage(
 	application *pipelinesv1alpha1.Application,
 	state *fixtureState,
 ) *pipelinesv1alpha1.Stage {
+	promotionStage := &application.Spec.Stages[0]
+	var rolloutStrategy *rolloutsv1alpha1.RolloutStrategy
+	if promotionStage.RolloutStrategy != nil {
+		copied := *promotionStage.RolloutStrategy
+		rolloutStrategy = &copied
+	}
 	return &pipelinesv1alpha1.Stage{
 		TypeMeta: metav1.TypeMeta{APIVersion: pipelinesv1alpha1.GroupVersion.String(), Kind: "Stage"},
 		ObjectMeta: fixtureChildMetadata(
 			application.Namespace,
-			application.Name+"-production",
+			application.Name+"-"+state.stageName,
 			types.UID("fixture-stage-"+string(application.UID)),
 			application.Name,
+			application.Spec.Project,
+			application.CreationTimestamp,
 			controllerOwner("Application", application.Name, application.UID),
 		),
 		Spec: pipelinesv1alpha1.StageSpec{
-			Name: "production", Ring: 3,
-			Cluster: pipelinesv1alpha1.ClusterRef{Name: state.cluster},
+			Name: state.stageName, Ring: 3, Templates: []string{application.Name + "-template"},
+			Cluster:         pipelinesv1alpha1.ClusterRef{Name: state.cluster},
+			ApprovalGates:   append([]pipelinesv1alpha1.ApprovalGate(nil), promotionStage.ApprovalGates...),
+			RolloutStrategy: rolloutStrategy,
 		},
+		Status: pipelinesv1alpha1.StageStatus{ObservedGeneration: 1},
 	}
 }
 
@@ -327,13 +461,18 @@ func fixtureRelease(
 			name,
 			types.UID("fixture-release-"+string(application.UID)),
 			application.Name,
+			application.Spec.Project,
+			application.CreationTimestamp,
 			controllerOwner("Application", application.Name, application.UID),
 		),
-		Spec: pipelinesv1alpha1.ReleaseSpec{Pipeline: "fixture", Target: "production"},
+		Spec: pipelinesv1alpha1.ReleaseSpec{
+			Pipeline: application.Status.PipelineRef,
+			Target:   application.Name + "-" + state.stageName,
+		},
 		Status: pipelinesv1alpha1.ReleaseStatus{
 			ObservedGeneration: 1,
 			Phase:              state.release,
-			CurrentStage:       "production",
+			CurrentStage:       application.Name + "-" + state.stageName,
 			RolloutRef:         application.Name + "-rollout-v1",
 		},
 	}
@@ -344,6 +483,7 @@ func fixtureRollout(
 	release *pipelinesv1alpha1.Release,
 	state *fixtureState,
 ) *rolloutsv1alpha1.Rollout {
+	strategy := *application.Spec.Stages[0].RolloutStrategy
 	return &rolloutsv1alpha1.Rollout{
 		TypeMeta: metav1.TypeMeta{APIVersion: rolloutsv1alpha1.GroupVersion.String(), Kind: "Rollout"},
 		ObjectMeta: fixtureChildMetadata(
@@ -351,11 +491,14 @@ func fixtureRollout(
 			application.Name+"-rollout-v1",
 			types.UID("fixture-rollout-"+string(application.UID)),
 			application.Name,
+			application.Spec.Project,
+			application.CreationTimestamp,
 			controllerOwner("Release", release.Name, release.UID),
 		),
 		Spec: rolloutsv1alpha1.RolloutSpec{
 			Target:   rolloutsv1alpha1.RolloutTarget{Kind: "Deployment", Name: application.Name},
-			Strategy: rolloutsv1alpha1.RolloutStrategy{Type: "Rolling"},
+			Strategy: strategy,
+			Paused:   state.rollout == rolloutsv1alpha1.RolloutPhasePaused,
 		},
 		Status: rolloutsv1alpha1.RolloutStatus{ObservedGeneration: 1, Phase: state.rollout},
 	}
@@ -365,13 +508,20 @@ func fixtureChildMetadata(
 	namespace, name string,
 	uid types.UID,
 	applicationName string,
+	project string,
+	createdAt metav1.Time,
 	owner *metav1.OwnerReference,
 ) metav1.ObjectMeta {
 	return metav1.ObjectMeta{
-		Namespace:       namespace,
-		Name:            name,
-		UID:             uid,
-		Labels:          map[string]string{fixtureApplicationLabel: applicationName},
+		Namespace:         namespace,
+		Name:              name,
+		UID:               uid,
+		Generation:        1,
+		CreationTimestamp: createdAt,
+		Labels: map[string]string{
+			fixtureApplicationLabel: applicationName,
+			fixtureProjectLabel:     project,
+		},
 		OwnerReferences: []metav1.OwnerReference{*owner},
 	}
 }
@@ -389,8 +539,12 @@ func controllerOwner(kind, name string, uid types.UID) *metav1.OwnerReference {
 
 func fixtureProject(key types.NamespacedName) *corev1alpha1.AppProject {
 	return &corev1alpha1.AppProject{
-		TypeMeta:   metav1.TypeMeta{APIVersion: corev1alpha1.GroupVersion.String(), Kind: "AppProject"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+		TypeMeta: metav1.TypeMeta{APIVersion: corev1alpha1.GroupVersion.String(), Kind: "AppProject"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: key.Namespace, Name: key.Name,
+			UID:        types.UID("fixture-project-" + key.Namespace + "-" + key.Name),
+			Generation: 1, CreationTimestamp: metav1.NewTime(fixtureEpoch),
+		},
 		Spec: corev1alpha1.AppProjectSpec{
 			Description:  "Deterministic fleet console fixture",
 			Repositories: []string{"source-primary", "source-unhealthy"},
@@ -412,8 +566,12 @@ func fixtureRepository(
 	connection corev1alpha1.ConnectionStatus,
 ) *corev1alpha1.Repository {
 	return &corev1alpha1.Repository{
-		TypeMeta:   metav1.TypeMeta{APIVersion: corev1alpha1.GroupVersion.String(), Kind: "Repository"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		TypeMeta: metav1.TypeMeta{APIVersion: corev1alpha1.GroupVersion.String(), Kind: "Repository"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace, Name: name,
+			UID:        types.UID("fixture-repository-" + namespace + "-" + name),
+			Generation: 1, CreationTimestamp: metav1.NewTime(fixtureEpoch),
+		},
 		Spec: corev1alpha1.RepositorySpec{
 			Type: corev1alpha1.RepositoryTypeGit,
 			URL:  "https://example.invalid/fixture/" + name + ".git",
@@ -429,8 +587,12 @@ func fixtureCluster(
 	phase clustersv1alpha1.ClusterPhase,
 ) *clustersv1alpha1.Cluster {
 	return &clustersv1alpha1.Cluster{
-		TypeMeta:   metav1.TypeMeta{APIVersion: clustersv1alpha1.GroupVersion.String(), Kind: "Cluster"},
-		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		TypeMeta: metav1.TypeMeta{APIVersion: clustersv1alpha1.GroupVersion.String(), Kind: "Cluster"},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace, Name: name,
+			UID:        types.UID("fixture-cluster-" + namespace + "-" + name),
+			Generation: 1, CreationTimestamp: metav1.NewTime(fixtureEpoch),
+		},
 		Spec: clustersv1alpha1.ClusterSpec{
 			DisplayName: displayName,
 			Mode:        clustersv1alpha1.ClusterModeDirect,

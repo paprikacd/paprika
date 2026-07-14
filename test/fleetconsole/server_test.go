@@ -220,7 +220,7 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 	assertFixtureHealth(t, httpClient, baseURL)
 
 	client := v1connect.NewPaprikaServiceClient(httpClient, baseURL)
-	assertRealFleetQueries(t, client)
+	assertRealFleetQueries(t, client, 24)
 	policies, err := client.ListPolicies(t.Context(), connect.NewRequest(&paprikav1.ListPoliciesRequest{}))
 	if err != nil {
 		t.Fatalf("ListPolicies: %v", err)
@@ -257,29 +257,43 @@ func assertFixtureHealth(t *testing.T, httpClient *http.Client, baseURL string) 
 	}
 }
 
-func assertRealFleetQueries(t *testing.T, client v1connect.PaprikaServiceClient) {
+type fixtureFleetQueryClient interface {
+	QueryApplications(context.Context, *connect.Request[paprikav1.QueryApplicationsRequest]) (*connect.Response[paprikav1.QueryApplicationsResponse], error)
+	QueryFleetMap(context.Context, *connect.Request[paprikav1.QueryFleetMapRequest]) (*connect.Response[paprikav1.QueryFleetMapResponse], error)
+	ListPipelines(context.Context, *connect.Request[paprikav1.ListPipelinesRequest]) (*connect.Response[paprikav1.ListPipelinesResponse], error)
+}
+
+func assertRealFleetQueries(t *testing.T, client fixtureFleetQueryClient, expectedApplications int) {
 	t.Helper()
 
-	all := queryAllApplications(t, client)
+	all := queryAllApplications(t, client, expectedApplications)
 	first := all.GetApplications()[0]
 	if first.GetIdentity().GetName() == "" || first.GetProject().GetName() == "" {
 		t.Fatalf("projected application lacks identity or project: %+v", first)
 	}
 	assertFleetSearch(t, client, all.GetTotal())
 	assertFleetProjectFilter(t, client, first, all.GetTotal())
+	assertCompleteFleetMap(t, client, all.GetApplications())
+	assertProjectLabelledPipelines(t, client, expectedApplications)
 }
 
-func queryAllApplications(t *testing.T, client v1connect.PaprikaServiceClient) *paprikav1.QueryApplicationsResponse {
+func queryAllApplications(
+	t *testing.T,
+	client fixtureFleetQueryClient,
+	expectedApplications int,
+) *paprikav1.QueryApplicationsResponse {
 	t.Helper()
 
 	all, err := client.QueryApplications(t.Context(), connect.NewRequest(&paprikav1.QueryApplicationsRequest{
-		PageSize: 100,
+		PageSize: 500,
 	}))
 	if err != nil {
 		t.Fatalf("QueryApplications: %v", err)
 	}
-	if all.Msg.GetTotal() != 24 || len(all.Msg.GetApplications()) != 24 {
-		t.Fatalf("unfiltered response = total %d, records %d; want 24, 24", all.Msg.GetTotal(), len(all.Msg.GetApplications()))
+	expectedTotal := uint64(expectedApplications) // #nosec G115 -- parseConfig bounds fixture counts to 100,000.
+	if all.Msg.GetTotal() != expectedTotal || len(all.Msg.GetApplications()) != expectedApplications {
+		t.Fatalf("unfiltered response = total %d, records %d; want %d, %d",
+			all.Msg.GetTotal(), len(all.Msg.GetApplications()), expectedApplications, expectedApplications)
 	}
 	if all.Msg.GetIndexGeneration() == 0 {
 		t.Fatal("real projected query returned zero index generation")
@@ -287,7 +301,268 @@ func queryAllApplications(t *testing.T, client v1connect.PaprikaServiceClient) *
 	return all.Msg
 }
 
-func assertFleetSearch(t *testing.T, client v1connect.PaprikaServiceClient, allTotal uint64) {
+//nolint:gocyclo // Keep the complete cross-RPC fixture oracle visible in one assertion helper.
+func assertCompleteFleetMap(
+	t *testing.T,
+	client fixtureFleetQueryClient,
+	applications []*paprikav1.ApplicationSummary,
+) {
+	t.Helper()
+	expectedApplications := len(applications)
+	expectedTotal := uint64(expectedApplications) // #nosec G115 -- QueryApplications is capped at 500 records.
+
+	response, err := client.QueryFleetMap(t.Context(), connect.NewRequest(&paprikav1.QueryFleetMapRequest{
+		Group: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE,
+	}))
+	if err != nil {
+		t.Fatalf("QueryFleetMap: %v", err)
+	}
+	if response.Msg.GetTotal() != expectedTotal {
+		t.Fatalf("QueryFleetMap total = %d, want %d", response.Msg.GetTotal(), expectedApplications)
+	}
+	if len(response.Msg.GetRoots()) != fixtureNamespaceCount {
+		t.Fatalf("namespace-grouped QueryFleetMap roots = %d, want %d", len(response.Msg.GetRoots()), fixtureNamespaceCount)
+	}
+	repeated, err := client.QueryFleetMap(t.Context(), connect.NewRequest(&paprikav1.QueryFleetMapRequest{
+		Group: paprikav1.FleetGroupDimension_FLEET_GROUP_DIMENSION_NAMESPACE,
+	}))
+	if err != nil {
+		t.Fatalf("repeat QueryFleetMap: %v", err)
+	}
+	if strings.Join(fixtureMapStableOrder(response.Msg.GetRoots()), "\n") !=
+		strings.Join(fixtureMapStableOrder(repeated.Msg.GetRoots()), "\n") {
+		t.Fatal("QueryFleetMap stable-ID order changed across identical reads")
+	}
+
+	leaves := flattenFixtureMapApplications(response.Msg.GetRoots())
+	if len(leaves) != expectedApplications {
+		t.Fatalf("QueryFleetMap application leaves = %d, want %d", len(leaves), expectedApplications)
+	}
+	stableIDs := make(map[string]struct{}, expectedApplications+fixtureNamespaceCount)
+	for _, node := range flattenFixtureMapNodes(response.Msg.GetRoots()) {
+		if node.GetStableId() == "" {
+			t.Fatalf("QueryFleetMap returned a %s node without a stable ID", node.GetKind())
+		}
+		if _, duplicate := stableIDs[node.GetStableId()]; duplicate {
+			t.Fatalf("QueryFleetMap returned duplicate stable ID %q", node.GetStableId())
+		}
+		stableIDs[node.GetStableId()] = struct{}{}
+	}
+	applicationIDs := make(map[string]struct{}, expectedApplications)
+	expectedApplicationIDs := make(map[string]struct{}, expectedApplications)
+	for _, application := range applications {
+		identity := application.GetIdentity().GetNamespace() + "/" + application.GetIdentity().GetName()
+		expectedApplicationIDs[identity] = struct{}{}
+	}
+	health := make(map[paprikav1.FleetHealth]struct{})
+	for _, leaf := range leaves {
+		identity := leaf.GetApplication().GetNamespace() + "/" + leaf.GetApplication().GetName()
+		if identity == "/" {
+			t.Fatalf("QueryFleetMap leaf %q lacks an Application identity", leaf.GetStableId())
+		}
+		if leaf.GetStableId() != "a:"+identity {
+			t.Fatalf("QueryFleetMap Application %q stable ID = %q, want %q", identity,
+				leaf.GetStableId(), "a:"+identity)
+		}
+		if _, duplicate := applicationIDs[identity]; duplicate {
+			t.Fatalf("QueryFleetMap returned Application %q more than once", identity)
+		}
+		applicationIDs[identity] = struct{}{}
+		if len(leaf.GetHealth()) != 1 || leaf.GetHealth()[0].GetCount() != 1 {
+			t.Fatalf("QueryFleetMap leaf %q health = %+v, want one count-1 bucket", leaf.GetStableId(), leaf.GetHealth())
+		}
+		health[leaf.GetHealth()[0].GetHealth()] = struct{}{}
+	}
+	if len(applicationIDs) != len(expectedApplicationIDs) {
+		t.Fatalf("QueryFleetMap identities = %d, QueryApplications identities = %d",
+			len(applicationIDs), len(expectedApplicationIDs))
+	}
+	for identity := range expectedApplicationIDs {
+		if _, ok := applicationIDs[identity]; !ok {
+			t.Errorf("QueryFleetMap omitted projected Application %q", identity)
+		}
+	}
+	for _, expected := range []paprikav1.FleetHealth{
+		paprikav1.FleetHealth_FLEET_HEALTH_HEALTHY,
+		paprikav1.FleetHealth_FLEET_HEALTH_PROGRESSING,
+		paprikav1.FleetHealth_FLEET_HEALTH_DEGRADED,
+		paprikav1.FleetHealth_FLEET_HEALTH_FAILED,
+		paprikav1.FleetHealth_FLEET_HEALTH_UNKNOWN,
+		paprikav1.FleetHealth_FLEET_HEALTH_MISSING,
+	} {
+		if _, ok := health[expected]; !ok {
+			t.Errorf("QueryFleetMap is missing health state %s", expected)
+		}
+	}
+}
+
+func flattenFixtureMapApplications(nodes []*paprikav1.FleetMapNode) []*paprikav1.FleetMapNode {
+	result := make([]*paprikav1.FleetMapNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node.GetKind() == paprikav1.FleetMapNodeKind_FLEET_MAP_NODE_KIND_APPLICATION {
+			result = append(result, node)
+		}
+		result = append(result, flattenFixtureMapApplications(node.GetChildren())...)
+	}
+	return result
+}
+
+func flattenFixtureMapNodes(nodes []*paprikav1.FleetMapNode) []*paprikav1.FleetMapNode {
+	result := make([]*paprikav1.FleetMapNode, 0, len(nodes))
+	for _, node := range nodes {
+		result = append(result, node)
+		result = append(result, flattenFixtureMapNodes(node.GetChildren())...)
+	}
+	return result
+}
+
+func fixtureMapStableOrder(nodes []*paprikav1.FleetMapNode) []string {
+	all := flattenFixtureMapNodes(nodes)
+	result := make([]string, 0, len(all))
+	for _, node := range all {
+		result = append(result, node.GetStableId())
+	}
+	return result
+}
+
+func assertProjectLabelledPipelines(
+	t *testing.T,
+	client fixtureFleetQueryClient,
+	expectedApplications int,
+) {
+	t.Helper()
+
+	first, err := client.ListPipelines(t.Context(), connect.NewRequest(&paprikav1.ListPipelinesRequest{}))
+	if err != nil {
+		t.Fatalf("ListPipelines: %v", err)
+	}
+	second, err := client.ListPipelines(t.Context(), connect.NewRequest(&paprikav1.ListPipelinesRequest{}))
+	if err != nil {
+		t.Fatalf("repeat ListPipelines: %v", err)
+	}
+	if len(first.Msg.GetPipelines()) != expectedApplications {
+		t.Fatalf("ListPipelines returned %d records, want %d", len(first.Msg.GetPipelines()), expectedApplications)
+	}
+	if pipelineResponseOrder(first.Msg.GetPipelines()) == nil ||
+		strings.Join(pipelineResponseOrder(first.Msg.GetPipelines()), "\n") !=
+			strings.Join(pipelineResponseOrder(second.Msg.GetPipelines()), "\n") {
+		t.Fatal("ListPipelines order is not deterministic across identical reads")
+	}
+	for _, pipeline := range first.Msg.GetPipelines() {
+		if pipeline.GetProject() == "" {
+			t.Fatalf("Pipeline %s/%s omitted app.paprika.io/project", pipeline.GetNamespace(), pipeline.GetName())
+		}
+	}
+
+	selected := pipelineInMixedProjectNamespace(first.Msg.GetPipelines())
+	if selected == nil {
+		t.Fatal("fixture has no namespace containing at least two Pipeline projects")
+	}
+	namespace := selected.GetNamespace()
+	project := selected.GetProject()
+	if projects := pipelineProjectsInNamespace(first.Msg.GetPipelines(), namespace); len(projects) < 2 {
+		t.Fatalf("Pipeline scope oracle chose namespace %q with only projects %v; it cannot prove project filtering", namespace, projects)
+	}
+
+	namespaceOnly, err := client.ListPipelines(t.Context(), connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Namespace: &namespace,
+	}))
+	if err != nil {
+		t.Fatalf("namespace-only ListPipelines: %v", err)
+	}
+	projectOnly, err := client.ListPipelines(t.Context(), connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Project: project,
+	}))
+	if err != nil {
+		t.Fatalf("project-only ListPipelines: %v", err)
+	}
+	intersection, err := client.ListPipelines(t.Context(), connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Namespace: &namespace,
+		Project:   project,
+	}))
+	if err != nil {
+		t.Fatalf("intersection ListPipelines: %v", err)
+	}
+
+	assertPipelineResponseMatches(t, namespaceOnly.Msg.GetPipelines(), first.Msg.GetPipelines(), namespace, "")
+	assertPipelineResponseMatches(t, projectOnly.Msg.GetPipelines(), first.Msg.GetPipelines(), "", project)
+	assertPipelineResponseMatches(t, intersection.Msg.GetPipelines(), first.Msg.GetPipelines(), namespace, project)
+	if len(namespaceOnly.Msg.GetPipelines()) >= expectedApplications || len(projectOnly.Msg.GetPipelines()) >= expectedApplications {
+		t.Fatalf("single-dimension Pipeline scopes did not narrow all=%d namespace=%d project=%d",
+			expectedApplications, len(namespaceOnly.Msg.GetPipelines()), len(projectOnly.Msg.GetPipelines()))
+	}
+	if len(intersection.Msg.GetPipelines()) == 0 ||
+		len(intersection.Msg.GetPipelines()) >= len(namespaceOnly.Msg.GetPipelines()) ||
+		len(intersection.Msg.GetPipelines()) >= len(projectOnly.Msg.GetPipelines()) {
+		t.Fatalf("Pipeline intersection does not prove both dimensions: namespace=%d project=%d intersection=%d",
+			len(namespaceOnly.Msg.GetPipelines()), len(projectOnly.Msg.GetPipelines()), len(intersection.Msg.GetPipelines()))
+	}
+}
+
+func pipelineInMixedProjectNamespace(pipelines []*paprikav1.Pipeline) *paprikav1.Pipeline {
+	projectsByNamespace := make(map[string]map[string]struct{})
+	for _, pipeline := range pipelines {
+		projects := projectsByNamespace[pipeline.GetNamespace()]
+		if projects == nil {
+			projects = make(map[string]struct{})
+			projectsByNamespace[pipeline.GetNamespace()] = projects
+		}
+		projects[pipeline.GetProject()] = struct{}{}
+	}
+	for _, pipeline := range pipelines {
+		if len(projectsByNamespace[pipeline.GetNamespace()]) >= 2 {
+			return pipeline
+		}
+	}
+	return nil
+}
+
+func pipelineProjectsInNamespace(pipelines []*paprikav1.Pipeline, namespace string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, pipeline := range pipelines {
+		if pipeline.GetNamespace() == namespace {
+			result[pipeline.GetProject()] = struct{}{}
+		}
+	}
+	return result
+}
+
+func assertPipelineResponseMatches(
+	t *testing.T,
+	actual, all []*paprikav1.Pipeline,
+	namespace, project string,
+) {
+	t.Helper()
+	expected := make(map[string]struct{})
+	for _, pipeline := range all {
+		if namespace != "" && pipeline.GetNamespace() != namespace {
+			continue
+		}
+		if project != "" && pipeline.GetProject() != project {
+			continue
+		}
+		expected[pipeline.GetNamespace()+"/"+pipeline.GetName()] = struct{}{}
+	}
+	if len(actual) != len(expected) {
+		t.Fatalf("ListPipelines scope namespace=%q project=%q returned %d, want %d", namespace, project, len(actual), len(expected))
+	}
+	for _, pipeline := range actual {
+		identity := pipeline.GetNamespace() + "/" + pipeline.GetName()
+		if _, ok := expected[identity]; !ok {
+			t.Fatalf("ListPipelines scope namespace=%q project=%q returned unexpected %s", namespace, project, identity)
+		}
+	}
+}
+
+func pipelineResponseOrder(pipelines []*paprikav1.Pipeline) []string {
+	result := make([]string, 0, len(pipelines))
+	for _, pipeline := range pipelines {
+		result = append(result, pipeline.GetNamespace()+"/"+pipeline.GetName()+":"+pipeline.GetProject())
+	}
+	return result
+}
+
+func assertFleetSearch(t *testing.T, client fixtureFleetQueryClient, allTotal uint64) {
 	t.Helper()
 
 	const searchIdentity = "checkout-service"
@@ -320,7 +595,7 @@ func assertFleetSearch(t *testing.T, client v1connect.PaprikaServiceClient, allT
 
 func assertFleetProjectFilter(
 	t *testing.T,
-	client v1connect.PaprikaServiceClient,
+	client fixtureFleetQueryClient,
 	first *paprikav1.ApplicationSummary,
 	allTotal uint64,
 ) {
