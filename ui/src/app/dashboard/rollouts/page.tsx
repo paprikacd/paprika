@@ -88,8 +88,15 @@ function RolloutsList() {
     }),
     [state.clusters, state.namespaces, state.projects, state.stages],
   );
+  const scopeKey = useMemo(
+    () => JSON.stringify([scope.projects, scope.clusters, scope.stages, scope.namespaces]),
+    [scope],
+  );
 
-  const [rollouts, setRollouts] = useState<Rollout[]>([]);
+  const [rolloutData, setRolloutData] = useState<{
+    scopeKey: string;
+    items: Rollout[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<Record<string, string>>({});
@@ -97,66 +104,83 @@ function RolloutsList() {
   const activeController = useRef<AbortController | null>(null);
   const actionRefreshTimers = useRef(new Set<number>());
   const actionRefreshMounted = useRef(false);
+  const rollouts = useMemo(
+    () => (rolloutData?.scopeKey === scopeKey ? rolloutData.items : []),
+    [rolloutData, scopeKey],
+  );
+  const scopedLoading = loading || rolloutData?.scopeKey !== scopeKey;
 
   const fetchData = useCallback(async () => {
     activeController.current?.abort();
     const controller = new AbortController();
     activeController.current = controller;
     const generation = ++requestGeneration.current;
+    const requestScopeKey = scopeKey;
     setLoading(true);
     setError(null);
     try {
       const namespaceRequests = planNamespaceRequests(scope.namespaces);
-      const [rolloutResponses, releaseResponses, mapResponse] = await Promise.all([
-        Promise.all(
-          namespaceRequests.map((request) =>
-            client.listRollouts(request, { signal: controller.signal }),
+      const rolloutResponsesPromise = Promise.all(
+        namespaceRequests.map((request) =>
+          client.listRollouts(request, { signal: controller.signal }),
+        ),
+      );
+      let nextRollouts: Rollout[];
+      if (requiresApplicationAssociation(scope)) {
+        const [rolloutResponses, releaseResponses, mapResponse] = await Promise.all([
+          rolloutResponsesPromise,
+          Promise.all(
+            namespaceRequests.map((request) =>
+              client.listReleases(request, { signal: controller.signal }),
+            ),
           ),
-        ),
-        Promise.all(
-          namespaceRequests.map((request) =>
-            client.listReleases(request, { signal: controller.signal }),
+          client.queryFleetMap(
+            {
+              filter: fleetScopeFilter(scope),
+              search: "",
+              group: FleetGroupDimension.PROJECT,
+              sizeMetric: FleetSizeMetric.RESOURCE_COUNT,
+            },
+            { signal: controller.signal },
           ),
-        ),
-        client.queryFleetMap(
-          {
-            filter: fleetScopeFilter(scope),
-            search: "",
-            group: FleetGroupDimension.PROJECT,
-            sizeMetric: FleetSizeMetric.RESOURCE_COUNT,
-          },
-          { signal: controller.signal },
-        ),
-      ]);
-      if (controller.signal.aborted || generation !== requestGeneration.current) return;
-
-      const mergedRollouts = mergeRollouts(
-        rolloutResponses.map((response) => response.rollouts ?? []),
-      );
-      const releases: Release[] = releaseResponses.flatMap(
-        (response) => response.releases ?? [],
-      );
-      const applications = flattenMapApplicationAssociations(mapResponse.roots ?? []);
-      if (BigInt(applications.length) !== mapResponse.total) {
-        throw new Error("Fleet map did not contain every Application leaf");
-      }
-      const associations = buildRolloutApplicationAssociations(
-        mergedRollouts,
-        releases,
-        applications,
-      );
-      setRollouts(
-        mergedRollouts.filter((rollout) =>
+        ]);
+        const mergedRollouts = mergeRollouts(
+          rolloutResponses.map((response) => response.rollouts ?? []),
+        );
+        const releases: Release[] = releaseResponses.flatMap(
+          (response) => response.releases ?? [],
+        );
+        const applications = flattenMapApplicationAssociations(mapResponse.roots ?? []);
+        if (BigInt(applications.length) !== mapResponse.total) {
+          throw new Error("Fleet map did not contain every Application leaf");
+        }
+        const associations = buildRolloutApplicationAssociations(
+          mergedRollouts,
+          releases,
+          applications,
+        );
+        nextRollouts = mergedRollouts.filter((rollout) =>
           rolloutMatchesFleetScope(
             rollout,
             associations.get(resourceKey(rollout.namespace, rollout.name)),
             scope,
           ),
-        ),
-      );
+        );
+      } else {
+        const rolloutResponses = await rolloutResponsesPromise;
+        nextRollouts = mergeRollouts(
+          rolloutResponses.map((response) => response.rollouts ?? []),
+        );
+      }
+      if (controller.signal.aborted || generation !== requestGeneration.current) return;
+      setRolloutData({ scopeKey: requestScopeKey, items: nextRollouts });
     } catch (err) {
       if (controller.signal.aborted || generation !== requestGeneration.current) return;
-      setRollouts([]);
+      setRolloutData((current) =>
+        current?.scopeKey === requestScopeKey
+          ? current
+          : { scopeKey: requestScopeKey, items: [] },
+      );
       setError("Failed to load rollouts");
       console.error(err);
     } finally {
@@ -164,7 +188,7 @@ function RolloutsList() {
         setLoading(false);
       }
     }
-  }, [scope]);
+  }, [scope, scopeKey]);
 
   const currentFetchData = useRef(fetchData);
   useEffect(() => {
@@ -261,8 +285,8 @@ function RolloutsList() {
             Advanced deployment strategies across namespaces
           </p>
         </div>
-        <Button variant="outline" onClick={fetchData} disabled={loading}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        <Button variant="outline" onClick={fetchData} disabled={scopedLoading}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${scopedLoading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -294,7 +318,7 @@ function RolloutsList() {
         </Card>
       </div>
 
-      {loading && rollouts.length === 0 ? (
+      {scopedLoading && rollouts.length === 0 ? (
         <div className="space-y-4">
           <SkeletonCard />
           <SkeletonCard />
@@ -408,6 +432,10 @@ function fleetScopeFilter(scope: FleetScope): FleetFilter {
     stages: [...scope.stages],
     namespaces: [...scope.namespaces],
   });
+}
+
+function requiresApplicationAssociation(scope: FleetScope): boolean {
+  return scope.projects.length > 0 || scope.clusters.length > 0 || scope.stages.length > 0;
 }
 
 function mergeRollouts(responses: readonly (readonly Rollout[])[]): Rollout[] {

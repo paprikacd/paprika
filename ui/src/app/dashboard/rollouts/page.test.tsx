@@ -39,6 +39,16 @@ vi.mock("@/lib/fleet-scope-context", () => ({
 
 import RolloutsPage from "./page"
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 function applicationLeaf(
   namespace: string,
   name: string,
@@ -71,7 +81,7 @@ describe("RolloutsPage fleet scope", () => {
     fleetState.value = { projects: [], clusters: [], stages: [], namespaces: [] }
     mockClient.listRollouts.mockResolvedValue({ rollouts: [] })
     mockClient.listReleases.mockResolvedValue({ releases: [] })
-    mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: 0n })
+    mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: BigInt(0) })
     mockClient.promoteRollout.mockResolvedValue({})
     mockClient.abortRollout.mockResolvedValue({})
   })
@@ -135,11 +145,11 @@ describe("RolloutsPage fleet scope", () => {
         new FleetMapNode({
           stableId: "group:applications",
           kind: FleetMapNodeKind.GROUP,
-          applicationCount: 125n,
+          applicationCount: BigInt(125),
           children: leaves,
         }),
       ],
-      total: 125n,
+      total: BigInt(125),
     })
 
     render(<RolloutsPage />)
@@ -190,6 +200,112 @@ describe("RolloutsPage fleet scope", () => {
     expect(screen.queryByText("partial")).not.toBeInTheDocument()
   })
 
+  it.each([
+    { label: "default", namespaces: [] as string[], requests: [{}] },
+    {
+      label: "Namespace-only",
+      namespaces: ["apps"],
+      requests: [{ namespace: "apps" }],
+    },
+  ])(
+    "loads $label Rollouts without Release or fleet-map association requests",
+    async ({ namespaces, requests }) => {
+      fleetState.value = { projects: [], clusters: [], stages: [], namespaces }
+      mockClient.listRollouts.mockResolvedValue({
+        rollouts: [
+          new Rollout({
+            namespace: namespaces[0] ?? "apps",
+            name: "deploy",
+            phase: "Progressing",
+          }),
+        ],
+      })
+
+      render(<RolloutsPage />)
+
+      expect(await screen.findByText("deploy")).toBeInTheDocument()
+      expect(mockClient.listRollouts.mock.calls.map(([request]) => request)).toEqual(requests)
+      expect(mockClient.listReleases).not.toHaveBeenCalled()
+      expect(mockClient.queryFleetMap).not.toHaveBeenCalled()
+    },
+  )
+
+  it("hides previous-scope rows and actions while the next scope is unresolved", async () => {
+    navigation.query = "namespace=apps"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["apps"] }
+    const nextScope = deferred<{ rollouts: Rollout[] }>()
+    mockClient.listRollouts.mockImplementation(({ namespace }: { namespace?: string }) =>
+      namespace === "apps"
+        ? Promise.resolve({
+            rollouts: [
+              new Rollout({ namespace: "apps", name: "apps-deploy", phase: "Progressing" }),
+            ],
+          })
+        : nextScope.promise,
+    )
+
+    const { rerender } = render(<RolloutsPage />)
+    expect(await screen.findByText("apps-deploy")).toBeInTheDocument()
+
+    navigation.query = "namespace=other"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["other"] }
+    rerender(<RolloutsPage />)
+
+    expect(screen.queryByText("apps-deploy")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Promote" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Abort" })).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(mockClient.listRollouts).toHaveBeenCalledWith(
+        { namespace: "other" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    )
+
+    nextScope.resolve({
+      rollouts: [
+        new Rollout({ namespace: "other", name: "other-deploy", phase: "Progressing" }),
+      ],
+    })
+    expect(await screen.findByText("other-deploy")).toBeInTheDocument()
+  })
+
+  it("does not restore previous-scope rows when the next scope fails", async () => {
+    navigation.query = "namespace=apps"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["apps"] }
+    const nextScope = deferred<{ rollouts: Rollout[] }>()
+    mockClient.listRollouts.mockImplementation(({ namespace }: { namespace?: string }) =>
+      namespace === "apps"
+        ? Promise.resolve({
+            rollouts: [
+              new Rollout({ namespace: "apps", name: "apps-deploy", phase: "Progressing" }),
+            ],
+          })
+        : nextScope.promise,
+    )
+
+    const { rerender } = render(<RolloutsPage />)
+    expect(await screen.findByText("apps-deploy")).toBeInTheDocument()
+
+    navigation.query = "namespace=other"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["other"] }
+    rerender(<RolloutsPage />)
+    await waitFor(() =>
+      expect(mockClient.listRollouts).toHaveBeenCalledWith(
+        { namespace: "other" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    )
+    await act(async () => {
+      nextScope.reject(new Error("other unavailable"))
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByText("Failed to load rollouts")).toBeInTheDocument()
+    expect(screen.queryByText("apps-deploy")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Promote" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Abort" })).not.toBeInTheDocument()
+  })
+
   it("keys action progress by exact namespace/name", async () => {
     fleetState.value = { projects: [], clusters: [], stages: [], namespaces: [] }
     mockClient.listRollouts.mockResolvedValue({
@@ -199,7 +315,7 @@ describe("RolloutsPage fleet scope", () => {
       ],
     })
     mockClient.listReleases.mockResolvedValue({ releases: [] })
-    mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: 0n })
+    mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: BigInt(0) })
     let resolvePromote!: () => void
     mockClient.promoteRollout.mockReturnValue(
       new Promise<void>((resolve) => {

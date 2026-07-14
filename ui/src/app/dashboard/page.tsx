@@ -168,10 +168,24 @@ function mergeScopedRollouts(responses: readonly (readonly Rollout[])[]): Rollou
   return rollouts
 }
 
+function requiresApplicationAssociation(scope: FleetScope): boolean {
+  return scope.projects.length > 0 || scope.clusters.length > 0 || scope.stages.length > 0
+}
+
 async function loadScopedRollouts(scope: FleetScope, signal: AbortSignal): Promise<Rollout[]> {
   const requests = namespaceListRequests(scope.namespaces)
+  const rolloutResponsesPromise = Promise.all(
+    requests.map((request) => client.listRollouts(request, { signal })),
+  )
+  if (!requiresApplicationAssociation(scope)) {
+    const rolloutResponses = await rolloutResponsesPromise
+    return mergeScopedRollouts(
+      rolloutResponses.map((response) => response.rollouts ?? []),
+    )
+  }
+
   const [rolloutResponses, releaseResponses, mapResponse] = await Promise.all([
-    Promise.all(requests.map((request) => client.listRollouts(request, { signal }))),
+    rolloutResponsesPromise,
     Promise.all(requests.map((request) => client.listReleases(request, { signal }))),
     client.queryFleetMap(
       {
@@ -200,6 +214,11 @@ async function loadScopedRollouts(scope: FleetScope, signal: AbortSignal): Promi
       scope,
     ),
   )
+}
+
+type ScopedCollection<T> = {
+  scopeKey: string
+  items: T[]
 }
 
 const StatCard = memo(function StatCard({
@@ -341,21 +360,26 @@ function DashboardContent() {
   )
   const fleet = useFleetData(overviewFleetState)
   const refreshFleet = fleet.refresh
-  const [pipelines, setPipelines] = useState<Pipeline[]>([])
+  const [pipelineData, setPipelineData] = useState<ScopedCollection<Pipeline> | null>(null)
   const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
-  const [rollouts, setRollouts] = useState<Rollout[]>([])
+  const [rolloutData, setRolloutData] = useState<ScopedCollection<Rollout> | null>(null)
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const requestGeneration = useRef(0)
   const activeController = useRef<AbortController | null>(null)
   const { reportRequestOutcome } = useConnection()
+  const pipelines = pipelineData?.scopeKey === scopeKey ? pipelineData.items : []
+  const rollouts = rolloutData?.scopeKey === scopeKey ? rolloutData.items : []
+  const operationalLoading =
+    loading || pipelineData?.scopeKey !== scopeKey || rolloutData?.scopeKey !== scopeKey
 
   const fetchData = useCallback(async () => {
     activeController.current?.abort()
     const controller = new AbortController()
     activeController.current = controller
     const generation = ++requestGeneration.current
+    const requestScopeKey = scopeKey
     setErrors({})
     const pipelineRequests = planPipelineScopeRequests(sharedScope)
     const [pr, asr, por, ror] = await Promise.allSettled([
@@ -375,9 +399,14 @@ function DashboardContent() {
     const next: Record<string, string> = {}
 
     if (pr.status === "fulfilled") {
-      setPipelines([...pr.value])
+      setPipelineData({ scopeKey: requestScopeKey, items: [...pr.value] })
       anySuccess = true
     } else {
+      setPipelineData((current) =>
+        current?.scopeKey === requestScopeKey
+          ? current
+          : { scopeKey: requestScopeKey, items: [] },
+      )
       next.pipelines = pr.reason?.message ?? "Failed to load pipelines"
     }
 
@@ -396,16 +425,21 @@ function DashboardContent() {
     }
 
     if (ror.status === "fulfilled") {
-      setRollouts(ror.value)
+      setRolloutData({ scopeKey: requestScopeKey, items: ror.value })
       anySuccess = true
     } else {
+      setRolloutData((current) =>
+        current?.scopeKey === requestScopeKey
+          ? current
+          : { scopeKey: requestScopeKey, items: [] },
+      )
       next.rollouts = ror.reason?.message ?? "Failed to load rollouts"
     }
 
     setErrors(next)
     setLoading(false)
     if (!anySuccess) throw new Error("dashboard refresh failed")
-  }, [sharedScope])
+  }, [scopeKey, sharedScope])
 
   const performDashboardRefresh = useCallback(async () => {
     await Promise.all([fetchData(), refreshFleet()])
@@ -518,10 +552,15 @@ function DashboardContent() {
             rollouts={rollouts}
             applicationSets={applicationSets}
             policies={policies}
-            loading={loading}
+            loading={operationalLoading}
             searchReleases={searchReleases}
             releaseQuery={rawQuery}
           />
+          {errors.rollouts && (
+            <div className="mt-3">
+              <SectionError message={errors.rollouts} onRetry={manualRefresh} />
+            </div>
+          )}
         </motion.div>
 
         <motion.div
@@ -529,12 +568,12 @@ function DashboardContent() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.05, ease: [0.22, 1, 0.36, 1] }}
           className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
-          <StatCard icon={GitBranch} label="Pipelines" value={pipelines.length} loading={loading} />
-          <StatCard icon={ListChecks} label="Running" value={runningCount} loading={loading} />
-          <StatCard icon={Layers} label="Succeeded" value={succeededCount} loading={loading} />
-          <StatCard icon={Activity} label="Failed" value={failedCount} loading={loading} />
+          <StatCard icon={GitBranch} label="Pipelines" value={pipelines.length} loading={operationalLoading} />
+          <StatCard icon={ListChecks} label="Running" value={runningCount} loading={operationalLoading} />
+          <StatCard icon={Layers} label="Succeeded" value={succeededCount} loading={operationalLoading} />
+          <StatCard icon={Activity} label="Failed" value={failedCount} loading={operationalLoading} />
           <StatCard icon={Rocket} label="Applications" value={appCount} loading={loading} />
-          <StatCard icon={Activity} label="Rollouts" value={`${activeRolloutCount}/${rollouts.length}`} loading={loading} />
+          <StatCard icon={Activity} label="Rollouts" value={`${activeRolloutCount}/${rollouts.length}`} loading={operationalLoading} />
           <StatCard icon={FolderTree} label="App Sets" value={applicationSets.length} loading={loading} />
         </motion.div>
 
@@ -555,12 +594,12 @@ function DashboardContent() {
           </div>
           {errors.pipelines && <SectionError message={errors.pipelines} onRetry={manualRefresh} />}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {loading
+            {operationalLoading
               ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
               : pipelines.map((p) => (
                   <PipelineCard key={`${p.namespace}/${p.name}`} pipeline={p} query={rawQuery} />
                 ))}
-            {!loading && pipelines.length === 0 && !errors.pipelines && (
+            {!operationalLoading && pipelines.length === 0 && !errors.pipelines && (
               <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
                 <div className="flex size-10 items-center justify-center rounded-full bg-muted">
                   <GitBranch className="size-4 text-muted-foreground" aria-hidden="true" />
