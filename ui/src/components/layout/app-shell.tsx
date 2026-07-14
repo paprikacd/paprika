@@ -1,6 +1,9 @@
 import { Suspense, type ReactNode } from "react"
 
-import { ScopeBar } from "@/components/layout/scope-bar"
+import {
+  ScopeBar,
+  ScopeBarFallback,
+} from "@/components/layout/scope-bar"
 import { Sidebar } from "@/components/layout/sidebar"
 import { FleetScopeProvider } from "@/lib/fleet-scope-context"
 
@@ -34,7 +37,7 @@ function AppShellFrame({ children }: { children: ReactNode }) {
 function FleetShellFallback() {
   return (
     <>
-      <ScopeBar />
+      <ScopeBarFallback />
       <DashboardMain>
         <div
           aria-busy="true"

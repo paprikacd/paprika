@@ -160,6 +160,116 @@ describe("AppShell navigation", () => {
     ).toHaveLength(1)
   })
 
+  it("renders interactive scope controls in order and clears only fleet scope", async () => {
+    const user = userEvent.setup()
+    navigation.query =
+      "project=team%2Fpayments&cluster=platform%2Fprod&stage=production" +
+      "&namespace=apps&page=4&selected=apps%2Fcheckout&unknown=kept"
+    fleetRpc.queryFleetMap.mockResolvedValue({
+      roots: [],
+      total: BigInt(0),
+      indexGeneration: BigInt(1),
+      facets: [
+        {
+          dimension: "project",
+          object: { namespace: "team", name: "payments" },
+          label: "Payments",
+          count: BigInt(12),
+        },
+        {
+          dimension: "cluster",
+          object: { namespace: "platform", name: "prod" },
+          label: "Production",
+          count: BigInt(9),
+        },
+        {
+          dimension: "stage",
+          value: "production",
+          label: "Production",
+          count: BigInt(9),
+        },
+        {
+          dimension: "namespace",
+          value: "apps",
+          label: "apps",
+          count: BigInt(7),
+        },
+      ],
+    })
+
+    const { container } = renderShell(<AppShell>Fleet content</AppShell>)
+    const scope = screen.getByRole("region", { name: "Current fleet scope" })
+    await waitFor(() =>
+      expect(
+        within(scope).getByRole("button", {
+          name: "Projects, Payments, 1 result",
+        }),
+      ).toBeInTheDocument(),
+    )
+
+    const controlNames = within(scope)
+      .getAllByRole("button")
+      .slice(0, 4)
+      .map((button) => button.getAttribute("aria-label"))
+    expect(controlNames).toEqual([
+      "Projects, Payments, 1 result",
+      "Clusters, Production, 1 result",
+      "Stages, Production, 1 result",
+      "Namespaces, apps, 1 result",
+    ])
+    expect(
+      container.querySelector("[data-fleet-scope-scroll]"),
+    ).toHaveClass("overflow-x-auto", "overscroll-x-contain")
+    expect(
+      container.querySelector("[data-fleet-scope-controls]"),
+    ).toHaveClass("min-w-max")
+
+    await user.click(
+      within(scope).getByRole("button", { name: "Clear fleet scope" }),
+    )
+    expect(navigation.replace).toHaveBeenCalledWith(
+      "/dashboard?unknown=kept",
+      { scroll: false },
+    )
+  })
+
+  it("surfaces an ambiguous legacy detail URL instead of making scope controls look inert", async () => {
+    const user = userEvent.setup()
+    navigation.pathname = "/dashboard/application"
+    navigation.query =
+      "namespace=apps&namespace=platform&name=checkout&unknown=kept"
+    fleetRpc.queryFleetMap.mockResolvedValue({
+      roots: [],
+      total: BigInt(0),
+      indexGeneration: BigInt(1),
+      facets: [
+        {
+          dimension: "namespace",
+          value: "apps",
+          label: "apps",
+          count: BigInt(1),
+        },
+        {
+          dimension: "namespace",
+          value: "platform",
+          label: "platform",
+          count: BigInt(1),
+        },
+      ],
+    })
+    renderShell(<AppShell>Application detail</AppShell>)
+
+    const scope = screen.getByRole("region", { name: "Current fleet scope" })
+    await user.click(
+      within(scope).getByRole("button", { name: "Clear fleet scope" }),
+    )
+
+    expect(navigation.replace).not.toHaveBeenCalled()
+    expect(within(scope).getByRole("alert")).toHaveTextContent(
+      "This legacy detail URL has multiple namespaces. Open a canonical detail link before changing fleet scope.",
+    )
+  })
+
   it("keeps the navigable dashboard shell visible while fleet scope suspends", () => {
     navigation.suspendSearchParams = true
 
@@ -175,9 +285,15 @@ describe("AppShell navigation", () => {
       "href",
       "/dashboard",
     )
-    expect(
-      screen.getByRole("region", { name: "Current fleet scope" }),
-    ).toHaveTextContent("All projects")
+    const scopeFallback = screen.getByRole("region", {
+      name: "Current fleet scope",
+    })
+    expect(scopeFallback).toHaveAttribute("aria-busy", "true")
+    expect(scopeFallback).toHaveTextContent("All projects")
+    expect(scopeFallback).toHaveTextContent("All clusters")
+    expect(scopeFallback).toHaveTextContent("All stages")
+    expect(scopeFallback).toHaveTextContent("All namespaces")
+    expect(within(scopeFallback).queryByRole("button")).not.toBeInTheDocument()
     expect(screen.getByRole("main")).toHaveAttribute("id", "dashboard-main")
     expect(screen.getByRole("status")).toHaveTextContent(
       "Loading fleet scope…",
