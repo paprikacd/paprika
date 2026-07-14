@@ -90,6 +90,7 @@ function ScopeProbe() {
             data-testid={`facet-${facet.dimension}-${facet.id}`}
             data-selected={facet.selected}
             data-availability={facet.availability}
+            data-count={facet.count?.toString()}
           >
             {facet.label}
           </li>
@@ -130,6 +131,15 @@ function ScopeProbe() {
         }}
       >
         Apply rapid query and scope patches
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          fleetScope.patchScope({ namespaces: ["replacement"] })
+          fleetScope.patchQuery({ q: "payments" })
+        }}
+      >
+        Apply rapid scope and query patches
       </button>
       <button
         type="button"
@@ -251,6 +261,52 @@ describe("FleetScopeProvider", () => {
     expect(screen.getByTestId("facet-project-team/platform")).toHaveAttribute(
       "data-availability",
       "available",
+    )
+  })
+
+  it("publishes optimistic scope while treating old map facets as pending", async () => {
+    const user = userEvent.setup()
+    fleetRpc.queryFleetMap.mockResolvedValue(
+      mapResult([
+        {
+          dimension: "namespace",
+          value: "modern",
+          label: "modern",
+          count: BigInt(4),
+        },
+      ]),
+    )
+
+    renderProvider()
+    await waitFor(() =>
+      expect(screen.getByTestId("facet-namespace-modern")).toHaveAttribute(
+        "data-availability",
+        "available",
+      ),
+    )
+
+    await user.click(
+      screen.getByRole("button", { name: "Change namespace" }),
+    )
+
+    expect(screen.getByTestId("scope-state")).toHaveTextContent(
+      '"namespaces":["replacement"]',
+    )
+    expect(screen.getByTestId("facet-status")).toHaveTextContent("loading")
+    expect(screen.getByTestId("facet-namespace-replacement")).toHaveAttribute(
+      "data-selected",
+      "true",
+    )
+    expect(screen.getByTestId("facet-namespace-replacement")).toHaveAttribute(
+      "data-availability",
+      "unknown",
+    )
+    expect(screen.getByTestId("facet-namespace-modern")).toHaveAttribute(
+      "data-availability",
+      "unknown",
+    )
+    expect(screen.getByTestId("facet-namespace-modern")).not.toHaveAttribute(
+      "data-count",
     )
   })
 
@@ -441,6 +497,54 @@ describe("FleetScopeProvider", () => {
     expect(destination.searchParams.getAll("health")).toEqual(["degraded"])
     expect(destination.searchParams.get("view")).toBe("table")
     expect(destination.searchParams.get("q")).toBe("checkout")
+  })
+
+  it("keeps facets pending when an intermediate scope URL precedes the latest query URL", async () => {
+    const user = userEvent.setup()
+    fleetRpc.queryFleetMap.mockResolvedValue(
+      mapResult([
+        {
+          dimension: "namespace",
+          value: "modern",
+          label: "modern",
+          count: BigInt(2),
+        },
+      ]),
+    )
+    const { queryClient, rerender } = renderProvider()
+    await waitFor(() =>
+      expect(screen.getByTestId("facet-namespace-modern")).toHaveAttribute(
+        "data-availability",
+        "available",
+      ),
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Apply rapid scope and query patches",
+      }),
+    )
+    const intermediate = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
+    )
+    navigation.query = intermediate.searchParams.toString()
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <FleetScopeProvider>
+          <ScopeProbe />
+        </FleetScopeProvider>
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByTestId("scope-state")).toHaveTextContent(
+      '"namespaces":["replacement"]',
+    )
+    expect(screen.getByTestId("facet-status")).toHaveTextContent("loading")
+    expect(screen.getByTestId("facet-namespace-modern")).toHaveAttribute(
+      "data-availability",
+      "unknown",
+    )
   })
 
   it("resets pending mutations when an external route query is observed", async () => {

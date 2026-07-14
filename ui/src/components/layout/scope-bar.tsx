@@ -1,6 +1,7 @@
 "use client"
 
 import { Boxes, Layers, Network, Rocket } from "lucide-react"
+import { useLayoutEffect, useRef } from "react"
 
 import { ScopeMultiselect } from "@/components/layout/scope-multiselect"
 import {
@@ -29,6 +30,15 @@ const fallbackSegments = [
 export function ScopeBar() {
   const { facets, status, mutationError, patchScope, retry } = useFleetScope()
   const hasSelection = facets.some((facet) => facet.selected)
+  const projectTriggerRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusAfterClear = useRef(false)
+
+  useLayoutEffect(() => {
+    if (!hasSelection && restoreFocusAfterClear.current) {
+      restoreFocusAfterClear.current = false
+      projectTriggerRef.current?.focus()
+    }
+  }, [hasSelection])
 
   function updateDimension(
     dimension: FleetScopeDimension,
@@ -62,6 +72,17 @@ export function ScopeBar() {
     }
   }
 
+  function clearFleetScope() {
+    restoreFocusAfterClear.current = true
+    const accepted = patchScope({
+      projects: [],
+      clusters: [],
+      stages: [],
+      namespaces: [],
+    })
+    if (!accepted) restoreFocusAfterClear.current = false
+  }
+
   return (
     <section
       aria-label="Current fleet scope"
@@ -89,20 +110,16 @@ export function ScopeBar() {
               onSelectionChange={(next) => updateDimension(dimension, next)}
               onRetry={retry}
               icon={<Icon className="size-3.5 text-muted-foreground" />}
+              triggerRef={
+                dimension === "project" ? projectTriggerRef : undefined
+              }
             />
           ))}
           {hasSelection ? (
             <button
               type="button"
               aria-label="Clear fleet scope"
-              onClick={() =>
-                patchScope({
-                  projects: [],
-                  clusters: [],
-                  stages: [],
-                  namespaces: [],
-                })
-              }
+              onClick={clearFleetScope}
               className="min-h-11 shrink-0 px-4 text-xs font-semibold text-primary transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               Clear scope

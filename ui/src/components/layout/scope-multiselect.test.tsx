@@ -72,7 +72,9 @@ function picker(
   }: {
     dimension?: FleetScopeDimension
     status?: FleetDataStatus
-    onSelectionChange?: (next: readonly FleetScopeFacet[]) => void
+    onSelectionChange?: (
+      next: readonly FleetScopeFacet[],
+    ) => boolean | void
     onRetry?: () => void | Promise<void>
   } = {},
 ) {
@@ -299,6 +301,131 @@ describe("ScopeMultiselect", () => {
     ).toEqual(["canary", "production"])
   })
 
+  it("renders keyboard selection immediately and composes Enter then Space as an undo", async () => {
+    const user = userEvent.setup()
+    const onSelectionChange = vi.fn()
+    render(
+      picker(
+        [
+          valueFacet({ dimension: "stage", value: "canary" }),
+          valueFacet({ dimension: "stage", value: "production" }),
+        ],
+        { dimension: "stage", onSelectionChange },
+      ),
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Stages, All stages, 2 results",
+      }),
+    )
+    await user.keyboard("{ArrowDown}{Enter}")
+
+    const selectedCanary = screen.getByRole("checkbox", {
+      name: /Stages, canary, 1 application, selected/i,
+    })
+    expect(selectedCanary).toBeChecked()
+    expect(
+      screen.getByRole("button", { name: "Stages, canary, 2 results" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Clear Stages selection" }),
+    ).toBeEnabled()
+
+    await user.keyboard(" ")
+
+    expect(
+      screen.getByRole("checkbox", {
+        name: /Stages, canary, 1 application, not selected/i,
+      }),
+    ).not.toBeChecked()
+    expect(onSelectionChange).toHaveBeenCalledTimes(2)
+    expect(
+      onSelectionChange.mock.calls[1][0].map(
+        (facet: FleetScopeFacet) => facet.id,
+      ),
+    ).toEqual([])
+    expect(
+      screen.getByRole("button", {
+        name: "Stages, All stages, 2 results",
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Clear Stages selection" }),
+    ).toBeDisabled()
+  })
+
+  it("composes a pointer double-click from empty as select then undo", async () => {
+    const user = userEvent.setup()
+    const onSelectionChange = vi.fn()
+    render(
+      picker(
+        [valueFacet({ dimension: "stage", value: "canary" })],
+        { dimension: "stage", onSelectionChange },
+      ),
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Stages, All stages, 1 result",
+      }),
+    )
+    await user.dblClick(
+      screen.getByRole("checkbox", { name: /Stages, canary/i }),
+    )
+
+    expect(onSelectionChange).toHaveBeenCalledTimes(2)
+    expect(
+      onSelectionChange.mock.calls[1][0].map(
+        (facet: FleetScopeFacet) => facet.id,
+      ),
+    ).toEqual([])
+    expect(
+      screen.getByRole("checkbox", { name: /not selected/i }),
+    ).not.toBeChecked()
+    expect(
+      screen.getByRole("button", {
+        name: "Stages, All stages, 1 result",
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it("keeps the rendered selection when Clear is rejected", async () => {
+    const user = userEvent.setup()
+    const onSelectionChange = vi.fn(() => false)
+    render(
+      picker(
+        [
+          valueFacet({
+            dimension: "stage",
+            value: "canary",
+            selected: true,
+          }),
+        ],
+        { dimension: "stage", onSelectionChange },
+      ),
+    )
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "Stages, canary, 1 result",
+      }),
+    )
+    const clear = screen.getByRole("button", {
+      name: "Clear Stages selection",
+    })
+    await user.click(clear)
+
+    expect(onSelectionChange).toHaveBeenCalledWith([])
+    expect(
+      screen.getByRole("checkbox", { name: /selected/i }),
+    ).toBeChecked()
+    expect(clear).toBeEnabled()
+    expect(
+      screen.getByRole("button", { name: "Stages, canary, 1 result" }),
+    ).toBeInTheDocument()
+  })
+
   it("resynchronizes after an unissued external scope replaces an observed intermediate URL", async () => {
     const user = userEvent.setup()
     const onSelectionChange = vi.fn()
@@ -393,6 +520,9 @@ describe("ScopeMultiselect", () => {
       }),
     )
     expect(onSelectionChange).toHaveBeenCalledWith([])
+    expect(
+      screen.getByRole("searchbox", { name: "Filter Namespaces, 0 results" }),
+    ).toHaveFocus()
   })
 
   it("reports failed facets and retries without mutating selection or location", async () => {

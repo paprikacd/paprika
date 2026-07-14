@@ -231,6 +231,123 @@ describe("AppShell navigation", () => {
       "/dashboard?unknown=kept",
       { scroll: false },
     )
+    expect(
+      within(scope).getByRole("button", {
+        name: /Projects, All projects, loading results/i,
+      }),
+    ).toHaveFocus()
+  })
+
+  it("lets global Clear cancel an unobserved local selection before the next selection", async () => {
+    const user = userEvent.setup()
+    fleetRpc.queryFleetMap.mockResolvedValue({
+      roots: [],
+      total: BigInt(2),
+      indexGeneration: BigInt(1),
+      facets: [
+        {
+          dimension: "stage",
+          value: "canary",
+          label: "canary",
+          count: BigInt(1),
+        },
+        {
+          dimension: "stage",
+          value: "staging",
+          label: "staging",
+          count: BigInt(1),
+        },
+      ],
+    })
+    const { rerender } = renderShell(<AppShell>Fleet content</AppShell>)
+
+    const scope = screen.getByRole("region", { name: "Current fleet scope" })
+    const allStages = await within(scope).findByRole("button", {
+      name: "Stages, All stages, 2 results",
+    })
+    await user.click(allStages)
+    await user.click(
+      screen.getByRole("checkbox", { name: /Stages, canary/i }),
+    )
+
+    await user.click(
+      within(scope).getByRole("button", { name: "Clear fleet scope" }),
+    )
+    const intermediate = new URL(
+      navigation.replace.mock.calls[0][0],
+      "https://paprika.test",
+    )
+    navigation.query = intermediate.searchParams.toString()
+    rerender(<AppShell>Fleet content</AppShell>)
+
+    const resetStages = await within(scope).findByRole("button", {
+      name: "Stages, All stages, loading results",
+    })
+    await user.click(resetStages)
+    await user.click(
+      screen.getByRole("checkbox", { name: /Stages, staging/i }),
+    )
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.getAll("stage")).toEqual(["staging"])
+  })
+
+  it("invalidates a pending picker selection when popstate resets to the observed scope", async () => {
+    const user = userEvent.setup()
+    navigation.query = "stage=canary"
+    fleetRpc.queryFleetMap.mockResolvedValue({
+      roots: [],
+      total: BigInt(3),
+      indexGeneration: BigInt(1),
+      facets: ["canary", "production", "staging"].map((value) => ({
+        dimension: "stage" as const,
+        value,
+        label: value,
+        count: BigInt(1),
+      })),
+    })
+    renderShell(
+      <StrictMode>
+        <AppShell>Fleet content</AppShell>
+      </StrictMode>,
+    )
+
+    const scope = screen.getByRole("region", { name: "Current fleet scope" })
+    await user.click(
+      await within(scope).findByRole("button", {
+        name: "Stages, canary, 3 results",
+      }),
+    )
+    await user.click(
+      screen.getByRole("checkbox", { name: /Stages, production/i }),
+    )
+    expect(
+      screen.getByRole("checkbox", { name: /Stages, production/i }),
+    ).toBeChecked()
+
+    act(() => window.dispatchEvent(new PopStateEvent("popstate")))
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: /Stages, production/i }),
+      ).not.toBeChecked(),
+    )
+    await user.click(
+      screen.getByRole("checkbox", { name: /Stages, staging/i }),
+    )
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.getAll("stage")).toEqual([
+      "canary",
+      "staging",
+    ])
+    expect(destination.searchParams.has("stage", "production")).toBe(false)
   })
 
   it("surfaces an ambiguous legacy detail URL instead of making scope controls look inert", async () => {

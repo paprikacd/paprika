@@ -9,6 +9,7 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type Ref,
 } from "react"
 
 import type {
@@ -46,9 +47,15 @@ interface DecoratedFacet {
   facet: FleetScopeFacet
   displayLabel: string
   technicalLabel?: string
+  selected: boolean
 }
 
 type RetryState = "idle" | "retrying" | "failed"
+
+interface OptimisticSelectionState {
+  observedKey: string
+  selection: Set<string>
+}
 
 export interface ScopeMultiselectProps {
   dimension: FleetScopeDimension
@@ -57,6 +64,7 @@ export interface ScopeMultiselectProps {
   onSelectionChange: (next: readonly FleetScopeFacet[]) => boolean | void
   onRetry: () => void | Promise<void>
   icon?: ReactNode
+  triggerRef?: Ref<HTMLButtonElement>
 }
 
 export function ScopeMultiselect({
@@ -66,36 +74,50 @@ export function ScopeMultiselect({
   onSelectionChange,
   onRetry,
   icon,
+  triggerRef,
 }: ScopeMultiselectProps) {
   const copy = dimensionCopy[dimension]
   const [filter, setFilter] = useState("")
   const [retryState, setRetryState] = useState<RetryState>("idle")
   const inputRef = useRef<HTMLInputElement>(null)
   const optionRefs = useRef<Array<HTMLInputElement | null>>([])
-  const options = useMemo(
+  const decoratedFacets = useMemo(
     () => decorateFacets(facets.filter((facet) => facet.dimension === dimension)),
     [dimension, facets],
   )
-  const selected = options.filter((option) => option.facet.selected)
-  const selectedKey = selectionKey(selected.map(({ facet }) => facet.id))
-  const pendingSelection = useRef(
-    new Set(selected.map(({ facet }) => facet.id)),
+  const selectedKey = selectionKey(
+    decoratedFacets
+      .filter((option) => option.facet.selected)
+      .map(({ facet }) => facet.id),
   )
-  const issuedSelectionKeys = useRef(new Set<string>())
-  const latestIssuedSelectionKey = useRef<string | null>(null)
+  const [optimisticState, setOptimisticState] =
+    useState<OptimisticSelectionState>(() => ({
+      observedKey: selectedKey,
+      selection: selectionFromKey(selectedKey),
+    }))
+  const selectionNeedsReset = optimisticState.observedKey !== selectedKey
+  const optimisticSelection = selectionNeedsReset
+    ? selectionFromKey(selectedKey)
+    : optimisticState.selection
+  const pendingSelection = useRef(optimisticSelection)
+  if (selectionNeedsReset) {
+    setOptimisticState({
+      observedKey: selectedKey,
+      selection: optimisticSelection,
+    })
+  }
   useLayoutEffect(() => {
-    if (latestIssuedSelectionKey.current === selectedKey) {
-      pendingSelection.current = selectionFromKey(selectedKey)
-      issuedSelectionKeys.current.clear()
-      latestIssuedSelectionKey.current = null
-      return
-    }
-    if (issuedSelectionKeys.current.has(selectedKey)) return
-
-    pendingSelection.current = selectionFromKey(selectedKey)
-    issuedSelectionKeys.current.clear()
-    latestIssuedSelectionKey.current = null
-  }, [selectedKey])
+    pendingSelection.current = optimisticSelection
+  }, [optimisticSelection])
+  const options = useMemo(
+    () =>
+      decoratedFacets.map((option) => ({
+        ...option,
+        selected: optimisticSelection.has(option.facet.id),
+      })),
+    [decoratedFacets, optimisticSelection],
+  )
+  const selected = options.filter((option) => option.selected)
   const authorizedCount = options.filter(
     (option) => option.facet.availability === "available",
   ).length
@@ -144,23 +166,30 @@ export function ScopeMultiselect({
             ? "Results unavailable."
             : `${formatResults(filteredAuthorizedCount)} available.`
 
-  function emitSelection(selectedIds: Set<string>) {
+  function emitSelection(selectedIds: Set<string>): boolean {
     const next = options
       .filter(({ facet }) => selectedIds.has(facet.id))
       .map(({ facet }) => facet)
     const accepted = onSelectionChange(next)
-    if (accepted === false) return
-    pendingSelection.current = new Set(selectedIds)
-    const nextKey = selectionKey(next.map((facet) => facet.id))
-    issuedSelectionKeys.current.add(nextKey)
-    latestIssuedSelectionKey.current = nextKey
+    if (accepted === false) return false
+    const published = new Set(selectedIds)
+    pendingSelection.current = published
+    setOptimisticState({ observedKey: selectedKey, selection: published })
+    return true
   }
 
   function toggle(option: DecoratedFacet, checked: boolean) {
     const next = new Set(pendingSelection.current)
     if (checked) next.add(option.facet.id)
     else next.delete(option.facet.id)
-    emitSelection(next)
+    const accepted = emitSelection(next)
+    if (
+      accepted &&
+      !checked &&
+      option.facet.availability !== "available"
+    ) {
+      inputRef.current?.focus()
+    }
   }
 
   function selectAllVisible() {
@@ -221,7 +250,7 @@ export function ScopeMultiselect({
         break
       case "Enter":
         event.preventDefault()
-        toggle(option, !pendingSelection.current.has(option.facet.id))
+        toggle(option, !option.selected)
         break
     }
   }
@@ -236,6 +265,7 @@ export function ScopeMultiselect({
       }}
     >
       <Popover.Trigger
+        ref={triggerRef}
         type="button"
         aria-label={`${copy.plural}, ${selectedSummary}, ${resultSummary}`}
         aria-busy={loading || undefined}
@@ -354,7 +384,7 @@ export function ScopeMultiselect({
                     }}
                     type="checkbox"
                     aria-label={optionAccessibleName(copy.plural, option)}
-                    checked={option.facet.selected}
+                    checked={option.selected}
                     onChange={(event) => toggle(option, event.target.checked)}
                     onKeyDown={(event) =>
                       handleOptionKeyDown(event, option, index)
@@ -445,6 +475,7 @@ function decorateFacets(facets: readonly FleetScopeFacet[]): DecoratedFacet[] {
         ? `${facet.label} · ${namespaceCollision ? facet.id : facet.object?.namespace}`
         : facet.label,
       technicalLabel: facet.object ? facet.id : undefined,
+      selected: facet.selected,
     }
   })
 }
@@ -453,7 +484,8 @@ function boundedOptions(
   filtered: readonly DecoratedFacet[],
 ): DecoratedFacet[] {
   const pinned = filtered.filter(
-    ({ facet }) => facet.selected && facet.availability !== "available",
+    ({ facet, selected }) =>
+      selected && facet.availability !== "available",
   )
   const pinnedIds = new Set(pinned.map(({ facet }) => facet.id))
   const ordinary = filtered.filter(({ facet }) => !pinnedIds.has(facet.id))
@@ -500,6 +532,6 @@ function optionAccessibleName(
   else if (option.facet.availability === "unknown") {
     parts.push("checking availability")
   }
-  parts.push(option.facet.selected ? "selected" : "not selected")
+  parts.push(option.selected ? "selected" : "not selected")
   return parts.join(", ")
 }

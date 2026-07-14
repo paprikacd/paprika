@@ -5,6 +5,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -81,6 +82,22 @@ interface PendingNavigation {
   latestIssuedRouteKey: string | null
 }
 
+interface ScopeIntent {
+  scope: FleetScope
+  pendingRouteKey: string | null
+}
+
+type NavigationSynchronization =
+  | "unchanged"
+  | "intermediate"
+  | "latest"
+  | "external"
+
+type FacetSource = {
+  facets: readonly FleetFacetBucket[]
+  availability: "available" | "unknown"
+}
+
 const FLEET_OWNED_QUERY_KEYS = [
   "project",
   "cluster",
@@ -117,6 +134,10 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
   const rawQuery = searchParams.toString()
   const parsed = useMemo(() => parseFleetQuery(rawQuery), [rawQuery])
   const routeKey = navigationRouteKey(pathname, rawQuery)
+  const observedScope = useMemo(
+    () => scopeFromState(parsed.state),
+    [parsed.state],
+  )
   const pendingNavigation = useRef<PendingNavigation>({
     observedRouteKey: routeKey,
     params: new URLSearchParams(rawQuery),
@@ -124,28 +145,70 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
     issuedRouteKeys: new Set(),
     latestIssuedRouteKey: null,
   })
+  const [scopeIntent, setScopeIntent] = useState<ScopeIntent>(() => ({
+    scope: observedScope,
+    pendingRouteKey: null,
+  }))
+  const scopeIntentRef = useRef(scopeIntent)
+  const [externalNavigationRevision, setExternalNavigationRevision] =
+    useState(0)
+  const handledExternalNavigationRevision = useRef(0)
+  const publishScopeIntent = useCallback((next: ScopeIntent) => {
+    scopeIntentRef.current = next
+    setScopeIntent((current) =>
+      sameScopeIntent(current, next) ? current : next,
+    )
+  }, [])
+
+  useEffect(() => {
+    function invalidatePendingIntent() {
+      setExternalNavigationRevision((revision) => revision + 1)
+    }
+
+    window.addEventListener("popstate", invalidatePendingIntent)
+    return () =>
+      window.removeEventListener("popstate", invalidatePendingIntent)
+  }, [])
+
   useLayoutEffect(() => {
-    synchronizePendingNavigation(
+    const forceExternal =
+      handledExternalNavigationRevision.current !==
+      externalNavigationRevision
+    handledExternalNavigationRevision.current = externalNavigationRevision
+    const synchronization = synchronizePendingNavigation(
       pendingNavigation.current,
       pathname,
       rawQuery,
       parsed.state,
+      forceExternal,
     )
-  }, [parsed.state, pathname, rawQuery])
-  const scope = useMemo<FleetScope>(
-    () => ({
-      projects: parsed.state.projects,
-      clusters: parsed.state.clusters,
-      stages: parsed.state.stages,
-      namespaces: parsed.state.namespaces,
-    }),
-    [
-      parsed.state.clusters,
-      parsed.state.namespaces,
-      parsed.state.projects,
-      parsed.state.stages,
-    ],
-  )
+    if (synchronization === "latest" || synchronization === "external") {
+      publishScopeIntent({ scope: observedScope, pendingRouteKey: null })
+      return
+    }
+    if (synchronization === "intermediate") {
+      const current = scopeIntentRef.current
+      publishScopeIntent({
+        scope: current.scope,
+        pendingRouteKey:
+          current.pendingRouteKey !== null ||
+          !sameFleetScope(current.scope, observedScope)
+            ? pendingNavigation.current.latestIssuedRouteKey
+            : null,
+      })
+    }
+  }, [
+    externalNavigationRevision,
+    observedScope,
+    parsed.state,
+    pathname,
+    publishScopeIntent,
+    rawQuery,
+  ])
+  const scope = scopeIntent.scope
+  const scopePending =
+    scopeIntent.pendingRouteKey !== null ||
+    !sameFleetScope(scope, observedScope)
   const facetRequestState = useMemo<FleetQueryState>(
     () => ({ ...parsed.state, view: "heatmap" }),
     [parsed.state],
@@ -155,15 +218,31 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
     MutationFailure | undefined
   >()
 
-  const authoritativeFacets = useMemo(() => {
+  const facetSource = useMemo<FacetSource | undefined>(() => {
+    if (scopePending) {
+      if (fleet.displayData?.kind !== "map") return undefined
+      return {
+        facets: fleet.displayData.result.facets,
+        availability: "unknown",
+      }
+    }
     if (!isAuthoritativeStatus(fleet.status)) return undefined
     if (fleet.currentData?.kind !== "map") return undefined
-    return fleet.currentData.result.facets
-  }, [fleet.currentData, fleet.status])
+    return {
+      facets: fleet.currentData.result.facets,
+      availability: "available",
+    }
+  }, [fleet.currentData, fleet.displayData, fleet.status, scopePending])
   const facets = useMemo(
-    () => buildScopeFacets(scope, authoritativeFacets),
-    [authoritativeFacets, scope],
+    () =>
+      buildScopeFacets(
+        scope,
+        facetSource?.facets,
+        facetSource?.availability,
+      ),
+    [facetSource, scope],
   )
+  const scopeStatus: FleetDataStatus = scopePending ? "loading" : fleet.status
   const mutationError =
     mutationFailure?.routeKey === routeKey ? mutationFailure.error : null
 
@@ -208,11 +287,26 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
       navigation.semanticState = nextState
       navigation.issuedRouteKeys.add(nextRouteKey)
       navigation.latestIssuedRouteKey = nextRouteKey
+      const nextScope = scopeFromState(nextState)
+      publishScopeIntent({
+        scope: nextScope,
+        pendingRouteKey: sameFleetScope(nextScope, observedScope)
+          ? null
+          : nextRouteKey,
+      })
       setMutationFailure(undefined)
       router.replace(fleetHref(`${pathname}${hash}`, next), { scroll: false })
       return true
     },
-    [parsed.state, pathname, rawQuery, routeKey, router],
+    [
+      observedScope,
+      parsed.state,
+      pathname,
+      publishScopeIntent,
+      rawQuery,
+      routeKey,
+      router,
+    ],
   )
 
   const patchQuery = useCallback(
@@ -230,7 +324,7 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
       state: parsed.state,
       scope,
       facets,
-      status: fleet.status,
+      status: scopeStatus,
       error: fleet.error,
       notices: parsed.notices,
       mutationError,
@@ -241,7 +335,6 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
     [
       facets,
       fleet.error,
-      fleet.status,
       mutationError,
       parsed.notices,
       parsed.state,
@@ -249,6 +342,7 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
       patchScope,
       retry,
       scope,
+      scopeStatus,
     ],
   )
 
@@ -271,15 +365,63 @@ function isAuthoritativeStatus(status: FleetDataStatus): boolean {
   return status === "ready" || status === "empty" || status === "partial"
 }
 
+function scopeFromState(state: FleetQueryState): FleetScope {
+  return {
+    projects: state.projects,
+    clusters: state.clusters,
+    stages: state.stages,
+    namespaces: state.namespaces,
+  }
+}
+
+function sameScopeIntent(left: ScopeIntent, right: ScopeIntent): boolean {
+  return (
+    left.pendingRouteKey === right.pendingRouteKey &&
+    sameFleetScope(left.scope, right.scope)
+  )
+}
+
+function sameFleetScope(left: FleetScope, right: FleetScope): boolean {
+  return (
+    sameNamespacedKeys(left.projects, right.projects) &&
+    sameNamespacedKeys(left.clusters, right.clusters) &&
+    sameStrings(left.stages, right.stages) &&
+    sameStrings(left.namespaces, right.namespaces)
+  )
+}
+
+function sameNamespacedKeys(
+  left: readonly NamespacedKey[],
+  right: readonly NamespacedKey[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (value, index) =>
+        value.namespace === right[index]?.namespace &&
+        value.name === right[index]?.name,
+    )
+  )
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  )
+}
+
 function buildScopeFacets(
   scope: FleetScope,
-  authoritativeFacets: readonly FleetFacetBucket[] | undefined,
+  facetBuckets: readonly FleetFacetBucket[] | undefined,
+  facetAvailability: "available" | "unknown" | undefined,
 ): FleetScopeFacet[] {
   const options = new Map<string, FleetScopeFacet>()
-  const authoritative = authoritativeFacets !== undefined
+  const authoritative =
+    facetBuckets !== undefined && facetAvailability === "available"
 
-  for (const facet of authoritativeFacets ?? []) {
-    const option = fromFacetBucket(facet)
+  for (const facet of facetBuckets ?? []) {
+    const option = fromFacetBucket(facet, facetAvailability ?? "unknown")
     if (!option) continue
     options.set(facetKey(option.dimension, option.id), option)
   }
@@ -303,7 +445,10 @@ function buildScopeFacets(
   })
 }
 
-function fromFacetBucket(facet: FleetFacetBucket): FleetScopeFacet | undefined {
+function fromFacetBucket(
+  facet: FleetFacetBucket,
+  availability: "available" | "unknown",
+): FleetScopeFacet | undefined {
   if (facet.dimension === "project" || facet.dimension === "cluster") {
     if (!facet.object) return undefined
     const object = {
@@ -317,9 +462,9 @@ function fromFacetBucket(facet: FleetFacetBucket): FleetScopeFacet | undefined {
       id,
       object,
       label: facet.label.trim() || id,
-      count: facet.count,
+      count: availability === "available" ? facet.count : undefined,
       selected: false,
-      availability: "available",
+      availability,
     }
   }
   if (facet.dimension === "stage" || facet.dimension === "namespace") {
@@ -330,9 +475,9 @@ function fromFacetBucket(facet: FleetFacetBucket): FleetScopeFacet | undefined {
       id: value,
       value,
       label: facet.label.trim() || value,
-      count: facet.count,
+      count: availability === "available" ? facet.count : undefined,
       selected: false,
-      availability: "available",
+      availability,
     }
   }
   return undefined
@@ -420,26 +565,32 @@ function synchronizePendingNavigation(
   pathname: string,
   rawQuery: string,
   semanticState: FleetQueryState,
-): void {
+  forceExternal = false,
+): NavigationSynchronization {
   const observedRouteKey = navigationRouteKey(pathname, rawQuery)
-  if (navigation.observedRouteKey === observedRouteKey) return
+  if (!forceExternal && navigation.observedRouteKey === observedRouteKey) {
+    return "unchanged"
+  }
 
   navigation.observedRouteKey = observedRouteKey
-  if (navigation.issuedRouteKeys.has(observedRouteKey)) {
+  if (!forceExternal && navigation.issuedRouteKeys.has(observedRouteKey)) {
     navigation.issuedRouteKeys.delete(observedRouteKey)
-    if (navigation.latestIssuedRouteKey !== observedRouteKey) return
+    if (navigation.latestIssuedRouteKey !== observedRouteKey) {
+      return "intermediate"
+    }
 
     navigation.params = new URLSearchParams(rawQuery)
     navigation.semanticState = semanticState
     navigation.issuedRouteKeys.clear()
     navigation.latestIssuedRouteKey = null
-    return
+    return "latest"
   }
 
   navigation.params = new URLSearchParams(rawQuery)
   navigation.semanticState = semanticState
   navigation.issuedRouteKeys.clear()
   navigation.latestIssuedRouteKey = null
+  return "external"
 }
 
 function canonicalFleetSearchParams(
