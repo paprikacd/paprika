@@ -192,6 +192,7 @@ func TestDefaultFixtureBuildIsCompleteAssociatedAndRepeatable(t *testing.T) {
 		"fixture generation order must be repeatable")
 
 	require.Len(t, firstInventory.applications, defaults.applications)
+	require.Len(t, firstInventory.applicationSets, fixtureNamespaceCount)
 	require.Len(t, firstInventory.pipelines, defaults.applications)
 	require.Len(t, firstInventory.stages, defaults.applications)
 	require.Len(t, firstInventory.releases, defaults.applications)
@@ -233,14 +234,15 @@ func TestDefaultFixtureBuildIsCompleteAssociatedAndRepeatable(t *testing.T) {
 }
 
 type fixtureInventory struct {
-	applications []pipelinesv1alpha1.Application
-	pipelines    []pipelinesv1alpha1.Pipeline
-	stages       []pipelinesv1alpha1.Stage
-	releases     []pipelinesv1alpha1.Release
-	rollouts     []rolloutsv1alpha1.Rollout
-	projects     []corev1alpha1.AppProject
-	repositories []corev1alpha1.Repository
-	clusters     []clustersv1alpha1.Cluster
+	applications    []pipelinesv1alpha1.Application
+	applicationSets []pipelinesv1alpha1.ApplicationSet
+	pipelines       []pipelinesv1alpha1.Pipeline
+	stages          []pipelinesv1alpha1.Stage
+	releases        []pipelinesv1alpha1.Release
+	rollouts        []rolloutsv1alpha1.Rollout
+	projects        []corev1alpha1.AppProject
+	repositories    []corev1alpha1.Repository
+	clusters        []clustersv1alpha1.Cluster
 }
 
 func readFixtureInventory(t *testing.T, reader client.Reader) fixtureInventory {
@@ -249,6 +251,8 @@ func readFixtureInventory(t *testing.T, reader client.Reader) fixtureInventory {
 
 	var applications pipelinesv1alpha1.ApplicationList
 	require.NoError(t, reader.List(ctx, &applications))
+	var applicationSets pipelinesv1alpha1.ApplicationSetList
+	require.NoError(t, reader.List(ctx, &applicationSets))
 	var pipelines pipelinesv1alpha1.PipelineList
 	require.NoError(t, reader.List(ctx, &pipelines))
 	var stages pipelinesv1alpha1.StageList
@@ -265,24 +269,28 @@ func readFixtureInventory(t *testing.T, reader client.Reader) fixtureInventory {
 	require.NoError(t, reader.List(ctx, &clusters))
 
 	return fixtureInventory{
-		applications: applications.Items,
-		pipelines:    pipelines.Items,
-		stages:       stages.Items,
-		releases:     releases.Items,
-		rollouts:     rollouts.Items,
-		projects:     projects.Items,
-		repositories: repositories.Items,
-		clusters:     clusters.Items,
+		applications:    applications.Items,
+		applicationSets: applicationSets.Items,
+		pipelines:       pipelines.Items,
+		stages:          stages.Items,
+		releases:        releases.Items,
+		rollouts:        rollouts.Items,
+		projects:        projects.Items,
+		repositories:    repositories.Items,
+		clusters:        clusters.Items,
 	}
 }
 
 func (inventory fixtureInventory) fingerprint() []string {
 	result := make([]string, 0,
-		len(inventory.applications)+len(inventory.pipelines)+len(inventory.stages)+
+		len(inventory.applications)+len(inventory.applicationSets)+len(inventory.pipelines)+len(inventory.stages)+
 			len(inventory.releases)+len(inventory.rollouts)+len(inventory.projects)+
 			len(inventory.repositories)+len(inventory.clusters))
 	for index := range inventory.applications {
 		result = append(result, objectFingerprint("Application", &inventory.applications[index]))
+	}
+	for index := range inventory.applicationSets {
+		result = append(result, objectFingerprint("ApplicationSet", &inventory.applicationSets[index]))
 	}
 	for index := range inventory.pipelines {
 		result = append(result, objectFingerprint("Pipeline", &inventory.pipelines[index]))
@@ -458,6 +466,9 @@ func assertSharedFixtureMetadata(
 	stableUIDs map[types.UID]string,
 ) {
 	t.Helper()
+	for index := range inventory.applicationSets {
+		assertStableFixtureMetadata(t, "ApplicationSet", &inventory.applicationSets[index], stableUIDs)
+	}
 	for index := range inventory.projects {
 		assertStableFixtureMetadata(t, "AppProject", &inventory.projects[index], stableUIDs)
 	}

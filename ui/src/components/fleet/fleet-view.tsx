@@ -18,6 +18,7 @@ import {
   type FleetFocusTarget,
 } from "@/lib/fleet-focus"
 import {
+  fleetMatrixSort,
   type FleetQueryPatch,
   type FleetQueryState,
   type FleetView as FleetViewName,
@@ -311,6 +312,8 @@ function FleetPresentation({
         <FleetTreemap
           result={data.result}
           zoom={state.zoom}
+          sort={state.sort}
+          direction={state.direction}
           selected={state.selected}
           onZoomChange={(zoom) => onPatch({ zoom })}
           onSelectApplication={onSelectApplication}
@@ -319,7 +322,13 @@ function FleetPresentation({
         />
       )
     case "matrix":
-      return <FleetMatrix result={data.result} />
+      return (
+        <FleetMatrix
+          result={data.result}
+          sort={fleetMatrixSort(state.sort)}
+          direction={state.direction}
+        />
+      )
   }
 }
 

@@ -60,6 +60,14 @@ export const FLEET_SORT_VALUES = [
 ] as const
 export type FleetSort = (typeof FLEET_SORT_VALUES)[number]
 
+export const FLEET_MATRIX_SORT_VALUES = [
+  "name",
+  "health",
+  "resource_count",
+  "impact",
+] as const satisfies readonly FleetSort[]
+export type FleetMatrixSort = (typeof FLEET_MATRIX_SORT_VALUES)[number]
+
 export const FLEET_DIRECTION_VALUES = ["asc", "desc"] as const
 export type FleetDirection = (typeof FLEET_DIRECTION_VALUES)[number]
 
@@ -211,6 +219,11 @@ export const DEFAULT_FLEET_QUERY: FleetQueryState = {
   range: "2h",
 }
 
+export const QUEUE_FLEET_ORDER = {
+  sort: "impact",
+  direction: "desc",
+} as const satisfies FleetQueryDefaults
+
 interface QueryParameters {
   get(name: string): string | null
   getAll(name: string): string[]
@@ -289,6 +302,31 @@ export function parseFleetQuery(
   return { state, notices }
 }
 
+export function parseFleetPresentationQuery(input: string): ParsedFleetQuery {
+  const base = parseFleetQuery(input)
+  const parsed = base.state.view === "queue"
+    ? parseFleetQuery(input, QUEUE_FLEET_ORDER)
+    : base
+
+  if (parsed.state.view !== "matrix" || isFleetMatrixSort(parsed.state.sort)) {
+    return parsed
+  }
+
+  const rejectedSort = parsed.state.sort
+  return {
+    state: { ...parsed.state, sort: "name" },
+    notices: [
+      ...parsed.notices,
+      {
+        field: "sort",
+        value: rejectedSort,
+        reason: "not_available",
+        message: `Matrix cannot order aggregate intersections by ${rejectedSort}; using Intersection.`,
+      },
+    ],
+  }
+}
+
 export function serializeFleetQuery(
   input: FleetQueryState,
   defaultOverrides: FleetQueryDefaults = {},
@@ -319,6 +357,31 @@ export function serializeFleetQuery(
   if (state.selected) parameters.set("selected", namespacedKey(state.selected))
   appendNonDefault(parameters, "range", state.range, defaults.range)
   return parameters
+}
+
+export function serializeFleetPresentationQuery(
+  input: FleetQueryState,
+): URLSearchParams {
+  const state = input.view === "matrix"
+    ? { ...input, sort: fleetMatrixSort(input.sort) }
+    : input
+  const parameters = serializeFleetQuery(state)
+  if (state.view === "queue") {
+    // Queue has different contextual defaults, so its complete ordering must
+    // remain explicit once the route is mutated. Otherwise returning to a
+    // presentation with global defaults would silently change the order.
+    parameters.set("sort", state.sort)
+    parameters.set("direction", state.direction)
+  }
+  return parameters
+}
+
+export function isFleetMatrixSort(sort: FleetSort): sort is FleetMatrixSort {
+  return (FLEET_MATRIX_SORT_VALUES as readonly FleetSort[]).includes(sort)
+}
+
+export function fleetMatrixSort(sort: FleetSort): FleetMatrixSort {
+  return isFleetMatrixSort(sort) ? sort : "name"
 }
 
 export function mergeFleetQuery(current: FleetQueryState, patch: FleetQueryPatch): FleetQueryState {

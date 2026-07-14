@@ -1,12 +1,16 @@
 import type {
   FleetHealthStatus,
+  FleetMatrixCell,
   FleetMatrixHeader,
   FleetMatrixResult,
 } from "@/lib/fleet-client"
+import type { FleetDirection, FleetMatrixSort } from "@/lib/fleet-query"
 import { cn } from "@/lib/utils"
 
 export interface FleetMatrixProps {
   result: FleetMatrixResult
+  sort?: FleetMatrixSort
+  direction?: FleetDirection
 }
 
 const healthTone: Record<FleetHealthStatus, string> = {
@@ -19,7 +23,11 @@ const healthTone: Record<FleetHealthStatus, string> = {
   unspecified: "border-border bg-muted text-muted-foreground",
 }
 
-export function FleetMatrix({ result }: FleetMatrixProps) {
+export function FleetMatrix({
+  result,
+  sort = "name",
+  direction = "asc",
+}: FleetMatrixProps) {
   if (result.cells.length === 0) {
     return (
       <section
@@ -38,6 +46,13 @@ export function FleetMatrix({ result }: FleetMatrixProps) {
   const rowHeaders = new Map(result.rows.map((header) => [header.stableId, header]))
   const columnHeaders = new Map(
     result.columns.map((header) => [header.stableId, header]),
+  )
+  const orderedCells = orderMatrixCells(
+    result.cells,
+    rowHeaders,
+    columnHeaders,
+    sort,
+    direction,
   )
 
   return (
@@ -75,7 +90,7 @@ export function FleetMatrix({ result }: FleetMatrixProps) {
             </tr>
           </thead>
           <tbody className="block xl:table-row-group">
-            {result.cells.map((cell, cellIndex) => {
+            {orderedCells.map((cell, cellIndex) => {
               const rowHeader = rowHeaders.get(cell.rowId)
               const columnHeader = columnHeaders.get(cell.columnId)
               const rowLabel = rowHeader?.label ?? cell.rowId
@@ -176,6 +191,83 @@ export function FleetMatrix({ result }: FleetMatrixProps) {
       </div>
     </section>
   )
+}
+
+function orderMatrixCells(
+  cells: readonly FleetMatrixCell[],
+  rows: ReadonlyMap<string, FleetMatrixHeader>,
+  columns: ReadonlyMap<string, FleetMatrixHeader>,
+  sort: FleetMatrixSort,
+  direction: FleetDirection,
+): FleetMatrixCell[] {
+  return [...cells].sort((left, right) => {
+    let selected = compareMatrixField(left, right, rows, columns, sort)
+    if (direction === "desc") selected = -selected
+    if (selected !== 0) return selected
+
+    const row = compareText(left.rowId, right.rowId)
+    return row || compareText(left.columnId, right.columnId)
+  })
+}
+
+function compareMatrixField(
+  left: FleetMatrixCell,
+  right: FleetMatrixCell,
+  rows: ReadonlyMap<string, FleetMatrixHeader>,
+  columns: ReadonlyMap<string, FleetMatrixHeader>,
+  sort: FleetMatrixSort,
+): number {
+  switch (sort) {
+    case "name":
+    {
+      const row = compareText(
+        rows.get(left.rowId)?.label ?? left.rowId,
+        rows.get(right.rowId)?.label ?? right.rowId,
+      )
+      return row || compareText(
+        columns.get(left.columnId)?.label ?? left.columnId,
+        columns.get(right.columnId)?.label ?? right.columnId,
+      )
+    }
+    case "health":
+      return compareNumber(matrixHealthSeverity(left), matrixHealthSeverity(right))
+    case "resource_count":
+      return compareBigInt(left.resourceWeight, right.resourceWeight)
+    case "impact": {
+      const health = compareNumber(matrixHealthSeverity(left), matrixHealthSeverity(right))
+      if (health !== 0) return health
+      const applications = compareBigInt(left.applicationCount, right.applicationCount)
+      return applications || compareBigInt(left.resourceWeight, right.resourceWeight)
+    }
+  }
+}
+
+function matrixHealthSeverity(cell: FleetMatrixCell): number {
+  const order: Readonly<Record<FleetHealthStatus, number>> = {
+    unspecified: 0,
+    healthy: 1,
+    unknown: 2,
+    missing: 3,
+    progressing: 4,
+    degraded: 5,
+    failed: 6,
+  }
+  return cell.health.reduce(
+    (highest, bucket) => bucket.count > BigInt(0) ? Math.max(highest, order[bucket.health]) : highest,
+    0,
+  )
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareNumber(left: number, right: number): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function healthLabel(health: FleetHealthStatus): string {

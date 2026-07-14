@@ -121,6 +121,14 @@ describe("PipelineDetailPage safe refresh", () => {
     expect(screen.queryByText("build-image")).not.toBeInTheDocument()
   })
 
+  it("gives the loaded pipeline back control an accessible name", async () => {
+    render(<PipelineDetailPage />)
+
+    expect(
+      await screen.findByRole("button", { name: "Back to Dashboard" }),
+    ).toBeInTheDocument()
+  })
+
   it("keeps the last pipeline DAG visible when a background refresh fails", async () => {
     mockClient.getPipeline
       .mockResolvedValueOnce({ pipeline: makePipeline() })

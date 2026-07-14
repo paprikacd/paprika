@@ -530,19 +530,15 @@ function activeRequest(state: FleetQueryState): ActiveRequest {
   switch (state.view) {
     case "table":
     case "queue": {
-      const requestState =
-        state.view === "queue"
-          ? { ...state, sort: "impact" as const, direction: "desc" as const }
-          : state
       return {
         kind: "applications",
         view: state.view,
-        state: requestState,
+        state,
         key: [
           "fleet",
           "applications",
           state.view,
-          toQueryApplicationsRequest(requestState, {
+          toQueryApplicationsRequest(state, {
             pageSize: APPLICATION_PAGE_SIZE,
           }).toJsonString(),
         ],

@@ -128,7 +128,7 @@ describe("FleetView URL state", () => {
     expect(mockPatchQuery.mock.calls).toEqual([
       [{ view: "heatmap" }],
       [{ view: "treemap" }],
-      [{ view: "matrix" }],
+      [{ view: "matrix", sort: "name" }],
       [{ view: "table" }],
       [{ view: "queue" }],
     ])

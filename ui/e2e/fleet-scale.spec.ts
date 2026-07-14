@@ -6,11 +6,18 @@ import {
   test,
   type Browser,
   type BrowserContext,
+  type Locator,
   type Page,
   type TestInfo,
 } from "@playwright/test"
 
-const baseURL = "http://127.0.0.1:3100"
+import {
+  expectCompleteHeatmap,
+  observeFleetMapResponses,
+  type FleetMapOracle,
+} from "./helpers/fleet-map-oracle"
+
+const baseURL = process.env.PAPRIKA_E2E_BASE_URL ?? "http://127.0.0.1:3100"
 const desktopViewport = { width: 1920, height: 1080 }
 const APPLICATION_COUNT = 10_000
 const INITIAL_SAMPLE_COUNT = 20
@@ -21,7 +28,7 @@ const MAX_TREEMAP_DOM_ELEMENTS = 200
 const INITIAL_READY_MARK = "fleet-scale:initial-canvas-ready"
 const readySelector = `[data-fleet-ready="${APPLICATION_COUNT}"]`
 
-type Presentation = "treemap" | "matrix"
+type Presentation = "heatmap" | "treemap" | "matrix"
 
 interface NavigationSample {
   durationMs: number
@@ -35,10 +42,20 @@ interface TreemapDOMSnapshot {
   presentationControllerCount: number
 }
 
+interface HeatmapDOMSnapshot {
+  applicationNodeCount: number
+  canvasCount: number
+  descendantElementCount: number
+  inputCount: number
+  layoutCount: number
+  digest: string
+}
+
 interface ColdNavigationRun {
   context: BrowserContext
   page: Page
   samples: NavigationSample[]
+  oracle: FleetMapOracle
 }
 
 test.setTimeout(180_000)
@@ -66,6 +83,14 @@ test("10,000-application fleet stays within Canvas presentation budgets", async 
   try {
     const measuredPage = coldRun.page
     const initialSamples = coldRun.samples
+    await selectPresentation(measuredPage, "heatmap")
+    const verifiedHeatmap = await expectCompleteHeatmap(
+      measuredPage,
+      coldRun.oracle,
+      APPLICATION_COUNT,
+    )
+    const heatmapDOM = await captureHeatmapDOM(verifiedHeatmap.host)
+    await selectPresentation(measuredPage, "treemap")
     const treemapDOM = await captureTreemapDOM(measuredPage)
 
     // Prime both post-load presentations before timing cached UI switches.
@@ -104,6 +129,7 @@ test("10,000-application fleet stays within Canvas presentation budgets", async 
           (_, index): Presentation => index % 2 === 0 ? "matrix" : "treemap",
         ),
       },
+      heatmapDOM,
       treemapDOM,
     }
 
@@ -126,6 +152,14 @@ test("10,000-application fleet stays within Canvas presentation budgets", async 
       treemapDOM.descendantElementCount,
       "the Canvas presentation must keep its DOM bounded independently of fleet size",
     ).toBeLessThan(MAX_TREEMAP_DOM_ELEMENTS)
+    expect(heatmapDOM.inputCount).toBe(APPLICATION_COUNT)
+    expect(heatmapDOM.layoutCount).toBe(APPLICATION_COUNT)
+    expect(heatmapDOM.canvasCount).toBe(1)
+    expect(heatmapDOM.applicationNodeCount).toBe(0)
+    expect(
+      heatmapDOM.descendantElementCount,
+      "the complete heatmap Canvas must keep its DOM bounded independently of fleet size",
+    ).toBeLessThan(MAX_TREEMAP_DOM_ELEMENTS)
     expect(
       initialP95Ms,
       `initial fleet query plus Canvas render p95 must be below ${INITIAL_P95_LIMIT_MS} ms`,
@@ -135,6 +169,7 @@ test("10,000-application fleet stays within Canvas presentation budgets", async 
       `post-load presentation switch p95 must be below ${SWITCH_P95_LIMIT_MS} ms`,
     ).toBeLessThan(SWITCH_P95_LIMIT_MS)
   } finally {
+    await coldRun.oracle.stop()
     await coldRun.context.close()
   }
 })
@@ -143,6 +178,7 @@ async function measureColdNavigations(browser: Browser): Promise<ColdNavigationR
   const samples: NavigationSample[] = []
   let retainedContext: BrowserContext | undefined
   let retainedPage: Page | undefined
+  let retainedOracle: FleetMapOracle | undefined
 
   try {
     for (let sample = 0; sample < INITIAL_SAMPLE_COUNT; sample += 1) {
@@ -152,8 +188,9 @@ async function measureColdNavigations(browser: Browser): Promise<ColdNavigationR
         viewport: desktopViewport,
       })
       let retainContext = false
+      const measuredPage = await context.newPage()
+      const oracle = observeFleetMapResponses(measuredPage)
       try {
-        const measuredPage = await context.newPage()
         await installInitialCanvasReadyMark(measuredPage)
         await measuredPage.goto("/dashboard/applications", { waitUntil: "commit" })
         samples.push(await readInitialNavigationSample(measuredPage))
@@ -161,21 +198,39 @@ async function measureColdNavigations(browser: Browser): Promise<ColdNavigationR
         if (sample === INITIAL_SAMPLE_COUNT - 1) {
           retainedContext = context
           retainedPage = measuredPage
+          retainedOracle = oracle
           retainContext = true
         }
       } finally {
-        if (!retainContext) await context.close()
+        if (!retainContext) {
+          await oracle.stop()
+          await context.close()
+        }
       }
     }
 
-    if (!retainedContext || !retainedPage) {
+    if (!retainedContext || !retainedPage || !retainedOracle) {
       throw new Error("the final cold navigation context was not retained")
     }
-    return { context: retainedContext, page: retainedPage, samples }
+    return { context: retainedContext, page: retainedPage, samples, oracle: retainedOracle }
   } catch (error) {
+    await retainedOracle?.stop()
     await retainedContext?.close()
     throw error
   }
+}
+
+async function captureHeatmapDOM(host: Locator): Promise<HeatmapDOMSnapshot> {
+  return host.evaluate((element) => ({
+    applicationNodeCount: element.querySelectorAll(
+      '[data-application-id], [data-application-key], [data-row-key], [role="row"], [role="listitem"]',
+    ).length,
+    canvasCount: element.querySelectorAll("canvas").length,
+    descendantElementCount: element.querySelectorAll("*").length,
+    inputCount: Number(element.getAttribute("data-heatmap-input-count")),
+    layoutCount: Number(element.getAttribute("data-heatmap-layout-count")),
+    digest: element.getAttribute("data-heatmap-layout-digest") ?? "",
+  }))
 }
 
 async function installInitialCanvasReadyMark(page: Page) {
@@ -385,13 +440,16 @@ function presentationButton(page: Page, presentation: Presentation) {
 }
 
 function presentationSurface(page: Page, presentation: Presentation) {
+  if (presentation === "heatmap") {
+    return page.getByRole("application", { name: "Fleet health heatmap" })
+  }
   return presentation === "treemap"
     ? page.getByRole("application", { name: "Fleet treemap" })
     : page.getByRole("table", { name: "Fleet matrix" })
 }
 
 function presentationLabel(presentation: Presentation) {
-  return presentation === "treemap" ? "Treemap" : "Matrix"
+  return presentation === "heatmap" ? "Heatmap" : presentation === "treemap" ? "Treemap" : "Matrix"
 }
 
 async function waitForTwoAnimationFrames(page: Page) {

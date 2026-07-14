@@ -1,6 +1,8 @@
 import { hierarchy, treemap, treemapBinary } from "d3-hierarchy"
 
+import { compareFleetMapApplications } from "@/components/fleet/heatmap-layout"
 import type { FleetMapNode } from "@/lib/fleet-client"
+import type { FleetDirection, FleetSort } from "@/lib/fleet-query"
 
 const DEFAULT_GAP = 1
 const DEFAULT_GROUP_HEADER_HEIGHT = 20
@@ -18,6 +20,8 @@ export interface TreemapLayoutOptions {
   zoom?: string
   gap?: number
   groupHeaderHeight?: number
+  sort?: FleetSort
+  direction?: FleetDirection
 }
 
 export interface TreemapCanvasMetrics {
@@ -94,6 +98,20 @@ export function layoutTreemap(
       return normalizedWeight(datum.effectiveWeight)
     })
     .sort((left, right) => {
+      if (
+        options.sort &&
+        isFleetMapNode(left.data) &&
+        isFleetMapNode(right.data) &&
+        left.data.kind === "application" &&
+        right.data.kind === "application"
+      ) {
+        return compareFleetMapApplications(
+          left.data,
+          right.data,
+          options.sort,
+          options.direction ?? "asc",
+        )
+      }
       const byWeight = (right.value ?? 0) - (left.value ?? 0)
       return byWeight || left.data.stableId.localeCompare(right.data.stableId)
     })

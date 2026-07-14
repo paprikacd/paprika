@@ -102,7 +102,7 @@ func newFixtureScheme() (*runtime.Scheme, error) {
 
 func fixtureObjects(applicationCount int) []client.Object {
 	namespaceCount := min(applicationCount, fixtureNamespaceCount)
-	objects := make([]client.Object, 0, applicationCount*5+namespaceCount*8)
+	objects := make([]client.Object, 0, applicationCount*5+namespaceCount*9)
 	seenNamespaces := make(map[string]struct{}, namespaceCount)
 	seenProjects := make(map[types.NamespacedName]struct{}, namespaceCount*4)
 
@@ -111,6 +111,10 @@ func fixtureObjects(applicationCount int) []client.Object {
 		namespace := fixtureNamespace(index)
 		if _, seen := seenNamespaces[namespace]; !seen {
 			objects = append(objects, fixtureConnectionObjects(namespace)...)
+			objects = append(objects, fixtureApplicationSet(
+				namespace,
+				fixtureApplicationsInNamespace(applicationCount, index),
+			))
 			seenNamespaces[namespace] = struct{}{}
 		}
 		projectKey := types.NamespacedName{Namespace: namespace, Name: state.project}
@@ -127,6 +131,53 @@ func fixtureObjects(applicationCount int) []client.Object {
 		objects = append(objects, pipeline, application, stage, release, rollout)
 	}
 	return objects
+}
+
+func fixtureApplicationsInNamespace(applicationCount, namespaceIndex int) int {
+	return 1 + (applicationCount-1-namespaceIndex)/fixtureNamespaceCount
+}
+
+func fixtureApplicationSet(
+	namespace string,
+	applications int,
+) *pipelinesv1alpha1.ApplicationSet {
+	transitioned := metav1.NewTime(fixtureEpoch)
+	return &pipelinesv1alpha1.ApplicationSet{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: pipelinesv1alpha1.GroupVersion.String(),
+			Kind:       "ApplicationSet",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:         namespace,
+			Name:              "fixture-applications",
+			UID:               types.UID("fixture-applicationset-" + namespace),
+			Generation:        1,
+			CreationTimestamp: metav1.NewTime(fixtureEpoch.Add(-72 * time.Hour)),
+			Labels:            map[string]string{fixtureProjectLabel: "fixture"},
+		},
+		Spec: pipelinesv1alpha1.ApplicationSetSpec{
+			Generators: []pipelinesv1alpha1.ApplicationSetGenerator{{
+				List: &pipelinesv1alpha1.ListGenerator{Items: []map[string]string{{
+					"namespace": namespace,
+				}}},
+			}},
+			Template: pipelinesv1alpha1.ApplicationTemplateSpec{
+				ApplicationSpec: pipelinesv1alpha1.ApplicationSpec{Project: "fixture"},
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationSetStatus{
+			ObservedGeneration: 1,
+			Applications:       applications,
+			Conditions: []metav1.Condition{{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: 1,
+				LastTransitionTime: transitioned,
+				Reason:             "FixtureReady",
+				Message:            "Deterministic local fixture is ready",
+			}},
+		},
+	}
 }
 
 type fixtureState struct {

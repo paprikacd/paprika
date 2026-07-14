@@ -270,8 +270,8 @@ describe("useFleetData primary presentation", () => {
 
     if (view === "queue") {
       expect(calls.applications[0]?.state).toMatchObject({
-        sort: "impact",
-        direction: "desc",
+        sort: "name",
+        direction: "asc",
       })
     }
   })
@@ -355,7 +355,7 @@ describe("useFleetData primary presentation", () => {
     expect(new Set(mapQueries.map((query) => JSON.stringify(query.queryKey))).size).toBe(3)
   })
 
-  it("isolates one complete map request from one forced-impact attention request", async () => {
+  it("isolates one complete map request from one operator-sorted attention request", async () => {
     const { client, calls } = testClient()
     const mapState = queryState("heatmap", {
       group: "health",
@@ -393,8 +393,8 @@ describe("useFleetData primary presentation", () => {
     expect(calls.applications[0]?.state).toMatchObject({
       view: "queue",
       group: "health",
-      sort: "impact",
-      direction: "desc",
+      sort: "name",
+      direction: "asc",
     })
   })
 

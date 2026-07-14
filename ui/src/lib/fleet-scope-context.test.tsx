@@ -80,6 +80,16 @@ function ScopeProbe() {
         })}
       </output>
       <output data-testid="facet-status">{fleetScope.status}</output>
+      <output data-testid="query-presentation">
+        {JSON.stringify({
+          view: fleetScope.state.view,
+          sort: fleetScope.state.sort,
+          direction: fleetScope.state.direction,
+        })}
+      </output>
+      <output data-testid="query-notices">
+        {fleetScope.notices.map((notice) => notice.message).join(" ")}
+      </output>
       <output data-testid="scope-mutation-error">
         {fleetScope.mutationError?.reason ?? ""}
       </output>
@@ -149,6 +159,38 @@ function ScopeProbe() {
       </button>
       <button
         type="button"
+        onClick={() => fleetScope.patchQuery({ sort: "name", direction: "asc" })}
+      >
+        Sort by name ascending
+      </button>
+      <button
+        type="button"
+        onClick={() => fleetScope.patchQuery({ view: "queue" })}
+      >
+        Show queue
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          fleetScope.patchQuery({ view: "treemap" })
+          fleetScope.patchQuery({ view: "queue" })
+        }}
+      >
+        Round trip queue
+      </button>
+      <button
+        type="button"
+        onClick={() => fleetScope.patchScope({
+          projects: [],
+          clusters: [],
+          stages: [],
+          namespaces: [],
+        })}
+      >
+        Clear scope
+      </button>
+      <button
+        type="button"
         onClick={() => void fleetScope.retry().catch(() => undefined)}
       >
         Retry facets
@@ -206,6 +248,146 @@ describe("FleetScopeProvider", () => {
       stages: ["production"],
       namespaces: ["apps"],
     })
+  })
+
+  it("defaults a direct Queue route to highest impact first", () => {
+    navigation.query = "view=queue"
+
+    renderProvider()
+
+    expect(screen.getByTestId("query-presentation")).toHaveTextContent(
+      JSON.stringify({ view: "queue", sort: "impact", direction: "desc" }),
+    )
+  })
+
+  it("uses the Queue default only when the current URL has no explicit order", async () => {
+    const user = userEvent.setup()
+
+    renderProvider()
+    await user.click(screen.getByRole("button", { name: "Show queue" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.get("view")).toBe("queue")
+    expect(destination.searchParams.get("sort")).toBe("impact")
+    expect(destination.searchParams.get("direction")).toBe("desc")
+  })
+
+  it("honors an explicit Queue order and keeps it canonical on mutation", async () => {
+    const user = userEvent.setup()
+    navigation.query = "view=queue&sort=health&direction=asc"
+
+    renderProvider()
+    expect(screen.getByTestId("query-presentation")).toHaveTextContent(
+      JSON.stringify({ view: "queue", sort: "health", direction: "asc" }),
+    )
+
+    await user.click(screen.getByRole("button", { name: "Sort by name ascending" }))
+
+    const destination = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    )
+    expect(destination.searchParams.get("view")).toBe("queue")
+    expect(destination.searchParams.get("sort")).toBe("name")
+    expect(destination.searchParams.get("direction")).toBe("asc")
+  })
+
+  it("retains explicit global-default ordering through a Queue presentation round trip", async () => {
+    const user = userEvent.setup()
+    navigation.query = "view=queue&sort=name&direction=asc"
+
+    renderProvider()
+    await user.click(screen.getByRole("button", { name: "Round trip queue" }))
+
+    expect(navigation.replace).toHaveBeenCalledTimes(2)
+    for (const [destination] of navigation.replace.mock.calls) {
+      const search = new URL(destination, "https://paprika.test").searchParams
+      expect(search.get("sort")).toBe("name")
+      expect(search.get("direction")).toBe("asc")
+    }
+    const finalSearch = new URL(
+      navigation.replace.mock.calls.at(-1)![0],
+      "https://paprika.test",
+    ).searchParams
+    expect(finalSearch.get("view")).toBe("queue")
+  })
+
+  it("rejects an application-only sort on a direct Matrix route", () => {
+    navigation.query = "view=matrix&sort=sync&direction=desc"
+
+    renderProvider()
+
+    expect(screen.getByTestId("query-presentation")).toHaveTextContent(
+      JSON.stringify({ view: "matrix", sort: "name", direction: "desc" }),
+    )
+    expect(screen.getByTestId("query-notices")).toHaveTextContent(
+      "Matrix cannot order aggregate intersections by sync; using Intersection.",
+    )
+  })
+
+  it("commits a query-only scope change when browser history matches the observed route", async () => {
+    const user = userEvent.setup()
+    navigation.query = "project=team%2Fpayments&view=heatmap&group=namespace"
+    const dispatchEvent = vi
+      .spyOn(window, "dispatchEvent")
+      .mockReturnValue(true)
+    window.history.replaceState(
+      { __NA: true },
+      "",
+      `/dashboard/applications?${navigation.query}`,
+    )
+
+    try {
+      renderProvider()
+      await user.click(screen.getByRole("button", { name: "Clear scope" }))
+
+      expect(navigation.replace).toHaveBeenCalledWith(
+        "/dashboard/applications?view=heatmap&group=namespace",
+        { scroll: false },
+      )
+      expect(window.location.pathname).toBe("/dashboard/applications")
+      expect(window.location.search).toBe("?view=heatmap&group=namespace")
+      expect(dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "popstate" }),
+      )
+    } finally {
+      dispatchEvent.mockRestore()
+      window.history.replaceState({}, "", "/dashboard/applications")
+    }
+  })
+
+  it("preserves the browser base path while committing a query-only scope change", async () => {
+    const user = userEvent.setup()
+    navigation.query = "project=team%2Fpayments&view=heatmap&group=namespace"
+    const dispatchEvent = vi
+      .spyOn(window, "dispatchEvent")
+      .mockReturnValue(true)
+    window.history.replaceState(
+      { __NA: true },
+      "",
+      `/paprika/dashboard/applications?${navigation.query}`,
+    )
+
+    try {
+      renderProvider()
+      await user.click(screen.getByRole("button", { name: "Clear scope" }))
+
+      expect(navigation.replace).toHaveBeenCalledWith(
+        "/dashboard/applications?view=heatmap&group=namespace",
+        { scroll: false },
+      )
+      expect(window.location.pathname).toBe("/paprika/dashboard/applications")
+      expect(window.location.search).toBe("?view=heatmap&group=namespace")
+      expect(dispatchEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "popstate" }),
+      )
+    } finally {
+      dispatchEvent.mockRestore()
+      window.history.replaceState({}, "", "/dashboard/applications")
+    }
   })
 
   it("keeps selected facets present while loading and marks settled missing values unavailable", async () => {
@@ -640,14 +822,14 @@ describe("FleetScopeProvider", () => {
     expect(destination.searchParams.getAll("health")).toEqual(["degraded"])
     for (const defaultKey of [
       "view",
-      "sort",
-      "direction",
       "density",
       "labels",
       "range",
     ]) {
       expect(destination.searchParams.has(defaultKey)).toBe(false)
     }
+    expect(destination.searchParams.get("sort")).toBe("name")
+    expect(destination.searchParams.get("direction")).toBe("asc")
     expect(destination.searchParams.get("q")).toBe("checkout")
     expect(destination.searchParams.get("page")).toBe("4")
     expect(destination.searchParams.get("cursor")).toBe("next")

@@ -33,7 +33,7 @@ jobs:
   fleet-ui-smoke:
     permissions:
       contents: read
-    name: Fleet console browser smoke
+    name: Fleet console browser acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -60,26 +60,18 @@ jobs:
         working-directory: ui
         run: npm ci
 
-      - name: Build compiled UI
-        working-directory: ui
-        run: npm run build
-
-      - name: Build real fleet fixture
-        run: go build -o bin/fleet-console-fixture ./test/fleetconsole
-
       - name: Install Chromium
         working-directory: ui
         run: npx playwright install --with-deps chromium
 
-      - name: Run real fleet console smoke
-        working-directory: ui
-        run: npm run test:e2e -- fleet-console.spec.ts
+      - name: Run complete and responsive fleet console acceptance
+        run: bash hack/test-fleet-console.sh
 
       - name: Upload browser diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: fleet-ui-smoke
+          name: fleet-ui-acceptance
           path: |
             ui/playwright-report
             ui/test-results

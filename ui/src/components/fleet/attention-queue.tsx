@@ -49,7 +49,7 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
     <section aria-label="Attention queue" className="min-w-0">
       <div className="border-b border-border bg-card px-4 py-3 sm:px-6">
         <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-primary">
-          Server-ranked impact
+          Server-ranked operator order
         </p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           The fleet service orders this queue. Every page remains in authoritative server order.

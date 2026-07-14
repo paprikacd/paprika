@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:fleet": "../hack/test-fleet-console.sh",
     "test:watch": "vitest",
     "generate": "cd .. && buf generate"
   },

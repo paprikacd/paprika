@@ -221,6 +221,7 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 
 	client := v1connect.NewPaprikaServiceClient(httpClient, baseURL)
 	assertRealFleetQueries(t, client, 24)
+	assertRealApplicationSetDetail(t, client)
 	policies, err := client.ListPolicies(t.Context(), connect.NewRequest(&paprikav1.ListPoliciesRequest{}))
 	if err != nil {
 		t.Fatalf("ListPolicies: %v", err)
@@ -230,6 +231,41 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 	}
 	assertEventsDisabled(t, httpClient, baseURL)
 	stopServer()
+}
+
+func assertRealApplicationSetDetail(
+	t *testing.T,
+	client v1connect.PaprikaServiceClient,
+) {
+	t.Helper()
+
+	sets, err := client.ListApplicationSets(
+		t.Context(),
+		connect.NewRequest(&paprikav1.ListApplicationSetsRequest{}),
+	)
+	if err != nil {
+		t.Fatalf("ListApplicationSets: %v", err)
+	}
+	if len(sets.Msg.GetApplicationsets()) != fixtureNamespaceCount {
+		t.Fatalf("ListApplicationSets returned %d sets, want %d",
+			len(sets.Msg.GetApplicationsets()), fixtureNamespaceCount)
+	}
+
+	detail, err := client.GetApplicationSet(
+		t.Context(),
+		connect.NewRequest(&paprikav1.GetApplicationSetRequest{
+			Namespace: "team-04",
+			Name:      "fixture-applications",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("GetApplicationSet: %v", err)
+	}
+	set := detail.Msg.GetApplicationset()
+	if set.GetNamespace() != "team-04" || set.GetName() != "fixture-applications" ||
+		set.GetPhase() != "Ready" || set.GetApplications() != 2 {
+		t.Fatalf("unexpected ApplicationSet detail: %+v", set)
+	}
 }
 
 func assertCompiledFleetRoutes(t *testing.T, httpClient *http.Client, baseURL string) {

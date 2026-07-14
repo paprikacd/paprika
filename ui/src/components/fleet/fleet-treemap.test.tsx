@@ -240,6 +240,8 @@ describe("FleetTreemap", () => {
       <FleetTreemap
         result={map}
         zoom=""
+        sort="name"
+        direction="asc"
         onZoomChange={onZoomChange}
         onSelectApplication={onSelectApplication}
         onFocusedApplication={vi.fn()}
@@ -255,6 +257,8 @@ describe("FleetTreemap", () => {
       <FleetTreemap
         result={map}
         zoom="group:payments"
+        sort="name"
+        direction="asc"
         onZoomChange={onZoomChange}
         onSelectApplication={onSelectApplication}
         onFocusedApplication={vi.fn()}
@@ -272,6 +276,8 @@ function renderTreemap(
     <FleetTreemap
       result={result([])}
       zoom=""
+      sort="name"
+      direction="asc"
       onZoomChange={vi.fn()}
       onSelectApplication={vi.fn()}
       onFocusedApplication={vi.fn()}

@@ -32,7 +32,7 @@ import type {
   FleetMapResult,
 } from "@/lib/fleet-client"
 import type { FleetFocusTarget } from "@/lib/fleet-focus"
-import type { NamespacedKey } from "@/lib/fleet-query"
+import type { FleetDirection, FleetSort, NamespacedKey } from "@/lib/fleet-query"
 
 const DEFAULT_VIEWPORT = { width: 960, height: 520 }
 const NAVIGATION_KEYS = new Set<TreemapNavigationKey>([
@@ -60,6 +60,8 @@ const HEALTH_STYLE: Record<
 export interface FleetTreemapProps {
   result: FleetMapResult
   zoom: string
+  sort: FleetSort
+  direction: FleetDirection
   selected?: NamespacedKey | null
   onZoomChange: (zoom: string) => void
   onSelectApplication: (identity: NamespacedKey) => void
@@ -70,6 +72,8 @@ export interface FleetTreemapProps {
 export function FleetTreemap({
   result,
   zoom,
+  sort,
+  direction,
   selected,
   onZoomChange,
   onSelectApplication,
@@ -96,9 +100,9 @@ export function FleetTreemap({
           devicePixelRatio:
             typeof window === "undefined" ? 1 : window.devicePixelRatio,
         },
-        { zoom },
+        { zoom, sort, direction },
       ),
-    [result.roots, viewport, zoom],
+    [direction, result.roots, sort, viewport, zoom],
   )
   const selectedStableId = useMemo(
     () => findApplicationStableId(layout.rectangles, selected),

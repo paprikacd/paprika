@@ -22,10 +22,11 @@ import {
   type FleetIdentityAmbiguity,
 } from "@/lib/fleet-navigation"
 import {
+  QUEUE_FLEET_ORDER,
   isValidNamespacedKey,
   mergeFleetQuery,
-  parseFleetQuery,
-  serializeFleetQuery,
+  parseFleetPresentationQuery,
+  serializeFleetPresentationQuery,
   type FleetQueryNotice,
   type FleetQueryPatch,
   type FleetQueryState,
@@ -132,7 +133,7 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const rawQuery = searchParams.toString()
-  const parsed = useMemo(() => parseFleetQuery(rawQuery), [rawQuery])
+  const parsed = useMemo(() => parseFleetPresentationQuery(rawQuery), [rawQuery])
   const routeKey = navigationRouteKey(pathname, rawQuery)
   const observedScope = useMemo(
     () => scopeFromState(parsed.state),
@@ -269,9 +270,16 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const semanticPatch = scopeChanged
+      let semanticPatch = scopeChanged
         ? { ...patch, selected: null, zoom: "" }
         : patch
+      if (
+        semanticPatch.view === "queue" &&
+        !current.has("sort") &&
+        !current.has("direction")
+      ) {
+        semanticPatch = { ...semanticPatch, ...QUEUE_FLEET_ORDER }
+      }
       const nextState = mergeFleetQuery(
         navigation.semanticState,
         semanticPatch,
@@ -295,7 +303,9 @@ export function FleetScopeProvider({ children }: { children: ReactNode }) {
           : nextRouteKey,
       })
       setMutationFailure(undefined)
-      router.replace(fleetHref(`${pathname}${hash}`, next), { scroll: false })
+      const destination = fleetHref(`${pathname}${hash}`, next)
+      router.replace(destination, { scroll: false })
+      commitSamePathBrowserNavigation(pathname, rawQuery, destination)
       return true
     },
     [
@@ -359,6 +369,48 @@ export function useFleetScope(): FleetScopeContextValue {
     throw new Error("useFleetScope must be used within FleetScopeProvider")
   }
   return value
+}
+
+function commitSamePathBrowserNavigation(
+  observedPathname: string,
+  observedRawQuery: string,
+  destination: string,
+): void {
+  if (typeof window === "undefined") return
+
+  const current = new URL(window.location.href)
+  const historyState = window.history.state as { __NA?: unknown } | null
+  if (historyState?.__NA !== true) return
+  if (current.searchParams.toString() !== new URLSearchParams(observedRawQuery).toString()) return
+
+  const target = new URL(destination, current)
+  if (
+    target.origin !== current.origin ||
+    normalizedPath(target.pathname) !== normalizedPath(observedPathname) ||
+    !browserPathMatchesObservedRoute(current.pathname, observedPathname)
+  ) {
+    return
+  }
+
+  const targetRoute = `${current.pathname}${target.search}${target.hash}`
+  const currentRoute = `${current.pathname}${current.search}${current.hash}`
+  if (targetRoute === currentRoute) return
+
+  window.history.replaceState(historyState, "", targetRoute)
+  window.dispatchEvent(new PopStateEvent("popstate", { state: historyState }))
+}
+
+function browserPathMatchesObservedRoute(
+  browserPathname: string,
+  observedPathname: string,
+): boolean {
+  const browser = normalizedPath(browserPathname)
+  const observed = normalizedPath(observedPathname)
+  return browser === observed || browser.endsWith(observed.startsWith("/") ? observed : `/${observed}`)
+}
+
+function normalizedPath(pathname: string): string {
+  return pathname === "/" ? pathname : pathname.replace(/\/+$/u, "")
 }
 
 function isAuthoritativeStatus(status: FleetDataStatus): boolean {
@@ -597,9 +649,18 @@ function canonicalFleetSearchParams(
   current: URLSearchParams,
   state: FleetQueryState,
 ): URLSearchParams {
+  const preserveExplicitSort = current.has("sort")
+  const preserveExplicitDirection = current.has("direction")
   const result = new URLSearchParams(current)
   for (const key of FLEET_OWNED_QUERY_KEYS) result.delete(key)
-  for (const [key, value] of serializeFleetQuery(state)) {
+  const serialized = serializeFleetPresentationQuery(state)
+  if (preserveExplicitSort && !serialized.has("sort")) {
+    serialized.set("sort", state.sort)
+  }
+  if (preserveExplicitDirection && !serialized.has("direction")) {
+    serialized.set("direction", state.direction)
+  }
+  for (const [key, value] of serialized) {
     result.append(key, value)
   }
   return result

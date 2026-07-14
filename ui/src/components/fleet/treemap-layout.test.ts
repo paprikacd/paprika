@@ -62,6 +62,35 @@ describe("layoutTreemap", () => {
     expect(hitTestTreemap(result.rectangles, Number.NaN, 20)).toBeNull()
   })
 
+  it("orders application rectangles by the selected field and direction", () => {
+    const roots = [group("group:all", [
+      application("application:alpha", 1),
+      application("application:bravo", 20),
+      application("application:charlie", 3),
+    ])]
+    const ascending = layoutTreemap(
+      roots,
+      { width: 600, height: 300 },
+      { ...NO_GAPS, sort: "name", direction: "asc" },
+    )
+    const descending = layoutTreemap(
+      roots,
+      { width: 600, height: 300 },
+      { ...NO_GAPS, sort: "name", direction: "desc" },
+    )
+
+    expect(selectableOrder(ascending.rectangles)).toEqual([
+      "application:alpha",
+      "application:bravo",
+      "application:charlie",
+    ])
+    expect(selectableOrder(descending.rectangles)).toEqual([
+      "application:charlie",
+      "application:bravo",
+      "application:alpha",
+    ])
+  })
+
   it("resolves semantic zoom as presentation scope and returns a zoom-only URL patch", () => {
     const payments = group("group:payments", [
       application("application:checkout"),
@@ -212,4 +241,12 @@ function signature(
     rectangle.width,
     rectangle.height,
   ])
+}
+
+function selectableOrder(
+  rectangles: readonly { stableId: string; selectable: boolean }[],
+): string[] {
+  return rectangles
+    .filter((rectangle) => rectangle.selectable)
+    .map((rectangle) => rectangle.stableId)
 }

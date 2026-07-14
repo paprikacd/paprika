@@ -152,7 +152,7 @@ describe("FleetFilters", () => {
     ["Table", "treemap", { view: "table" }],
     ["Queue", "treemap", { view: "queue" }],
   ] as const)(
-    "switches to %s with an exact view-only patch",
+    "switches to %s with the exact presentation patch",
     async (label, currentView, expectedPatch) => {
       const user = userEvent.setup()
       const state = { ...DEFAULT_FLEET_QUERY, view: currentView }
@@ -164,6 +164,36 @@ describe("FleetFilters", () => {
       expect(onPatch).toHaveBeenLastCalledWith(expectedPatch)
     },
   )
+
+  it("preserves an explicit non-default order when switching to Queue", async () => {
+    const user = userEvent.setup()
+    const state: FleetQueryState = {
+      ...DEFAULT_FLEET_QUERY,
+      sort: "health",
+      direction: "desc",
+    }
+    const { onPatch } = renderFilters(state)
+
+    await user.click(screen.getByRole("button", { name: "Show Queue view" }))
+
+    expect(onPatch).toHaveBeenCalledOnce()
+    expect(onPatch).toHaveBeenLastCalledWith({ view: "queue" })
+  })
+
+  it("replaces an unsupported order when switching to Matrix", async () => {
+    const user = userEvent.setup()
+    const state: FleetQueryState = {
+      ...DEFAULT_FLEET_QUERY,
+      sort: "sync",
+      direction: "desc",
+    }
+    const { onPatch } = renderFilters(state)
+
+    await user.click(screen.getByRole("button", { name: "Show Matrix view" }))
+
+    expect(onPatch).toHaveBeenCalledOnce()
+    expect(onPatch).toHaveBeenLastCalledWith({ view: "matrix", sort: "name" })
+  })
 
   it("changes presentation without copying or losing scoped URL fields", async () => {
     const user = userEvent.setup()
@@ -214,6 +244,46 @@ describe("FleetFilters", () => {
     })
     expect(onPatch).toHaveBeenNthCalledWith(3, { rows: "health" })
     expect(onPatch).toHaveBeenNthCalledWith(4, { columns: "stage" })
+  })
+
+  it.each(["heatmap", "treemap", "table", "queue"] as const)(
+    "emits exact sort and direction patches in the %s presentation",
+    (view) => {
+      const onPatch = vi.fn<(patch: FleetQueryPatch) => void>()
+      renderFilters({ ...DEFAULT_FLEET_QUERY, view }, onPatch)
+
+      fireEvent.change(screen.getByRole("combobox", { name: "Sort applications by" }), {
+        target: { value: "health" },
+      })
+      fireEvent.change(screen.getByRole("combobox", { name: "Sort direction" }), {
+        target: { value: "desc" },
+      })
+
+      expect(onPatch).toHaveBeenNthCalledWith(1, { sort: "health" })
+      expect(onPatch).toHaveBeenNthCalledWith(2, { direction: "desc" })
+    },
+  )
+
+  it("offers only truthful aggregate ordering in the Matrix presentation", () => {
+    const onPatch = vi.fn<(patch: FleetQueryPatch) => void>()
+    renderFilters({ ...DEFAULT_FLEET_QUERY, view: "matrix" }, onPatch)
+
+    const sort = screen.getByRole("combobox", { name: "Sort intersections by" })
+    expect(sort).toHaveValue("name")
+    expect(within(sort).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual([
+      "name",
+      "health",
+      "resource_count",
+      "impact",
+    ])
+
+    fireEvent.change(sort, { target: { value: "health" } })
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort direction" }), {
+      target: { value: "desc" },
+    })
+
+    expect(onPatch).toHaveBeenNthCalledWith(1, { sort: "health" })
+    expect(onPatch).toHaveBeenNthCalledWith(2, { direction: "desc" })
   })
 
   it("uses semantic groups and 44px minimum interactive targets", () => {

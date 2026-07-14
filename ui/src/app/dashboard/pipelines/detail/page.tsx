@@ -198,7 +198,12 @@ function PipelineDetail() {
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-8">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push(dashboardHref)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to Dashboard"
+            onClick={() => router.push(dashboardHref)}
+          >
             <ChevronLeft className="size-4" />
           </Button>
           <div>

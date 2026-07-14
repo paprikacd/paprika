@@ -111,6 +111,24 @@ describe("FleetMatrix", () => {
     expect(within(populated).getAllByRole("cell")).toHaveLength(4)
   })
 
+  it("orders populated intersections by the selected field and direction", () => {
+    const { rerender } = render(
+      <FleetMatrix result={result} sort="resource_count" direction="asc" />,
+    )
+
+    const populatedRows = () => screen.getAllByRole("row").slice(1)
+    expect(populatedRows().map((row) => row.textContent)).toEqual([
+      expect.stringContaining("commerce"),
+      expect.stringContaining("payments"),
+    ])
+
+    rerender(<FleetMatrix result={result} sort="resource_count" direction="desc" />)
+    expect(populatedRows().map((row) => row.textContent)).toEqual([
+      expect.stringContaining("payments"),
+      expect.stringContaining("commerce"),
+    ])
+  })
+
   it("renders a useful empty state without inventing matrix intersections", () => {
     render(
       <FleetMatrix

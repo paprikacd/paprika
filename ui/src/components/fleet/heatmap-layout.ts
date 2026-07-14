@@ -185,7 +185,7 @@ export function layoutHeatmap(input: HeatmapLayoutInput): HeatmapLayoutResult {
     if (groups.length > 0) y += HEATMAP_GROUP_GAP
 
     const applications = [...band.applications].sort((left, right) =>
-      compareApplications(left, right, input.sort, input.direction),
+      compareFleetMapApplications(left, right, input.sort, input.direction),
     )
     const columns = columnsForWidth(input.width, cellSize)
     const columnCount = Math.min(columns, applications.length)
@@ -455,7 +455,7 @@ function labelEligibility(labels: FleetLabelMode, cellSize: number): boolean {
   return cellSize >= HEATMAP_AUTO_LABEL_MIN_CELL_SIZE
 }
 
-function compareApplications(
+export function compareFleetMapApplications(
   left: FleetMapNode,
   right: FleetMapNode,
   sort: FleetSortField,

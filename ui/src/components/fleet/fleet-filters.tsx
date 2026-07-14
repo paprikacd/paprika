@@ -6,20 +6,28 @@ import { useEffect, useId, useMemo, useRef, useState } from "react"
 import type { FleetFacetBucket } from "@/lib/fleet-client"
 import {
   FLEET_DENSITY_VALUES,
+  FLEET_DIRECTION_VALUES,
   FLEET_GROUP_VALUES,
   FLEET_HEALTH_VALUES,
   FLEET_LABEL_MODE_VALUES,
+  FLEET_MATRIX_SORT_VALUES,
   FLEET_RELEASE_VALUES,
   FLEET_ROLLOUT_VALUES,
   FLEET_SIZE_VALUES,
+  FLEET_SORT_VALUES,
   FLEET_SOURCE_VALUES,
   FLEET_SYNC_VALUES,
+  fleetMatrixSort,
+  isFleetMatrixSort,
   type FleetDensity,
+  type FleetDirection,
   type FleetGroup,
   type FleetLabelMode,
+  type FleetMatrixSort,
   type FleetQueryPatch,
   type FleetQueryState,
   type FleetSize,
+  type FleetSort,
   type FleetView,
   type NamespacedKey,
 } from "@/lib/fleet-query"
@@ -78,6 +86,33 @@ const labelModeLabels: Record<FleetLabelMode, string> = {
   none: "None",
 }
 
+const sortLabels: Record<FleetSort, string> = {
+  name: "Name",
+  project: "Project",
+  cluster: "Cluster",
+  stage: "Stage",
+  health: "Health",
+  sync: "Sync",
+  release: "Release",
+  rollout: "Rollout",
+  resource_count: "Resource count",
+  last_transition: "Last transition",
+  impact: "Impact",
+  relevance: "Relevance",
+}
+
+const matrixSortLabels: Record<FleetMatrixSort, string> = {
+  name: "Intersection",
+  health: "Worst health",
+  resource_count: "Resource weight",
+  impact: "Operational impact",
+}
+
+const directionLabels: Record<FleetDirection, string> = {
+  asc: "Ascending",
+  desc: "Descending",
+}
+
 const FACET_WINDOW_SIZE = 50
 
 export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps) {
@@ -124,6 +159,10 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
   }
 
   const selectPresentation = (view: FleetView) => {
+    if (view === "matrix" && !isFleetMatrixSort(state.sort)) {
+      onPatch({ view, sort: "name" })
+      return
+    }
     onPatch({ view })
   }
 
@@ -323,10 +362,16 @@ function CanvasControls({
   state,
   onPatch,
 }: Pick<FleetFiltersProps, "state" | "onPatch">) {
-  if (state.view !== "heatmap" && state.view !== "treemap" && state.view !== "matrix") return null
-
   const presentationLabel =
-    state.view === "heatmap" ? "Heatmap" : state.view === "treemap" ? "Treemap" : "Matrix"
+    state.view === "heatmap"
+      ? "Heatmap"
+      : state.view === "treemap"
+        ? "Treemap"
+        : state.view === "matrix"
+          ? "Matrix"
+          : state.view === "table"
+            ? "Table"
+            : "Queue"
 
   return (
     <div
@@ -369,7 +414,7 @@ function CanvasControls({
             onChange={(value) => onPatch({ size: value as FleetSize })}
           />
         </>
-      ) : (
+      ) : state.view === "matrix" ? (
         <>
           <SelectControl
             label="Matrix rows"
@@ -384,7 +429,31 @@ function CanvasControls({
             onChange={(value) => onPatch({ columns: value as FleetGroup })}
           />
         </>
+      ) : null}
+      {state.view === "matrix" ? (
+        <SelectControl
+          label="Sort intersections by"
+          value={fleetMatrixSort(state.sort)}
+          options={FLEET_MATRIX_SORT_VALUES.map((value) => ({
+            value,
+            label: matrixSortLabels[value],
+          }))}
+          onChange={(value) => onPatch({ sort: value as FleetMatrixSort })}
+        />
+      ) : (
+        <SelectControl
+          label="Sort applications by"
+          value={state.sort}
+          options={FLEET_SORT_VALUES.map((value) => ({ value, label: sortLabels[value] }))}
+          onChange={(value) => onPatch({ sort: value as FleetSort })}
+        />
       )}
+      <SelectControl
+        label="Sort direction"
+        value={state.direction}
+        options={FLEET_DIRECTION_VALUES.map((value) => ({ value, label: directionLabels[value] }))}
+        onChange={(value) => onPatch({ direction: value as FleetDirection })}
+      />
     </div>
   )
 }
