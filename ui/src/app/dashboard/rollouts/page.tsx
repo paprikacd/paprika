@@ -95,6 +95,8 @@ function RolloutsList() {
   const [acting, setActing] = useState<Record<string, string>>({});
   const requestGeneration = useRef(0);
   const activeController = useRef<AbortController | null>(null);
+  const actionRefreshTimers = useRef(new Set<number>());
+  const actionRefreshMounted = useRef(false);
 
   const fetchData = useCallback(async () => {
     activeController.current?.abort();
@@ -164,6 +166,30 @@ function RolloutsList() {
     }
   }, [scope]);
 
+  const currentFetchData = useRef(fetchData);
+  useEffect(() => {
+    currentFetchData.current = fetchData;
+  }, [fetchData]);
+
+  const scheduleActionRefresh = useCallback(() => {
+    if (!actionRefreshMounted.current) return;
+    const timer = window.setTimeout(() => {
+      actionRefreshTimers.current.delete(timer);
+      void currentFetchData.current();
+    }, 1000);
+    actionRefreshTimers.current.add(timer);
+  }, []);
+
+  useEffect(() => {
+    const timers = actionRefreshTimers.current;
+    actionRefreshMounted.current = true;
+    return () => {
+      actionRefreshMounted.current = false;
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fetchData();
@@ -180,7 +206,7 @@ function RolloutsList() {
       setActing((prev) => ({ ...prev, [key]: "promote" }));
       try {
         await client.promoteRollout({ namespace: ro.namespace, name: ro.name });
-        window.setTimeout(() => void fetchData(), 1000);
+        scheduleActionRefresh();
       } catch (err) {
         setError(`Promote failed for ${ro.name}`);
         console.error(err);
@@ -188,7 +214,7 @@ function RolloutsList() {
         setActing((prev) => ({ ...prev, [key]: "" }));
       }
     },
-    [fetchData],
+    [scheduleActionRefresh],
   );
 
   const handleAbort = useCallback(
@@ -197,7 +223,7 @@ function RolloutsList() {
       setActing((prev) => ({ ...prev, [key]: "abort" }));
       try {
         await client.abortRollout({ namespace: ro.namespace, name: ro.name });
-        window.setTimeout(() => void fetchData(), 1000);
+        scheduleActionRefresh();
       } catch (err) {
         setError(`Abort failed for ${ro.name}`);
         console.error(err);
@@ -205,7 +231,7 @@ function RolloutsList() {
         setActing((prev) => ({ ...prev, [key]: "" }));
       }
     },
-    [fetchData],
+    [scheduleActionRefresh],
   );
 
   const activeCount = useMemo(

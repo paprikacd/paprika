@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   FleetMapApplicationMetadata,
@@ -74,6 +74,10 @@ describe("RolloutsPage fleet scope", () => {
     mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: 0n })
     mockClient.promoteRollout.mockResolvedValue({})
     mockClient.abortRollout.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it("fans out repeated Namespaces and filters Project, Cluster, and Stage through the complete map association", async () => {
@@ -214,5 +218,69 @@ describe("RolloutsPage fleet scope", () => {
 
     await act(async () => resolvePromote())
     await waitFor(() => expect(mockClient.promoteRollout).toHaveBeenCalledWith({ namespace: "apps", name: "deploy" }))
+  })
+
+  it.each([
+    { label: "Promote", method: "promoteRollout" as const },
+    { label: "Abort", method: "abortRollout" as const },
+  ])("keeps delayed $label refreshes in the latest observed scope", async ({ label, method }) => {
+    vi.useFakeTimers()
+    navigation.query = "namespace=apps"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["apps"] }
+    mockClient.listRollouts.mockImplementation(({ namespace }: { namespace?: string }) =>
+      Promise.resolve({
+        rollouts: [
+          new Rollout({
+            namespace: namespace ?? "all",
+            name: `${namespace ?? "all"}-deploy`,
+            phase: "Progressing",
+          }),
+        ],
+      }),
+    )
+
+    const { rerender, unmount } = render(<RolloutsPage />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText("apps-deploy")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: label }))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mockClient[method]).toHaveBeenCalledWith({ namespace: "apps", name: "apps-deploy" })
+
+    navigation.query = "namespace=other"
+    fleetState.value = { projects: [], clusters: [], stages: [], namespaces: ["other"] }
+    rerender(<RolloutsPage />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText("other-deploy")).toBeInTheDocument()
+    expect(screen.queryByText("apps-deploy")).not.toBeInTheDocument()
+
+    mockClient.listRollouts.mockClear()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    expect(mockClient.listRollouts.mock.calls.map(([request]) => request)).toEqual([
+      { namespace: "other" },
+    ])
+    expect(screen.getByText("other-deploy")).toBeInTheDocument()
+    expect(screen.queryByText("apps-deploy")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: label }))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    mockClient.listRollouts.mockClear()
+    unmount()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    expect(mockClient.listRollouts).not.toHaveBeenCalled()
   })
 })
