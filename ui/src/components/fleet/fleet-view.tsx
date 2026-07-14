@@ -1,7 +1,6 @@
 "use client"
 
 import { X } from "lucide-react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ApplicationTable } from "@/components/fleet/application-table"
@@ -10,7 +9,6 @@ import { FleetFilters } from "@/components/fleet/fleet-filters"
 import { FleetMatrix } from "@/components/fleet/fleet-matrix"
 import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { FleetTreemap } from "@/components/fleet/fleet-treemap"
-import type { FleetFacetBucket } from "@/lib/fleet-client"
 import { useConnection } from "@/lib/connection-context"
 import {
   createFleetFocusCoordinator,
@@ -18,17 +16,13 @@ import {
   type FleetFocusTarget,
 } from "@/lib/fleet-focus"
 import {
-  mergeFleetQuery,
-  parseFleetQuery,
-  reconcileFleetQuery,
-  serializeFleetQuery,
-  type FleetFacetAvailability,
   type FleetQueryPatch,
   type FleetQueryState,
   type FleetView as FleetViewName,
   type NamespacedKey,
 } from "@/lib/fleet-query"
 import { useFleetRefresh } from "@/lib/fleet-refresh"
+import { useFleetScope } from "@/lib/fleet-scope-context"
 import {
   useFleetData,
   type FleetPresentationData,
@@ -37,17 +31,12 @@ import {
 const presentations: readonly FleetViewName[] = ["treemap", "matrix"]
 
 export function FleetView() {
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const rawQuery = searchParams.toString()
-  const parsed = useMemo(() => parseFleetQuery(rawQuery), [rawQuery])
-  const fleet = useFleetData(parsed.state)
+  const { state, notices, patchQuery } = useFleetScope()
+  const fleet = useFleetData(state)
   const { reportRequestOutcome } = useConnection()
   const [focusMessage, setFocusMessage] = useState("")
   const [queryNotice, setQueryNotice] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const lastCanonicalReplace = useRef("")
   const summaryTargets = useRef(new Map<string, HTMLElement>())
   const [focusCoordinator] = useState(() =>
     createFleetFocusCoordinator({ announce: setFocusMessage }),
@@ -67,20 +56,7 @@ export function FleetView() {
     )
   }, [fleet.status, reportRequestOutcome])
 
-  const replaceState = useCallback(
-    (state: FleetQueryState) => {
-      const query = serializeFleetQuery(state).toString()
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false })
-    },
-    [pathname, router],
-  )
-
-  const patchState = useCallback(
-    (patch: FleetQueryPatch) => {
-      replaceState(mergeFleetQuery(parsed.state, patch))
-    },
-    [parsed.state, replaceState],
-  )
+  const patchState = patchQuery
 
   const hasSettledData =
     fleet.currentData !== undefined &&
@@ -88,27 +64,10 @@ export function FleetView() {
   const fleetReadyTotal = hasSettledData && fleet.currentData
     ? presentationTotal(fleet.currentData).toString()
     : undefined
-  const settledFacets = useMemo(
-    () => hasSettledData ? presentationFacets(fleet.currentData) : undefined,
-    [fleet.currentData, hasSettledData],
-  )
-  const availability = useMemo(
-    () =>
-      settledFacets
-        ? facetAvailability(settledFacets)
-        : {},
-    [settledFacets],
-  )
-  const reconciliation = useMemo(
-    () => reconcileFleetQuery(parsed.state, availability),
-    [availability, parsed.state],
-  )
   const derivedQueryNotice = useMemo(
     () =>
-      [...parsed.notices, ...reconciliation.notices]
-        .map((notice) => notice.message)
-        .join(" "),
-    [parsed.notices, reconciliation.notices],
+      notices.map((notice) => notice.message).join(" "),
+    [notices],
   )
 
   useEffect(() => {
@@ -120,18 +79,6 @@ export function FleetView() {
       current === derivedQueryNotice ? current : derivedQueryNotice,
     )
   }, [derivedQueryNotice])
-
-  useEffect(() => {
-    const canonical = serializeFleetQuery(reconciliation.state).toString()
-    if (canonical === rawQuery) {
-      lastCanonicalReplace.current = ""
-      return
-    }
-    const replacementKey = `${rawQuery}\n${canonical}`
-    if (lastCanonicalReplace.current === replacementKey) return
-    lastCanonicalReplace.current = replacementKey
-    replaceState(reconciliation.state)
-  }, [rawQuery, reconciliation, replaceState])
 
   const getResultsHeadingTarget = useCallback(
     (): FleetFocusTarget | null => headingRef.current,
@@ -150,8 +97,8 @@ export function FleetView() {
   }, [focusCoordinator, getResultsHeadingTarget])
 
   useEffect(() => {
-    void focusCoordinator.activatePresentation(parsed.state.view)
-  }, [focusCoordinator, parsed.state.view])
+    void focusCoordinator.activatePresentation(state.view)
+  }, [focusCoordinator, state.view])
 
   const focusedApplications = useMemo(() => {
     if (fleet.currentData?.kind !== "applications") return undefined
@@ -212,7 +159,7 @@ export function FleetView() {
       </header>
 
       <FleetFilters
-        state={parsed.state}
+        state={state}
         facets={fleet.applicationFacets}
         onPatch={patchState}
       />
@@ -246,7 +193,7 @@ export function FleetView() {
           onLoadMore={fleet.loadMore}
           onSelectApplication={selectApplication}
           onFocusedApplication={trackApplicationFocus}
-          state={parsed.state}
+          state={state}
           onPatch={patchState}
           focusCoordinator={focusCoordinator}
           getResultsHeadingTarget={getResultsHeadingTarget}
@@ -340,50 +287,8 @@ function FleetPresentation({
   }
 }
 
-function facetAvailability(facets: readonly FleetFacetBucket[]): FleetFacetAvailability {
-  const objects = (dimension: "project" | "cluster") =>
-    uniqueObjects(
-      facets
-        .filter((facet) => facet.dimension === dimension)
-        .map((facet) => facet.object)
-        .filter((value): value is NamespacedKey => Boolean(value)),
-    )
-  const values = (dimension: FleetFacetBucket["dimension"]) =>
-    [...new Set(
-      facets
-        .filter((facet) => facet.dimension === dimension)
-        .map((facet) => facet.value)
-        .filter((value): value is string => Boolean(value)),
-    )]
-
-  return {
-    projects: objects("project"),
-    clusters: objects("cluster"),
-    stages: values("stage"),
-    namespaces: values("namespace"),
-    health: values("health") as FleetFacetAvailability["health"],
-    sync: values("sync") as FleetFacetAvailability["sync"],
-    release: values("release") as FleetFacetAvailability["release"],
-    rollout: values("rollout") as FleetFacetAvailability["rollout"],
-    sources: values("source_type") as FleetFacetAvailability["sources"],
-  }
-}
-
-function presentationFacets(
-  data: FleetPresentationData | undefined,
-): readonly FleetFacetBucket[] {
-  if (!data) return []
-  return data.kind === "applications" ? data.facets : data.result.facets
-}
-
 function presentationTotal(data: FleetPresentationData): bigint {
   return data.kind === "applications" ? data.total : data.result.total
-}
-
-function uniqueObjects(values: readonly NamespacedKey[]): NamespacedKey[] {
-  const unique = new Map<string, NamespacedKey>()
-  values.forEach((value) => unique.set(identityKey(value), { ...value }))
-  return [...unique.values()]
 }
 
 function identityKey(identity: NamespacedKey): string {

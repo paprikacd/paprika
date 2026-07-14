@@ -12,6 +12,7 @@ import type {
   FleetRequestOptions,
   QueryApplicationsOptions,
 } from "@/lib/fleet-client"
+import { toQueryFleetMapRequest } from "@/lib/fleet-client"
 import {
   DEFAULT_FLEET_QUERY,
   type FleetQueryState,
@@ -185,6 +186,7 @@ function deferred<T>() {
 
 describe("useFleetData primary presentation", () => {
   it.each([
+    ["heatmap", "map"],
     ["treemap", "map"],
     ["matrix", "matrix"],
     ["table", "applications"],
@@ -212,6 +214,48 @@ describe("useFleetData primary presentation", () => {
         direction: "desc",
       })
     }
+  })
+
+  it("uses one serialized RPC map key for presentation-only heatmap and treemap differences", async () => {
+    const { client, calls } = testClient()
+    const queryClient = newQueryClient()
+    const heatmap = queryState("heatmap", {
+      q: "payments",
+      group: "namespace",
+      density: "compact",
+      labels: "none",
+    })
+    const treemap = queryState("treemap", {
+      q: "payments",
+      group: "namespace",
+      density: "comfortable",
+      labels: "all",
+    })
+    const { result } = renderHook(
+      () => [
+        useFleetData(heatmap, { client }),
+        useFleetData(treemap, { client }),
+      ] as const,
+      { wrapper: queryWrapper(queryClient) },
+    )
+
+    await waitFor(() => {
+      expect(result.current[0].status).toBe("ready")
+      expect(result.current[1].status).toBe("ready")
+    })
+
+    expect(calls.map).toHaveLength(1)
+    const mapQueries = queryClient.getQueryCache().findAll({
+      queryKey: ["fleet", "map"],
+    })
+    expect(mapQueries).toHaveLength(1)
+    expect(mapQueries[0]?.queryKey).toEqual([
+      "fleet",
+      "map",
+      toQueryFleetMapRequest(heatmap).toJsonString(),
+    ])
+    expect(mapQueries[0]?.queryKey).not.toContain("heatmap")
+    expect(mapQueries[0]?.queryKey).not.toContain("treemap")
   })
 
   it("keeps the last settled presentation visible as stale while a new view loads", async () => {

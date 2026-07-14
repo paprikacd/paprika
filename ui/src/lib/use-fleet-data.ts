@@ -58,7 +58,6 @@ export interface FleetApplicationsData {
 
 export interface FleetMapData {
   kind: "map"
-  view: "treemap"
   result: FleetMapResult
 }
 
@@ -115,12 +114,10 @@ const defaultClient: FleetDataClient = {
   queryFleetMatrix,
 }
 
-type FleetDataQueryKey = readonly [
-  "fleet",
-  "applications" | "map" | "matrix",
-  "treemap" | "matrix" | "table" | "queue",
-  string,
-]
+type FleetDataQueryKey =
+  | readonly ["fleet", "applications", "table" | "queue", string]
+  | readonly ["fleet", "map", string]
+  | readonly ["fleet", "matrix", "matrix", string]
 
 type ActiveRequest =
   | {
@@ -131,7 +128,6 @@ type ActiveRequest =
     }
   | {
       kind: "map"
-      view: "treemap"
       state: FleetQueryState
       key: FleetDataQueryKey
     }
@@ -231,7 +227,6 @@ export function useFleetData(
         case "map":
           return {
             kind: "map",
-            view: "treemap",
             result: await client.queryFleetMap(request.state, { signal }),
           }
         case "matrix":
@@ -502,15 +497,14 @@ function activeRequest(state: FleetQueryState): ActiveRequest {
         ],
       }
     }
+    case "heatmap":
     case "treemap":
       return {
         kind: "map",
-        view: "treemap",
         state,
         key: [
           "fleet",
           "map",
-          "treemap",
           toQueryFleetMapRequest(state).toJsonString(),
         ],
       }

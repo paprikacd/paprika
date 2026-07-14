@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
-import { StrictMode } from "react"
+import { StrictMode, type ReactNode } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -21,6 +22,10 @@ const authState = vi.hoisted(() => ({
   logout: vi.fn(),
 }))
 
+const fleetRpc = vi.hoisted(() => ({
+  queryFleetMap: vi.fn(),
+}))
+
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => navigation.router,
@@ -31,12 +36,51 @@ vi.mock("@/lib/auth-context", () => ({
   useAuth: () => authState,
 }))
 
+vi.mock("@/lib/fleet-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/fleet-client")>()
+  return {
+    ...actual,
+    queryFleetMap: fleetRpc.queryFleetMap,
+  }
+})
+
 import { AppShell } from "@/components/layout/app-shell"
 import { Nav } from "@/components/layout/nav"
+import { useFleetScope } from "@/lib/fleet-scope-context"
+import { useFleetData } from "@/lib/use-fleet-data"
 
 const uiRoot = process.cwd().endsWith(`${path.sep}ui`)
   ? process.cwd()
   : path.resolve(process.cwd(), "ui")
+
+function renderShell(ui: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, staleTime: Infinity, gcTime: Infinity },
+    },
+  })
+  return {
+    queryClient,
+    ...render(ui, {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      ),
+    }),
+  }
+}
+
+function ApplicationsMapProbe() {
+  const { state } = useFleetScope()
+  const fleet = useFleetData({
+    ...state,
+    view: "treemap",
+    density: "comfortable",
+    labels: "all",
+  })
+  return <output data-testid="applications-map-status">{fleet.status}</output>
+}
 
 function cssRule(selector: string) {
   const css = readFileSync(path.join(uiRoot, "src/app/globals.css"), "utf8")
@@ -54,6 +98,13 @@ describe("AppShell navigation", () => {
     authState.user = null
     authState.isLoading = false
     authState.logout.mockReset()
+    fleetRpc.queryFleetMap.mockReset()
+    fleetRpc.queryFleetMap.mockResolvedValue({
+      roots: [],
+      total: BigInt(0),
+      indexGeneration: BigInt(1),
+      facets: [],
+    })
     window.history.replaceState({}, "", "/dashboard")
   })
 
@@ -63,7 +114,7 @@ describe("AppShell navigation", () => {
 
   it("renders every working destination with its exact route", () => {
     navigation.query = "namespace=apps&view=heatmap&unknown=kept"
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     const destinations = new Map([
       ["Overview", "/dashboard?namespace=apps&view=heatmap&unknown=kept"],
@@ -82,8 +133,29 @@ describe("AppShell navigation", () => {
     expect(main).toHaveAttribute("id", "dashboard-main")
   })
 
+  it("mounts one shared scope provider and reuses one semantic map request with Applications", async () => {
+    navigation.pathname = "/dashboard/applications"
+    navigation.query =
+      "project=team%2Fpayments&namespace=apps&q=checkout&group=namespace" +
+      "&view=heatmap&density=compact&labels=none"
+    const { queryClient } = renderShell(
+      <AppShell>
+        <ApplicationsMapProbe />
+      </AppShell>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("applications-map-status")).toHaveTextContent("empty"),
+    )
+
+    expect(fleetRpc.queryFleetMap).toHaveBeenCalledOnce()
+    expect(
+      queryClient.getQueryCache().findAll({ queryKey: ["fleet", "map"] }),
+    ).toHaveLength(1)
+  })
+
   it("uses one explicit skip-link hook with a fixed clipped and focus-visible contract", () => {
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     const skipLink = screen.getByRole("link", { name: "Skip to fleet content" })
     const main = screen.getByRole("main")
@@ -126,7 +198,7 @@ describe("AppShell navigation", () => {
   it("preserves authenticated identity and logout in the dashboard shell", async () => {
     const user = userEvent.setup()
     authState.user = { name: "Ada Platform" }
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     expect(screen.getByText("Ada Platform")).toBeInTheDocument()
     const signOut = screen.getByRole("button", { name: "Sign out" })
@@ -144,7 +216,7 @@ describe("AppShell navigation", () => {
   })
 
   it("renders Activity and Admin as disabled non-links with roadmap context", () => {
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     for (const label of ["Activity", "Admin"]) {
       expect(screen.queryByRole("link", { name: new RegExp(label, "i") })).not.toBeInTheDocument()
@@ -159,7 +231,7 @@ describe("AppShell navigation", () => {
 
   it("traps focus in the mobile drawer, closes on Escape, and restores the trigger", async () => {
     const user = userEvent.setup()
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     const trigger = screen.getByRole("button", { name: "Open navigation" })
     expect(trigger).toHaveClass("size-11")
@@ -184,7 +256,7 @@ describe("AppShell navigation", () => {
 
   it("recaptures focus if it is moved behind the open drawer", async () => {
     const user = userEvent.setup()
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     const trigger = screen.getByRole("button", { name: "Open navigation" })
     await user.click(trigger)
@@ -196,7 +268,7 @@ describe("AppShell navigation", () => {
 
   it("makes the background inert and keeps the backdrop outside the accessibility tree", async () => {
     const user = userEvent.setup()
-    const { container } = render(<AppShell>Fleet content</AppShell>)
+    const { container } = renderShell(<AppShell>Fleet content</AppShell>)
 
     const content = container.querySelector<HTMLElement>("[data-dashboard-shell-content]")
     const mobileHeader = container.querySelector<HTMLElement>("[data-dashboard-mobile-header]")
@@ -239,7 +311,7 @@ describe("AppShell navigation", () => {
         dispatchEvent: vi.fn(),
       })),
     )
-    const { container } = render(<AppShell>Fleet content</AppShell>)
+    const { container } = renderShell(<AppShell>Fleet content</AppShell>)
 
     await user.click(screen.getByRole("button", { name: "Open navigation" }))
     const content = container.querySelector<HTMLElement>("[data-dashboard-shell-content]")
@@ -256,7 +328,7 @@ describe("AppShell navigation", () => {
 
   it("migrates the legacy applications hash once without redirecting the dedicated route", async () => {
     window.history.replaceState({}, "", "/dashboard#applications")
-    const { rerender } = render(<AppShell>Fleet content</AppShell>)
+    const { rerender } = renderShell(<AppShell>Fleet content</AppShell>)
 
     await waitFor(() => {
       expect(navigation.replace).toHaveBeenCalledTimes(1)
@@ -271,7 +343,7 @@ describe("AppShell navigation", () => {
   it("migrates the legacy applications hash from the static-export dashboard path", async () => {
     navigation.pathname = "/dashboard/"
     window.history.replaceState({}, "", "/dashboard/#applications")
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     await waitFor(() => {
       expect(navigation.replace).toHaveBeenCalledTimes(1)
@@ -287,7 +359,7 @@ describe("AppShell navigation", () => {
       "&namespace=platform&q=dashboard-search&view=queue&group=health&selected=apps%2Fcheckout&unknown=kept"
     window.history.replaceState({}, "", `/dashboard/releases?${navigation.query}`)
 
-    render(<AppShell>Release inventory</AppShell>)
+    renderShell(<AppShell>Release inventory</AppShell>)
 
     expect(screen.getByRole("link", { name: "Releases" })).toHaveAttribute(
       "href",
@@ -312,7 +384,7 @@ describe("AppShell navigation", () => {
       "&stage=production&namespace=apps&namespace=platform&view=matrix&selected=apps%2Fcheckout"
     window.history.replaceState({}, "", `${url.split("#")[0]}?${navigation.query}#releases`)
 
-    render(
+    renderShell(
       <StrictMode>
         <AppShell>Fleet content</AppShell>
       </StrictMode>,
@@ -337,7 +409,7 @@ describe("AppShell navigation", () => {
         <AppShell>Fleet content</AppShell>
       </StrictMode>
     )
-    const { rerender } = render(view())
+    const { rerender } = renderShell(view())
 
     await waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(1))
 
@@ -377,7 +449,7 @@ describe("AppShell navigation", () => {
   ])("marks $label active for static-export dashboard URLs", async ({ label, pathname, hash }) => {
     navigation.pathname = pathname
     window.history.replaceState({}, "", `${pathname}${hash}`)
-    render(<AppShell>Fleet content</AppShell>)
+    renderShell(<AppShell>Fleet content</AppShell>)
 
     await waitFor(() => {
       expect(screen.getByRole("link", { name: label })).toHaveAttribute("aria-current", "page")
@@ -389,7 +461,7 @@ describe("AppShell navigation", () => {
 
   it("marks deep application routes as part of the Applications section", () => {
     navigation.pathname = "/dashboard/application"
-    render(<AppShell>Application detail</AppShell>)
+    renderShell(<AppShell>Application detail</AppShell>)
 
     expect(screen.getByRole("link", { name: "Applications" })).toHaveAttribute(
       "aria-current",

@@ -7,7 +7,7 @@ import type {
   FleetFacetBucket,
   FleetMapResult,
 } from "@/lib/fleet-client"
-import type { FleetQueryState } from "@/lib/fleet-query"
+import { parseFleetQuery, type FleetQueryState } from "@/lib/fleet-query"
 import type {
   FleetApplicationsData,
   FleetPresentationData,
@@ -20,6 +20,8 @@ const navigation = vi.hoisted(() => ({
   replace: vi.fn(),
 }))
 const mockUseFleetData = vi.hoisted(() => vi.fn())
+const mockUseFleetScope = vi.hoisted(() => vi.fn())
+const mockPatchQuery = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
@@ -34,6 +36,10 @@ vi.mock("@/lib/use-fleet-data", async () => {
   return { ...actual, useFleetData: mockUseFleetData }
 })
 
+vi.mock("@/lib/fleet-scope-context", () => ({
+  useFleetScope: mockUseFleetScope,
+}))
+
 import { FleetView } from "@/components/fleet/fleet-view"
 
 beforeEach(() => {
@@ -41,6 +47,28 @@ beforeEach(() => {
   navigation.pathname = "/dashboard/applications"
   navigation.replace.mockReset()
   mockUseFleetData.mockReset()
+  mockUseFleetScope.mockReset()
+  mockPatchQuery.mockReset()
+  mockUseFleetScope.mockImplementation(() => {
+    const parsed = parseFleetQuery(navigation.params)
+    return {
+      state: parsed.state,
+      scope: {
+        projects: parsed.state.projects,
+        clusters: parsed.state.clusters,
+        stages: parsed.state.stages,
+        namespaces: parsed.state.namespaces,
+      },
+      facets: [],
+      status: "loading",
+      error: undefined,
+      notices: parsed.notices,
+      mutationError: null,
+      patchQuery: mockPatchQuery,
+      patchScope: vi.fn(),
+      retry: vi.fn().mockResolvedValue(undefined),
+    }
+  })
   mockUseFleetData.mockImplementation((state: FleetQueryState) =>
     fleetResult(state, { status: "loading" }),
   )
@@ -51,7 +79,7 @@ afterEach(() => {
 })
 
 describe("FleetView URL state", () => {
-  it("patches the canonical URL on the current route while preserving scope and selection", async () => {
+  it("delegates presentation changes to the shared lossless query patch surface", async () => {
     navigation.params = new URLSearchParams(
       "project=tenant%2Fpayments&health=degraded&selected=apps%2Fcheckout",
     )
@@ -62,10 +90,12 @@ describe("FleetView URL state", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show Table view" }))
 
-    expect(navigation.replace).toHaveBeenCalledWith(
-      "/dashboard/applications?project=tenant%2Fpayments&health=degraded&view=table&selected=apps%2Fcheckout",
-      { scroll: false },
-    )
+    expect(mockPatchQuery).toHaveBeenCalledWith({
+      view: "table",
+      sort: "name",
+      direction: "asc",
+    })
+    expect(navigation.replace).not.toHaveBeenCalled()
   })
 
   it("updates row selection in URL state without taking ownership of zoom", () => {
@@ -78,13 +108,13 @@ describe("FleetView URL state", () => {
 
     fireEvent.click(screen.getByRole("row", { name: /apps\/checkout/i }))
 
-    expect(navigation.replace).toHaveBeenCalledWith(
-      "/dashboard/applications?view=table&zoom=project%3Atenant%2Fpayments&selected=apps%2Fcheckout",
-      { scroll: false },
-    )
+    expect(mockPatchQuery).toHaveBeenCalledWith({
+      selected: { namespace: "apps", name: "checkout" },
+    })
+    expect(navigation.replace).not.toHaveBeenCalled()
   })
 
-  it("reconciles authorized facets, replaces once, and shows one visible notice", async () => {
+  it("never reconciles a selected scope value away when settled facets omit it", async () => {
     navigation.params = new URLSearchParams(
       "project=tenant-a%2Fpayments&project=tenant-b%2Fpayments&view=table",
     )
@@ -100,48 +130,26 @@ describe("FleetView URL state", () => {
         applicationFacets: facets,
       }),
     )
-    const { rerender } = render(<FleetView />)
+    render(<FleetView />)
 
-    await waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(1))
-    expect(navigation.replace).toHaveBeenCalledWith(
-      "/dashboard/applications?project=tenant-b%2Fpayments&view=table",
-      { scroll: false },
-    )
-    expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
-      "Removed unavailable project value “tenant-a/payments”.",
-    )
-
-    rerender(<FleetView />)
     await act(async () => {})
-    expect(navigation.replace).toHaveBeenCalledTimes(1)
-    expect(screen.getAllByRole("status", { name: "Fleet query notice" })).toHaveLength(1)
+    expect(mockPatchQuery).not.toHaveBeenCalled()
+    expect(navigation.replace).not.toHaveBeenCalled()
+    const scope = screen.getByRole("group", { name: "Fleet scope summary" })
+    expect(within(scope).getByText("Project tenant-a/payments")).toBeInTheDocument()
+    expect(within(scope).getByText("Project tenant-b/payments")).toBeInTheDocument()
+    expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
   })
 
-  it("keeps a reconciliation notice after navigation advances until it is dismissed", async () => {
-    navigation.params = new URLSearchParams(
-      "project=tenant-a%2Fpayments&project=tenant-b%2Fpayments&view=table",
-    )
-    const facets = [facet("project", "tenant-b/payments", BigInt(8))]
-    const apps = applicationsData([application("apps", "payments")], facets)
-    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, {
-        status: "ready",
-        currentData: apps,
-        displayData: apps,
-        applicationFacets: facets,
-      }),
-    )
-    const { rerender } = render(<FleetView />)
-
-    await waitFor(() =>
-      expect(screen.getByRole("status", { name: "Fleet query notice" })).toBeInTheDocument(),
-    )
-    navigation.params = new URLSearchParams("project=tenant-b%2Fpayments&view=table")
-    rerender(<FleetView />)
+  it("shows parse notices without reconstructing or replacing the route URL", () => {
+    navigation.params = new URLSearchParams("health=broken&unknown=kept")
+    render(<FleetView />)
 
     expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
-      "tenant-a/payments",
+      "Dropped invalid health value “broken”.",
     )
+    expect(mockPatchQuery).not.toHaveBeenCalled()
+    expect(navigation.replace).not.toHaveBeenCalled()
     const dismiss = screen.getByRole("button", { name: "Dismiss fleet query notice" })
     expect(dismiss).toHaveClass("min-h-11")
     fireEvent.click(dismiss)
@@ -166,10 +174,14 @@ describe("FleetView URL state", () => {
 
     expect(navigation.replace).not.toHaveBeenCalled()
     expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
-    expect(screen.getByRole("checkbox", { name: "Project tenant-old/payments" })).toBeInTheDocument()
+    expect(
+      within(screen.getByRole("group", { name: "Fleet scope summary" })).getByText(
+        "Project tenant-new/payments",
+      ),
+    ).toBeInTheDocument()
   })
 
-  it("treats a settled complete empty facet set as no authorized values", async () => {
+  it("keeps selected scope when a settled response has no authorized facet values", async () => {
     navigation.params = new URLSearchParams("project=tenant%2Fpayments&view=table")
     const settled = applicationsData([])
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
@@ -183,15 +195,14 @@ describe("FleetView URL state", () => {
 
     render(<FleetView />)
 
-    await waitFor(() =>
-      expect(navigation.replace).toHaveBeenCalledWith(
-        "/dashboard/applications?view=table",
-        { scroll: false },
+    await act(async () => {})
+    expect(mockPatchQuery).not.toHaveBeenCalled()
+    expect(navigation.replace).not.toHaveBeenCalled()
+    expect(
+      within(screen.getByRole("group", { name: "Fleet scope summary" })).getByText(
+        "Project tenant/payments",
       ),
-    )
-    expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
-      "Removed unavailable project value “tenant/payments”.",
-    )
+    ).toBeInTheDocument()
   })
 })
 
@@ -199,7 +210,6 @@ describe("FleetView states", () => {
   it("exposes the authorized total only after the current fleet snapshot settles", () => {
     const settledMap: FleetPresentationData = {
       kind: "map",
-      view: "treemap",
       result: mapResult(),
     }
     let overrides: Partial<UseFleetDataResult> = {
@@ -244,7 +254,6 @@ describe("FleetView states", () => {
   it("keeps the prior presentation rendered while marking it stale", () => {
     const priorMap: FleetPresentationData = {
       kind: "map",
-      view: "treemap",
       result: mapResult(),
     }
     navigation.params = new URLSearchParams("view=matrix")
@@ -420,21 +429,19 @@ describe("FleetView application presentations", () => {
     )
 
     row.focus()
-    navigation.replace.mockClear()
+    mockPatchQuery.mockClear()
     fireEvent.keyDown(row, { key: "Enter" })
     expect(row).toHaveFocus()
-    expect(navigation.replace).toHaveBeenLastCalledWith(
-      "/dashboard/applications?sort=impact&direction=desc&view=queue&selected=delivery%2Fcheckout",
-      { scroll: false },
-    )
+    expect(mockPatchQuery).toHaveBeenLastCalledWith({
+      selected: { namespace: "delivery", name: "checkout" },
+    })
 
-    navigation.replace.mockClear()
+    mockPatchQuery.mockClear()
     fireEvent.keyDown(row, { key: " " })
     expect(row).toHaveFocus()
-    expect(navigation.replace).toHaveBeenLastCalledWith(
-      "/dashboard/applications?sort=impact&direction=desc&view=queue&selected=delivery%2Fcheckout",
-      { scroll: false },
-    )
+    expect(mockPatchQuery).toHaveBeenLastCalledWith({
+      selected: { namespace: "delivery", name: "checkout" },
+    })
   })
 
   it.each<{

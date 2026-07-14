@@ -27,13 +27,6 @@ export interface FleetFiltersProps {
   onPatch: (patch: FleetQueryPatch) => void
 }
 
-interface ObjectOption {
-  id: string
-  value: NamespacedKey
-  label: string
-  count?: bigint
-}
-
 interface StringOption {
   id: string
   value: string
@@ -41,10 +34,7 @@ interface StringOption {
   count?: bigint
 }
 
-type ObjectFilterField = "projects" | "clusters"
 type StringFilterField =
-  | "stages"
-  | "namespaces"
   | "health"
   | "sync"
   | "release"
@@ -62,6 +52,7 @@ const groupLabels: Record<FleetGroup, string> = {
   project: "Project",
   cluster: "Cluster",
   stage: "Stage",
+  namespace: "Namespace",
   health: "Health",
 }
 
@@ -70,7 +61,6 @@ const sizeLabels: Record<FleetSize, string> = {
   request_rate: "Request rate",
 }
 
-const dnsLabel = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
 const FACET_WINDOW_SIZE = 50
 
 export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps) {
@@ -95,31 +85,14 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
 
   const options = useMemo(
     () => ({
-      projects: objectOptions("project", state.projects, facets),
-      clusters: objectOptions("cluster", state.clusters, facets),
-      stages: stringOptions("stage", state.stages, facets),
-      namespaces: stringOptions("namespace", state.namespaces, facets),
       health: enumOptions("health", FLEET_HEALTH_VALUES, facets),
       sync: enumOptions("sync", FLEET_SYNC_VALUES, facets),
       release: enumOptions("release", FLEET_RELEASE_VALUES, facets),
       rollout: enumOptions("rollout", FLEET_ROLLOUT_VALUES, facets),
       sources: enumOptions("source_type", FLEET_SOURCE_VALUES, facets),
     }),
-    [facets, state.clusters, state.namespaces, state.projects, state.stages],
+    [facets],
   )
-
-  const toggleObject = (
-    field: ObjectFilterField,
-    current: readonly NamespacedKey[],
-    value: NamespacedKey,
-    checked: boolean,
-  ) => {
-    const id = objectId(value)
-    const next = checked
-      ? uniqueObjects([...current, value])
-      : current.filter((item) => objectId(item) !== id)
-    onPatch({ [field]: next })
-  }
 
   const toggleString = (
     field: StringFilterField,
@@ -208,33 +181,13 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
 
       <CanvasControls state={state} onPatch={onPatch} />
 
-      {hasSelections(state) ? (
+      {hasScopeSelections(state) ? <ScopeSummary state={state} /> : null}
+
+      {hasAdvancedSelections(state) ? (
         <div
           aria-label="Active filters"
           className="flex gap-2 overflow-x-auto border-b border-border px-4 py-2 sm:flex-wrap sm:px-6"
         >
-          <ObjectSelectionChips
-            label="project"
-            values={state.projects}
-            onRemove={(value) => onPatch({ projects: withoutObject(state.projects, value) })}
-          />
-          <ObjectSelectionChips
-            label="cluster"
-            values={state.clusters}
-            onRemove={(value) => onPatch({ clusters: withoutObject(state.clusters, value) })}
-          />
-          <StringSelectionChips
-            label="stage"
-            values={state.stages}
-            onRemove={(value) => onPatch({ stages: state.stages.filter((item) => item !== value) })}
-          />
-          <StringSelectionChips
-            label="namespace"
-            values={state.namespaces}
-            onRemove={(value) =>
-              onPatch({ namespaces: state.namespaces.filter((item) => item !== value) })
-            }
-          />
           <StringSelectionChips
             label="health"
             values={state.health}
@@ -275,32 +228,6 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
           </span>
         </summary>
         <div className="grid border-t border-border sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <ObjectFilterGroup
-            legend="Project"
-            options={options.projects}
-            selected={state.projects}
-            onToggle={(value, checked) => toggleObject("projects", state.projects, value, checked)}
-          />
-          <ObjectFilterGroup
-            legend="Cluster"
-            options={options.clusters}
-            selected={state.clusters}
-            onToggle={(value, checked) => toggleObject("clusters", state.clusters, value, checked)}
-          />
-          <StringFilterGroup
-            legend="Stage"
-            options={options.stages}
-            selected={state.stages}
-            onToggle={(value, checked) => toggleString("stages", state.stages, value, checked)}
-          />
-          <StringFilterGroup
-            legend="Namespace"
-            options={options.namespaces}
-            selected={state.namespaces}
-            onToggle={(value, checked) =>
-              toggleString("namespaces", state.namespaces, value, checked)
-            }
-          />
           <StringFilterGroup
             legend="Health"
             options={options.health}
@@ -334,6 +261,52 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
         </div>
       </details>
     </section>
+  )
+}
+
+function ScopeSummary({ state }: { state: FleetQueryState }) {
+  return (
+    <div
+      role="group"
+      aria-label="Fleet scope summary"
+      className="flex gap-2 overflow-x-auto border-b border-border px-4 py-2 sm:flex-wrap sm:px-6"
+    >
+      <span className="flex min-h-11 shrink-0 items-center font-mono text-[0.625rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        Fleet scope
+      </span>
+      {state.projects.map((value) => (
+        <ScopeSummaryItem
+          key={`project:${objectId(value)}`}
+          label="Project"
+          value={objectId(value)}
+        />
+      ))}
+      {state.clusters.map((value) => (
+        <ScopeSummaryItem
+          key={`cluster:${objectId(value)}`}
+          label="Cluster"
+          value={objectId(value)}
+        />
+      ))}
+      {state.stages.map((value) => (
+        <ScopeSummaryItem key={`stage:${value}`} label="Stage" value={value} />
+      ))}
+      {state.namespaces.map((value) => (
+        <ScopeSummaryItem
+          key={`namespace:${value}`}
+          label="Namespace"
+          value={value}
+        />
+      ))}
+    </div>
+  )
+}
+
+function ScopeSummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-border bg-muted/40 px-3 font-mono text-xs text-foreground">
+      {label} {value}
+    </span>
   )
 }
 
@@ -412,47 +385,6 @@ function SelectControl({
         ))}
       </select>
     </label>
-  )
-}
-
-function ObjectFilterGroup({
-  legend,
-  options,
-  selected,
-  onToggle,
-}: {
-  legend: "Project" | "Cluster"
-  options: readonly ObjectOption[]
-  selected: readonly NamespacedKey[]
-  onToggle: (value: NamespacedKey, checked: boolean) => void
-}) {
-  const selectedIds = new Set(selected.map(objectId))
-  const [filter, setFilter] = useState("")
-  const filteredOptions = useMemo(
-    () => filterFacetOptions(options, filter),
-    [filter, options],
-  )
-  const visibleOptions = filteredOptions.slice(0, FACET_WINDOW_SIZE)
-  return (
-    <FilterGroup
-      legend={legend}
-      empty={filteredOptions.length === 0}
-      emptyMessage={options.length === 0 ? "No authorized values" : "No matching values"}
-      search={options.length > FACET_WINDOW_SIZE ? { value: filter, onChange: setFilter } : undefined}
-      remaining={filteredOptions.length - visibleOptions.length}
-    >
-      {visibleOptions.map((option) => (
-        <FilterCheckbox
-          key={option.id}
-          accessibleName={`${legend} ${option.id}`}
-          label={option.label}
-          technicalLabel={option.id}
-          count={option.count}
-          checked={selectedIds.has(option.id)}
-          onChange={(checked) => onToggle(option.value, checked)}
-        />
-      ))}
-    </FilterGroup>
   )
 }
 
@@ -587,25 +519,6 @@ function FilterCheckbox({
   )
 }
 
-function ObjectSelectionChips({
-  label,
-  values,
-  onRemove,
-}: {
-  label: "project" | "cluster"
-  values: readonly NamespacedKey[]
-  onRemove: (value: NamespacedKey) => void
-}) {
-  return values.filter(validObject).map((value) => (
-    <SelectionChip
-      key={`${label}:${objectId(value)}`}
-      label={label}
-      value={objectId(value)}
-      onRemove={() => onRemove(value)}
-    />
-  ))
-}
-
 function StringSelectionChips({
   label,
   values,
@@ -652,53 +565,6 @@ function SelectionChip({
   )
 }
 
-function objectOptions(
-  dimension: "project" | "cluster",
-  selected: readonly NamespacedKey[],
-  facets: readonly FleetFacetBucket[],
-): ObjectOption[] {
-  const options = new Map<string, ObjectOption>()
-  for (const value of selected) {
-    if (!validObject(value)) continue
-    const id = objectId(value)
-    options.set(id, { id, value: { ...value }, label: id })
-  }
-  for (const facet of facets) {
-    if (facet.dimension !== dimension || !facet.object || !validObject(facet.object)) continue
-    const id = objectId(facet.object)
-    options.set(id, {
-      id,
-      value: { ...facet.object },
-      label: facet.label.trim() || id,
-      count: facet.count,
-    })
-  }
-  return [...options.values()].sort((left, right) => left.id.localeCompare(right.id))
-}
-
-function stringOptions(
-  dimension: "stage" | "namespace",
-  selected: readonly string[],
-  facets: readonly FleetFacetBucket[],
-): StringOption[] {
-  const options = new Map<string, StringOption>()
-  for (const value of selected) {
-    const normalized = value.trim()
-    if (normalized) options.set(normalized, { id: normalized, value: normalized, label: normalized })
-  }
-  for (const facet of facets) {
-    const value = facet.value?.trim()
-    if (facet.dimension !== dimension || !value) continue
-    options.set(value, {
-      id: value,
-      value,
-      label: facet.label.trim() || value,
-      count: facet.count,
-    })
-  }
-  return [...options.values()].sort((left, right) => left.id.localeCompare(right.id))
-}
-
 function enumOptions<T extends string>(
   dimension: "health" | "sync" | "release" | "rollout" | "source_type",
   values: readonly T[],
@@ -720,32 +586,6 @@ function enumOptions<T extends string>(
       count: facet?.count,
     }
   })
-}
-
-function validObject(value: NamespacedKey): boolean {
-  return (
-    value.namespace.length > 0 &&
-    value.namespace.length <= 63 &&
-    dnsLabel.test(value.namespace) &&
-    value.name.length > 0 &&
-    value.name.length <= 253 &&
-    value.name.split(".").every((part) => part.length <= 63 && dnsLabel.test(part))
-  )
-}
-
-function uniqueObjects(values: readonly NamespacedKey[]): NamespacedKey[] {
-  const unique = new Map<string, NamespacedKey>()
-  for (const value of values) {
-    if (validObject(value)) unique.set(objectId(value), { ...value })
-  }
-  return [...unique.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, value]) => value)
-}
-
-function withoutObject(values: readonly NamespacedKey[], target: NamespacedKey): NamespacedKey[] {
-  const targetId = objectId(target)
-  return uniqueObjects(values).filter((value) => objectId(value) !== targetId)
 }
 
 function objectId(value: NamespacedKey): string {
@@ -770,13 +610,19 @@ function humanize(value: string): string {
     .join(" ")
 }
 
-function hasSelections(state: FleetQueryState): boolean {
+function hasScopeSelections(state: FleetQueryState): boolean {
   return (
     state.projects.length +
       state.clusters.length +
       state.stages.length +
-      state.namespaces.length +
-      state.health.length +
+      state.namespaces.length >
+    0
+  )
+}
+
+function hasAdvancedSelections(state: FleetQueryState): boolean {
+  return (
+    state.health.length +
       state.sync.length +
       state.release.length +
       state.rollout.length +

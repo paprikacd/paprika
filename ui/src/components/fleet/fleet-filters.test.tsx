@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -91,10 +91,6 @@ describe("FleetFilters", () => {
   })
 
   it.each([
-    ["Project tenant-a/payments", { projects: [{ namespace: "tenant-a", name: "payments" }] }],
-    ["Cluster platform/prod-eu", { clusters: [{ namespace: "platform", name: "prod-eu" }] }],
-    ["Stage prod", { stages: ["prod"] }],
-    ["Namespace checkout", { namespaces: ["checkout"] }],
     ["Health degraded", { health: ["degraded"] }],
     ["Sync out_of_sync", { sync: ["out_of_sync"] }],
     ["Release awaiting_approval", { release: ["awaiting_approval"] }],
@@ -110,56 +106,43 @@ describe("FleetFilters", () => {
     expect(onPatch).toHaveBeenLastCalledWith(expectedPatch)
   })
 
-  it("renders authorized object facets plus current selections and rejects malformed keys", async () => {
-    const user = userEvent.setup()
+  it("summarizes global scope without rendering a second set of scope editors", () => {
     const state: FleetQueryState = {
       ...DEFAULT_FLEET_QUERY,
-      projects: [
-        { namespace: "tenant-b", name: "legacy.api" },
-        { namespace: "UPPER", name: "current-broken" },
-      ],
+      projects: [{ namespace: "tenant-b", name: "legacy.api" }],
+      clusters: [{ namespace: "platform", name: "prod-eu" }],
       stages: ["retired"],
+      namespaces: ["checkout"],
     }
-    const { onPatch } = renderFilters(state, undefined, [
-      ...facets,
-      { dimension: "project", label: "Missing object", count: BigInt(99) },
-      {
-        dimension: "project",
-        object: { namespace: "UPPER", name: "broken" },
-        label: "Malformed project",
-        count: BigInt(88),
-      },
-      { dimension: "stage", value: "", label: "Malformed stage", count: BigInt(77) },
-    ])
+    const { onPatch } = renderFilters(state)
+    const summary = screen.getByRole("group", { name: "Fleet scope summary" })
 
-    expect(screen.getByRole("checkbox", { name: "Project tenant-a/payments" })).toBeInTheDocument()
-    expect(screen.getByRole("checkbox", { name: "Project tenant-b/legacy.api" })).toBeChecked()
-    expect(screen.getByRole("checkbox", { name: "Stage retired" })).toBeChecked()
-    expect(screen.queryByRole("checkbox", { name: /Missing object/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole("checkbox", { name: /Malformed project/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole("checkbox", { name: /Malformed stage/i })).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole("button", { name: "Remove project UPPER/current-broken" }),
-    ).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole("button", { name: "Remove project tenant-b/legacy.api" }))
-    expect(onPatch).toHaveBeenLastCalledWith({ projects: [] })
+    expect(within(summary).getByText("Project tenant-b/legacy.api")).toBeInTheDocument()
+    expect(within(summary).getByText("Cluster platform/prod-eu")).toBeInTheDocument()
+    expect(within(summary).getByText("Stage retired")).toBeInTheDocument()
+    expect(within(summary).getByText("Namespace checkout")).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /^Project / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /^Cluster / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /^Stage / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /^Namespace / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Remove project / })).not.toBeInTheDocument()
+    expect(onPatch).not.toHaveBeenCalled()
   })
 
-  it("removes one repeated selection without replacing unrelated scope", async () => {
+  it("removes a non-scope selection without replacing global scope", async () => {
     const user = userEvent.setup()
     const state: FleetQueryState = {
       ...DEFAULT_FLEET_QUERY,
       projects: [{ namespace: "tenant-a", name: "payments" }],
       stages: ["dev", "prod"],
-      health: ["degraded"],
+      health: ["degraded", "failed"],
     }
     const { onPatch } = renderFilters(state)
 
-    await user.click(screen.getByRole("button", { name: "Remove stage dev" }))
+    await user.click(screen.getByRole("button", { name: "Remove health degraded" }))
 
     expect(onPatch).toHaveBeenCalledOnce()
-    expect(onPatch).toHaveBeenLastCalledWith({ stages: ["prod"] })
+    expect(onPatch).toHaveBeenLastCalledWith({ health: ["failed"] })
   })
 
   it.each([
@@ -207,12 +190,12 @@ describe("FleetFilters", () => {
     const { rerender } = renderFilters(DEFAULT_FLEET_QUERY, onPatch)
 
     fireEvent.change(screen.getByRole("combobox", { name: "Group treemap by" }), {
-      target: { value: "cluster" },
+      target: { value: "namespace" },
     })
     fireEvent.change(screen.getByRole("combobox", { name: "Size applications by" }), {
       target: { value: "request_rate" },
     })
-    expect(onPatch).toHaveBeenNthCalledWith(1, { group: "cluster" })
+    expect(onPatch).toHaveBeenNthCalledWith(1, { group: "namespace" })
     expect(onPatch).toHaveBeenNthCalledWith(2, { size: "request_rate" })
 
     rerender(
@@ -236,7 +219,11 @@ describe("FleetFilters", () => {
     renderFilters()
 
     expect(screen.getByRole("group", { name: "Presentation" })).toBeInTheDocument()
-    expect(screen.getByRole("group", { name: "Project" })).toBeInTheDocument()
+    expect(screen.getByRole("group", { name: "Health" })).toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Project" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Cluster" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Stage" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: "Namespace" })).not.toBeInTheDocument()
     expect(screen.getByText("Filter dimensions").closest("details")).not.toHaveAttribute("open")
     expect(screen.getByRole("searchbox", { name: "Search applications" })).toHaveClass("min-h-11")
     expect(screen.getByRole("button", { name: "Show Table view" })).toHaveClass("min-h-11")
@@ -245,8 +232,7 @@ describe("FleetFilters", () => {
     )
   })
 
-  it("bounds high-cardinality facet DOM and makes every option searchable", async () => {
-    const user = userEvent.setup()
+  it("ignores high-cardinality scope facets because the shell is their sole editor", () => {
     const manyProjects: FleetFacetBucket[] = Array.from({ length: 200 }, (_, index) => ({
       dimension: "project",
       object: { namespace: "tenant", name: `service-${String(index).padStart(3, "0")}` },
@@ -256,19 +242,8 @@ describe("FleetFilters", () => {
 
     renderFilters(DEFAULT_FLEET_QUERY, undefined, manyProjects)
 
-    expect(screen.getAllByRole("checkbox", { name: /^Project / })).toHaveLength(50)
-    expect(
-      screen.queryByRole("checkbox", { name: "Project tenant/service-199" }),
-    ).not.toBeInTheDocument()
-
-    await user.type(
-      screen.getByRole("searchbox", { name: "Filter Project options" }),
-      "service-199",
-    )
-
-    expect(
-      screen.getByRole("checkbox", { name: "Project tenant/service-199" }),
-    ).toBeInTheDocument()
-    expect(screen.getAllByRole("checkbox", { name: /^Project / })).toHaveLength(1)
+    expect(screen.queryByRole("checkbox", { name: /^Project / })).not.toBeInTheDocument()
+    expect(screen.queryByRole("searchbox", { name: "Filter Project options" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Service 199")).not.toBeInTheDocument()
   })
 })
