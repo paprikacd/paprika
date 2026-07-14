@@ -7,6 +7,7 @@ const mockClient = vi.hoisted(() => ({
   listReleases: vi.fn().mockResolvedValue({ releases: [] }),
   queryReleases: vi.fn().mockResolvedValue({ releases: [], totalCount: 0n }),
   listApplications: vi.fn().mockResolvedValue({ applications: [] }),
+  queryFleetMap: vi.fn().mockResolvedValue({ roots: [], total: 0n }),
   listApplicationSets: vi.fn().mockResolvedValue({ applicationsets: [] }),
   listPolicies: vi.fn().mockResolvedValue({ policies: [] }),
   listRollouts: vi.fn().mockResolvedValue({ rollouts: [] }),
@@ -48,6 +49,25 @@ vi.mock("@/lib/use-fleet-data", () => ({
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(navigation.query),
 }))
+vi.mock("@/lib/fleet-scope-context", async () => {
+  const { parseFleetQuery } = await vi.importActual<typeof import("@/lib/fleet-query")>(
+    "@/lib/fleet-query",
+  )
+  return {
+    useFleetScope: () => {
+      const state = parseFleetQuery(navigation.query).state
+      return {
+        state,
+        scope: {
+          projects: state.projects,
+          clusters: state.clusters,
+          stages: state.stages,
+          namespaces: state.namespaces,
+        },
+      }
+    },
+  }
+})
 vi.mock("@/components/dashboard/pipeline-card", () => ({
   PipelineCard: () => <div />,
 }))
@@ -64,11 +84,13 @@ function renderDashboard() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
+  const tree = () => (
     <QueryClientProvider client={queryClient}>
       <DashboardPage />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  const rendered = render(tree())
+  return { ...rendered, rerenderDashboard: () => rendered.rerender(tree()) }
 }
 
 async function flushRefresh() {
@@ -83,6 +105,7 @@ function resetSuccessfulResponses() {
   mockClient.listReleases.mockResolvedValue({ releases: [] })
   mockClient.queryReleases.mockResolvedValue({ releases: [], totalCount: 0n })
   mockClient.listApplications.mockResolvedValue({ applications: [] })
+  mockClient.queryFleetMap.mockResolvedValue({ roots: [], total: 0n })
   mockClient.listApplicationSets.mockResolvedValue({ applicationsets: [] })
   mockClient.listPolicies.mockResolvedValue({ policies: [] })
   mockClient.listRollouts.mockResolvedValue({ rollouts: [] })
@@ -91,6 +114,8 @@ function resetSuccessfulResponses() {
 function boundedLegacyMethods() {
   return [
     mockClient.listPipelines,
+    mockClient.listReleases,
+    mockClient.queryFleetMap,
     mockClient.listApplicationSets,
     mockClient.listPolicies,
     mockClient.listRollouts,
@@ -135,7 +160,7 @@ describe("Dashboard bounded refresh", () => {
     for (const method of boundedLegacyMethods()) {
       expect(method).toHaveBeenCalledTimes(1)
     }
-    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).toHaveBeenCalledTimes(1)
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
     expect(mockClient.listApplications).not.toHaveBeenCalled()
     expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
@@ -150,7 +175,7 @@ describe("Dashboard bounded refresh", () => {
     for (const method of boundedLegacyMethods()) {
       expect(method).toHaveBeenCalledTimes(1)
     }
-    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).toHaveBeenCalledTimes(1)
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
     expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
   })
@@ -205,7 +230,7 @@ describe("Dashboard bounded refresh", () => {
     await flushRefresh()
 
     expect(mockReportRequestOutcome).toHaveBeenLastCalledWith(true)
-    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).toHaveBeenCalledTimes(2)
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
   })
 
@@ -280,7 +305,7 @@ describe("Dashboard bounded refresh", () => {
     renderDashboard()
     await flushRefresh()
 
-    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).toHaveBeenCalledTimes(1)
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
     fireEvent.change(screen.getByRole("searchbox", { name: /search operations/i }), {
       target: { value: "checkout-release-v42" },
@@ -323,14 +348,69 @@ describe("Dashboard bounded refresh", () => {
     )
   })
 
-  it("never performs a release RPC during immediate or periodic refresh", async () => {
+  it("loads complete Releases for Rollout association without using the paginated release search RPC", async () => {
     renderDashboard()
     await flushRefresh()
 
     await act(async () => vi.advanceTimersByTimeAsync(60_000))
 
-    expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).toHaveBeenCalledTimes(2)
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
+  })
+
+  it("plans canonical Pipeline requests and refreshes immediately when observed scope changes", async () => {
+    navigation.query = "project=team-a%2Fpayments&namespace=team-a"
+    let resolveInitial!: (value: { pipelines: Array<Record<string, unknown>> }) => void
+    const initial = new Promise<{ pipelines: Array<Record<string, unknown>> }>((resolve) => {
+      resolveInitial = resolve
+    })
+    mockClient.listPipelines.mockImplementation((request: { namespace?: string; project?: string }) =>
+      request.namespace === "team-a"
+        ? initial
+        : Promise.resolve({
+            pipelines: [{ namespace: "team-b", name: "delivery", project: "delivery", phase: "Running" }],
+          }),
+    )
+
+    const { rerenderDashboard } = renderDashboard()
+    await act(async () => Promise.resolve())
+    expect(mockClient.listPipelines).toHaveBeenCalledWith(
+      { namespace: "team-a", project: "payments" },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+
+    navigation.query = "project=team-b%2Fdelivery&namespace=team-b"
+    rerenderDashboard()
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockClient.listPipelines).toHaveBeenCalledWith(
+      { namespace: "team-b", project: "delivery" },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(mockClient.listPipelines).toHaveBeenCalledTimes(2)
+
+    await act(async () =>
+      resolveInitial({
+        pipelines: [
+          { namespace: "team-a", name: "stale-a", project: "payments", phase: "Running" },
+          { namespace: "team-a", name: "stale-b", project: "payments", phase: "Running" },
+        ],
+      }),
+    )
+    const pipelinesStat = screen.getByText("Pipelines", { selector: "p" }).parentElement
+    expect(pipelinesStat).toHaveTextContent("1")
+  })
+
+  it("intersects selected Pipeline projects and namespaces and makes no request for an empty intersection", async () => {
+    navigation.query = "project=team-a%2Fpayments&namespace=team-b&cluster=platform%2Fomega&stage=prod"
+
+    renderDashboard()
+    await flushRefresh()
+
+    expect(mockClient.listPipelines).not.toHaveBeenCalled()
   })
 
   it("keeps application search, health tiles, and drill-downs on the bounded fleet window", async () => {

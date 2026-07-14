@@ -18,6 +18,7 @@ import (
 	ctrlfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 )
@@ -35,6 +36,86 @@ func newPipelineTestClient(objs ...client.Object) client.Client {
 		WithObjects(objs...).
 		WithStatusSubresource(&pipelinesv1alpha1.Pipeline{}).
 		Build()
+}
+
+func TestListPipelinesIntersectsNamespaceAndProject(t *testing.T) {
+	cl := newPipelineTestClient(
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "payments", Namespace: "team-a", Labels: map[string]string{projectLabelKey: "payments"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "platform", Namespace: "team-a", Labels: map[string]string{projectLabelKey: "platform"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "cross-namespace", Namespace: "team-b", Labels: map[string]string{projectLabelKey: "payments"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "unlabelled", Namespace: "team-a",
+		}},
+	)
+	srv := NewPaprikaServer(cl, nil)
+
+	resp, err := srv.ListPipelines(context.Background(), connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Namespace: ptr("team-a"),
+		Project:   "payments",
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, resp.Msg.Pipelines, 1)
+	require.Equal(t, "payments", resp.Msg.Pipelines[0].Name)
+	projectField := resp.Msg.Pipelines[0].ProtoReflect().Descriptor().Fields().ByName("project")
+	require.NotNil(t, projectField, "Pipeline.project must be present in list responses")
+	require.Equal(t, "payments", resp.Msg.Pipelines[0].ProtoReflect().Get(projectField).String())
+}
+
+func TestListPipelinesProjectAuthorization(t *testing.T) {
+	cl := newPipelineTestClient(
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "allowed", Namespace: "team-a", Labels: map[string]string{projectLabelKey: "payments"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "denied", Namespace: "team-a", Labels: map[string]string{projectLabelKey: "private"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "unlabelled", Namespace: "team-a",
+		}},
+	)
+	authorizer := auth.NewRBACAuthorizer([]auth.RBACRule{{
+		Subjects: []string{"alice"}, Actions: []string{string(auth.ActionRead)},
+		Resources: []string{string(auth.ResourcePipelines)}, Namespaces: []string{"team-a"},
+		Projects: []string{"payments"},
+	}})
+	srv := NewPaprikaServer(cl, nil, WithAuthorizer(authorizer))
+	ctx := auth.WithPrincipal(context.Background(), &auth.Principal{Subject: "alice"})
+
+	resp, err := srv.ListPipelines(ctx, connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Namespace: ptr("team-a"),
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, resp.Msg.Pipelines, 1)
+	require.Equal(t, "allowed", resp.Msg.Pipelines[0].Name)
+}
+
+func TestListPipelinesDefaultProjectDoesNotMatchUnlabelled(t *testing.T) {
+	cl := newPipelineTestClient(
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "labelled-default", Namespace: "team-a", Labels: map[string]string{projectLabelKey: "default"},
+		}},
+		&pipelinesv1alpha1.Pipeline{ObjectMeta: metav1.ObjectMeta{
+			Name: "unlabelled", Namespace: "team-a",
+		}},
+	)
+	srv := NewPaprikaServer(cl, nil)
+
+	resp, err := srv.ListPipelines(context.Background(), connect.NewRequest(&paprikav1.ListPipelinesRequest{
+		Project: "default",
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, resp.Msg.Pipelines, 1)
+	require.Equal(t, "labelled-default", resp.Msg.Pipelines[0].Name)
+	require.Equal(t, "default", resp.Msg.Pipelines[0].Project)
 }
 
 func TestGetPipeline(t *testing.T) {

@@ -537,6 +537,7 @@ export const Pipeline = /*@__PURE__*/ proto3.makeMessageType(
     { no: 6, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 7, name: "step_statuses", kind: "message", T: StepStatus, repeated: true },
     { no: 8, name: "artifacts", kind: "message", T: ArtifactRef, repeated: true },
+    { no: 9, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

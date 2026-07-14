@@ -213,6 +213,7 @@ message Pipeline {
   string phase = 6;
   repeated StepStatus step_statuses = 7;
   repeated ArtifactRef artifacts = 8;
+  string project = 9;
 }
 
 message ManifestSource {

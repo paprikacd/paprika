@@ -1608,6 +1608,11 @@ export declare class Pipeline extends Message<Pipeline> {
    */
   artifacts: ArtifactRef[];
 
+  /**
+   * @generated from field: string project = 9;
+   */
+  project: string;
+
   constructor(data?: PartialMessage<Pipeline>);
 
   static readonly runtime: typeof proto3;

@@ -316,6 +316,9 @@ func (s *PaprikaServer) ListPipelines(
 	pipelines := make([]*paprikav1.Pipeline, 0, len(list.Items))
 	for i := range list.Items {
 		p := &list.Items[i]
+		if req.Msg.Project != "" && p.GetLabels()[projectLabelKey] != req.Msg.Project {
+			continue
+		}
 		if !s.authorizeProjectFromLabels(ctx, p, auth.ResourcePipelines) {
 			continue
 		}
@@ -1259,6 +1262,7 @@ func convertPipeline(p *pipelinesv1alpha1.Pipeline) *paprikav1.Pipeline {
 		Phase:        string(p.Status.Phase),
 		StepStatuses: stepStatuses,
 		Artifacts:    artifacts,
+		Project:      p.GetLabels()[projectLabelKey],
 	}
 }
 

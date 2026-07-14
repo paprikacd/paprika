@@ -17,6 +17,14 @@ func TestFleetDescriptor(t *testing.T) {
 	file := paprikav1.File_paprika_v1_api_proto
 	assertLegacyFleetDescriptors(t, file)
 
+	pipeline := file.Messages().ByName("Pipeline")
+	require.NotNil(t, pipeline, "missing Pipeline message")
+	project := pipeline.Fields().ByName("project")
+	require.NotNil(t, project, "Pipeline.project must remain additive")
+	require.Equal(t, protoreflect.FieldNumber(9), project.Number())
+	require.Equal(t, protoreflect.StringKind, project.Kind())
+	require.Equal(t, protoreflect.Optional, project.Cardinality())
+
 	wantEnums := map[string]map[string]int32{
 		"FleetHealth": {
 			"FLEET_HEALTH_UNSPECIFIED": 0, "FLEET_HEALTH_HEALTHY": 1,
@@ -632,7 +640,7 @@ var legacyFleetMessageDescriptorHashes = map[string]string{
 	"AnalysisRunResult":               "c6579c4b88cd99359b7462942f50ee61676847ffd54314a3efac0c2ee822835d",
 	"AnalysisRun":                     "6a84dcb7147ad7ba8d7763a395e2336e8a0e8b1f1a9b8ae32120ef930462a798",
 	"Application":                     "2dae4949c5b1d3ac9632aecc12732ff8be133ef505dc8759596d3d7ccd3a070e",
-	"Pipeline":                        "0569d43ff198497537987d88afea6d8531b1cbf57d7f15fb8871d39590079ff2",
+	"Pipeline":                        "f2af58aed2013635742ceb4f472992d3890eec147a7e0c35b6703c03251e60a2",
 	"ManifestSource":                  "6fd2c813b5b4e5998fe5095419248a5bbfbb8c5d63b155e527264a3564f9b729",
 	"PolicyResult":                    "cf37eb8bbc14a30b100d648b0276c2ca311f20b38090813773451e6431e2ee42",
 	"Release":                         "c4fe296b93ca546a7044b96a941ceb471d55acac07926e7d7f2ec4c6d22245cc",

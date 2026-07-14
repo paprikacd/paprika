@@ -2595,6 +2595,7 @@ type Pipeline struct {
 	Phase         string         `protobuf:"bytes,6,opt,name=phase,proto3" json:"phase,omitempty"`
 	StepStatuses  []*StepStatus  `protobuf:"bytes,7,rep,name=step_statuses,json=stepStatuses,proto3" json:"step_statuses,omitempty"`
 	Artifacts     []*ArtifactRef `protobuf:"bytes,8,rep,name=artifacts,proto3" json:"artifacts,omitempty"`
+	Project       string         `protobuf:"bytes,9,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2683,6 +2684,13 @@ func (x *Pipeline) GetArtifacts() []*ArtifactRef {
 		return x.Artifacts
 	}
 	return nil
+}
+
+func (x *Pipeline) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type ManifestSource struct {
@@ -10979,7 +10987,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x10analysis_results\x18\x1a \x03(\v2\x1a.paprika.v1.AnalysisResultR\x0fanalysisResults\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x02\n" +
 	"\bPipeline\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x1d\n" +
@@ -10989,7 +10997,8 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\fmax_parallel\x18\x05 \x01(\x05R\vmaxParallel\x12\x14\n" +
 	"\x05phase\x18\x06 \x01(\tR\x05phase\x12;\n" +
 	"\rstep_statuses\x18\a \x03(\v2\x16.paprika.v1.StepStatusR\fstepStatuses\x125\n" +
-	"\tartifacts\x18\b \x03(\v2\x17.paprika.v1.ArtifactRefR\tartifacts\"6\n" +
+	"\tartifacts\x18\b \x03(\v2\x17.paprika.v1.ArtifactRefR\tartifacts\x12\x18\n" +
+	"\aproject\x18\t \x01(\tR\aproject\"6\n" +
 	"\x0eManifestSource\x12$\n" +
 	"\x0econfig_map_ref\x18\x01 \x01(\tR\fconfigMapRef\"\x88\x01\n" +
 	"\fPolicyResult\x12\x12\n" +

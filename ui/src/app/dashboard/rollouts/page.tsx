@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { fleetDetailHref, fleetHref } from "@/lib/fleet-navigation";
@@ -34,7 +41,20 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
-import type { Rollout } from "@/gen/paprika/v1/api_pb";
+import {
+  FleetFilter,
+  FleetGroupDimension,
+  FleetObjectKey,
+  FleetSizeMetric,
+  type Release,
+  type Rollout,
+} from "@/gen/paprika/v1/api_pb";
+import {
+  buildRolloutApplicationAssociations,
+  flattenMapApplicationAssociations,
+  rolloutMatchesFleetScope,
+} from "@/lib/fleet-resource-scope";
+import { useFleetScope, type FleetScope } from "@/lib/fleet-scope-context";
 
 const transport = createTransport();
 const client = createPromiseClient(PaprikaService, transport);
@@ -58,46 +78,114 @@ function SkeletonCard() {
 
 function RolloutsList() {
   const searchParams = useSearchParams();
-  const namespace = searchParams.get("namespace") ?? "";
+  const { state } = useFleetScope();
+  const scope = useMemo<FleetScope>(
+    () => ({
+      projects: state.projects,
+      clusters: state.clusters,
+      stages: state.stages,
+      namespaces: state.namespaces,
+    }),
+    [state.clusters, state.namespaces, state.projects, state.stages],
+  );
 
   const [rollouts, setRollouts] = useState<Rollout[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState<Record<string, string>>({});
+  const requestGeneration = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async () => {
+    activeController.current?.abort();
+    const controller = new AbortController();
+    activeController.current = controller;
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(null);
     try {
-      const req = namespace ? { namespace } : {};
-      const res = await client.listRollouts(req);
-      setRollouts(res.rollouts ?? []);
+      const namespaceRequests = planNamespaceRequests(scope.namespaces);
+      const [rolloutResponses, releaseResponses, mapResponse] = await Promise.all([
+        Promise.all(
+          namespaceRequests.map((request) =>
+            client.listRollouts(request, { signal: controller.signal }),
+          ),
+        ),
+        Promise.all(
+          namespaceRequests.map((request) =>
+            client.listReleases(request, { signal: controller.signal }),
+          ),
+        ),
+        client.queryFleetMap(
+          {
+            filter: fleetScopeFilter(scope),
+            search: "",
+            group: FleetGroupDimension.PROJECT,
+            sizeMetric: FleetSizeMetric.RESOURCE_COUNT,
+          },
+          { signal: controller.signal },
+        ),
+      ]);
+      if (controller.signal.aborted || generation !== requestGeneration.current) return;
+
+      const mergedRollouts = mergeRollouts(
+        rolloutResponses.map((response) => response.rollouts ?? []),
+      );
+      const releases: Release[] = releaseResponses.flatMap(
+        (response) => response.releases ?? [],
+      );
+      const applications = flattenMapApplicationAssociations(mapResponse.roots ?? []);
+      if (BigInt(applications.length) !== mapResponse.total) {
+        throw new Error("Fleet map did not contain every Application leaf");
+      }
+      const associations = buildRolloutApplicationAssociations(
+        mergedRollouts,
+        releases,
+        applications,
+      );
+      setRollouts(
+        mergedRollouts.filter((rollout) =>
+          rolloutMatchesFleetScope(
+            rollout,
+            associations.get(resourceKey(rollout.namespace, rollout.name)),
+            scope,
+          ),
+        ),
+      );
     } catch (err) {
+      if (controller.signal.aborted || generation !== requestGeneration.current) return;
+      setRollouts([]);
       setError("Failed to load rollouts");
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && generation === requestGeneration.current) {
+        setLoading(false);
+      }
     }
-  }, [namespace]);
+  }, [scope]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void fetchData();
     }, 0);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      activeController.current?.abort();
+    };
   }, [fetchData]);
 
   const handlePromote = useCallback(
     async (ro: Rollout) => {
-      setActing((prev) => ({ ...prev, [ro.name]: "promote" }));
+      const key = resourceKey(ro.namespace, ro.name);
+      setActing((prev) => ({ ...prev, [key]: "promote" }));
       try {
         await client.promoteRollout({ namespace: ro.namespace, name: ro.name });
-        setTimeout(fetchData, 1000);
+        window.setTimeout(() => void fetchData(), 1000);
       } catch (err) {
         setError(`Promote failed for ${ro.name}`);
         console.error(err);
       } finally {
-        setActing((prev) => ({ ...prev, [ro.name]: "" }));
+        setActing((prev) => ({ ...prev, [key]: "" }));
       }
     },
     [fetchData],
@@ -105,15 +193,16 @@ function RolloutsList() {
 
   const handleAbort = useCallback(
     async (ro: Rollout) => {
-      setActing((prev) => ({ ...prev, [ro.name]: "abort" }));
+      const key = resourceKey(ro.namespace, ro.name);
+      setActing((prev) => ({ ...prev, [key]: "abort" }));
       try {
         await client.abortRollout({ namespace: ro.namespace, name: ro.name });
-        setTimeout(fetchData, 1000);
+        window.setTimeout(() => void fetchData(), 1000);
       } catch (err) {
         setError(`Abort failed for ${ro.name}`);
         console.error(err);
       } finally {
-        setActing((prev) => ({ ...prev, [ro.name]: "" }));
+        setActing((prev) => ({ ...prev, [key]: "" }));
       }
     },
     [fetchData],
@@ -212,60 +301,63 @@ function RolloutsList() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rollouts.map((ro) => (
-                    <TableRow key={`${ro.namespace}/${ro.name}`}>
-                      <TableCell className="font-medium">
-                        <Link
-                          href={fleetDetailHref("rollout", ro, searchParams)}
-                          className="hover:underline"
-                        >
-                          {ro.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{ro.namespace}</TableCell>
-                      <TableCell>{ro.strategyType || "—"}</TableCell>
-                      <TableCell>
-                        <StatusBadge status={ro.phase} />
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {ro.targetKind ? `${ro.targetKind}/${ro.targetName}` : "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {ro.currentStep > 0 ? `step ${ro.currentStep}` : "—"}
-                        {ro.currentWeight > 0 ? ` / ${ro.currentWeight}%` : ""}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePromote(ro)}
-                            disabled={
-                              acting[ro.name] === "promote" ||
-                              ro.phase === "Healthy" ||
-                              ro.phase === "RolledBack"
-                            }
+                  {rollouts.map((ro) => {
+                    const key = resourceKey(ro.namespace, ro.name);
+                    return (
+                      <TableRow key={key}>
+                        <TableCell className="font-medium">
+                          <Link
+                            href={fleetDetailHref("rollout", ro, searchParams)}
+                            className="hover:underline"
                           >
-                            <Play className="mr-1 h-4 w-4" />
-                            Promote
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleAbort(ro)}
-                            disabled={
-                              acting[ro.name] === "abort" ||
-                              ro.phase === "RolledBack" ||
-                              ro.phase === "Healthy"
-                            }
-                          >
-                            <Square className="mr-1 h-4 w-4" />
-                            Abort
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {ro.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{ro.namespace}</TableCell>
+                        <TableCell>{ro.strategyType || "—"}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={ro.phase} />
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {ro.targetKind ? `${ro.targetKind}/${ro.targetName}` : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {ro.currentStep > 0 ? `step ${ro.currentStep}` : "—"}
+                          {ro.currentWeight > 0 ? ` / ${ro.currentWeight}%` : ""}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePromote(ro)}
+                              disabled={
+                                acting[key] === "promote" ||
+                                ro.phase === "Healthy" ||
+                                ro.phase === "RolledBack"
+                              }
+                            >
+                              <Play className="mr-1 h-4 w-4" />
+                              Promote
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleAbort(ro)}
+                              disabled={
+                                acting[key] === "abort" ||
+                                ro.phase === "RolledBack" ||
+                                ro.phase === "Healthy"
+                              }
+                            >
+                              <Square className="mr-1 h-4 w-4" />
+                              Abort
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -274,6 +366,40 @@ function RolloutsList() {
       )}
     </div>
   );
+}
+
+function planNamespaceRequests(namespaces: readonly string[]): Array<{ namespace?: string }> {
+  const unique = [...new Set(namespaces.filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  return unique.length > 0 ? unique.map((namespace) => ({ namespace })) : [{}];
+}
+
+function fleetScopeFilter(scope: FleetScope): FleetFilter {
+  return new FleetFilter({
+    projects: scope.projects.map((project) => new FleetObjectKey(project)),
+    clusters: scope.clusters.map((cluster) => new FleetObjectKey(cluster)),
+    stages: [...scope.stages],
+    namespaces: [...scope.namespaces],
+  });
+}
+
+function mergeRollouts(responses: readonly (readonly Rollout[])[]): Rollout[] {
+  const seen = new Set<string>();
+  const rollouts: Rollout[] = [];
+  for (const response of responses) {
+    for (const rollout of response) {
+      const key = resourceKey(rollout.namespace, rollout.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rollouts.push(rollout);
+    }
+  }
+  return rollouts;
+}
+
+function resourceKey(namespace: string, name: string): string {
+  return `${namespace}/${name}`;
 }
 
 export default function RolloutsPage() {

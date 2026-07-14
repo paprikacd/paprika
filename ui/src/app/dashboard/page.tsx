@@ -2,7 +2,17 @@
 
 import { useSearchParams } from "next/navigation"
 import { fleetDetailHref, fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
-import { useState, memo, Component, Suspense, type ReactNode, useCallback, useMemo } from "react"
+import {
+  useState,
+  memo,
+  Component,
+  Suspense,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { createPromiseClient } from "@connectrpc/connect"
@@ -11,11 +21,13 @@ import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import {
   Application,
   FleetFilter,
+  FleetGroupDimension,
   FleetHealth as FleetHealthProto,
   FleetObjectKey,
   FleetReleaseState as FleetReleaseStateProto,
   FleetRolloutState as FleetRolloutStateProto,
   FleetSourceType as FleetSourceTypeProto,
+  FleetSizeMetric,
   FleetSyncState as FleetSyncStateProto,
 } from "@/gen/paprika/v1/api_pb"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
@@ -32,9 +44,16 @@ import { useConnection } from "@/lib/connection-context"
 import { useFleetRefresh, useSingleFlightRefresh } from "@/lib/fleet-refresh"
 import {
   mergeFleetQuery,
-  parseFleetQuery,
   type FleetQueryState,
 } from "@/lib/fleet-query"
+import { useFleetScope, type FleetScope } from "@/lib/fleet-scope-context"
+import {
+  buildRolloutApplicationAssociations,
+  flattenMapApplicationAssociations,
+  mergeScopedPipelines,
+  planPipelineScopeRequests,
+  rolloutMatchesFleetScope,
+} from "@/lib/fleet-resource-scope"
 import { useFleetData } from "@/lib/use-fleet-data"
 import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { ToastStack } from "@/components/notifications/toast-stack"
@@ -113,6 +132,74 @@ function dashboardReleaseFilter(state: FleetQueryState): FleetFilter {
     rolloutStates: state.rollout.map((value) => rolloutValues[value]),
     sourceTypes: state.sources.map((value) => sourceValues[value]),
   })
+}
+
+function fleetScopeFilter(scope: FleetScope): FleetFilter {
+  return new FleetFilter({
+    projects: scope.projects.map((project) => new FleetObjectKey(project)),
+    clusters: scope.clusters.map((cluster) => new FleetObjectKey(cluster)),
+    stages: [...scope.stages],
+    namespaces: [...scope.namespaces],
+  })
+}
+
+function namespaceListRequests(namespaces: readonly string[]): Array<{ namespace?: string }> {
+  const unique = [...new Set(namespaces.filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right),
+  )
+  return unique.length > 0 ? unique.map((namespace) => ({ namespace })) : [{}]
+}
+
+function resourceIdentity(namespace: string, name: string): string {
+  return `${namespace}/${name}`
+}
+
+function mergeScopedRollouts(responses: readonly (readonly Rollout[])[]): Rollout[] {
+  const seen = new Set<string>()
+  const rollouts: Rollout[] = []
+  for (const response of responses) {
+    for (const rollout of response) {
+      const identity = resourceIdentity(rollout.namespace, rollout.name)
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      rollouts.push(rollout)
+    }
+  }
+  return rollouts
+}
+
+async function loadScopedRollouts(scope: FleetScope, signal: AbortSignal): Promise<Rollout[]> {
+  const requests = namespaceListRequests(scope.namespaces)
+  const [rolloutResponses, releaseResponses, mapResponse] = await Promise.all([
+    Promise.all(requests.map((request) => client.listRollouts(request, { signal }))),
+    Promise.all(requests.map((request) => client.listReleases(request, { signal }))),
+    client.queryFleetMap(
+      {
+        filter: fleetScopeFilter(scope),
+        search: "",
+        group: FleetGroupDimension.PROJECT,
+        sizeMetric: FleetSizeMetric.RESOURCE_COUNT,
+      },
+      { signal },
+    ),
+  ])
+
+  const rollouts = mergeScopedRollouts(
+    rolloutResponses.map((response) => response.rollouts ?? []),
+  )
+  const releases = releaseResponses.flatMap((response) => response.releases ?? [])
+  const applications = flattenMapApplicationAssociations(mapResponse.roots ?? [])
+  if (BigInt(applications.length) !== mapResponse.total) {
+    throw new Error("Fleet map did not contain every Application leaf")
+  }
+  const associations = buildRolloutApplicationAssociations(rollouts, releases, applications)
+  return rollouts.filter((rollout) =>
+    rolloutMatchesFleetScope(
+      rollout,
+      associations.get(resourceIdentity(rollout.namespace, rollout.name)),
+      scope,
+    ),
+  )
 }
 
 const StatCard = memo(function StatCard({
@@ -223,7 +310,31 @@ export default function DashboardPage() {
 function DashboardContent() {
   const searchParams = useSearchParams()
   const rawQuery = searchParams.toString()
-  const sharedFleetState = useMemo(() => parseFleetQuery(rawQuery).state, [rawQuery])
+  const { state: sharedFleetState } = useFleetScope()
+  const sharedScope = useMemo<FleetScope>(
+    () => ({
+      projects: sharedFleetState.projects,
+      clusters: sharedFleetState.clusters,
+      stages: sharedFleetState.stages,
+      namespaces: sharedFleetState.namespaces,
+    }),
+    [
+      sharedFleetState.clusters,
+      sharedFleetState.namespaces,
+      sharedFleetState.projects,
+      sharedFleetState.stages,
+    ],
+  )
+  const scopeKey = useMemo(
+    () =>
+      JSON.stringify([
+        sharedScope.projects,
+        sharedScope.clusters,
+        sharedScope.stages,
+        sharedScope.namespaces,
+      ]),
+    [sharedScope],
+  )
   const overviewFleetState = useMemo(
     () => mergeFleetQuery(sharedFleetState, { view: "queue", sort: "impact", direction: "desc" }),
     [sharedFleetState],
@@ -236,21 +347,35 @@ function DashboardContent() {
   const [rollouts, setRollouts] = useState<Rollout[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const requestGeneration = useRef(0)
+  const activeController = useRef<AbortController | null>(null)
   const { reportRequestOutcome } = useConnection()
 
   const fetchData = useCallback(async () => {
+    activeController.current?.abort()
+    const controller = new AbortController()
+    activeController.current = controller
+    const generation = ++requestGeneration.current
     setErrors({})
+    const pipelineRequests = planPipelineScopeRequests(sharedScope)
     const [pr, asr, por, ror] = await Promise.allSettled([
-      client.listPipelines({}),
-      client.listApplicationSets({}),
-      client.listPolicies({}),
-      client.listRollouts({}),
+      Promise.all(
+        pipelineRequests.map((request) =>
+          client.listPipelines(request, { signal: controller.signal }),
+        ),
+      ).then((responses) =>
+        mergeScopedPipelines(responses.map((response) => response.pipelines ?? [])),
+      ),
+      client.listApplicationSets({}, { signal: controller.signal }),
+      client.listPolicies({}, { signal: controller.signal }),
+      loadScopedRollouts(sharedScope, controller.signal),
     ])
+    if (controller.signal.aborted || generation !== requestGeneration.current) return
     let anySuccess = false
     const next: Record<string, string> = {}
 
     if (pr.status === "fulfilled") {
-      setPipelines(pr.value.pipelines)
+      setPipelines([...pr.value])
       anySuccess = true
     } else {
       next.pipelines = pr.reason?.message ?? "Failed to load pipelines"
@@ -271,7 +396,7 @@ function DashboardContent() {
     }
 
     if (ror.status === "fulfilled") {
-      setRollouts(ror.value.rollouts)
+      setRollouts(ror.value)
       anySuccess = true
     } else {
       next.rollouts = ror.reason?.message ?? "Failed to load rollouts"
@@ -280,7 +405,7 @@ function DashboardContent() {
     setErrors(next)
     setLoading(false)
     if (!anySuccess) throw new Error("dashboard refresh failed")
-  }, [])
+  }, [sharedScope])
 
   const performDashboardRefresh = useCallback(async () => {
     await Promise.all([fetchData(), refreshFleet()])
@@ -288,6 +413,30 @@ function DashboardContent() {
   const refreshDashboard = useSingleFlightRefresh(performDashboardRefresh)
 
   useFleetRefresh(refreshDashboard, { onRequestOutcome: reportRequestOutcome })
+
+  const scopedRefresh = useRef(performDashboardRefresh)
+  const scopedRefreshOutcome = useRef(reportRequestOutcome)
+  const initialScope = useRef(scopeKey)
+  useEffect(() => {
+    scopedRefresh.current = performDashboardRefresh
+  }, [performDashboardRefresh])
+  useEffect(() => {
+    scopedRefreshOutcome.current = reportRequestOutcome
+  }, [reportRequestOutcome])
+  useEffect(() => {
+    if (initialScope.current === scopeKey) return
+    initialScope.current = scopeKey
+    void scopedRefresh.current().then(
+      () => scopedRefreshOutcome.current(true),
+      () => scopedRefreshOutcome.current(false),
+    )
+  }, [scopeKey])
+  useEffect(
+    () => () => {
+      activeController.current?.abort()
+    },
+    [],
+  )
 
   const manualRefresh = useCallback(() => {
     void refreshDashboard().then(
