@@ -96,7 +96,7 @@ function ReleasesContent() {
   const rawQuery = searchParams.toString()
   const parsed = useMemo(() => parseReleaseQuery(rawQuery), [rawQuery])
   const state = parsed.state
-  const canonicalQuery = useMemo(() => releaseURL(state), [state])
+  const canonicalQuery = useMemo(() => releaseURL(rawQuery), [rawQuery])
   const [searchDraft, setSearchDraft] = useState({ source: state.q, value: state.q })
   const [pendingSearchCommits, setPendingSearchCommits] = useState<string[]>([])
   const lastHandledSearchURL = useRef(state.q)
@@ -150,10 +150,10 @@ function ReleasesContent() {
       setPendingSearchCommits((current) =>
         current.at(-1) === committedSearch ? current : [...current, committedSearch],
       )
-      replace(releaseURL(state, { q: committedSearch }))
+      replace(releaseURL(rawQuery, { q: committedSearch }))
     }, 250)
     return () => window.clearTimeout(timer)
-  }, [replace, search, state])
+  }, [rawQuery, replace, search, state])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -185,7 +185,7 @@ function ReleasesContent() {
         if (state.page > lastPage) {
           redirecting = true
           if (total === ZERO_BIGINT) setData({ releases: [], total })
-          replace(releaseURL(state, { page: lastPage }))
+          replace(releaseURL(rawQuery, { page: lastPage }))
           return
         }
 
@@ -202,11 +202,11 @@ function ReleasesContent() {
       })
 
     return () => controller.abort()
-  }, [canonicalQuery, replace, retryGeneration, state])
+  }, [canonicalQuery, rawQuery, replace, retryGeneration, state])
 
   const totalPages = releasePageCount(data.total)
-  const previousHref = releaseURL(state, { page: Math.max(1, state.page - 1) })
-  const nextHref = releaseURL(state, { page: Math.min(totalPages, state.page + 1) })
+  const previousHref = releaseURL(rawQuery, { page: Math.max(1, state.page - 1) })
+  const nextHref = releaseURL(rawQuery, { page: Math.min(totalPages, state.page + 1) })
 
   return (
     <main className="mx-auto max-w-[100rem] space-y-6 px-4 py-6 sm:px-6 lg:px-8">

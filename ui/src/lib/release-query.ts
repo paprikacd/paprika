@@ -10,6 +10,7 @@ export const RELEASE_MAX_OFFSET = 1_000_000
 
 const RELEASE_MAX_PAGE = Math.floor(RELEASE_MAX_OFFSET / RELEASE_PAGE_SIZE) + 1
 const SCOPE_PARAMETERS = ["project", "cluster", "stage", "namespace"] as const
+const RELEASE_PARAMETERS = [...SCOPE_PARAMETERS, "q", "page"] as const
 
 export interface ReleaseQueryState {
   projects: NamespacedKey[]
@@ -49,7 +50,8 @@ export function parseReleaseQuery(input: string | QueryParameters): ParsedReleas
 
   return {
     state,
-    needsCanonicalReplace: parameters.toString() !== serializeReleaseQuery(state).toString(),
+    needsCanonicalReplace:
+      releaseParameters(parameters).toString() !== serializeReleaseQuery(state).toString(),
   }
 }
 
@@ -79,8 +81,12 @@ export function mergeReleaseQuery(
 }
 
 export function releaseURL(current: ReleaseQueryInput, patch: ReleaseQueryPatch = {}): string {
-  const state = mergeReleaseQuery(releaseQueryState(current), patch)
-  const query = serializeReleaseQuery(state).toString()
+  const currentState = releaseQueryState(current)
+  const state = mergeReleaseQuery(currentState, patch)
+  const parameters = isReleaseQueryState(current)
+    ? serializeReleaseQuery(state)
+    : patchRawReleaseParameters(copyQueryParameters(current), currentState, state, patch)
+  const query = parameters.toString()
   return query ? `/dashboard/releases?${query}` : "/dashboard/releases"
 }
 
@@ -132,6 +138,57 @@ function validPage(page: number): boolean {
 
 function copyQueryParameters(input: string | QueryParameters): URLSearchParams {
   return new URLSearchParams(typeof input === "string" ? input : input.toString())
+}
+
+function releaseParameters(input: URLSearchParams): URLSearchParams {
+  const parameters = new URLSearchParams()
+  for (const [key, value] of input) {
+    if (RELEASE_PARAMETERS.includes(key as (typeof RELEASE_PARAMETERS)[number])) {
+      parameters.append(key, value)
+    }
+  }
+  return parameters
+}
+
+function patchRawReleaseParameters(
+  current: URLSearchParams,
+  currentState: ReleaseQueryState,
+  nextState: ReleaseQueryState,
+  patch: ReleaseQueryPatch,
+): URLSearchParams {
+  const canonical = serializeReleaseQuery(nextState)
+  const patchFields = Object.keys(patch) as Array<keyof ReleaseQueryPatch>
+  const parameters =
+    patchFields.length === 0
+      ? [...RELEASE_PARAMETERS]
+      : releaseParametersForPatch(patchFields, currentState, nextState)
+
+  for (const parameter of parameters) {
+    current.delete(parameter)
+    for (const value of canonical.getAll(parameter)) current.append(parameter, value)
+  }
+  return current
+}
+
+function releaseParametersForPatch(
+  fields: Array<keyof ReleaseQueryPatch>,
+  current: ReleaseQueryState,
+  next: ReleaseQueryState,
+): Array<(typeof RELEASE_PARAMETERS)[number]> {
+  const parameters = new Set<(typeof RELEASE_PARAMETERS)[number]>()
+  const mappings: Record<keyof ReleaseQueryState, readonly (typeof RELEASE_PARAMETERS)[number][]> = {
+    projects: ["project"],
+    clusters: ["cluster"],
+    stages: ["stage"],
+    namespaces: ["namespace"],
+    q: ["q"],
+    page: ["page"],
+  }
+  for (const field of fields) {
+    for (const parameter of mappings[field]) parameters.add(parameter)
+  }
+  if (fields.includes("q") && current.q !== next.q) parameters.add("page")
+  return [...parameters]
 }
 
 function copyScopeParameters(

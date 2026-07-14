@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { fleetDetailHref, fleetHref } from "@/lib/fleet-navigation"
+import { fleetDetailHref, fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
 import { useState, memo, Component, Suspense, type ReactNode, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
@@ -33,7 +33,6 @@ import { useFleetRefresh, useSingleFlightRefresh } from "@/lib/fleet-refresh"
 import {
   mergeFleetQuery,
   parseFleetQuery,
-  serializeFleetQuery,
   type FleetQueryState,
 } from "@/lib/fleet-query"
 import { useFleetData } from "@/lib/use-fleet-data"
@@ -324,8 +323,16 @@ function DashboardContent() {
   )
   const appCount = fleetApplications?.total.toString() ?? "—"
   const activeRolloutCount = rollouts.filter((r) => r.phase === "Progressing" || r.phase === "Paused").length
-  const inventoryHref = fleetInventoryHref(sharedFleetState)
-  const queueHref = fleetInventoryHref(overviewFleetState)
+  const rawFleetParameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery])
+  const inventoryHref = fleetHref("/dashboard/applications", rawFleetParameters)
+  const queueHref = fleetHref(
+    "/dashboard/applications",
+    patchFleetSearchParams(rawFleetParameters, {
+      view: "queue",
+      sort: "impact",
+      direction: "desc",
+    }),
+  )
 
   return (
     <ErrorBoundary>
@@ -528,11 +535,6 @@ function DashboardContent() {
       <ToastStack />
     </ErrorBoundary>
   )
-}
-
-function fleetInventoryHref(state: ReturnType<typeof parseFleetQuery>["state"]): string {
-  const query = serializeFleetQuery(state).toString()
-  return query ? `/dashboard/applications?${query}` : "/dashboard/applications"
 }
 
 function toDashboardApplications(

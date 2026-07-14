@@ -49,7 +49,8 @@ describe("release query URL codec", () => {
   it("recognizes the canonical order without requesting another replacement", () => {
     const query =
       "project=a%2Fpayments&project=z%2Fcheckout&cluster=platform%2Feu" +
-      "&stage=prod&namespace=apps&namespace=platform&q=payments&page=2"
+      "&stage=prod&namespace=apps&namespace=platform&q=payments&page=2" +
+      "&view=matrix&tab=evidence&unknown=kept&application_namespace=apps&application_name=checkout"
 
     expect(parseReleaseQuery(query).needsCanonicalReplace).toBe(false)
   })
@@ -131,23 +132,35 @@ describe("release query URL codec", () => {
     })
   })
 
-  it("builds release links from raw navigation state while preserving only scope, search, and page", () => {
+  it("patches release-owned keys without dropping raw navigation state", () => {
     const current =
       "view=matrix&namespace=platform&project=tenant%2Fpayments&selected=apps%2Fcheckout" +
-      "&cluster=platform%2Fprod&stage=prod&namespace=apps&q=checkout&page=4&group=cluster"
+      "&cluster=platform%2Fprod&stage=prod&namespace=apps&q=checkout&page=4&group=cluster" +
+      "&tab=evidence&unknown=kept&application_namespace=delivery&application_name=checkout"
 
-    expect(releaseURL(current)).toBe(
-      "/dashboard/releases?project=tenant%2Fpayments&cluster=platform%2Fprod" +
-        "&stage=prod&namespace=apps&namespace=platform&q=checkout&page=4",
+    const unchanged = new URL(releaseURL(current), "https://paprika.test")
+    const paged = new URL(releaseURL(current, { page: 5 }), "https://paprika.test")
+    const searched = new URL(
+      releaseURL(current, { q: "payments", page: 8 }),
+      "https://paprika.test",
     )
-    expect(releaseURL(current, { page: 5 })).toBe(
-      "/dashboard/releases?project=tenant%2Fpayments&cluster=platform%2Fprod" +
-        "&stage=prod&namespace=apps&namespace=platform&q=checkout&page=5",
-    )
-    expect(releaseURL(current, { q: "payments", page: 8 })).toBe(
-      "/dashboard/releases?project=tenant%2Fpayments&cluster=platform%2Fprod" +
-        "&stage=prod&namespace=apps&namespace=platform&q=payments",
-    )
+
+    for (const destination of [unchanged, paged, searched]) {
+      expect(destination.searchParams.get("view")).toBe("matrix")
+      expect(destination.searchParams.get("selected")).toBe("apps/checkout")
+      expect(destination.searchParams.get("group")).toBe("cluster")
+      expect(destination.searchParams.get("tab")).toBe("evidence")
+      expect(destination.searchParams.get("unknown")).toBe("kept")
+      expect(destination.searchParams.get("application_namespace")).toBe("delivery")
+      expect(destination.searchParams.get("application_name")).toBe("checkout")
+    }
+    expect(unchanged.searchParams.getAll("namespace")).toEqual(["apps", "platform"])
+    expect(paged.searchParams.getAll("namespace")).toEqual(["platform", "apps"])
+    expect(searched.searchParams.getAll("namespace")).toEqual(["platform", "apps"])
+    expect(unchanged.searchParams.get("page")).toBe("4")
+    expect(paged.searchParams.get("page")).toBe("5")
+    expect(searched.searchParams.get("q")).toBe("payments")
+    expect(searched.searchParams.has("page")).toBe(false)
   })
 
   it("keeps detail identity separate from every repeated namespace scope value", () => {

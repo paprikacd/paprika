@@ -44,6 +44,21 @@ function release(name: string, namespace = "apps") {
   })
 }
 
+const losslessContext =
+  "view=matrix&health=degraded&tab=evidence&unknown=kept" +
+  "&application_namespace=delivery&application_name=checkout"
+
+function expectLosslessContext(href: string | null) {
+  const url = new URL(href ?? "", "https://paprika.test")
+  expect(url.searchParams.get("view")).toBe("matrix")
+  expect(url.searchParams.get("health")).toBe("degraded")
+  expect(url.searchParams.get("tab")).toBe("evidence")
+  expect(url.searchParams.get("unknown")).toBe("kept")
+  expect(url.searchParams.get("application_namespace")).toBe("delivery")
+  expect(url.searchParams.get("application_name")).toBe("checkout")
+  return url
+}
+
 describe("ReleasesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -64,7 +79,7 @@ describe("ReleasesPage", () => {
   it("queries the scoped second page and renders exact results with real scoped pagination links", async () => {
     query.value =
       "project=team%2Fpayments&cluster=platform%2Fprod&stage=production" +
-      "&namespace=apps&namespace=platform&q=checkout&page=2&unknown=kept"
+      `&namespace=apps&namespace=platform&q=checkout&page=2&${losslessContext}`
     mockClient.queryReleases.mockResolvedValue({
       releases: [release("checkout-v42")],
       totalCount: 49n,
@@ -92,29 +107,32 @@ describe("ReleasesPage", () => {
       },
     })
     expect(options.signal).toBeInstanceOf(AbortSignal)
-    expect(screen.getByRole("link", { name: "Previous page" })).toHaveAttribute(
-      "href",
-      "/dashboard/releases?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout",
+    const previous = expectLosslessContext(
+      screen.getByRole("link", { name: "Previous page" }).getAttribute("href"),
     )
-    expect(screen.getByRole("link", { name: "Next page" })).toHaveAttribute(
-      "href",
-      "/dashboard/releases?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout&page=3",
+    const next = expectLosslessContext(
+      screen.getByRole("link", { name: "Next page" }).getAttribute("href"),
     )
+    expect(previous.searchParams.getAll("namespace")).toEqual(["apps", "platform"])
+    expect(next.searchParams.getAll("namespace")).toEqual(["apps", "platform"])
+    expect(previous.searchParams.has("page")).toBe(false)
+    expect(next.searchParams.get("page")).toBe("3")
     expect(screen.getByText(/Page 2 of 3/)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
       "href",
-      "/dashboard?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout&page=2&unknown=kept",
+      `/dashboard?project=team%2Fpayments&cluster=platform%2Fprod&stage=production&namespace=apps&namespace=platform&q=checkout&page=2&${losslessContext}`,
     )
   })
 
   it("canonicalizes invalid pages and resets pagination after a 250ms debounced search change", async () => {
     vi.useFakeTimers()
-    query.value = "namespace=apps&q=old&page=invalid"
+    query.value = `namespace=apps&q=old&page=invalid&${losslessContext}`
 
     render(<ReleasesPage />)
 
     await act(async () => Promise.resolve())
-    expect(replace).toHaveBeenCalledWith("/dashboard/releases?namespace=apps&q=old")
+    expectLosslessContext(replace.mock.calls[0]?.[0])
+    expect(new URL(replace.mock.calls[0][0], "https://paprika.test").searchParams.has("page")).toBe(false)
     expect(mockClient.queryReleases).toHaveBeenCalledWith(
       expect.objectContaining({ search: "old", pageOffset: 0 }),
       expect.any(Object),
@@ -127,9 +145,9 @@ describe("ReleasesPage", () => {
     await act(async () => vi.advanceTimersByTime(249))
     expect(replace).not.toHaveBeenCalled()
     await act(async () => vi.advanceTimersByTime(1))
-    expect(replace).toHaveBeenCalledWith(
-      "/dashboard/releases?namespace=apps&q=new+release",
-    )
+    const searched = expectLosslessContext(replace.mock.calls.at(-1)?.[0])
+    expect(searched.searchParams.get("q")).toBe("new release")
+    expect(searched.searchParams.has("page")).toBe(false)
   })
 
   it("keeps newer draft keystrokes when an older debounced URL commit arrives, then accepts external navigation", async () => {
@@ -221,15 +239,16 @@ describe("ReleasesPage", () => {
   })
 
   it("moves a shrunken total to the last page and refetches once, including the zero-total page-one case", async () => {
-    query.value = "namespace=apps&page=4"
+    query.value = `namespace=apps&page=4&${losslessContext}`
     mockClient.queryReleases.mockResolvedValueOnce({ releases: [], totalCount: 30n })
 
     const { rerender } = render(<ReleasesPage />)
     await waitFor(() => {
-      expect(replace).toHaveBeenCalledWith("/dashboard/releases?namespace=apps&page=2")
+      const corrected = expectLosslessContext(replace.mock.calls.at(-1)?.[0])
+      expect(corrected.searchParams.get("page")).toBe("2")
     })
 
-    query.value = "namespace=apps&page=2"
+    query.value = `namespace=apps&page=2&${losslessContext}`
     mockClient.queryReleases.mockResolvedValueOnce({
       releases: [release("last-page-result")],
       totalCount: 30n,
@@ -240,13 +259,14 @@ describe("ReleasesPage", () => {
     expect(mockClient.queryReleases.mock.calls[1][0]).toMatchObject({ pageOffset: 24 })
 
     replace.mockClear()
-    query.value = "namespace=apps&page=3"
+    query.value = `namespace=apps&page=3&${losslessContext}`
     mockClient.queryReleases.mockResolvedValueOnce({ releases: [], totalCount: 0n })
     rerender(<ReleasesPage />)
     await waitFor(() => {
-      expect(replace).toHaveBeenCalledWith("/dashboard/releases?namespace=apps")
+      const corrected = expectLosslessContext(replace.mock.calls.at(-1)?.[0])
+      expect(corrected.searchParams.has("page")).toBe(false)
     })
-    query.value = "namespace=apps"
+    query.value = `namespace=apps&${losslessContext}`
     mockClient.queryReleases.mockResolvedValueOnce({ releases: [], totalCount: 0n })
     rerender(<ReleasesPage />)
     await waitFor(() => expect(mockClient.queryReleases).toHaveBeenCalledTimes(4))

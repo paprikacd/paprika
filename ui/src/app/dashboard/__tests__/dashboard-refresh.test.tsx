@@ -209,14 +209,20 @@ describe("Dashboard bounded refresh", () => {
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
   })
 
-  it("carries shared URL scope into the fleet query and overview links", async () => {
-    navigation.query = "project=tenant%2Fretail&stage=production&q=checkout"
+  it("keeps raw scope, presentation, identity, and unknown state in overview links", async () => {
+    navigation.query =
+      "project=tenant%2Fretail&project=tenant%2Fplatform&stage=production" +
+      "&namespace=apps&namespace=platform&q=checkout&view=matrix&sort=name&direction=asc" +
+      "&tab=evidence&unknown=kept&application_namespace=delivery&application_name=checkout"
     renderDashboard()
     await flushRefresh()
 
     expect(fleetMocks.useFleetData).toHaveBeenCalledWith(
       expect.objectContaining({
-        projects: [{ namespace: "tenant", name: "retail" }],
+        projects: [
+          { namespace: "tenant", name: "platform" },
+          { namespace: "tenant", name: "retail" },
+        ],
         stages: ["production"],
         q: "checkout",
         view: "queue",
@@ -224,14 +230,32 @@ describe("Dashboard bounded refresh", () => {
         direction: "desc",
       }),
     )
-    expect(screen.getByRole("link", { name: "Open application inventory" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("project=tenant%2Fretail"),
+    const inventory = new URL(
+      screen.getByRole("link", { name: "Open application inventory" }).getAttribute("href")!,
+      "https://paprika.test",
     )
-    expect(screen.getByRole("link", { name: "Open full queue" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("stage=production"),
+    const queue = new URL(
+      screen.getByRole("link", { name: "Open full queue" }).getAttribute("href")!,
+      "https://paprika.test",
     )
+    for (const destination of [inventory, queue]) {
+      expect(destination.searchParams.getAll("project")).toEqual([
+        "tenant/retail",
+        "tenant/platform",
+      ])
+      expect(destination.searchParams.getAll("namespace")).toEqual(["apps", "platform"])
+      expect(destination.searchParams.get("tab")).toBe("evidence")
+      expect(destination.searchParams.get("unknown")).toBe("kept")
+      expect(destination.searchParams.get("application_namespace")).toBe("delivery")
+      expect(destination.searchParams.get("application_name")).toBe("checkout")
+      expect(destination.searchParams.get("q")).toBe("checkout")
+    }
+    expect(inventory.searchParams.get("view")).toBe("matrix")
+    expect(inventory.searchParams.get("sort")).toBe("name")
+    expect(inventory.searchParams.get("direction")).toBe("asc")
+    expect(queue.searchParams.get("view")).toBe("queue")
+    expect(queue.searchParams.get("sort")).toBe("impact")
+    expect(queue.searchParams.get("direction")).toBe("desc")
   })
 
   it("queries releases only after command search with the full current FleetFilter and request signal", async () => {
