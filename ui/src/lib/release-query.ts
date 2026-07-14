@@ -90,14 +90,6 @@ export function releaseURL(current: ReleaseQueryInput, patch: ReleaseQueryPatch 
   return query ? `/dashboard/releases?${query}` : "/dashboard/releases"
 }
 
-export function applicationURL(current: ReleaseQueryInput, identity: NamespacedKey): string {
-  return detailURL("/dashboard/application", current, "application", identity)
-}
-
-export function rolloutURL(current: ReleaseQueryInput, identity: NamespacedKey): string {
-  return detailURL("/dashboard/rollouts/detail", current, "rollout", identity)
-}
-
 function canonicalizeReleaseQuery(input: ReleaseQueryState): ReleaseQueryState {
   const scope = new URLSearchParams()
   copyScopeParameters(input, scope)
@@ -206,18 +198,4 @@ function copyScopeParameters(
   for (const parameter of SCOPE_PARAMETERS) {
     for (const value of canonical.getAll(parameter)) target.append(parameter, value)
   }
-}
-
-function detailURL(
-  route: string,
-  current: ReleaseQueryInput,
-  identityPrefix: "application" | "rollout",
-  identity: NamespacedKey,
-): string {
-  const state = releaseQueryState(current)
-  const parameters = new URLSearchParams()
-  copyScopeParameters(state, parameters)
-  parameters.set(`${identityPrefix}_namespace`, identity.namespace)
-  parameters.set(`${identityPrefix}_name`, identity.name)
-  return `${route}?${parameters.toString()}`
 }

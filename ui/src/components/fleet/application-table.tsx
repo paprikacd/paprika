@@ -14,8 +14,8 @@ import type {
   FleetFocusCoordinator,
   FleetFocusTarget,
 } from "@/lib/fleet-focus"
+import { fleetDetailHref } from "@/lib/fleet-navigation"
 import type { NamespacedKey } from "@/lib/fleet-query"
-import { applicationURL } from "@/lib/release-query"
 import { cn } from "@/lib/utils"
 
 export interface ApplicationCollectionProps {
@@ -241,7 +241,7 @@ export function ApplicationTable(props: ApplicationCollectionProps) {
                   {identity ? (
                     <span className="flex flex-wrap items-center gap-1.5">
                       <Link
-                        href={applicationURL(searchParams, identity)}
+                        href={fleetDetailHref("application", identity, searchParams)}
                         aria-label={`Open application ${identityKey(identity)}`}
                         className="inline-flex min-h-11 items-center rounded-md border border-border bg-background px-2.5 text-[0.6875rem] font-semibold text-foreground transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >

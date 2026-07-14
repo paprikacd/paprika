@@ -694,7 +694,11 @@ describe("FleetView application presentations", () => {
       "project=team-b%2Fpayments&project=team-a%2Fcheckout" +
         "&cluster=platform%2Fstaging&cluster=platform%2Fprod" +
         "&stage=production&stage=canary&namespace=platform&namespace=apps" +
-        "&view=table&health=degraded&name=legacy-name",
+        "&q=checkout+api&health=degraded&sync=out_of_sync&release=failed" +
+        "&rollout=paused&source=git&view=table&group=namespace&rows=3&columns=4" +
+        "&size=comfortable&density=compact&labels=all&sort=impact&direction=desc" +
+        "&zoom=team&range=24h&tab=resources&selected=delivery%2Fcheckout" +
+        "&page=4&cursor=next&unknown=one&unknown=two&name=legacy-name",
     )
     const scopedFacets = [
       facet("project", "team-a/checkout", BigInt(1)),
@@ -761,14 +765,20 @@ describe("FleetView application presentations", () => {
     const open = within(row).getByRole("link", {
       name: "Open application delivery/checkout",
     })
+    const expectedParameters = new URLSearchParams(navigation.params)
+    expectedParameters.set("application_namespace", "delivery")
+    expectedParameters.set("application_name", "checkout")
     expect(open).toHaveAttribute(
       "href",
-      "/dashboard/application?project=team-a%2Fcheckout&project=team-b%2Fpayments" +
-        "&cluster=platform%2Fprod&cluster=platform%2Fstaging" +
-        "&stage=canary&stage=production&namespace=apps&namespace=platform" +
-        "&application_namespace=delivery&application_name=checkout",
+      `/dashboard/application?${expectedParameters.toString()}`,
     )
-    expect(new URL(open.getAttribute("href")!, "http://localhost").searchParams.has("name")).toBe(false)
+    const destination = new URL(open.getAttribute("href")!, "http://localhost")
+    expect(destination.searchParams.getAll("namespace")).toEqual(["platform", "apps"])
+    expect(destination.searchParams.getAll("unknown")).toEqual(["one", "two"])
+    expect(destination.searchParams.get("tab")).toBe("resources")
+    expect(destination.searchParams.get("selected")).toBe("delivery/checkout")
+    expect(destination.searchParams.get("zoom")).toBe("team")
+    expect(destination.searchParams.get("name")).toBe("legacy-name")
     navigation.replace.mockClear()
     open.focus()
     fireEvent.keyDown(open, { key: "Enter" })

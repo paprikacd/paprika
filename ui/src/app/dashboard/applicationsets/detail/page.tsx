@@ -63,9 +63,11 @@ function ApplicationSetDetail() {
   const replacedMigration = useRef("");
 
   useEffect(() => {
-    if (!migratedHref || replacedMigration.current === migratedHref) return;
-    replacedMigration.current = migratedHref;
-    router.replace(migratedHref);
+    if (!migratedHref) return;
+    const replacementHref = `${migratedHref}${window.location.hash}`;
+    if (replacedMigration.current === replacementHref) return;
+    replacedMigration.current = replacementHref;
+    router.replace(replacementHref);
   }, [migratedHref, router]);
 
   const [set, setSet] = useState<ApplicationSet | null>(null);
@@ -100,6 +102,19 @@ function ApplicationSetDetail() {
       <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
         <p role="alert" className="text-destructive">
           Ambiguous application set identity. Choose one application set from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard/applicationsets", parameters)} className="text-primary hover:underline">
+          Back to Application Sets
+        </Link>
+      </div>
+    );
+  }
+
+  if (detailIdentity.status === "missing") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Missing application set identity. Choose an application set from the fleet view.
         </p>
         <Link href={fleetHref("/dashboard/applicationsets", parameters)} className="text-primary hover:underline">
           Back to Application Sets

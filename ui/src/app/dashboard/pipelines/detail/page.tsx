@@ -54,9 +54,11 @@ function PipelineDetail() {
   const replacedMigration = useRef("")
 
   useEffect(() => {
-    if (!migratedHref || replacedMigration.current === migratedHref) return
-    replacedMigration.current = migratedHref
-    router.replace(migratedHref)
+    if (!migratedHref) return
+    const replacementHref = `${migratedHref}${window.location.hash}`
+    if (replacedMigration.current === replacementHref) return
+    replacedMigration.current = replacementHref
+    router.replace(replacementHref)
   }, [migratedHref, router])
 
   const [pipeline, setPipeline] = useState<Pipeline | null>(null)

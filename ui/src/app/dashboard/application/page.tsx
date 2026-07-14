@@ -145,9 +145,11 @@ function ApplicationDetail() {
   const replacedMigration = useRef("");
 
   useEffect(() => {
-    if (!migratedHref || replacedMigration.current === migratedHref) return;
-    replacedMigration.current = migratedHref;
-    router.replace(migratedHref);
+    if (!migratedHref) return;
+    const replacementHref = `${migratedHref}${window.location.hash}`;
+    if (replacedMigration.current === replacementHref) return;
+    replacedMigration.current = replacementHref;
+    router.replace(replacementHref);
   }, [migratedHref, router]);
 
   const [application, setApplication] = useState<Application | null>(null);
@@ -280,6 +282,19 @@ function ApplicationDetail() {
       <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
         <p role="alert" className="text-destructive">
           Ambiguous application identity. Choose one application from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard", parameters)} className="text-primary hover:underline">
+          Back to Dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  if (detailIdentity.status === "missing") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Missing application identity. Choose an application from the fleet view.
         </p>
         <Link href={fleetHref("/dashboard", parameters)} className="text-primary hover:underline">
           Back to Dashboard

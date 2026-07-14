@@ -59,6 +59,7 @@ describe("PipelineDetailPage safe refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     query.value = "pipeline_namespace=ns&pipeline_name=pipe&namespace=apps&unknown=kept"
+    window.history.replaceState({}, "", "/dashboard/pipelines/detail")
     mockClient.getPipeline.mockResolvedValue({
       pipeline: makePipeline([
         { name: "build-image", kind: "oci", phase: "Ready", producingStep: "build" },
@@ -91,11 +92,13 @@ describe("PipelineDetailPage safe refresh", () => {
 
   it("migrates a single legacy identity once and retains unknown scope", async () => {
     query.value = "namespace=ns&name=pipe&unknown=kept"
+    window.history.replaceState({}, "", "/dashboard/pipelines/detail#logs")
     render(<PipelineDetailPage />)
 
     await waitFor(() => expect(mockClient.getPipeline).toHaveBeenCalledWith({ namespace: "ns", name: "pipe" }))
+    expect(mockReplace).toHaveBeenCalledTimes(1)
     expect(mockReplace).toHaveBeenCalledWith(
-      "/dashboard/pipelines/detail?namespace=ns&unknown=kept&pipeline_namespace=ns&pipeline_name=pipe",
+      "/dashboard/pipelines/detail?namespace=ns&unknown=kept&pipeline_namespace=ns&pipeline_name=pipe#logs",
     )
   })
 

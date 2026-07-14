@@ -42,6 +42,7 @@ describe("ApplicationDetailPage safe refresh", () => {
     vi.clearAllMocks()
     query.value = "namespace=ns&name=app"
     replace.mockReset()
+    window.history.replaceState({}, "", "/dashboard/application")
     mockClient.getApplication.mockResolvedValue({ application: undefined })
     mockClient.listReleases.mockResolvedValue({ releases: [] })
     mockClient.getResourceTree.mockResolvedValue({ nodes: [] })
@@ -92,36 +93,49 @@ describe("ApplicationDetailPage safe refresh", () => {
 
   it("falls back to the legacy namespace and name pair", async () => {
     query.value = "namespace=legacy&name=payments&unknown=kept"
+    window.history.replaceState({}, "", "/dashboard/application#resources")
 
     render(<ApplicationDetailPage />)
 
     await waitFor(() => {
       expect(mockClient.getApplication).toHaveBeenCalledWith({ namespace: "legacy", name: "payments" })
     })
+    expect(replace).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledWith(
-      "/dashboard/application?namespace=legacy&unknown=kept&application_namespace=legacy&application_name=payments",
+      "/dashboard/application?namespace=legacy&unknown=kept&application_namespace=legacy&application_name=payments#resources",
     )
   })
 
-  it("fails closed when an explicit application identity is incomplete", async () => {
+  it("renders recovery when an explicit application identity is incomplete", async () => {
     query.value =
-      "application_namespace=%20&application_name=ignored&namespace=legacy&name=payments"
+      "application_namespace=%20&application_name=ignored&namespace=legacy&name=payments&tab=resources&unknown=kept"
 
     render(<ApplicationDetailPage />)
 
     await act(async () => Promise.resolve())
     expect(mockClient.getApplication).not.toHaveBeenCalled()
+    expect(mockClient.listReleases).not.toHaveBeenCalled()
     expect(replace).not.toHaveBeenCalled()
+    expect(screen.getByRole("alert")).toHaveTextContent(/missing application identity/i)
+    expect(screen.getByRole("link", { name: "Back to Dashboard" })).toHaveAttribute(
+      "href",
+      "/dashboard?application_namespace=+&application_name=ignored&namespace=legacy&name=payments&tab=resources&unknown=kept",
+    )
   })
 
-  it("does not query with an incomplete legacy identity pair", async () => {
-    query.value = "namespace=legacy"
+  it("renders recovery instead of querying with an incomplete legacy identity pair", async () => {
+    query.value = "namespace=legacy&tab=resources&unknown=kept"
 
     render(<ApplicationDetailPage />)
     await act(async () => Promise.resolve())
 
     expect(mockClient.getApplication).not.toHaveBeenCalled()
     expect(mockClient.listReleases).not.toHaveBeenCalled()
+    expect(screen.getByRole("alert")).toHaveTextContent(/missing application identity/i)
+    expect(screen.getByRole("link", { name: "Back to Dashboard" })).toHaveAttribute(
+      "href",
+      "/dashboard?namespace=legacy&tab=resources&unknown=kept",
+    )
   })
 
   it("renders ambiguity instead of guessing between repeated legacy namespaces", async () => {

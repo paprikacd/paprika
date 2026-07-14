@@ -3,11 +3,9 @@ import { describe, expect, it } from "vitest"
 import {
   RELEASE_MAX_OFFSET,
   RELEASE_PAGE_SIZE,
-  applicationURL,
   mergeReleaseQuery,
   parseReleaseQuery,
   releaseURL,
-  rolloutURL,
   serializeReleaseQuery,
   type ReleaseQueryState,
 } from "@/lib/release-query"
@@ -161,27 +159,5 @@ describe("release query URL codec", () => {
     expect(paged.searchParams.get("page")).toBe("5")
     expect(searched.searchParams.get("q")).toBe("payments")
     expect(searched.searchParams.has("page")).toBe(false)
-  })
-
-  it("keeps detail identity separate from every repeated namespace scope value", () => {
-    const parameters = new URLSearchParams(
-      "namespace=apps&namespace=platform&project=tenant%2Fpayments" +
-        "&cluster=platform%2Fprod&stage=prod&q=checkout&page=3&view=table",
-    )
-
-    expect(applicationURL(parameters, { namespace: "payments-system", name: "checkout api" })).toBe(
-      "/dashboard/application?project=tenant%2Fpayments&cluster=platform%2Fprod" +
-        "&stage=prod&namespace=apps&namespace=platform" +
-        "&application_namespace=payments-system&application_name=checkout+api",
-    )
-    expect(rolloutURL(parameters, { namespace: "delivery-system", name: "checkout rollout" })).toBe(
-      "/dashboard/rollouts/detail?project=tenant%2Fpayments&cluster=platform%2Fprod" +
-        "&stage=prod&namespace=apps&namespace=platform" +
-        "&rollout_namespace=delivery-system&rollout_name=checkout+rollout",
-    )
-    expect(parameters.toString()).toBe(
-      "namespace=apps&namespace=platform&project=tenant%2Fpayments" +
-        "&cluster=platform%2Fprod&stage=prod&q=checkout&page=3&view=table",
-    )
   })
 })

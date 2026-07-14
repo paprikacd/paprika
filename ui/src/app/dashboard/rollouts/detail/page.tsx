@@ -84,9 +84,11 @@ function RolloutDetail() {
   const replacedMigration = useRef("");
 
   useEffect(() => {
-    if (!migratedHref || replacedMigration.current === migratedHref) return;
-    replacedMigration.current = migratedHref;
-    router.replace(migratedHref);
+    if (!migratedHref) return;
+    const replacementHref = `${migratedHref}${window.location.hash}`;
+    if (replacedMigration.current === replacementHref) return;
+    replacedMigration.current = replacementHref;
+    router.replace(replacementHref);
   }, [migratedHref, router]);
 
   const [rollout, setRollout] = useState<Rollout | null>(null);
@@ -152,6 +154,19 @@ function RolloutDetail() {
       <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
         <p role="alert" className="text-destructive">
           Ambiguous rollout identity. Choose one rollout from the fleet view.
+        </p>
+        <Link href={fleetHref("/dashboard/rollouts", parameters)} className="text-primary hover:underline">
+          Back to Rollouts
+        </Link>
+      </div>
+    );
+  }
+
+  if (detailIdentity.status === "missing") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 px-6 py-12 text-center">
+        <p role="alert" className="text-destructive">
+          Missing rollout identity. Choose a rollout from the fleet view.
         </p>
         <Link href={fleetHref("/dashboard/rollouts", parameters)} className="text-primary hover:underline">
           Back to Rollouts
