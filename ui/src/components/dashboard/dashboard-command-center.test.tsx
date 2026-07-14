@@ -4,6 +4,17 @@ import userEvent from "@testing-library/user-event"
 import type { SVGProps } from "react"
 import { DashboardCommandCenter } from "@/components/dashboard/dashboard-command-center"
 import type { Application, Pipeline, Release, Rollout } from "@/gen/paprika/v1/api_pb"
+import type { FleetMapNode, FleetMapResult } from "@/lib/fleet-client"
+
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  query: "",
+}))
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: navigation.push }),
+  useSearchParams: () => new URLSearchParams(navigation.query),
+}))
 
 vi.mock("lucide-react", () => {
   const Icon = (props: SVGProps<SVGSVGElement>) => <svg data-testid="icon" {...props} />
@@ -120,20 +131,26 @@ function makeRelease(name: string, namespace = "team-06", phase = "Complete") {
 function renderCommandCenter({
   initialApplications = applications,
   initialReleases = releases,
-  applicationTotal,
+  fleetMap = completeMap(3),
+  fleetMapStatus = "ready",
+  onRetryFleetMap,
   searchReleases,
   releaseQuery = "",
 }: {
   initialApplications?: Application[]
   initialReleases?: Release[]
-  applicationTotal?: bigint
+  fleetMap?: FleetMapResult | null
+  fleetMapStatus?: "loading" | "ready" | "empty" | "error"
+  onRetryFleetMap?: () => void
   searchReleases?: (query: string, signal: AbortSignal) => Promise<Release[]>
   releaseQuery?: string
 } = {}) {
   return render(
     <DashboardCommandCenter
       applications={initialApplications}
-      applicationTotal={applicationTotal}
+      fleetMap={fleetMap ?? undefined}
+      fleetMapStatus={fleetMapStatus}
+      onRetryFleetMap={onRetryFleetMap}
       pipelines={pipelines}
       releases={initialReleases}
       rollouts={rollouts}
@@ -149,10 +166,16 @@ function renderCommandCenter({
 describe("DashboardCommandCenter", () => {
   beforeEach(() => {
     localStorage.clear()
+    navigation.push.mockReset()
+    navigation.query = ""
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      canvasContext() as unknown as CanvasRenderingContext2D,
+    )
   })
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it("searches across cluster objects and remembers selected searches", async () => {
@@ -177,32 +200,39 @@ describe("DashboardCommandCenter", () => {
     expect(screen.getByRole("button", { name: /recent search checkout/i })).toBeInTheDocument()
   })
 
-  it("filters the app health heatmap and links tiles to app drilldown", async () => {
-    const user = userEvent.setup()
-    renderCommandCenter({ releaseQuery: "namespace=platform&unknown=kept" })
+  it("uses complete map counts and geometry instead of the attention window", () => {
+    renderCommandCenter({ fleetMap: completeMap(250) })
 
-    expect(screen.getByRole("link", { name: /checkout-api Degraded/i })).toHaveAttribute(
-      "href",
-      "/dashboard/application?namespace=platform&unknown=kept&application_namespace=prod&application_name=checkout-api",
+    expect(screen.getByText("200 healthy")).toBeInTheDocument()
+    expect(screen.getByText("50 needs attention")).toBeInTheDocument()
+    expect(screen.getByText("250 applications in this complete map")).toBeInTheDocument()
+    expect(screen.getByRole("application", { name: "Fleet health heatmap" })).toHaveAttribute(
+      "data-heatmap-layout-count",
+      "250",
     )
-    expect(screen.getByRole("link", { name: /ledger-worker Healthy/i })).toBeInTheDocument()
-
-    await user.click(screen.getByRole("button", { name: /show degraded applications/i }))
-
-    expect(screen.getByRole("link", { name: /checkout-api Degraded/i })).toBeInTheDocument()
-    expect(screen.queryByRole("link", { name: /ledger-worker Healthy/i })).not.toBeInTheDocument()
-    expect(screen.getByText("ns/prod")).toBeInTheDocument()
-    expect(screen.getByText(/1 pod crash looping/i)).toBeInTheDocument()
+    expect(screen.queryByText(/3 of 3 loaded/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/preview/i)).not.toBeInTheDocument()
   })
 
-  it("integrates the bounded health map with the indexed application total", () => {
-    renderCommandCenter({ applicationTotal: 250n })
+  it("keeps search and operational results usable when only the complete map fails", async () => {
+    const user = userEvent.setup()
+    const retry = vi.fn()
+    renderCommandCenter({
+      fleetMap: null,
+      fleetMapStatus: "error",
+      onRetryFleetMap: retry,
+      releaseQuery: "namespace=platform&unknown=kept",
+    })
 
-    expect(screen.getByText("3 of 3 loaded · 250 indexed")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View all applications as treemap" })).toHaveAttribute(
-      "href",
-      "/dashboard/applications?view=treemap",
-    )
+    expect(screen.getByRole("alert", { name: "Application health map unavailable" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Retry application health map" }))
+    expect(retry).toHaveBeenCalledTimes(1)
+
+    await user.type(screen.getByRole("searchbox", { name: /search operations/i }), "checkout")
+    const results = screen.getByRole("list", { name: /search results/i })
+    expect(within(results).getByRole("link", { name: /Application checkout-api/i })).toBeInTheDocument()
+    expect(within(results).getByRole("link", { name: /Pipeline checkout-build/i })).toBeInTheDocument()
+    expect(within(results).getByRole("link", { name: /Rollout checkout-api-rollout/i })).toBeInTheDocument()
   })
 
   it("waits the full 250ms before finding a release outside the initial dashboard data", async () => {
@@ -219,7 +249,7 @@ describe("DashboardCommandCenter", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: /search operations/i }), {
       target: { value: "application-00246-release-v1" },
     })
-    expect(screen.getByRole("status")).toHaveTextContent("Searching releases…")
+    expect(screen.getByText("Searching releases…")).toBeInTheDocument()
 
     await act(async () => vi.advanceTimersByTime(249))
     expect(searchReleases).not.toHaveBeenCalled()
@@ -301,7 +331,7 @@ describe("DashboardCommandCenter", () => {
     })
 
     expect(screen.getByText("Release search unavailable")).toBeInTheDocument()
-    expect(screen.getByRole("status")).toHaveTextContent("Release search unavailable")
+    expect(screen.getByText("Release search unavailable")).toBeInTheDocument()
     const results = screen.getByRole("list", { name: /search results/i })
     expect(within(results).getByRole("link", { name: /Application checkout-api/i })).toBeInTheDocument()
     expect(within(results).getByRole("link", { name: /Pipeline checkout-build/i })).toBeInTheDocument()
@@ -450,7 +480,7 @@ describe("DashboardCommandCenter", () => {
       />,
     )
     expect(screen.queryByRole("link", { name: /Release shared-query/i })).not.toBeInTheDocument()
-    expect(screen.getByRole("status")).toHaveTextContent("Searching releases…")
+    expect(screen.getByText("Searching releases…")).toBeInTheDocument()
     await act(async () => vi.advanceTimersByTime(250))
     expect(oldSearch).toHaveBeenCalledTimes(1)
 
@@ -461,7 +491,7 @@ describe("DashboardCommandCenter", () => {
         releaseQuery="namespace=scope-b"
       />,
     )
-    expect(screen.getByRole("status")).toHaveTextContent("Searching releases…")
+    expect(screen.getByText("Searching releases…")).toBeInTheDocument()
     await act(async () => vi.advanceTimersByTime(250))
     expect(newSearch).toHaveBeenCalledTimes(1)
 
@@ -476,3 +506,75 @@ describe("DashboardCommandCenter", () => {
     )
   })
 })
+
+function completeMap(count: number): FleetMapResult {
+  const children = Array.from({ length: count }, (_, index) => {
+    const health = index % 5 === 0 ? "failed" as const : "healthy" as const
+    return {
+      stableId: `application:apps/app-${index.toString().padStart(5, "0")}`,
+      kind: "application" as const,
+      label: `app-${index.toString().padStart(5, "0")}`,
+      application: {
+        namespace: "apps",
+        name: `app-${index.toString().padStart(5, "0")}`,
+      },
+      applicationCount: BigInt(1),
+      targetCount: BigInt(1),
+      health: [{ health, count: BigInt(1) }],
+      resourceWeight: BigInt(1),
+      requestRateWeight: 0,
+      effectiveWeight: 1,
+      usedResourceFallback: false,
+      children: [],
+    } satisfies FleetMapNode
+  })
+  return {
+    roots: count === 0 ? [] : [{
+      stableId: "health:complete",
+      kind: "group",
+      label: "Complete fleet",
+      groupValue: "complete",
+      applicationCount: BigInt(count),
+      targetCount: BigInt(count),
+      health: [],
+      resourceWeight: BigInt(count),
+      requestRateWeight: 0,
+      effectiveWeight: count,
+      usedResourceFallback: false,
+      children,
+    }],
+    total: BigInt(count),
+    indexGeneration: BigInt(7),
+    facets: [
+      {
+        dimension: "health",
+        value: "healthy",
+        label: "Healthy",
+        count: BigInt(count - Math.ceil(count / 5)),
+      },
+      {
+        dimension: "health",
+        value: "failed",
+        label: "Failed",
+        count: BigInt(Math.ceil(count / 5)),
+      },
+    ],
+  }
+}
+
+function canvasContext() {
+  return {
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    setLineDash: vi.fn(),
+    fillText: vi.fn(),
+    save: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    restore: vi.fn(),
+    measureText: (value: string) => ({ width: value.length * 6 }),
+  }
+}

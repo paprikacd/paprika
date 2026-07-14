@@ -5,14 +5,17 @@ import type {
   FleetConnectionStatus,
   FleetFacetBucket,
   FleetHealthStatus,
+  FleetMapNode,
+  FleetMapResult,
 } from "@/lib/fleet-client"
 import type { FleetHealth, FleetRelease, FleetRollout } from "@/lib/fleet-query"
 import { fleetDetailHref } from "@/lib/fleet-navigation"
+import type { FleetDataStatus } from "@/lib/use-fleet-data"
 
 export interface FleetOverviewProps {
-  applications: readonly FleetApplicationSummary[]
-  facets?: readonly FleetFacetBucket[]
-  total: bigint
+  result?: FleetMapResult
+  attentionApplications?: readonly FleetApplicationSummary[]
+  attentionStatus?: FleetDataStatus
   inventoryHref?: string
   queueHref?: string
   selectedHealth?: readonly FleetHealth[]
@@ -42,19 +45,19 @@ const attentionRolloutStates = new Set(["paused", "degraded", "failed", "aborted
 
 interface OverviewSummary {
   health: Map<string, bigint>
-  activeReleases: bigint
-  activeRollouts: bigint
-  blockedGates: number
-  repositoryFailures: number
-  clusterFailures: number
-  observabilityFailures: number
+  activeReleases: bigint | null
+  activeRollouts: bigint | null
+  blockedGates: number | null
+  repositoryFailures: number | null
+  clusterFailures: number | null
+  observabilityFailures: number | null
   attention: FleetApplicationSummary[]
 }
 
 export function FleetOverview({
-  applications,
-  facets = [],
-  total,
+  result,
+  attentionApplications = [],
+  attentionStatus = "ready",
   inventoryHref = "/dashboard/applications",
   queueHref = "/dashboard/applications?sort=impact&direction=desc&view=queue",
   selectedHealth = [],
@@ -62,11 +65,23 @@ export function FleetOverview({
   selectedRollout = [],
   query = "",
 }: FleetOverviewProps) {
-  const summary = summarizeOverview(applications, facets, {
-    health: selectedHealth,
-    release: selectedRelease,
-    rollout: selectedRollout,
-  })
+  const attentionAvailable =
+    attentionStatus === "ready" ||
+    attentionStatus === "empty" ||
+    attentionStatus === "partial"
+  const attentionMessage = attentionUnavailableMessage(attentionStatus)
+  const summary = summarizeOverview(
+    attentionApplications,
+    result?.facets ?? [],
+    {
+      health: selectedHealth,
+      release: selectedRelease,
+      rollout: selectedRollout,
+    },
+    result ? completeMapHealth(result) : null,
+    result?.total ?? null,
+    attentionAvailable,
+  )
 
   return (
     <section aria-labelledby="fleet-overview-title" className="space-y-4">
@@ -87,31 +102,33 @@ export function FleetOverview({
         </Link>
       </div>
 
-      <section
-        aria-labelledby="fleet-health-title"
-        className="border border-border bg-card"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
-          <h3 id="fleet-health-title" className="text-sm font-semibold text-foreground">
-            Fleet health posture
-          </h3>
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {total.toString()} applications
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 xl:grid-cols-6">
-          {healthOrder.map((health) => (
-            <div key={health} className="bg-background px-4 py-4">
-              <span className="block text-xs capitalize text-muted-foreground">
-                {healthLabel(health)}
-              </span>
-              <strong className="mt-1 block font-mono text-xl font-semibold tabular-nums text-foreground">
-                {(summary.health.get(health) ?? BigInt(0)).toString()}
-              </strong>
-            </div>
-          ))}
-        </div>
-      </section>
+      {result ? (
+        <section
+          aria-labelledby="fleet-health-title"
+          className="border border-border bg-card"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3 sm:px-5">
+            <h3 id="fleet-health-title" className="text-sm font-semibold text-foreground">
+              Fleet health posture
+            </h3>
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {result.total.toString()} applications
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 xl:grid-cols-6">
+            {healthOrder.map((health) => (
+              <div key={health} className="bg-background px-4 py-4">
+                <span className="block text-xs capitalize text-muted-foreground">
+                  {healthLabel(health)}
+                </span>
+                <strong className="mt-1 block font-mono text-xl font-semibold tabular-nums text-foreground">
+                  {(summary.health.get(health) ?? BigInt(0)).toString()}
+                </strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <section aria-labelledby="active-change-title" className="border border-border bg-card">
@@ -126,10 +143,19 @@ export function FleetOverview({
           <div className="grid grid-cols-3 gap-px bg-border">
             <OverviewCount label="Active releases" value={summary.activeReleases} />
             <OverviewCount label="Active rollouts" value={summary.activeRollouts} />
-            <OverviewCount label="Blocked gates" value={BigInt(summary.blockedGates)} />
+            <OverviewCount
+              label="Blocked gates"
+              value={
+                summary.blockedGates === null ? null : BigInt(summary.blockedGates)
+              }
+            />
           </div>
           <p className="border-t border-border px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
-            {applications.length} highest-impact applications loaded; blocked-gate count reflects this window.
+            {attentionAvailable
+              ? result
+                ? `Release and rollout counts use complete-map facets when available; blocked gates use the ${attentionApplications.length}-application impact window.`
+                : `All change counts use the ${attentionApplications.length}-application impact window while complete-map facets are unavailable.`
+              : `${result ? "Complete-map release and rollout facets remain visible when available. " : ""}${attentionMessage}`}
           </p>
         </section>
 
@@ -143,13 +169,40 @@ export function FleetOverview({
             </h3>
           </div>
           <div className="grid grid-cols-3 gap-px bg-border">
-            <OverviewCount label="Repository failures" value={BigInt(summary.repositoryFailures)} />
-            <OverviewCount label="Cluster failures" value={BigInt(summary.clusterFailures)} />
-            <OverviewCount label="Observability failures" value={BigInt(summary.observabilityFailures)} />
+            <OverviewCount
+              label="Repository failures"
+              value={
+                summary.repositoryFailures === null
+                  ? null
+                  : BigInt(summary.repositoryFailures)
+              }
+            />
+            <OverviewCount
+              label="Cluster failures"
+              value={
+                summary.clusterFailures === null
+                  ? null
+                  : BigInt(summary.clusterFailures)
+              }
+            />
+            <OverviewCount
+              label="Observability failures"
+              value={
+                summary.observabilityFailures === null
+                  ? null
+                  : BigInt(summary.observabilityFailures)
+              }
+            />
           </div>
           <p className="border-t border-border px-4 py-2 text-[0.6875rem] leading-5 text-muted-foreground sm:px-5">
-            {applications.length} highest-impact applications loaded; connection counts reflect this window.{" "}
-            Observability sources that are not configured are absent, not failed.
+            {attentionAvailable ? (
+              <>
+                {attentionApplications.length} impact-ranked applications loaded; connection counts reflect this window.{" "}
+                Observability sources that are not configured are absent, not failed.
+              </>
+            ) : (
+              attentionMessage
+            )}
           </p>
         </section>
       </div>
@@ -171,7 +224,11 @@ export function FleetOverview({
             Open full queue
           </Link>
         </div>
-        {summary.attention.length > 0 ? (
+        {!attentionAvailable ? (
+          <p role="status" className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-5">
+            {attentionMessage}
+          </p>
+        ) : summary.attention.length > 0 ? (
           <ol className="divide-y divide-border">
             {summary.attention.map((application, index) => {
               const identity = application.identity!
@@ -210,12 +267,12 @@ export function FleetOverview({
   )
 }
 
-function OverviewCount({ label, value }: { label: string; value: bigint }) {
+function OverviewCount({ label, value }: { label: string; value: bigint | null }) {
   return (
     <div aria-label={label} className="min-w-0 bg-background px-3 py-4 sm:px-4">
       <span className="block text-[0.6875rem] leading-4 text-muted-foreground">{label}</span>
       <strong className="mt-1 block font-mono text-xl font-semibold tabular-nums text-foreground">
-        {value.toString()}
+        {value?.toString() ?? "—"}
       </strong>
     </div>
   )
@@ -229,6 +286,9 @@ function summarizeOverview(
     release: readonly FleetRelease[]
     rollout: readonly FleetRollout[]
   },
+  completeHealth: Map<string, bigint> | null,
+  completeTotal: bigint | null,
+  attentionAvailable: boolean,
 ): OverviewSummary {
   const applicationHealth = new Map<string, bigint>()
   let activeReleases = BigInt(0)
@@ -239,7 +299,7 @@ function summarizeOverview(
   let observabilityFailures = 0
   const attention: FleetApplicationSummary[] = []
 
-  for (const application of applications) {
+  for (const application of attentionAvailable ? applications : []) {
     const health = application.health === "unspecified" ? "unknown" : application.health
     applicationHealth.set(
       health,
@@ -291,15 +351,72 @@ function summarizeOverview(
   }
 
   return {
-    health: hasHealthFacets ? facetHealth : applicationHealth,
-    activeReleases: hasReleaseFacets ? facetActiveReleases : activeReleases,
-    activeRollouts: hasRolloutFacets ? facetActiveRollouts : activeRollouts,
-    blockedGates,
-    repositoryFailures,
-    clusterFailures,
-    observabilityFailures,
+    health:
+      completeHealth ??
+      (hasHealthFacets
+        ? facetHealth
+        : completeTotal !== null
+          ? new Map([["unknown", completeTotal]])
+          : applicationHealth),
+    activeReleases: hasReleaseFacets
+      ? facetActiveReleases
+      : attentionAvailable
+        ? activeReleases
+        : null,
+    activeRollouts: hasRolloutFacets
+      ? facetActiveRollouts
+      : attentionAvailable
+        ? activeRollouts
+        : null,
+    blockedGates: attentionAvailable ? blockedGates : null,
+    repositoryFailures: attentionAvailable ? repositoryFailures : null,
+    clusterFailures: attentionAvailable ? clusterFailures : null,
+    observabilityFailures: attentionAvailable ? observabilityFailures : null,
     attention,
   }
+}
+
+function attentionUnavailableMessage(status: FleetDataStatus): string {
+  return status === "loading" || status === "stale"
+    ? "Refreshing impact-ranked application data; window-derived counts are temporarily unavailable."
+    : "Impact-ranked application data is unavailable; window-derived counts cannot be shown."
+}
+
+function completeMapHealth(result: FleetMapResult): Map<string, bigint> | null {
+  const counts = new Map<string, bigint>()
+  let leaves = BigInt(0)
+  const visit = (nodes: readonly FleetMapNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === "application") {
+        const health = strongestPositiveHealth(node)
+        const normalized = health === "unspecified" ? "unknown" : health
+        counts.set(normalized, (counts.get(normalized) ?? BigInt(0)) + BigInt(1))
+        leaves += BigInt(1)
+      }
+      if (node.children.length > 0) visit(node.children)
+    }
+  }
+  visit(result.roots)
+  return leaves === result.total ? counts : null
+}
+
+const completeHealthSeverity: readonly FleetHealthStatus[] = [
+  "failed",
+  "degraded",
+  "progressing",
+  "missing",
+  "unknown",
+  "healthy",
+  "unspecified",
+]
+
+function strongestPositiveHealth(node: FleetMapNode): FleetHealthStatus {
+  for (const health of completeHealthSeverity) {
+    if (node.health.some((bucket) => bucket.health === health && bucket.count > BigInt(0))) {
+      return health
+    }
+  }
+  return "unknown"
 }
 
 function connectionFailed(status: FleetConnectionStatus): boolean {

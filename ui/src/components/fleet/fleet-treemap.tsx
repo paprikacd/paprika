@@ -31,6 +31,7 @@ import type {
   FleetHealthStatus,
   FleetMapResult,
 } from "@/lib/fleet-client"
+import type { FleetFocusTarget } from "@/lib/fleet-focus"
 import type { NamespacedKey } from "@/lib/fleet-query"
 
 const DEFAULT_VIEWPORT = { width: 960, height: 520 }
@@ -63,7 +64,7 @@ export interface FleetTreemapProps {
   onZoomChange: (zoom: string) => void
   onSelectApplication: (identity: NamespacedKey) => void
   onFocusedApplication: (identity: NamespacedKey | null) => void
-  registerTarget?: (identity: NamespacedKey, target: HTMLElement | null) => void
+  registerTarget?: (identity: NamespacedKey, target: FleetFocusTarget | null) => void
 }
 
 export function FleetTreemap({
@@ -165,15 +166,37 @@ export function FleetTreemap({
     )
   }, [effectiveActiveId, layout])
 
+  const focusRectangle = useCallback(
+    (rectangle: TreemapRectangle) => {
+      const identity = rectangle.node.application
+      if (!identity) return
+      setActiveStableId(rectangle.stableId)
+      onFocusedApplication(identity)
+    },
+    [onFocusedApplication],
+  )
+
   useEffect(() => {
     if (!registerTarget) return
-    const target = controllerRef.current
-    const identities = layout.rectangles
-      .map((rectangle) => rectangle.node.application)
-      .filter((identity): identity is NamespacedKey => Boolean(identity))
-    identities.forEach((identity) => registerTarget(identity, target))
-    return () => identities.forEach((identity) => registerTarget(identity, null))
-  }, [layout.rectangles, registerTarget])
+    const targets: Array<{ identity: NamespacedKey; target: FleetFocusTarget }> = []
+
+    for (const rectangle of layout.rectangles) {
+      const identity = rectangle.node.application
+      if (!identity) continue
+      const target: FleetFocusTarget = {
+        focus: () => {
+          const controller = controllerRef.current
+          if (!controller) return
+          controller.focus()
+          focusRectangle(rectangle)
+        },
+      }
+      targets.push({ identity, target })
+      registerTarget(identity, target)
+    }
+
+    return () => targets.forEach(({ identity }) => registerTarget(identity, null))
+  }, [focusRectangle, layout.rectangles, registerTarget])
 
   const selectRectangle = useCallback(
     (rectangle: TreemapRectangle | null) => {

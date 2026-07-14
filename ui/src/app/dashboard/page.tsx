@@ -38,7 +38,6 @@ import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
 import { DashboardCommandCenter } from "@/components/dashboard/dashboard-command-center"
 import { FleetOverview } from "@/components/fleet/fleet-overview"
-import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
 import { useFleetRefresh, useSingleFlightRefresh } from "@/lib/fleet-refresh"
@@ -54,7 +53,7 @@ import {
   planPipelineScopeRequests,
   rolloutMatchesFleetScope,
 } from "@/lib/fleet-resource-scope"
-import { useFleetData } from "@/lib/use-fleet-data"
+import { overviewHeatmapState, useFleetData } from "@/lib/use-fleet-data"
 import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { ToastStack } from "@/components/notifications/toast-stack"
 import {
@@ -355,11 +354,22 @@ function DashboardContent() {
     [sharedScope],
   )
   const overviewFleetState = useMemo(
-    () => mergeFleetQuery(sharedFleetState, { view: "queue", sort: "impact", direction: "desc" }),
+    () => overviewHeatmapState(sharedFleetState, new URLSearchParams(rawQuery)),
+    [rawQuery, sharedFleetState],
+  )
+  const attentionFleetState = useMemo(
+    () =>
+      mergeFleetQuery(sharedFleetState, {
+        view: "queue",
+        sort: "impact",
+        direction: "desc",
+      }),
     [sharedFleetState],
   )
-  const fleet = useFleetData(overviewFleetState)
-  const refreshFleet = fleet.refresh
+  const fleetMap = useFleetData(overviewFleetState)
+  const attentionFleet = useFleetData(attentionFleetState)
+  const refreshFleetMap = fleetMap.refresh
+  const refreshAttentionFleet = attentionFleet.refresh
   const [pipelineData, setPipelineData] = useState<ScopedCollection<Pipeline> | null>(null)
   const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
@@ -442,8 +452,8 @@ function DashboardContent() {
   }, [scopeKey, sharedScope])
 
   const performDashboardRefresh = useCallback(async () => {
-    await Promise.all([fetchData(), refreshFleet()])
-  }, [fetchData, refreshFleet])
+    await Promise.all([fetchData(), refreshFleetMap(), refreshAttentionFleet()])
+  }, [fetchData, refreshAttentionFleet, refreshFleetMap])
   const refreshDashboard = useSingleFlightRefresh(performDashboardRefresh)
 
   useFleetRefresh(refreshDashboard, { onRequestOutcome: reportRequestOutcome })
@@ -479,6 +489,13 @@ function DashboardContent() {
     )
   }, [refreshDashboard, reportRequestOutcome])
 
+  const retryFleetMap = useCallback(() => {
+    void refreshFleetMap().then(
+      () => reportRequestOutcome(true),
+      () => reportRequestOutcome(false),
+    )
+  }, [refreshFleetMap, reportRequestOutcome])
+
   const searchReleases = useCallback(
     async (query: string, signal: AbortSignal): Promise<Release[]> => {
       const response = await client.queryReleases(
@@ -498,13 +515,27 @@ function DashboardContent() {
   const runningCount = pipelines.filter((p) => p.phase === "Running").length
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
   const failedCount = pipelines.filter((p) => p.phase === "Failed").length
-  const fleetApplications =
-    fleet.displayData?.kind === "applications" ? fleet.displayData : undefined
+  const fleetMapIsCurrent =
+    fleetMap.status === "ready" ||
+    fleetMap.status === "empty" ||
+    fleetMap.status === "partial"
+  const attentionIsCurrent =
+    attentionFleet.status === "ready" ||
+    attentionFleet.status === "empty" ||
+    attentionFleet.status === "partial"
+  const fleetMapData =
+    fleetMapIsCurrent && fleetMap.currentData?.kind === "map"
+      ? fleetMap.currentData
+      : undefined
+  const attentionApplications =
+    attentionIsCurrent && attentionFleet.currentData?.kind === "applications"
+      ? attentionFleet.currentData
+      : undefined
   const commandApplications = useMemo(
-    () => toDashboardApplications(fleetApplications?.applications ?? []),
-    [fleetApplications?.applications],
+    () => toDashboardApplications(attentionApplications?.applications ?? []),
+    [attentionApplications?.applications],
   )
-  const appCount = fleetApplications?.total.toString() ?? "—"
+  const appCount = fleetMapData?.result.total.toString() ?? "—"
   const activeRolloutCount = rollouts.filter((r) => r.phase === "Progressing" || r.phase === "Paused").length
   const rawFleetParameters = useMemo(() => new URLSearchParams(rawQuery), [rawQuery])
   const inventoryHref = fleetHref("/dashboard/applications", rawFleetParameters)
@@ -522,20 +553,17 @@ function DashboardContent() {
       <div className="mx-auto max-w-7xl space-y-10 px-6 py-8">
         <h1 className="sr-only">Dashboard</h1>
 
-        <FleetStateNotice status={fleet.status} />
-        {fleetApplications ? (
-          <FleetOverview
-            applications={fleetApplications.applications}
-            facets={fleetApplications.facets}
-            total={fleetApplications.total}
-            inventoryHref={inventoryHref}
-            queueHref={queueHref}
-            selectedHealth={overviewFleetState.health}
-            selectedRelease={overviewFleetState.release}
-            selectedRollout={overviewFleetState.rollout}
-            query={rawQuery}
-          />
-        ) : null}
+        <FleetOverview
+          result={fleetMapData?.result}
+          attentionApplications={attentionApplications?.applications ?? []}
+          attentionStatus={attentionFleet.status}
+          inventoryHref={inventoryHref}
+          queueHref={queueHref}
+          selectedHealth={overviewFleetState.health}
+          selectedRelease={overviewFleetState.release}
+          selectedRollout={overviewFleetState.rollout}
+          query={rawQuery}
+        />
 
         <motion.div
           id="releases"
@@ -546,7 +574,14 @@ function DashboardContent() {
         >
           <DashboardCommandCenter
             applications={commandApplications}
-            applicationTotal={fleetApplications?.total}
+            fleetMap={fleetMapData?.result}
+            fleetMapStatus={fleetMap.status}
+            fleetDensity={overviewFleetState.density}
+            fleetLabels={overviewFleetState.labels}
+            fleetSort={overviewFleetState.sort}
+            fleetDirection={overviewFleetState.direction}
+            selectedApplication={overviewFleetState.selected}
+            onRetryFleetMap={retryFleetMap}
             pipelines={pipelines}
             releases={EMPTY_RELEASES}
             rollouts={rollouts}

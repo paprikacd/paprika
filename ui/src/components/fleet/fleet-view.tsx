@@ -6,9 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ApplicationTable } from "@/components/fleet/application-table"
 import { AttentionQueue } from "@/components/fleet/attention-queue"
 import { FleetFilters } from "@/components/fleet/fleet-filters"
+import { FleetHealthHeatmap } from "@/components/fleet/fleet-health-heatmap"
 import { FleetMatrix } from "@/components/fleet/fleet-matrix"
 import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { FleetTreemap } from "@/components/fleet/fleet-treemap"
+import type { FleetMapNode } from "@/lib/fleet-client"
 import { useConnection } from "@/lib/connection-context"
 import {
   createFleetFocusCoordinator,
@@ -28,7 +30,7 @@ import {
   type FleetPresentationData,
 } from "@/lib/use-fleet-data"
 
-const presentations: readonly FleetViewName[] = ["treemap", "matrix"]
+const presentations: readonly FleetViewName[] = ["heatmap", "treemap", "matrix"]
 
 export function FleetView() {
   const { state, notices, patchQuery } = useFleetScope()
@@ -37,7 +39,8 @@ export function FleetView() {
   const [focusMessage, setFocusMessage] = useState("")
   const [queryNotice, setQueryNotice] = useState("")
   const headingRef = useRef<HTMLHeadingElement>(null)
-  const summaryTargets = useRef(new Map<string, HTMLElement>())
+  const summaryTargets = useRef(new Map<string, FleetFocusTarget>())
+  const preserveFocusTransition = useRef(false)
   const [focusCoordinator] = useState(() =>
     createFleetFocusCoordinator({ announce: setFocusMessage }),
   )
@@ -101,10 +104,15 @@ export function FleetView() {
   }, [focusCoordinator, state.view])
 
   const focusedApplications = useMemo(() => {
-    if (fleet.currentData?.kind !== "applications") return undefined
-    return fleet.currentData.applications
-      .map((application) => application.identity)
-      .filter((identity): identity is NamespacedKey => Boolean(identity))
+    if (fleet.currentData?.kind === "applications") {
+      return fleet.currentData.applications
+        .map((application) => application.identity)
+        .filter((identity): identity is NamespacedKey => Boolean(identity))
+    }
+    if (fleet.currentData?.kind === "map") {
+      return mapApplicationIdentities(fleet.currentData.result.roots)
+    }
+    return undefined
   }, [fleet.currentData])
 
   useEffect(() => {
@@ -116,14 +124,17 @@ export function FleetView() {
     [patchState],
   )
   const trackApplicationFocus = useCallback(
-    (identity: NamespacedKey | null) => focusCoordinator.trackFocusedApplication(identity),
+    (identity: NamespacedKey | null) => {
+      if (identity === null && preserveFocusTransition.current) return
+      focusCoordinator.trackFocusedApplication(identity)
+    },
     [focusCoordinator],
   )
   const registerSummaryTarget = useCallback(
     (
-      view: "treemap" | "matrix",
+      view: "heatmap" | "treemap" | "matrix",
       identity: NamespacedKey,
-      target: HTMLElement | null,
+      target: FleetFocusTarget | null,
     ) => {
       const key = `${view}:${identityKey(identity)}`
       if (target) summaryTargets.current.set(key, target)
@@ -137,6 +148,14 @@ export function FleetView() {
       aria-labelledby="applications-title"
       aria-busy={fleet.status === "loading" || fleet.status === "stale"}
       data-fleet-ready={fleetReadyTotal}
+      onBlurCapture={(event) => {
+        preserveFocusTransition.current =
+          event.relatedTarget instanceof HTMLElement &&
+          event.relatedTarget.dataset.preserveFleetFocus === "true"
+      }}
+      onFocusCapture={() => {
+        preserveFocusTransition.current = false
+      }}
       className="min-w-0 bg-background"
     >
       <header className="border-b border-border bg-background px-4 py-7 sm:px-6 lg:flex lg:items-end lg:justify-between lg:gap-8">
@@ -240,14 +259,19 @@ function FleetPresentation({
   focusCoordinator: FleetFocusCoordinator
   getResultsHeadingTarget: () => FleetFocusTarget | null
   registerSummaryTarget: (
-    view: "treemap" | "matrix",
+    view: "heatmap" | "treemap" | "matrix",
     identity: NamespacedKey,
-    target: HTMLElement | null,
+    target: FleetFocusTarget | null,
   ) => void
 }) {
   const registerTreemapTarget = useCallback(
-    (identity: NamespacedKey, target: HTMLElement | null) =>
+    (identity: NamespacedKey, target: FleetFocusTarget | null) =>
       registerSummaryTarget("treemap", identity, target),
+    [registerSummaryTarget],
+  )
+  const registerHeatmapTarget = useCallback(
+    (identity: NamespacedKey, target: FleetFocusTarget | null) =>
+      registerSummaryTarget("heatmap", identity, target),
     [registerSummaryTarget],
   )
 
@@ -271,7 +295,19 @@ function FleetPresentation({
       )
     }
     case "map":
-      return (
+      return state.view === "heatmap" ? (
+        <FleetHealthHeatmap
+          result={data.result}
+          density={state.density}
+          labels={state.labels}
+          sort={state.sort}
+          direction={state.direction}
+          selected={state.selected}
+          onSelectApplication={onSelectApplication}
+          onFocusedApplication={onFocusedApplication}
+          registerTarget={registerHeatmapTarget}
+        />
+      ) : (
         <FleetTreemap
           result={data.result}
           zoom={state.zoom}
@@ -293,4 +329,16 @@ function presentationTotal(data: FleetPresentationData): bigint {
 
 function identityKey(identity: NamespacedKey): string {
   return `${identity.namespace}/${identity.name}`
+}
+
+function mapApplicationIdentities(roots: readonly FleetMapNode[]): NamespacedKey[] {
+  const identities: NamespacedKey[] = []
+  const pending = [...roots]
+  while (pending.length > 0) {
+    const node = pending.pop()
+    if (!node) continue
+    if (node.application) identities.push(node.application)
+    pending.push(...node.children)
+  }
+  return identities
 }

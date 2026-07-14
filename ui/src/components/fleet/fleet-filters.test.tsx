@@ -146,12 +146,13 @@ describe("FleetFilters", () => {
   })
 
   it.each([
+    ["Heatmap", "treemap", { view: "heatmap" }],
     ["Treemap", "matrix", { view: "treemap" }],
     ["Matrix", "treemap", { view: "matrix" }],
-    ["Table", "treemap", { view: "table", sort: "name", direction: "asc" }],
-    ["Queue", "treemap", { view: "queue", sort: "impact", direction: "desc" }],
+    ["Table", "treemap", { view: "table" }],
+    ["Queue", "treemap", { view: "queue" }],
   ] as const)(
-    "switches to %s with the exact presentation defaults",
+    "switches to %s with an exact view-only patch",
     async (label, currentView, expectedPatch) => {
       const user = userEvent.setup()
       const state = { ...DEFAULT_FLEET_QUERY, view: currentView }

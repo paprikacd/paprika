@@ -1,92 +1,77 @@
 "use client"
 
-import { useMemo, useState } from "react"
 import Link from "next/link"
-import { ArrowUpRight, Clock3, Workflow } from "lucide-react"
+import { Clock3, Workflow } from "lucide-react"
 import type { Application } from "@/gen/paprika/v1/api_pb"
-import { fleetDetailHref, fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
 
-const PREVIEW_LIMIT = 8
-const RESULTS_ID = "dashboard-health-map-results"
+import { FleetHealthHeatmap } from "@/components/fleet/fleet-health-heatmap"
+import type { FleetMapResult } from "@/lib/fleet-client"
+import { fleetHref, patchFleetSearchParams } from "@/lib/fleet-navigation"
+import type {
+  FleetDensity,
+  FleetDirection,
+  FleetLabelMode,
+  FleetSort,
+  NamespacedKey,
+} from "@/lib/fleet-query"
+import type { FleetDataStatus } from "@/lib/use-fleet-data"
 
-type HealthFilter = "All" | "Healthy" | "Degraded" | "Progressing" | "OutOfSync" | "Unknown"
-
-interface DashboardHealthMapProps {
-  applications: Application[]
-  applicationTotal?: bigint
+export interface DashboardHealthMapProps {
+  result?: FleetMapResult
+  status?: FleetDataStatus
   fleetQuery?: string
-  loading?: boolean
+  density?: FleetDensity
+  labels?: FleetLabelMode
+  sort?: FleetSort
+  direction?: FleetDirection
+  selected?: NamespacedKey | null
+  onSelectApplication?: (identity: NamespacedKey) => void
+  onFocusedApplication?: (identity: NamespacedKey | null) => void
+  onRetry?: () => void
 }
 
-const healthFilters: HealthFilter[] = ["All", "Healthy", "Degraded", "Progressing", "OutOfSync", "Unknown"]
-
-const filterLabels: Record<HealthFilter, string> = {
-  All: "All",
-  Healthy: "Healthy",
-  Degraded: "Degraded",
-  Progressing: "Progressing",
-  OutOfSync: "Out of sync",
-  Unknown: "Unknown",
-}
-
-const healthStyles: Record<Exclude<HealthFilter, "All">, { dot: string; tile: string; text: string; ring: string }> = {
-  Healthy: {
-    dot: "bg-emerald-500",
-    tile: "bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25",
-    text: "text-emerald-500",
-    ring: "ring-emerald-500/25",
-  },
-  Degraded: {
-    dot: "bg-rose-500",
-    tile: "bg-rose-500/15 text-rose-500 hover:bg-rose-500/25",
-    text: "text-rose-500",
-    ring: "ring-rose-500/25",
-  },
-  Progressing: {
-    dot: "bg-sky-500",
-    tile: "bg-sky-500/15 text-sky-500 hover:bg-sky-500/25",
-    text: "text-sky-500",
-    ring: "ring-sky-500/25",
-  },
-  OutOfSync: {
-    dot: "bg-amber-500",
-    tile: "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25",
-    text: "text-amber-500",
-    ring: "ring-amber-500/25",
-  },
-  Unknown: {
-    dot: "bg-muted-foreground",
-    tile: "bg-muted text-muted-foreground hover:bg-muted/80",
-    text: "text-muted-foreground",
-    ring: "ring-foreground/10",
-  },
-}
+type ApplicationHealth = "Healthy" | "Degraded" | "Progressing" | "OutOfSync" | "Unknown"
 
 function normalize(value: string) {
   return value.trim().toLowerCase()
 }
 
-function getHealthBucket(status: string): Exclude<HealthFilter, "All"> {
+function getHealthBucket(status: string): ApplicationHealth {
   const normalized = normalize(status)
   if (normalized.includes("degraded") || normalized.includes("failed") || normalized.includes("error")) {
     return "Degraded"
   }
-  if (normalized.includes("progress") || normalized.includes("canary") || normalized.includes("running") || normalized.includes("pending")) {
+  if (
+    normalized.includes("progress") ||
+    normalized.includes("canary") ||
+    normalized.includes("running") ||
+    normalized.includes("pending")
+  ) {
     return "Progressing"
   }
-  if (normalized.includes("outofsync") || normalized.includes("out-of-sync") || normalized.includes("out of sync")) {
+  if (
+    normalized.includes("outofsync") ||
+    normalized.includes("out-of-sync") ||
+    normalized.includes("out of sync")
+  ) {
     return "OutOfSync"
   }
-  if (normalized.includes("healthy") || normalized.includes("succeeded") || normalized.includes("complete")) {
+  if (
+    normalized.includes("healthy") ||
+    normalized.includes("succeeded") ||
+    normalized.includes("complete")
+  ) {
     return "Healthy"
   }
   return "Unknown"
 }
 
-export function getApplicationHealth(application: Application): Exclude<HealthFilter, "All"> {
+export function getApplicationHealth(application: Application): ApplicationHealth {
   if (application.health) {
     const health = getHealthBucket(application.health)
-    if (application.outOfSync > 0 && (health === "Healthy" || health === "Unknown")) return "OutOfSync"
+    if (application.outOfSync > 0 && (health === "Healthy" || health === "Unknown")) {
+      return "OutOfSync"
+    }
     return health
   }
   if (application.outOfSync > 0) return "OutOfSync"
@@ -100,9 +85,13 @@ export function getApplicationIssue(application: Application) {
     return health !== "Healthy" && health !== "Unknown"
   })
   if (resourceIssue?.message) return resourceIssue.message
-  if (resourceIssue?.name) return `${resourceIssue.kind || "Resource"} ${resourceIssue.name} is ${resourceIssue.health}`
+  if (resourceIssue?.name) {
+    return `${resourceIssue.kind || "Resource"} ${resourceIssue.name} is ${resourceIssue.health}`
+  }
 
-  const healthIssue = application.healthChecks?.find((check) => check.status && getHealthBucket(check.status) !== "Healthy")
+  const healthIssue = application.healthChecks?.find(
+    (check) => check.status && getHealthBucket(check.status) !== "Healthy",
+  )
   if (healthIssue?.message) return healthIssue.message
   if (application.outOfSync > 0) {
     return `${application.outOfSync} out-of-sync resource${application.outOfSync === 1 ? "" : "s"}`
@@ -110,178 +99,168 @@ export function getApplicationIssue(application: Application) {
   return ""
 }
 
-function statusCount(applications: Application[], filter: HealthFilter) {
-  if (filter === "All") return applications.length
-  return applications.filter((application) => getApplicationHealth(application) === filter).length
-}
-
-function applicationsTreemapHref(fleetQuery: string) {
-  const treemap = patchFleetSearchParams(new URLSearchParams(fleetQuery), {
-    selected: null,
-    view: "treemap",
-    zoom: "",
-  })
-  return fleetHref("/dashboard/applications", treemap)
-}
-
-function HealthMapTile({ application, fleetQuery }: { application: Application; fleetQuery: string }) {
-  const health = getApplicationHealth(application)
-  const issue = getApplicationIssue(application)
-  const style = healthStyles[health]
-  const resourceCount = application.resourceHealth?.length || application.resources?.length || 0
-
-  return (
-    <Link
-      href={fleetDetailHref("application", application, new URLSearchParams(fleetQuery))}
-      aria-label={`${application.name} ${health} in ${application.namespace}`}
-      className={`group flex min-h-24 flex-col justify-between rounded-lg p-3 ring-1 transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${style.tile} ${style.ring}`}
-    >
-      <span>
-        <span className="flex items-start justify-between gap-2">
-          <span className="min-w-0">
-            <span className="block truncate font-mono text-sm font-semibold text-foreground">{application.name}</span>
-            <span className="mt-0.5 block text-[11px] text-muted-foreground">ns/{application.namespace}</span>
-          </span>
-          <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-full ${style.dot}`} />
-        </span>
-        {issue && <span className="mt-2 line-clamp-2 block text-xs text-foreground/75">{issue}</span>}
-      </span>
-      <span className="mt-3 flex items-center justify-between gap-2 text-[11px]">
-        <span className={`font-medium ${style.text}`}>{health}</span>
-        <span className="text-muted-foreground">
-          {application.currentStage || application.phase || "stage unknown"}
-          {resourceCount > 0 && ` / ${resourceCount} resources`}
-        </span>
-      </span>
-    </Link>
-  )
-}
-
 export function DashboardHealthMap({
-  applications,
-  applicationTotal,
+  result,
+  status = result ? "ready" : "loading",
   fleetQuery = "",
-  loading = false,
+  density = "auto",
+  labels = "auto",
+  sort = "health",
+  direction = "desc",
+  selected,
+  onSelectApplication,
+  onFocusedApplication,
+  onRetry,
 }: DashboardHealthMapProps) {
-  const [healthFilter, setHealthFilter] = useState<HealthFilter>("All")
-  const [expanded, setExpanded] = useState(false)
-  const filteredApplications = useMemo(
-    () => healthFilter === "All"
-      ? applications
-      : applications.filter((application) => getApplicationHealth(application) === healthFilter),
-    [applications, healthFilter],
-  )
-  const visibleApplications = expanded
-    ? filteredApplications
-    : filteredApplications.slice(0, PREVIEW_LIMIT)
-  const canExpand = filteredApplications.length > PREVIEW_LIMIT
-
-  function changeFilter(filter: HealthFilter) {
-    setExpanded(false)
-    setHealthFilter(filter)
-  }
+  const tableHref = applicationsTableHref(fleetQuery)
+  const failed =
+    status === "error" || status === "unavailable" || status === "unauthorized"
+  const currentResult =
+    status === "ready" || status === "empty" || status === "partial"
+      ? result
+      : undefined
 
   return (
-    <div className="p-5 sm:p-6">
+    <section aria-labelledby="dashboard-health-map-title" className="p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Workflow className="size-4 text-primary" aria-hidden="true" />
-            <h3 className="text-sm font-semibold">Application health map</h3>
+            <h3 id="dashboard-health-map-title" className="text-sm font-semibold">
+              Complete application health
+            </h3>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Filter by status, then open an app tile for the full debug view.
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Every authorized Application has equal visual weight; color and glyph show current health.
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground tabular-nums">
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs tabular-nums text-muted-foreground">
           <Clock3 className="size-3.5" aria-hidden="true" />
-          {applicationTotal === undefined
-            ? `${applications.length} apps loaded`
-            : `${applications.length}/${applicationTotal.toString()} apps loaded`}
+          {currentResult
+            ? `${currentResult.total.toString()} applications in this complete map`
+            : "Complete map unavailable"}
         </span>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {healthFilters.map((filter) => {
-          const selected = filter === healthFilter
-          return (
-            <button
-              key={filter}
-              type="button"
-              aria-label={`Show ${filterLabels[filter]} applications`}
-              aria-pressed={selected}
-              onClick={() => changeFilter(filter)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-                selected
-                  ? "bg-foreground text-background"
-                  : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-              }`}
-            >
-              {filter !== "All" && <span aria-hidden="true" className={`size-2 rounded-full ${healthStyles[filter].dot}`} />}
-              {filterLabels[filter]}
-              <span className="tabular-nums opacity-75">{statusCount(applications, filter)}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-5">
-        {loading ? (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {[0, 1, 2, 3, 4, 5].map((item) => (
-              <div key={item} className="h-24 rounded-lg bg-muted animate-pulse" />
-            ))}
-          </div>
-        ) : visibleApplications.length > 0 ? (
-          <ul
-            id={RESULTS_ID}
-            role="list"
-            aria-label="Application health map results"
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
-          >
-            {visibleApplications.map((application) => (
-              <li key={`${application.namespace}/${application.name}`}>
-                <HealthMapTile application={application} fleetQuery={fleetQuery} />
-              </li>
-            ))}
-          </ul>
+      <div className="mt-4">
+        {failed ? (
+          <HealthMapError tableHref={tableHref} onRetry={onRetry} />
+        ) : status === "loading" || status === "stale" ? (
+          <HealthMapLoading />
+        ) : currentResult && currentResult.total > BigInt(0) ? (
+          <FleetHealthHeatmap
+            result={currentResult}
+            density={density}
+            labels={labels}
+            sort={sort}
+            direction={direction}
+            selected={selected}
+            onSelectApplication={onSelectApplication}
+            onFocusedApplication={onFocusedApplication}
+          />
+        ) : currentResult?.total === BigInt(0) || status === "empty" ? (
+          <HealthMapEmpty fleetQuery={fleetQuery} tableHref={tableHref} />
         ) : (
-          <div id={RESULTS_ID} className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-            <p className="text-sm font-medium">No applications in this view</p>
-            <p className="mt-1 text-xs text-muted-foreground">Change the health filter to inspect another status.</p>
-          </div>
+          <HealthMapError tableHref={tableHref} onRetry={onRetry} />
         )}
       </div>
+    </section>
+  )
+}
 
-      {!loading && (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-4 text-xs text-muted-foreground">
-          <span className="tabular-nums">
-            {visibleApplications.length} of {filteredApplications.length} loaded
-            {applicationTotal !== undefined && ` · ${applicationTotal.toString()} indexed`}
-          </span>
-          <span className="flex flex-wrap items-center gap-3">
-            {canExpand && (
-              <button
-                type="button"
-                aria-expanded={expanded}
-                aria-controls={RESULTS_ID}
-                onClick={() => setExpanded((current) => !current)}
-                className="font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {expanded ? "Show compact preview" : `Show all ${filteredApplications.length} loaded applications`}
-              </button>
-            )}
-            <Link
-              href={applicationsTreemapHref(fleetQuery)}
-              aria-label="View all applications as treemap"
-              className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              View all as treemap
-              <ArrowUpRight className="size-3.5" aria-hidden="true" />
-            </Link>
-          </span>
-        </div>
-      )}
+function HealthMapLoading() {
+  return (
+    <div role="status" aria-label="Loading complete application health map" className="space-y-3">
+      <div className="h-4 w-52 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+      <div className="h-72 animate-pulse rounded bg-muted motion-reduce:animate-none" />
     </div>
   )
+}
+
+function HealthMapError({
+  tableHref,
+  onRetry,
+}: {
+  tableHref: string
+  onRetry?: () => void
+}) {
+  return (
+    <div
+      role="alert"
+      aria-label="Application health map unavailable"
+      className="border border-destructive/40 bg-destructive/5 px-4 py-5"
+    >
+      <p className="text-sm font-semibold text-foreground">
+        The complete fleet map could not be loaded
+      </p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        Search and other operational panels remain available while this view recovers.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-4 text-sm font-semibold">
+        {onRetry ? (
+          <button
+            type="button"
+            aria-label="Retry application health map"
+            onClick={onRetry}
+            className="min-h-11 text-primary hover:underline"
+          >
+            Retry
+          </button>
+        ) : null}
+        <Link href={tableHref} aria-label="Open complete Table view" className="min-h-11 content-center text-primary hover:underline">
+          Open complete Table
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function HealthMapEmpty({
+  fleetQuery,
+  tableHref,
+}: {
+  fleetQuery: string
+  tableHref: string
+}) {
+  return (
+    <div className="border border-border bg-card px-4 py-7 text-center">
+      <p role="status" className="text-sm font-semibold text-foreground">
+        No applications match this fleet scope
+      </p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        The active scope is preserved. Clear it in one step or inspect the complete Table.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-4 text-sm font-semibold">
+        <Link href={clearScopeHref(fleetQuery)} aria-label="Clear fleet scope" className="min-h-11 content-center text-primary hover:underline">
+          Clear fleet scope
+        </Link>
+        <Link href={tableHref} aria-label="Open complete Table view" className="min-h-11 content-center text-primary hover:underline">
+          Open complete Table
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function applicationsTableHref(fleetQuery: string) {
+  const table = patchFleetSearchParams(new URLSearchParams(fleetQuery), {
+    selected: null,
+    view: "table",
+    zoom: "",
+  })
+  return fleetHref("/dashboard/applications", table)
+}
+
+function clearScopeHref(fleetQuery: string) {
+  const cleared = patchFleetSearchParams(
+    new URLSearchParams(fleetQuery),
+    {
+      projects: [],
+      clusters: [],
+      stages: [],
+      namespaces: [],
+    },
+    { scopeChanged: true },
+  )
+  return fleetHref("/dashboard", cleared)
 }

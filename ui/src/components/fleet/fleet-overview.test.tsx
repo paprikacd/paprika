@@ -5,6 +5,7 @@ import { FleetOverview } from "@/components/fleet/fleet-overview"
 import type {
   FleetApplicationSummary,
   FleetFacetBucket,
+  FleetMapResult,
 } from "@/lib/fleet-client"
 
 function application(
@@ -92,7 +93,10 @@ describe("FleetOverview", () => {
     ]
 
     render(
-      <FleetOverview applications={applications} facets={facets} total={BigInt(13)} />,
+      <FleetOverview
+        result={mapResult(13, facets)}
+        attentionApplications={applications}
+      />,
     )
 
     const posture = screen.getByRole("region", { name: "Fleet health posture" })
@@ -112,8 +116,10 @@ describe("FleetOverview", () => {
     expect(within(connections).getByLabelText("Repository failures")).toHaveTextContent("1")
     expect(within(connections).getByLabelText("Cluster failures")).toHaveTextContent("1")
     expect(within(connections).getByLabelText("Observability failures")).toHaveTextContent("1")
-    expect(connections).toHaveTextContent("2 highest-impact applications loaded")
-    expect(changes).toHaveTextContent("2 highest-impact applications loaded")
+    expect(connections).toHaveTextContent("2 impact-ranked applications loaded")
+    expect(changes).toHaveTextContent(
+      "Release and rollout counts use complete-map facets when available; blocked gates use the 2-application impact window.",
+    )
   })
 
   it("keeps not-configured observability out of failures and preserves server impact order", () => {
@@ -133,9 +139,8 @@ describe("FleetOverview", () => {
 
     render(
       <FleetOverview
-        applications={applications}
-        facets={[]}
-        total={BigInt(3)}
+        result={mapResult(3)}
+        attentionApplications={applications}
         query="namespace=platform&view=queue&unknown=kept"
       />,
     )
@@ -159,11 +164,11 @@ describe("FleetOverview", () => {
   it("keeps failed and paused delivery changes in the attention queue even when health is green", () => {
     render(
       <FleetOverview
-        applications={[
+        result={mapResult(2)}
+        attentionApplications={[
           application("apps", "failed-release", { releaseState: "failed" }),
           application("apps", "paused-rollout", { rolloutState: "paused" }),
         ]}
-        total={BigInt(2)}
       />,
     )
 
@@ -175,8 +180,8 @@ describe("FleetOverview", () => {
   it("folds unspecified health into Unknown so posture totals remain reconcilable", () => {
     render(
       <FleetOverview
-        applications={[application("apps", "checkout", { health: "unspecified" })]}
-        total={BigInt(1)}
+        result={mapResult(1, [valueFacet("health", "unspecified", 1)])}
+        attentionApplications={[application("apps", "checkout", { health: "unspecified" })]}
       />,
     )
 
@@ -184,12 +189,24 @@ describe("FleetOverview", () => {
     expect(posture).toHaveTextContent("Unknown1")
   })
 
+  it("never substitutes bounded attention health for incomplete complete-map posture", () => {
+    render(
+      <FleetOverview
+        result={mapResult(3)}
+        attentionApplications={[application("apps", "checkout", { health: "failed" })]}
+      />,
+    )
+
+    const posture = screen.getByRole("region", { name: "Fleet health posture" })
+    expect(posture).toHaveTextContent("Failed0")
+    expect(posture).toHaveTextContent("Unknown3")
+  })
+
   it("scopes self-excluding facet aggregates to active state filters", () => {
     render(
       <FleetOverview
-        applications={[]}
-        facets={facets}
-        total={BigInt(2)}
+        result={mapResult(2, facets)}
+        attentionApplications={[]}
         selectedHealth={["degraded"]}
         selectedRelease={["complete"]}
         selectedRollout={["paused"]}
@@ -202,4 +219,149 @@ describe("FleetOverview", () => {
     expect(screen.getByLabelText("Active releases")).toHaveTextContent("0")
     expect(screen.getByLabelText("Active rollouts")).toHaveTextContent("1")
   })
+
+  it("keeps complete map posture separate from the impact-ranked attention window", () => {
+    const attentionApplications = [
+      application("apps", "highest-impact", {
+        health: "failed",
+        blockedGateCount: 4,
+        repositoryConnection: "unhealthy",
+      }),
+      application("apps", "second-impact", { health: "degraded" }),
+    ]
+    const completeFacets = [
+      valueFacet("health", "healthy", 240),
+      valueFacet("health", "failed", 10),
+    ]
+
+    render(
+      <FleetOverview
+        result={mapResult(250, completeFacets)}
+        attentionApplications={attentionApplications}
+      />,
+    )
+
+    const posture = screen.getByRole("region", { name: "Fleet health posture" })
+    expect(posture).toHaveTextContent("250 applications")
+    expect(posture).toHaveTextContent("Healthy240")
+    expect(posture).toHaveTextContent("Failed10")
+    expect(screen.getByLabelText("Blocked gates")).toHaveTextContent("4")
+    expect(screen.getByLabelText("Repository failures")).toHaveTextContent("1")
+    expect(screen.getByRole("region", { name: "Highest impact attention" })).toHaveTextContent(
+      "highest-impact",
+    )
+    expect(screen.getByRole("region", { name: "Active delivery changes" })).toHaveTextContent(
+      "Release and rollout counts use complete-map facets when available; blocked gates use the 2-application impact window.",
+    )
+    expect(screen.queryByText(/2 applications$/i)).not.toBeInTheDocument()
+  })
+
+  it("keeps impact attention usable while the complete map is unavailable", () => {
+    render(
+      <FleetOverview
+        attentionApplications={[
+          application("apps", "checkout", {
+            health: "failed",
+            blockedGateCount: 2,
+            releaseState: "promoting",
+            rolloutState: "paused",
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.queryByRole("region", { name: "Fleet health posture" })).not.toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Highest impact attention" })).toHaveTextContent(
+      "checkout",
+    )
+    expect(screen.getByLabelText("Blocked gates")).toHaveTextContent("2")
+    const changes = screen.getByRole("region", { name: "Active delivery changes" })
+    expect(within(changes).getByLabelText("Active releases")).toHaveTextContent("1")
+    expect(within(changes).getByLabelText("Active rollouts")).toHaveTextContent("1")
+    expect(changes).toHaveTextContent(
+      "All change counts use the 1-application impact window while complete-map facets are unavailable.",
+    )
+  })
+
+  it("marks stale impact-window counts unknown instead of presenting the previous scope", () => {
+    render(
+      <FleetOverview
+        result={mapResult(3, [valueFacet("release", "promoting", 2)])}
+        attentionApplications={[
+          application("old-scope", "checkout", {
+            health: "failed",
+            blockedGateCount: 4,
+            rolloutState: "paused",
+            repositoryConnection: "unhealthy",
+          }),
+        ]}
+        attentionStatus="stale"
+      />,
+    )
+
+    const changes = screen.getByRole("region", { name: "Active delivery changes" })
+    expect(within(changes).getByLabelText("Active releases")).toHaveTextContent("2")
+    expect(within(changes).getByLabelText("Active rollouts")).toHaveTextContent("—")
+    expect(within(changes).getByLabelText("Blocked gates")).toHaveTextContent("—")
+    expect(screen.getByLabelText("Repository failures")).toHaveTextContent("—")
+    expect(screen.queryByText("checkout")).not.toBeInTheDocument()
+    expect(changes).toHaveTextContent(
+      "Refreshing impact-ranked application data; window-derived counts are temporarily unavailable.",
+    )
+    expect(screen.getByRole("region", { name: "Highest impact attention" })).toHaveTextContent(
+      "Refreshing impact-ranked application data",
+    )
+  })
+
+  it("derives each complete leaf from its strongest positive health bucket", () => {
+    const leaf = (
+      name: string,
+      health: FleetMapResult["roots"][number]["health"],
+    ): FleetMapResult["roots"][number] => ({
+      stableId: `application:apps/${name}`,
+      kind: "application",
+      label: name,
+      application: { namespace: "apps", name },
+      applicationCount: BigInt(1),
+      targetCount: BigInt(1),
+      health,
+      resourceWeight: BigInt(1),
+      requestRateWeight: 0,
+      effectiveWeight: 1,
+      usedResourceFallback: false,
+      children: [],
+    })
+    const result = mapResult(2)
+    result.roots = [
+      leaf("failed", [
+        { health: "healthy", count: BigInt(0) },
+        { health: "progressing", count: BigInt(1) },
+        { health: "failed", count: BigInt(1) },
+      ]),
+      leaf("unknown", [
+        { health: "unknown", count: BigInt(0) },
+        { health: "unspecified", count: BigInt(1) },
+      ]),
+    ]
+
+    render(<FleetOverview result={result} />)
+
+    const posture = screen.getByRole("region", { name: "Fleet health posture" })
+    expect(posture).toHaveTextContent("Failed1")
+    expect(posture).toHaveTextContent("Progressing0")
+    expect(posture).toHaveTextContent("Healthy0")
+    expect(posture).toHaveTextContent("Unknown1")
+  })
 })
+
+function mapResult(
+  total: number,
+  mapFacets: FleetFacetBucket[] = [],
+): FleetMapResult {
+  return {
+    roots: [],
+    total: BigInt(total),
+    indexGeneration: BigInt(7),
+    facets: mapFacets,
+  }
+}

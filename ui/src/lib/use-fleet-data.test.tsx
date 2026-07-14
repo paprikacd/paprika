@@ -15,6 +15,7 @@ import type {
 import { toQueryFleetMapRequest } from "@/lib/fleet-client"
 import {
   DEFAULT_FLEET_QUERY,
+  parseFleetQuery,
   type FleetQueryState,
   type FleetView,
   type NamespacedKey,
@@ -22,6 +23,7 @@ import {
 import {
   type FleetDataClient,
   type FleetPresentationData,
+  overviewHeatmapState,
   useFleetData,
 } from "@/lib/use-fleet-data"
 
@@ -185,6 +187,64 @@ function deferred<T>() {
 }
 
 describe("useFleetData primary presentation", () => {
+  it("applies Overview heatmap defaults only where the URL is silent", () => {
+    const applications = parseFleetQuery("").state
+    const overview = overviewHeatmapState(
+      applications,
+      new URLSearchParams(),
+    )
+
+    expect(overview).toMatchObject({
+      view: "heatmap",
+      group: "health",
+      sort: "health",
+      direction: "desc",
+      density: "auto",
+      labels: "auto",
+    })
+    expect(applications).toMatchObject({
+      view: "treemap",
+      group: "project",
+      sort: "name",
+      direction: "asc",
+    })
+
+    const explicitParameters = new URLSearchParams(
+      "group=namespace&sort=last_transition&direction=asc&density=compact&labels=all",
+    )
+    const explicit = parseFleetQuery(explicitParameters).state
+    expect(overviewHeatmapState(explicit, explicitParameters)).toMatchObject({
+      view: "heatmap",
+      group: "namespace",
+      sort: "last_transition",
+      direction: "asc",
+      density: "compact",
+      labels: "all",
+    })
+
+    const invalidParameters = new URLSearchParams(
+      "group=&sort=not-a-sort&direction=sideways",
+    )
+    const invalid = parseFleetQuery(invalidParameters).state
+    expect(overviewHeatmapState(invalid, invalidParameters)).toMatchObject({
+      view: "heatmap",
+      group: "health",
+      sort: "health",
+      direction: "desc",
+    })
+
+    const repeatedParameters = new URLSearchParams(
+      "group=broken&group=namespace&group=&sort=impact&sort=broken&direction=asc&direction=",
+    )
+    const repeated = parseFleetQuery(repeatedParameters).state
+    expect(overviewHeatmapState(repeated, repeatedParameters)).toMatchObject({
+      view: "heatmap",
+      group: "namespace",
+      sort: "impact",
+      direction: "asc",
+    })
+  })
+
   it.each([
     ["heatmap", "map"],
     ["treemap", "map"],
@@ -258,6 +318,86 @@ describe("useFleetData primary presentation", () => {
     expect(mapQueries[0]?.queryKey).not.toContain("treemap")
   })
 
+  it("keeps authoritative map group and size changes in distinct cache keys and RPCs", async () => {
+    const { client, calls } = testClient()
+    const queryClient = newQueryClient()
+    const baseline = queryState("heatmap", {
+      group: "project",
+      size: "resource_count",
+    })
+    const changedGroup = queryState("treemap", {
+      group: "health",
+      size: "resource_count",
+    })
+    const changedSize = queryState("heatmap", {
+      group: "project",
+      size: "request_rate",
+    })
+
+    const { result } = renderHook(
+      () => [
+        useFleetData(baseline, { client }),
+        useFleetData(changedGroup, { client }),
+        useFleetData(changedSize, { client }),
+      ] as const,
+      { wrapper: queryWrapper(queryClient) },
+    )
+
+    await waitFor(() => {
+      expect(result.current.every((entry) => entry.status === "ready")).toBe(true)
+    })
+
+    expect(calls.map).toHaveLength(3)
+    const mapQueries = queryClient.getQueryCache().findAll({
+      queryKey: ["fleet", "map"],
+    })
+    expect(mapQueries).toHaveLength(3)
+    expect(new Set(mapQueries.map((query) => JSON.stringify(query.queryKey))).size).toBe(3)
+  })
+
+  it("isolates one complete map request from one forced-impact attention request", async () => {
+    const { client, calls } = testClient()
+    const mapState = queryState("heatmap", {
+      group: "health",
+      sort: "health",
+      direction: "desc",
+    })
+    const attentionState = queryState("queue", {
+      group: "health",
+      sort: "name",
+      direction: "asc",
+    })
+
+    const { result } = renderHook(
+      () => [
+        useFleetData(mapState, { client }),
+        useFleetData(attentionState, { client }),
+      ] as const,
+      { wrapper: queryWrapper(newQueryClient()) },
+    )
+
+    await waitFor(() => {
+      expect(result.current[0].status).toBe("ready")
+      expect(result.current[1].status).toBe("ready")
+    })
+
+    expect(calls.map).toHaveLength(1)
+    expect(calls.applications).toHaveLength(1)
+    expect(calls.matrix).toHaveLength(0)
+    expect(calls.map[0]?.state).toMatchObject({
+      view: "heatmap",
+      group: "health",
+      sort: "health",
+      direction: "desc",
+    })
+    expect(calls.applications[0]?.state).toMatchObject({
+      view: "queue",
+      group: "health",
+      sort: "impact",
+      direction: "desc",
+    })
+  })
+
   it("keeps the last settled presentation visible as stale while a new view loads", async () => {
     const pendingMatrix = deferred<FleetMatrixResult>()
     const { client } = testClient({
@@ -304,6 +444,54 @@ describe("useFleetData primary presentation", () => {
     await act(async () => result.current.refresh())
 
     expect(calls.map).toHaveLength(2)
+  })
+
+  it("joins the stale-cache remount fetch instead of aborting and replacing it", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: Infinity, staleTime: 0 },
+      },
+    })
+    const pending: Array<ReturnType<typeof deferred<FleetMapResult>>> = []
+    const signals: AbortSignal[] = []
+    let requestCount = 0
+    const { client } = testClient({
+      queryFleetMap: async (_state, options = {}) => {
+        requestCount += 1
+        if (options.signal) signals.push(options.signal)
+        if (requestCount === 1) return mapResult()
+
+        const request = deferred<FleetMapResult>()
+        options.signal?.addEventListener(
+          "abort",
+          () => request.reject(new DOMException("aborted", "AbortError")),
+          { once: true },
+        )
+        pending.push(request)
+        return request.promise
+      },
+    })
+    const state = queryState("heatmap")
+    const first = renderHook(() => useFleetData(state, { client }), {
+      wrapper: queryWrapper(queryClient),
+    })
+    await waitFor(() => expect(first.result.current.status).toBe("ready"))
+    first.unmount()
+
+    const remounted = renderHook(() => useFleetData(state, { client }), {
+      wrapper: queryWrapper(queryClient),
+    })
+    await waitFor(() => expect(requestCount).toBe(2))
+    const remountSignal = signals[1]
+    const refresh = remounted.result.current.refresh()
+
+    await act(async () => {
+      for (const request of pending) request.resolve(mapResult())
+      await refresh
+    })
+
+    expect(requestCount).toBe(2)
+    expect(remountSignal?.aborted).toBe(false)
   })
 })
 

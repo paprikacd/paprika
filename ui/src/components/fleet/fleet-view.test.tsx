@@ -90,12 +90,70 @@ describe("FleetView URL state", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show Table view" }))
 
-    expect(mockPatchQuery).toHaveBeenCalledWith({
-      view: "table",
-      sort: "name",
-      direction: "asc",
-    })
+    expect(mockPatchQuery).toHaveBeenCalledWith({ view: "table" })
     expect(navigation.replace).not.toHaveBeenCalled()
+  })
+
+  it("switches every presentation without rewriting scope, filters, selection, or display state", () => {
+    navigation.params = new URLSearchParams(
+      [
+        "project=tenant%2Fpayments",
+        "cluster=platform%2Fomega",
+        "stage=production",
+        "namespace=apps",
+        "q=checkout",
+        "health=degraded",
+        "sync=out_of_sync",
+        "release=failed",
+        "rollout=paused",
+        "source=git",
+        "view=treemap",
+        "group=namespace",
+        "rows=stage",
+        "columns=health",
+        "size=request_rate",
+        "density=compact",
+        "labels=all",
+        "sort=last_transition",
+        "direction=desc",
+        "selected=apps%2Fcheckout",
+      ].join("&"),
+    )
+    render(<FleetView />)
+
+    for (const label of ["Heatmap", "Treemap", "Matrix", "Table", "Queue"]) {
+      fireEvent.click(screen.getByRole("button", { name: `Show ${label} view` }))
+    }
+
+    expect(mockPatchQuery.mock.calls).toEqual([
+      [{ view: "heatmap" }],
+      [{ view: "treemap" }],
+      [{ view: "matrix" }],
+      [{ view: "table" }],
+      [{ view: "queue" }],
+    ])
+  })
+
+  it("offers complete Heatmap controls including Namespace grouping", () => {
+    navigation.params = new URLSearchParams("view=heatmap")
+    render(<FleetView />)
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Group heatmap by" }), {
+      target: { value: "namespace" },
+    })
+    fireEvent.change(screen.getByRole("combobox", { name: "Heatmap density" }), {
+      target: { value: "comfortable" },
+    })
+    fireEvent.change(screen.getByRole("combobox", { name: "Heatmap labels" }), {
+      target: { value: "none" },
+    })
+
+    expect(mockPatchQuery.mock.calls).toEqual([
+      [{ group: "namespace" }],
+      [{ density: "comfortable" }],
+      [{ labels: "none" }],
+    ])
+    expect(screen.queryByRole("combobox", { name: "Size applications by" })).not.toBeInTheDocument()
   })
 
   it("updates row selection in URL state without taking ownership of zoom", () => {
@@ -154,11 +212,7 @@ describe("FleetView URL state", () => {
     expect(navigation.replace).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Show Table view" }))
-    expect(mockPatchQuery).toHaveBeenCalledWith({
-      view: "table",
-      sort: "name",
-      direction: "asc",
-    })
+    expect(mockPatchQuery).toHaveBeenCalledWith({ view: "table" })
 
     navigation.params = new URLSearchParams("view=table&unknown=kept")
     rerender(<FleetView />)
@@ -222,6 +276,45 @@ describe("FleetView URL state", () => {
 })
 
 describe("FleetView states", () => {
+  it("keeps Applications Project-grouped Treemap defaults but accepts the complete Heatmap presentation", () => {
+    let captured: FleetQueryState | undefined
+    const map: FleetPresentationData = {
+      kind: "map",
+      result: completeMapResult(),
+    }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) => {
+      captured = state
+      return fleetResult(state, {
+        status: "ready",
+        currentData: map,
+        displayData: map,
+      })
+    })
+
+    const rendered = render(<FleetView />)
+    expect(captured).toMatchObject({ view: "treemap", group: "project" })
+    expect(screen.getByRole("region", { name: "Fleet map" })).toBeInTheDocument()
+
+    navigation.params = new URLSearchParams(
+      "view=heatmap&group=namespace&density=compact&labels=none&sort=health&direction=desc",
+    )
+    rendered.rerender(<FleetView />)
+
+    expect(captured).toMatchObject({
+      view: "heatmap",
+      group: "namespace",
+      density: "compact",
+      labels: "none",
+      sort: "health",
+      direction: "desc",
+    })
+    expect(screen.getByRole("application", { name: "Fleet health heatmap" })).toHaveAttribute(
+      "data-heatmap-layout-count",
+      "2",
+    )
+    expect(screen.queryByRole("region", { name: "Fleet map" })).not.toBeInTheDocument()
+  })
+
   it("exposes the authorized total only after the current fleet snapshot settles", () => {
     const settledMap: FleetPresentationData = {
       kind: "map",
@@ -900,6 +993,160 @@ describe("FleetView application presentations", () => {
       expect(screen.getByRole("listitem", { name: /apps\/checkout/i })).toHaveFocus(),
     )
   })
+
+  it("restores a non-first Table identity to the Heatmap controller without URL selection", async () => {
+    mockCanvasContext()
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([
+      application("apps", "checkout"),
+      application("apps", "ledger"),
+    ])
+    const map: FleetPresentationData = {
+      kind: "map",
+      result: completeMapResult(),
+    }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      state.view === "table"
+        ? fleetResult(state, {
+            status: "ready",
+            currentData: apps,
+            displayData: apps,
+          })
+        : fleetResult(state, {
+            status: "ready",
+            currentData: map,
+            displayData: map,
+          }),
+    )
+
+    const { rerender } = render(<FleetView />)
+    screen.getByRole("row", { name: /apps\/ledger/i }).focus()
+    screen.getByRole("button", { name: "Show Heatmap view" }).focus()
+
+    navigation.params = new URLSearchParams("view=heatmap")
+    rerender(<FleetView />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole("application", { name: "Fleet health heatmap" }),
+      ).toHaveFocus(),
+    )
+    expect(
+      screen.getByRole("status", { name: "Active heatmap application" }),
+    ).toHaveTextContent("ledger")
+    expect(
+      screen.getByRole("status", { name: "Active heatmap application" }),
+    ).not.toHaveTextContent("checkout")
+    expect(navigation.params.has("selected")).toBe(false)
+
+    screen.getByRole("button", { name: "Show Table view" }).focus()
+    navigation.params = new URLSearchParams("view=table")
+    rerender(<FleetView />)
+    await waitFor(() =>
+      expect(screen.getByRole("row", { name: /apps\/ledger/i })).toHaveFocus(),
+    )
+  })
+
+  it("preserves a non-first identity across Treemap, Heatmap, and Treemap without URL selection", async () => {
+    mockCanvasContext()
+    navigation.params = new URLSearchParams("view=treemap")
+    const map: FleetPresentationData = {
+      kind: "map",
+      result: completeMapResult(),
+    }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, {
+        status: "ready",
+        currentData: map,
+        displayData: map,
+      }),
+    )
+
+    const { container, rerender } = render(<FleetView />)
+    const treemap = screen.getByRole("application", { name: "Fleet treemap" })
+    treemap.focus()
+    fireEvent.keyDown(treemap, { key: "End" })
+    expect(treemap).toHaveFocus()
+    expect(screen.getByRole("status", { name: "Treemap selection" })).toHaveTextContent(
+      "ledger",
+    )
+    expect(container.querySelectorAll("canvas")).toHaveLength(1)
+    screen.getByRole("button", { name: "Show Heatmap view" }).focus()
+
+    navigation.params = new URLSearchParams("view=heatmap")
+    rerender(<FleetView />)
+    await waitFor(() =>
+      expect(
+        screen.getByRole("application", { name: "Fleet health heatmap" }),
+      ).toHaveFocus(),
+    )
+    expect(
+      screen.getByRole("status", { name: "Active heatmap application" }),
+    ).toHaveTextContent("ledger")
+    expect(
+      screen.getByRole("status", { name: "Active heatmap application" }),
+    ).not.toHaveTextContent("checkout")
+    expect(container.querySelectorAll("canvas")).toHaveLength(1)
+    expect(navigation.params.has("selected")).toBe(false)
+
+    screen.getByRole("button", { name: "Show Treemap view" }).focus()
+    navigation.params = new URLSearchParams("view=treemap")
+    rerender(<FleetView />)
+    await waitFor(() =>
+      expect(screen.getByRole("application", { name: "Fleet treemap" })).toHaveFocus(),
+    )
+    expect(screen.getByRole("status", { name: "Treemap selection" })).toHaveTextContent(
+      "ledger",
+    )
+    expect(screen.getByRole("status", { name: "Treemap selection" })).not.toHaveTextContent(
+      "checkout",
+    )
+    expect(container.querySelectorAll("canvas")).toHaveLength(1)
+    expect(navigation.params.has("selected")).toBe(false)
+  })
+
+  it("restores a non-first Table identity to the Treemap controller without URL selection", async () => {
+    mockCanvasContext()
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([
+      application("apps", "checkout"),
+      application("apps", "ledger"),
+    ])
+    const map: FleetPresentationData = {
+      kind: "map",
+      result: completeMapResult(),
+    }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      state.view === "table"
+        ? fleetResult(state, {
+            status: "ready",
+            currentData: apps,
+            displayData: apps,
+          })
+        : fleetResult(state, {
+            status: "ready",
+            currentData: map,
+            displayData: map,
+          }),
+    )
+
+    const { container, rerender } = render(<FleetView />)
+    screen.getByRole("row", { name: /apps\/ledger/i }).focus()
+    screen.getByRole("button", { name: "Show Treemap view" }).focus()
+
+    navigation.params = new URLSearchParams("view=treemap")
+    rerender(<FleetView />)
+    await waitFor(() =>
+      expect(screen.getByRole("application", { name: "Fleet treemap" })).toHaveFocus(),
+    )
+    expect(screen.getByRole("status", { name: "Treemap selection" })).toHaveTextContent(
+      "ledger",
+    )
+    expect(screen.getByRole("status", { name: "Treemap selection" })).not.toHaveTextContent(
+      "checkout",
+    )
+    expect(container.querySelectorAll("canvas")).toHaveLength(1)
+    expect(navigation.params.has("selected")).toBe(false)
+  })
 })
 
 function fleetResult(
@@ -1023,6 +1270,49 @@ function mapResult(): FleetMapResult {
   }
 }
 
+function completeMapResult(): FleetMapResult {
+  const applicationNode = (name: string, health: "healthy" | "failed") => ({
+    stableId: `application:apps/${name}`,
+    kind: "application" as const,
+    label: name,
+    application: { namespace: "apps", name },
+    applicationCount: BigInt(1),
+    targetCount: BigInt(1),
+    health: [{ health, count: BigInt(1) }],
+    resourceWeight: BigInt(12),
+    requestRateWeight: 0,
+    effectiveWeight: 12,
+    usedResourceFallback: false,
+    children: [],
+  })
+  const children = [
+    applicationNode("checkout", "failed"),
+    applicationNode("ledger", "healthy"),
+  ]
+  return {
+    roots: [{
+      stableId: "namespace:apps",
+      kind: "group",
+      label: "apps",
+      groupValue: "apps",
+      applicationCount: BigInt(2),
+      targetCount: BigInt(2),
+      health: [
+        { health: "failed", count: BigInt(1) },
+        { health: "healthy", count: BigInt(1) },
+      ],
+      resourceWeight: BigInt(24),
+      requestRateWeight: 0,
+      effectiveWeight: 24,
+      usedResourceFallback: false,
+      children,
+    }],
+    total: BigInt(2),
+    indexGeneration: BigInt(7),
+    facets: [],
+  }
+}
+
 function rectangle(width: number, height: number): DOMRect {
   return {
     x: 0,
@@ -1035,4 +1325,23 @@ function rectangle(width: number, height: number): DOMRect {
     left: 0,
     toJSON: () => ({}),
   }
+}
+
+function mockCanvasContext() {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    beginPath: vi.fn(),
+    clearRect: vi.fn(),
+    clip: vi.fn(),
+    fillRect: vi.fn(),
+    fillText: vi.fn(),
+    measureText: vi.fn((label: string) => ({
+      width: Array.from(label).length * 6,
+    })),
+    rect: vi.fn(),
+    restore: vi.fn(),
+    save: vi.fn(),
+    setLineDash: vi.fn(),
+    setTransform: vi.fn(),
+    strokeRect: vi.fn(),
+  } as unknown as CanvasRenderingContext2D)
 }

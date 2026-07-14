@@ -24,12 +24,63 @@ import {
   mergeFleetApplicationPages,
 } from "@/lib/fleet-pages"
 import {
+  FLEET_DIRECTION_VALUES,
+  FLEET_GROUP_VALUES,
+  FLEET_SORT_VALUES,
+  mergeFleetQuery,
   parseFleetQuery,
   serializeFleetQuery,
   type FleetQueryState,
 } from "@/lib/fleet-query"
 
 const APPLICATION_PAGE_SIZE = 100
+
+interface FleetQueryParameters {
+  getAll(name: string): string[]
+}
+
+/**
+ * Overview is a map-owned route with health-first defaults. Applying those
+ * defaults here keeps the shared Applications parser untouched: explicit URL
+ * display choices still win, while an unadorned Applications URL remains the
+ * Project-grouped Treemap.
+ */
+export function overviewHeatmapState(
+  state: FleetQueryState,
+  parameters: FleetQueryParameters,
+): FleetQueryState {
+  return mergeFleetQuery(state, {
+    view: "heatmap",
+    group: hasEffectiveScalar(parameters, "group", FLEET_GROUP_VALUES, state.group)
+      ? state.group
+      : "health",
+    sort: hasEffectiveScalar(parameters, "sort", FLEET_SORT_VALUES, state.sort)
+      ? state.sort
+      : "health",
+    direction: hasEffectiveScalar(
+      parameters,
+      "direction",
+      FLEET_DIRECTION_VALUES,
+      state.direction,
+    )
+      ? state.direction
+      : "desc",
+  })
+}
+
+function hasEffectiveScalar<T extends string>(
+  parameters: FleetQueryParameters,
+  field: string,
+  allowed: readonly T[],
+  current: T,
+): boolean {
+  let effective: T | undefined
+  for (const rawValue of parameters.getAll(field)) {
+    const value = rawValue.trim() as T
+    if (allowed.includes(value)) effective = value
+  }
+  return effective === current
+}
 
 export interface FleetDataClient {
   queryApplications: (
@@ -325,7 +376,7 @@ export function useFleetData(
   const isLoadingMore = loadingMoreKey === keyId
   const refetch = query.refetch
   const refresh = useCallback(async () => {
-    await refetch({ throwOnError: true })
+    await refetch({ throwOnError: true, cancelRefetch: false })
   }, [refetch])
 
   return {

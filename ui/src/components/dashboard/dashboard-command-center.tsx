@@ -29,6 +29,15 @@ import {
   getApplicationHealth,
   getApplicationIssue,
 } from "@/components/dashboard/dashboard-health-map"
+import type { FleetHealthStatus, FleetMapNode, FleetMapResult } from "@/lib/fleet-client"
+import type {
+  FleetDensity,
+  FleetDirection,
+  FleetLabelMode,
+  FleetSort,
+  NamespacedKey,
+} from "@/lib/fleet-query"
+import type { FleetDataStatus } from "@/lib/use-fleet-data"
 
 const RECENT_SEARCHES_KEY = "paprika-dashboard-recent-searches"
 const MAX_RECENT_SEARCHES = 5
@@ -40,7 +49,16 @@ type SearchKind = "Application" | "Pipeline" | "Release" | "Rollout" | "Applicat
 
 interface DashboardCommandCenterProps {
   applications: Application[]
-  applicationTotal?: bigint
+  fleetMap?: FleetMapResult
+  fleetMapStatus?: FleetDataStatus
+  fleetDensity?: FleetDensity
+  fleetLabels?: FleetLabelMode
+  fleetSort?: FleetSort
+  fleetDirection?: FleetDirection
+  selectedApplication?: NamespacedKey | null
+  onSelectApplication?: (identity: NamespacedKey) => void
+  onFocusedApplication?: (identity: NamespacedKey | null) => void
+  onRetryFleetMap?: () => void
   pipelines: Pipeline[]
   releases: Release[]
   rollouts: Rollout[]
@@ -293,7 +311,16 @@ function SearchResult({ item, onSelect }: { item: SearchItem; onSelect: () => vo
 
 export function DashboardCommandCenter({
   applications,
-  applicationTotal,
+  fleetMap,
+  fleetMapStatus = fleetMap ? "ready" : "loading",
+  fleetDensity = "auto",
+  fleetLabels = "auto",
+  fleetSort = "health",
+  fleetDirection = "desc",
+  selectedApplication,
+  onSelectApplication,
+  onFocusedApplication,
+  onRetryFleetMap,
   pipelines,
   releases,
   rollouts,
@@ -442,8 +469,7 @@ export function DashboardCommandCenter({
     })
   }, [])
 
-  const unhealthyCount = applications.filter((application) => getApplicationHealth(application) !== "Healthy").length
-  const healthyCount = applications.length - unhealthyCount
+  const completeHealth = useMemo(() => completeHealthCounts(fleetMap), [fleetMap])
 
   return (
     <section
@@ -468,11 +494,11 @@ export function DashboardCommandCenter({
           <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
             <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-1 text-emerald-500 ring-1 ring-emerald-500/20">
               <CheckCircle2 className="size-3.5" aria-hidden="true" />
-              {healthyCount} healthy
+              {completeHealth ? completeHealth.healthy.toString() : "—"} healthy
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 ring-1 ring-foreground/10">
               <AlertCircle className="size-3.5" aria-hidden="true" />
-              {unhealthyCount} needs attention
+              {completeHealth ? completeHealth.needsAttention.toString() : "—"} needs attention
             </span>
           </div>
         </div>
@@ -558,12 +584,62 @@ export function DashboardCommandCenter({
         </div>
 
         <DashboardHealthMap
-          applications={applications}
-          applicationTotal={applicationTotal}
+          result={fleetMap}
+          status={fleetMapStatus}
           fleetQuery={releaseQuery}
-          loading={loading}
+          density={fleetDensity}
+          labels={fleetLabels}
+          sort={fleetSort}
+          direction={fleetDirection}
+          selected={selectedApplication}
+          onSelectApplication={onSelectApplication}
+          onFocusedApplication={onFocusedApplication}
+          onRetry={onRetryFleetMap}
         />
       </div>
     </section>
   )
+}
+
+function completeHealthCounts(result: FleetMapResult | undefined): {
+  healthy: bigint
+  needsAttention: bigint
+} | null {
+  if (!result) return null
+  let healthy = BigInt(0)
+  let needsAttention = BigInt(0)
+  let leaves = BigInt(0)
+
+  const visit = (nodes: readonly FleetMapNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === "application") {
+        const health = strongestPositiveHealth(node)
+        if (health === "healthy") healthy += BigInt(1)
+        else needsAttention += BigInt(1)
+        leaves += BigInt(1)
+      }
+      if (node.children.length > 0) visit(node.children)
+    }
+  }
+  visit(result.roots)
+  return leaves === result.total ? { healthy, needsAttention } : null
+}
+
+const healthSeverity: readonly FleetHealthStatus[] = [
+  "failed",
+  "degraded",
+  "progressing",
+  "missing",
+  "unknown",
+  "healthy",
+  "unspecified",
+]
+
+function strongestPositiveHealth(node: FleetMapNode): FleetHealthStatus {
+  for (const health of healthSeverity) {
+    if (node.health.some((bucket) => bucket.health === health && bucket.count > BigInt(0))) {
+      return health
+    }
+  }
+  return "unknown"
 }

@@ -5,14 +5,18 @@ import { useEffect, useId, useMemo, useRef, useState } from "react"
 
 import type { FleetFacetBucket } from "@/lib/fleet-client"
 import {
+  FLEET_DENSITY_VALUES,
   FLEET_GROUP_VALUES,
   FLEET_HEALTH_VALUES,
+  FLEET_LABEL_MODE_VALUES,
   FLEET_RELEASE_VALUES,
   FLEET_ROLLOUT_VALUES,
   FLEET_SIZE_VALUES,
   FLEET_SOURCE_VALUES,
   FLEET_SYNC_VALUES,
+  type FleetDensity,
   type FleetGroup,
+  type FleetLabelMode,
   type FleetQueryPatch,
   type FleetQueryState,
   type FleetSize,
@@ -42,6 +46,7 @@ type StringFilterField =
   | "sources"
 
 const presentations: readonly { value: FleetView; label: string; detail: string }[] = [
+  { value: "heatmap", label: "Heatmap", detail: "Equal-weight application health" },
   { value: "treemap", label: "Treemap", detail: "Relative fleet footprint" },
   { value: "matrix", label: "Matrix", detail: "Cross-scope comparison" },
   { value: "table", label: "Table", detail: "Sortable inventory" },
@@ -59,6 +64,18 @@ const groupLabels: Record<FleetGroup, string> = {
 const sizeLabels: Record<FleetSize, string> = {
   resource_count: "Resource count",
   request_rate: "Request rate",
+}
+
+const densityLabels: Record<FleetDensity, string> = {
+  auto: "Auto",
+  compact: "Compact",
+  comfortable: "Comfortable",
+}
+
+const labelModeLabels: Record<FleetLabelMode, string> = {
+  auto: "Auto",
+  all: "All",
+  none: "None",
 }
 
 const FACET_WINDOW_SIZE = 50
@@ -107,14 +124,6 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
   }
 
   const selectPresentation = (view: FleetView) => {
-    if (view === "table") {
-      onPatch({ view, sort: "name", direction: "asc" })
-      return
-    }
-    if (view === "queue") {
-      onPatch({ view, sort: "impact", direction: "desc" })
-      return
-    }
     onPatch({ view })
   }
 
@@ -152,7 +161,7 @@ export function FleetFilters({ state, facets = [], onPatch }: FleetFiltersProps)
           <legend className="mb-1.5 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Presentation
           </legend>
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-5">
             {presentations.map((presentation) => {
               const active = state.view === presentation.value
               return (
@@ -314,20 +323,52 @@ function CanvasControls({
   state,
   onPatch,
 }: Pick<FleetFiltersProps, "state" | "onPatch">) {
-  if (state.view !== "treemap" && state.view !== "matrix") return null
+  if (state.view !== "heatmap" && state.view !== "treemap" && state.view !== "matrix") return null
+
+  const presentationLabel =
+    state.view === "heatmap" ? "Heatmap" : state.view === "treemap" ? "Treemap" : "Matrix"
 
   return (
     <div
-      aria-label={`${state.view === "treemap" ? "Treemap" : "Matrix"} layout controls`}
+      aria-label={`${presentationLabel} layout controls`}
       className="flex flex-wrap items-end gap-3 border-b border-border px-4 py-3 sm:px-6"
     >
-      {state.view === "treemap" ? (
-        <SelectControl
-          label="Group treemap by"
-          value={state.group}
-          options={FLEET_GROUP_VALUES.map((value) => ({ value, label: groupLabels[value] }))}
-          onChange={(value) => onPatch({ group: value as FleetGroup })}
-        />
+      {state.view === "heatmap" ? (
+        <>
+          <SelectControl
+            label="Group heatmap by"
+            value={state.group}
+            options={FLEET_GROUP_VALUES.map((value) => ({ value, label: groupLabels[value] }))}
+            onChange={(value) => onPatch({ group: value as FleetGroup })}
+          />
+          <SelectControl
+            label="Heatmap density"
+            value={state.density}
+            options={FLEET_DENSITY_VALUES.map((value) => ({ value, label: densityLabels[value] }))}
+            onChange={(value) => onPatch({ density: value as FleetDensity })}
+          />
+          <SelectControl
+            label="Heatmap labels"
+            value={state.labels}
+            options={FLEET_LABEL_MODE_VALUES.map((value) => ({ value, label: labelModeLabels[value] }))}
+            onChange={(value) => onPatch({ labels: value as FleetLabelMode })}
+          />
+        </>
+      ) : state.view === "treemap" ? (
+        <>
+          <SelectControl
+            label="Group treemap by"
+            value={state.group}
+            options={FLEET_GROUP_VALUES.map((value) => ({ value, label: groupLabels[value] }))}
+            onChange={(value) => onPatch({ group: value as FleetGroup })}
+          />
+          <SelectControl
+            label="Size applications by"
+            value={state.size}
+            options={FLEET_SIZE_VALUES.map((value) => ({ value, label: sizeLabels[value] }))}
+            onChange={(value) => onPatch({ size: value as FleetSize })}
+          />
+        </>
       ) : (
         <>
           <SelectControl
@@ -344,12 +385,6 @@ function CanvasControls({
           />
         </>
       )}
-      <SelectControl
-        label="Size applications by"
-        value={state.size}
-        options={FLEET_SIZE_VALUES.map((value) => ({ value, label: sizeLabels[value] }))}
-        onChange={(value) => onPatch({ size: value as FleetSize })}
-      />
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockClient = vi.hoisted(() => ({
@@ -14,8 +14,19 @@ const mockClient = vi.hoisted(() => ({
 }))
 const mockReportRequestOutcome = vi.hoisted(() => vi.fn())
 const fleetMocks = vi.hoisted(() => {
-  const refresh = vi.fn().mockResolvedValue(undefined)
-  const displayData = {
+  const mapRefresh = vi.fn().mockResolvedValue(undefined)
+  const attentionRefresh = vi.fn().mockResolvedValue(undefined)
+  const mapResult = {
+    roots: [] as Array<Record<string, unknown>>,
+    total: BigInt(0),
+    indexGeneration: BigInt(1),
+    facets: [] as Array<Record<string, unknown>>,
+  }
+  const mapDisplayData = {
+    kind: "map" as const,
+    result: mapResult,
+  }
+  const attentionDisplayData = {
     kind: "applications" as const,
     view: "queue" as const,
     pages: [],
@@ -24,14 +35,32 @@ const fleetMocks = vi.hoisted(() => {
     total: BigInt(0),
     indexGeneration: BigInt(1),
   }
-  const useFleetData = vi.fn(() => ({
-    status: "ready",
-    displayData,
-    refresh,
-  }))
-  return { displayData, refresh, useFleetData }
+  const currentResult = (state: { view: string }) =>
+    state.view === "heatmap"
+      ? {
+          status: "ready",
+          currentData: mapDisplayData,
+          displayData: mapDisplayData,
+          refresh: mapRefresh,
+        }
+      : {
+          status: "ready",
+          currentData: attentionDisplayData,
+          displayData: attentionDisplayData,
+          refresh: attentionRefresh,
+        }
+  const useFleetData = vi.fn(currentResult)
+  return {
+    attentionDisplayData,
+    attentionRefresh,
+    mapDisplayData,
+    mapRefresh,
+    mapResult,
+    currentResult,
+    useFleetData,
+  }
 })
-const navigation = vi.hoisted(() => ({ query: "" }))
+const navigation = vi.hoisted(() => ({ query: "", replace: vi.fn() }))
 
 vi.mock("@connectrpc/connect-web", () => ({
   createConnectTransport: vi.fn(() => ({})),
@@ -43,10 +72,14 @@ vi.mock("@/gen/paprika/v1/api_connect", () => ({ PaprikaService: {} }))
 vi.mock("@/lib/connection-context", () => ({
   useConnection: () => ({ reportRequestOutcome: mockReportRequestOutcome }),
 }))
-vi.mock("@/lib/use-fleet-data", () => ({
-  useFleetData: fleetMocks.useFleetData,
-}))
+vi.mock("@/lib/use-fleet-data", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/use-fleet-data")>(
+    "@/lib/use-fleet-data",
+  )
+  return { ...actual, useFleetData: fleetMocks.useFleetData }
+})
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: navigation.replace }),
   useSearchParams: () => new URLSearchParams(navigation.query),
 }))
 vi.mock("@/lib/fleet-scope-context", async () => {
@@ -133,11 +166,16 @@ describe("Dashboard bounded refresh", () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    fleetMocks.useFleetData.mockImplementation(fleetMocks.currentResult)
     resetSuccessfulResponses()
-    fleetMocks.refresh.mockResolvedValue(undefined)
-    fleetMocks.displayData.applications = []
-    fleetMocks.displayData.facets = []
-    fleetMocks.displayData.total = BigInt(0)
+    fleetMocks.mapRefresh.mockResolvedValue(undefined)
+    fleetMocks.attentionRefresh.mockResolvedValue(undefined)
+    fleetMocks.mapResult.roots = []
+    fleetMocks.mapResult.facets = []
+    fleetMocks.mapResult.total = BigInt(0)
+    fleetMocks.attentionDisplayData.applications = []
+    fleetMocks.attentionDisplayData.facets = []
+    fleetMocks.attentionDisplayData.total = BigInt(0)
     navigation.query = ""
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -162,7 +200,8 @@ describe("Dashboard bounded refresh", () => {
     expect(mockClient.queryFleetMap).not.toHaveBeenCalled()
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
     expect(mockClient.listApplications).not.toHaveBeenCalled()
-    expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.mapRefresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.attentionRefresh).toHaveBeenCalledTimes(1)
     expect(eventSource).not.toHaveBeenCalled()
     expect(mockReportRequestOutcome).toHaveBeenLastCalledWith(true)
 
@@ -177,7 +216,8 @@ describe("Dashboard bounded refresh", () => {
     expect(mockClient.listReleases).not.toHaveBeenCalled()
     expect(mockClient.queryFleetMap).not.toHaveBeenCalled()
     expect(mockClient.queryReleases).not.toHaveBeenCalled()
-    expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.mapRefresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.attentionRefresh).toHaveBeenCalledTimes(1)
   })
 
   it("keeps partial results usable and preserves pipeline and release anchors", async () => {
@@ -464,6 +504,50 @@ describe("Dashboard bounded refresh", () => {
     expect(mockClient.queryFleetMap).not.toHaveBeenCalled()
   })
 
+  it("never presents previous-scope fleet placeholders as current", async () => {
+    fleetMocks.mapResult.total = BigInt(1)
+    fleetMocks.attentionDisplayData.applications = [
+      {
+        identity: { namespace: "old-scope", name: "old-checkout" },
+        targets: [],
+        currentStage: "production",
+        currentClusterLabel: "omega",
+        sourceType: "git",
+        sourceRevision: "old",
+        health: "failed",
+        sync: "out_of_sync",
+        driftCount: 1,
+        missingResourceCount: 0,
+        releaseState: "promoting",
+        rolloutState: "paused",
+        resourceCount: 12,
+        repositoryConnection: "unhealthy",
+        observabilityConnection: "not_configured",
+        blockedGateCount: 3,
+        lastTransitionUnixMs: BigInt(0),
+        capabilities: [],
+      },
+    ]
+    fleetMocks.useFleetData.mockImplementation((state) => ({
+      ...fleetMocks.currentResult(state),
+      status: "stale",
+      currentData: undefined,
+    }))
+
+    renderDashboard()
+    await flushRefresh()
+
+    expect(screen.queryByRole("region", { name: "Fleet health posture" })).not.toBeInTheDocument()
+    const changes = screen.getByRole("region", { name: "Active delivery changes" })
+    expect(within(changes).getByLabelText("Active releases")).toHaveTextContent("—")
+    expect(within(changes).getByLabelText("Active rollouts")).toHaveTextContent("—")
+    expect(within(changes).getByLabelText("Blocked gates")).toHaveTextContent("—")
+    expect(screen.queryByText("old-checkout")).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("status", { name: "Loading complete application health map" }),
+    ).toBeInTheDocument()
+  })
+
   it("intersects selected Pipeline projects and namespaces and makes no request for an empty intersection", async () => {
     navigation.query = "project=team-a%2Fpayments&namespace=team-b&cluster=platform%2Fomega&stage=prod"
 
@@ -475,8 +559,25 @@ describe("Dashboard bounded refresh", () => {
 
   it("keeps application search, health tiles, and drill-downs on the bounded fleet window", async () => {
     navigation.query = "namespace=platform&view=heatmap&unknown=kept"
-    fleetMocks.displayData.total = BigInt(1)
-    fleetMocks.displayData.applications = [
+    fleetMocks.mapResult.total = BigInt(1)
+    fleetMocks.mapResult.roots = [
+      {
+        stableId: "application:apps/checkout",
+        kind: "application",
+        label: "checkout",
+        application: { namespace: "apps", name: "checkout" },
+        applicationCount: BigInt(1),
+        targetCount: BigInt(1),
+        health: [{ health: "failed", count: BigInt(1) }],
+        resourceWeight: BigInt(12),
+        requestRateWeight: 0,
+        effectiveWeight: 12,
+        usedResourceFallback: false,
+        children: [],
+      },
+    ]
+    fleetMocks.attentionDisplayData.total = BigInt(1)
+    fleetMocks.attentionDisplayData.applications = [
       {
         identity: { namespace: "apps", name: "checkout" },
         project: { namespace: "tenant", name: "retail" },
@@ -485,7 +586,7 @@ describe("Dashboard bounded refresh", () => {
         currentClusterLabel: "omega",
         sourceType: "git",
         sourceRevision: "abc123",
-        health: "healthy",
+        health: "failed",
         sync: "synced",
         driftCount: 0,
         missingResourceCount: 0,
@@ -507,11 +608,11 @@ describe("Dashboard bounded refresh", () => {
       "href",
       "/dashboard/application?namespace=platform&view=heatmap&unknown=kept&application_namespace=apps&application_name=checkout",
     )
-    expect(screen.getByText("1/1 apps loaded")).toBeInTheDocument()
+    expect(screen.getByText("1 applications in this complete map")).toBeInTheDocument()
   })
 
   it("backs off when the fleet query refresh rejects even if legacy sections succeed", async () => {
-    fleetMocks.refresh.mockRejectedValue(new Error("fleet unavailable"))
+    fleetMocks.mapRefresh.mockRejectedValue(new Error("fleet unavailable"))
     renderDashboard()
     await flushRefresh()
 
@@ -520,10 +621,12 @@ describe("Dashboard bounded refresh", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
-    expect(fleetMocks.refresh).not.toHaveBeenCalled()
+    expect(fleetMocks.mapRefresh).not.toHaveBeenCalled()
+    expect(fleetMocks.attentionRefresh).not.toHaveBeenCalled()
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
-    expect(fleetMocks.refresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.mapRefresh).toHaveBeenCalledTimes(1)
+    expect(fleetMocks.attentionRefresh).toHaveBeenCalledTimes(1)
   })
 })

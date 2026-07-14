@@ -1,172 +1,244 @@
-import { render, screen, within } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
-import { describe, expect, it } from "vitest"
+import { fireEvent, render, screen } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
 import { DashboardHealthMap } from "@/components/dashboard/dashboard-health-map"
-import type { Application } from "@/gen/paprika/v1/api_pb"
+import type {
+  FleetHealthStatus,
+  FleetMapNode,
+  FleetMapResult,
+} from "@/lib/fleet-client"
 
-function makeApplication(name: string, health: "Healthy" | "Degraded", index: number): Application {
-  return {
-    name,
-    namespace: `team-${index % 4}`,
-    phase: health,
-    currentStage: index % 2 === 0 ? "production" : "canary",
-    revision: "",
-    synced: health === "Healthy",
-    templateRef: "",
-    pipelineRef: "delivery",
-    releaseRef: `${name}-release-v1`,
-    stages: [],
-    strategy: "",
-    syncPolicy: "",
-    parameters: {},
-    sourceHash: "",
-    sourceRevision: "",
-    health,
-    healthChecks: [],
-    resources: [],
-    resourceHealth: [],
-    outOfSync: health === "Healthy" ? 0 : 1,
-    prunedResources: 0,
-    gates: [],
-    project: "commerce",
-    conditions: [],
-    analysisResults: [],
-  } as Application
-}
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  query: "",
+}))
 
-const rankedNames = [
-  "zebra-api",
-  "amber-worker",
-  "quartz-web",
-  "beacon-cron",
-  "yarrow-api",
-  "cobalt-worker",
-  "xenon-web",
-  "delta-cron",
-  "willow-api",
-  "ember-worker",
-  "violet-web",
-  "fjord-cron",
-  "umber-api",
-  "grove-worker",
-  "tango-web",
-  "harbor-cron",
-  "sable-api",
-  "iris-worker",
-  "raven-web",
-  "juniper-cron",
-]
-
-const rankedApplications = rankedNames.map((name, index) =>
-  makeApplication(name, index < 12 ? "Degraded" : "Healthy", index),
-)
-
-function renderedApplicationNames() {
-  const results = screen.getByRole("list", { name: "Application health map results" })
-  return within(results)
-    .getAllByRole("link")
-    .map((link) => link.getAttribute("aria-label")?.split(" ")[0])
-}
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: navigation.push }),
+  useSearchParams: () => new URLSearchParams(navigation.query),
+}))
 
 describe("DashboardHealthMap", () => {
-  it("bounds the preview without changing server rank or excluding loaded apps from counts", () => {
-    render(<DashboardHealthMap applications={rankedApplications} applicationTotal={250n} />)
-
-    expect(renderedApplicationNames()).toEqual(rankedNames.slice(0, 8))
-    expect(screen.getByRole("button", { name: "Show Degraded applications" })).toHaveTextContent("Degraded12")
-    expect(screen.getByRole("button", { name: "Show Healthy applications" })).toHaveTextContent("Healthy8")
-
-    const expand = screen.getByRole("button", { name: "Show all 20 loaded applications" })
-    expect(expand).toHaveAttribute("aria-expanded", "false")
-    expect(expand).toHaveAttribute("aria-controls", "dashboard-health-map-results")
-    expect(screen.getByText("8 of 20 loaded · 250 indexed")).toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "View all applications as treemap" })).toHaveAttribute(
-      "href",
-      "/dashboard/applications?view=treemap",
+  beforeEach(() => {
+    navigation.push.mockReset()
+    navigation.query = ""
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      canvasContext() as unknown as CanvasRenderingContext2D,
     )
   })
 
-  it("expands in server rank and returns to a compact filtered preview", async () => {
-    const user = userEvent.setup()
-    render(<DashboardHealthMap applications={rankedApplications} applicationTotal={250n} />)
-
-    await user.click(screen.getByRole("button", { name: "Show all 20 loaded applications" }))
-    expect(renderedApplicationNames()).toEqual(rankedNames)
-    expect(screen.getByRole("button", { name: "Show compact preview" })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    )
-
-    await user.click(screen.getByRole("button", { name: "Show Degraded applications" }))
-    expect(renderedApplicationNames()).toEqual(rankedNames.slice(0, 8))
-    expect(screen.getByRole("button", { name: "Show all 12 loaded applications" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    )
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it("preserves the complete lossless fleet query while clearing stale detail state", () => {
-    render(
+  it("renders every complete map leaf with no sampled preview or application cards", () => {
+    const result = completeMap(250)
+
+    const { container } = render(
       <DashboardHealthMap
-        applications={rankedApplications}
-        applicationTotal={250n}
-        fleetQuery={[
-          "project=zeta%2Fpayments",
-          "project=alpha%2Fcore",
-          "project=zeta%2Fpayments",
-          "cluster=ops%2Fprod",
-          "stage=production",
-          "stage=canary",
-          "stage=production",
-          "namespace=platform",
-          "namespace=apps",
-          "health=healthy",
-          "health=degraded",
-          "sync=synced",
-          "sync=out_of_sync",
-          "release=failed",
-          "release=complete",
-          "rollout=healthy",
-          "rollout=degraded",
-          "source=helm",
-          "source=git",
-          "q=checkout",
-          "view=queue",
-          "group=cluster",
-          "size=request_rate",
-          "selected=apps%2Fcheckout",
-          "zoom=project%3Aalpha",
-          "range=24h",
-          "unknown=kept",
-        ].join("&")}
+        result={result}
+        status="ready"
+        density="compact"
+        labels="none"
+        sort="health"
+        direction="desc"
       />,
     )
 
-    const href = screen.getByRole("link", { name: "View all applications as treemap" }).getAttribute("href")!
-    const url = new URL(href, "https://paprika.invalid")
-    expect(url.pathname).toBe("/dashboard/applications")
-    expect(url.searchParams.getAll("project")).toEqual([
-      "zeta/payments",
-      "alpha/core",
-      "zeta/payments",
-    ])
-    expect(url.searchParams.getAll("stage")).toEqual(["production", "canary", "production"])
-    expect(url.searchParams.getAll("namespace")).toEqual(["platform", "apps"])
-    expect(url.searchParams.getAll("health")).toEqual(["healthy", "degraded"])
-    expect(url.searchParams.getAll("source")).toEqual(["helm", "git"])
-    expect(url.searchParams.get("q")).toBe("checkout")
-    expect(url.searchParams.get("group")).toBe("cluster")
-    expect(url.searchParams.get("size")).toBe("request_rate")
-    expect(url.searchParams.get("range")).toBe("24h")
-    expect(url.searchParams.get("view")).toBe("treemap")
-    expect(url.searchParams.get("unknown")).toBe("kept")
-    expect(url.searchParams.has("selected")).toBe(false)
-    expect(url.searchParams.has("zoom")).toBe(false)
+    expect(screen.getByText("250 applications in this complete map")).toBeInTheDocument()
+    expect(screen.getByRole("application", { name: "Fleet health heatmap" })).toHaveAttribute(
+      "data-heatmap-layout-count",
+      "250",
+    )
+    expect(container.querySelectorAll("[data-application-card]")).toHaveLength(0)
+    expect(screen.queryByText(/loaded applications/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /show all/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/preview/i)).not.toBeInTheDocument()
+  })
 
-    const application = screen.getAllByRole("link", { name: /Degraded in team-/i })[0]
-    const detail = new URL(application.getAttribute("href")!, "https://paprika.invalid")
-    expect(detail.searchParams.get("unknown")).toBe("kept")
-    expect(detail.searchParams.get("application_namespace")).toMatch(/^team-/)
-    expect(detail.searchParams.get("application_name")).toBeTruthy()
+  it("keeps a failed map actionable with Retry and a lossless complete Table fallback", () => {
+    const retry = vi.fn()
+    const fleetQuery = [
+      "project=tenant%2Fpayments",
+      "cluster=platform%2Fomega",
+      "stage=production",
+      "namespace=apps",
+      "q=checkout",
+      "health=degraded",
+      "group=namespace",
+      "density=compact",
+      "labels=all",
+      "selected=apps%2Fcheckout",
+      "unknown=kept",
+    ].join("&")
+
+    render(
+      <DashboardHealthMap
+        status="error"
+        fleetQuery={fleetQuery}
+        onRetry={retry}
+      />,
+    )
+
+    expect(screen.getByRole("alert", { name: "Application health map unavailable" })).toHaveTextContent(
+      "The complete fleet map could not be loaded",
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Retry application health map" }))
+    expect(retry).toHaveBeenCalledTimes(1)
+
+    const fallback = new URL(
+      screen.getByRole("link", { name: "Open complete Table view" }).getAttribute("href")!,
+      "https://paprika.invalid",
+    )
+    expect(fallback.pathname).toBe("/dashboard/applications")
+    expect(fallback.searchParams.get("view")).toBe("table")
+    expect(fallback.searchParams.getAll("project")).toEqual(["tenant/payments"])
+    expect(fallback.searchParams.getAll("namespace")).toEqual(["apps"])
+    expect(fallback.searchParams.get("q")).toBe("checkout")
+    expect(fallback.searchParams.get("group")).toBe("namespace")
+    expect(fallback.searchParams.get("density")).toBe("compact")
+    expect(fallback.searchParams.get("labels")).toBe("all")
+    expect(fallback.searchParams.get("unknown")).toBe("kept")
+    expect(fallback.searchParams.has("selected")).toBe(false)
+  })
+
+  it("never presents a cached map as current when its refresh has failed", () => {
+    const retry = vi.fn()
+
+    render(
+      <DashboardHealthMap
+        result={completeMap(3)}
+        status="unavailable"
+        onRetry={retry}
+      />,
+    )
+
+    expect(
+      screen.getByRole("alert", { name: "Application health map unavailable" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("application", { name: "Fleet health heatmap" })).not.toBeInTheDocument()
+  })
+
+  it("explains an empty scoped fleet and clears only global scope in one action", () => {
+    const fleetQuery = [
+      "project=tenant%2Fpayments",
+      "cluster=platform%2Fomega",
+      "stage=production",
+      "namespace=apps",
+      "health=failed",
+      "view=heatmap",
+      "group=health",
+      "density=comfortable",
+      "labels=none",
+      "unknown=kept",
+    ].join("&")
+
+    render(
+      <DashboardHealthMap
+        result={completeMap(0)}
+        status="empty"
+        fleetQuery={fleetQuery}
+      />,
+    )
+
+    expect(screen.getByRole("status")).toHaveTextContent("No applications match this fleet scope")
+    const clear = new URL(
+      screen.getByRole("link", { name: "Clear fleet scope" }).getAttribute("href")!,
+      "https://paprika.invalid",
+    )
+    expect(clear.pathname).toBe("/dashboard")
+    for (const field of ["project", "cluster", "stage", "namespace"]) {
+      expect(clear.searchParams.has(field)).toBe(false)
+    }
+    expect(clear.searchParams.getAll("health")).toEqual(["failed"])
+    expect(clear.searchParams.get("view")).toBe("heatmap")
+    expect(clear.searchParams.get("group")).toBe("health")
+    expect(clear.searchParams.get("density")).toBe("comfortable")
+    expect(clear.searchParams.get("labels")).toBe("none")
+    expect(clear.searchParams.get("unknown")).toBe("kept")
   })
 })
+
+function completeMap(count: number): FleetMapResult {
+  const applications = Array.from({ length: count }, (_, index) =>
+    application(
+      `opaque-application-${index.toString().padStart(5, "0")}`,
+      `application-${index.toString().padStart(5, "0")}`,
+      index % 5 === 0 ? "failed" : "healthy",
+    ),
+  )
+  return {
+    roots: count === 0 ? [] : [group("health:complete", applications)],
+    total: BigInt(count),
+    indexGeneration: BigInt(7),
+    facets: [
+      {
+        dimension: "health",
+        value: "healthy",
+        label: "Healthy",
+        count: BigInt(count - Math.ceil(count / 5)),
+      },
+      {
+        dimension: "health",
+        value: "failed",
+        label: "Failed",
+        count: BigInt(Math.ceil(count / 5)),
+      },
+    ],
+  }
+}
+
+function application(
+  stableId: string,
+  name: string,
+  health: FleetHealthStatus,
+): FleetMapNode {
+  return {
+    stableId,
+    kind: "application",
+    label: name,
+    application: { namespace: "apps", name },
+    applicationCount: BigInt(1),
+    targetCount: BigInt(1),
+    health: [{ health, count: BigInt(1) }],
+    resourceWeight: BigInt(1),
+    requestRateWeight: 0,
+    effectiveWeight: 1,
+    usedResourceFallback: false,
+    children: [],
+  }
+}
+
+function group(stableId: string, children: FleetMapNode[]): FleetMapNode {
+  return {
+    stableId,
+    kind: "group",
+    label: "Complete fleet",
+    groupValue: "complete",
+    applicationCount: BigInt(children.length),
+    targetCount: BigInt(children.length),
+    health: [],
+    resourceWeight: BigInt(children.length),
+    requestRateWeight: 0,
+    effectiveWeight: children.length,
+    usedResourceFallback: false,
+    children,
+  }
+}
+
+function canvasContext() {
+  return {
+    setTransform: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    setLineDash: vi.fn(),
+    fillText: vi.fn(),
+    save: vi.fn(),
+    beginPath: vi.fn(),
+    rect: vi.fn(),
+    clip: vi.fn(),
+    restore: vi.fn(),
+    measureText: (value: string) => ({ width: value.length * 6 }),
+  }
+}

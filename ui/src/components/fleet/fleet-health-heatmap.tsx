@@ -43,6 +43,7 @@ import {
   fleetHref,
   patchFleetSearchParams,
 } from "@/lib/fleet-navigation"
+import type { FleetFocusTarget } from "@/lib/fleet-focus"
 import type {
   FleetDensity,
   FleetDirection,
@@ -135,6 +136,7 @@ export interface FleetHealthHeatmapProps {
   selected?: NamespacedKey | null
   onSelectApplication?: (identity: NamespacedKey) => void
   onFocusedApplication?: (identity: NamespacedKey | null) => void
+  registerTarget?: (identity: NamespacedKey, target: FleetFocusTarget | null) => void
 }
 
 interface TooltipState {
@@ -167,6 +169,7 @@ export function FleetHealthHeatmap({
   selected,
   onSelectApplication,
   onFocusedApplication,
+  registerTarget,
 }: FleetHealthHeatmapProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -352,6 +355,28 @@ export function FleetHealthHeatmap({
     },
     [layout, onFocusedApplication, selectedKey, viewport.height],
   )
+
+  useEffect(() => {
+    if (!layout || !registerTarget) return
+    const targets: Array<{ identity: NamespacedKey; target: FleetFocusTarget }> = []
+
+    for (const cell of layout.cells) {
+      const identity = cell.node.application
+      if (!identity) continue
+      const target: FleetFocusTarget = {
+        focus: () => {
+          const controller = controllerRef.current
+          if (!controller) return
+          controller.focus()
+          focusCell(cell)
+        },
+      }
+      targets.push({ identity, target })
+      registerTarget(identity, target)
+    }
+
+    return () => targets.forEach(({ identity }) => registerTarget(identity, null))
+  }, [focusCell, layout, registerTarget])
 
   const activateCell = useCallback(
     (cell: HeatmapCellRect | null) => {
