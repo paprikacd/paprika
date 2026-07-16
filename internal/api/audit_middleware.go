@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	"github.com/benebsworth/paprika/internal/api/admin"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/audit"
@@ -56,7 +57,10 @@ func NewAuditInterceptor(a audit.Auditor, broker *events.Broker) connect.UnaryIn
 				Success:   err == nil,
 				Extra:     map[string]string{"method": procedure},
 			}
-			if p := auth.PrincipalFromContext(ctx); p != nil {
+			if p, ok := admin.ValidatedPrincipalFromContext(ctx); ok {
+				event.Principal = principalString(p)
+				event.Extra[audit.ExtraAccessModeKey] = admin.AccessMode
+			} else if p := auth.PrincipalFromContext(ctx); p != nil {
 				event.Principal = principalString(p)
 			}
 			if err != nil {

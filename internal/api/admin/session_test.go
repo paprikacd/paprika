@@ -137,14 +137,15 @@ func TestStoreCreateValidateAndDefensiveCopies(t *testing.T) {
 	clock.Set(sessionEpoch.Add(4 * time.Minute))
 	validated, err := store.Validate(token, types.UID("pod-uid-a"))
 	require.NoError(t, err)
-	assert.Equal(t, reviewedIdentity(), validated.Identity)
-	assert.Equal(t, sessionEpoch.Add(14*time.Minute), validated.Description.IdleExpires)
+	assert.Equal(t, reviewedIdentity(), validated.Identity())
+	assert.Equal(t, sessionEpoch.Add(14*time.Minute), validated.Description().IdleExpires)
 
-	validated.Identity.Groups[0] = "caller-mutated"
-	validated.Identity.Extra["oidc.example.com/team"][0] = "caller-mutated"
+	validatedIdentity := validated.Identity()
+	validatedIdentity.Groups[0] = "caller-mutated"
+	validatedIdentity.Extra["oidc.example.com/team"][0] = "caller-mutated"
 	again, err := store.Validate(token, types.UID("pod-uid-a"))
 	require.NoError(t, err)
-	assert.Equal(t, reviewedIdentity(), again.Identity)
+	assert.Equal(t, reviewedIdentity(), again.Identity())
 }
 
 func TestStoreDefaultSourceEmitsUniqueCryptographicWidthTokens(t *testing.T) {
@@ -219,8 +220,8 @@ func TestStoreLifetimeTable(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, sessionEpoch.Add(test.wantIdleEnd), validated.Description.IdleExpires)
-			assert.Equal(t, sessionEpoch.Add(30*time.Minute), validated.Description.AbsoluteEnds)
+			assert.Equal(t, sessionEpoch.Add(test.wantIdleEnd), validated.Description().IdleExpires)
+			assert.Equal(t, sessionEpoch.Add(30*time.Minute), validated.Description().AbsoluteEnds)
 		})
 	}
 }

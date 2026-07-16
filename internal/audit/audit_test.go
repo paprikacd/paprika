@@ -21,7 +21,10 @@ func TestLogAuditorWritesValidJSONWithExpectedFields(t *testing.T) {
 		Name:      "my-app",
 		Namespace: "default",
 		Success:   true,
-		Extra:     map[string]string{"method": "/paprika.v1.PaprikaService/ApproveGate"},
+		Extra: map[string]string{
+			"method":           "/paprika.v1.PaprikaService/ApproveGate",
+			ExtraAccessModeKey: "kubernetes-port-forward-admin",
+		},
 	})
 
 	var got Event
@@ -52,6 +55,10 @@ func TestLogAuditorWritesValidJSONWithExpectedFields(t *testing.T) {
 	}
 	if got.Extra["method"] != "/paprika.v1.PaprikaService/ApproveGate" {
 		t.Errorf("Extra.method: got %q, want procedure", got.Extra["method"])
+	}
+	if got.Extra[ExtraAccessModeKey] != "kubernetes-port-forward-admin" {
+		t.Errorf("Extra.access_mode: got %q, want kubernetes-port-forward-admin",
+			got.Extra[ExtraAccessModeKey])
 	}
 	if got.Timestamp == "" {
 		t.Error("Timestamp: got empty, want RFC3339 timestamp")

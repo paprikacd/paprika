@@ -67,8 +67,31 @@ type SessionDescription struct {
 }
 
 type ValidatedSession struct {
-	Identity    ReviewedIdentity
-	Description SessionDescription
+	identity    ReviewedIdentity
+	description SessionDescription
+	proof       *validatedSessionProof
+}
+
+type validatedSessionProof struct{}
+
+var storeValidationProof = &validatedSessionProof{}
+
+func (session *ValidatedSession) Identity() ReviewedIdentity {
+	if !session.valid() {
+		return ReviewedIdentity{}
+	}
+	return cloneIdentity(session.identity)
+}
+
+func (session *ValidatedSession) Description() SessionDescription {
+	if !session.valid() {
+		return SessionDescription{}
+	}
+	return session.description
+}
+
+func (session *ValidatedSession) valid() bool {
+	return session != nil && session.proof == storeValidationProof
 }
 
 type sessionRecord struct {
@@ -287,8 +310,9 @@ func tokenKey(token string) ([sha256.Size]byte, bool) {
 
 func validated(record *sessionRecord) ValidatedSession {
 	return ValidatedSession{
-		Identity:    cloneIdentity(record.identity),
-		Description: describe(record),
+		identity:    cloneIdentity(record.identity),
+		description: describe(record),
+		proof:       storeValidationProof,
 	}
 }
 

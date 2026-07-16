@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const ExtraAccessModeKey = "access_mode"
+
 // Event records a single auditable action.
 type Event struct {
 	Timestamp string            `json:"timestamp"` // RFC3339
