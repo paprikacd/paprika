@@ -62,6 +62,7 @@ import (
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	apiserver "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/admin"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -112,6 +113,8 @@ type cliConfig struct {
 	shardID, shardTotal                                           int
 	shardIDSource                                                 string
 	auditLogEnabled                                               bool
+	adminDashboardEnabled                                         bool
+	adminPodIdentity                                              admin.PodIdentity
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
 	apiCacheEnabled                                               bool
 	cacheSyncTimeout                                              time.Duration
@@ -161,6 +164,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, _ io.Re
 func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	if err := validateMode(cfg.mode); err != nil {
 		return fmt.Errorf("validate mode: %w", err)
+	}
+	if err := validateAdminDashboardMode(cfg); err != nil {
+		return err
 	}
 	if err := validateCoordinatorConfig(cfg); err != nil {
 		return err
@@ -264,6 +270,8 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
 	fs.StringVar(&cfg.uiAddr, "ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
+	fs.BoolVar(&cfg.adminDashboardEnabled, "admin-dashboard-enabled", false,
+		"Enable the loopback-only verified Kubernetes admin dashboard in API or operator mode.")
 	fs.StringVar(&cfg.mode, "mode", "operator",
 		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent).")
 	fs.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
@@ -327,10 +335,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 
 	cfg.zapOptions = zap.Options{Development: false}
 	cfg.zapOptions.BindFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return nil, fmt.Errorf("parse flags: %w", err)
-	}
-	return &cfg, nil
+	return finishFlagRegistration(fs, &cfg, args, getenv)
 }
 
 func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {
@@ -364,17 +369,18 @@ func buildAPIServerOptions(
 	projectValidator *governance.ProjectValidator,
 	policyEvaluator *governance.PolicyEvaluator,
 	restConfig *rest.Config,
-) ([]apiserver.ServerOption, error) {
+) ([]apiserver.ServerOption, auth.Authorizer, error) {
 	opts := []apiserver.ServerOption{
 		apiserver.WithGovernanceValidator(projectValidator),
 		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
 	}
+	var authorizer auth.Authorizer
 	if authCfg.Enabled {
-		authz, err := auth.BuildAuthorizer(authCfg, apiClient)
+		var err error
+		authorizer, err = auth.BuildAuthorizer(authCfg, apiClient)
 		if err != nil {
-			return nil, fmt.Errorf("build authorizer: %w", err)
+			return nil, nil, fmt.Errorf("build authorizer: %w", err)
 		}
-		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
 	if auditLogEnabled {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
@@ -388,7 +394,7 @@ func buildAPIServerOptions(
 			opts = append(opts, apiserver.WithRESTMapper(mapper))
 		}
 	}
-	return opts, nil
+	return opts, authorizer, nil
 }
 
 type apiCacheLifecycle interface {
@@ -488,7 +494,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.fleetReader, clients.authCfg, clients.interceptor, cfg, setupLog)
+	_, connectHandler, assembly, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.fleetReader, clients.authCfg, clients.interceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
@@ -504,35 +510,51 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
 	ready := fleetReadyChecker(clients.fleetReader)
-	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, ready, extraMuxHandlers...)
-	if muxErr != nil {
-		return fmt.Errorf("build API mux: %w", muxErr)
+	uiHandler, err := apiserver.UIHandler()
+	if err != nil {
+		return fmt.Errorf("build UI handler: %w", err)
 	}
+	mux := buildAPIMuxWithUI(connectHandler, uiHandler, setupLog, ready, extraMuxHandlers...)
 	wrappedHandler := otelhttp.NewHandler(apiserver.MetricsMiddleware(mux), "paprika-http")
 	healthMux := buildHealthMux(setupLog, ready)
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
-	go func() {
-		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
-			setupLog.Error(srvErr, "Health probe server exited with error")
-		}
-	}()
-
-	startMetricsServer(apiCtx, cfg.metricsAddr, setupLog)
-
-	if clients.cacheBundle == nil {
-		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
-	}
-	return runFleetCacheLifecycle(
-		apiCtx,
-		clients.cacheBundle.Cache,
-		fleetRuntime,
-		cfg.cacheSyncTimeout,
-		func(ctx context.Context) error {
-			setupLog.Info("API informer cache and fleet index ready")
+	normalStart := func(ctx context.Context) error {
+		go func() {
+			if srvErr := runHTTPServer(ctx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
+				setupLog.Error(srvErr, "Health probe server exited with error")
+			}
+		}()
+		startMetricsServer(ctx, cfg.metricsAddr, setupLog)
+		if clients.cacheBundle == nil {
 			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, setupLog)
+		}
+		return runFleetCacheLifecycle(
+			ctx,
+			clients.cacheBundle.Cache,
+			fleetRuntime,
+			cfg.cacheSyncTimeout,
+			func(serveCtx context.Context) error {
+				setupLog.Info("API informer cache and fleet index ready")
+				return startAPIServer(
+					serveCtx,
+					wrappedHandler,
+					cfg.uiAddr,
+					setupLog,
+				)
+			},
+		)
+	}
+	return runAPIModeRuntime(apiCtx, apiModeRuntimeConfig{
+		cfg:       cfg,
+		assembly:  assembly,
+		uiHandler: uiHandler,
+		listenerFactory: func(ctx context.Context, handler http.Handler) (adminDashboardListener, error) {
+			return admin.NewListener(ctx, handler)
 		},
-	)
+		normalStart: normalStart,
+		log:         setupLog,
+	})
 }
 
 func prepareStandaloneFleetRuntime(
@@ -614,29 +636,37 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	}, nil
 }
 
-func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, fleetReader fleet.Reader, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, fleetReader fleet.Reader, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, *paprikaServerAssembly, error) {
 	resolver := governance.NewProjectResolver(apiClient)
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
 
-	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
+	opts, authorizer, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	opts = append(opts, apiserver.WithFleetIndex(fleetReader))
-	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
-
 	otelInterceptor, err := otelconnect.NewInterceptor()
 	if err != nil {
-		return nil, nil, fmt.Errorf("otelconnect interceptor: %w", err)
+		return nil, nil, nil, fmt.Errorf("otelconnect interceptor: %w", err)
 	}
+	assembly := &paprikaServerAssembly{
+		apiClient:        apiClient,
+		k8sClient:        k8sClient,
+		broker:           broker,
+		fleetReader:      fleetReader,
+		baseOptions:      opts,
+		normalAuthorizer: authorizer,
+		otelInterceptor:  otelInterceptor,
+	}
+	paprikaServer := assembly.newNormalServer()
 
 	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
 		connect.WithInterceptors(otelInterceptor, authInterceptor, paprikaServer.AuditInterceptor()),
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
-	return paprikaServer, connectHandler, nil
+	return paprikaServer, connectHandler, assembly, nil
 }
 
 func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.ServeMux), error) {
@@ -874,7 +904,7 @@ func readBearerToken(k8sTokenFile string) (string, error) {
 		}
 		return string(data), nil
 	}
-	// #nosec G304 -- k8sTokenFile is from a command-line flag
+	// #nosec G304,G703 -- k8sTokenFile is an explicitly user-configured credential path.
 	data, err := os.ReadFile(k8sTokenFile)
 	if err != nil {
 		return "", fmt.Errorf("read token file: %w", err)
@@ -955,8 +985,24 @@ func buildAPIMux(
 	ready healthz.Checker,
 	extraHandlers ...func(*http.ServeMux),
 ) (*http.ServeMux, error) {
+	uiHandler, err := apiserver.UIHandler()
+	if err != nil {
+		return nil, fmt.Errorf("build UI handler: %w", err)
+	}
+	return buildAPIMuxWithUI(connectHandler, uiHandler, log, ready, extraHandlers...), nil
+}
+
+func buildAPIMuxWithUI(
+	connectHandler http.Handler,
+	uiHandler http.Handler,
+	log logr.Logger,
+	ready healthz.Checker,
+	extraHandlers ...func(*http.ServeMux),
+) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	mux.Handle("/admin/session", http.NotFoundHandler())
+	mux.Handle("/admin/session/", http.NotFoundHandler())
 	// Raw browser SSE is intentionally disabled until an authorized WatchEvents
 	// transport is available. Keep the exact route fail-closed so the UI catch-all
 	// cannot accidentally serve index.html with a 200 response.
@@ -967,12 +1013,8 @@ func buildAPIMux(
 	for _, h := range extraHandlers {
 		h(mux)
 	}
-	uiHandler, err := apiserver.UIHandler()
-	if err != nil {
-		return nil, fmt.Errorf("build UI handler: %w", err)
-	}
 	mux.Handle("/", uiHandler)
-	return mux, nil
+	return mux
 }
 
 func buildHealthMux(log logr.Logger, ready healthz.Checker) *http.ServeMux {

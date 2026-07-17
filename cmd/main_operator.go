@@ -52,6 +52,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	apiserver "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/admin"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -198,21 +199,59 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.auditLogEnabled, setupLog); err != nil {
-		return fmt.Errorf("start UI server: %w", err)
+	uiServer, assembly, uiHandler, err := buildOperatorUI(
+		opCtx,
+		mgr,
+		cfg,
+		gov.k8sClient,
+		gov.authCfg,
+		gov.projectValidator,
+		gov.policyEvaluator,
+		gov.authz,
+		deps.broker,
+		deps.fleetReader,
+		cfg.auditLogEnabled,
+		setupLog,
+	)
+	if err != nil {
+		return fmt.Errorf("build operator UI server: %w", err)
 	}
-
-	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.webhookSecret, setupLog); err != nil {
-		return fmt.Errorf("start inline webhook server: %w", err)
-	}
-
-	registerGauges(setupLog, mgr.GetClient())
-
-	setupLog.Info("Starting manager")
-	if err := mgr.Start(opCtx); err != nil {
-		return fmt.Errorf("failed to run manager: %w", err)
-	}
-	return nil
+	return runOperatorModeRuntime(opCtx, &operatorModeRuntimeConfig{
+		cfg:       cfg,
+		assembly:  assembly,
+		uiHandler: uiHandler,
+		listenerFactory: func(ctx context.Context, handler http.Handler) (adminDashboardListener, error) {
+			return admin.NewListener(ctx, handler)
+		},
+		startDetachedUI: func(ctx context.Context) {
+			startOperatorUIServer(ctx, uiServer, setupLog)
+		},
+		beforeManager: func() error {
+			if startErr := startInlineWebhookServer(
+				opCtx,
+				mgr.GetClient(),
+				cfg.webhookSecret,
+				setupLog,
+			); startErr != nil {
+				return fmt.Errorf("start inline webhook server: %w", startErr)
+			}
+			registerGauges(setupLog, mgr.GetClient())
+			setupLog.Info("Starting manager")
+			return nil
+		},
+		managerStart: mgr.Start,
+		uiStart: func(componentCtx context.Context) error {
+			return runHTTPServer(
+				componentCtx,
+				uiServer,
+				"UI server",
+				setupLog,
+				nil,
+				true,
+			)
+		},
+		log: setupLog,
+	})
 }
 
 func buildOperatorManagerAndFleetRuntime(
@@ -446,17 +485,16 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, setupLog)
-	if err != nil {
-		return fmt.Errorf("build operator UI server: %w", err)
-	}
+func startOperatorUIServer(
+	ctx context.Context,
+	uiServer *http.Server,
+	setupLog logr.Logger,
+) {
 	go func() {
 		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true); srvErr != nil {
 			setupLog.Error(srvErr, "UI server exited with error")
 		}
 	}()
-	return nil
 }
 
 func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecret string, setupLog logr.Logger) error {
@@ -480,19 +518,16 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) (*http.Server, *paprikaServerAssembly, http.Handler, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
 	if err != nil {
-		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
 
 	opts := []apiserver.ServerOption{
 		apiserver.WithGovernanceValidator(projectValidator),
 		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
 		apiserver.WithFleetIndex(fleetReader),
-	}
-	if authz != nil {
-		opts = append(opts, apiserver.WithAuthorizer(authz))
 	}
 	if auditEnabled {
 		opts = append(opts, apiserver.WithAuditor(audit.NewLogAuditor()))
@@ -502,12 +537,20 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		opts = append(opts, apiserver.WithDynamicClient(dc))
 	}
 	opts = append(opts, apiserver.WithRESTMapper(mgr.GetRESTMapper()))
-	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
-
 	otelInterceptor, err := otelconnect.NewInterceptor()
 	if err != nil {
-		return nil, fmt.Errorf("otelconnect interceptor: %w", err)
+		return nil, nil, nil, fmt.Errorf("otelconnect interceptor: %w", err)
 	}
+	assembly := &paprikaServerAssembly{
+		apiClient:        mgr.GetClient(),
+		k8sClient:        k8sClient,
+		broker:           broker,
+		fleetReader:      fleetReader,
+		baseOptions:      opts,
+		normalAuthorizer: authz,
+		otelInterceptor:  otelInterceptor,
+	}
+	paprikaServer := assembly.newNormalServer()
 
 	const maxMsgBytes = 10 * 1024 * 1024 // 10 MiB
 	_, connectHandler := v1connect.NewPaprikaServiceHandler(paprikaServer,
@@ -517,11 +560,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 
 	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(ctx, cfg, k8sClient)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	uiHandler, err := apiserver.UIHandler()
 	if err != nil {
-		return nil, fmt.Errorf("build UI handler: %w", err)
+		return nil, nil, nil, fmt.Errorf("build UI handler: %w", err)
 	}
 	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
@@ -529,7 +572,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
-	}, nil
+	}, assembly, uiHandler, nil
 }
 
 func buildOperatorUIMux(
@@ -541,6 +584,8 @@ func buildOperatorUIMux(
 ) *http.ServeMux {
 	uiMux := http.NewServeMux()
 	uiMux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	uiMux.Handle("/admin/session", http.NotFoundHandler())
+	uiMux.Handle("/admin/session/", http.NotFoundHandler())
 	// Do not expose the unauthenticated legacy SSE stream. The explicit route is
 	// required because the embedded UI is registered as the catch-all handler.
 	uiMux.Handle("/events", http.NotFoundHandler())

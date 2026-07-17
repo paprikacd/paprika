@@ -125,14 +125,15 @@ func TestAdminContextRejectsZeroSessionAndCallerCreatedPrincipal(t *testing.T) {
 func TestAdminContextCannotBeActivatedByBrowserControlledInputs(t *testing.T) {
 	t.Parallel()
 
-	request := httptest.NewRequest(
+	request := httptest.NewRequestWithContext(
+		t.Context(),
 		http.MethodPost,
 		"http://127.0.0.1:3001/paprika.v1.PaprikaService/SyncApplication?admin=true",
 		nil,
 	)
 	request.Header.Set("X-Paprika-Admin-Session", "caller-session")
 	request.Header.Set("X-Paprika-Access-Mode", AccessMode)
-	request.AddCookie(&http.Cookie{Name: "paprika_admin", Value: AccessMode})
+	request.Header.Set("Cookie", "paprika_admin="+AccessMode)
 	ctx := auth.WithPrincipal(request.Context(), &auth.Principal{
 		Subject: "kubernetes:caller",
 		Claims: map[string]any{

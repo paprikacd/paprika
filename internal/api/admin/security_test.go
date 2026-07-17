@@ -16,7 +16,12 @@ func TestHostAcceptsOnlyCanonicalIPv4LoopbackWithPort(t *testing.T) {
 		host := host
 		t.Run("accept "+host, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest(http.MethodGet, "http://"+host+"/dashboard/", nil)
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://"+host+"/dashboard/",
+				nil,
+			)
 			request.Host = host
 			require.NoError(t, ValidateLoopbackHost(request))
 		})
@@ -41,7 +46,12 @@ func TestHostAcceptsOnlyCanonicalIPv4LoopbackWithPort(t *testing.T) {
 		host := host
 		t.Run("reject "+host, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001/", nil)
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://127.0.0.1:3001/",
+				nil,
+			)
 			request.Host = host
 			require.ErrorIs(t, ValidateLoopbackHost(request), ErrInvalidLoopbackHost)
 		})
@@ -61,7 +71,12 @@ func TestHostRejectsForwardedAuthorityHeaders(t *testing.T) {
 		header := header
 		t.Run(header, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001/", nil)
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://127.0.0.1:3001/",
+				nil,
+			)
 			request.Host = "127.0.0.1:3001"
 			request.Header.Set(header, "attacker.example")
 			require.ErrorIs(t, ValidateLoopbackHost(request), ErrInvalidLoopbackHost)
@@ -72,7 +87,12 @@ func TestHostRejectsForwardedAuthorityHeaders(t *testing.T) {
 func TestOriginAcceptsSameOriginAndRewritesToCanonicalUpstream(t *testing.T) {
 	t.Parallel()
 
-	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:49152/admin/session/exchange", nil)
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"http://127.0.0.1:49152/admin/session/exchange",
+		nil,
+	)
 	request.Host = "127.0.0.1:49152"
 	request.Header.Set("Origin", "http://127.0.0.1:49152")
 
@@ -109,7 +129,12 @@ func TestOriginRejectsMissingForeignMalformedOrAmbiguousValuesBeforeRewrite(t *t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:49152/admin/session", nil)
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"http://127.0.0.1:49152/admin/session",
+				nil,
+			)
 			request.Host = "127.0.0.1:49152"
 			for _, origin := range test.origins {
 				request.Header.Add("Origin", origin)
@@ -166,7 +191,12 @@ func TestOriginRejectsInvalidHostForwardingAndUpstreamContract(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:49152/admin/session", nil)
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"http://127.0.0.1:49152/admin/session",
+				nil,
+			)
 			request.Host = "127.0.0.1:49152"
 			request.Header.Set("Origin", "http://127.0.0.1:49152")
 			test.mutate(request)

@@ -23,6 +23,7 @@ import (
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/admin"
 	"github.com/benebsworth/paprika/internal/api/events"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/fleet"
@@ -53,6 +54,88 @@ func TestOperatorEventsRouteDisabled(t *testing.T) {
 		logr.Discard(),
 	)
 	assertEventsRouteDisabled(t, mux)
+}
+
+func TestNormalListenerAdminSessionRoutesAreExactlyNotFound(t *testing.T) {
+	t.Parallel()
+
+	standalone, err := buildAPIMux(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "ordinary auth required", http.StatusUnauthorized)
+		}),
+		events.NewBroker(logr.Discard()),
+		logr.Discard(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build standalone API mux: %v", err)
+	}
+	operator := buildOperatorUIMux(
+		http.NotFoundHandler(),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		nil,
+		logr.Discard(),
+	)
+
+	for name, handler := range map[string]http.Handler{
+		"standalone": standalone,
+		"operator":   operator,
+	} {
+		for _, path := range []string{"/admin/session", "/admin/session/"} {
+			request := httptest.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				path,
+				http.NoBody,
+			)
+			request.Header.Set("X-Paprika-Admin-Session", "spoofed-session")
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusNotFound {
+				t.Errorf("%s GET %s status = %d, want %d", name, path, recorder.Code, http.StatusNotFound)
+			}
+		}
+	}
+}
+
+func TestNormalListenerSessionHeaderDoesNotInstallAdminContext(t *testing.T) {
+	t.Parallel()
+
+	connectCalled := false
+	connectHandler := http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		connectCalled = true
+		if _, ok := admin.SessionDescriptionFromContext(request.Context()); ok {
+			t.Error("normal listener installed an admin session context")
+		}
+		http.Error(w, "ordinary auth required", http.StatusUnauthorized)
+	})
+	mux, err := buildAPIMux(
+		connectHandler,
+		events.NewBroker(logr.Discard()),
+		logr.Discard(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("build standalone API mux: %v", err)
+	}
+	request := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"/paprika.v1.PaprikaService/QueryFleetMap",
+		http.NoBody,
+	)
+	request.Header.Set("X-Paprika-Admin-Session", "spoofed-session")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if !connectCalled {
+		t.Fatal("normal Connect handler was not called")
+	}
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("normal Connect status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
 }
 
 func assertEventsRouteDisabled(t *testing.T, handler http.Handler) {
