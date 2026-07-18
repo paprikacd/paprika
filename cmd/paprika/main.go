@@ -101,6 +101,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newGatesCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newRenderCmd(ctx, clientFn, &globalOutput))
 	root.AddCommand(newResolveCmd(ctx, clientFn, &globalOutput))
+	root.AddCommand(newAdminCmd(ctx, runAdminDashboard))
 
 	return root
 }
