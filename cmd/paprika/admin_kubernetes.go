@@ -168,13 +168,24 @@ func newAdminExchangeRequestClient(
 	return &adminExchangeRequestClient{transport: transport}, nil
 }
 
-//nolint:cyclop // Request construction validates every loopback exchange URL invariant explicitly.
 func (c *adminExchangeRequestClient) RoundTrip(
 	ctx context.Context,
 	endpoint string,
 ) (*http.Response, error) {
+	return c.RoundTripWithCurrentSession(ctx, endpoint, "")
+}
+
+//nolint:cyclop // Request construction validates every loopback exchange invariant explicitly.
+func (c *adminExchangeRequestClient) RoundTripWithCurrentSession(
+	ctx context.Context,
+	endpoint string,
+	currentSession string,
+) (*http.Response, error) {
 	if c == nil || c.transport == nil {
 		return nil, errors.New("kubernetes exchange request client is unavailable")
+	}
+	if currentSession != "" && !validAdminSecret(currentSession) {
+		return nil, errors.New("current admin session header is invalid")
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -188,6 +199,11 @@ func (c *adminExchangeRequestClient) RoundTrip(
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, parsed.String(), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build Kubernetes exchange request: %w", err)
+	}
+	request.Host = adminUpstreamHost
+	request.Header.Set("Origin", adminUpstreamOrigin)
+	if currentSession != "" {
+		request.Header.Set("X-Paprika-Admin-Session", currentSession)
 	}
 	response, err := c.transport.RoundTrip(request)
 	if err != nil {

@@ -89,6 +89,53 @@ func TestAdminKubeconfigStaticBearerUsesClientGoWrapper(t *testing.T) {
 	}
 }
 
+func TestAdminKubeconfigGuardedExchangeCarriesCurrentSessionAndFixedTransport(t *testing.T) {
+	t.Parallel()
+	current := strings.Repeat("c", 43)
+	called := false
+	base := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		called = true
+		if req.Method != http.MethodPost ||
+			req.URL.String() != "http://127.0.0.1:43123/admin/session/exchange" ||
+			req.Host != adminUpstreamHost ||
+			req.Header.Get("Origin") != adminUpstreamOrigin ||
+			req.Header.Get("X-Paprika-Admin-Session") != current ||
+			req.Body != http.NoBody {
+			t.Fatalf("guarded exchange request = %#v", req)
+		}
+		return &http.Response{
+			StatusCode: http.StatusCreated,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	client, err := newAdminExchangeRequestClient(
+		&rest.Config{Host: "https://cluster.invalid", BearerToken: "bearer"},
+		base,
+		adminCredentialRoundTripper,
+	)
+	if err != nil {
+		t.Fatalf("newAdminExchangeRequestClient() error = %v", err)
+	}
+	response, err := client.RoundTripWithCurrentSession(
+		t.Context(),
+		"http://127.0.0.1:43123/admin/session/exchange",
+		current,
+	)
+	if err != nil {
+		t.Fatalf("RoundTripWithCurrentSession() error = %v", err)
+	}
+	if response.Body == nil {
+		t.Fatal("guarded exchange did not normalize nil response body")
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("close response body: %v", err)
+	}
+	if !called {
+		t.Fatal("guarded exchange did not use credential transport")
+	}
+}
+
 func TestAdminKubeconfigExecBearerUsesClientGoWrapper(t *testing.T) {
 	if os.Getenv("GO_WANT_ADMIN_EXEC_HELPER") == "1" {
 		_, _ = fmt.Fprintln(os.Stdout, `{"apiVersion":"client.authentication.k8s.io/v1","kind":"ExecCredential","status":{"token":"exec-helper-value"}}`)
