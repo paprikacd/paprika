@@ -4,11 +4,17 @@ import {
   ScopeBar,
   ScopeBarFallback,
 } from "@/components/layout/scope-bar"
+import { AdminSessionBanner } from "@/components/layout/admin-session-banner"
 import { Sidebar } from "@/components/layout/sidebar"
+import { AdminSessionProvider } from "@/lib/admin-session-context"
 import { FleetScopeProvider } from "@/lib/fleet-scope-context"
 
 export function AppShell({ children }: { children: ReactNode }) {
-  return <AppShellFrame>{children}</AppShellFrame>
+  return (
+    <AdminSessionProvider>
+      <AppShellFrame>{children}</AppShellFrame>
+    </AdminSessionProvider>
+  )
 }
 
 function AppShellFrame({ children }: { children: ReactNode }) {
@@ -25,7 +31,9 @@ function AppShellFrame({ children }: { children: ReactNode }) {
       <div data-dashboard-shell-content className="lg:pl-64">
         <Suspense fallback={<FleetShellFallback />}>
           <FleetScopeProvider>
-            <ScopeBar />
+            <StickyShellRail>
+              <ScopeBar />
+            </StickyShellRail>
             <DashboardMain>{children}</DashboardMain>
           </FleetScopeProvider>
         </Suspense>
@@ -37,7 +45,9 @@ function AppShellFrame({ children }: { children: ReactNode }) {
 function FleetShellFallback() {
   return (
     <>
-      <ScopeBarFallback />
+      <StickyShellRail>
+        <ScopeBarFallback />
+      </StickyShellRail>
       <DashboardMain>
         <div
           aria-busy="true"
@@ -49,6 +59,18 @@ function FleetShellFallback() {
         </div>
       </DashboardMain>
     </>
+  )
+}
+
+function StickyShellRail({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-dashboard-sticky-rail
+      className="sticky top-14 z-30 lg:top-0"
+    >
+      <AdminSessionBanner />
+      {children}
+    </div>
   )
 }
 

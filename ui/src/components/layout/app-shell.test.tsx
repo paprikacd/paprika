@@ -28,6 +28,13 @@ const fleetRpc = vi.hoisted(() => ({
   queryFleetMap: vi.fn(),
 }))
 
+const validAdminSession = {
+  subject: "alice@example.com",
+  accessMode: "kubernetes-port-forward-admin",
+  idleExpiresAt: "2099-07-18T05:10:00Z",
+  absoluteExpiresAt: "2099-07-18T05:30:00Z",
+}
+
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => navigation.router,
@@ -111,6 +118,12 @@ describe("AppShell navigation", () => {
       indexGeneration: BigInt(1),
       facets: [],
     })
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(null, { status: 404 }),
+      ),
+    )
     window.history.replaceState({}, "", "/dashboard")
   })
 
@@ -137,6 +150,71 @@ describe("AppShell navigation", () => {
 
     const main = screen.getByRole("main")
     expect(main).toHaveAttribute("id", "dashboard-main")
+  })
+
+  it("keeps an explicit ordinary session unmarked", async () => {
+    renderShell(<AppShell>Fleet content</AppShell>)
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Session security status unknown"),
+      ).not.toBeInTheDocument(),
+    )
+    expect(
+      screen.queryByText(
+        "Kubernetes port-forward admin session · unrestricted Paprika access",
+      ),
+    ).not.toBeInTheDocument()
+  })
+
+  it("keeps the admin marker across the shell without obscuring mobile controls", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify(validAdminSession), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    )
+
+    const { container } = renderShell(<AppShell>Fleet content</AppShell>)
+
+    const banner = await screen.findByRole("status", {
+      name: "Kubernetes port-forward admin session",
+    })
+    const rail = container.querySelector("[data-dashboard-sticky-rail]")
+    const scope = screen.getByRole("region", { name: "Current fleet scope" })
+    expect(rail).toHaveClass("sticky", "top-14", "lg:top-0")
+    expect(rail).toContainElement(banner)
+    expect(rail).toContainElement(scope)
+    expect(
+      banner.compareDocumentPosition(scope) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Open navigation" }))
+      .toBeInTheDocument()
+    expect(screen.getByRole("main")).toHaveTextContent("Fleet content")
+  })
+
+  it("keeps unknown session security visible while the fleet shell remains usable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockRejectedValue(
+        new TypeError("admin session probe failed"),
+      ),
+    )
+
+    renderShell(<AppShell>Fleet content</AppShell>)
+
+    expect(
+      await screen.findByRole("alert", {
+        name: "Session security status unknown",
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled()
+    expect(screen.getByRole("region", { name: "Current fleet scope" }))
+      .toBeInTheDocument()
+    expect(screen.getByRole("main")).toHaveTextContent("Fleet content")
   })
 
   it("mounts one shared scope provider and reuses one semantic map request with Applications", async () => {
