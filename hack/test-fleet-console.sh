@@ -204,6 +204,7 @@ PAPRIKA_E2E_OUTPUT_DIR="${validated_output_dir}" \
 PAPRIKA_E2E_APPLICATIONS="${applications}" \
 PAPRIKA_E2E_RUN_NAMESPACE="${PAPRIKA_E2E_RUN_NAMESPACE:-team-00}" \
 PAPRIKA_E2E_ADMIN_SUBJECT="${PAPRIKA_E2E_ADMIN_SUBJECT:-system:serviceaccount:paprika-e2e:reviewed-fleet-admin}" \
+PAPRIKA_E2E_ADMIN_SESSION_STUB="${PAPRIKA_E2E_ADMIN_SESSION_STUB:-1}" \
 npm --prefix "${repo_root}/ui" run test:e2e -- \
   "${playwright_specs[@]}" \
   --project=chromium
