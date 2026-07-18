@@ -92,6 +92,10 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 test-race: manifests generate fmt vet setup-envtest ## Run tests with the race detector enabled.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test -race $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: test-fleet-admin-dashboard
+test-fleet-admin-dashboard: ## Validate the live admin dashboard (requires FLEET_ADMIN_KUBECONFIG, FLEET_ADMIN_CONTEXT, FLEET_ADMIN_TARGET_NAMESPACE, FLEET_ADMIN_TARGET_RELEASE, FLEET_ADMIN_PUBLIC_URL, FLEET_ADMIN_ARTIFACT_ROOT).
+	bash hack/test-fleet-admin-dashboard.sh
+
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # kubectl kuberc is disabled by default for test isolation; enable with:

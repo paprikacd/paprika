@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -423,6 +424,46 @@ func TestCreateCommandRejectsInvalidRunIDBeforeClientConfiguration(t *testing.T)
 	require.ErrorContains(t, err, "invalid run ID")
 	require.NotContains(t, err.Error(), "Kubernetes client")
 	require.NotContains(t, err.Error(), "kubeconfig")
+}
+
+func TestGuardCommandsRejectNonPositiveTimeoutBeforeKubernetes(t *testing.T) {
+	ownership := testOwnership()
+	tests := [][]string{
+		{"create", "--run-id", ownership.RunID, "--timeout", "0s"},
+		{
+			"link",
+			"--run-id", ownership.RunID,
+			"--namespace", ownership.Namespace,
+			"--uid", string(ownership.UID),
+			"--timeout", "-1s",
+		},
+		{
+			"delete",
+			"--run-id", ownership.RunID,
+			"--namespace", ownership.Namespace,
+			"--uid", string(ownership.UID),
+			"--timeout", "0s",
+		},
+	}
+	for _, args := range tests {
+		err := run(t.Context(), args, io.Discard)
+		require.ErrorContains(t, err, "timeout must be positive", args[0])
+	}
+}
+
+func TestBoundedKubernetesContextUsesRequestedDeadline(t *testing.T) {
+	start := time.Now()
+	ctx, cancel, err := boundedKubernetesContext(t.Context(), 125*time.Millisecond)
+	require.NoError(t, err)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	require.True(t, ok)
+	require.WithinDuration(t, start.Add(125*time.Millisecond), deadline, 50*time.Millisecond)
+
+	_, cancel, err = boundedKubernetesContext(t.Context(), 0)
+	require.ErrorContains(t, err, "timeout must be positive")
+	require.Nil(t, cancel)
 }
 
 func TestValidateRunIDBeforeKubernetes(t *testing.T) {

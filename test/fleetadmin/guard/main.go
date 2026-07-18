@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -31,8 +32,9 @@ const (
 	suiteLabelValue = "fleet-admin-dashboard"
 	runLabelKey     = "paprika.io/e2e-run"
 
-	applicationNameLabelKey = "app.paprika.io/name"
-	releaseNameLabelKey     = "app.paprika.io/release"
+	applicationNameLabelKey  = "app.paprika.io/name"
+	releaseNameLabelKey      = "app.paprika.io/release"
+	defaultKubernetesTimeout = 60 * time.Second
 )
 
 var (
@@ -112,6 +114,7 @@ type ownershipCommandFlags struct {
 	ownership  namespaceOwnership
 	kubeconfig string
 	context    string
+	timeout    time.Duration
 }
 
 func main() {
@@ -145,17 +148,27 @@ func runCreate(ctx context.Context, args []string, output io.Writer) error {
 	runID := flags.String("run-id", "", "unique fleet-admin run ID")
 	kubeconfig := flags.String("kubeconfig", "", "path to kubeconfig")
 	contextName := flags.String("context", "", "kubeconfig context")
+	timeout := flags.Duration(
+		"timeout",
+		defaultKubernetesTimeout,
+		"maximum duration for Kubernetes operations",
+	)
 	if err := flags.Parse(args); err != nil {
 		return fmt.Errorf("parse create flags: %w", err)
 	}
 	if _, err := namespaceForRun(*runID); err != nil {
 		return err
 	}
+	operationCtx, cancel, err := boundedKubernetesContext(ctx, *timeout)
+	if err != nil {
+		return err
+	}
+	defer cancel()
 	client, err := newNamespaceClient(*kubeconfig, *contextName)
 	if err != nil {
 		return err
 	}
-	ownership, err := createOwnedNamespace(ctx, client, *runID)
+	ownership, err := createOwnedNamespace(operationCtx, client, *runID)
 	if err != nil {
 		return err
 	}
@@ -174,7 +187,12 @@ func runDelete(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return deleteOwnedNamespace(ctx, client, settings.ownership)
+	operationCtx, cancel, err := boundedKubernetesContext(ctx, settings.timeout)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return deleteOwnedNamespace(operationCtx, client, settings.ownership)
 }
 
 func runLink(ctx context.Context, args []string) error {
@@ -186,7 +204,12 @@ func runLink(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	return linkFixtureOwners(ctx, client, settings.ownership)
+	operationCtx, cancel, err := boundedKubernetesContext(ctx, settings.timeout)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return linkFixtureOwners(operationCtx, client, settings.ownership)
 }
 
 func parseOwnershipCommandFlags(command string, args []string) (ownershipCommandFlags, error) {
@@ -201,13 +224,33 @@ func parseOwnershipCommandFlags(command string, args []string) (ownershipCommand
 	})
 	flags.StringVar(&settings.kubeconfig, "kubeconfig", "", "path to kubeconfig")
 	flags.StringVar(&settings.context, "context", "", "kubeconfig context")
+	flags.DurationVar(
+		&settings.timeout,
+		"timeout",
+		defaultKubernetesTimeout,
+		"maximum duration for Kubernetes operations",
+	)
 	if err := flags.Parse(args); err != nil {
 		return ownershipCommandFlags{}, fmt.Errorf("parse %s flags: %w", command, err)
 	}
 	if err := validateOwnership(settings.ownership); err != nil {
 		return ownershipCommandFlags{}, err
 	}
+	if settings.timeout <= 0 {
+		return ownershipCommandFlags{}, errors.New("timeout must be positive")
+	}
 	return settings, nil
+}
+
+func boundedKubernetesContext(
+	ctx context.Context,
+	timeout time.Duration,
+) (context.Context, context.CancelFunc, error) {
+	if timeout <= 0 {
+		return nil, nil, errors.New("timeout must be positive")
+	}
+	bounded, cancel := context.WithTimeout(ctx, timeout)
+	return bounded, cancel, nil
 }
 
 func runOverlay(args []string, output io.Writer) error {
