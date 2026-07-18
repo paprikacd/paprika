@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,14 +30,20 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
@@ -284,6 +291,383 @@ func TestAdminOutputNeverIncludesCredentialsOrSessions(t *testing.T) {
 		if !strings.Contains(output.String(), field) {
 			t.Errorf("readiness output missing %s: %q", field, output.String())
 		}
+	}
+}
+
+//nolint:gocyclo // Keeping the verified exchange-to-revoke lifecycle linear makes security ordering reviewable.
+func TestAdminDashboardEndToEnd(t *testing.T) {
+	const (
+		namespace      = "paprika"
+		podName        = "paprika-api-1"
+		podUID         = types.UID("paprika-api-1-uid")
+		serviceAccount = "paprika-admin-dashboard"
+		subject        = "alice@example.com"
+	)
+	kubeBearer := strings.Repeat("k", 32)
+	fixedNow := time.Date(2031, time.February, 3, 4, 5, 6, 0, time.UTC)
+	var firstRaw, secondRaw [32]byte
+	for index := range firstRaw {
+		firstRaw[index] = 0x11
+		secondRaw[index] = 0x22
+	}
+	firstToken := base64.RawURLEncoding.EncodeToString(firstRaw[:])
+	secondToken := base64.RawURLEncoding.EncodeToString(secondRaw[:])
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      podName,
+			UID:       podUID,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       "paprika",
+				"app.kubernetes.io/managed-by": "Helm",
+				"app.kubernetes.io/instance":   "paprika",
+				"app.kubernetes.io/component":  "api-server",
+			},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: serviceAccount,
+			Containers:         []corev1.Container{{Name: "api-server"}},
+		},
+		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+			Type: corev1.PodReady, Status: corev1.ConditionTrue,
+		}}},
+	}
+	clientset := fake.NewSimpleClientset(pod.DeepCopy())
+	var tokenReviews, accessReviews, selfAccessReviews atomic.Int32
+	rotationReviewed := make(chan struct{})
+	releaseRotation := make(chan struct{})
+	var releaseRotationOnce sync.Once
+	releaseReviewedRotation := func() {
+		releaseRotationOnce.Do(func() { close(releaseRotation) })
+	}
+	t.Cleanup(releaseReviewedRotation)
+	clientset.Fake.PrependReactor(
+		"create",
+		"tokenreviews",
+		func(action k8stesting.Action) (bool, runtime.Object, error) {
+			create, ok := action.(k8stesting.CreateAction)
+			if !ok {
+				return true, nil, errors.New("unexpected TokenReview action")
+			}
+			review, ok := create.GetObject().(*authenticationv1.TokenReview)
+			if !ok || review.Spec.Token != kubeBearer {
+				return true, nil, errors.New("unexpected Kubernetes bearer review")
+			}
+			tokenReviews.Add(1)
+			return true, &authenticationv1.TokenReview{
+				Status: authenticationv1.TokenReviewStatus{
+					Authenticated: true,
+					User: authenticationv1.UserInfo{
+						Username: subject,
+						Groups:   []string{"platform-admins"},
+					},
+				},
+			}, nil
+		},
+	)
+	clientset.Fake.PrependReactor(
+		"create",
+		"subjectaccessreviews",
+		func(action k8stesting.Action) (bool, runtime.Object, error) {
+			create, ok := action.(k8stesting.CreateAction)
+			if !ok {
+				return true, nil, errors.New("unexpected SubjectAccessReview action")
+			}
+			review, ok := create.GetObject().(*authorizationv1.SubjectAccessReview)
+			attributes := review.Spec.ResourceAttributes
+			if !ok || review.Spec.User != subject || attributes == nil ||
+				attributes.Namespace != namespace ||
+				attributes.Name != podName ||
+				attributes.Resource != "pods" ||
+				attributes.Subresource != "portforward" ||
+				attributes.Verb != "create" {
+				return true, nil, errors.New("unexpected pod port-forward access review")
+			}
+			if accessReviews.Add(1) == 2 {
+				close(rotationReviewed)
+				select {
+				case <-releaseRotation:
+				case <-time.After(2 * time.Second):
+					return true, nil, errors.New("timed out releasing reviewed rotation")
+				}
+			}
+			return true, &authorizationv1.SubjectAccessReview{
+				Status: authorizationv1.SubjectAccessReviewStatus{Allowed: true},
+			}, nil
+		},
+	)
+	clientset.Fake.PrependReactor(
+		"create",
+		"selfsubjectaccessreviews",
+		func(action k8stesting.Action) (bool, runtime.Object, error) {
+			create, ok := action.(k8stesting.CreateAction)
+			if !ok {
+				return true, nil, errors.New("unexpected SelfSubjectAccessReview action")
+			}
+			review, ok := create.GetObject().(*authorizationv1.SelfSubjectAccessReview)
+			attributes := review.Spec.ResourceAttributes
+			if !ok || attributes == nil ||
+				attributes.Namespace != namespace ||
+				attributes.Name != podName ||
+				attributes.Resource != "pods" ||
+				attributes.Subresource != "portforward" ||
+				attributes.Verb != "create" {
+				return true, nil, errors.New("unexpected self pod port-forward access review")
+			}
+			selfAccessReviews.Add(1)
+			return true, &authorizationv1.SelfSubjectAccessReview{
+				Status: authorizationv1.SubjectAccessReviewStatus{Allowed: true},
+			}, nil
+		},
+	)
+
+	var uiRequests atomic.Int32
+	store := admin.NewStore(
+		adminEndToEndClock{now: fixedNow},
+		&adminEndToEndTokenSource{tokens: [][32]byte{firstRaw, secondRaw}},
+	)
+	adminHandler, err := admin.NewHTTPHandler(&admin.HTTPConfig{
+		Store: store,
+		Review: &admin.KubernetesReview{
+			Identity: admin.PodIdentity{
+				Namespace:          namespace,
+				Name:               podName,
+				UID:                podUID,
+				ServiceAccount:     serviceAccount,
+				ExpectedContainers: []string{"api-server"},
+			},
+			Pods:                 adminEndToEndPodGetter{clientset: clientset},
+			TokenReviews:         clientset.AuthenticationV1().TokenReviews(),
+			SubjectAccessReviews: clientset.AuthorizationV1().SubjectAccessReviews(),
+			Timeout:              time.Second,
+		},
+		PodUID: podUID,
+		HealthHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		ReadyHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		ConnectHandler: http.NotFoundHandler(),
+		UIHandler: http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			if request.Header.Get("Authorization") != "" ||
+				request.Header.Get(admin.AdminSessionHeader) != "" {
+				http.Error(w, "credential leaked to UI handler", http.StatusInternalServerError)
+				return
+			}
+			description, ok := admin.SessionDescriptionFromContext(request.Context())
+			if !ok || description.Subject != subject || description.AccessMode != admin.AccessMode {
+				http.Error(w, "validated admin context missing", http.StatusInternalServerError)
+				return
+			}
+			uiRequests.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"authenticated":true}`)
+		}),
+	})
+	if err != nil {
+		t.Fatalf("NewHTTPHandler() error = %v", err)
+	}
+	adminListener := httptest.NewServer(adminHandler)
+	defer adminListener.Close()
+
+	normalListener := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, request *http.Request) {
+			if request.URL.Path == "/events" {
+				http.NotFound(w, request)
+				return
+			}
+			http.Error(w, "ordinary authentication required", http.StatusUnauthorized)
+		},
+	))
+	defer normalListener.Close()
+
+	kubeconfigPath := filepath.Join(t.TempDir(), "config")
+	err = clientcmd.WriteToFile(clientcmdapi.Config{
+		Clusters: map[string]*clientcmdapi.Cluster{
+			"cluster": {Server: "https://cluster.invalid"},
+		},
+		AuthInfos: map[string]*clientcmdapi.AuthInfo{
+			"user": {Token: kubeBearer},
+		},
+		Contexts: map[string]*clientcmdapi.Context{
+			"omega": {Cluster: "cluster", AuthInfo: "user", Namespace: namespace},
+		},
+		CurrentContext: "omega",
+	}, kubeconfigPath)
+	if err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+
+	forwardJoined := make(chan struct{})
+	rotationTicks := make(chan time.Time, 1)
+	deps := testAdminDashboardDependencies(func(
+		ctx context.Context,
+		_ *rest.Config,
+		gotNamespace, gotPod string,
+	) (adminPortForward, error) {
+		if gotNamespace != namespace || gotPod != podName {
+			return adminPortForward{}, errors.New("forward selected an unexpected pod")
+		}
+		done := make(chan error, 1)
+		go func() {
+			defer close(forwardJoined)
+			<-ctx.Done()
+			done <- nil
+			close(done)
+		}()
+		return adminPortForward{
+			LocalPort: adminSessionTestPort(t, adminListener.URL),
+			Done:      done,
+			Joined:    forwardJoined,
+		}, nil
+	})
+	deps.loadKubeconfig = loadAdminKubeconfig
+	deps.newPodLister = func(*rest.Config) (adminPodLister, error) {
+		return func(
+			ctx context.Context,
+			namespace string,
+			options metav1.ListOptions,
+		) (*corev1.PodList, error) {
+			return clientset.CoreV1().Pods(namespace).List(ctx, options)
+		}, nil
+	}
+	deps.newReviewer = func(*rest.Config) (adminAccessReviewer, error) {
+		return func(
+			ctx context.Context,
+			review *authorizationv1.SelfSubjectAccessReview,
+		) (*authorizationv1.SelfSubjectAccessReview, error) {
+			return clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(
+				ctx,
+				review,
+				metav1.CreateOptions{},
+			)
+		}, nil
+	}
+	deps.now = func() time.Time { return fixedNow }
+	deps.rotation = func(context.Context, time.Duration) adminRotationSchedule {
+		return testAdminRotationSchedule(rotationTicks)
+	}
+	deps.openURL = func(string) error {
+		return errors.New("browser must not open with --no-open")
+	}
+	useProductionAdminDashboardSession(&deps)
+
+	runCtx, cancelRun := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelRun()
+	commandCtx, shutdown := context.WithCancel(runCtx)
+	defer shutdown()
+	var stdout, stderr bytes.Buffer
+	ready := make(chan struct{})
+	var readyOnce sync.Once
+	command := newAdminCmd(commandCtx, func(
+		ctx context.Context,
+		opts *adminDashboardOptions,
+		out, progress adminDashboardOutput,
+	) error {
+		return runAdminDashboardWithDependencies(ctx, opts, out, progress, deps)
+	})
+	command.SetOut(notifyWriter{
+		writer: &stdout,
+		notify: func() { readyOnce.Do(func() { close(ready) }) },
+	})
+	command.SetErr(&stderr)
+	command.SetArgs([]string{
+		"dashboard",
+		"--kubeconfig=" + kubeconfigPath,
+		"--context=omega",
+		"--namespace=" + namespace,
+		"--release=paprika",
+		"--no-open",
+		"--timeout=1s",
+		"--output=json",
+	})
+	result := make(chan error, 1)
+	go func() {
+		result <- command.ExecuteContext(commandCtx)
+	}()
+
+	waitAdminEndToEndSignal(t, ready, "JSON readiness")
+	var readiness adminDashboardReady
+	if err = json.Unmarshal(stdout.Bytes(), &readiness); err != nil {
+		t.Fatalf("decode readiness JSON: %v; stdout=%q", err, stdout.String())
+	}
+	if readiness.Context != "omega" ||
+		readiness.Namespace != namespace ||
+		readiness.Pod != podName ||
+		readiness.Subject != subject ||
+		readiness.AccessMode != admin.AccessMode ||
+		!readiness.SessionExpiry.Equal(fixedNow.Add(10*time.Minute)) ||
+		!strings.HasSuffix(readiness.URL, "/dashboard/") {
+		t.Fatalf("readiness = %#v, want validated dashboard description", readiness)
+	}
+	assertAdminEndToEndNormalIsolation(t, normalListener.URL, firstToken)
+	assertAdminEndToEndProxyRequest(t, readiness.URL)
+
+	rotationTicks <- fixedNow.Add(adminSessionRotationInterval)
+	waitAdminEndToEndSignal(t, rotationReviewed, "completed rotation access reviews")
+	releaseReviewedRotation()
+	waitAdminEndToEndRotation(
+		t,
+		adminListener.URL,
+		readiness.URL,
+		firstToken,
+		secondToken,
+	)
+	assertAdminEndToEndHiddenSession(t, adminListener.URL, firstToken, http.StatusUnauthorized)
+	assertAdminEndToEndHiddenSession(t, adminListener.URL, secondToken, http.StatusOK)
+	assertAdminEndToEndNormalIsolation(t, normalListener.URL, secondToken)
+	assertAdminEndToEndProxyRequest(t, readiness.URL)
+
+	shutdown()
+	var commandErr error
+	select {
+	case commandErr = <-result:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cobra admin dashboard command did not complete after shutdown")
+	}
+	waitAdminEndToEndSignal(t, forwardJoined, "forwarder join")
+	assertAdminEndToEndProxyClosed(t, readiness.URL)
+	assertAdminEndToEndHiddenSession(t, adminListener.URL, secondToken, http.StatusUnauthorized)
+	assertAdminEndToEndNormalIsolation(t, normalListener.URL, secondToken)
+	if tokenReviews.Load() != 2 ||
+		accessReviews.Load() != 2 ||
+		selfAccessReviews.Load() != 1 ||
+		uiRequests.Load() != 3 {
+		t.Fatalf(
+			"review/UI counts = token:%d access:%d self:%d UI:%d, want 2/2/1/3",
+			tokenReviews.Load(),
+			accessReviews.Load(),
+			selfAccessReviews.Load(),
+			uiRequests.Load(),
+		)
+	}
+
+	errorText := ""
+	if commandErr != nil {
+		errorText = commandErr.Error()
+	}
+	for name, value := range map[string]string{
+		"stdout": stdout.String(),
+		"stderr": stderr.String(),
+		"error":  errorText,
+	} {
+		for _, secret := range []string{
+			kubeBearer,
+			firstToken,
+			secondToken,
+			"Bearer " + kubeBearer,
+			"Authorization",
+			admin.AdminSessionHeader,
+		} {
+			if strings.Contains(value, secret) {
+				t.Fatalf("%s leaked %q: %q", name, secret, value)
+			}
+		}
+	}
+	if commandErr != nil {
+		t.Fatalf("Cobra admin dashboard command error = %v", commandErr)
 	}
 }
 
@@ -1558,6 +1942,240 @@ type cancelWriter struct {
 type notifyWriter struct {
 	writer io.Writer
 	notify func()
+}
+
+type adminEndToEndClock struct {
+	now time.Time
+}
+
+func (clock adminEndToEndClock) Now() time.Time {
+	return clock.now
+}
+
+type adminEndToEndPodGetter struct {
+	clientset *fake.Clientset
+}
+
+func (getter adminEndToEndPodGetter) Get(
+	ctx context.Context,
+	namespace, name string,
+	options metav1.GetOptions,
+) (*corev1.Pod, error) {
+	return getter.clientset.CoreV1().Pods(namespace).Get(ctx, name, options)
+}
+
+type adminEndToEndTokenSource struct {
+	mu     sync.Mutex
+	tokens [][32]byte
+	next   int
+}
+
+func (source *adminEndToEndTokenSource) Token() ([32]byte, error) {
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	if source.next >= len(source.tokens) {
+		return [32]byte{}, errors.New("admin end-to-end token fixture exhausted")
+	}
+	token := source.tokens[source.next]
+	source.next++
+	return token, nil
+}
+
+func waitAdminEndToEndSignal(t *testing.T, signal <-chan struct{}, operation string) {
+	t.Helper()
+	select {
+	case <-signal:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", operation)
+	}
+}
+
+func waitAdminEndToEndRotation(
+	t *testing.T,
+	hiddenOrigin, proxyURL, oldToken, newToken string,
+) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if adminEndToEndRotationVisible(
+			ctx,
+			hiddenOrigin,
+			proxyURL,
+			oldToken,
+			newToken,
+		) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for externally visible session rotation: %v", ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func adminEndToEndRotationVisible(
+	ctx context.Context,
+	hiddenOrigin, proxyURL, oldToken, newToken string,
+) bool {
+	oldStatus, oldOK := probeAdminEndToEndHiddenSession(ctx, hiddenOrigin, oldToken)
+	newStatus, newOK := probeAdminEndToEndHiddenSession(ctx, hiddenOrigin, newToken)
+	return oldOK &&
+		oldStatus == http.StatusUnauthorized &&
+		newOK &&
+		newStatus == http.StatusOK &&
+		probeAdminEndToEndProxy(ctx, proxyURL)
+}
+
+func probeAdminEndToEndHiddenSession(
+	ctx context.Context,
+	origin, token string,
+) (int, bool) {
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		origin+"/admin/session",
+		http.NoBody,
+	)
+	if err != nil {
+		return 0, false
+	}
+	request.Host = adminUpstreamHost
+	request.Header.Set(admin.AdminSessionHeader, token)
+	response, err := (&http.Client{Timeout: 250 * time.Millisecond}).Do(request)
+	if err != nil {
+		return 0, false
+	}
+	status := response.StatusCode
+	_, readErr := io.Copy(io.Discard, io.LimitReader(response.Body, 1024))
+	closeErr := response.Body.Close()
+	return status, readErr == nil && closeErr == nil
+}
+
+func probeAdminEndToEndProxy(ctx context.Context, url string) bool {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return false
+	}
+	response, err := (&http.Client{Timeout: 250 * time.Millisecond}).Do(request)
+	if err != nil {
+		return false
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 1024))
+	closeErr := response.Body.Close()
+	return response.StatusCode == http.StatusOK &&
+		string(body) == `{"authenticated":true}` &&
+		readErr == nil &&
+		closeErr == nil
+}
+
+func assertAdminEndToEndProxyRequest(t *testing.T, url string) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("build authenticated proxy request: %v", err)
+	}
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("authenticated proxy request: %v", err)
+	}
+	defer closeAdminResponse(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
+	if err != nil {
+		t.Fatalf("read authenticated proxy response: %v", err)
+	}
+	if response.StatusCode != http.StatusOK ||
+		string(body) != `{"authenticated":true}` {
+		t.Fatalf(
+			"authenticated proxy response = HTTP %d %q, want HTTP 200",
+			response.StatusCode,
+			body,
+		)
+	}
+}
+
+func assertAdminEndToEndProxyClosed(t *testing.T, url string) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("build closed proxy request: %v", err)
+	}
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err == nil {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			t.Fatalf("close unexpected proxy response: %v", closeErr)
+		}
+		t.Fatal("browser-facing admin proxy remained reachable after shutdown")
+	}
+}
+
+func assertAdminEndToEndHiddenSession(
+	t *testing.T,
+	origin, token string,
+	wantStatus int,
+) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		origin+"/admin/session",
+		http.NoBody,
+	)
+	if err != nil {
+		t.Fatalf("build hidden session request: %v", err)
+	}
+	request.Host = adminUpstreamHost
+	request.Header.Set(admin.AdminSessionHeader, token)
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatalf("hidden session request: %v", err)
+	}
+	defer closeAdminResponse(response.Body)
+	if response.StatusCode != wantStatus {
+		t.Fatalf(
+			"hidden session HTTP status = %d, want %d",
+			response.StatusCode,
+			wantStatus,
+		)
+	}
+}
+
+func assertAdminEndToEndNormalIsolation(t *testing.T, origin, token string) {
+	t.Helper()
+	for path, wantStatus := range map[string]int{
+		"/dashboard/": http.StatusUnauthorized,
+		"/events":     http.StatusNotFound,
+	} {
+		request, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodGet,
+			origin+path,
+			http.NoBody,
+		)
+		if err != nil {
+			t.Fatalf("build normal listener request: %v", err)
+		}
+		request.Header.Set("Authorization", "Bearer ordinary-listener-probe")
+		request.Header.Set(admin.AdminSessionHeader, token)
+		response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+		if err != nil {
+			t.Fatalf("normal listener request: %v", err)
+		}
+		if err := response.Body.Close(); err != nil {
+			t.Fatalf("close normal listener response: %v", err)
+		}
+		if response.StatusCode != wantStatus {
+			t.Fatalf(
+				"normal listener %s status = %d, want %d",
+				path,
+				response.StatusCode,
+				wantStatus,
+			)
+		}
+	}
 }
 
 type testAdminDashboardSession struct {
