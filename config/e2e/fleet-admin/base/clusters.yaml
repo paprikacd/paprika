@@ -1,0 +1,35 @@
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-east
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  displayName: Production East
+  mode: in-cluster
+  labels:
+    environment: production
+    region: east
+status:
+  observedGeneration: 1
+  phase: Healthy
+  version: v1.34.0
+---
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-west
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  displayName: Production West
+  mode: in-cluster
+  labels:
+    environment: production
+    region: west
+status:
+  observedGeneration: 1
+  phase: Healthy
+  version: v1.34.0

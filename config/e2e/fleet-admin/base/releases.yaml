@@ -1,0 +1,69 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: catalog-active
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: catalog
+spec:
+  pipeline: storefront-ci
+  target: staging
+status:
+  observedGeneration: 1
+  phase: Promoting
+  currentStage: staging
+  rolloutRef: catalog-active-rollout
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: checkout-complete
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: checkout
+spec:
+  pipeline: storefront-ci
+  target: production
+status:
+  observedGeneration: 1
+  phase: Complete
+  currentStage: production
+  rolloutRef: checkout-complete-rollout
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: ledger-failed
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: ledger
+spec:
+  pipeline: finance-ci
+  target: production
+  onFailure:
+    action: halt
+status:
+  observedGeneration: 1
+  phase: Failed
+  currentStage: production
+  rolloutRef: ledger-failed-rollout
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Release
+metadata:
+  name: billing-gated
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: billing
+spec:
+  pipeline: finance-ci
+  target: production
+status:
+  observedGeneration: 1
+  phase: AwaitingApproval
+  currentStage: production
+  rolloutRef: billing-gated-rollout

@@ -94,6 +94,50 @@ rules:
       - namespaces
       - nodes
     verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Fleet-admin fixtures are created in a guarded, run-owned namespace. The
+  # guard re-checks the recorded UID and labels before this delete is used.
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs: ["create", "get", "delete"]
+  - apiGroups: ["core.paprika.io"]
+    resources:
+      - appprojects
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["core.paprika.io"]
+    resources:
+      - appprojects/status
+    verbs: ["update", "patch"]
+  - apiGroups: ["clusters.paprika.io"]
+    resources:
+      - clusters
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["clusters.paprika.io"]
+    resources:
+      - clusters/status
+    verbs: ["update", "patch"]
+  - apiGroups: ["pipelines.paprika.io"]
+    resources:
+      - applications
+      - pipelines
+      - releases
+      - stages
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["pipelines.paprika.io"]
+    resources:
+      - applications/status
+      - pipelines/status
+      - releases/status
+      - stages/status
+    verbs: ["update", "patch"]
+  - apiGroups: ["rollouts.paprika.io"]
+    resources:
+      - rollouts
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+  - apiGroups: ["rollouts.paprika.io"]
+    resources:
+      - rollouts/status
+    verbs: ["update", "patch"]
   - apiGroups: ["apiextensions.k8s.io"]
     resources:
       - customresourcedefinitions

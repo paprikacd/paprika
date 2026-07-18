@@ -1,0 +1,84 @@
+apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: catalog-active-rollout
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: catalog
+    app.paprika.io/release: catalog-active
+spec:
+  target:
+    kind: Deployment
+    name: catalog
+  strategy:
+    type: Rolling
+status:
+  observedGeneration: 1
+  phase: Progressing
+  message: Advancing the active rollout
+---
+apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: checkout-complete-rollout
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: checkout
+    app.paprika.io/release: checkout-complete
+spec:
+  target:
+    kind: Deployment
+    name: checkout
+  strategy:
+    type: Rolling
+status:
+  observedGeneration: 1
+  phase: Healthy
+  stableReadyReplicas: 3
+  message: Rollout completed
+---
+apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: ledger-failed-rollout
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: ledger
+    app.paprika.io/release: ledger-failed
+spec:
+  target:
+    kind: Deployment
+    name: ledger
+  strategy:
+    type: Rolling
+status:
+  observedGeneration: 1
+  phase: Failed
+  message: Readiness deadline exceeded
+---
+apiVersion: rollouts.paprika.io/v1alpha1
+kind: Rollout
+metadata:
+  name: billing-gated-rollout
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: billing
+    app.paprika.io/release: billing-gated
+spec:
+  target:
+    kind: Deployment
+    name: billing
+  strategy:
+    type: BlueGreen
+    blueGreen:
+      activeService: billing
+      previewService: billing-preview
+  paused: true
+status:
+  observedGeneration: 1
+  phase: Paused
+  message: Awaiting production change approval

@@ -1,0 +1,33 @@
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: storefront
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  description: Storefront fleet-admin acceptance topology
+  sourceRepos:
+    - https://example.invalid/storefront.git
+  destinations:
+    - name: cluster-east
+      namespace: "*"
+status:
+  observedGeneration: 1
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: finance
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  description: Finance fleet-admin acceptance topology
+  sourceRepos:
+    - https://example.invalid/finance.git
+  destinations:
+    - name: cluster-west
+      namespace: "*"
+status:
+  observedGeneration: 1

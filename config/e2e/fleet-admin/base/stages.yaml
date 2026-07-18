@@ -1,0 +1,105 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: checkout-production
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: checkout
+spec:
+  name: production
+  ring: 1
+  cluster:
+    name: cluster-east
+  templates: []
+status:
+  observedGeneration: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: catalog-staging
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: catalog
+spec:
+  name: staging
+  ring: 1
+  cluster:
+    name: cluster-east
+  templates: []
+status:
+  observedGeneration: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: billing-production
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: billing
+spec:
+  name: production
+  ring: 1
+  cluster:
+    name: cluster-west
+  templates: []
+  approvalGates:
+    - name: change-review
+      type: manual
+      stage: production
+status:
+  observedGeneration: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: ledger-production
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: ledger
+spec:
+  name: production
+  ring: 1
+  cluster:
+    name: cluster-west
+  templates: []
+status:
+  observedGeneration: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: search-development
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+    app.paprika.io/name: search
+spec:
+  name: development
+  ring: 1
+  cluster:
+    name: cluster-east
+  templates: []
+status:
+  observedGeneration: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Stage
+metadata:
+  name: notifications-development
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+    app.paprika.io/name: notifications
+spec:
+  name: development
+  ring: 1
+  cluster:
+    name: cluster-west
+  templates: []
+status:
+  observedGeneration: 1

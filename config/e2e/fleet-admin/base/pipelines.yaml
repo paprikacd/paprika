@@ -1,0 +1,45 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: storefront-ci
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  sources:
+    - type: git
+      url: https://example.invalid/storefront.git
+  steps:
+    - name: verify
+      image: busybox:1.36.1
+      script: echo verified
+status:
+  observedGeneration: 1
+  phase: Succeeded
+  stepStatuses:
+    - name: verify
+      phase: Succeeded
+  lastExecutionId: storefront-fixture-42
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Pipeline
+metadata:
+  name: finance-ci
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  sources:
+    - type: git
+      url: https://example.invalid/finance.git
+  steps:
+    - name: policy-check
+      image: busybox:1.36.1
+      script: echo policy-checked
+status:
+  observedGeneration: 1
+  phase: Running
+  stepStatuses:
+    - name: policy-check
+      phase: Running
+  lastExecutionId: finance-fixture-17

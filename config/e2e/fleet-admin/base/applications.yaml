@@ -1,0 +1,216 @@
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  project: storefront
+  source:
+    type: git
+    repoUrl: https://example.invalid/storefront.git
+    revision: fixture
+    path: checkout
+  stages:
+    - name: production
+      ring: 1
+      cluster:
+        name: cluster-east
+  strategy: Rolling
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Healthy
+  currentStage: production
+  synced: true
+  revision: checkout-v42
+  pipelineRef: storefront-ci
+  stageRefs:
+    - checkout-production
+  releaseRef: checkout-complete
+  health: Healthy
+  resources:
+    - kind: Deployment
+      name: checkout
+      status: Synced
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: catalog
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  project: storefront
+  source:
+    type: git
+    repoUrl: https://example.invalid/storefront.git
+    revision: fixture
+    path: catalog
+  stages:
+    - name: staging
+      ring: 1
+      cluster:
+        name: cluster-east
+  strategy: Canary
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Promoting
+  currentStage: staging
+  revision: catalog-v17
+  pipelineRef: storefront-ci
+  stageRefs:
+    - catalog-staging
+  releaseRef: catalog-active
+  health: Progressing
+  resources:
+    - kind: Deployment
+      name: catalog
+      status: Synced
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: billing
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  project: finance
+  source:
+    type: git
+    repoUrl: https://example.invalid/finance.git
+    revision: fixture
+    path: billing
+  stages:
+    - name: production
+      ring: 1
+      cluster:
+        name: cluster-west
+  strategy: BlueGreen
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Degraded
+  currentStage: production
+  revision: billing-v9
+  pipelineRef: finance-ci
+  stageRefs:
+    - billing-production
+  releaseRef: billing-gated
+  health: Degraded
+  resources:
+    - kind: Deployment
+      name: billing
+      status: OutOfSync
+  outOfSync: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: ledger
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  project: finance
+  source:
+    type: git
+    repoUrl: https://example.invalid/finance.git
+    revision: fixture
+    path: ledger
+  stages:
+    - name: production
+      ring: 1
+      cluster:
+        name: cluster-west
+  strategy: Rolling
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Failed
+  currentStage: production
+  revision: ledger-v31
+  pipelineRef: finance-ci
+  stageRefs:
+    - ledger-production
+  releaseRef: ledger-failed
+  resources:
+    - kind: Deployment
+      name: ledger
+      status: OutOfSync
+  outOfSync: 1
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: search
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: storefront
+spec:
+  project: storefront
+  source:
+    type: git
+    repoUrl: https://example.invalid/storefront.git
+    revision: fixture
+    path: search
+  stages:
+    - name: development
+      ring: 1
+      cluster:
+        name: cluster-east
+  strategy: Rolling
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Healthy
+  currentStage: development
+  synced: true
+  revision: search-v5
+  pipelineRef: storefront-ci
+  stageRefs:
+    - search-development
+  health: Unknown
+  resources:
+    - kind: Deployment
+      name: search
+      status: Synced
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: notifications
+  labels:
+    paprika.io/e2e-suite: fleet-admin-dashboard
+    app.paprika.io/project: finance
+spec:
+  project: finance
+  source:
+    type: git
+    repoUrl: https://example.invalid/finance.git
+    revision: fixture
+    path: notifications
+  stages:
+    - name: development
+      ring: 1
+      cluster:
+        name: cluster-west
+  strategy: Rolling
+  syncPolicy: Manual
+status:
+  observedGeneration: 1
+  phase: Healthy
+  currentStage: development
+  revision: notifications-v12
+  pipelineRef: finance-ci
+  stageRefs:
+    - notifications-development
+  health: Healthy
+  resources:
+    - kind: ConfigMap
+      name: notifications-routing
+      status: Missing
