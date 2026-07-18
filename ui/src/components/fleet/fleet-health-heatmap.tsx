@@ -384,6 +384,10 @@ export function FleetHealthHeatmap({
       if (!cell || !identity) return
       focusCell(cell)
       onSelectApplication?.(identity)
+      // Selection updates preserve scroll on the inventory route. Reset before
+      // the detail navigation so the sticky admin/scope rail cannot cover the
+      // detail header when both router transitions are scheduled together.
+      window.scrollTo(0, 0)
       router.push(fleetDetailHref("application", identity, new URLSearchParams(query)))
     },
     [focusCell, onSelectApplication, query, router],

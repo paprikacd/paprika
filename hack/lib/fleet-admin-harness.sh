@@ -7,6 +7,7 @@
 FLEET_ADMIN_SUITE_LABEL="${FLEET_ADMIN_SUITE_LABEL:-paprika.io/e2e-suite=fleet-admin-dashboard}"
 FLEET_ADMIN_CLI_PID="${FLEET_ADMIN_CLI_PID:-}"
 FLEET_ADMIN_FORWARD_PID="${FLEET_ADMIN_FORWARD_PID:-}"
+FLEET_ADMIN_BOUNDED_PID="${FLEET_ADMIN_BOUNDED_PID:-}"
 FLEET_ADMIN_NAMESPACE="${FLEET_ADMIN_NAMESPACE:-}"
 FLEET_ADMIN_NAMESPACE_UID="${FLEET_ADMIN_NAMESPACE_UID:-}"
 FLEET_ADMIN_RUN_ID="${FLEET_ADMIN_RUN_ID:-}"
@@ -182,9 +183,14 @@ fleet_admin_run_recorded_bounded() {
   local raw="${FLEET_ADMIN_WORK_DIR}/${name}.raw"
   local iterations
   iterations="$(fleet_admin_duration_poll_iterations "${timeout}")" || return $?
+  [[ -z "${FLEET_ADMIN_BOUNDED_PID}" ]] || {
+    fleet_admin_log "refusing concurrent bounded command while PID ${FLEET_ADMIN_BOUNDED_PID} is owned"
+    return 125
+  }
 
   "$@" >"${raw}" 2>&1 &
   local pid=$!
+  FLEET_ADMIN_BOUNDED_PID="${pid}"
   local timed_out=0
   if ! fleet_admin_wait_owned_child_iterations "${pid}" "${iterations}"; then
     timed_out=1
@@ -215,6 +221,7 @@ fleet_admin_run_recorded_bounded() {
 
   local command_status=0
   wait "${pid}" 2>/dev/null || command_status=$?
+  FLEET_ADMIN_BOUNDED_PID=""
   local redact_status=0
   fleet_admin_redact_file \
     "${raw}" "${FLEET_ADMIN_ARTIFACT_DIR}/${name}.log" ||
@@ -346,6 +353,43 @@ fleet_admin_stop_owned_forward() {
   local result=0
   wait "${pid}" 2>/dev/null || result=$?
   printf 'harness:normal-forward-exit=%s\n' "${result}" >>"${result_log}"
+  return "${result}"
+}
+
+fleet_admin_stop_owned_bounded() {
+  local pid=$1
+  local timeout_seconds=$2
+  local result_log=$3
+  local kill_timeout_seconds=${4:-${FLEET_ADMIN_KILL_TIMEOUT_SECONDS:-2}}
+  [[ "${pid}" =~ ^[1-9][0-9]*$ ]] || return 0
+  fleet_admin_is_active_child "${pid}" || {
+    local early_result=0
+    wait "${pid}" 2>/dev/null || early_result=$?
+    printf 'harness:bounded-exit=%s\n' "${early_result}" >>"${result_log}"
+    return "${early_result}"
+  }
+
+  if fleet_admin_signal_active_child "${pid}" TERM; then
+    printf 'harness:bounded-sigterm\n' >>"${result_log}"
+  fi
+  local deadline=$((SECONDS + timeout_seconds))
+  while ((SECONDS < deadline)) && fleet_admin_is_active_child "${pid}"; do
+    sleep 0.05
+  done
+  if fleet_admin_signal_active_child "${pid}" KILL; then
+    printf 'harness:bounded-sigkill-after-timeout\n' >>"${result_log}"
+    deadline=$((SECONDS + kill_timeout_seconds))
+    while ((SECONDS < deadline)) && fleet_admin_is_active_child "${pid}"; do
+      sleep 0.05
+    done
+  fi
+  if fleet_admin_is_active_child "${pid}"; then
+    printf 'harness:bounded-still-running-after-sigkill\n' >>"${result_log}"
+    return 1
+  fi
+  local result=0
+  wait "${pid}" 2>/dev/null || result=$?
+  printf 'harness:bounded-exit=%s\n' "${result}" >>"${result_log}"
   return "${result}"
 }
 
@@ -483,6 +527,19 @@ fleet_admin_stop_all_owned_processes() {
   local cleanup_status=0
   local process_status=0
   mkdir -p "$(dirname "${result_log}")"
+  # Bounded acceptance commands may own a detached browser process group. Stop
+  # that group before revoking the admin session it is actively using.
+  if [[ -n "${FLEET_ADMIN_BOUNDED_PID}" ]]; then
+    fleet_admin_stop_owned_bounded \
+      "${FLEET_ADMIN_BOUNDED_PID}" \
+      "${FLEET_ADMIN_STOP_TIMEOUT_SECONDS:-10}" \
+      "${result_log}" ||
+      {
+        process_status=$?
+        cleanup_status=${process_status}
+      }
+    FLEET_ADMIN_BOUNDED_PID=""
+  fi
   # The CLI must exit first: its authenticated DELETE revokes the session while
   # the hidden Kubernetes tunnel is still owned by the CLI.
   if [[ -n "${FLEET_ADMIN_CLI_PID}" ]]; then
@@ -1154,6 +1211,132 @@ fleet_admin_prove_auth_boundaries() {
   fleet_admin_assert_unauthenticated normal-forward-fleet
 }
 
+fleet_admin_expected_application_digest() {
+  local stable_ids=$1
+  # shellcheck disable=SC2016 # JavaScript template interpolation, not shell expansion.
+  "${FLEET_ADMIN_NODE}" -e '
+    const ids = JSON.parse(process.argv[1]);
+    if (!Array.isArray(ids) || ids.length === 0 ||
+        ids.some((value) => typeof value !== "string")) process.exit(2);
+    const encoder = new TextEncoder();
+    const mask = BigInt("18446744073709551615");
+    const prime = BigInt("1099511628211");
+    let hash = BigInt("14695981039346656037");
+    const hashByte = (byte) => {
+      hash ^= BigInt(byte);
+      hash = (hash * prime) & mask;
+    };
+    for (const stableId of [...ids].sort()) {
+      const encoded = encoder.encode(stableId);
+      hashByte((encoded.length >>> 24) & 0xff);
+      hashByte((encoded.length >>> 16) & 0xff);
+      hashByte((encoded.length >>> 8) & 0xff);
+      hashByte(encoded.length & 0xff);
+      for (const byte of encoded) hashByte(byte);
+    }
+    process.stdout.write(`hm1-${hash.toString(16).padStart(16, "0")}`);
+  ' "${stable_ids}"
+}
+
+fleet_admin_run_live_playwright() {
+  local stable_ids
+  stable_ids="$(jq -cn --arg namespace "${FLEET_ADMIN_NAMESPACE}" '
+    ["billing", "catalog", "checkout", "ledger", "notifications", "search"]
+    | map("a:" + $namespace + "/" + .)
+  ')"
+  local expected_digest
+  expected_digest="$(fleet_admin_expected_application_digest "${stable_ids}")"
+  [[ "${expected_digest}" =~ ^hm1-[0-9a-f]{16}$ ]] || {
+    fleet_admin_log "failed to compute the exact fleet fixture digest"
+    return 1
+  }
+  local reviewed_subject
+  reviewed_subject="$(jq -er '.subject' \
+    "${FLEET_ADMIN_ARTIFACT_DIR}/admin-readiness.json")"
+  local playwright_artifacts="${FLEET_ADMIN_ARTIFACT_DIR}/playwright"
+  mkdir -p "${playwright_artifacts}"
+  local stop_timeout_seconds="${FLEET_ADMIN_STOP_TIMEOUT_SECONDS:-10}"
+  [[ "${stop_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || {
+    fleet_admin_log "FLEET_ADMIN_STOP_TIMEOUT_SECONDS must be a positive integer"
+    return 2
+  }
+  local term_timeout_seconds="${FLEET_ADMIN_TERM_TIMEOUT_SECONDS:-2}"
+  [[ "${term_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] || {
+    fleet_admin_log "FLEET_ADMIN_TERM_TIMEOUT_SECONDS must be a positive integer"
+    return 2
+  }
+  local group_kill_boundary_seconds="${stop_timeout_seconds}"
+  if ((10#${term_timeout_seconds} < 10#${group_kill_boundary_seconds})); then
+    group_kill_boundary_seconds="${term_timeout_seconds}"
+  fi
+  # The detached browser group must be KILLed before either caller can KILL
+  # the Node wrapper and lose the process-group owner.
+  local group_kill_after_ms="$((10#${group_kill_boundary_seconds} * 500))"
+
+  fleet_admin_run_recorded_bounded \
+    playwright "${FLEET_ADMIN_PLAYWRIGHT_TIMEOUT:-12m}" \
+    env FLEET_ADMIN_GROUP_KILL_AFTER_MS="${group_kill_after_ms}" \
+    "${FLEET_ADMIN_NODE}" -e '
+      const { spawn } = require("node:child_process");
+      const command = process.argv[1];
+      const groupKillAfterMs = Number(process.env.FLEET_ADMIN_GROUP_KILL_AFTER_MS);
+      if (!Number.isSafeInteger(groupKillAfterMs) || groupKillAfterMs < 100) {
+        console.error("invalid browser process-group kill timeout");
+        process.exit(2);
+      }
+      const child = spawn(command, process.argv.slice(2), {
+        detached: true,
+        stdio: "inherit",
+      });
+      let exited = false;
+      let killTimer;
+      const forward = (signal) => {
+        if (exited || !child.pid) return;
+        try {
+          process.kill(-child.pid, signal);
+        } catch (error) {
+          if (error?.code !== "ESRCH") throw error;
+        }
+      };
+      process.on("SIGINT", () => forward("SIGINT"));
+      process.on("SIGTERM", () => {
+        forward("SIGTERM");
+        if (killTimer) return;
+        killTimer = setTimeout(() => forward("SIGKILL"), groupKillAfterMs);
+      });
+      child.once("error", (error) => {
+        console.error(error.message);
+        process.exit(126);
+      });
+      child.once("exit", (code, signal) => {
+        exited = true;
+        if (killTimer) clearTimeout(killTimer);
+        const signalExit = { SIGINT: 130, SIGTERM: 143, SIGKILL: 137 };
+        process.exit(code ?? signalExit[signal] ?? 1);
+      });
+    ' env \
+    PLAYWRIGHT_NO_WEBSERVER=1 \
+    PAPRIKA_E2E_ADMIN_SESSION_STUB=0 \
+    PAPRIKA_E2E_BASE_URL="${FLEET_ADMIN_PROXY_URL}" \
+    PAPRIKA_E2E_RUN_ID="${FLEET_ADMIN_RUN_ID}" \
+    PAPRIKA_E2E_FIXTURE_MODE=live \
+    PAPRIKA_E2E_RUN_NAMESPACE="${FLEET_ADMIN_NAMESPACE}" \
+    PAPRIKA_E2E_ADMIN_SUBJECT="${reviewed_subject}" \
+    PAPRIKA_E2E_EXPECTED_APPLICATION_IDS="${stable_ids}" \
+    PAPRIKA_E2E_EXPECTED_APPLICATION_COUNT=6 \
+    PAPRIKA_E2E_EXPECTED_APPLICATION_DIGEST="${expected_digest}" \
+    PAPRIKA_E2E_EXPECTED_PROJECT="${FLEET_ADMIN_NAMESPACE}/finance" \
+    PAPRIKA_E2E_EXPECTED_CLUSTER="${FLEET_ADMIN_NAMESPACE}/cluster-west" \
+    PAPRIKA_E2E_EXPECTED_STAGE=production \
+    PAPRIKA_E2E_DETAIL_APPLICATION=checkout \
+    PAPRIKA_E2E_TRACE=on \
+    PAPRIKA_E2E_OUTPUT_DIR="${playwright_artifacts}" \
+    "${FLEET_ADMIN_NPM}" --prefix "${FLEET_ADMIN_ROOT}/ui" \
+    run test:e2e -- \
+    e2e/fleet-admin-live.spec.ts \
+    --project=chromium
+}
+
 fleet_admin_preflight() {
   local kube=(
     "${FLEET_ADMIN_KUBECTL}"
@@ -1182,6 +1365,7 @@ fleet_admin_initialize() {
   # started below may be signalled, and only paths created below may be removed.
   FLEET_ADMIN_CLI_PID=""
   FLEET_ADMIN_FORWARD_PID=""
+  FLEET_ADMIN_BOUNDED_PID=""
   FLEET_ADMIN_NAMESPACE=""
   FLEET_ADMIN_NAMESPACE_UID=""
   FLEET_ADMIN_SUITE_LABEL="paprika.io/e2e-suite=fleet-admin-dashboard"
@@ -1197,6 +1381,8 @@ fleet_admin_initialize() {
   FLEET_ADMIN_HELM="${FLEET_ADMIN_HELM:-helm}"
   FLEET_ADMIN_CURL="${FLEET_ADMIN_CURL:-curl}"
   FLEET_ADMIN_GO="${FLEET_ADMIN_GO:-go}"
+  FLEET_ADMIN_NODE="${FLEET_ADMIN_NODE:-node}"
+  FLEET_ADMIN_NPM="${FLEET_ADMIN_NPM:-npm}"
   FLEET_ADMIN_MAKE="${FLEET_ADMIN_MAKE:-make}"
   FLEET_ADMIN_PAPRIKA_BIN="${FLEET_ADMIN_PAPRIKA_BIN:-${FLEET_ADMIN_ROOT}/bin/paprika}"
   FLEET_ADMIN_REQUEST_TIMEOUT="${FLEET_ADMIN_REQUEST_TIMEOUT:-60s}"
@@ -1268,5 +1454,6 @@ fleet_admin_main() {
   fleet_admin_start_cli
   fleet_admin_query_exact_snapshot
   fleet_admin_prove_auth_boundaries
+  fleet_admin_run_live_playwright
   fleet_admin_log "validated fleet admin dashboard; artifacts: ${FLEET_ADMIN_ARTIFACT_DIR}"
 }

@@ -4,10 +4,14 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+# shellcheck source=/dev/null
+source "${repo_root}/hack/lib/fleet-console-process.sh"
 fixture_pid=""
-fixture_log="$(mktemp "${TMPDIR:-/tmp}/paprika-fleet-console.XXXXXX.log")"
+fixture_log=""
 requested_output_dir="${PAPRIKA_E2E_OUTPUT_DIR:-${repo_root}/ui/test-results}"
 validated_output_dir=""
+fixture_term_timeout_seconds="${PAPRIKA_E2E_FIXTURE_TERM_TIMEOUT_SECONDS:-5}"
+fixture_kill_timeout_seconds="${PAPRIKA_E2E_FIXTURE_KILL_TIMEOUT_SECONDS:-2}"
 
 fail() {
   printf 'fleet console gate: %s\n' "$*" >&2
@@ -16,22 +20,32 @@ fail() {
 
 cleanup() {
   local status=$?
+  local cleanup_status=0
   trap - EXIT INT TERM
   set +e
-  if [[ -n "${fixture_pid}" ]] && kill -0 "${fixture_pid}" >/dev/null 2>&1; then
-    kill "${fixture_pid}" >/dev/null 2>&1 || true
-    wait "${fixture_pid}" >/dev/null 2>&1 || true
+  if [[ -n "${fixture_pid}" ]]; then
+    fleet_console_stop_owned_job \
+      "${fixture_pid}" \
+      "${fixture_term_timeout_seconds}" \
+      "${fixture_kill_timeout_seconds}" || {
+      cleanup_status=$?
+      printf 'fleet console gate: fixture cleanup exceeded its bounded deadline\n' >&2
+    }
   fi
-  if [[ -n "${validated_output_dir}" ]] && [[ -d "${validated_output_dir}" ]]; then
+  if [[ -n "${fixture_log}" ]] &&
+    [[ -n "${validated_output_dir}" ]] &&
+    [[ -d "${validated_output_dir}" ]]; then
     cp "${fixture_log}" "${validated_output_dir}/fleet-console-fixture.log" 2>/dev/null || true
   fi
-  rm -f "${fixture_log}" || true
-  exit "${status}"
+  [[ -z "${fixture_log}" ]] || rm -f "${fixture_log}" || true
+  exit "$(fleet_console_final_status "${status}" "${cleanup_status}")"
 }
 
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+fixture_log="$(fleet_console_allocate_fixture_log "${TMPDIR:-/tmp}")"
 
 for command in go node npm; do
   command -v "${command}" >/dev/null 2>&1 || fail "${command} is required"
@@ -40,6 +54,43 @@ done
 applications="${PAPRIKA_E2E_APPLICATIONS:-250}"
 [[ "${applications}" =~ ^[1-9][0-9]*$ ]] || fail "PAPRIKA_E2E_APPLICATIONS must be a positive integer"
 ((applications <= 100000)) || fail "PAPRIKA_E2E_APPLICATIONS must not exceed 100000"
+[[ "${fixture_term_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] ||
+  fail "PAPRIKA_E2E_FIXTURE_TERM_TIMEOUT_SECONDS must be a positive integer"
+[[ "${fixture_kill_timeout_seconds}" =~ ^[1-9][0-9]*$ ]] ||
+  fail "PAPRIKA_E2E_FIXTURE_KILL_TIMEOUT_SECONDS must be a positive integer"
+
+playwright_specs=(
+  "e2e/fleet-console.spec.ts"
+  "e2e/fleet-responsive.spec.ts"
+)
+if [[ -n "${PAPRIKA_E2E_EXTRA_SPECS:-}" ]]; then
+  normalized_extra_specs="${PAPRIKA_E2E_EXTRA_SPECS//$'\n'/ }"
+  normalized_extra_specs="${normalized_extra_specs//$'\t'/ }"
+  extra_specs=()
+  IFS=' ' read -r -a extra_specs <<<"${normalized_extra_specs}"
+  ((${#extra_specs[@]} > 0)) ||
+    fail "PAPRIKA_E2E_EXTRA_SPECS must name at least one spec"
+  for spec in "${extra_specs[@]}"; do
+    [[ "${spec}" =~ ^e2e/[A-Za-z0-9][A-Za-z0-9._-]*[.]spec[.]ts$ ]] ||
+      fail "PAPRIKA_E2E_EXTRA_SPECS contains an unsafe spec path: ${spec}"
+    [[ -f "${repo_root}/ui/${spec}" ]] ||
+      fail "PAPRIKA_E2E_EXTRA_SPECS does not exist: ${spec}"
+    canonical_spec="$(node -e '
+      const fs = require("node:fs");
+      process.stdout.write(fs.realpathSync(process.argv[1]));
+    ' "${repo_root}/ui/${spec}")"
+    [[ "$(dirname "${canonical_spec}")" == "${repo_root}/ui/e2e" ]] ||
+      fail "PAPRIKA_E2E_EXTRA_SPECS must stay directly under ui/e2e: ${spec}"
+    duplicate=0
+    for accepted in "${playwright_specs[@]}"; do
+      if [[ "${accepted}" == "${spec}" ]]; then
+        duplicate=1
+        break
+      fi
+    done
+    [[ "${duplicate}" == 0 ]] && playwright_specs+=("${spec}")
+  done
+fi
 
 choose_free_port() {
   node -e '
@@ -124,6 +175,7 @@ fixture_pid=$!
 base_url="http://127.0.0.1:${port}"
 ready=0
 for _ in $(seq 1 240); do
+  # shellcheck disable=SC2016 # JavaScript template interpolation, not shell expansion.
   if node -e '
     fetch(`${process.argv[1]}/readyz`, { signal: AbortSignal.timeout(750) })
       .then(async (response) => {
@@ -149,9 +201,11 @@ PLAYWRIGHT_NO_WEBSERVER=1 \
 PAPRIKA_E2E_BASE_URL="${base_url}" \
 PAPRIKA_E2E_PORT="${port}" \
 PAPRIKA_E2E_OUTPUT_DIR="${validated_output_dir}" \
+PAPRIKA_E2E_APPLICATIONS="${applications}" \
+PAPRIKA_E2E_RUN_NAMESPACE="${PAPRIKA_E2E_RUN_NAMESPACE:-team-00}" \
+PAPRIKA_E2E_ADMIN_SUBJECT="${PAPRIKA_E2E_ADMIN_SUBJECT:-system:serviceaccount:paprika-e2e:reviewed-fleet-admin}" \
 npm --prefix "${repo_root}/ui" run test:e2e -- \
-  e2e/fleet-console.spec.ts \
-  e2e/fleet-responsive.spec.ts \
+  "${playwright_specs[@]}" \
   --project=chromium
 
 printf 'Fleet console browser gate passed; evidence: %s\n' "${validated_output_dir}"

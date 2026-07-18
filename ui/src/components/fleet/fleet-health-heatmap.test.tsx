@@ -580,6 +580,7 @@ describe("FleetHealthHeatmap", () => {
   it("opens query-preserving application detail on Enter and pointer activation", () => {
     navigation.query = "project=tenant%2Fpayments&namespace=apps&namespace=ops&q=error&custom=keep&view=heatmap"
     const onSelectApplication = vi.fn()
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined)
     renderHeatmap({
       result: result([
         group("opaque-group", [application("opaque-checkout", "checkout", "healthy")]),
@@ -591,11 +592,13 @@ describe("FleetHealthHeatmap", () => {
 
     fireEvent.keyDown(host, { key: "Enter" })
     expect(onSelectApplication).toHaveBeenLastCalledWith({ namespace: "apps", name: "checkout" })
+    expect(scrollTo).toHaveBeenLastCalledWith(0, 0)
     expectDetailNavigation(navigation.push.mock.calls.at(-1)?.[0])
 
     navigation.push.mockClear()
     fireEvent.click(host, { clientX: 28, clientY: 38 })
     expect(navigation.push).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenCalledTimes(2)
     expectDetailNavigation(navigation.push.mock.calls[0]?.[0])
   })
 

@@ -54,6 +54,13 @@ export interface HeatmapOracleResult {
   digest: string
 }
 
+export interface ExactFleetMapExpectation {
+  namespace: string
+  stableIds: readonly string[]
+  count: number
+  digest: string
+}
+
 /**
  * Independent wire oracle for the browser tests. It deliberately does not
  * import the UI's fleet client, layout code, or digest implementation.
@@ -184,6 +191,96 @@ export function assertWireCompleteness(capture: FleetMapCapture) {
     .toBe(capture.leaves.length)
   expect(capture.leaves.length, "raw Application-leaf count must equal unique stable-ID count")
     .toBe(uniqueStableIds.size)
+  expect(
+    sampledPreviewSignals(capture.response),
+    "the accepted fleet map must be complete, never a sampled or truncated preview",
+  ).toEqual([])
+}
+
+export function assertExactFleetMap(
+  capture: FleetMapCapture,
+  expected: ExactFleetMapExpectation,
+) {
+  assertWireCompleteness(capture)
+  const expectedStableIds = [...expected.stableIds].sort()
+  expect(expected.count, "declared fixture count must equal exact expected identities")
+    .toBe(expectedStableIds.length)
+  expect(
+    independentStableIdDigest(expectedStableIds),
+    "declared fixture digest must match exact expected identities",
+  ).toBe(expected.digest)
+  expect(capture.total, "run-scoped fleet response count").toBe(expected.count)
+  expect([...capture.stableIds].sort(), "run-scoped fleet leaf identities")
+    .toEqual(expectedStableIds)
+  expect(capture.digest, "run-scoped fleet response digest").toBe(expected.digest)
+  expect(
+    capture.leaves.map((leaf) => leaf.application?.namespace),
+    "every accepted Application leaf must belong to the selected run namespace",
+  ).toEqual(Array.from({ length: expected.count }, () => expected.namespace))
+  expect(
+    requestNamespaces(capture.request),
+    "the exact fixture snapshot must be requested through the selected namespace scope",
+  ).toEqual([expected.namespace])
+}
+
+export type FleetMapSubsetSelection =
+  | {
+    field: "project" | "cluster"
+    value: { namespace: string; name: string }
+  }
+  | {
+    field: "stage"
+    value: string
+  }
+
+export function auditExactFleetMapSubset(
+  baseline: Pick<FleetMapCapture, "leaves" | "stableIds">,
+  selected: Pick<FleetMapCapture, "total" | "leaves" | "stableIds" | "digest">,
+  selection: FleetMapSubsetSelection,
+) {
+  const expectedStableIds = baseline.leaves
+    .filter((leaf) => fleetMapLeafMatchesSelection(leaf, selection))
+    .flatMap((leaf) => typeof leaf.stableId === "string" ? [leaf.stableId] : [])
+    .sort()
+  const violations: string[] = []
+  if (expectedStableIds.length === 0) {
+    violations.push("selected metadata matches no baseline applications")
+  }
+  if (expectedStableIds.length >= baseline.stableIds.length) {
+    violations.push(
+      `selected metadata must narrow the baseline of ${baseline.stableIds.length} applications`,
+    )
+  }
+  if (
+    selected.total !== expectedStableIds.length ||
+    selected.leaves.length !== expectedStableIds.length
+  ) {
+    violations.push(
+      `selected response total=${selected.total} leaves=${selected.leaves.length} ` +
+        `expected=${expectedStableIds.length}`,
+    )
+  }
+  const selectedStableIds = [...selected.stableIds].sort()
+  if (JSON.stringify(selectedStableIds) !== JSON.stringify(expectedStableIds)) {
+    violations.push(
+      "selected response stable identities differ from the baseline-derived subset",
+    )
+  }
+  const expectedDigest = independentStableIdDigest(expectedStableIds)
+  if (selected.digest !== expectedDigest) {
+    violations.push(
+      `selected response digest=${selected.digest} expected=${expectedDigest}`,
+    )
+  }
+  for (const leaf of selected.leaves) {
+    if (!fleetMapLeafMatchesSelection(leaf, selection)) {
+      violations.push(
+        `selected response leaf ${leaf.stableId ?? "<missing stableId>"} ` +
+          `does not match ${describeFleetMapSelection(selection)}`,
+      )
+    }
+  }
+  return { expectedStableIds, violations }
 }
 
 export function flattenApplicationLeaves(roots: readonly WireFleetMapNode[]) {
@@ -196,6 +293,26 @@ export function flattenApplicationLeaves(roots: readonly WireFleetMapNode[]) {
     pending.push(...(node.children ?? []))
   }
   return leaves
+}
+
+function fleetMapLeafMatchesSelection(
+  leaf: WireFleetMapNode,
+  selection: FleetMapSubsetSelection,
+) {
+  if (selection.field === "stage") {
+    return leaf.applicationMetadata?.currentStage === selection.value
+  }
+  const actual = selection.field === "project"
+    ? leaf.applicationMetadata?.project
+    : leaf.applicationMetadata?.currentCluster
+  return actual?.namespace === selection.value.namespace &&
+    actual.name === selection.value.name
+}
+
+function describeFleetMapSelection(selection: FleetMapSubsetSelection) {
+  return selection.field === "stage"
+    ? `stage ${selection.value}`
+    : `${selection.field} ${selection.value.namespace}/${selection.value.name}`
 }
 
 export function independentStableIdDigest(stableIds: readonly string[]) {
@@ -218,6 +335,44 @@ export function independentStableIdDigest(stableIds: readonly string[]) {
   return `hm1-${hash.toString(16).padStart(16, "0")}`
 }
 
+export function sampledPreviewSignals(value: unknown): string[] {
+  const signals: string[] = []
+  const pending: Array<{ path: string; value: unknown }> = [{ path: "$", value }]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (!current) continue
+    if (typeof current.value === "string") {
+      if (/\b(sampled preview|sampled subset|preview only|truncated result)\b/iu.test(current.value)) {
+        signals.push(`${current.path}=${JSON.stringify(current.value)}`)
+      }
+      continue
+    }
+    if (Array.isArray(current.value)) {
+      current.value.forEach((entry, index) => {
+        pending.push({ path: `${current.path}[${index}]`, value: entry })
+      })
+      continue
+    }
+    if (!current.value || typeof current.value !== "object") continue
+    for (const [key, entry] of Object.entries(current.value)) {
+      const normalized = key.toLocaleLowerCase().replaceAll("_", "")
+      if (
+        ["sampled", "issampled", "samplesize", "truncated", "istruncated", "previewonly"]
+          .includes(normalized) &&
+        entry !== false &&
+        entry !== 0 &&
+        entry !== "0" &&
+        entry !== null &&
+        entry !== undefined
+      ) {
+        signals.push(`${current.path}.${key}=${JSON.stringify(entry)}`)
+      }
+      pending.push({ path: `${current.path}.${key}`, value: entry })
+    }
+  }
+  return signals
+}
+
 function decimalCount(value: string | number | undefined) {
   if (value === undefined) return 0
   const parsed = typeof value === "number" ? value : Number(value)
@@ -236,6 +391,15 @@ function requestJSON(request: Request): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+export function requestNamespaces(request: Record<string, unknown>) {
+  const filter = request.filter
+  if (!filter || typeof filter !== "object" || Array.isArray(filter)) return []
+  const namespaces = (filter as Record<string, unknown>).namespaces
+  return Array.isArray(namespaces)
+    ? namespaces.filter((value): value is string => typeof value === "string")
+    : []
 }
 
 async function heatmapAttributes(host: Locator) {

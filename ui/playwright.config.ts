@@ -1,11 +1,15 @@
 import { defineConfig, devices } from "@playwright/test"
+import { join } from "node:path"
 
 const fixturePort = positivePort(process.env.PAPRIKA_E2E_PORT ?? "3100")
 const baseURL = process.env.PAPRIKA_E2E_BASE_URL ?? `http://127.0.0.1:${fixturePort}`
 const desktopViewport = { width: 1920, height: 1080 }
 const useExternalServer = process.env.PLAYWRIGHT_NO_WEBSERVER === "1"
 const trace = process.env.PAPRIKA_E2E_TRACE === "on" ? "on" : "retain-on-failure"
-const outputDir = process.env.PAPRIKA_E2E_OUTPUT_DIR ?? "test-results"
+const artifactRoot = process.env.PAPRIKA_E2E_OUTPUT_DIR ?? "test-results"
+const outputDir = join(artifactRoot, "test-results")
+const reportDir = join(artifactRoot, "playwright-report")
+const resultsFile = join(artifactRoot, "results.json")
 
 export default defineConfig({
   testDir: "./e2e",
@@ -15,9 +19,11 @@ export default defineConfig({
   },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI
-    ? [["line"], ["html", { open: "never" }]]
-    : "line",
+  reporter: [
+    ["line"],
+    ["html", { open: "never", outputFolder: reportDir }],
+    ["json", { outputFile: resultsFile }],
+  ],
   outputDir,
   use: {
     baseURL,

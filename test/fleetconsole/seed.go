@@ -234,10 +234,10 @@ func fixtureStateFor(index int) fixtureState {
 		}
 	case 4:
 		return fixtureState{
-			project: "payments", sourceType: pipelinesv1alpha1.SourceTypeS3,
+			project: "governance", sourceType: pipelinesv1alpha1.SourceTypeS3,
 			application: pipelinesv1alpha1.ApplicationPromoting, health: pipelinesv1alpha1.HealthProgressing,
-			synced: true, stageName: "production", stagePhase: "Pending", release: pipelinesv1alpha1.ReleaseAwaitingApproval,
-			rollout: rolloutsv1alpha1.RolloutPhasePaused, repository: "source-primary", cluster: "delivery-primary",
+			synced: true, stageName: "staging", stagePhase: "Pending", release: pipelinesv1alpha1.ReleaseAwaitingApproval,
+			rollout: rolloutsv1alpha1.RolloutPhasePaused, repository: "source-primary", cluster: "delivery-unhealthy",
 			pipeline:      pipelinesv1alpha1.PipelineRunning,
 			blockedByGate: true,
 		}

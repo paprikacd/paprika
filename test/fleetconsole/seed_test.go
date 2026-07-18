@@ -72,6 +72,8 @@ func TestSeedFixturePublishesDeterministicRealObjectStates(t *testing.T) {
 
 	assertFixtureSummary(t, snapshot, types.NamespacedName{Namespace: "team-00", Name: "checkout-service"}, expectedFixtureSummary{
 		project:              "payments",
+		currentStage:         "production",
+		currentCluster:       "delivery-primary",
 		health:               fleet.HealthHealthy,
 		sync:                 fleet.SyncStateSynced,
 		release:              fleet.ReleaseStateComplete,
@@ -82,6 +84,8 @@ func TestSeedFixturePublishesDeterministicRealObjectStates(t *testing.T) {
 	})
 	assertFixtureSummary(t, snapshot, types.NamespacedName{Namespace: "team-01", Name: "application-00001"}, expectedFixtureSummary{
 		project:              "commerce",
+		currentStage:         "production",
+		currentCluster:       "delivery-unhealthy",
 		health:               fleet.HealthDegraded,
 		sync:                 fleet.SyncStateUnknown,
 		release:              fleet.ReleaseStateFailed,
@@ -92,6 +96,8 @@ func TestSeedFixturePublishesDeterministicRealObjectStates(t *testing.T) {
 	})
 	assertFixtureSummary(t, snapshot, types.NamespacedName{Namespace: "team-02", Name: "application-00002"}, expectedFixtureSummary{
 		project:              "fulfillment",
+		currentStage:         "production",
+		currentCluster:       "delivery-primary",
 		health:               fleet.HealthHealthy,
 		sync:                 fleet.SyncStateOutOfSync,
 		release:              fleet.ReleaseStateComplete,
@@ -103,6 +109,8 @@ func TestSeedFixturePublishesDeterministicRealObjectStates(t *testing.T) {
 	})
 	assertFixtureSummary(t, snapshot, types.NamespacedName{Namespace: "team-03", Name: "application-00003"}, expectedFixtureSummary{
 		project:              "platform",
+		currentStage:         "production",
+		currentCluster:       "delivery-primary",
 		health:               fleet.HealthProgressing,
 		sync:                 fleet.SyncStateSynced,
 		release:              fleet.ReleaseStatePromoting,
@@ -112,13 +120,15 @@ func TestSeedFixturePublishesDeterministicRealObjectStates(t *testing.T) {
 		sourceType:           fleet.SourceTypeOCI,
 	})
 	assertFixtureSummary(t, snapshot, types.NamespacedName{Namespace: "team-04", Name: "application-00004"}, expectedFixtureSummary{
-		project:              "payments",
+		project:              "governance",
+		currentStage:         "staging",
+		currentCluster:       "delivery-unhealthy",
 		health:               fleet.HealthProgressing,
 		sync:                 fleet.SyncStateSynced,
 		release:              fleet.ReleaseStateAwaitingApproval,
 		rollout:              fleet.RolloutStatePaused,
 		repositoryConnection: fleet.ConnectionStateHealthy,
-		clusterConnection:    fleet.ConnectionStateHealthy,
+		clusterConnection:    fleet.ConnectionStateUnhealthy,
 		sourceType:           fleet.SourceTypeS3,
 		blockedGateCount:     1,
 	})
@@ -608,6 +618,8 @@ func fixtureRolloutsByKey(items []rolloutsv1alpha1.Rollout) map[types.Namespaced
 
 type expectedFixtureSummary struct {
 	project              string
+	currentStage         string
+	currentCluster       string
 	health               fleet.Health
 	sync                 fleet.SyncState
 	release              fleet.ReleaseState
@@ -638,8 +650,12 @@ func assertFixtureSummary(
 	require.Equal(t, want.sourceType, summary.SourceType)
 	require.Equal(t, want.driftCount, summary.DriftCount)
 	require.Equal(t, want.blockedGateCount, summary.BlockedGateCount)
-	require.Equal(t, "production", summary.CurrentStage)
+	require.Equal(t, want.currentStage, summary.CurrentStage)
 	require.Len(t, summary.Targets, 1)
+	require.Equal(t, types.NamespacedName{
+		Namespace: key.Namespace,
+		Name:      want.currentCluster,
+	}, summary.Targets[0].Cluster)
 	require.Equal(t, want.clusterConnection, summary.Targets[0].ClusterConnection)
 	require.NotZero(t, summary.LastTransitionUnixMS)
 }
@@ -654,7 +670,7 @@ func assertRealFixtureAssociations(t *testing.T, reader client.Reader) {
 	require.NotEmpty(t, app.UID)
 
 	stage := &pipelinesv1alpha1.Stage{}
-	require.NoError(t, reader.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Name + "-production"}, stage))
+	require.NoError(t, reader.Get(ctx, types.NamespacedName{Namespace: app.Namespace, Name: app.Name + "-staging"}, stage))
 	require.Equal(t, app.Name, stage.Labels["app.paprika.io/name"])
 	assertControllerOwner(t, stage.OwnerReferences, "Application", app.Name, app.UID)
 

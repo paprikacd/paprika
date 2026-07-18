@@ -27,6 +27,7 @@ const test = base.extend<RuntimeAuditFixtures>({
   runtimeAudit: [
     async ({ page }, use) => {
       const audit = installRuntimeAudit(page)
+      await audit.ready()
       await use(audit)
       await audit.assertClean()
     },

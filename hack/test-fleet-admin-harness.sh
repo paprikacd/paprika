@@ -11,6 +11,13 @@ TESTS_RUN=0
 
 cleanup() {
   local status=$?
+  for owned_pid in \
+    "${TIMEOUT_NPM_PID:-}" \
+    "${TIMEOUT_BROWSER_PID:-}"; do
+    if [[ "${owned_pid}" =~ ^[1-9][0-9]*$ ]]; then
+      kill -KILL "${owned_pid}" 2>/dev/null || true
+    fi
+  done
   if [[ -n "${INDEPENDENT_PID:-}" ]]; then
     kill "${INDEPENDENT_PID}" 2>/dev/null || true
     wait "${INDEPENDENT_PID}" 2>/dev/null || true
@@ -1165,11 +1172,68 @@ FAKE
 cat >"${FULL_FAKE_BIN}/npm" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'playwright-env base=%s run=%s namespace=%s subject=%s count=%s digest=%s project=%s cluster=%s stage=%s detail=%s trace=%s output=%s\n' \
+  "${PAPRIKA_E2E_BASE_URL:-}" \
+  "${PAPRIKA_E2E_RUN_ID:-}" \
+  "${PAPRIKA_E2E_RUN_NAMESPACE:-}" \
+  "${PAPRIKA_E2E_ADMIN_SUBJECT:-}" \
+  "${PAPRIKA_E2E_EXPECTED_APPLICATION_COUNT:-}" \
+  "${PAPRIKA_E2E_EXPECTED_APPLICATION_DIGEST:-}" \
+  "${PAPRIKA_E2E_EXPECTED_PROJECT:-}" \
+  "${PAPRIKA_E2E_EXPECTED_CLUSTER:-}" \
+  "${PAPRIKA_E2E_EXPECTED_STAGE:-}" \
+  "${PAPRIKA_E2E_DETAIL_APPLICATION:-}" \
+  "${PAPRIKA_E2E_TRACE:-}" \
+  "${PAPRIKA_E2E_OUTPUT_DIR:-}" \
+  >>"${FAKE_COMMAND_LOG}"
+printf 'playwright-identities=%s\n' \
+  "${PAPRIKA_E2E_EXPECTED_APPLICATION_IDS:-}" >>"${FAKE_COMMAND_LOG}"
+printf 'playwright-admin-session-stub=%s\n' \
+  "${PAPRIKA_E2E_ADMIN_SESSION_STUB:-unset}" >>"${FAKE_COMMAND_LOG}"
 printf 'npm' >>"${FAKE_COMMAND_LOG}"
 for argument in "$@"; do
   printf ' %q' "${argument}" >>"${FAKE_COMMAND_LOG}"
 done
 printf '\n' >>"${FAKE_COMMAND_LOG}"
+printf 'npm-block-config mode=%s npm-pid-file=%s browser-pid-file=%s\n' \
+  "${FAKE_NPM_BLOCK:-unset}" \
+  "${FAKE_NPM_PID_FILE:-unset}" \
+  "${FAKE_BROWSER_PID_FILE:-unset}" \
+  >>"${FAKE_COMMAND_LOG}"
+if [[ "${FAKE_NPM_BLOCK:-0}" != 0 ]]; then
+  printf '%s\n' "$$" >"${FAKE_NPM_PID_FILE}"
+  /usr/bin/perl -e '
+    use strict;
+    use warnings;
+    open my $pid_file, ">", $ENV{FAKE_BROWSER_PID_FILE} or die $!;
+    print {$pid_file} "$$\n";
+    close $pid_file;
+    $SIG{TERM} = sub {
+      open my $log, ">>", $ENV{FAKE_COMMAND_LOG} or die $!;
+      print {$log} $ENV{FAKE_NPM_BLOCK} eq "ignore-term"
+        ? "browser-block-ignore-term\n"
+        : "browser-block-term\n";
+      close $log;
+      exit 0 unless $ENV{FAKE_NPM_BLOCK} eq "ignore-term";
+    };
+    $SIG{INT} = $SIG{TERM};
+    select undef, undef, undef, 0.05 while 1;
+  ' &
+  browser_pid=$!
+  if [[ "${FAKE_NPM_BLOCK}" == ignore-term ]]; then
+    trap 'printf "npm-block-ignore-term\n" >>"${FAKE_COMMAND_LOG}"' TERM
+  else
+    trap '
+      printf "npm-block-term\n" >>"${FAKE_COMMAND_LOG}"
+      wait "${browser_pid}" 2>/dev/null || true
+      exit 0
+    ' INT TERM
+  fi
+  printf 'npm-block-ready\n' >>"${FAKE_COMMAND_LOG}"
+  while kill -0 "${browser_pid}" 2>/dev/null; do
+    wait "${browser_pid}" 2>/dev/null || true
+  done
+fi
 FAKE
 
 cat >"${FULL_FAKE_BIN}/make" <<'FAKE'
@@ -1190,6 +1254,7 @@ env \
   PATH="${FULL_FAKE_BIN}:${PATH}" \
   FAKE_COMMAND_LOG="${FULL_COMMAND_LOG}" \
   FAKE_SNAPSHOT_FIXTURE_DIR="${EXACT_SNAPSHOT_DIR}" \
+  PAPRIKA_E2E_ADMIN_SESSION_STUB=1 \
   FLEET_ADMIN_KUBECTL="${FULL_FAKE_BIN}/kubectl" \
   FLEET_ADMIN_HELM="${FULL_FAKE_BIN}/helm" \
   FLEET_ADMIN_GUARD_BIN="${FULL_FAKE_BIN}/guard" \
@@ -1289,6 +1354,17 @@ assert_file_contains "${FULL_COMMAND_LOG}" \
   '--selector=paprika.io/e2e-suite=fleet-admin-dashboard\,paprika.io/e2e-run=fake-success'
 assert_file_contains "${FULL_COMMAND_LOG}" \
   'guard delete --run-id fake-success --namespace paprika-fleet-e2e-fake-success --uid uid-fake-success'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'npm --prefix'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'run test:e2e -- e2e/fleet-admin-live.spec.ts --project=chromium'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'playwright-env base=http://127.0.0.1:43123 run=fake-success namespace=paprika-fleet-e2e-fake-success subject=ci-example.test count=6 digest=hm1-'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'project=paprika-fleet-e2e-fake-success/finance cluster=paprika-fleet-e2e-fake-success/cluster-west stage=production detail=checkout trace=on'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'playwright-identities=["a:paprika-fleet-e2e-fake-success/billing","a:paprika-fleet-e2e-fake-success/catalog","a:paprika-fleet-e2e-fake-success/checkout","a:paprika-fleet-e2e-fake-success/ledger","a:paprika-fleet-e2e-fake-success/notifications","a:paprika-fleet-e2e-fake-success/search"]'
+assert_file_contains "${FULL_COMMAND_LOG}" 'playwright-admin-session-stub=0'
 DIAGNOSTIC_LINE="$(first_line_containing "${FULL_COMMAND_LOG}" ' logs ')"
 RUN_VALIDATION_LINE="$(
   first_line_containing "${FULL_COMMAND_LOG}" \
@@ -1346,6 +1422,135 @@ for secret in \
   fi
 done
 pass "full fake lifecycle validates auth boundaries, revokes first, preserves sanitized artifacts, and owns only its PIDs"
+
+INTERRUPT_ARTIFACT_ROOT="${TEST_ROOT}/interrupt-artifacts"
+INTERRUPT_NPM_PID_FILE="${TEST_ROOT}/interrupt-npm.pid"
+INTERRUPT_BROWSER_PID_FILE="${TEST_ROOT}/interrupt-browser.pid"
+mkdir -p "${INTERRUPT_ARTIFACT_ROOT}"
+env \
+  PATH="${FULL_FAKE_BIN}:${PATH}" \
+  FAKE_COMMAND_LOG="${FULL_COMMAND_LOG}" \
+  FAKE_SNAPSHOT_FIXTURE_DIR="${EXACT_SNAPSHOT_DIR}" \
+  FAKE_NPM_BLOCK=ignore-term \
+  FAKE_NPM_PID_FILE="${INTERRUPT_NPM_PID_FILE}" \
+  FAKE_BROWSER_PID_FILE="${INTERRUPT_BROWSER_PID_FILE}" \
+  FLEET_ADMIN_KUBECTL="${FULL_FAKE_BIN}/kubectl" \
+  FLEET_ADMIN_HELM="${FULL_FAKE_BIN}/helm" \
+  FLEET_ADMIN_GUARD_BIN="${FULL_FAKE_BIN}/guard" \
+  FLEET_ADMIN_CURL="${FULL_FAKE_BIN}/curl" \
+  FLEET_ADMIN_PAPRIKA_BIN="${FULL_FAKE_BIN}/paprika" \
+  FLEET_ADMIN_NPM="${FULL_FAKE_BIN}/npm" \
+  FLEET_ADMIN_MAKE="${FULL_FAKE_BIN}/make" \
+  FLEET_ADMIN_SKIP_CLI_BUILD=1 \
+  FLEET_ADMIN_STOP_TIMEOUT_SECONDS=2 \
+  FLEET_ADMIN_TERM_TIMEOUT_SECONDS=1 \
+  FLEET_ADMIN_KILL_TIMEOUT_SECONDS=1 \
+  FLEET_ADMIN_REQUEST_TIMEOUT=7s \
+  FLEET_ADMIN_READINESS_TIMEOUT_SECONDS=5 \
+  FLEET_ADMIN_SNAPSHOT_TIMEOUT_SECONDS=5 \
+  FLEET_ADMIN_PLAYWRIGHT_TIMEOUT=12m \
+  FLEET_ADMIN_KUBECONFIG="${TEST_ROOT}/full-kubeconfig" \
+  FLEET_ADMIN_CONTEXT=omega \
+  FLEET_ADMIN_TARGET_NAMESPACE=paprika-e2e \
+  FLEET_ADMIN_TARGET_RELEASE=paprika-e2e \
+  FLEET_ADMIN_PUBLIC_URL=https://public.example.test \
+  FLEET_ADMIN_ARTIFACT_ROOT="${INTERRUPT_ARTIFACT_ROOT}" \
+  FLEET_ADMIN_RUN_ID=fake-success \
+  bash "${REAL_HARNESS}" \
+  >"${TEST_ROOT}/interrupt-harness.stdout" \
+  2>"${TEST_ROOT}/interrupt-harness.stderr" &
+INTERRUPT_HARNESS_PID=$!
+for _ in {1..200}; do
+  [[ -s "${INTERRUPT_NPM_PID_FILE}" &&
+    -s "${INTERRUPT_BROWSER_PID_FILE}" ]] && break
+  if ! kill -0 "${INTERRUPT_HARNESS_PID}" 2>/dev/null; then
+    fail "interrupt harness exited before Playwright became active: stderr=$(tr '\n' ' ' <"${TEST_ROOT}/interrupt-harness.stderr") log=$(tail -n 8 "${FULL_COMMAND_LOG}" | tr '\n' '|')"
+  fi
+  sleep 0.05
+done
+[[ -s "${INTERRUPT_NPM_PID_FILE}" &&
+  -s "${INTERRUPT_BROWSER_PID_FILE}" ]] ||
+  fail "interrupt harness never reached the owned Playwright process group"
+INTERRUPT_NPM_PID="$(cat "${INTERRUPT_NPM_PID_FILE}")"
+INTERRUPT_BROWSER_PID="$(cat "${INTERRUPT_BROWSER_PID_FILE}")"
+kill -TERM "${INTERRUPT_HARNESS_PID}"
+set +e
+wait "${INTERRUPT_HARNESS_PID}"
+INTERRUPT_STATUS=$?
+set -e
+[[ "${INTERRUPT_STATUS}" -eq 143 ]] ||
+  fail "interrupted harness returned ${INTERRUPT_STATUS}, want 143"
+if kill -0 "${INTERRUPT_NPM_PID}" 2>/dev/null; then
+  fail "interrupted harness orphaned fake npm PID ${INTERRUPT_NPM_PID}"
+fi
+if kill -0 "${INTERRUPT_BROWSER_PID}" 2>/dev/null; then
+  fail "interrupted harness orphaned fake browser PID ${INTERRUPT_BROWSER_PID}"
+fi
+assert_file_contains "${FULL_COMMAND_LOG}" "npm-block-ignore-term"
+assert_file_contains "${FULL_COMMAND_LOG}" "browser-block-ignore-term"
+pass "TERM during Playwright escalates and reaps a TERM-ignoring npm/browser group"
+
+TIMEOUT_ARTIFACT_ROOT="${TEST_ROOT}/timeout-artifacts"
+TIMEOUT_COMMAND_LOG="${TEST_ROOT}/timeout-commands.log"
+TIMEOUT_NPM_PID_FILE="${TEST_ROOT}/timeout-npm.pid"
+TIMEOUT_BROWSER_PID_FILE="${TEST_ROOT}/timeout-browser.pid"
+mkdir -p "${TIMEOUT_ARTIFACT_ROOT}"
+: >"${TIMEOUT_COMMAND_LOG}"
+set +e
+env \
+  PATH="${FULL_FAKE_BIN}:${PATH}" \
+  FAKE_COMMAND_LOG="${TIMEOUT_COMMAND_LOG}" \
+  FAKE_SNAPSHOT_FIXTURE_DIR="${EXACT_SNAPSHOT_DIR}" \
+  FAKE_NPM_BLOCK=ignore-term \
+  FAKE_NPM_PID_FILE="${TIMEOUT_NPM_PID_FILE}" \
+  FAKE_BROWSER_PID_FILE="${TIMEOUT_BROWSER_PID_FILE}" \
+  FLEET_ADMIN_KUBECTL="${FULL_FAKE_BIN}/kubectl" \
+  FLEET_ADMIN_HELM="${FULL_FAKE_BIN}/helm" \
+  FLEET_ADMIN_GUARD_BIN="${FULL_FAKE_BIN}/guard" \
+  FLEET_ADMIN_CURL="${FULL_FAKE_BIN}/curl" \
+  FLEET_ADMIN_PAPRIKA_BIN="${FULL_FAKE_BIN}/paprika" \
+  FLEET_ADMIN_NPM="${FULL_FAKE_BIN}/npm" \
+  FLEET_ADMIN_MAKE="${FULL_FAKE_BIN}/make" \
+  FLEET_ADMIN_SKIP_CLI_BUILD=1 \
+  FLEET_ADMIN_STOP_TIMEOUT_SECONDS=10 \
+  FLEET_ADMIN_TERM_TIMEOUT_SECONDS=1 \
+  FLEET_ADMIN_KILL_TIMEOUT_SECONDS=1 \
+  FLEET_ADMIN_REQUEST_TIMEOUT=7s \
+  FLEET_ADMIN_READINESS_TIMEOUT_SECONDS=5 \
+  FLEET_ADMIN_SNAPSHOT_TIMEOUT_SECONDS=5 \
+  FLEET_ADMIN_PLAYWRIGHT_TIMEOUT=250ms \
+  FLEET_ADMIN_KUBECONFIG="${TEST_ROOT}/full-kubeconfig" \
+  FLEET_ADMIN_CONTEXT=omega \
+  FLEET_ADMIN_TARGET_NAMESPACE=paprika-e2e \
+  FLEET_ADMIN_TARGET_RELEASE=paprika-e2e \
+  FLEET_ADMIN_PUBLIC_URL=https://public.example.test \
+  FLEET_ADMIN_ARTIFACT_ROOT="${TIMEOUT_ARTIFACT_ROOT}" \
+  FLEET_ADMIN_RUN_ID=fake-success \
+  bash "${REAL_HARNESS}" \
+  >"${TEST_ROOT}/timeout-harness.stdout" \
+  2>"${TEST_ROOT}/timeout-harness.stderr"
+TIMEOUT_STATUS=$?
+set -e
+[[ "${TIMEOUT_STATUS}" -eq 124 ]] ||
+  fail "naturally timed out harness returned ${TIMEOUT_STATUS}, want 124"
+[[ -s "${TIMEOUT_NPM_PID_FILE}" && -s "${TIMEOUT_BROWSER_PID_FILE}" ]] ||
+  fail "naturally timed out harness did not record exact npm/browser PIDs"
+TIMEOUT_NPM_PID="$(cat "${TIMEOUT_NPM_PID_FILE}")"
+TIMEOUT_BROWSER_PID="$(cat "${TIMEOUT_BROWSER_PID_FILE}")"
+if kill -0 "${TIMEOUT_NPM_PID}" 2>/dev/null; then
+  fail "naturally timed out harness orphaned fake npm PID ${TIMEOUT_NPM_PID}"
+fi
+if kill -0 "${TIMEOUT_BROWSER_PID}" 2>/dev/null; then
+  fail "naturally timed out harness orphaned fake browser PID ${TIMEOUT_BROWSER_PID}"
+fi
+assert_file_contains "${TIMEOUT_COMMAND_LOG}" "npm-block-ignore-term"
+assert_file_contains "${TIMEOUT_COMMAND_LOG}" "browser-block-ignore-term"
+assert_file_contains \
+  "${TIMEOUT_ARTIFACT_ROOT}/fake-success/playwright.log" \
+  "harness:bounded-command-timeout=250ms"
+TIMEOUT_NPM_PID=""
+TIMEOUT_BROWSER_PID=""
+pass "natural Playwright timeout preserves 124 and reaps a TERM-ignoring npm/browser group"
 
 CONFLICT_BIN="${TEST_ROOT}/conflict-kubectl"
 cat >"${CONFLICT_BIN}" <<'FAKE'
