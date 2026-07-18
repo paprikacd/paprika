@@ -65,6 +65,9 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run complete and responsive fleet console acceptance
+        env:
+          PAPRIKA_E2E_EXTRA_SPECS: e2e/fleet-admin-live.spec.ts
+          PAPRIKA_E2E_ADMIN_SESSION_STUB: "1"
         run: bash hack/test-fleet-console.sh
 
       - name: Upload browser diagnostics
@@ -73,8 +76,9 @@ jobs:
         with:
           name: fleet-ui-acceptance
           path: |
-            ui/playwright-report
             ui/test-results
+            ui/test-results/playwright-report
+            ui/test-results/results.json
           if-no-files-found: ignore
           retention-days: 14
 

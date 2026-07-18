@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOTOOLCHAIN: auto
+      IMAGE_REPOSITORY: ghcr.io/paprikacd/paprika
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -26,24 +27,89 @@ jobs:
           go-version-file: go.mod
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        id: build
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
         with:
           context: .
           push: true
+          platforms: linux/amd64
           tags: |
             ghcr.io/paprikacd/paprika:latest
             ghcr.io/paprikacd/paprika:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify immutable linux/amd64 image and write metadata
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -Eeuo pipefail
+
+          repository="${IMAGE_REPOSITORY}"
+          commit_sha='${{ github.sha }}'
+          digest="${IMAGE_DIGEST}"
+          platform="linux/amd64"
+          if ! [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::build-push-action returned an invalid digest"
+            exit 1
+          fi
+
+          image_ref="${repository}@${digest}"
+          docker buildx imagetools inspect "$image_ref" \
+            --format '{{json .Manifest}}' > image-manifest.json
+          docker buildx imagetools inspect "$image_ref" \
+            --format '{{json .Image}}' > image-config.json
+
+          jq -e '
+            ([.manifests[]? | select(.platform.os != "unknown") | .platform]) as $platforms
+            | ($platforms | length) == 1
+              and $platforms[0].os == "linux"
+              and $platforms[0].architecture == "amd64"
+          ' image-manifest.json >/dev/null
+          jq -e '
+            .os == "linux" and .architecture == "amd64"
+          ' image-config.json >/dev/null
+
+          jq -n \
+            --arg repository "${repository}" \
+            --arg commit_sha "${commit_sha}" \
+            --arg digest "${digest}" \
+            --arg platform "${platform}" \
+            '{
+              "repository": $repository,
+              "commit_sha": $commit_sha,
+              "digest": $digest,
+              "platform": $platform
+            }' > image-metadata.json
+
+          jq -e \
+            --arg repository "${repository}" \
+            --arg commit_sha "${commit_sha}" \
+            --arg digest "${digest}" \
+            '
+              keys == ["commit_sha", "digest", "platform", "repository"]
+              and .repository == $repository
+              and .commit_sha == $commit_sha
+              and (.digest == $digest and (.digest | test("^sha256:[0-9a-f]{64}$")))
+              and .platform == "linux/amd64"
+            ' image-metadata.json >/dev/null
+
+      - name: Upload immutable image metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: image-metadata-${{ github.sha }}
+          path: image-metadata.json
+          if-no-files-found: error
+          retention-days: 30
 
       # Package is public; no need to set visibility from CI
