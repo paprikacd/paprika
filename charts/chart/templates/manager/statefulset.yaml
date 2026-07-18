@@ -1,4 +1,5 @@
 {{- if and (or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled)) .Values.manager.sharding.enabled }}
+{{- $adminDashboardEligible := include "paprika.adminDashboardManagerEligible" . -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -37,7 +38,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.manager.automountServiceAccountToken | default false }}
+      automountServiceAccountToken: {{ if $adminDashboardEligible }}true{{ else }}{{ .Values.manager.automountServiceAccountToken | default false }}{{ end }}
       {{- with .Values.manager.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -57,7 +58,7 @@ spec:
       {{- with .Values.manager.terminationGracePeriodSeconds }}
       terminationGracePeriodSeconds: {{ . }}
       {{- end }}
-      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      serviceAccountName: {{ include "paprika.adminEligibleServiceAccountName" (dict "context" . "eligible" $adminDashboardEligible) }}
       {{- $pc := .Values.manager.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}
       priorityClassName: {{ $pc | quote }}
@@ -80,16 +81,21 @@ spec:
         - --health-probe-bind-address=:8081
         - --mode=operator
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- if $adminDashboardEligible }}
+        {{- include "paprika.adminDashboardArgs" (dict "eligible" true) | nindent 8 }}
+        {{- end }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
         command:
         - /manager
         env:
+        {{- if not $adminDashboardEligible }}
         - name: POD_NAME
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        {{- end }}
         - name: PAPRIKA_SHARD_TOTAL
           value: {{ .Values.manager.sharding.replicas | quote }}
         - name: PAPRIKA_SHARD_ID
@@ -115,6 +121,9 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- if $adminDashboardEligible }}
+        {{- include "paprika.adminDashboardEnv" (dict "eligible" true "container" "manager") | nindent 8 }}
+        {{- end }}
         {{- with $.Values.manager.extraEnv }}
         {{- include "paprika.extraEnv" . | nindent 8 }}
         {{- end }}

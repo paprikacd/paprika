@@ -26,3 +26,8 @@ subjects:
 - kind: ServiceAccount
   name: {{ include "paprika.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
+{{- if include "paprika.adminDashboardAnyEligible" . }}
+- kind: ServiceAccount
+  name: {{ include "paprika.adminDashboardServiceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

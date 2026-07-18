@@ -1,4 +1,5 @@
 {{- if eq .Values.deploymentMode "split" }}
+{{- $adminDashboardEligible := include "paprika.adminDashboardAPIEligible" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,7 +39,7 @@ spec:
         {{ $k }}: {{ $v | quote }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.apiServer.automountServiceAccountToken | default false }}
+      automountServiceAccountToken: {{ if $adminDashboardEligible }}true{{ else }}{{ .Values.apiServer.automountServiceAccountToken | default false }}{{ end }}
       {{- with .Values.apiServer.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -74,6 +75,9 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- if $adminDashboardEligible }}
+        {{- include "paprika.adminDashboardArgs" (dict "eligible" true) | nindent 8 }}
+        {{- end }}
         {{- range .Values.apiServer.args }}
         - {{ . }}
         {{- end }}
@@ -158,6 +162,9 @@ spec:
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
+        {{- if $adminDashboardEligible }}
+        {{- include "paprika.adminDashboardEnv" (dict "eligible" true "container" "api-server") | nindent 8 }}
+        {{- end }}
         {{- with .Values.apiServer.extraEnv }}
         {{- include "paprika.extraEnv" . | nindent 8 }}
         {{- end }}
@@ -171,7 +178,7 @@ spec:
         {{- else }}
         {}
         {{- end }}
-      serviceAccountName: {{ include "paprika.serviceAccountName" . }}
+      serviceAccountName: {{ include "paprika.adminEligibleServiceAccountName" (dict "context" . "eligible" $adminDashboardEligible) }}
       {{- $pc := .Values.apiServer.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}
       priorityClassName: {{ $pc | quote }}

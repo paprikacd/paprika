@@ -225,6 +225,9 @@ deploymentMode: monolith
 # In monolith mode this controls the single pod behavior.
 mode: operator
 
+adminDashboard:
+  enabled: false
+
 ## API server configuration (used only when deploymentMode=split)
 ##
 apiServer:

@@ -63,6 +63,108 @@ Otherwise, use the standard resourceName helper with "controller-manager" suffix
 {{- end }}
 
 {{/*
+Dedicated ServiceAccount name for manager/API pods that opt in to the private
+admin dashboard.
+*/}}
+{{- define "paprika.adminDashboardServiceAccountName" -}}
+{{- include "paprika.resourceName" (dict "suffix" "admin-dashboard" "context" .) }}
+{{- end }}
+
+{{/*
+Validate the admin dashboard value type and trust boundary. Keep this centralized
+so invalid values fail consistently even when no eligible workload is rendered.
+*/}}
+{{- define "paprika.validateAdminDashboard" -}}
+{{- if not (kindIs "bool" .Values.adminDashboard.enabled) -}}
+{{- fail "adminDashboard.enabled must be a boolean" -}}
+{{- end -}}
+{{- $managerEnabled := or (not (hasKey .Values.manager "enabled")) .Values.manager.enabled -}}
+{{- if and (eq .Values.adminDashboard.enabled true) (eq .Values.deploymentMode "monolith") (eq .Values.mode "api") (ne .Values.remoteCluster.apiServer "") $managerEnabled (not .Values.manager.sharding.enabled) -}}
+{{- fail "adminDashboard.enabled cannot be used with monolith mode=api and remoteCluster.apiServer; local pod-forward review cannot use the remote cluster client" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Whether the rendered manager workload is eligible for the admin dashboard.
+Split managers always run operator mode. Monolith managers are eligible only
+when their configured runtime mode is operator or API.
+*/}}
+{{- define "paprika.adminDashboardManagerEligible" -}}
+{{- include "paprika.validateAdminDashboard" . -}}
+{{- $managerEnabled := or (not (hasKey .Values.manager "enabled")) .Values.manager.enabled -}}
+{{- if and (eq .Values.adminDashboard.enabled true) $managerEnabled (or (eq .Values.deploymentMode "split") (eq .Values.mode "operator") (eq .Values.mode "api")) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+Whether the split API workload is eligible for the admin dashboard.
+*/}}
+{{- define "paprika.adminDashboardAPIEligible" -}}
+{{- include "paprika.validateAdminDashboard" . -}}
+{{- if and (eq .Values.adminDashboard.enabled true) (eq .Values.deploymentMode "split") -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+Whether at least one rendered workload is eligible for the admin identity.
+*/}}
+{{- define "paprika.adminDashboardAnyEligible" -}}
+{{- if or (include "paprika.adminDashboardManagerEligible" .) (include "paprika.adminDashboardAPIEligible" .) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+ServiceAccount name for a manager/API pod eligible to run the private admin
+dashboard. Other components continue to use paprika.serviceAccountName.
+*/}}
+{{- define "paprika.adminEligibleServiceAccountName" -}}
+{{- if .eligible }}
+{{- include "paprika.adminDashboardServiceAccountName" .context }}
+{{- else }}
+{{- include "paprika.serviceAccountName" .context }}
+{{- end }}
+{{- end }}
+
+{{/*
+Private admin dashboard argument for eligible manager/API containers.
+*/}}
+{{- define "paprika.adminDashboardArgs" -}}
+{{- if .eligible }}
+- --admin-dashboard-enabled
+{{- end }}
+{{- end }}
+
+{{/*
+Required pod identity for verified admin-session exchange. The caller provides
+the expected regular container name because manager and split API pods differ.
+*/}}
+{{- define "paprika.adminDashboardEnv" -}}
+{{- if .eligible }}
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+- name: POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: POD_UID
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.uid
+- name: POD_SERVICE_ACCOUNT
+  valueFrom:
+    fieldRef:
+      fieldPath: spec.serviceAccountName
+- name: PAPRIKA_ADMIN_EXPECTED_CONTAINER
+  value: {{ .container | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
 Cache environment variables shared across all components.
 */}}
 {{- define "paprika.cacheEnv" -}}

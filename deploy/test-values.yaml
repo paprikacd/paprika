@@ -15,6 +15,9 @@ revisionHistoryLimit: 2
 deploymentMode: "split"
 mode: "operator"
 
+adminDashboard:
+  enabled: true
+
 # ── Metrics / Prometheus ──────────────────────────────────────────────────────
 metrics:
   enable: true
