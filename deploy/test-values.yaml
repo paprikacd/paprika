@@ -3,6 +3,11 @@
 # =============================================================================
 # Used by hack/e2e-vultr.sh. Enables a representative subset of features
 # to validate chart correctness, health probes, and the UI.
+#
+# .github/workflows/deploy-vke.yml overrides every enabled component
+# image.repository with the same validated repository@sha256 digest. The tags
+# below remain developer discovery defaults and must never be passed to Helm by
+# the VKE deployment workflow.
 # =============================================================================
 
 # ── Global ────────────────────────────────────────────────────────────────────

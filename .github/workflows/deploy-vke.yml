@@ -3,61 +3,237 @@ name: Deploy VKE
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'Image tag or ref to deploy (default: latest)'
-        required: false
-        default: 'latest'
-      retain_cluster:
-        description: 'Keep VKE cluster running after validation'
-        required: false
-        default: 'true'
+      commit_sha:
+        description: Full 40-character commit SHA to deploy
+        required: true
+        type: string
+      digest:
+        description: Immutable ghcr.io/paprikacd/paprika sha256 digest
+        required: true
+        type: string
+      build_run_id:
+        description: Successful Build & Push Actions run that produced the metadata
+        required: true
+        type: string
   workflow_run:
     workflows: [Build & Push]
     types: [completed]
     branches: [master]
 
-concurrency: deploy-vke
+concurrency:
+  group: deploy-vke
+  cancel-in-progress: false
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
 env:
+  IMAGE_REPOSITORY: ghcr.io/paprikacd/paprika
   VKE_NAMESPACE: paprika-e2e
   HELM_RELEASE: paprika-e2e
   HELM_CHART: charts/chart
   TEST_VALUES: deploy/test-values.yaml
+  PUBLIC_URL: https://paprika.benebsworth.com
+  EVIDENCE_ROOT: artifacts/fleet-admin-vke
 
 jobs:
   deploy:
-    if: >
+    if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master')
-    name: Deploy and validate on VKE
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'master' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    name: Deploy immutable image and validate fleet admin dashboard
     runs-on: ubuntu-latest
     environment: vke-production
     env:
-      IMAGE_TAG: >-
-        ${{
-          github.event_name == 'workflow_dispatch'
-          && inputs.ref
-          || format('sha-{0}', github.event.workflow_run.head_sha)
-        }}
+      KUBECONFIG: /tmp/paprika-vke-kubeconfig
     steps:
-      - name: Clone the code
-        uses: actions/checkout@v7
+      - name: Resolve and validate deployment source
+        id: source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          EVENT_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          EVENT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          EVENT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          MANUAL_COMMIT_SHA: ${{ inputs.commit_sha }}
+          MANUAL_DIGEST: ${{ inputs.digest }}
+          MANUAL_BUILD_RUN_ID: ${{ inputs.build_run_id }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            [[ "${EVENT_REPOSITORY}" == "${GITHUB_REPOSITORY}" ]] ||
+              { echo "::error::triggering repository mismatch"; exit 1; }
+            [[ "${EVENT_BRANCH}" == "master" ]] ||
+              { echo "::error::triggering branch must be master"; exit 1; }
+            [[ "${EVENT_CONCLUSION}" == "success" ]] ||
+              { echo "::error::triggering build was not successful"; exit 1; }
+            [[ "${EVENT_RUN_ID}" =~ ^[1-9][0-9]*$ ]] ||
+              { echo "::error::invalid triggering run id"; exit 1; }
+            commit_sha="${EVENT_HEAD_SHA}"
+            build_run_id="${EVENT_RUN_ID}"
+          else
+            commit_sha="${MANUAL_COMMIT_SHA}"
+            [[ "${MANUAL_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+              { echo "::error::manual digest must be sha256 plus 64 lowercase hex characters"; exit 1; }
+            [[ "${MANUAL_BUILD_RUN_ID}" =~ ^[1-9][0-9]*$ ]] ||
+              { echo "::error::manual build_run_id must be a positive Actions run id"; exit 1; }
+            build_run_id="${MANUAL_BUILD_RUN_ID}"
+          fi
+          [[ "${commit_sha}" =~ ^[0-9a-f]{40}$ ]] ||
+            { echo "::error::deployment commit must be a full lowercase SHA"; exit 1; }
+          {
+            echo "commit_sha=${commit_sha}"
+            echo "build_run_id=${build_run_id}"
+            if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+              echo "manual_digest=${MANUAL_DIGEST}"
+            fi
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Clone the exact built commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ steps.source.outputs.commit_sha }}
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify checked-out commit is on trusted master history
+        env:
+          COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$(git rev-parse HEAD)" == "${COMMIT_SHA}" ]] ||
+            { echo "::error::checkout does not match deployment commit"; exit 1; }
+          git show-ref --verify --quiet refs/remotes/origin/master ||
+            { echo "::error::trusted origin/master ref is missing"; exit 1; }
+          git merge-base --is-ancestor "${COMMIT_SHA}" refs/remotes/origin/master ||
+            { echo "::error::deployment commit is not on trusted origin/master history"; exit 1; }
+
+      - name: Validate exact Build & Push run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ steps.source.outputs.build_run_id }}
+          COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
+        run: |
+          set -Eeuo pipefail
+          run_json="$(mktemp "${RUNNER_TEMP}/build-run.XXXXXX")"
+          trap 'rm -f "${run_json}"' EXIT
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${BUILD_RUN_ID}" >"${run_json}"
+          jq -e \
+            --arg repository "${GITHUB_REPOSITORY}" \
+            --arg commit_sha "${COMMIT_SHA}" '
+              type == "object" and
+              .name == "Build & Push" and
+              .path == ".github/workflows/build-push.yml" and
+              .event == "push" and
+              .head_branch == "master" and
+              .head_sha == $commit_sha and
+              .status == "completed" and
+              .conclusion == "success" and
+              .repository.full_name == $repository and
+              .head_repository.full_name == $repository
+            ' "${run_json}" >/dev/null
+
+      - name: Download exact build metadata
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: image-metadata-${{ steps.source.outputs.commit_sha }}
+          path: ${{ runner.temp }}/image-metadata
+          run-id: ${{ steps.source.outputs.build_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Setup Docker buildx for immutable inspection
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+
+      - name: Validate metadata and image platform
+        id: image
+        env:
+          COMMIT_SHA: ${{ steps.source.outputs.commit_sha }}
+          MANUAL_DIGEST: ${{ steps.source.outputs.manual_digest }}
+        run: |
+          set -Eeuo pipefail
+          metadata="${RUNNER_TEMP}/image-metadata/image-metadata.json"
+          [[ -f "${metadata}" ]] ||
+            { echo "::error::exact image metadata artifact is missing"; exit 1; }
+          jq -e \
+            --arg repository "${IMAGE_REPOSITORY}" \
+            --arg commit_sha "${COMMIT_SHA}" \
+            --arg manual_digest "${MANUAL_DIGEST}" '
+              type == "object" and
+              keys == ["commit_sha", "digest", "platform", "repository"] and
+              .repository == $repository and
+              .commit_sha == $commit_sha and
+              .platform == "linux/amd64" and
+              (.digest | type == "string" and test("^sha256:[0-9a-f]{64}$")) and
+              ($manual_digest == "" or .digest == $manual_digest)
+            ' "${metadata}" >/dev/null
+
+          DIGEST="$(jq -er '.digest' "${metadata}")"
+          IMAGE_REF="ghcr.io/paprikacd/paprika@${DIGEST}"
+          [[ "${IMAGE_REF}" =~ ^ghcr[.]io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]] ||
+            { echo "::error::refusing a tag-based Helm deployment"; exit 1; }
+
+          docker buildx imagetools inspect "$IMAGE_REF" \
+            --format '{{json .Manifest}}' >"${RUNNER_TEMP}/image-manifest.json"
+          docker buildx imagetools inspect "$IMAGE_REF" \
+            --format '{{json .Image}}' >"${RUNNER_TEMP}/image-config.json"
+
+          RUNTIME_DIGEST="$(
+            jq -er --arg digest "${DIGEST}" '
+              if has("manifests") then
+                [
+                  .manifests[]?
+                  | select(.platform.os != "unknown")
+                  | select(
+                      .platform.os == "linux" and
+                      .platform.architecture == "amd64"
+                    )
+                ] as $platforms
+                | select($platforms | length == 1)
+                | $platforms[0].digest
+                | select(test("^sha256:[0-9a-f]{64}$"))
+              else
+                $digest
+              end
+            ' "${RUNNER_TEMP}/image-manifest.json"
+          )"
+          jq -e '.os == "linux" and .architecture == "amd64"' \
+            "${RUNNER_TEMP}/image-config.json" >/dev/null
+          [[ "${RUNTIME_DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]
+          {
+            echo "digest=${DIGEST}"
+            echo "image_ref=${IMAGE_REF}"
+            echo "runtime_digest=${RUNTIME_DIGEST}"
+          } >>"${GITHUB_OUTPUT}"
+
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
 
-      - name: Setup Helm
-        uses: azure/setup-helm@v5
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          version: latest
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Setup Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.19.0
+
+      - name: Install browser gate dependencies
+        run: |
+          set -Eeuo pipefail
+          npm --prefix ui ci
+          npx --prefix ui playwright install --with-deps chromium
 
       - name: Configure Kubernetes OIDC access
         env:
@@ -66,195 +242,794 @@ jobs:
           VKE_K8S_OIDC_AUDIENCE: ${{ vars.VKE_K8S_OIDC_AUDIENCE || 'paprika-vke-deploy' }}
           VKE_TOKEN_EXCHANGE_URL: ${{ vars.VKE_TOKEN_EXCHANGE_URL || 'https://paprika.benebsworth.com/auth/github-actions/token' }}
         run: |
-          missing=0
+          set -Eeuo pipefail
           for name in VKE_CLUSTER_ENDPOINT VKE_CLUSTER_CA_B64 VKE_K8S_OIDC_AUDIENCE VKE_TOKEN_EXCHANGE_URL; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::$name is required"
-              missing=1
-            fi
+            [[ -n "${!name:-}" ]] ||
+              { echo "::error::${name} is required"; exit 1; }
           done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
 
-          install -d -m 700 "$HOME/.kube"
-          printf '%s' "$VKE_CLUSTER_CA_B64" | base64 -d > "$HOME/.kube/vke-ca.crt"
-          chmod 600 "$HOME/.kube/vke-ca.crt"
-
+          install -d -m 700 "$(dirname "${KUBECONFIG}")"
+          ca_file="${RUNNER_TEMP}/vke-ca.crt"
+          printf '%s' "${VKE_CLUSTER_CA_B64}" | base64 -d >"${ca_file}"
+          chmod 600 "${ca_file}"
           kubectl config set-cluster vke \
             --server="https://${VKE_CLUSTER_ENDPOINT}:6443" \
-            --certificate-authority="$HOME/.kube/vke-ca.crt" \
+            --certificate-authority="${ca_file}" \
             --embed-certs=true
           kubectl config set-credentials github-actions-oidc \
-            --exec-command="$GITHUB_WORKSPACE/hack/github-actions-vke-token.sh" \
+            --exec-command="${GITHUB_WORKSPACE}/hack/github-actions-vke-token.sh" \
             --exec-api-version=client.authentication.k8s.io/v1 \
             --exec-interactive-mode=Never \
-            --exec-env=GITHUB_ACTIONS_OIDC_AUDIENCE="$VKE_K8S_OIDC_AUDIENCE" \
-            --exec-env=GITHUB_ACTIONS_TOKEN_EXCHANGE_URL="$VKE_TOKEN_EXCHANGE_URL"
+            --exec-env=GITHUB_ACTIONS_OIDC_AUDIENCE="${VKE_K8S_OIDC_AUDIENCE}" \
+            --exec-env=GITHUB_ACTIONS_TOKEN_EXCHANGE_URL="${VKE_TOKEN_EXCHANGE_URL}"
           kubectl config set-context vke \
             --cluster=vke \
             --user=github-actions-oidc \
-            --namespace="${{ env.VKE_NAMESPACE }}"
+            --namespace="${VKE_NAMESPACE}"
           kubectl config use-context vke
 
-      - name: Show GitHub OIDC claims
+      - name: Verify cluster and port-forward access
+        run: |
+          set -Eeuo pipefail
+          kubectl get nodes -o json |
+            jq -e '
+              (.items | length) > 0 and
+              all(.items[]; .metadata.labels["kubernetes.io/arch"] == "amd64")
+            ' >/dev/null
+          kubectl get namespace "${VKE_NAMESPACE}"
+          [[ "$(kubectl auth can-i create pods/portforward -n "${VKE_NAMESPACE}")" == "yes" ]]
+
+      - name: Prepare evidence helpers
+        run: |
+          set -Eeuo pipefail
+          install -d -m 700 "${EVIDENCE_ROOT}"/{pre,post,rollback,live}
+          cat >"${RUNNER_TEMP}/fleet-evidence.sh" <<'EVIDENCE_HELPERS'
+          # shellcheck shell=bash
+          source "${GITHUB_WORKSPACE}/hack/lib/fleet-admin-harness.sh"
+
+          capture_redacted() {
+            local destination=$1
+            shift
+            local raw
+            raw="$(mktemp "${RUNNER_TEMP}/fleet-evidence.XXXXXX")"
+            "$@" >"${raw}" 2>&1
+            local status=$?
+            fleet_admin_redact_file "${raw}" "${destination}"
+            rm -f "${raw}"
+            return "${status}"
+          }
+
+          capture_optional() {
+            capture_redacted "$@" || true
+          }
+
+          sanitize_json_file() {
+            local source=$1
+            local destination=$2
+            local sanitized
+            sanitized="$(mktemp "${RUNNER_TEMP}/fleet-json.XXXXXX")"
+            jq '
+              def sensitive:
+                test("(?i)(authorization|token|secret|password|credential|cookie)");
+              walk(
+                if type == "object" then
+                  (
+                    if ((.name? // "") | type == "string" and sensitive) and has("value")
+                    then .value = "[REDACTED]"
+                    else .
+                    end
+                  )
+                  | with_entries(
+                      if (.key | sensitive)
+                      then .value = "[REDACTED]"
+                      else .
+                      end
+                    )
+                else .
+                end
+              )
+            ' "${source}" >"${sanitized}"
+            fleet_admin_redact_file "${sanitized}" "${destination}"
+            rm -f "${sanitized}"
+          }
+
+          capture_json() {
+            local destination=$1
+            shift
+            local raw
+            raw="$(mktemp "${RUNNER_TEMP}/fleet-json-raw.XXXXXX")"
+            "$@" >"${raw}"
+            local status=$?
+            if [[ -s "${raw}" ]] && jq -e . "${raw}" >/dev/null 2>&1; then
+              sanitize_json_file "${raw}" "${destination}"
+            else
+              fleet_admin_redact_file "${raw}" "${destination}"
+            fi
+            rm -f "${raw}"
+            return "${status}"
+          }
+
+          sanitize_yaml_file() {
+            local source=$1
+            local destination=$2
+            local sanitized
+            sanitized="$(mktemp "${RUNNER_TEMP}/fleet-yaml.XXXXXX")"
+            awk '
+              {
+                line = $0
+                lower = tolower(line)
+                if (lower ~ /^[[:space:]]*-[[:space:]]*name:.*(authorization|token|secret|password|credential|cookie)/) {
+                  sensitive_env = 1
+                } else if (lower ~ /^[[:space:]]*-[[:space:]]*name:/) {
+                  sensitive_env = 0
+                } else if (sensitive_env && lower ~ /^[[:space:]]*value:/) {
+                  sub(/value:.*/, "value: \"[REDACTED]\"", line)
+                  sensitive_env = 0
+                }
+                print line
+              }
+            ' "${source}" >"${sanitized}"
+            fleet_admin_redact_file "${sanitized}" "${destination}"
+            rm -f "${sanitized}"
+          }
+
+          capture_yaml() {
+            local destination=$1
+            shift
+            local raw
+            raw="$(mktemp "${RUNNER_TEMP}/fleet-yaml-raw.XXXXXX")"
+            "$@" >"${raw}"
+            local status=$?
+            sanitize_yaml_file "${raw}" "${destination}"
+            rm -f "${raw}"
+            return "${status}"
+          }
+
+          capture_manifest() {
+            local destination=$1
+            local raw filtered
+            raw="$(mktemp "${RUNNER_TEMP}/fleet-manifest-raw.XXXXXX")"
+            filtered="$(mktemp "${RUNNER_TEMP}/fleet-manifest-filtered.XXXXXX")"
+            helm get manifest "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" >"${raw}"
+            awk '
+              function flush(i) {
+                if (secret) {
+                  print "---"
+                  print "# Secret document omitted from sanitized evidence"
+                } else {
+                  for (i = 1; i <= count; i++) print lines[i]
+                }
+                delete lines
+                count = 0
+                secret = 0
+              }
+              /^---[[:space:]]*$/ {
+                if (count > 0) flush()
+              }
+              {
+                line = $0
+                lower = tolower(line)
+                if (lower ~ /^[[:space:]]*-[[:space:]]*name:.*(authorization|token|secret|password|credential|cookie)/) {
+                  sensitive_env = 1
+                } else if (lower ~ /^[[:space:]]*-[[:space:]]*name:/) {
+                  sensitive_env = 0
+                } else if (sensitive_env && lower ~ /^[[:space:]]*value:/) {
+                  sub(/value:.*/, "value: \"[REDACTED]\"", line)
+                  sensitive_env = 0
+                }
+                lines[++count] = line
+                if (line ~ /^kind:[[:space:]]*Secret[[:space:]]*$/) secret = 1
+              }
+              END { if (count > 0) flush() }
+            ' "${raw}" >"${filtered}"
+            fleet_admin_redact_file "${filtered}" "${destination}"
+            rm -f "${raw}" "${filtered}"
+          }
+
+          require_release_absent() {
+            local proof_destination=${1:-}
+            local inventory
+            inventory="$(mktemp "${RUNNER_TEMP}/helm-release-list.XXXXXX")"
+            if ! helm list --all --namespace "${VKE_NAMESPACE}" \
+              --filter "^${HELM_RELEASE}$" -o json >"${inventory}"; then
+              rm -f "${inventory}"
+              echo "::error::cannot prove that the Helm release is absent: helm list failed"
+              return 1
+            fi
+            if ! jq -e 'type == "array" and length == 0' "${inventory}" >/dev/null; then
+              rm -f "${inventory}"
+              echo "::error::cannot prove that the Helm release is absent: matching release exists or inventory is ambiguous"
+              return 1
+            fi
+            if [[ -n "${proof_destination}" ]]; then
+              sanitize_json_file "${inventory}" "${proof_destination}"
+            fi
+            rm -f "${inventory}"
+          }
+
+          capture_pre_release_evidence() {
+            local directory=$1
+            local release_existed=$2
+            mkdir -p "${directory}"
+            if [[ "${release_existed}" == "1" ]]; then
+              capture_redacted "${directory}/helm-status.json" \
+                helm status "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json
+              capture_redacted "${directory}/helm-history.json" \
+                helm history "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json
+              local values_raw
+              values_raw="$(mktemp "${RUNNER_TEMP}/helm-values.XXXXXX")"
+              helm get values "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json \
+                >"${values_raw}"
+              sanitize_json_file "${values_raw}" "${directory}/helm-values.json"
+              rm -f "${values_raw}"
+              capture_manifest "${directory}/helm-manifest.yaml"
+            else
+              printf '{"available":false,"reason":"release positively absent"}\n' \
+                >"${directory}/helm-status.json"
+              printf '{"available":false,"reason":"release positively absent"}\n' \
+                >"${directory}/helm-history.json"
+              printf '{"available":false,"reason":"release positively absent"}\n' \
+                >"${directory}/helm-values.json"
+              printf '# Helm manifest unavailable: release positively absent\n' \
+                >"${directory}/helm-manifest.yaml"
+              printf 'release positively absent before this run\n' \
+                >"${directory}/release-absent.txt"
+            fi
+            capture_json "${directory}/workloads.json" \
+              kubectl get deployment,statefulset,daemonset \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o json
+            capture_yaml "${directory}/workloads.yaml" \
+              kubectl get deployment,statefulset,daemonset \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o yaml
+            capture_json "${directory}/pods.json" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o json
+            capture_yaml "${directory}/pods.yaml" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o yaml
+            capture_redacted "${directory}/images.txt" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" \
+                -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[*].ready,IMAGE:.spec.containers[*].image,IMAGE_ID:.status.containerStatuses[*].imageID
+            capture_redacted "${directory}/readiness.txt" \
+              kubectl get deployment,statefulset,daemonset,pod \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o wide
+            capture_json "${directory}/events.json" \
+              kubectl get events -n "${VKE_NAMESPACE}" -o json
+          }
+
+          capture_release_evidence_best_effort() {
+            local directory=$1
+            mkdir -p "${directory}"
+            capture_optional "${directory}/helm-status.json" \
+              helm status "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json
+            capture_optional "${directory}/helm-history.json" \
+              helm history "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json
+            local values_raw
+            values_raw="$(mktemp "${RUNNER_TEMP}/helm-values.XXXXXX")"
+            if helm get values "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json >"${values_raw}"; then
+              sanitize_json_file "${values_raw}" "${directory}/helm-values.json" || true
+              capture_manifest "${directory}/helm-manifest.yaml" || true
+            fi
+            rm -f "${values_raw}"
+            capture_json "${directory}/workloads.json" \
+              kubectl get deployment,statefulset,daemonset \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o json || true
+            capture_yaml "${directory}/workloads.yaml" \
+              kubectl get deployment,statefulset,daemonset \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o yaml || true
+            capture_json "${directory}/pods.json" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o json || true
+            capture_yaml "${directory}/pods.yaml" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o yaml || true
+            capture_optional "${directory}/images.txt" \
+              kubectl get pods -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" \
+                -o custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[*].ready,IMAGE:.spec.containers[*].image,IMAGE_ID:.status.containerStatuses[*].imageID
+            capture_optional "${directory}/readiness.txt" \
+              kubectl get deployment,statefulset,daemonset,pod \
+                -n "${VKE_NAMESPACE}" \
+                -l "app.kubernetes.io/instance=${HELM_RELEASE}" -o wide
+            capture_json "${directory}/events.json" \
+              kubectl get events -n "${VKE_NAMESPACE}" -o json || true
+          }
+          EVIDENCE_HELPERS
+          chmod 600 "${RUNNER_TEMP}/fleet-evidence.sh"
+
+      - name: Capture sanitized pre-upgrade evidence
+        id: previous
+        run: |
+          set -Eeuo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/fleet-evidence.sh"
+          RELEASE_EXISTED=0
+          PREVIOUS_REVISION=""
+          if helm status "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" >/dev/null 2>&1; then
+            RELEASE_EXISTED=1
+            PREVIOUS_REVISION="$(
+              helm history "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json |
+                jq -er '[.[] | select(.status == "deployed")][-1].revision'
+            )"
+            [[ "${PREVIOUS_REVISION}" =~ ^[1-9][0-9]*$ ]] ||
+              { echo "::error::no real deployed Helm revision found"; exit 1; }
+          else
+            require_release_absent "${EVIDENCE_ROOT}/pre/helm-list.json"
+          fi
+          capture_pre_release_evidence "${EVIDENCE_ROOT}/pre" "${RELEASE_EXISTED}"
+          {
+            echo "release_existed=${RELEASE_EXISTED}"
+            echo "previous_revision=${PREVIOUS_REVISION}"
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Deploy every enabled component with one immutable image
+        id: upgrade
+        continue-on-error: true
         env:
-          GITHUB_ACTIONS_OIDC_AUDIENCE: ${{ vars.VKE_K8S_OIDC_AUDIENCE || 'paprika-vke-deploy' }}
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          VKE_OIDC_CLIENT_ID: ${{ secrets.VKE_OIDC_CLIENT_ID }}
+          VKE_OIDC_CLIENT_SECRET: ${{ secrets.VKE_OIDC_CLIENT_SECRET }}
+          VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
+          VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}
         run: |
-          credential="$(hack/github-actions-oidc-token.sh)"
-          token="$(jq -r '.status.token' <<< "$credential")"
-          payload="$(cut -d. -f2 <<< "$token")"
-          case $((${#payload} % 4)) in
-            0) ;;
-            2) payload="${payload}==" ;;
-            3) payload="${payload}=" ;;
-            *)
-              echo "::error::invalid OIDC payload encoding"
-              exit 1
-              ;;
-          esac
-          decoded="$(printf '%s' "$payload" | tr '_-' '/+' | base64 -d)"
-          printf '%s' "$decoded" | jq '{
-            iss,
-            aud,
-            sub,
-            repository,
-            repository_id,
-            repository_owner,
-            environment,
-            event_name,
-            ref,
-            workflow,
-            workflow_ref,
-            job_workflow_ref
-          }'
-
-      - name: Verify cluster access
-        run: |
-          kubectl get nodes
-          kubectl get namespace "${{ env.VKE_NAMESPACE }}"
-
-      - name: Deploy Paprika chart
-        run: |
-          helm upgrade --install "${{ env.HELM_RELEASE }}" "${{ env.HELM_CHART }}" \
-            --namespace "${{ env.VKE_NAMESPACE }}" \
-            --values "${{ env.TEST_VALUES }}" \
-            --set-string manager.image.tag="${{ env.IMAGE_TAG }}" \
-            --set-string apiServer.image.tag="${{ env.IMAGE_TAG }}" \
-            --set-string repoServer.image.tag="${{ env.IMAGE_TAG }}" \
-            --set-string webhookReceiver.image.tag="${{ env.IMAGE_TAG }}" \
-            --set auth.oidc.clientID="${{ secrets.VKE_OIDC_CLIENT_ID }}" \
-            --set auth.oidc.clientSecret="${{ secrets.VKE_OIDC_CLIENT_SECRET }}" \
-            --set auth.tokenSecret="${{ secrets.VKE_AUTH_TOKEN_SECRET }}" \
-            --set auth.basic.passwordHash="${{ secrets.VKE_BASIC_PASSWORD_HASH }}" \
+          set -Eeuo pipefail
+          [[ "${IMAGE_REF}" =~ ^ghcr[.]io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]
+          for name in VKE_OIDC_CLIENT_ID VKE_OIDC_CLIENT_SECRET VKE_AUTH_TOKEN_SECRET VKE_BASIC_PASSWORD_HASH; do
+            [[ -n "${!name:-}" ]] ||
+              { echo "::error::${name} is required"; exit 1; }
+          done
+          echo "mutation_started=true" >>"${GITHUB_OUTPUT}"
+          helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
+            --namespace "${VKE_NAMESPACE}" \
+            --values "${TEST_VALUES}" \
+            --set adminDashboard.enabled=true \
+            --set-string manager.image.repository="${IMAGE_REF}" \
+            --set-string apiServer.image.repository="${IMAGE_REF}" \
+            --set-string repoServer.image.repository="${IMAGE_REF}" \
+            --set-string webhookReceiver.image.repository="${IMAGE_REF}" \
+            --set-string auth.oidc.clientID="${VKE_OIDC_CLIENT_ID}" \
+            --set-string auth.oidc.clientSecret="${VKE_OIDC_CLIENT_SECRET}" \
+            --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
+            --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
+            --atomic \
             --wait \
             --timeout 5m \
             --create-namespace
 
-      - name: Verify Helm release
+      - name: Verify runtime image readiness and admin isolation
+        id: runtime
+        if: steps.upgrade.outcome == 'success'
+        continue-on-error: true
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          RUNTIME_DIGEST: ${{ steps.image.outputs.runtime_digest }}
         run: |
-          helm status "${{ env.HELM_RELEASE }}" --namespace "${{ env.VKE_NAMESPACE }}"
+          set -Eeuo pipefail
+          selector="app.kubernetes.io/instance=${HELM_RELEASE}"
+          kubectl wait --for=condition=Available deployment \
+            -n "${VKE_NAMESPACE}" -l "${selector}" --timeout=180s
+          kubectl wait --for=condition=Ready pod \
+            -n "${VKE_NAMESPACE}" -l "${selector}" --timeout=180s
 
-      - name: Wait for all pods ready
-        run: |
-          echo "Waiting for all Paprika pods to be ready..."
-          kubectl wait --for=condition=Ready pods \
-            -l app.kubernetes.io/instance="${{ env.HELM_RELEASE }}" \
-            -n "${{ env.VKE_NAMESPACE }}" \
-            --timeout=180s
+          kubectl get nodes -o json |
+            jq -e '
+              (.items | length) > 0 and
+              all(.items[]; .metadata.labels["kubernetes.io/arch"] == "amd64")
+            ' >/dev/null
 
-      - name: Show pod status
-        run: |
-          kubectl get pods -n "${{ env.VKE_NAMESPACE }}" -o wide
+          workloads="${RUNNER_TEMP}/post-workloads.json"
+          pods="${RUNNER_TEMP}/post-pods.json"
+          kubectl get deployment,statefulset,daemonset \
+            -n "${VKE_NAMESPACE}" -l "${selector}" -o json >"${workloads}"
+          kubectl get pods -n "${VKE_NAMESPACE}" -l "${selector}" -o json >"${pods}"
 
-      - name: Check pod conditions
-        run: |
-          PASS=0
-          FAIL=0
-          for component in controller-manager api-server webhook-receiver repo-server; do
-            selector="app.kubernetes.io/component=${component}"
-            if [ "$component" = "controller-manager" ]; then
-              selector="control-plane=controller-manager"
-            fi
-            count=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
-              -l "$selector" \
-              -o json | jq '[.items[] | select(.status.phase == "Running")] | length')
-            expected=$(kubectl get pods -n "${{ env.VKE_NAMESPACE }}" \
-              -l "$selector" \
-              -o json | jq '.items | length')
-            if [ "$count" -gt 0 ] && [ "$count" -eq "$expected" ]; then
-              echo "  PASS  ${component}: ${count}/${expected} pods Running"
-              PASS=$((PASS + 1))
-            else
-              echo "  FAIL  ${component}: ${count}/${expected} pods Running"
-              FAIL=$((FAIL + 1))
-            fi
+          jq -e --arg image "${IMAGE_REF}" '
+            def component: .metadata.labels["app.kubernetes.io/component"] // "";
+            def manager: .metadata.labels["control-plane"] == "controller-manager";
+            def main_container:
+              if manager then "manager"
+              elif component == "api-server" then "api-server"
+              elif component == "repo-server" then "repo-server"
+              elif component == "webhook-receiver" then "webhook-receiver"
+              else error("unexpected enabled Paprika workload")
+              end;
+            (.items | length) >= 4 and
+            (
+              [.items[] |
+                if manager then "controller-manager" else component end
+              ] | unique | sort
+            ) == ["api-server", "controller-manager", "repo-server", "webhook-receiver"] and
+            all(.items[];
+              main_container as $main
+              | [
+                  .spec.template.spec.containers[]
+                  | select(.name == $main and .image == $image)
+                ]
+                | length == 1
+            )
+          ' "${workloads}" >/dev/null
+          jq -e --arg image "${IMAGE_REF}" --arg runtime "${RUNTIME_DIGEST}" '
+            def component: .metadata.labels["app.kubernetes.io/component"] // "";
+            def manager: .metadata.labels["control-plane"] == "controller-manager";
+            def main_container:
+              if manager then "manager"
+              elif component == "api-server" then "api-server"
+              elif component == "repo-server" then "repo-server"
+              elif component == "webhook-receiver" then "webhook-receiver"
+              else error("unexpected enabled Paprika pod")
+              end;
+            (.items | length) >= 4 and
+            all(.items[];
+              main_container as $main
+              | (
+                  [.spec.containers[] | select(.name == $main and .image == $image)]
+                  | length == 1
+                ) and
+                (
+                  [
+                    .status.containerStatuses[]
+                    | select(
+                        .name == $main and
+                        .ready == true and
+                        (.imageID | endswith("@" + $runtime))
+                      )
+                  ]
+                  | length == 1
+                )
+            )
+          ' "${pods}" >/dev/null
+
+          jq -e '
+            def component:
+              .metadata.labels["app.kubernetes.io/component"] //
+              .spec.template.metadata.labels["app.kubernetes.io/component"] // "";
+            def manager:
+              .metadata.labels["control-plane"] == "controller-manager" or
+              .spec.template.metadata.labels["control-plane"] == "controller-manager";
+            def eligible: manager or component == "api-server";
+            def identity_names:
+              ["POD_NAMESPACE", "POD_NAME", "POD_UID", "POD_SERVICE_ACCOUNT",
+               "PAPRIKA_ADMIN_EXPECTED_CONTAINER"];
+            def has_admin($container):
+              (($container.args // []) | index("--admin-dashboard-enabled")) != null and
+              all(identity_names[] as $name;
+                (($container.env // []) | map(.name) | index($name)) != null
+              ) and
+              (
+                ($container.env // [])
+                | map(select(.name == "PAPRIKA_ADMIN_EXPECTED_CONTAINER"))
+                | length == 1 and .[0].value == $container.name
+              );
+            def unprivileged($container):
+              ((($container.args // []) | index("--admin-dashboard-enabled")) == null) and
+              all(identity_names[] as $name;
+                (($container.env // []) | map(.name) | index($name)) == null
+              );
+            all(.items[] | select(eligible);
+              (if manager then "manager" else "api-server" end) as $expected
+              | (
+                  [.spec.template.spec.containers[] | select(has_admin(.)) | .name] ==
+                  [$expected]
+                ) and
+                all(.spec.template.spec.containers[] | select(.name != $expected);
+                  unprivileged(.)
+                )
+            ) and
+            all(.items[] | select(eligible | not);
+              all(.spec.template.spec.containers[]; unprivileged(.))
+            )
+          ' "${workloads}" >/dev/null
+          jq -e '
+            def component: .metadata.labels["app.kubernetes.io/component"] // "";
+            def manager: .metadata.labels["control-plane"] == "controller-manager";
+            def eligible: manager or component == "api-server";
+            def identity_names:
+              ["POD_NAMESPACE", "POD_NAME", "POD_UID", "POD_SERVICE_ACCOUNT",
+               "PAPRIKA_ADMIN_EXPECTED_CONTAINER"];
+            def has_admin($container):
+              (($container.args // []) | index("--admin-dashboard-enabled")) != null and
+              all(identity_names[] as $name;
+                (($container.env // []) | map(.name) | index($name)) != null
+              ) and
+              (
+                ($container.env // [])
+                | map(select(.name == "PAPRIKA_ADMIN_EXPECTED_CONTAINER"))
+                | length == 1 and .[0].value == $container.name
+              );
+            def unprivileged($container):
+              ((($container.args // []) | index("--admin-dashboard-enabled")) == null) and
+              all(identity_names[] as $name;
+                (($container.env // []) | map(.name) | index($name)) == null
+              );
+            all(.items[] | select(eligible);
+              (if manager then "manager" else "api-server" end) as $expected
+              | ([.spec.containers[] | select(has_admin(.)) | .name] == [$expected]) and
+                all(.spec.containers[] | select(.name != $expected); unprivileged(.))
+            ) and
+            all(.items[] | select(eligible | not);
+              all(.spec.containers[]; unprivileged(.))
+            )
+          ' "${pods}" >/dev/null
+
+          jq -e '
+            all(.items[];
+              all(
+                (
+                  .spec.template.spec.containers +
+                  (.spec.template.spec.initContainers // [])
+                )[];
+                all(.ports[]?; .containerPort != 3001)
+              )
+            )
+          ' "${workloads}" >/dev/null
+          # Port 3001 must be absent from containerPort declarations and every
+          # Service, EndpointSlice, Ingress, HTTPRoute, Gateway, and
+          # NetworkPolicy exposure path.
+          kubectl get service -n "${VKE_NAMESPACE}" -o json |
+            jq -e 'all(.items[]; all(.spec.ports[]?; .port != 3001 and .targetPort != 3001))' >/dev/null
+          kubectl get endpointslice.discovery.k8s.io -n "${VKE_NAMESPACE}" -o json |
+            jq -e 'all(.items[]; all(.ports[]?; .port != 3001))' >/dev/null
+          kubectl get ingress.networking.k8s.io -n "${VKE_NAMESPACE}" -o json |
+            jq -e '
+              all(.items[];
+                all(.spec.rules[]?.http.paths[]?;
+                  .backend.service.port.number != 3001
+                )
+              )
+            ' >/dev/null
+          kubectl get httproute.gateway.networking.k8s.io -n "${VKE_NAMESPACE}" -o json |
+            jq -e '
+              all(.items[];
+                all(.spec.rules[]?.backendRefs[]?; .port != 3001)
+              )
+            ' >/dev/null
+          kubectl get gateway.gateway.networking.k8s.io -A -o json |
+            jq -e 'all(.items[]; all(.spec.listeners[]?; .port != 3001))' >/dev/null
+          kubectl get networkpolicy.networking.k8s.io -n "${VKE_NAMESPACE}" -o json |
+            jq -e '
+              all(.items[];
+                all(.spec.ingress[]?.ports[]?;
+                  if (.port | type) == "number" then
+                    (3001 < .port or 3001 > (.endPort // .port))
+                  else
+                    true
+                  end
+                )
+              )
+            ' >/dev/null
+
+          api_pod="$(
+            kubectl get pods -n "${VKE_NAMESPACE}" \
+              -l "${selector},app.kubernetes.io/component=api-server" \
+              -o jsonpath='{.items[0].metadata.name}'
+          )"
+          kubectl port-forward -n "${VKE_NAMESPACE}" "pod/${api_pod}" 13000:3000 \
+            >"${RUNNER_TEMP}/readyz-port-forward.log" 2>&1 &
+          forward_pid=$!
+          trap 'kill "${forward_pid}" 2>/dev/null || true' EXIT
+          for _ in {1..30}; do
+            curl --fail --silent --show-error --max-time 3 \
+              http://127.0.0.1:13000/readyz >/dev/null && break
+            sleep 1
           done
-          if [ "$FAIL" -gt 0 ]; then
-            echo "::error::$FAIL component(s) have unhealthy pods"
-            exit 1
-          fi
-          echo "All components healthy ($PASS passed)"
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:13000/readyz >/dev/null
 
-      - name: Health check via port-forward
+      - name: Run real fleet admin public and browser gate
+        id: live
+        if: steps.upgrade.outcome == 'success' && steps.runtime.outcome == 'success'
+        continue-on-error: true
+        env:
+          FLEET_ADMIN_KUBECONFIG: ${{ env.KUBECONFIG }}
+          FLEET_ADMIN_CONTEXT: vke
+          FLEET_ADMIN_TARGET_NAMESPACE: ${{ env.VKE_NAMESPACE }}
+          FLEET_ADMIN_TARGET_RELEASE: ${{ env.HELM_RELEASE }}
+          FLEET_ADMIN_PUBLIC_URL: ${{ env.PUBLIC_URL }}
+          FLEET_ADMIN_ARTIFACT_ROOT: ${{ env.EVIDENCE_ROOT }}/live
+          FLEET_ADMIN_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          PAPRIKA_E2E_TRACE: "on"
+        run: bash hack/test-fleet-admin-dashboard.sh
+
+      - name: Capture sanitized post-upgrade evidence
+        if: ${{ always() }}
         run: |
-          kubectl port-forward -n "${{ env.VKE_NAMESPACE }}" \
-            svc/${{ env.HELM_RELEASE }}-api-server 3000:3000 &
-          PF_PID=$!
-          trap 'kill "$PF_PID" 2>/dev/null || true' EXIT
-          sleep 5
+          set -Eeuo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/fleet-evidence.sh"
+          capture_release_evidence_best_effort "${EVIDENCE_ROOT}/post"
+          jq -n \
+            --arg image_ref '${{ steps.image.outputs.image_ref }}' \
+            --arg runtime_digest '${{ steps.image.outputs.runtime_digest }}' \
+            --arg upgrade '${{ steps.upgrade.outcome }}' \
+            --arg runtime '${{ steps.runtime.outcome }}' \
+            --arg live '${{ steps.live.outcome }}' \
+            '{
+              imageRef: $image_ref,
+              runtimeDigest: $runtime_digest,
+              gates: {upgrade: $upgrade, runtime: $runtime, live: $live}
+            }' >"${EVIDENCE_ROOT}/post/gate-summary.json"
 
-          PASS=0
-          FAIL=0
-
-          check() {
-            local desc="$1" url="$2" expected="${3:-200}"
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || echo "FAIL")
-            if [ "$code" = "$expected" ]; then
-              echo "  PASS  $desc ($url → $expected)"
-              PASS=$((PASS + 1))
-            else
-              echo "  FAIL  $desc ($url → $code, expected $expected)"
-              FAIL=$((FAIL + 1))
-            fi
-          }
-
-          check "Health endpoint" "http://localhost:3000/healthz" 200
-          check "Readiness endpoint" "http://localhost:3000/readyz" 200
-
-          UI_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://localhost:3000/" 2>/dev/null || echo "FAIL")
-          if [ "$UI_CODE" = "200" ]; then
-            CTYPE=$(curl -s -o /dev/null -w "%{content_type}" --max-time 5 "http://localhost:3000/" 2>/dev/null || echo "")
-            if echo "$CTYPE" | grep -qi "html"; then
-              echo "  PASS  UI serves HTML at /"
-              PASS=$((PASS + 1))
-            else
-              echo "  FAIL  UI at / returned non-HTML content-type: $CTYPE"
-              FAIL=$((FAIL + 1))
-            fi
-          else
-            echo "  FAIL  UI at / (HTTP $UI_CODE)"
-            FAIL=$((FAIL + 1))
-          fi
-
-          check "Metrics endpoint" "http://localhost:3000/metrics" 200
-
-          kill "$PF_PID" 2>/dev/null || true
-          trap - EXIT
-
-          echo ""
-          echo "Health check results: $PASS passed, $FAIL failed"
-          if [ "$FAIL" -gt 0 ]; then
-            exit 1
-          fi
-
-      - name: Deployment Summary
+      - name: Recover failed rollout
+        id: recovery
+        if: >-
+          always() &&
+          steps.previous.outcome == 'success' &&
+          steps.upgrade.outputs.mutation_started == 'true' &&
+          (
+            cancelled() ||
+            steps.upgrade.outcome != 'success' ||
+            steps.runtime.outcome != 'success' ||
+            steps.live.outcome != 'success'
+          )
+        env:
+          RELEASE_EXISTED: ${{ steps.previous.outputs.release_existed }}
+          PREVIOUS_REVISION: ${{ steps.previous.outputs.previous_revision }}
+          UPGRADE_OUTCOME: ${{ steps.upgrade.outcome }}
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
         run: |
+          set -Eeuo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/fleet-evidence.sh"
           {
-            echo "## VKE Deployment Summary"
-            echo ""
-            echo "- **Release**: ${{ env.HELM_RELEASE }}"
-            echo "- **Namespace**: ${{ env.VKE_NAMESPACE }}"
-            echo "- **Image**: ghcr.io/paprikacd/paprika:${{ env.IMAGE_TAG }}"
-            echo "- **Status**: ✅ Deployed and healthy"
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "upgrade=${UPGRADE_OUTCOME}"
+            echo "runtime=${RUNTIME_OUTCOME}"
+            echo "live=${LIVE_OUTCOME}"
+            echo "release_existed=${RELEASE_EXISTED}"
+            echo "previous_revision=${PREVIOUS_REVISION}"
+          } >"${EVIDENCE_ROOT}/rollback/decision.txt"
+
+          if [[ "${RELEASE_EXISTED}" == "1" ]]; then
+            [[ "${PREVIOUS_REVISION}" =~ ^[1-9][0-9]*$ ]]
+            helm rollback "${HELM_RELEASE}" "${PREVIOUS_REVISION}" \
+              --namespace "${VKE_NAMESPACE}" --wait --timeout 5m |
+              tee -a "${EVIDENCE_ROOT}/rollback/result.txt"
+          else
+            recovery_inventory="$(mktemp "${RUNNER_TEMP}/recovery-release-list.XXXXXX")"
+            trap 'rm -f "${recovery_inventory}"' EXIT
+            helm list --all --namespace "${VKE_NAMESPACE}" \
+              --filter "^${HELM_RELEASE}$" -o json >"${recovery_inventory}"
+            jq -e --arg release "${HELM_RELEASE}" '
+              type == "array" and
+              length <= 1 and
+              all(.[]; .name == $release)
+            ' "${recovery_inventory}" >/dev/null
+            release_count="$(jq -er 'length' "${recovery_inventory}")"
+            if [[ "${release_count}" == "1" ]]; then
+              echo "new release exists after recovery check; uninstalling it" |
+                tee -a "${EVIDENCE_ROOT}/rollback/result.txt"
+              helm uninstall "${HELM_RELEASE}" --namespace "${VKE_NAMESPACE}" |
+                tee -a "${EVIDENCE_ROOT}/rollback/result.txt"
+            fi
+            require_release_absent
+          fi
+
+          if [[ "${RELEASE_EXISTED}" == "1" ]]; then
+            kubectl wait --for=condition=Available deployment \
+              -n "${VKE_NAMESPACE}" \
+              -l "app.kubernetes.io/instance=${HELM_RELEASE}" \
+              --timeout=180s
+            kubectl wait --for=condition=Ready pod \
+              -n "${VKE_NAMESPACE}" \
+              -l "app.kubernetes.io/instance=${HELM_RELEASE}" \
+              --timeout=180s
+            current_manifest="$(mktemp "${RUNNER_TEMP}/restored-current-manifest.XXXXXX")"
+            previous_manifest="$(mktemp "${RUNNER_TEMP}/restored-previous-manifest.XXXXXX")"
+            current_values="$(mktemp "${RUNNER_TEMP}/restored-current-values.XXXXXX")"
+            previous_values="$(mktemp "${RUNNER_TEMP}/restored-previous-values.XXXXXX")"
+            trap 'rm -f "${current_manifest}" "${previous_manifest}" "${current_values}" "${previous_values}"' EXIT
+            helm get manifest "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" \
+              >"${current_manifest}"
+            helm get manifest "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" \
+              --revision "${PREVIOUS_REVISION}" >"${previous_manifest}"
+            cmp -s "${current_manifest}" "${previous_manifest}" ||
+              { echo "::error::restored manifest does not match PREVIOUS_REVISION"; exit 1; }
+            helm get values "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" -o json |
+              jq -S . >"${current_values}"
+            helm get values "${HELM_RELEASE}" -n "${VKE_NAMESPACE}" \
+              --revision "${PREVIOUS_REVISION}" -o json |
+              jq -S . >"${previous_values}"
+            cmp -s "${current_values}" "${previous_values}" ||
+              { echo "::error::restored values do not match PREVIOUS_REVISION"; exit 1; }
+            printf 'restored content matches PREVIOUS_REVISION=%s\n' \
+              "${PREVIOUS_REVISION}" >>"${EVIDENCE_ROOT}/rollback/result.txt"
+          else
+            require_release_absent
+          fi
+
+      - name: Verify restored readiness and authentication
+        if: always() && steps.recovery.outcome == 'success' && steps.previous.outputs.release_existed == '1'
+        run: |
+          set -Eeuo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/fleet-evidence.sh"
+          selector="app.kubernetes.io/instance=${HELM_RELEASE}"
+          api_pod="$(
+            kubectl get pods -n "${VKE_NAMESPACE}" \
+              -l "${selector},app.kubernetes.io/component=api-server" \
+              -o jsonpath='{.items[0].metadata.name}'
+          )"
+          kubectl port-forward -n "${VKE_NAMESPACE}" "pod/${api_pod}" 13001:3000 \
+            >"${RUNNER_TEMP}/rollback-port-forward.log" 2>&1 &
+          forward_pid=$!
+          trap 'kill "${forward_pid}" 2>/dev/null || true' EXIT
+          for _ in {1..30}; do
+            curl --silent --max-time 2 http://127.0.0.1:13001/readyz >/dev/null && break
+            sleep 1
+          done
+          curl --fail --silent --show-error --max-time 5 \
+            http://127.0.0.1:13001/readyz >/dev/null
+
+          unauthenticated() {
+            local name=$1
+            local origin=$2
+            local raw="${RUNNER_TEMP}/${name}.body"
+            local status
+            status="$(
+              curl --silent --show-error --max-time 10 \
+                --request POST \
+                --header 'Content-Type: application/json' \
+                --header 'Connect-Protocol-Version: 1' \
+                --data '{}' \
+                --output "${raw}" \
+                --write-out '%{http_code}' \
+                "${origin}/paprika.v1.PaprikaService/QueryFleetMap"
+            )"
+            printf '%s\n' "${status}" >"${EVIDENCE_ROOT}/rollback/${name}.status"
+            fleet_admin_redact_file "${raw}" "${EVIDENCE_ROOT}/rollback/${name}.body.json"
+            [[ "${status}" == "401" ]]
+          }
+          echo "checking normal unauthenticated behavior"
+          unauthenticated normal-unauthenticated http://127.0.0.1:13001
+          echo "checking public unauthenticated behavior"
+          unauthenticated public-unauthenticated "${PUBLIC_URL}"
+
+      - name: Capture sanitized rollback evidence
+        if: ${{ always() }}
+        run: |
+          set -Eeuo pipefail
+          # shellcheck source=/dev/null
+          source "${RUNNER_TEMP}/fleet-evidence.sh"
+          capture_release_evidence_best_effort "${EVIDENCE_ROOT}/rollback/restored"
+
+      - name: Upload fleet admin deployment evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fleet-admin-vke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/fleet-admin-vke
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce deployment and post-upgrade gates
+        if: ${{ always() }}
+        env:
+          UPGRADE_OUTCOME: ${{ steps.upgrade.outcome }}
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          LIVE_OUTCOME: ${{ steps.live.outcome }}
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "${RECOVERY_OUTCOME}" == "success" ||
+                "${UPGRADE_OUTCOME}" != "success" ||
+                "${RUNTIME_OUTCOME}" != "success" ||
+                "${LIVE_OUTCOME}" != "success" ]]; then
+            [[ "${RECOVERY_OUTCOME}" == "success" ]] ||
+              echo "::error::recovery did not complete successfully"
+            echo "::error::immutable VKE deployment or fleet admin gate failed"
+            exit 1
+          fi
+          {
+            echo "## VKE fleet admin deployment"
+            echo
+            echo "- Commit: \`${{ steps.source.outputs.commit_sha }}\`"
+            echo "- Image: \`${{ steps.image.outputs.image_ref }}\`"
+            echo "- Runtime digest: \`${{ steps.image.outputs.runtime_digest }}\`"
+            echo "- Fleet admin public/auth/browser gate: passed"
+          } >>"${GITHUB_STEP_SUMMARY}"
