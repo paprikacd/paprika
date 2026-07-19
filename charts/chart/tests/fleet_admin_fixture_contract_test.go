@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
@@ -102,6 +103,12 @@ func TestHelmFleetAdminStatusFieldsMatchAuthoritativeCRDs(t *testing.T) {
 			crdName:     "releases.pipelines.paprika.io",
 			statusField: "rolloutRef",
 		},
+		{
+			name:        "Release phase",
+			baseFile:    "pipelines.paprika.io_releases.yaml",
+			crdName:     "releases.pipelines.paprika.io",
+			statusField: "phase",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			authoritative := readYAMLFile(t, filepath.Join(
@@ -138,6 +145,125 @@ func TestHelmFleetAdminStatusFieldsMatchAuthoritativeCRDs(t *testing.T) {
 					packagedJSON,
 					authoritativeJSON,
 				)
+			}
+		})
+	}
+}
+
+func TestHelmFleetAdminFixtureStatusSchemasMatchAuthoritativeCRDs(t *testing.T) {
+	_, rendered := renderChart(t)
+	for _, resource := range []struct {
+		name        string
+		fixtureFile string
+		baseFile    string
+		crdName     string
+	}{
+		{
+			name:        "AppProject",
+			fixtureFile: "projects.yaml",
+			baseFile:    "core.paprika.io_appprojects.yaml",
+			crdName:     "appprojects.core.paprika.io",
+		},
+		{
+			name:        "Cluster",
+			fixtureFile: "clusters.yaml",
+			baseFile:    "clusters.paprika.io_clusters.yaml",
+			crdName:     "clusters.clusters.paprika.io",
+		},
+		{
+			name:        "Application",
+			fixtureFile: "applications.yaml",
+			baseFile:    "pipelines.paprika.io_applications.yaml",
+			crdName:     "applications.pipelines.paprika.io",
+		},
+		{
+			name:        "Stage",
+			fixtureFile: "stages.yaml",
+			baseFile:    "pipelines.paprika.io_stages.yaml",
+			crdName:     "stages.pipelines.paprika.io",
+		},
+		{
+			name:        "Release",
+			fixtureFile: "releases.yaml",
+			baseFile:    "pipelines.paprika.io_releases.yaml",
+			crdName:     "releases.pipelines.paprika.io",
+		},
+		{
+			name:        "Pipeline",
+			fixtureFile: "pipelines.yaml",
+			baseFile:    "pipelines.paprika.io_pipelines.yaml",
+			crdName:     "pipelines.pipelines.paprika.io",
+		},
+		{
+			name:        "Rollout",
+			fixtureFile: "rollouts.yaml",
+			baseFile:    "rollouts.paprika.io_rollouts.yaml",
+			crdName:     "rollouts.rollouts.paprika.io",
+		},
+	} {
+		t.Run(resource.name, func(t *testing.T) {
+			root := repoRoot(t)
+			authoritative := readYAMLFile(t, filepath.Join(
+				root,
+				"config",
+				"crd",
+				"bases",
+				resource.baseFile,
+			))
+			packaged := requireManifest(
+				t,
+				rendered,
+				"CustomResourceDefinition",
+				resource.crdName,
+			)
+			fixtures := readYAMLDocuments(t, filepath.Join(
+				root,
+				"config",
+				"e2e",
+				"fleet-admin",
+				"base",
+				resource.fixtureFile,
+			))
+			fields := make(map[string]struct{})
+			for _, fixture := range fixtures {
+				status := object(
+					t,
+					path(fixture, "status"),
+					resource.name+" fixture status",
+				)
+				for field := range status {
+					fields[field] = struct{}{}
+				}
+			}
+			fieldNames := make([]string, 0, len(fields))
+			for field := range fields {
+				fieldNames = append(fieldNames, field)
+			}
+			sort.Strings(fieldNames)
+			for _, field := range fieldNames {
+				authoritativeSchema := crdStatusFieldSchema(
+					t,
+					authoritative,
+					field,
+				)
+				packagedSchema := crdStatusFieldSchema(t, packaged, field)
+				authoritativeJSON, err := json.Marshal(authoritativeSchema)
+				if err != nil {
+					t.Fatalf("encode authoritative %s status.%s schema: %v", resource.name, field, err)
+				}
+				packagedJSON, err := json.Marshal(packagedSchema)
+				if err != nil {
+					t.Fatalf("encode packaged %s status.%s schema: %v", resource.name, field, err)
+				}
+				if !bytes.Equal(packagedJSON, authoritativeJSON) {
+					t.Errorf(
+						"Helm %s status.%s schema drifted from config/crd/bases:\npackaged: %s\nauthoritative: %s",
+						resource.name,
+						field,
+						packagedJSON,
+						authoritativeJSON,
+					)
+				}
 			}
 		})
 	}
