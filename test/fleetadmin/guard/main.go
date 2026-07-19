@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -126,13 +127,17 @@ func main() {
 
 func run(ctx context.Context, args []string, output io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: fleetadmin-guard <create|delete|link|overlay>")
+		return errors.New(
+			"usage: fleetadmin-guard <create|delete|fixture-documents|link|overlay>",
+		)
 	}
 	switch args[0] {
 	case "create":
 		return runCreate(ctx, args[1:], output)
 	case "delete":
 		return runDelete(ctx, args[1:])
+	case "fixture-documents":
+		return runFixtureDocuments(args[1:], output)
 	case "link":
 		return runLink(ctx, args[1:])
 	case "overlay":
@@ -140,6 +145,146 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	default:
 		return fmt.Errorf("unknown fleetadmin-guard command %q", args[0])
 	}
+}
+
+func runFixtureDocuments(args []string, output io.Writer) error {
+	flags := flag.NewFlagSet("fixture-documents", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	mode := flags.String("mode", "", "document partition: objects or stages")
+	inputPath := flags.String("input", "", "rendered fixture document path")
+	if err := flags.Parse(args); err != nil {
+		return fmt.Errorf("parse fixture-documents flags: %w", err)
+	}
+	if *inputPath == "" {
+		return errors.New("fixture-documents input is required")
+	}
+	if *mode != "objects" && *mode != "stages" {
+		return fmt.Errorf("fixture-documents mode must be objects or stages, got %q", *mode)
+	}
+	// #nosec G304 -- the caller supplies a harness-owned temporary fixture path.
+	input, err := os.Open(*inputPath)
+	if err != nil {
+		return fmt.Errorf("open fixture documents: %w", err)
+	}
+	partitionErr := partitionFixtureDocuments(input, output, *mode)
+	closeErr := input.Close()
+	if partitionErr != nil {
+		return partitionErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close fixture documents: %w", closeErr)
+	}
+	return nil
+}
+
+func partitionFixtureDocuments(input io.Reader, output io.Writer, mode string) error {
+	decoder := k8syaml.NewYAMLOrJSONDecoder(input, 4096)
+	var selected [][]byte
+	for {
+		var document map[string]any
+		err := decoder.Decode(&document)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("decode fixture document: %w", err)
+		}
+		if len(document) == 0 {
+			continue
+		}
+		rendered, include, err := renderSelectedFixtureDocument(document, mode)
+		if err != nil {
+			return err
+		}
+		if !include {
+			continue
+		}
+		selected = append(selected, rendered)
+	}
+	return writeFixtureDocuments(output, selected)
+}
+
+func renderSelectedFixtureDocument(
+	document map[string]any,
+	mode string,
+) (rendered []byte, include bool, err error) {
+	apiVersion, kind, identityErr := fixtureDocumentIdentity(document)
+	if identityErr != nil {
+		return nil, false, identityErr
+	}
+	isControllerOwnedStage := apiVersion == "pipelines.paprika.io/v1alpha1" &&
+		kind == "Stage"
+	validationErr := validateControllerOwnedStageDocument(document, isControllerOwnedStage)
+	if validationErr != nil {
+		return nil, false, validationErr
+	}
+	include = mode == "objects" && !isControllerOwnedStage ||
+		mode == "stages" && isControllerOwnedStage
+	if !include {
+		return nil, false, nil
+	}
+	rendered, err = yaml.Marshal(document)
+	if err != nil {
+		return nil, false, fmt.Errorf("render fixture document: %w", err)
+	}
+	return rendered, true, nil
+}
+
+func fixtureDocumentIdentity(
+	document map[string]any,
+) (apiVersion, kind string, err error) {
+	apiVersion, apiVersionOK := document["apiVersion"].(string)
+	kind, kindOK := document["kind"].(string)
+	if !apiVersionOK || apiVersion == "" || !kindOK || kind == "" {
+		return "", "", errors.New("fixture document must have non-empty apiVersion and kind")
+	}
+	return apiVersion, kind, nil
+}
+
+func validateControllerOwnedStageDocument(
+	document map[string]any,
+	isControllerOwnedStage bool,
+) error {
+	if !isControllerOwnedStage {
+		return nil
+	}
+	if _, hasSpec := document["spec"]; !hasSpec {
+		return nil
+	}
+	return fmt.Errorf(
+		"stage %q contains spec; application controller must be the only Stage spec owner",
+		pathString(document, "metadata", "name"),
+	)
+}
+
+func writeFixtureDocuments(output io.Writer, documents [][]byte) error {
+	for index, document := range documents {
+		if index != 0 {
+			if _, err := io.WriteString(output, "---\n"); err != nil {
+				return fmt.Errorf("write fixture document separator: %w", err)
+			}
+		}
+		if _, err := output.Write(document); err != nil {
+			return fmt.Errorf("write fixture document: %w", err)
+		}
+	}
+	return nil
+}
+
+func pathString(document map[string]any, keys ...string) string {
+	var current any = document
+	for _, key := range keys {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current = object[key]
+	}
+	value, ok := current.(string)
+	if !ok {
+		return ""
+	}
+	return value
 }
 
 func runCreate(ctx context.Context, args []string, output io.Writer) error {

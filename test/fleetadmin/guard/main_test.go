@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8stesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
@@ -413,6 +416,86 @@ func TestOverlayCommandUsesOnlyFixedSiblingBase(t *testing.T) {
 		}, io.Discard)
 		require.ErrorContains(t, err, "flag provided but not defined")
 	})
+}
+
+func TestFixtureDocumentsCommandPartitionsControllerOwnedStages(t *testing.T) {
+	input := strings.Join([]string{
+		"apiVersion: pipelines.paprika.io/v1alpha1",
+		"kind: Application",
+		"metadata:",
+		"  name: billing",
+		"---",
+		"apiVersion: pipelines.paprika.io/v1alpha1",
+		"kind: Stage",
+		"metadata:",
+		"  name: billing-production",
+		"---",
+		"apiVersion: pipelines.paprika.io/v1alpha1",
+		"kind: Release",
+		"metadata:",
+		"  name: billing-gated",
+		"",
+	}, "\n")
+	inputPath := t.TempDir() + "/fixtures.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(input), 0o600))
+
+	for _, test := range []struct {
+		mode  string
+		kinds []string
+	}{
+		{mode: "objects", kinds: []string{"Application", "Release"}},
+		{mode: "stages", kinds: []string{"Stage"}},
+	} {
+		t.Run(test.mode, func(t *testing.T) {
+			var output bytes.Buffer
+			err := run(t.Context(), []string{
+				"fixture-documents",
+				"--mode", test.mode,
+				"--input", inputPath,
+			}, &output)
+			require.NoError(t, err)
+			require.Equal(t, test.kinds, decodeFixtureDocumentKinds(t, output.String()))
+		})
+	}
+}
+
+func TestFixtureDocumentsCommandRejectsStageSpecs(t *testing.T) {
+	inputPath := t.TempDir() + "/fixtures.yaml"
+	require.NoError(t, os.WriteFile(inputPath, []byte(strings.Join([]string{
+		"apiVersion: pipelines.paprika.io/v1alpha1",
+		"kind: Stage",
+		"metadata:",
+		"  name: billing-production",
+		"spec:",
+		"  name: production",
+		"",
+	}, "\n")), 0o600))
+
+	err := run(t.Context(), []string{
+		"fixture-documents",
+		"--mode", "stages",
+		"--input", inputPath,
+	}, io.Discard)
+	require.ErrorContains(t, err, "application controller must be the only Stage spec owner")
+}
+
+func decodeFixtureDocumentKinds(t *testing.T, input string) []string {
+	t.Helper()
+	decoder := k8syaml.NewYAMLOrJSONDecoder(strings.NewReader(input), 4096)
+	var kinds []string
+	for {
+		var document map[string]any
+		err := decoder.Decode(&document)
+		if errors.Is(err, io.EOF) {
+			return kinds
+		}
+		require.NoError(t, err)
+		if len(document) != 0 {
+			kind, ok := document["kind"].(string)
+			require.True(t, ok)
+			kinds = append(kinds, kind)
+		}
+	}
 }
 
 func TestCreateCommandRejectsInvalidRunIDBeforeClientConfiguration(t *testing.T) {

@@ -90,6 +90,10 @@ spec:
       ring: 1
       cluster:
         name: cluster-west
+      approvalGates:
+        - name: change-review
+          type: manual
+          stage: production
   strategy: BlueGreen
   syncPolicy: Manual
 status:

@@ -232,6 +232,15 @@ func materializeFleetAdminFixtureRuntimeGraph(t *testing.T, fixtures *typedFleet
 		stage.UID = types.UID("stage-" + stage.Name)
 		parent := applications[stage.Labels[projectionAppNameLabel]]
 		require.NotNil(t, parent, "Stage %q must reference a committed Application", stage.Name)
+		promotionStage := fleetAdminPromotionStage(t, parent, stage.Name)
+		stage.Spec = pipelinesv1alpha1.StageSpec{
+			Name:          promotionStage.Name,
+			Ring:          promotionStage.Ring,
+			Cluster:       promotionStage.Cluster,
+			Gates:         promotionStage.Gates,
+			ApprovalGates: promotionStage.ApprovalGates,
+			Canary:        promotionStage.Canary,
+		}
 		stage.OwnerReferences = []metav1.OwnerReference{
 			fleetAdminControllerOwner(parent.APIVersion, "Application", parent.Name, parent.UID),
 		}
@@ -255,6 +264,26 @@ func materializeFleetAdminFixtureRuntimeGraph(t *testing.T, fixtures *typedFleet
 			fleetAdminControllerOwner(parent.APIVersion, "Release", parent.Name, parent.UID),
 		}
 	}
+}
+
+func fleetAdminPromotionStage(
+	t *testing.T,
+	application *pipelinesv1alpha1.Application,
+	stageName string,
+) *pipelinesv1alpha1.ApplicationPromotionStage {
+	t.Helper()
+	for index := range application.Spec.Stages {
+		promotionStage := &application.Spec.Stages[index]
+		if application.Name+"-"+promotionStage.Name == stageName {
+			return promotionStage
+		}
+	}
+	t.Fatalf(
+		"Stage %q must be declared by Application %q",
+		stageName,
+		application.Name,
+	)
+	return nil
 }
 
 func fleetAdminControllerOwner(

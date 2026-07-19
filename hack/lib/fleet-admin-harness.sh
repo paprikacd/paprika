@@ -735,7 +735,9 @@ fleet_admin_prepare_fixture_documents() {
     "${FLEET_ADMIN_OVERLAY_DIR}/kustomization.yaml"
 
   local rendered_with_status="${FLEET_ADMIN_WORK_DIR}/fixtures-with-status.yaml"
+  local rendered_all_objects="${FLEET_ADMIN_WORK_DIR}/fixtures-all-objects.yaml"
   local rendered_objects="${FLEET_ADMIN_WORK_DIR}/fixtures-objects.yaml"
+  local rendered_stages="${FLEET_ADMIN_WORK_DIR}/fixtures-stage-metadata.yaml"
   "${FLEET_ADMIN_KUBECTL}" kustomize \
     "${FLEET_ADMIN_OVERLAY_DIR}" >"${rendered_with_status}"
 
@@ -751,23 +753,56 @@ fleet_admin_prepare_fixture_documents() {
       '        path: /status'
   } >>"${FLEET_ADMIN_OVERLAY_DIR}/kustomization.yaml"
   "${FLEET_ADMIN_KUBECTL}" kustomize \
-    "${FLEET_ADMIN_OVERLAY_DIR}" >"${rendered_objects}"
-  if grep -q '^status:' "${rendered_objects}"; then
+    "${FLEET_ADMIN_OVERLAY_DIR}" >"${rendered_all_objects}"
+  if grep -q '^status:' "${rendered_all_objects}"; then
     fleet_admin_log "object fixture rendering retained a top-level status"
+    return 1
+  fi
+  "${FLEET_ADMIN_GUARD_BIN}" fixture-documents \
+    --mode objects \
+    --input "${rendered_all_objects}" >"${rendered_objects}"
+  "${FLEET_ADMIN_GUARD_BIN}" fixture-documents \
+    --mode stages \
+    --input "${rendered_all_objects}" >"${rendered_stages}"
+  if grep -q '^kind: Stage$' "${rendered_objects}"; then
+    fleet_admin_log "object fixture rendering retained a controller-owned Stage"
+    return 1
+  fi
+  if ! grep -q '^kind: Stage$' "${rendered_stages}"; then
+    fleet_admin_log "Stage metadata fixture rendering is empty"
     return 1
   fi
   fleet_admin_redact_file "${rendered_with_status}" \
     "${FLEET_ADMIN_ARTIFACT_DIR}/fixtures-rendered-with-status.yaml"
   fleet_admin_redact_file "${rendered_objects}" \
     "${FLEET_ADMIN_ARTIFACT_DIR}/fixtures-objects.yaml"
+  fleet_admin_redact_file "${rendered_stages}" \
+    "${FLEET_ADMIN_ARTIFACT_DIR}/fixtures-stage-metadata.yaml"
 }
 
 fleet_admin_apply_fixtures() {
-  "${FLEET_ADMIN_KUBECTL}" \
-    --kubeconfig "${FLEET_ADMIN_KUBECONFIG}" \
-    --context "${FLEET_ADMIN_CONTEXT}" \
-    --request-timeout="${FLEET_ADMIN_REQUEST_TIMEOUT}" \
+  local kube=(
+    "${FLEET_ADMIN_KUBECTL}"
+    --kubeconfig "${FLEET_ADMIN_KUBECONFIG}"
+    --context "${FLEET_ADMIN_CONTEXT}"
+    --request-timeout="${FLEET_ADMIN_REQUEST_TIMEOUT}"
+  )
+  "${kube[@]}" \
     apply -f "${FLEET_ADMIN_WORK_DIR}/fixtures-objects.yaml"
+  # Applications are the sole Stage spec owners. Wait for their reconciler to
+  # materialize the Stage identities before adding only the harness ownership
+  # labels used by the guarded cleanup and inventory checks.
+  "${kube[@]}" \
+    wait \
+    --for=create \
+    --timeout="${FLEET_ADMIN_REQUEST_TIMEOUT}" \
+    -f "${FLEET_ADMIN_WORK_DIR}/fixtures-stage-metadata.yaml"
+  "${kube[@]}" \
+    label \
+    --overwrite \
+    -f "${FLEET_ADMIN_WORK_DIR}/fixtures-stage-metadata.yaml" \
+    "${FLEET_ADMIN_SUITE_LABEL}" \
+    "${FLEET_ADMIN_RUN_LABEL}"
   "${FLEET_ADMIN_GUARD_BIN}" link \
     --run-id "${FLEET_ADMIN_RUN_ID}" \
     --namespace "${FLEET_ADMIN_NAMESPACE}" \
@@ -777,10 +812,7 @@ fleet_admin_apply_fixtures() {
     --timeout "${FLEET_ADMIN_REQUEST_TIMEOUT}"
   # Server-side apply uses the PATCH verb against only the status subresource;
   # spec and ownership metadata cannot be rewritten by this operation.
-  "${FLEET_ADMIN_KUBECTL}" \
-    --kubeconfig "${FLEET_ADMIN_KUBECONFIG}" \
-    --context "${FLEET_ADMIN_CONTEXT}" \
-    --request-timeout="${FLEET_ADMIN_REQUEST_TIMEOUT}" \
+  "${kube[@]}" \
     apply \
     --server-side \
     --subresource=status \

@@ -1063,6 +1063,38 @@ case "${1:-}" in
       'resources:' \
       '  - ../base'
     ;;
+  fixture-documents)
+    mode=""
+    while (($#)); do
+      case "$1" in
+        --mode)
+          mode=$2
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    case "${mode}" in
+      objects)
+        printf '%s\n' \
+          'apiVersion: v1' \
+          'kind: List' \
+          'items: []'
+        ;;
+      stages)
+        printf '%s\n' \
+          'apiVersion: pipelines.paprika.io/v1alpha1' \
+          'kind: Stage' \
+          'metadata:' \
+          '  name: billing-production'
+        ;;
+      *)
+        exit 2
+        ;;
+    esac
+    ;;
   link|delete)
     ;;
   *)
@@ -1312,6 +1344,8 @@ if ! awk '
   index($0, " auth can-i create pods/portforward ") ||
     $0 ~ / get nodes$/ ||
     index($0, " apply -f ") ||
+    index($0, " wait --for=create ") ||
+    index($0, " label --overwrite ") ||
     index($0, " apply --server-side ") ||
     (index($0, " get appprojects.core.paprika.io") && index($0, " -o json")) ||
     index($0, " delete appprojects.core.paprika.io") {
@@ -1322,10 +1356,10 @@ if ! awk '
     }
   }
   END {
-    if (count < 6) {
+    if (count < 8) {
       print "matched only " count " one-shot kubectl commands" > "/dev/stderr"
     }
-    if (missing || count < 6) exit 1
+    if (missing || count < 8) exit 1
   }
 ' "${FULL_COMMAND_LOG}"; then
   fail "one-shot kubectl commands were missing the bounded request timeout"
@@ -1348,6 +1382,33 @@ if ! awk '
   END { if (count != 6) exit 1 }
 ' "${FULL_COMMAND_LOG}"; then
   fail "diagnostic commands were missing bounded request timeout or finite log tail"
+fi
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'guard fixture-documents --mode objects --input'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'guard fixture-documents --mode stages --input'
+if ! awk '
+  index($0, " apply -f ") && index($0, "fixtures-objects.yaml") {
+    object_apply = NR
+  }
+  index($0, " wait --for=create ") && index($0, "fixtures-stage-metadata.yaml") {
+    stage_wait = NR
+  }
+  index($0, " label --overwrite ") && index($0, "fixtures-stage-metadata.yaml") {
+    stage_label = NR
+  }
+  index($0, "guard link ") {
+    owner_link = NR
+  }
+  END {
+    if (!object_apply || !stage_wait || !stage_label || !owner_link ||
+        !(object_apply < stage_wait && stage_wait < stage_label &&
+          stage_label < owner_link)) {
+      exit 1
+    }
+  }
+' "${FULL_COMMAND_LOG}"; then
+  fail "Stage lifecycle did not apply parents, wait, label metadata, then validate ownership"
 fi
 assert_file_not_contains "${FULL_COMMAND_LOG}" '--tail=-1'
 assert_file_contains "${FULL_COMMAND_LOG}" \

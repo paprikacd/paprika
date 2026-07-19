@@ -103,13 +103,27 @@ func TestFleetAdminFixtureTopologyUsesProductionAssociations(t *testing.T) {
 		statusStageRefs := nestedStringSlice(t, application, "status", "stageRefs")
 		require.NotEmpty(t, specStages, "Application %s spec.stages", name)
 		require.Len(t, statusStageRefs, len(specStages), "Application %s stageRefs", name)
-		for _, stageRef := range statusStageRefs {
+		for index, stageRef := range statusStageRefs {
 			stage := requireObject(t, stages, stageRef, "Application %s stageRef", name)
 			require.Equal(t, name, stage.GetLabels()[applicationLabel], "Stage %s application", stageRef)
 			require.Equal(t, project, stage.GetLabels()[projectLabel], "Stage %s project", stageRef)
-			clusterRef := nestedString(t, stage, "spec", "cluster", "name")
+			require.NotContains(
+				t,
+				stage.Object,
+				"spec",
+				"Stage %s must leave spec ownership to its Application controller",
+				stageRef,
+			)
+			promotionStage, ok := specStages[index].(map[string]any)
+			require.True(t, ok, "Application %s promotion stage %d", name, index)
+			logicalName, ok := promotionStage["name"].(string)
+			require.True(t, ok)
+			require.Equal(t, name+"-"+logicalName, stageRef)
+			cluster, ok := promotionStage["cluster"].(map[string]any)
+			require.True(t, ok, "Application %s stage %s cluster", name, logicalName)
+			clusterRef, ok := cluster["name"].(string)
+			require.True(t, ok)
 			require.Contains(t, clusters, clusterRef, "Stage %s cluster", stageRef)
-			logicalName := nestedString(t, stage, "spec", "name")
 			require.Truef(t, applicationHasStage(specStages, logicalName), "Application %s misses logical stage %s", name, logicalName)
 		}
 	}
@@ -178,7 +192,16 @@ func TestFleetAdminFixtureStatusesCanBePatchedSeparately(t *testing.T) {
 		require.NotEmpty(t, objectOnly.GetAPIVersion())
 		require.NotEmpty(t, objectOnly.GetKind())
 		require.NotEmpty(t, objectOnly.GetName())
-		require.Contains(t, objectOnly.Object, "spec")
+		if object.GetKind() == "Stage" {
+			require.NotContains(
+				t,
+				objectOnly.Object,
+				"spec",
+				"Stage fixtures are status-only because the Application controller owns spec",
+			)
+		} else {
+			require.Contains(t, objectOnly.Object, "spec")
+		}
 
 		statusOnly := map[string]any{
 			"apiVersion": object.GetAPIVersion(),

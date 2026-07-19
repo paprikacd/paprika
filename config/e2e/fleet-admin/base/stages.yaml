@@ -6,12 +6,6 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: storefront
     app.paprika.io/name: checkout
-spec:
-  name: production
-  ring: 1
-  cluster:
-    name: cluster-east
-  templates: []
 status:
   observedGeneration: 1
 ---
@@ -23,12 +17,6 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: storefront
     app.paprika.io/name: catalog
-spec:
-  name: staging
-  ring: 1
-  cluster:
-    name: cluster-east
-  templates: []
 status:
   observedGeneration: 1
 ---
@@ -40,16 +28,6 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: finance
     app.paprika.io/name: billing
-spec:
-  name: production
-  ring: 1
-  cluster:
-    name: cluster-west
-  templates: []
-  approvalGates:
-    - name: change-review
-      type: manual
-      stage: production
 status:
   observedGeneration: 1
 ---
@@ -61,12 +39,6 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: finance
     app.paprika.io/name: ledger
-spec:
-  name: production
-  ring: 1
-  cluster:
-    name: cluster-west
-  templates: []
 status:
   observedGeneration: 1
 ---
@@ -78,12 +50,6 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: storefront
     app.paprika.io/name: search
-spec:
-  name: development
-  ring: 1
-  cluster:
-    name: cluster-east
-  templates: []
 status:
   observedGeneration: 1
 ---
@@ -95,11 +61,5 @@ metadata:
     paprika.io/e2e-suite: fleet-admin-dashboard
     app.paprika.io/project: finance
     app.paprika.io/name: notifications
-spec:
-  name: development
-  ring: 1
-  cluster:
-    name: cluster-west
-  templates: []
 status:
   observedGeneration: 1
