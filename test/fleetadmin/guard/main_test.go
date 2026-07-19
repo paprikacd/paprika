@@ -325,6 +325,92 @@ func TestLinkFixtureOwnersFailsClosedOnConcurrentResourceVersionChange(t *testin
 	require.Empty(t, stage.GetOwnerReferences(), "a stale linker must not overwrite the concurrent object")
 }
 
+func TestWaitForControllerStagesPollsUntilExactControllerOwnedInventoryExists(t *testing.T) {
+	ownership := testOwnership()
+	objects, stages := controllerStageWaitObjects(t, ownership)
+	client := newFixtureDynamicClient(objects...)
+	attempts := 0
+	client.PrependReactor("get", "stages", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		attempts++
+		if attempts == 1 {
+			getAction, ok := action.(k8stesting.GetAction)
+			require.True(t, ok)
+			return true, nil, apierrors.NewNotFound(
+				schema.GroupResource{
+					Group:    testStageGVR.Group,
+					Resource: testStageGVR.Resource,
+				},
+				getAction.GetName(),
+			)
+		}
+		if attempts == 2 {
+			for _, stage := range stages {
+				require.NoError(t, client.Tracker().Create(testStageGVR, stage, ownership.Namespace))
+			}
+		}
+		return false, nil, nil
+	})
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, waitForControllerStages(ctx, client, ownership, time.Millisecond))
+	require.GreaterOrEqual(t, attempts, 2)
+	require.Empty(t, fixturePatchActions(client.Actions()),
+		"the readiness gate must not mutate controller-owned Stages")
+}
+
+func TestWaitForControllerStagesTimesOutWithMissingInventory(t *testing.T) {
+	ownership := testOwnership()
+	objects, _ := controllerStageWaitObjects(t, ownership)
+	client := newFixtureDynamicClient(objects...)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Millisecond)
+	defer cancel()
+
+	err := waitForControllerStages(ctx, client, ownership, time.Millisecond)
+	require.ErrorContains(t, err, "context deadline exceeded")
+	require.ErrorContains(t, err, "billing-production")
+	require.Empty(t, fixturePatchActions(client.Actions()))
+}
+
+func TestWaitForControllerStagesRejectsMismatchedIdentityWithoutRetry(t *testing.T) {
+	tests := map[string]struct {
+		mutate      func(*unstructured.Unstructured)
+		errorSubstr string
+	}{
+		"application association": {
+			mutate: func(stage *unstructured.Unstructured) {
+				stageLabels := stage.GetLabels()
+				stageLabels[testApplicationNameLabelKey] = "catalog"
+				stage.SetLabels(stageLabels)
+			},
+			errorSubstr: "application association",
+		},
+		"controller owner": {
+			mutate: func(stage *unstructured.Unstructured) {
+				owners := stage.GetOwnerReferences()
+				owners[0].UID = "foreign-uid"
+				stage.SetOwnerReferences(owners)
+			},
+			errorSubstr: "controller owner",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			ownership := testOwnership()
+			objects, stages := controllerStageWaitObjects(t, ownership)
+			test.mutate(stages[0])
+			for _, stage := range stages {
+				objects = append(objects, stage)
+			}
+			client := newFixtureDynamicClient(objects...)
+
+			err := waitForControllerStages(t.Context(), client, ownership, time.Hour)
+			require.ErrorContains(t, err, test.errorSubstr)
+			require.Empty(t, fixturePatchActions(client.Actions()))
+		})
+	}
+}
+
 func TestPlanOwnerPatchRepairsExactControllerWithoutBlockOwnerDeletion(t *testing.T) {
 	expected := &metav1.OwnerReference{
 		APIVersion:         "pipelines.paprika.io/v1alpha1",
@@ -865,6 +951,51 @@ func successfulLinkObjects(ownership namespaceOwnership) []runtime.Object {
 		resourceVersion++
 	}
 	return objects
+}
+
+func controllerStageWaitObjects(
+	t *testing.T,
+	ownership namespaceOwnership,
+) ([]runtime.Object, []*unstructured.Unstructured) {
+	t.Helper()
+	all := successfulLinkObjects(ownership)
+	objects := make([]runtime.Object, 0, 1+len(expectedApplications))
+	stages := make([]*unstructured.Unstructured, 0, len(expectedStages))
+	applications := make(map[string]*unstructured.Unstructured, len(expectedApplications))
+	for _, object := range all {
+		fixture, ok := object.(*unstructured.Unstructured)
+		require.True(t, ok)
+		switch fixture.GetKind() {
+		case "Namespace":
+			objects = append(objects, fixture.DeepCopy())
+		case "Application":
+			application := fixture.DeepCopy()
+			applications[application.GetName()] = application
+			objects = append(objects, application)
+		}
+	}
+	for _, object := range all {
+		fixture, ok := object.(*unstructured.Unstructured)
+		require.True(t, ok)
+		if fixture.GetKind() != "Stage" {
+			continue
+		}
+		stage := fixture.DeepCopy()
+		stageLabels := stage.GetLabels()
+		delete(stageLabels, suiteLabelKey)
+		delete(stageLabels, runLabelKey)
+		stage.SetLabels(stageLabels)
+		application := applications[stageLabels[testApplicationNameLabelKey]]
+		stage.SetOwnerReferences([]metav1.OwnerReference{
+			*controllerOwner(
+				application,
+				"pipelines.paprika.io/v1alpha1",
+				"Application",
+			),
+		})
+		stages = append(stages, stage)
+	}
+	return objects, stages
 }
 
 func dynamicNamespace(ownership namespaceOwnership) *unstructured.Unstructured {

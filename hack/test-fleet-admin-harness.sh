@@ -1095,7 +1095,7 @@ case "${1:-}" in
         ;;
     esac
     ;;
-  link|delete)
+  wait-stages|link|delete)
     ;;
   *)
     exit 2
@@ -1329,7 +1329,7 @@ if ! awk '
 ' "${FULL_COMMAND_LOG}"; then
   fail "helm status received an unsupported timeout flag"
 fi
-for guard_action in create link delete; do
+for guard_action in create wait-stages link delete; do
   if ! awk -v action="${guard_action}" '
     $0 ~ ("guard " action " ") {
       found = 1
@@ -1344,7 +1344,6 @@ if ! awk '
   index($0, " auth can-i create pods/portforward ") ||
     $0 ~ / get nodes$/ ||
     index($0, " apply -f ") ||
-    index($0, " wait --for=create ") ||
     index($0, " label --overwrite ") ||
     index($0, " apply --server-side ") ||
     (index($0, " get appprojects.core.paprika.io") && index($0, " -o json")) ||
@@ -1356,10 +1355,10 @@ if ! awk '
     }
   }
   END {
-    if (count < 8) {
+    if (count < 7) {
       print "matched only " count " one-shot kubectl commands" > "/dev/stderr"
     }
-    if (missing || count < 8) exit 1
+    if (missing || count < 7) exit 1
   }
 ' "${FULL_COMMAND_LOG}"; then
   fail "one-shot kubectl commands were missing the bounded request timeout"
@@ -1400,7 +1399,7 @@ if ! awk '
   index($0, " apply -f ") && index($0, "fixtures-objects.yaml") {
     object_apply = NR
   }
-  index($0, " wait --for=create ") && index($0, "fixtures-stage-metadata.yaml") {
+  index($0, "guard wait-stages ") {
     stage_wait = NR
   }
   index($0, " label --overwrite ") && index($0, "fixtures-stage-metadata.yaml") {

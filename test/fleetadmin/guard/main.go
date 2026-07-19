@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -128,7 +129,7 @@ func main() {
 func run(ctx context.Context, args []string, output io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(
-			"usage: fleetadmin-guard <create|delete|fixture-documents|link|overlay>",
+			"usage: fleetadmin-guard <create|delete|fixture-documents|link|overlay|wait-stages>",
 		)
 	}
 	switch args[0] {
@@ -142,6 +143,8 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 		return runLink(ctx, args[1:])
 	case "overlay":
 		return runOverlay(args[1:], output)
+	case "wait-stages":
+		return runWaitStages(ctx, args[1:])
 	default:
 		return fmt.Errorf("unknown fleetadmin-guard command %q", args[0])
 	}
@@ -355,6 +358,28 @@ func runLink(ctx context.Context, args []string) error {
 	}
 	defer cancel()
 	return linkFixtureOwners(operationCtx, client, settings.ownership)
+}
+
+func runWaitStages(ctx context.Context, args []string) error {
+	settings, err := parseOwnershipCommandFlags("wait-stages", args)
+	if err != nil {
+		return err
+	}
+	client, err := newDynamicClient(settings.kubeconfig, settings.context)
+	if err != nil {
+		return err
+	}
+	operationCtx, cancel, err := boundedKubernetesContext(ctx, settings.timeout)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return waitForControllerStages(
+		operationCtx,
+		client,
+		settings.ownership,
+		250*time.Millisecond,
+	)
 }
 
 func parseOwnershipCommandFlags(command string, args []string) (ownershipCommandFlags, error) {
@@ -632,6 +657,151 @@ func linkFixtureOwners(
 		}
 	}
 	return nil
+}
+
+func waitForControllerStages(
+	ctx context.Context,
+	client dynamic.Interface,
+	ownership namespaceOwnership,
+	pollInterval time.Duration,
+) error {
+	if err := validateOwnership(ownership); err != nil {
+		return err
+	}
+	if pollInterval <= 0 {
+		return errors.New("stage poll interval must be positive")
+	}
+	applications, err := loadExpectedApplicationsForStageWait(ctx, client, ownership)
+	if err != nil {
+		return err
+	}
+	for {
+		missing, readinessErr := inspectControllerStageReadiness(
+			ctx,
+			client,
+			ownership,
+			applications,
+		)
+		if readinessErr != nil {
+			return readinessErr
+		}
+		if len(missing) == 0 {
+			return nil
+		}
+
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf(
+				"wait for controller-created Stages (%s still missing): %w",
+				strings.Join(missing, ", "),
+				ctx.Err(),
+			)
+		case <-timer.C:
+		}
+	}
+}
+
+func loadExpectedApplicationsForStageWait(
+	ctx context.Context,
+	client dynamic.Interface,
+	ownership namespaceOwnership,
+) (map[string]*unstructured.Unstructured, error) {
+	if err := validateDynamicNamespaceOwnership(ctx, client, ownership); err != nil {
+		return nil, err
+	}
+	selector := labels.Set{
+		suiteLabelKey: suiteLabelValue,
+		runLabelKey:   ownership.RunID,
+	}.AsSelector().String()
+	applications, err := listOwnedFixtureKind(
+		ctx,
+		client,
+		ownership,
+		applicationGVR,
+		"Application",
+		selector,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateExactFixtureNames(
+		ctx,
+		client,
+		ownership,
+		applicationGVR,
+		"Application",
+		applications,
+		expectedApplications,
+	); err != nil {
+		return nil, err
+	}
+	return applications, nil
+}
+
+func inspectControllerStageReadiness(
+	ctx context.Context,
+	client dynamic.Interface,
+	ownership namespaceOwnership,
+	applications map[string]*unstructured.Unstructured,
+) ([]string, error) {
+	names := make([]string, 0, len(expectedStages))
+	for name := range expectedStages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	missing := make([]string, 0)
+	for _, name := range names {
+		stage, err := client.Resource(stageGVR).Namespace(ownership.Namespace).Get(
+			ctx,
+			name,
+			metav1.GetOptions{},
+		)
+		if apierrors.IsNotFound(err) {
+			missing = append(missing, name)
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("get controller-created Stage %q: %w", name, err)
+		}
+		if stage.GetNamespace() != ownership.Namespace {
+			return nil, fmt.Errorf(
+				"controller-created Stage %q namespace does not match the owned namespace",
+				name,
+			)
+		}
+		applicationName := expectedStages[name]
+		if actual := stage.GetLabels()[applicationNameLabelKey]; actual != applicationName {
+			return nil, fmt.Errorf(
+				"controller-created Stage %q application association is %q, expected %q",
+				name,
+				actual,
+				applicationName,
+			)
+		}
+		application := applications[applicationName]
+		if application == nil || application.GetUID() == "" {
+			return nil, fmt.Errorf(
+				"controller-created Stage %q parent Application %q is missing or has an empty UID",
+				name,
+				applicationName,
+			)
+		}
+		expectedOwner := controllerOwner(
+			application,
+			"pipelines.paprika.io/v1alpha1",
+			"Application",
+		)
+		if !hasOnlyExpectedController(stage.GetOwnerReferences(), expectedOwner) {
+			return nil, fmt.Errorf(
+				"controller-created Stage %q controller owner does not match Application %q",
+				name,
+				applicationName,
+			)
+		}
+	}
+	return missing, nil
 }
 
 func validateDynamicNamespaceOwnership(

@@ -790,13 +790,15 @@ fleet_admin_apply_fixtures() {
   "${kube[@]}" \
     apply -f "${FLEET_ADMIN_WORK_DIR}/fixtures-objects.yaml"
   # Applications are the sole Stage spec owners. Wait for their reconciler to
-  # materialize the Stage identities before adding only the harness ownership
-  # labels used by the guarded cleanup and inventory checks.
-  "${kube[@]}" \
-    wait \
-    --for=create \
-    --timeout="${FLEET_ADMIN_REQUEST_TIMEOUT}" \
-    -f "${FLEET_ADMIN_WORK_DIR}/fixtures-stage-metadata.yaml"
+  # materialize the exact identities and controller-owner graph before adding
+  # only the harness ownership labels used by cleanup and inventory checks.
+  "${FLEET_ADMIN_GUARD_BIN}" wait-stages \
+    --run-id "${FLEET_ADMIN_RUN_ID}" \
+    --namespace "${FLEET_ADMIN_NAMESPACE}" \
+    --uid "${FLEET_ADMIN_NAMESPACE_UID}" \
+    --kubeconfig "${FLEET_ADMIN_KUBECONFIG}" \
+    --context "${FLEET_ADMIN_CONTEXT}" \
+    --timeout "${FLEET_ADMIN_REQUEST_TIMEOUT}"
   "${kube[@]}" \
     label \
     --overwrite \
