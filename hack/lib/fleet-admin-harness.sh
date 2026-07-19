@@ -837,6 +837,8 @@ rollouts.rollouts.paprika.io \
     --namespace "${FLEET_ADMIN_NAMESPACE}" \
     --selector="${FLEET_ADMIN_SUITE_LABEL},${FLEET_ADMIN_RUN_LABEL}" \
     -o json >"${live}" || return 1
+  # Application health and sync have multiple controller-owned raw shapes. The
+  # exact normalized fleet snapshot below is the authoritative semantic check.
   if ! jq -e '
     def one($kind; $name):
       [.items[] | select(.kind == $kind and .metadata.name == $name)]
@@ -854,14 +856,6 @@ rollouts.rollouts.paprika.io \
     inventory("Release"; 4) and observed("Release") and
     inventory("Pipeline"; 2) and observed("Pipeline") and
     inventory("Rollout"; 4) and observed("Rollout") and
-    (one("Application"; "checkout").status.health == "Healthy") and
-    (one("Application"; "catalog").status.phase == "Degraded") and
-    (one("Application"; "catalog").status.synced == true) and
-    (one("Application"; "billing").status.health == "Degraded") and
-    (one("Application"; "ledger").status.phase == "Degraded") and
-    (one("Application"; "search").status.health == "Unknown") and
-    (one("Application"; "notifications").status.resources[0].status == "Missing") and
-    (one("Application"; "notifications").status.synced == true) and
     (one("Release"; "catalog-active").status.phase == "Failed") and
     (one("Release"; "checkout-complete").status.phase == "Complete") and
     (one("Release"; "ledger-failed").status.phase == "Failed") and

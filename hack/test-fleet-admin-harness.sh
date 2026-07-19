@@ -975,7 +975,7 @@ case "${joined}" in
 {"kind":"AppProject","metadata":{"name":"finance"},"status":{"observedGeneration":1}},
 {"kind":"Cluster","metadata":{"name":"cluster-east"},"status":{"observedGeneration":1,"phase":"Healthy"}},
 {"kind":"Cluster","metadata":{"name":"cluster-west"},"status":{"observedGeneration":1,"phase":"Healthy"}},
-{"kind":"Application","metadata":{"name":"checkout"},"status":{"observedGeneration":1,"health":"Healthy"}},
+{"kind":"Application","metadata":{"name":"checkout"},"status":{"observedGeneration":1,"phase":"Healthy"}},
 {"kind":"Application","metadata":{"name":"catalog"},"status":{"observedGeneration":1,"phase":"Degraded","synced":true}},
 {"kind":"Application","metadata":{"name":"billing"},"status":{"observedGeneration":1,"health":"Degraded"}},
 {"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Degraded"}},
