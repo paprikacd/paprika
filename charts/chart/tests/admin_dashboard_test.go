@@ -29,6 +29,24 @@ const (
 
 type manifest map[string]any
 
+func TestManagerRoleCanWriteEventsV1(t *testing.T) {
+	_, objects := renderChart(t)
+	assertManagerRoleRule(t, objects, "events.k8s.io", "events", []string{"create", "patch"})
+}
+
+func TestManagerRoleCanManagePodDisruptionBudgets(t *testing.T) {
+	_, objects := renderChart(t)
+	assertManagerRoleRule(t, objects, "policy", "poddisruptionbudgets", []string{
+		"create",
+		"delete",
+		"get",
+		"list",
+		"patch",
+		"update",
+		"watch",
+	})
+}
+
 func TestAdminDashboardValueIsOptIn(t *testing.T) {
 	values := readYAMLFile(t, filepath.Join(chartRoot(t), "values.yaml"))
 	admin := object(t, values["adminDashboard"], "adminDashboard")
@@ -767,6 +785,35 @@ func assertExactReviewRules(t *testing.T, role manifest) {
 			t.Errorf("review ClusterRole missing exact permission %q", permission)
 		}
 	}
+}
+
+func assertManagerRoleRule(
+	t *testing.T,
+	objects []manifest,
+	apiGroup string,
+	resource string,
+	wantVerbs []string,
+) {
+	t.Helper()
+	role := requireManifest(t, objects, "ClusterRole", "admin-paprika-manager-role")
+	for _, ruleValue := range list(t, role["rules"], "manager role rules") {
+		rule := object(t, ruleValue, "manager role rule")
+		apiGroups := stringList(t, rule["apiGroups"])
+		resources := stringList(t, rule["resources"])
+		if len(apiGroups) != 1 || apiGroups[0] != apiGroup ||
+			len(resources) != 1 || resources[0] != resource {
+			continue
+		}
+		gotVerbs := append([]string(nil), stringList(t, rule["verbs"])...)
+		sortedWant := append([]string(nil), wantVerbs...)
+		sort.Strings(gotVerbs)
+		sort.Strings(sortedWant)
+		if strings.Join(gotVerbs, ",") != strings.Join(sortedWant, ",") {
+			t.Fatalf("%s/%s verbs=%v, want %v", apiGroup, resource, gotVerbs, sortedWant)
+		}
+		return
+	}
+	t.Fatalf("manager role missing %s/%s rule", apiGroup, resource)
 }
 
 func assertNoPort3001Exposure(t *testing.T, objects []manifest) {

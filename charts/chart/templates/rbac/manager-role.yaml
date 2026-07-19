@@ -43,6 +43,13 @@ rules:
   - create
   - patch
 - apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
   - ""
   resources:
   - namespaces
@@ -322,3 +329,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
