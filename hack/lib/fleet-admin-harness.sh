@@ -815,6 +815,7 @@ fleet_admin_apply_fixtures() {
   "${kube[@]}" \
     apply \
     --server-side \
+    --force-conflicts \
     --subresource=status \
     --field-manager=paprika-fleet-admin-harness \
     -f "${FLEET_ADMIN_WORK_DIR}/fixtures-with-status.yaml"

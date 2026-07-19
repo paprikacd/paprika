@@ -1364,6 +1364,15 @@ if ! awk '
 ' "${FULL_COMMAND_LOG}"; then
   fail "one-shot kubectl commands were missing the bounded request timeout"
 fi
+if ! awk '
+  index($0, " apply --server-side ") && index($0, "--subresource=status") {
+    found = 1
+    if (index($0, "--force-conflicts") == 0) exit 1
+  }
+  END { if (!found) exit 1 }
+' "${FULL_COMMAND_LOG}"; then
+  fail "fixture status apply did not explicitly take ownership in the disposable namespace"
+fi
 assert_file_contains "${FULL_COMMAND_LOG}" \
   'app.kubernetes.io/instance=paprika-e2e\,app.kubernetes.io/component=api-server'
 assert_file_contains "${FULL_COMMAND_LOG}" \

@@ -82,6 +82,67 @@ func TestHelmApplicationPromotionStageCRDMatchesApprovalGateSchema(t *testing.T)
 	}
 }
 
+func TestHelmFleetAdminStatusFieldsMatchAuthoritativeCRDs(t *testing.T) {
+	_, rendered := renderChart(t)
+	for _, test := range []struct {
+		name        string
+		baseFile    string
+		crdName     string
+		statusField string
+	}{
+		{
+			name:        "Stage observedGeneration",
+			baseFile:    "pipelines.paprika.io_stages.yaml",
+			crdName:     "stages.pipelines.paprika.io",
+			statusField: "observedGeneration",
+		},
+		{
+			name:        "Release rolloutRef",
+			baseFile:    "pipelines.paprika.io_releases.yaml",
+			crdName:     "releases.pipelines.paprika.io",
+			statusField: "rolloutRef",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authoritative := readYAMLFile(t, filepath.Join(
+				repoRoot(t),
+				"config",
+				"crd",
+				"bases",
+				test.baseFile,
+			))
+			packaged := requireManifest(
+				t,
+				rendered,
+				"CustomResourceDefinition",
+				test.crdName,
+			)
+			authoritativeSchema := crdStatusFieldSchema(
+				t,
+				authoritative,
+				test.statusField,
+			)
+			packagedSchema := crdStatusFieldSchema(t, packaged, test.statusField)
+			authoritativeJSON, err := json.Marshal(authoritativeSchema)
+			if err != nil {
+				t.Fatalf("encode authoritative %s schema: %v", test.name, err)
+			}
+			packagedJSON, err := json.Marshal(packagedSchema)
+			if err != nil {
+				t.Fatalf("encode packaged %s schema: %v", test.name, err)
+			}
+			if !bytes.Equal(packagedJSON, authoritativeJSON) {
+				t.Fatalf(
+					"Helm %s schema drifted from config/crd/bases:\npackaged: %s\nauthoritative: %s",
+					test.name,
+					packagedJSON,
+					authoritativeJSON,
+				)
+			}
+		})
+	}
+}
+
 func TestFleetAdminStageFixturesLeaveSpecOwnershipToApplicationController(t *testing.T) {
 	applications := readYAMLDocuments(t, filepath.Join(
 		repoRoot(t),
@@ -193,6 +254,31 @@ func applicationPromotionStageApprovalGateSchema(t *testing.T, crd any) any {
 		return schema
 	}
 	t.Fatal("Application CRD has no v1alpha1 version")
+	return nil
+}
+
+func crdStatusFieldSchema(t *testing.T, crd any, field string) any {
+	t.Helper()
+	for _, versionValue := range list(t, path(crd, "spec", "versions"), "CRD versions") {
+		version := object(t, versionValue, "CRD version")
+		if stringValue(version["name"]) != "v1alpha1" {
+			continue
+		}
+		schema := path(
+			version,
+			"schema",
+			"openAPIV3Schema",
+			"properties",
+			"status",
+			"properties",
+			field,
+		)
+		if schema == nil {
+			t.Fatalf("v1alpha1 CRD status has no %s schema", field)
+		}
+		return schema
+	}
+	t.Fatal("CRD has no v1alpha1 version")
 	return nil
 }
 
