@@ -857,10 +857,11 @@ rollouts.rollouts.paprika.io \
     (one("Application"; "checkout").status.health == "Healthy") and
     (one("Application"; "catalog").status.health == "Progressing") and
     (one("Application"; "billing").status.health == "Degraded") and
-    (one("Application"; "ledger").status.phase == "Failed") and
+    (one("Application"; "ledger").status.phase == "Degraded") and
+    (one("Application"; "ledger").status.health == "Failed") and
     (one("Application"; "search").status.health == "Unknown") and
     (one("Application"; "notifications").status.resources[0].status == "Missing") and
-    (one("Release"; "catalog-active").status.phase == "Promoting") and
+    (one("Release"; "catalog-active").status.phase == "Failed") and
     (one("Release"; "checkout-complete").status.phase == "Complete") and
     (one("Release"; "ledger-failed").status.phase == "Failed") and
     (one("Release"; "billing-gated").status.phase == "AwaitingApproval") and
@@ -869,7 +870,7 @@ rollouts.rollouts.paprika.io \
     (one("Rollout"; "ledger-failed-rollout").status.phase == "Failed") and
     (one("Rollout"; "billing-gated-rollout").status.phase == "Paused") and
     (one("Pipeline"; "storefront-ci").status.phase == "Succeeded") and
-    (one("Pipeline"; "finance-ci").status.phase == "Running")
+    (one("Pipeline"; "finance-ci").status.phase == "Failed")
   ' "${live}" >/dev/null; then
     fleet_admin_redact_file "${live}" \
       "${FLEET_ADMIN_ARTIFACT_DIR}/conflicting-fixture-status.json"
@@ -995,7 +996,7 @@ fleet_admin_validate_exact_snapshot() {
         expected_application(
           "catalog"; "storefront"; "cluster-east"; "staging";
           "FLEET_HEALTH_PROGRESSING"; "FLEET_SYNC_STATE_UNKNOWN";
-          "FLEET_RELEASE_STATE_PROMOTING"; "FLEET_ROLLOUT_STATE_PROGRESSING"
+          "FLEET_RELEASE_STATE_FAILED"; "FLEET_ROLLOUT_STATE_PROGRESSING"
         ),
         expected_application(
           "checkout"; "storefront"; "cluster-east"; "production";
@@ -1076,7 +1077,7 @@ fleet_admin_validate_exact_snapshot() {
             "billing-gated-rollout"
           ),
           release(
-            "catalog-active"; "Promoting"; "catalog";
+            "catalog-active"; "Failed"; "catalog";
             "catalog-active-rollout"
           ),
           release(
@@ -1120,7 +1121,7 @@ fleet_admin_validate_exact_snapshot() {
         };
       def expected:
         [
-          pipeline("finance-ci"; "Running"; "finance"),
+          pipeline("finance-ci"; "Failed"; "finance"),
           pipeline("storefront-ci"; "Succeeded"; "storefront")
         ];
       (.pipelines | length == 2) and

@@ -605,7 +605,7 @@ cat >"${EXACT_SNAPSHOT_DIR}/fleet.json" <<'JSON'
       "currentCluster":{"namespace":"paprika-fleet-e2e-exact","name":"cluster-east"},
       "currentStage":"staging",
       "sync":"FLEET_SYNC_STATE_UNKNOWN",
-      "release":"FLEET_RELEASE_STATE_PROMOTING",
+      "release":"FLEET_RELEASE_STATE_FAILED",
       "rollout":"FLEET_ROLLOUT_STATE_PROGRESSING"
     }
   },
@@ -678,7 +678,7 @@ JSON
 cat >"${EXACT_SNAPSHOT_DIR}/releases.json" <<'JSON'
 {"totalCount":4,"releases":[
   {"namespace":"paprika-fleet-e2e-exact","name":"billing-gated","phase":"AwaitingApproval","application":"billing","rolloutRef":"billing-gated-rollout"},
-  {"namespace":"paprika-fleet-e2e-exact","name":"catalog-active","phase":"Promoting","application":"catalog","rolloutRef":"catalog-active-rollout"},
+  {"namespace":"paprika-fleet-e2e-exact","name":"catalog-active","phase":"Failed","application":"catalog","rolloutRef":"catalog-active-rollout"},
   {"namespace":"paprika-fleet-e2e-exact","name":"checkout-complete","phase":"Complete","application":"checkout","rolloutRef":"checkout-complete-rollout"},
   {"namespace":"paprika-fleet-e2e-exact","name":"ledger-failed","phase":"Failed","application":"ledger","rolloutRef":"ledger-failed-rollout"}
 ]}
@@ -693,7 +693,7 @@ cat >"${EXACT_SNAPSHOT_DIR}/rollouts.json" <<'JSON'
 JSON
 cat >"${EXACT_SNAPSHOT_DIR}/pipelines.json" <<'JSON'
 {"pipelines":[
-  {"namespace":"paprika-fleet-e2e-exact","name":"finance-ci","phase":"Running","project":"finance"},
+  {"namespace":"paprika-fleet-e2e-exact","name":"finance-ci","phase":"Failed","project":"finance"},
   {"namespace":"paprika-fleet-e2e-exact","name":"storefront-ci","phase":"Succeeded","project":"storefront"}
 ]}
 JSON
@@ -978,7 +978,7 @@ case "${joined}" in
 {"kind":"Application","metadata":{"name":"checkout"},"status":{"observedGeneration":1,"health":"Healthy"}},
 {"kind":"Application","metadata":{"name":"catalog"},"status":{"observedGeneration":1,"health":"Progressing"}},
 {"kind":"Application","metadata":{"name":"billing"},"status":{"observedGeneration":1,"health":"Degraded"}},
-{"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Failed"}},
+{"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Degraded","health":"Failed"}},
 {"kind":"Application","metadata":{"name":"search"},"status":{"observedGeneration":1,"health":"Unknown"}},
 {"kind":"Application","metadata":{"name":"notifications"},"status":{"observedGeneration":1,"resources":[{"status":"Missing"}]}},
 {"kind":"Stage","metadata":{"name":"checkout-production"},"status":{"observedGeneration":1}},
@@ -987,12 +987,12 @@ case "${joined}" in
 {"kind":"Stage","metadata":{"name":"ledger-production"},"status":{"observedGeneration":1}},
 {"kind":"Stage","metadata":{"name":"search-development"},"status":{"observedGeneration":1}},
 {"kind":"Stage","metadata":{"name":"notifications-development"},"status":{"observedGeneration":1}},
-{"kind":"Release","metadata":{"name":"catalog-active"},"status":{"observedGeneration":1,"phase":"Promoting"}},
+{"kind":"Release","metadata":{"name":"catalog-active"},"status":{"observedGeneration":1,"phase":"Failed"}},
 {"kind":"Release","metadata":{"name":"checkout-complete"},"status":{"observedGeneration":1,"phase":"Complete"}},
 {"kind":"Release","metadata":{"name":"ledger-failed"},"status":{"observedGeneration":1,"phase":"Failed"}},
 {"kind":"Release","metadata":{"name":"billing-gated"},"status":{"observedGeneration":1,"phase":"AwaitingApproval"}},
 {"kind":"Pipeline","metadata":{"name":"storefront-ci"},"status":{"observedGeneration":1,"phase":"Succeeded"}},
-{"kind":"Pipeline","metadata":{"name":"finance-ci"},"status":{"observedGeneration":1,"phase":"Running"}},
+{"kind":"Pipeline","metadata":{"name":"finance-ci"},"status":{"observedGeneration":1,"phase":"Failed"}},
 {"kind":"Rollout","metadata":{"name":"catalog-active-rollout"},"status":{"observedGeneration":1,"phase":"Progressing"}},
 {"kind":"Rollout","metadata":{"name":"checkout-complete-rollout"},"status":{"observedGeneration":1,"phase":"Healthy"}},
 {"kind":"Rollout","metadata":{"name":"ledger-failed-rollout"},"status":{"observedGeneration":1,"phase":"Failed"}},

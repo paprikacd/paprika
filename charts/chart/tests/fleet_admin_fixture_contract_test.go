@@ -330,6 +330,59 @@ func TestFleetAdminStageFixturesLeaveSpecOwnershipToApplicationController(t *tes
 	}
 }
 
+func TestFleetAdminStatusFixturesMatchControllerDerivedStableStates(t *testing.T) {
+	root := filepath.Join(repoRoot(t), "config", "e2e", "fleet-admin", "base")
+	applications := readYAMLDocuments(t, filepath.Join(root, "applications.yaml"))
+	releases := readYAMLDocuments(t, filepath.Join(root, "releases.yaml"))
+	pipelines := readYAMLDocuments(t, filepath.Join(root, "pipelines.yaml"))
+
+	billing := requireNamedFixture(t, applications, "billing")
+	if phase := stringValue(path(billing, "status", "phase")); phase != "Promoting" {
+		t.Errorf("billing status.phase must match its controller-derived approval-gated state, got %q", phase)
+	}
+	catalog := requireNamedFixture(t, applications, "catalog")
+	if phase := stringValue(path(catalog, "status", "phase")); phase != "Degraded" {
+		t.Errorf("catalog status.phase must match its controller-derived failed Release state, got %q", phase)
+	}
+	ledger := requireNamedFixture(t, applications, "ledger")
+	if phase := stringValue(path(ledger, "status", "phase")); phase != "Degraded" {
+		t.Errorf("ledger status.phase must match its controller-derived ReleaseFailed state, got %q", phase)
+	}
+	if health := stringValue(path(ledger, "status", "health")); health != "Failed" {
+		t.Errorf("ledger status.health must preserve the failed heatmap scenario, got %q", health)
+	}
+
+	catalogRelease := requireNamedFixture(t, releases, "catalog-active")
+	if phase := stringValue(path(catalogRelease, "status", "phase")); phase != "Failed" {
+		t.Errorf("catalog-active status.phase must be terminal under its synthetic target, got %q", phase)
+	}
+
+	financePipeline := requireNamedFixture(t, pipelines, "finance-ci")
+	if phase := stringValue(path(financePipeline, "status", "phase")); phase != "Failed" {
+		t.Errorf("finance-ci status.phase must be terminal under its synthetic workflow, got %q", phase)
+	}
+	stepStatuses := list(
+		t,
+		path(financePipeline, "status", "stepStatuses"),
+		"finance-ci step statuses",
+	)
+	if len(stepStatuses) != 1 ||
+		stringValue(path(object(t, stepStatuses[0], "finance-ci step status"), "phase")) != "Failed" {
+		t.Errorf("finance-ci must expose one failed synthetic step, got %#v", stepStatuses)
+	}
+}
+
+func requireNamedFixture(t *testing.T, fixtures []manifest, name string) manifest {
+	t.Helper()
+	for _, fixture := range fixtures {
+		if stringValue(path(fixture, "metadata", "name")) == name {
+			return fixture
+		}
+	}
+	t.Fatalf("fixture %q is missing", name)
+	return nil
+}
+
 func stageApprovalGateSchema(t *testing.T, crd any) any {
 	t.Helper()
 	for _, versionValue := range list(t, path(crd, "spec", "versions"), "CRD versions") {

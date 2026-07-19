@@ -38,8 +38,8 @@ spec:
       script: echo policy-checked
 status:
   observedGeneration: 1
-  phase: Running
+  phase: Failed
   stepStatuses:
     - name: policy-check
-      phase: Running
+      phase: Failed
   lastExecutionId: finance-fixture-17

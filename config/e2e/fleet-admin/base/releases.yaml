@@ -11,7 +11,7 @@ spec:
   target: staging
 status:
   observedGeneration: 1
-  phase: Promoting
+  phase: Failed
   currentStage: staging
   rolloutRef: catalog-active-rollout
 ---

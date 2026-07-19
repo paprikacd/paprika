@@ -58,7 +58,7 @@ spec:
   syncPolicy: Manual
 status:
   observedGeneration: 1
-  phase: Promoting
+  phase: Degraded
   currentStage: staging
   revision: catalog-v17
   pipelineRef: storefront-ci
@@ -98,7 +98,7 @@ spec:
   syncPolicy: Manual
 status:
   observedGeneration: 1
-  phase: Degraded
+  phase: Promoting
   currentStage: production
   revision: billing-v9
   pipelineRef: finance-ci
@@ -135,7 +135,8 @@ spec:
   syncPolicy: Manual
 status:
   observedGeneration: 1
-  phase: Failed
+  phase: Degraded
+  health: Failed
   currentStage: production
   revision: ledger-v31
   pipelineRef: finance-ci

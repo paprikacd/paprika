@@ -892,7 +892,7 @@ function expectedDeliveryFixture() {
     return {
       releases: [
         release("billing-gated", "AwaitingApproval", "billing", "billing-gated-rollout"),
-        release("catalog-active", "Promoting", "catalog", "catalog-active-rollout"),
+        release("catalog-active", "Failed", "catalog", "catalog-active-rollout"),
         release("checkout-complete", "Complete", "checkout", "checkout-complete-rollout"),
         release("ledger-failed", "Failed", "ledger", "ledger-failed-rollout"),
       ],
@@ -903,7 +903,7 @@ function expectedDeliveryFixture() {
         rollout("ledger-failed-rollout", "Failed"),
       ],
       pipelines: [
-        pipeline("finance-ci", "Running", "finance"),
+        pipeline("finance-ci", "Failed", "finance"),
         pipeline("storefront-ci", "Succeeded", "storefront"),
       ],
     }
