@@ -153,7 +153,7 @@ base("local browser audit rejects a foreign nested ApplicationSummary", async ({
       await route.fulfill({ response, json: body })
     },
   )
-  await page.goto(`/dashboard/applications?namespace=${runNamespace}&view=heatmap`)
+  await page.goto(`/dashboard/applications/?namespace=${runNamespace}&view=heatmap`)
   await expect(page.locator(`[data-fleet-ready="${expectedCount}"]`)).toBeVisible()
   await page.getByRole("button", { name: "Show Table view" }).click()
   await expect(page.getByRole("table", { name: "Applications" })).toBeVisible()
@@ -169,7 +169,7 @@ base("runtime audit rejects an unscoped fleet query from a selected URL by defau
   audit.expectFleetRun(exactFleet)
   await audit.ready()
   const oracle = observeFleetMapResponses(page)
-  await page.goto(`/dashboard/applications?namespace=${runNamespace}&view=heatmap`)
+  await page.goto(`/dashboard/applications/?namespace=${runNamespace}&view=heatmap`)
   await expectCompleteHeatmap(page, oracle, expectedCount)
   await deselectNamespaceOption(page, oracle)
   await expect(audit.assertClean()).rejects.toThrow(/request[.]filter[.]namespaces/u)
@@ -184,7 +184,7 @@ base("runtime audit consumes one explicit local unscoped fleet-query allowance",
   audit.expectFleetRun(exactFleet)
   await audit.ready()
   const oracle = observeFleetMapResponses(page)
-  await page.goto(`/dashboard/applications?namespace=${runNamespace}&view=heatmap`)
+  await page.goto(`/dashboard/applications/?namespace=${runNamespace}&view=heatmap`)
   await expectCompleteHeatmap(page, oracle, expectedCount)
   audit.allowUnscopedQueryOnce(QUERY_FLEET_MAP_PATH)
   await deselectNamespaceOption(page, oracle)
@@ -201,7 +201,7 @@ base("runtime audit rejects a second unscoped fleet query after one allowance", 
   audit.expectFleetRun(exactFleet)
   await audit.ready()
   const oracle = observeFleetMapResponses(page)
-  await page.goto(`/dashboard/applications?namespace=${runNamespace}&view=heatmap`)
+  await page.goto(`/dashboard/applications/?namespace=${runNamespace}&view=heatmap`)
   await expectCompleteHeatmap(page, oracle, expectedCount)
   audit.allowUnscopedQueryOnce(QUERY_FLEET_MAP_PATH)
   const { option: namespaceOption } = await deselectNamespaceOption(page, oracle)
@@ -246,7 +246,7 @@ for (const viewport of [
       view: "heatmap",
       group: "namespace",
     })
-    await page.goto(`/dashboard/applications?${scope}`)
+    await page.goto(`/dashboard/applications/?${scope}`)
 
     const verified = await expectCompleteHeatmap(page, fleetMapOracle, expectedCount)
     assertExactFleetMap(verified.capture, exactFleet)
@@ -286,7 +286,7 @@ for (const viewport of [
 
     for (const presentation of ["heatmap", "treemap", "matrix", "table", "queue"] as const) {
       const query = new URLSearchParams({ namespace: runNamespace, view: presentation })
-      await page.goto(`/dashboard/applications?${query}`)
+      await page.goto(`/dashboard/applications/?${query}`)
       await expect(page.locator(`[data-fleet-ready="${expectedCount}"]`)).toBeVisible()
       if (presentation === "heatmap") {
         const exact = await expectCompleteHeatmap(page, fleetMapOracle, expectedCount)
@@ -316,7 +316,7 @@ for (const viewport of [
     const releases = await navigateToScopedResponse(
       page,
       "/paprika.v1.PaprikaService/QueryReleases",
-      `/dashboard/releases?namespace=${runNamespace}`,
+      `/dashboard/releases/?namespace=${runNamespace}`,
     )
     await expect(page.getByRole("heading", { level: 1, name: "Releases" })).toBeVisible()
     await expect(page.getByText(runNamespace, { exact: true }).first()).toBeVisible()
@@ -329,7 +329,7 @@ for (const viewport of [
     const rollouts = await navigateToScopedResponse(
       page,
       "/paprika.v1.PaprikaService/ListRollouts",
-      `/dashboard/rollouts?namespace=${runNamespace}`,
+      `/dashboard/rollouts/?namespace=${runNamespace}`,
     )
     await expect(page.getByRole("heading", { level: 1, name: "Rollouts" })).toBeVisible()
     await expect(page.getByText(runNamespace, { exact: true }).first()).toBeVisible()
@@ -354,7 +354,7 @@ for (const viewport of [
     await attachView(page, testInfo, `${viewport.name}-pipelines`)
 
     await page.goto(
-      `/dashboard/application?namespace=${runNamespace}` +
+      `/dashboard/application/?namespace=${runNamespace}` +
         `&application_namespace=${runNamespace}&application_name=${detailApplication}`,
     )
     await expect(page.getByRole("heading", { level: 1, name: detailApplication })).toBeVisible()

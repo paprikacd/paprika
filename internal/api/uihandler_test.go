@@ -27,6 +27,26 @@ func TestUIHandlerCacheHeaders(t *testing.T) {
 			wantContains: "no-cache",
 		},
 		{
+			name:         "applications route uses canonical exported directory",
+			path:         "/dashboard/applications/?view=heatmap",
+			wantContains: "no-cache",
+		},
+		{
+			name:         "application detail route uses canonical exported directory",
+			path:         "/dashboard/application/?application_name=checkout",
+			wantContains: "no-cache",
+		},
+		{
+			name:         "releases route uses canonical exported directory",
+			path:         "/dashboard/releases/?namespace=team-00",
+			wantContains: "no-cache",
+		},
+		{
+			name:         "rollouts route uses canonical exported directory",
+			path:         "/dashboard/rollouts/?namespace=team-00",
+			wantContains: "no-cache",
+		},
+		{
 			name:         "spa fallback html is not immutable",
 			path:         "/missing-client-route",
 			wantContains: "no-cache",
