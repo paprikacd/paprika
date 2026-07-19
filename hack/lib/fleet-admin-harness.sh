@@ -855,11 +855,13 @@ rollouts.rollouts.paprika.io \
     inventory("Pipeline"; 2) and observed("Pipeline") and
     inventory("Rollout"; 4) and observed("Rollout") and
     (one("Application"; "checkout").status.health == "Healthy") and
-    (one("Application"; "catalog").status.health == "Progressing") and
+    (one("Application"; "catalog").status.phase == "Degraded") and
+    (one("Application"; "catalog").status.synced == true) and
     (one("Application"; "billing").status.health == "Degraded") and
     (one("Application"; "ledger").status.phase == "Degraded") and
     (one("Application"; "search").status.health == "Unknown") and
     (one("Application"; "notifications").status.resources[0].status == "Missing") and
+    (one("Application"; "notifications").status.synced == true) and
     (one("Release"; "catalog-active").status.phase == "Failed") and
     (one("Release"; "checkout-complete").status.phase == "Complete") and
     (one("Release"; "ledger-failed").status.phase == "Failed") and
@@ -994,7 +996,7 @@ fleet_admin_validate_exact_snapshot() {
         ),
         expected_application(
           "catalog"; "storefront"; "cluster-east"; "staging";
-          "FLEET_HEALTH_PROGRESSING"; "FLEET_SYNC_STATE_UNKNOWN";
+          "FLEET_HEALTH_DEGRADED"; "FLEET_SYNC_STATE_SYNCED";
           "FLEET_RELEASE_STATE_FAILED"; "FLEET_ROLLOUT_STATE_PROGRESSING"
         ),
         expected_application(
@@ -1009,7 +1011,7 @@ fleet_admin_validate_exact_snapshot() {
         ),
         expected_application(
           "notifications"; "finance"; "cluster-west"; "development";
-          "FLEET_HEALTH_MISSING"; "FLEET_SYNC_STATE_UNKNOWN";
+          "FLEET_HEALTH_MISSING"; "FLEET_SYNC_STATE_SYNCED";
           "FLEET_RELEASE_STATE_UNSPECIFIED"; "FLEET_ROLLOUT_STATE_UNSPECIFIED"
         ),
         expected_application(

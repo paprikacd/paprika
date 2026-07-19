@@ -84,11 +84,10 @@ func TestFleetAdminCommittedFixturesProjectIntoProductionHealthMap(t *testing.T)
 		healthBuckets[root.Health[0].Health] += root.Health[0].Count
 	}
 	require.Equal(t, map[Health]uint64{
-		HealthHealthy:     1,
-		HealthProgressing: 1,
-		HealthDegraded:    2,
-		HealthUnknown:     1,
-		HealthMissing:     1,
+		HealthHealthy:  1,
+		HealthDegraded: 3,
+		HealthUnknown:  1,
+		HealthMissing:  1,
 	}, healthBuckets)
 
 	expectedTargets := map[string]ClusterKey{

@@ -344,6 +344,12 @@ func TestFleetAdminStatusFixturesMatchControllerDerivedStableStates(t *testing.T
 	if phase := stringValue(path(catalog, "status", "phase")); phase != "Degraded" {
 		t.Errorf("catalog status.phase must match its controller-derived failed Release state, got %q", phase)
 	}
+	if health := stringValue(path(catalog, "status", "health")); health != "" {
+		t.Errorf("catalog status.health must defer to its controller-derived degraded phase, got %q", health)
+	}
+	if synced, ok := path(catalog, "status", "synced").(bool); !ok || !synced {
+		t.Errorf("catalog status.synced must match the controller-derived terminal state, got %#v", synced)
+	}
 	ledger := requireNamedFixture(t, applications, "ledger")
 	if phase := stringValue(path(ledger, "status", "phase")); phase != "Degraded" {
 		t.Errorf("ledger status.phase must match its controller-derived ReleaseFailed state, got %q", phase)

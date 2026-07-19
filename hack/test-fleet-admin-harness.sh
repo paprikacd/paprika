@@ -599,12 +599,12 @@ cat >"${EXACT_SNAPSHOT_DIR}/fleet.json" <<'JSON'
     "application":{"namespace":"paprika-fleet-e2e-exact","name":"catalog"},
     "applicationCount":"1",
     "targetCount":"1",
-    "health":[{"health":"FLEET_HEALTH_PROGRESSING","count":"1"}],
+    "health":[{"health":"FLEET_HEALTH_DEGRADED","count":"1"}],
     "applicationMetadata":{
       "project":{"namespace":"paprika-fleet-e2e-exact","name":"storefront"},
       "currentCluster":{"namespace":"paprika-fleet-e2e-exact","name":"cluster-east"},
       "currentStage":"staging",
-      "sync":"FLEET_SYNC_STATE_UNKNOWN",
+      "sync":"FLEET_SYNC_STATE_SYNCED",
       "release":"FLEET_RELEASE_STATE_FAILED",
       "rollout":"FLEET_ROLLOUT_STATE_PROGRESSING"
     }
@@ -655,7 +655,7 @@ cat >"${EXACT_SNAPSHOT_DIR}/fleet.json" <<'JSON'
       "project":{"namespace":"paprika-fleet-e2e-exact","name":"finance"},
       "currentCluster":{"namespace":"paprika-fleet-e2e-exact","name":"cluster-west"},
       "currentStage":"development",
-      "sync":"FLEET_SYNC_STATE_UNKNOWN"
+      "sync":"FLEET_SYNC_STATE_SYNCED"
     }
   },
   {
@@ -976,11 +976,11 @@ case "${joined}" in
 {"kind":"Cluster","metadata":{"name":"cluster-east"},"status":{"observedGeneration":1,"phase":"Healthy"}},
 {"kind":"Cluster","metadata":{"name":"cluster-west"},"status":{"observedGeneration":1,"phase":"Healthy"}},
 {"kind":"Application","metadata":{"name":"checkout"},"status":{"observedGeneration":1,"health":"Healthy"}},
-{"kind":"Application","metadata":{"name":"catalog"},"status":{"observedGeneration":1,"health":"Progressing"}},
+{"kind":"Application","metadata":{"name":"catalog"},"status":{"observedGeneration":1,"phase":"Degraded","synced":true}},
 {"kind":"Application","metadata":{"name":"billing"},"status":{"observedGeneration":1,"health":"Degraded"}},
 {"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Degraded"}},
 {"kind":"Application","metadata":{"name":"search"},"status":{"observedGeneration":1,"health":"Unknown"}},
-{"kind":"Application","metadata":{"name":"notifications"},"status":{"observedGeneration":1,"resources":[{"status":"Missing"}]}},
+{"kind":"Application","metadata":{"name":"notifications"},"status":{"observedGeneration":1,"synced":true,"resources":[{"status":"Missing"}]}},
 {"kind":"Stage","metadata":{"name":"checkout-production"},"status":{"observedGeneration":1}},
 {"kind":"Stage","metadata":{"name":"catalog-staging"},"status":{"observedGeneration":1}},
 {"kind":"Stage","metadata":{"name":"billing-production"},"status":{"observedGeneration":1}},

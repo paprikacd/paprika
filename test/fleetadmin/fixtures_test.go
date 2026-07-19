@@ -165,8 +165,7 @@ func TestFleetAdminFixturesCoverControllerStableHealthAndDeliveryStates(t *testi
 		healthStates[fixtureFleetHealth(t, application)] = true
 	}
 	require.Equal(t, map[string]bool{
-		"Healthy": true, "Progressing": true, "Degraded": true,
-		"Unknown": true, "Missing": true,
+		"Healthy": true, "Degraded": true, "Unknown": true, "Missing": true,
 	}, healthStates)
 
 	releaseStates := objectPhases(t, byKind["Release"])

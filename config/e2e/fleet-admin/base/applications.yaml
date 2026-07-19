@@ -65,7 +65,7 @@ status:
   stageRefs:
     - catalog-staging
   releaseRef: catalog-active
-  health: Progressing
+  synced: true
   resources:
     - kind: Deployment
       name: catalog
