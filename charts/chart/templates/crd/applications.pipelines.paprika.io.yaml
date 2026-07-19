@@ -486,6 +486,70 @@ spec:
                     ApplicationPromotionStage defines a promotion stage.
                     ApplicationPromotionStage defines a promotion stage.
                   properties:
+                    approvalGates:
+                      description: ApprovalGates define manual/webhook/Slack approval
+                        gates for promotion into this stage.
+                      items:
+                        description: ApprovalGate defines a manual or automated approval
+                          gate for stage transitions.
+                        properties:
+                          body:
+                            description: Body template sent to webhook gates.
+                            type: string
+                          headers:
+                            additionalProperties:
+                              type: string
+                            description: Headers to send with webhook requests.
+                            type: object
+                          method:
+                            default: POST
+                            description: HTTP method for webhook gates. Defaults to
+                              POST.
+                            type: string
+                          name:
+                            description: Name of the gate
+                            type: string
+                          required:
+                            default: true
+                            description: Whether the gate is required (default true)
+                            type: boolean
+                          secretRef:
+                            description: SecretRef names a Secret in the same namespace
+                              whose data is added to webhook headers.
+                            type: string
+                          slackChannel:
+                            description: SlackChannel is the channel to notify for
+                              Slack gates.
+                            type: string
+                          slackWebhookUrl:
+                            description: |-
+                              SlackWebhookURL is the incoming Slack webhook URL used to notify a channel.
+                              Phase 2: actual Slack interaction handling.
+                            type: string
+                          stage:
+                            description: Stage at which this gate applies (e.g., "prod").
+                              Empty applies to all stages.
+                            type: string
+                          successStatus:
+                            default: 200
+                            description: SuccessStatus is the expected HTTP status
+                              code for approval (default any 2xx).
+                            type: integer
+                          type:
+                            description: 'Type of gate: manual, webhook, slack'
+                            enum:
+                            - manual
+                            - webhook
+                            - slack
+                            type: string
+                          url:
+                            description: URL is the webhook URL for webhook gates.
+                            type: string
+                        required:
+                        - name
+                        - type
+                        type: object
+                      type: array
                     autoPromote:
                       description: Auto-promote to the next ring after this stage
                         is healthy

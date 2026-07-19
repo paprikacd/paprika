@@ -47,6 +47,41 @@ func TestHelmStageCRDMatchesApprovalGateSchema(t *testing.T) {
 	}
 }
 
+func TestHelmApplicationPromotionStageCRDMatchesApprovalGateSchema(t *testing.T) {
+	authoritative := readYAMLFile(t, filepath.Join(
+		repoRoot(t),
+		"config",
+		"crd",
+		"bases",
+		"pipelines.paprika.io_applications.yaml",
+	))
+	_, rendered := renderChart(t)
+	packaged := requireManifest(
+		t,
+		rendered,
+		"CustomResourceDefinition",
+		"applications.pipelines.paprika.io",
+	)
+
+	authoritativeSchema := applicationPromotionStageApprovalGateSchema(t, authoritative)
+	packagedSchema := applicationPromotionStageApprovalGateSchema(t, packaged)
+	authoritativeJSON, err := json.Marshal(authoritativeSchema)
+	if err != nil {
+		t.Fatalf("encode authoritative Application stage approvalGates schema: %v", err)
+	}
+	packagedJSON, err := json.Marshal(packagedSchema)
+	if err != nil {
+		t.Fatalf("encode packaged Application stage approvalGates schema: %v", err)
+	}
+	if !bytes.Equal(packagedJSON, authoritativeJSON) {
+		t.Fatalf(
+			"Helm Application promotion-stage approvalGates schema drifted from config/crd/bases:\npackaged: %s\nauthoritative: %s",
+			packagedJSON,
+			authoritativeJSON,
+		)
+	}
+}
+
 func TestFleetAdminStageFixturesLeaveSpecOwnershipToApplicationController(t *testing.T) {
 	applications := readYAMLDocuments(t, filepath.Join(
 		repoRoot(t),
@@ -130,6 +165,34 @@ func stageApprovalGateSchema(t *testing.T, crd any) any {
 		return schema
 	}
 	t.Fatal("Stage CRD has no v1alpha1 version")
+	return nil
+}
+
+func applicationPromotionStageApprovalGateSchema(t *testing.T, crd any) any {
+	t.Helper()
+	for _, versionValue := range list(t, path(crd, "spec", "versions"), "CRD versions") {
+		version := object(t, versionValue, "CRD version")
+		if stringValue(version["name"]) != "v1alpha1" {
+			continue
+		}
+		schema := path(
+			version,
+			"schema",
+			"openAPIV3Schema",
+			"properties",
+			"spec",
+			"properties",
+			"stages",
+			"items",
+			"properties",
+			"approvalGates",
+		)
+		if schema == nil {
+			t.Fatal("Application v1alpha1 CRD promotion stage has no approvalGates schema")
+		}
+		return schema
+	}
+	t.Fatal("Application CRD has no v1alpha1 version")
 	return nil
 }
 
