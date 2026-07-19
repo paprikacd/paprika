@@ -240,6 +240,8 @@ for (const viewport of [
     fleetMapOracle,
     runtimeAudit,
   }, testInfo) => {
+    const captureView = (name: string) =>
+      attachView(page, testInfo, name, fleetMapOracle, runtimeAudit)
     await page.setViewportSize(viewport)
     const scope = new URLSearchParams({
       namespace: runNamespace,
@@ -259,9 +261,7 @@ for (const viewport of [
       runtimeAudit,
       verified.capture,
     )
-    await attachView(
-      page,
-      testInfo,
+    await captureView(
       `${viewport.name}-applications-heatmap-grouped-namespace`,
     )
 
@@ -272,7 +272,7 @@ for (const viewport of [
       .toBeVisible()
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} keyboard-opened Application detail`)
-    await attachView(page, testInfo, `${viewport.name}-keyboard-application-detail`)
+    await captureView(`${viewport.name}-keyboard-application-detail`)
     const backToDashboard = page.getByRole("link", { name: "Dashboard", exact: true })
     await expectScopeInHref(backToDashboard)
     await backToDashboard.click()
@@ -282,7 +282,7 @@ for (const viewport of [
     assertExactFleetMap(overview.capture, exactFleet)
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} Overview`)
-    await attachView(page, testInfo, `${viewport.name}-overview`)
+    await captureView(`${viewport.name}-overview`)
 
     for (const presentation of ["heatmap", "treemap", "matrix", "table", "queue"] as const) {
       const query = new URLSearchParams({ namespace: runNamespace, view: presentation })
@@ -304,9 +304,7 @@ for (const viewport of [
       await expect(page.getByText(/sampled (preview|subset)|preview only/iu)).toHaveCount(0)
       await assertAdminSession(page)
       await assertViewportRoute(page, `${viewport.name} Applications ${presentation}`)
-      await attachView(
-        page,
-        testInfo,
+      await captureView(
         presentation === "heatmap"
           ? `${viewport.name}-applications-heatmap-default`
           : `${viewport.name}-applications-${presentation}`,
@@ -324,7 +322,7 @@ for (const viewport of [
     await assertRenderedReleases(page)
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} Releases`)
-    await attachView(page, testInfo, `${viewport.name}-releases`)
+    await captureView(`${viewport.name}-releases`)
 
     const rollouts = await navigateToScopedResponse(
       page,
@@ -337,7 +335,7 @@ for (const viewport of [
     await assertRenderedRollouts(page)
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} Rollouts`)
-    await attachView(page, testInfo, `${viewport.name}-rollouts`)
+    await captureView(`${viewport.name}-rollouts`)
 
     const pipelinesResponse = await navigateToScopedResponse(
       page,
@@ -351,7 +349,7 @@ for (const viewport of [
     await assertRenderedPipelines(pipelines)
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} Pipelines`)
-    await attachView(page, testInfo, `${viewport.name}-pipelines`)
+    await captureView(`${viewport.name}-pipelines`)
 
     await page.goto(
       `/dashboard/application/?namespace=${runNamespace}` +
@@ -363,7 +361,7 @@ for (const viewport of [
     await expectScopeInHref(applicationBack)
     await assertAdminSession(page)
     await assertViewportRoute(page, `${viewport.name} Application detail`)
-    await attachView(page, testInfo, `${viewport.name}-application-detail`)
+    await captureView(`${viewport.name}-application-detail`)
   })
 }
 
@@ -779,11 +777,25 @@ async function expectScopeInHref(locator: Locator) {
     .toEqual([runNamespace])
 }
 
-async function attachView(page: Page, testInfo: TestInfo, name: string) {
+async function attachView(
+  page: Page,
+  testInfo: TestInfo,
+  name: string,
+  fleetMapOracle: FleetMapOracle,
+  runtimeAudit: RuntimeAudit,
+) {
+  await runtimeAudit.settle()
+  await fleetMapOracle.drain()
   await testInfo.attach(name, {
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   })
+  // A full-page capture can expose lazy surfaces that start requests. Drain
+  // those requests and response-body audits before the next route replaces the
+  // document, otherwise mobile Chromium can abort legitimate Connect calls or
+  // evict a successful response body before the independent oracle reads it.
+  await runtimeAudit.settle()
+  await fleetMapOracle.drain()
 }
 
 async function navigateToScopedResponse(

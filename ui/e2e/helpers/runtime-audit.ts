@@ -189,9 +189,14 @@ export class RuntimeAudit {
     await this.initialization
   }
 
-  async assertClean() {
+  async settle() {
     await this.initialization
+    await this.page.waitForLoadState("networkidle")
     await this.settleResponseAudits()
+  }
+
+  async assertClean() {
+    await this.settle()
     this.stop()
     expect(this.consoleErrors, "browser console errors").toEqual([])
     expect(this.pageErrors, "uncaught page errors").toEqual([])
