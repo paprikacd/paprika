@@ -1137,6 +1137,7 @@ headers=""
 body_file=""
 data=""
 url=""
+origin=""
 while (($#)); do
   case "$1" in
     --dump-header)
@@ -1151,7 +1152,13 @@ while (($#)); do
       data=$2
       shift 2
       ;;
-    --request|--header|--connect-timeout|--max-time|--write-out)
+    --header)
+      if [[ "$2" == "Origin: "* ]]; then
+        origin=${2#"Origin: "}
+      fi
+      shift 2
+      ;;
+    --request|--connect-timeout|--max-time|--write-out)
       shift 2
       ;;
     --silent|--show-error)
@@ -1166,7 +1173,9 @@ while (($#)); do
       ;;
   esac
 done
-printf 'curl %s %s\n' "${url}" "${data}" >>"${FAKE_COMMAND_LOG}"
+[[ "${url}" =~ ^(https?://[^/]+)(/|$) ]]
+[[ "${origin}" == "${BASH_REMATCH[1]}" ]]
+printf 'curl %s origin=%s %s\n' "${url}" "${origin}" "${data}" >>"${FAKE_COMMAND_LOG}"
 if [[ "${url}" == https://public.example.test/* ]] ||
   [[ "${url}" == http://127.0.0.1:45678/* ]]; then
   printf 'HTTP/1.1 401 Unauthorized\r\nConnect-Error-Code: unauthenticated\r\n\r\n' >"${headers}"
@@ -1434,6 +1443,12 @@ assert_file_contains "${FULL_COMMAND_LOG}" \
 assert_file_contains "${FULL_COMMAND_LOG}" \
   'playwright-identities=["a:paprika-fleet-e2e-fake-success/billing","a:paprika-fleet-e2e-fake-success/catalog","a:paprika-fleet-e2e-fake-success/checkout","a:paprika-fleet-e2e-fake-success/ledger","a:paprika-fleet-e2e-fake-success/notifications","a:paprika-fleet-e2e-fake-success/search"]'
 assert_file_contains "${FULL_COMMAND_LOG}" 'playwright-admin-session-stub=0'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'curl http://127.0.0.1:43123/paprika.v1.PaprikaService/QueryFleetMap origin=http://127.0.0.1:43123'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'curl https://public.example.test/paprika.v1.PaprikaService/QueryFleetMap origin=https://public.example.test'
+assert_file_contains "${FULL_COMMAND_LOG}" \
+  'curl http://127.0.0.1:45678/paprika.v1.PaprikaService/QueryFleetMap origin=http://127.0.0.1:45678'
 DIAGNOSTIC_LINE="$(first_line_containing "${FULL_COMMAND_LOG}" ' logs ')"
 RUN_VALIDATION_LINE="$(
   first_line_containing "${FULL_COMMAND_LOG}" \

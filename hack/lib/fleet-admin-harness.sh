@@ -933,6 +933,7 @@ fleet_admin_connect_request() {
     --request POST \
     --header 'Content-Type: application/json' \
     --header 'Connect-Protocol-Version: 1' \
+    --header "Origin: ${origin}" \
     --data "${body}" \
     --dump-header "${raw_headers}" \
     --output "${raw_body}" \
