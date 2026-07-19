@@ -445,32 +445,40 @@ func (r *ApplicationReconciler) patchAppStatusAllowingReleaseRefClear(ctx contex
 
 func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, app *paprikav1.Application, preserveReleaseRef bool) error {
 	desiredStatus := app.Status.DeepCopy()
-	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var fresh paprikav1.Application
-		if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
-			return fmt.Errorf("fetching application for status update: %w", err)
-		}
-		// Preserve fields that may be set concurrently by other actors (e.g.
-		// ApplyBundle setting ReleaseRef, the Release controller's
-		// syncApplicationGateStatus setting Gates) when the current reconcile did not
-		// populate them.
-		if preserveReleaseRef && desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
-			desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
-			app.Status.ReleaseRef = fresh.Status.ReleaseRef
-		}
-		if len(desiredStatus.Gates) == 0 && len(fresh.Status.Gates) > 0 {
-			desiredStatus.Gates = fresh.Status.Gates
-			app.Status.Gates = fresh.Status.Gates
-		}
-		fresh.Status = *desiredStatus
-		fresh.Status.ObservedGeneration = fresh.Generation
-		if err := r.client.Status().Update(ctx, &fresh); err != nil {
-			return fmt.Errorf("updating application status: %w", err)
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("patching application status: %w", err)
+	var fresh paprikav1.Application
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Name, Namespace: app.Namespace}, &fresh); err != nil {
+		return fmt.Errorf("fetching application for status update: %w", err)
 	}
+	if app.ResourceVersion != "" && fresh.ResourceVersion != app.ResourceVersion {
+		return fmt.Errorf(
+			"patching application status: %w",
+			apierrors.NewConflict(
+				paprikav1.GroupVersion.WithResource("applications").GroupResource(),
+				app.Name,
+				errors.New("application changed during reconciliation"),
+			),
+		)
+	}
+
+	// Preserve fields that may be set concurrently by other actors (e.g.
+	// ApplyBundle setting ReleaseRef, the Release controller's
+	// syncApplicationGateStatus setting Gates) when the current reconcile did not
+	// populate them.
+	if preserveReleaseRef && desiredStatus.ReleaseRef == "" && fresh.Status.ReleaseRef != "" {
+		desiredStatus.ReleaseRef = fresh.Status.ReleaseRef
+		app.Status.ReleaseRef = fresh.Status.ReleaseRef
+	}
+	if len(desiredStatus.Gates) == 0 && len(fresh.Status.Gates) > 0 {
+		desiredStatus.Gates = fresh.Status.Gates
+		app.Status.Gates = fresh.Status.Gates
+	}
+	fresh.Status = *desiredStatus
+	fresh.Status.ObservedGeneration = fresh.Generation
+	if err := r.client.Status().Update(ctx, &fresh); err != nil {
+		return fmt.Errorf("updating application status: %w", err)
+	}
+	app.Status = fresh.Status
+	app.ResourceVersion = fresh.ResourceVersion
 	return nil
 }
 

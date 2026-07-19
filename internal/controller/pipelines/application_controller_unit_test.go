@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -42,6 +43,67 @@ func newPruneTestClient(objs ...client.Object) client.Client {
 	scheme := runtime.NewScheme()
 	_ = pipelinesv1alpha1.AddToScheme(scheme)
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+}
+
+func TestApplicationReconciler_patchAppStatusRejectsStaleFullStatusWrite(t *testing.T) {
+	ctx := t.Context()
+	scheme := runtime.NewScheme()
+	if err := pipelinesv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add pipeline scheme: %v", err)
+	}
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "concurrent-status",
+			Namespace: "default",
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase: pipelinesv1alpha1.ApplicationPending,
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+
+	var stale pipelinesv1alpha1.Application
+	key := client.ObjectKeyFromObject(app)
+	if err := c.Get(ctx, key, &stale); err != nil {
+		t.Fatalf("get stale application: %v", err)
+	}
+
+	var concurrent pipelinesv1alpha1.Application
+	if err := c.Get(ctx, key, &concurrent); err != nil {
+		t.Fatalf("get application for concurrent status update: %v", err)
+	}
+	concurrent.Status = pipelinesv1alpha1.ApplicationStatus{
+		ObservedGeneration: concurrent.Generation,
+		Phase:              pipelinesv1alpha1.ApplicationHealthy,
+		CurrentStage:       "production",
+		Resources: []pipelinesv1alpha1.ResourceSync{{
+			Kind:   "Deployment",
+			Name:   "checkout",
+			Status: "Synced",
+		}},
+	}
+	if err := c.Status().Update(ctx, &concurrent); err != nil {
+		t.Fatalf("write concurrent status: %v", err)
+	}
+
+	stale.Status.Phase = pipelinesv1alpha1.ApplicationDegraded
+	reconciler := &ApplicationReconciler{client: c}
+	err := reconciler.patchAppStatus(ctx, &stale)
+	if !apierrors.IsConflict(err) {
+		t.Fatalf("patch stale status error = %v, want conflict", err)
+	}
+
+	var preserved pipelinesv1alpha1.Application
+	if err := c.Get(ctx, key, &preserved); err != nil {
+		t.Fatalf("get preserved application: %v", err)
+	}
+	if diff := cmp.Diff(concurrent.Status, preserved.Status); diff != "" {
+		t.Fatalf("concurrent status was overwritten (-want +got):\n%s", diff)
+	}
 }
 
 type staticSourceRenderer struct {
