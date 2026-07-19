@@ -1004,9 +1004,10 @@ JSON
     exec perl -e '
       use strict;
       use warnings;
+      $| = 1;
       $SIG{INT} = sub { exit 0 };
       $SIG{TERM} = sub { exit 0 };
-      print STDERR "Forwarding from 127.0.0.1:45678 -> 3000\n";
+      print "Forwarding from 127.0.0.1:45678 -> 3000\n";
       select undef, undef, undef, 0.05 while 1;
     '
     ;;

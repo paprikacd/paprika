@@ -1176,18 +1176,23 @@ fleet_admin_query_exact_snapshot() {
 }
 
 fleet_admin_wait_normal_forward() {
-  local stderr=$1
-  local pid=$2
-  local timeout_seconds=$3
+  local stdout=$1
+  local stderr=$2
+  local pid=$3
+  local timeout_seconds=$4
   local deadline=$((SECONDS + timeout_seconds))
   while ((SECONDS < deadline)); do
     local count
-    count="$(grep -Ec '^Forwarding from 127[.]0[.]0[.]1:[0-9]+ -> 3000$' \
-      "${stderr}" 2>/dev/null || true)"
+    count="$(
+      awk '
+        /^Forwarding from 127[.]0[.]0[.]1:[0-9]+ -> 3000$/ { count++ }
+        END { print count + 0 }
+      ' "${stdout}" "${stderr}" 2>/dev/null
+    )"
     if [[ "${count}" == "1" ]]; then
       FLEET_ADMIN_NORMAL_PORT="$(
         sed -nE 's/^Forwarding from 127[.]0[.]0[.]1:([0-9]+) -> 3000$/\1/p' \
-          "${stderr}"
+          "${stdout}" "${stderr}"
       )"
       [[ "${FLEET_ADMIN_NORMAL_PORT}" =~ ^[1-9][0-9]*$ ]]
       return
@@ -1217,7 +1222,7 @@ fleet_admin_start_normal_forward() {
     :3000 >"${stdout}" 2>"${stderr}" &
   FLEET_ADMIN_FORWARD_PID=$!
   fleet_admin_wait_normal_forward \
-    "${stderr}" "${FLEET_ADMIN_FORWARD_PID}" \
+    "${stdout}" "${stderr}" "${FLEET_ADMIN_FORWARD_PID}" \
     "${FLEET_ADMIN_FORWARD_TIMEOUT_SECONDS:-15}"
 }
 
