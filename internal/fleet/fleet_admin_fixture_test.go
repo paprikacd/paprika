@@ -86,8 +86,7 @@ func TestFleetAdminCommittedFixturesProjectIntoProductionHealthMap(t *testing.T)
 	require.Equal(t, map[Health]uint64{
 		HealthHealthy:     1,
 		HealthProgressing: 1,
-		HealthDegraded:    1,
-		HealthFailed:      1,
+		HealthDegraded:    2,
 		HealthUnknown:     1,
 		HealthMissing:     1,
 	}, healthBuckets)
@@ -115,7 +114,7 @@ func TestFleetAdminCommittedFixturesProjectIntoProductionHealthMap(t *testing.T)
 		t,
 		owned.snapshot,
 		"catalog",
-		ReleaseStatePromoting,
+		ReleaseStateFailed,
 		RolloutStateProgressing,
 	)
 	requireDeliveryState(

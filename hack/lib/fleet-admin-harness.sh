@@ -858,7 +858,6 @@ rollouts.rollouts.paprika.io \
     (one("Application"; "catalog").status.health == "Progressing") and
     (one("Application"; "billing").status.health == "Degraded") and
     (one("Application"; "ledger").status.phase == "Degraded") and
-    (one("Application"; "ledger").status.health == "Failed") and
     (one("Application"; "search").status.health == "Unknown") and
     (one("Application"; "notifications").status.resources[0].status == "Missing") and
     (one("Release"; "catalog-active").status.phase == "Failed") and
@@ -1005,7 +1004,7 @@ fleet_admin_validate_exact_snapshot() {
         ),
         expected_application(
           "ledger"; "finance"; "cluster-west"; "production";
-          "FLEET_HEALTH_FAILED"; "FLEET_SYNC_STATE_OUT_OF_SYNC";
+          "FLEET_HEALTH_DEGRADED"; "FLEET_SYNC_STATE_OUT_OF_SYNC";
           "FLEET_RELEASE_STATE_FAILED"; "FLEET_ROLLOUT_STATE_FAILED"
         ),
         expected_application(

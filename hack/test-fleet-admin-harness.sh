@@ -633,7 +633,7 @@ cat >"${EXACT_SNAPSHOT_DIR}/fleet.json" <<'JSON'
     "application":{"namespace":"paprika-fleet-e2e-exact","name":"ledger"},
     "applicationCount":"1",
     "targetCount":"1",
-    "health":[{"health":"FLEET_HEALTH_FAILED","count":"1"}],
+    "health":[{"health":"FLEET_HEALTH_DEGRADED","count":"1"}],
     "applicationMetadata":{
       "project":{"namespace":"paprika-fleet-e2e-exact","name":"finance"},
       "currentCluster":{"namespace":"paprika-fleet-e2e-exact","name":"cluster-west"},
@@ -978,7 +978,7 @@ case "${joined}" in
 {"kind":"Application","metadata":{"name":"checkout"},"status":{"observedGeneration":1,"health":"Healthy"}},
 {"kind":"Application","metadata":{"name":"catalog"},"status":{"observedGeneration":1,"health":"Progressing"}},
 {"kind":"Application","metadata":{"name":"billing"},"status":{"observedGeneration":1,"health":"Degraded"}},
-{"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Degraded","health":"Failed"}},
+{"kind":"Application","metadata":{"name":"ledger"},"status":{"observedGeneration":1,"phase":"Degraded"}},
 {"kind":"Application","metadata":{"name":"search"},"status":{"observedGeneration":1,"health":"Unknown"}},
 {"kind":"Application","metadata":{"name":"notifications"},"status":{"observedGeneration":1,"resources":[{"status":"Missing"}]}},
 {"kind":"Stage","metadata":{"name":"checkout-production"},"status":{"observedGeneration":1}},

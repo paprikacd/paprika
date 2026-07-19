@@ -348,8 +348,8 @@ func TestFleetAdminStatusFixturesMatchControllerDerivedStableStates(t *testing.T
 	if phase := stringValue(path(ledger, "status", "phase")); phase != "Degraded" {
 		t.Errorf("ledger status.phase must match its controller-derived ReleaseFailed state, got %q", phase)
 	}
-	if health := stringValue(path(ledger, "status", "health")); health != "Failed" {
-		t.Errorf("ledger status.health must preserve the failed heatmap scenario, got %q", health)
+	if health := stringValue(path(ledger, "status", "health")); health != "" {
+		t.Errorf("ledger status.health must defer to its controller-derived degraded phase, got %q", health)
 	}
 
 	catalogRelease := requireNamedFixture(t, releases, "catalog-active")

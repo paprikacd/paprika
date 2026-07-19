@@ -157,7 +157,7 @@ func TestFleetAdminBaseDefersControllerOwnersUntilRuntimeUIDsExist(t *testing.T)
 	}
 }
 
-func TestFleetAdminFixturesCoverEveryFleetHealthAndDeliveryState(t *testing.T) {
+func TestFleetAdminFixturesCoverControllerStableHealthAndDeliveryStates(t *testing.T) {
 	byKind := indexByKind(t, loadFixtureObjects(t))
 
 	healthStates := make(map[string]bool)
@@ -166,13 +166,13 @@ func TestFleetAdminFixturesCoverEveryFleetHealthAndDeliveryState(t *testing.T) {
 	}
 	require.Equal(t, map[string]bool{
 		"Healthy": true, "Progressing": true, "Degraded": true,
-		"Failed": true, "Unknown": true, "Missing": true,
+		"Unknown": true, "Missing": true,
 	}, healthStates)
 
 	releaseStates := objectPhases(t, byKind["Release"])
-	for _, phase := range []string{"Promoting", "Complete", "Failed", "AwaitingApproval"} {
-		require.Truef(t, releaseStates[phase], "missing Release phase %s", phase)
-	}
+	require.Equal(t, map[string]bool{
+		"Complete": true, "Failed": true, "AwaitingApproval": true,
+	}, releaseStates)
 
 	rolloutStates := objectPhases(t, byKind["Rollout"])
 	for _, phase := range []string{"Progressing", "Healthy", "Failed", "Paused"} {
