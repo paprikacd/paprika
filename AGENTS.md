@@ -25,10 +25,12 @@
 - **Fast canonical CI**: `.github/workflows/ci.yml` runs on pull requests and `master` pushes with five parallel validation lanes: Go race tests, Go lint, UI test/lint/build, generated-code drift, and Helm lint/template.
 - **Gated amd64 publication**: only a validated `master` push publishes `ghcr.io/paprikacd/paprika` for `linux/amd64`. `latest` and `sha-<commit>` remain discoverability tags; the publish job exposes the immutable registry digest.
 - **Deterministic VKE promotion**: CI passes the published digest directly to the trusted local reusable VKE workflow. Automatic deployment uses `ghcr.io/paprikacd/paprika@sha256:<digest>`, not a tag, and there is no separate privileged `workflow_run` trigger.
-- **Digest-only manual deployment**: manual VKE, GKE, and Cloud Run runs require exactly `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>`; GKE and Cloud Run remain manual-only.
+- **Default-branch privileged entrypoints**: manual VKE, GKE, and Cloud Run requests use typed `repository_dispatch` events and require exactly `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>`. Helm publishing uses `publish-helm` with a validated semantic chart version; Pages uses `publish-pages`.
+- **Safe CI concurrency**: pull-request runs cancel superseded work, while `master` runs share a workflow/ref group without cancellation so an in-flight reusable deployment is never cancelled by a later push.
+- **Independent VKE OIDC boundary**: the exchange requires allowed `event_name`, exact `refs/heads/master`, an allowlisted caller `workflow_ref`, and the exact reusable VKE `job_workflow_ref` before minting a service-account token.
 - **Hardened workflow contract**: Go contract tests enforce validation dependencies, failure propagation, branch/event restrictions, digest data flow and grammar, action pins, permissions, timeouts, the pinned Kind checksum, Helm publishing from `master`, and nightly/manual E2E.
 - **Deployment values aligned with GHCR**: `deploy/test-values.yaml` already uses `ghcr.io/paprikacd/paprika`; the VKE workflow overrides each Paprika component image repository with the promoted digest, so its `latest` defaults are not deployed by the workflow.
-- **No live deployment for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed as part of the change.
+- **No live deployment or environment mutation for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed and no GitHub environment policy was changed as part of the work.
 
 ### In Progress
 - (none)
@@ -38,7 +40,7 @@
 
 ## Next Steps
 1. Merge the fast CI changes and observe the first `master` publish and automatic digest-based VKE promotion end to end.
-2. Add defense-in-depth checks in the custom GitHub OIDC exchange for the expected `event_name`, `ref`, and `job_workflow_ref` before minting a Kubernetes credential.
+2. Restrict the GitHub `vke-production` environment externally so only `master` may deploy; the repository-side gate and OIDC claim checks are already in code, but this environment policy has not been applied.
 3. Create a scoped Cloudflare API token for the `benebsworth.com` zone (currently using the Global API key).
 
 ## Verified Metrics on Controller-Manager
@@ -58,7 +60,8 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - **Observable gauges register callbacks only in operator mode** (where cache-backed `mgr.GetClient()` is available). API/webhook/repo-server/agent modes don't register K8s callbacks — gauges silently absent from their `/metrics` output.
 - **`_ratio` suffix on observable gauge names** is expected OTel Prometheus exporter behavior for dimensionless (unit "1") instruments. Not a bug.
 - **GitHub Actions CI/CD**: `.github/workflows/ci.yml` validates pull requests and `master` pushes. Only the gated `publish` job receives `packages: write`; it publishes `linux/amd64` discovery tags and returns the digest consumed by the reusable VKE deployment.
-- **Trusted deployment handoff**: the VKE call is a job in the same CI run and receives only the publish output digest. Manual deployment workflows enforce the same full GHCR digest grammar before authentication or deployment.
+- **Trusted deployment handoff**: the VKE call is a job in the same CI run and receives only the publish output digest. Typed repository-dispatch workflows load default-branch code and enforce the same full GHCR digest grammar before authentication or deployment.
+- **Defense in depth**: the reusable VKE job accepts only `push` or `repository_dispatch` on `refs/heads/master`; its token exchange separately binds the repository/environment/subject, event, ref, caller workflow, and called reusable workflow claims.
 - **Workflow hardening**: fast CI, deploy, E2E, and Helm-publish actions are pinned to immutable revisions, jobs have bounded timeouts, permissions are scoped, and Kind installation verifies a repository-pinned checksum.
 - **`ttl.sh` fallback**: when local builds can't push to ghcr.io, use `ttl.sh/paprika-amd64:<tag>` with `<tag>` being the TTL duration (e.g., `4h`). Image auto-deletes after TTL. Must rebuild before expiry.
 - **`--platform linux/amd64` for Docker builds**: build host is Apple Silicon (arm64) → images are arm64-only. VKE nodes are amd64. Must explicitly target `linux/amd64`.
@@ -77,7 +80,8 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - `cmd/main_operator.go`: `runOperatorMode` with `RegisterKubernetesGaugeCallbacks`.
 - `deploy/test-values.yaml`: GHCR image defaults, resource limits, gateway-api config; automated VKE deployment overrides component repositories with a full digest.
 - `.github/workflows/ci.yml`: canonical parallel validation, gated `linux/amd64` publication, digest output, and reusable VKE promotion.
-- `.github/workflows/deploy-vke.yml`: reusable/manual digest-only VKE deployment and health validation.
+- `.github/workflows/deploy-vke.yml`: reusable digest-only VKE deployment and health validation with an exact event/ref gate.
+- `.github/workflows/deploy-vke-manual.yml`: default-branch typed repository-dispatch wrapper for manual VKE promotion.
 - `.github/workflows/deploy-gke.yml`, `.github/workflows/deploy-cloudrun.yml`: manual-only digest deployments.
 - `.github/workflows/test-e2e.yml`: nightly/manual Kind end-to-end suite with checksum-verified Kind binary.
 - `.github/workflows/helm-publish.yml`: chart publication for `master` chart changes or manual version input.
@@ -97,5 +101,7 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - `kubectl port-forward -n paprika-e2e svc/paprika-e2e-controller-manager-metrics-service <local_port>:8443`
 - `kubectl port-forward -n paprika-e2e pods/<api-server-pod> <local_port>:8080` (metrics) or `:3000` (UI)
 - `curl -s http://localhost:<port>/metrics | grep 'otel_scope_name="paprika"'`
+- `IMAGE_REF='ghcr.io/paprikacd/paprika@sha256:<64-lowercase-hex>'; gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=deploy-vke -f "client_payload[image_ref]=${IMAGE_REF}"`
+- `gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-helm -f 'client_payload[version]=0.1.0'`
 - `source .env && make omega-apply`
 - `kubectl --kubeconfig=terraform/omega-oidc.kubeconfig get nodes`

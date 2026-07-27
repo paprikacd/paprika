@@ -192,12 +192,34 @@ This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
 | CI | PR; push to `master` | Runs Go race tests, Go lint, UI checks, generated-code drift, and Helm checks in five parallel lanes. After every lane passes on `master`, publishes a `linux/amd64` image with `latest` and `sha-<commit>` discovery tags and exposes its digest. |
-| Deploy VKE | Reusable call after CI publish; manual | CI automatically promotes its published digest through the reusable workflow. Manual runs require a full `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>` reference. |
-| Deploy GKE Dev | Manual | Deploys only an explicitly supplied full Paprika GHCR digest. |
-| Deploy Cloud Run Dev | Manual | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| Deploy VKE | Reusable call after CI publish; typed repository dispatch | CI automatically promotes its published digest through the reusable workflow. Manual requests run default-branch workflow code and require a full `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>` reference. |
+| Deploy GKE Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| Deploy Cloud Run Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
 | E2E Tests | Nightly; manual | Builds local images and runs the full end-to-end suite on Kind. |
-| Publish Helm Chart | Chart changes on `master`; manual | Packages and publishes the Helm chart to GHCR. |
+| Publish Helm Chart | Chart changes on `master`; typed repository dispatch | Lints, renders, packages, and publishes the Helm chart to GHCR. |
 | Release | `v*` tag push | Runs GoReleaser and publishes the versioned Helm chart. |
+
+Privileged manual requests use repository dispatch so GitHub loads workflow code from the default
+branch. Supply an immutable image digest or a safe semantic chart version:
+
+```sh
+IMAGE_REF='ghcr.io/paprikacd/paprika@sha256:<64-lowercase-hex>'
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-vke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-gke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-cloudrun -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=publish-helm -f 'client_payload[version]=0.1.0'
+```
+
+CI cancels superseded pull-request runs, but `master` runs sharing the same workflow/ref queue and
+complete in order. The VKE token exchange independently requires the allowed event, exact
+`refs/heads/master` ref, trusted caller `workflow_ref`, and the reusable VKE
+`job_workflow_ref` before minting a Kubernetes credential. The GitHub `vke-production`
+environment must also be configured externally to permit only `master`; this repository change
+does not apply that environment policy.
 
 ## Roadmap
 

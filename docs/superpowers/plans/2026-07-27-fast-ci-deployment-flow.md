@@ -100,3 +100,38 @@ the documentation-only final pass.
 No live VKE, GKE, or Cloud Run deployment was performed as part of this implementation. The first
 merged `master` run still needs operational observation of package publication, OIDC exchange,
 digest promotion, rollout, and post-deploy health checks.
+
+## Security Hardening Follow-up
+
+The privileged boundaries were tightened after the initial fast-flow implementation:
+
+- [x] Cancel superseded pull-request CI runs while serializing `master` runs without cancellation.
+- [x] Replace privileged branch-selectable `workflow_dispatch` entrypoints with typed
+  `repository_dispatch` events: `deploy-vke`, `deploy-gke`, `deploy-cloudrun`, `publish-helm`, and
+  `publish-pages`.
+- [x] Make VKE reusable-only and add a default-branch `deploy-vke-manual.yml` wrapper plus an exact
+  `push`/`repository_dispatch` and `refs/heads/master` defense gate.
+- [x] Bind token exchange to allowed `event_name`, exact ref, allowed caller `workflow_ref`, and
+  exact called `job_workflow_ref` claims before token minting.
+- [x] Require Helm lint and template checks before packaging, validate manual chart versions, give
+  E2E image builds distinct cache scopes, and allowlist exact external action SHAs.
+- [ ] Configure the GitHub `vke-production` environment externally to permit only `master`. This
+  repository change deliberately did not mutate GitHub environment policy.
+
+Privileged manual requests now use default-branch repository dispatch:
+
+```sh
+IMAGE_REF='ghcr.io/paprikacd/paprika@sha256:<64-lowercase-hex>'
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-vke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-gke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-cloudrun -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=publish-helm -f 'client_payload[version]=0.1.0'
+gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-pages
+```
+
+The final local verification for this follow-up is recorded by the completing agent; no live
+GitHub dispatch, environment change, package publication, or cluster deployment is part of it.
