@@ -75,15 +75,9 @@ func testPublication(t *testing.T) {
 		}
 	}
 
-	condition := compactExpression(scalarString(publish["if"]))
-	if !strings.Contains(condition, "github.event_name=='push'") {
-		t.Errorf("ci.yml publish.if must restrict publication to push events; got %q", scalarString(publish["if"]))
-	}
-	if !strings.Contains(condition, "github.ref=='refs/heads/master'") {
-		t.Errorf("ci.yml publish.if must restrict publication to refs/heads/master; got %q", scalarString(publish["if"]))
-	}
-	if !strings.Contains(condition, "&&") || strings.Contains(condition, "||") {
-		t.Errorf("ci.yml publish.if must require both the push event and master ref; got %q", scalarString(publish["if"]))
+	wantCondition := "github.event_name=='push'&&github.ref=='refs/heads/master'"
+	if condition := normalizeExpression(scalarString(publish["if"])); condition != wantCondition {
+		t.Errorf("ci.yml publish.if = %q after normalization, want %q", condition, wantCondition)
 	}
 
 	if permission(workflow, publish, "packages") != "write" {
@@ -128,15 +122,9 @@ func testVKETriggers(t *testing.T) {
 
 func testVKEDeployCondition(t *testing.T) {
 	deploy := vkeDeployJob(t)
-	condition := compactExpression(scalarString(deploy["if"]))
-	if !strings.Contains(condition, "github.event_name=='workflow_dispatch'") {
-		t.Errorf("deploy-vke.yml deploy.if must allow workflow_dispatch; got %q", scalarString(deploy["if"]))
-	}
-	if !strings.Contains(condition, "github.event.workflow_run.conclusion=='success'") {
-		t.Errorf("deploy-vke.yml deploy.if must require a successful CI workflow_run; got %q", scalarString(deploy["if"]))
-	}
-	if !strings.Contains(condition, "||") {
-		t.Errorf("deploy-vke.yml deploy.if must allow manual runs or successful automatic runs; got %q", scalarString(deploy["if"]))
+	wantCondition := "github.event_name=='workflow_dispatch'||github.event.workflow_run.conclusion=='success'"
+	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantCondition {
+		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want %q", condition, wantCondition)
 	}
 }
 
@@ -146,13 +134,17 @@ func testVKEAutomaticProvenance(t *testing.T) {
 	if !foundCheckout {
 		t.Fatal("deploy-vke.yml deploy job has no actions/checkout step")
 	}
-	if !strings.Contains(checkoutRef, "github.event.workflow_run.head_sha") {
-		t.Errorf("deploy-vke.yml checkout ref must use github.event.workflow_run.head_sha; got %q", checkoutRef)
+	wantCheckoutRef := "github.event_name=='workflow_run'&&github.event.workflow_run.head_sha||github.sha"
+	normalizedCheckoutRef := normalizeExpression(checkoutRef)
+	if normalizedCheckoutRef != wantCheckoutRef {
+		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want %q", normalizedCheckoutRef, wantCheckoutRef)
 	}
 
 	imageTag := selectedImageTag(t, deploy)
-	if !usesWorkflowRunSHAImage(imageTag) {
-		t.Errorf("deploy-vke.yml IMAGE_TAG must select sha-${{ github.event.workflow_run.head_sha }} for automatic runs; got %q", imageTag)
+	wantImageTag := "github.event_name=='workflow_dispatch'&&inputs.ref||format('sha-{0}',github.event.workflow_run.head_sha)"
+	normalizedImageTag := normalizeExpression(imageTag)
+	if normalizedImageTag != wantImageTag {
+		t.Errorf("deploy-vke.yml IMAGE_TAG = %q after normalization, want %q", normalizedImageTag, wantImageTag)
 	}
 }
 
@@ -160,7 +152,7 @@ func testVKEManualImageTag(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
 	inputName := manualImageTagInput(t, workflow)
 	imageTag := selectedImageTag(t, requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs"))
-	if !strings.Contains(compactExpression(imageTag), "inputs."+inputName) {
+	if !strings.Contains(normalizeExpression(imageTag), "inputs."+inputName) {
 		t.Errorf("deploy-vke.yml IMAGE_TAG must consume manual input %q; got %q", inputName, imageTag)
 	}
 }
@@ -384,7 +376,11 @@ func isOnceDailyCron(cron string) bool {
 	return regexp.MustCompile(`^(?:[0-5]?\d)\s+(?:[01]?\d|2[0-3])\s+\*\s+\*\s+\*$`).MatchString(strings.TrimSpace(cron))
 }
 
-func compactExpression(expression string) string {
+func normalizeExpression(expression string) string {
+	expression = strings.TrimSpace(expression)
+	if strings.HasPrefix(expression, "${{") && strings.HasSuffix(expression, "}}") {
+		expression = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(expression, "${{"), "}}"))
+	}
 	expression = strings.ReplaceAll(expression, `"`, `'`)
 	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) {
@@ -429,12 +425,6 @@ func selectedImageTag(t *testing.T, deploy map[string]any) string {
 		t.Fatal("deploy-vke.yml deploy job must compute env.IMAGE_TAG")
 	}
 	return imageTag
-}
-
-func usesWorkflowRunSHAImage(expression string) bool {
-	expression = compactExpression(expression)
-	return strings.Contains(expression, "sha-${{github.event.workflow_run.head_sha}}") ||
-		strings.Contains(expression, "format('sha-{0}',github.event.workflow_run.head_sha)")
 }
 
 func manualImageTagInput(t *testing.T, workflow workflowFile) string {
