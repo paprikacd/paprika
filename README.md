@@ -2,7 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CI](https://github.com/benebsworth/paprika/actions/workflows/ci.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/ci.yml)
+[![CI](https://github.com/paprikacd/paprika/actions/workflows/ci.yml/badge.svg)](https://github.com/paprikacd/paprika/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/benebsworth/paprika)](https://goreportcard.com/report/github.com/benebsworth/paprika)
 
 **paprika** is a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single operator. It replaces the need for separate ArgoCD, Argo Rollouts, and Argo Workflows deployments with a unified, controller-driven approach.
@@ -88,15 +88,15 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 
 ```sh
 # Clone the repository
-git clone https://github.com/benebsworth/paprika.git
+git clone https://github.com/paprikacd/paprika.git
 cd paprika
 
 # Install CRDs
 make install
 
 # Build and deploy the operator
-make docker-build docker-push IMG=ghcr.io/benebsworth/paprika:latest
-make deploy IMG=ghcr.io/benebsworth/paprika:latest
+make docker-build docker-push IMG=ghcr.io/paprikacd/paprika:latest
+make deploy IMG=ghcr.io/paprikacd/paprika:latest
 
 # Verify the operator is running
 kubectl get pods -n paprika-system
@@ -135,7 +135,7 @@ make test-e2e
 ### Single YAML Bundle
 
 ```sh
-make build-installer IMG=ghcr.io/benebsworth/paprika:<tag>
+make build-installer IMG=ghcr.io/paprikacd/paprika:<tag>
 # Generates dist/install.yaml — apply with:
 kubectl apply -f dist/install.yaml
 ```
