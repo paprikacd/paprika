@@ -8,17 +8,27 @@ import (
 	"sort"
 	"strings"
 	"testing"
-	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
 
 type workflowFile struct {
 	name     string
-	text     string
 	document map[string]any
 	triggers map[string]any
 	jobs     map[string]any
+}
+
+type validationJobContract struct {
+	id               string
+	commands         []string
+	oneOfCommands    []string
+	workingDirectory string
+}
+
+type workflowRunStep struct {
+	run              string
+	workingDirectory string
 }
 
 func TestWorkflowContract(t *testing.T) {
@@ -53,14 +63,42 @@ func testCanonicalCIValidation(t *testing.T) {
 		}
 	}
 
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart"} {
-		job, ok := workflow.jobs[jobID].(map[string]any)
-		if !ok {
-			continue
+	contracts := []validationJobContract{
+		{id: "go-test", commands: []string{"make test-race"}},
+		{id: "go-lint", commands: []string{"make lint-config", "make lint"}},
+		{id: "ui", commands: []string{"npm ci", "npm test", "npm run lint", "npm run build"}, workingDirectory: "ui"},
+		{id: "generated", commands: []string{"git diff --exit-code"}, oneOfCommands: []string{"make generate", "make generate-proto"}},
+		{id: "chart", commands: []string{"helm lint", "helm template"}},
+	}
+	for _, contract := range contracts {
+		assertValidationJob(t, workflow, contract)
+	}
+}
+
+func assertValidationJob(t *testing.T, workflow workflowFile, contract validationJobContract) {
+	t.Helper()
+	job, ok := workflow.jobs[contract.id].(map[string]any)
+	if !ok {
+		t.Errorf("ci.yml validation job %q must be a mapping", contract.id)
+		return
+	}
+	if scalarString(job["runs-on"]) == "" {
+		t.Errorf("ci.yml validation job %q must declare runs-on", contract.id)
+	}
+	if needs := stringList(job["needs"]); len(needs) != 0 {
+		t.Errorf("ci.yml validation job %q must run in parallel without needs; got %v", contract.id, needs)
+	}
+	if len(workflowRunSteps(job)) == 0 {
+		t.Errorf("ci.yml validation job %q must declare structured run steps", contract.id)
+	}
+
+	for _, command := range contract.commands {
+		if !hasRunCommand(job, command, contract.workingDirectory) {
+			t.Errorf("ci.yml validation job %q must run %q", contract.id, command)
 		}
-		if needs := stringList(job["needs"]); len(needs) != 0 {
-			t.Errorf("ci.yml validation job %q must run in parallel without needs; got %v", jobID, needs)
-		}
+	}
+	if len(contract.oneOfCommands) != 0 && !hasAnyRunCommand(job, contract.oneOfCommands, contract.workingDirectory) {
+		t.Errorf("ci.yml validation job %q must run one of %v", contract.id, contract.oneOfCommands)
 	}
 }
 
@@ -75,7 +113,7 @@ func testPublication(t *testing.T) {
 		}
 	}
 
-	wantCondition := "github.event_name=='push'&&github.ref=='refs/heads/master'"
+	wantCondition := "github.event_name == 'push' && github.ref == 'refs/heads/master'"
 	if condition := normalizeExpression(scalarString(publish["if"])); condition != wantCondition {
 		t.Errorf("ci.yml publish.if = %q after normalization, want %q", condition, wantCondition)
 	}
@@ -84,14 +122,24 @@ func testPublication(t *testing.T) {
 		t.Errorf("ci.yml publish job must have packages: write permission")
 	}
 
-	publishText := marshalYAML(t, publish, "ci.yml publish job")
-	for _, required := range []string{
-		"linux/amd64",
+	buildPush, ok := findUsesStep(publish, "docker/build-push-action@")
+	if !ok {
+		t.Fatal("ci.yml publish job must contain a docker/build-push-action step")
+	}
+	with := requireMappingValue(t, buildPush, "with", "ci.yml docker/build-push-action step")
+	if push, ok := with["push"].(bool); !ok || !push {
+		t.Errorf("ci.yml docker/build-push-action with.push = %v, want true", with["push"])
+	}
+	if platforms := delimitedValues(with["platforms"]); !exactly(platforms, "linux/amd64") {
+		t.Errorf("ci.yml docker/build-push-action platforms = %v, want exactly [linux/amd64]", platforms)
+	}
+	tags := delimitedValues(with["tags"])
+	for _, tag := range []string{
 		"ghcr.io/paprikacd/paprika:latest",
 		"ghcr.io/paprikacd/paprika:sha-${{ github.sha }}",
 	} {
-		if !strings.Contains(publishText, required) {
-			t.Errorf("ci.yml publish job must contain %q", required)
+		if !contains(tags, tag) {
+			t.Errorf("ci.yml docker/build-push-action tags = %v, want %q", tags, tag)
 		}
 	}
 }
@@ -122,7 +170,7 @@ func testVKETriggers(t *testing.T) {
 
 func testVKEDeployCondition(t *testing.T) {
 	deploy := vkeDeployJob(t)
-	wantCondition := "github.event_name=='workflow_dispatch'||github.event.workflow_run.conclusion=='success'"
+	wantCondition := "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'"
 	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantCondition {
 		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want %q", condition, wantCondition)
 	}
@@ -134,14 +182,14 @@ func testVKEAutomaticProvenance(t *testing.T) {
 	if !foundCheckout {
 		t.Fatal("deploy-vke.yml deploy job has no actions/checkout step")
 	}
-	wantCheckoutRef := "github.event_name=='workflow_run'&&github.event.workflow_run.head_sha||github.sha"
+	wantCheckoutRef := "github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha"
 	normalizedCheckoutRef := normalizeExpression(checkoutRef)
 	if normalizedCheckoutRef != wantCheckoutRef {
 		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want %q", normalizedCheckoutRef, wantCheckoutRef)
 	}
 
 	imageTag := selectedImageTag(t, deploy)
-	wantImageTag := "github.event_name=='workflow_dispatch'&&inputs.ref||format('sha-{0}',github.event.workflow_run.head_sha)"
+	wantImageTag := "github.event_name == 'workflow_dispatch' && inputs.ref || format('sha-{0}', github.event.workflow_run.head_sha)"
 	normalizedImageTag := normalizeExpression(imageTag)
 	if normalizedImageTag != wantImageTag {
 		t.Errorf("deploy-vke.yml IMAGE_TAG = %q after normalization, want %q", normalizedImageTag, wantImageTag)
@@ -150,10 +198,18 @@ func testVKEAutomaticProvenance(t *testing.T) {
 
 func testVKEManualImageTag(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
-	inputName := manualImageTagInput(t, workflow)
-	imageTag := selectedImageTag(t, requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs"))
-	if !strings.Contains(normalizeExpression(imageTag), "inputs."+inputName) {
-		t.Errorf("deploy-vke.yml IMAGE_TAG must consume manual input %q; got %q", inputName, imageTag)
+	dispatch := requireMappingValue(t, workflow.triggers, "workflow_dispatch", "deploy-vke.yml triggers")
+	inputs := requireMappingValue(t, dispatch, "inputs", "deploy-vke.yml workflow_dispatch")
+	ref := requireMappingValue(t, inputs, "ref", "deploy-vke.yml workflow_dispatch inputs")
+	description := strings.ToLower(scalarString(ref["description"]))
+	if !strings.Contains(description, "image") || !strings.Contains(description, "tag") {
+		t.Errorf("deploy-vke.yml workflow_dispatch ref description must mention image and tag; got %q", ref["description"])
+	}
+	if required, ok := ref["required"].(bool); !ok || !required {
+		t.Errorf("deploy-vke.yml workflow_dispatch ref.required = %v, want true", ref["required"])
+	}
+	if defaultValue, ok := ref["default"]; ok {
+		t.Errorf("deploy-vke.yml workflow_dispatch ref must require an explicit tag without a default; got %q", defaultValue)
 	}
 }
 
@@ -233,9 +289,12 @@ func testNoMainBranchTargets(t *testing.T) {
 				}
 			}
 
-			mainExpression := regexp.MustCompile(`(?i)(refs/heads/main\b|head_branch\s*==\s*['\"]main['\"]|ref_name\s*==\s*['\"]main['\"])`)
-			if mainExpression.MatchString(workflow.text) {
-				t.Errorf("%s contains an expression targeting the main branch", workflow.name)
+			mainExpression := regexp.MustCompile(`(?i)(refs/heads/main\b|head_branch\s*==\s*['\"]main['\"]|ref_name\s*==\s*['\"]main['\"]|^\s*main\s*$)`)
+			expressionValues := append(mappingsNamed(workflow.document, "if"), mappingsNamed(workflow.document, "ref")...)
+			for _, value := range expressionValues {
+				if expression, ok := value.(string); ok && mainExpression.MatchString(expression) {
+					t.Errorf("%s contains an expression targeting the main branch: %q", workflow.name, expression)
+				}
 			}
 		})
 	}
@@ -261,7 +320,6 @@ func loadWorkflowPath(t *testing.T, path string) workflowFile {
 
 	return workflowFile{
 		name:     filepath.Base(path),
-		text:     string(data),
 		document: document,
 		triggers: requireMappingValue(t, document, "on", filepath.Base(path)),
 		jobs:     optionalMappingValue(t, document, "jobs"),
@@ -381,34 +439,29 @@ func normalizeExpression(expression string) string {
 	if strings.HasPrefix(expression, "${{") && strings.HasSuffix(expression, "}}") {
 		expression = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(expression, "${{"), "}}"))
 	}
-	expression = strings.ReplaceAll(expression, `"`, `'`)
-	return strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return -1
-		}
-		return r
-	}, expression)
+	return strings.TrimSpace(expression)
 }
 
 func permission(workflow workflowFile, job map[string]any, name string) string {
-	if permissions, ok := job["permissions"].(map[string]any); ok {
-		if value := scalarString(permissions[name]); value != "" {
-			return value
-		}
+	if permissions, declared := job["permissions"]; declared {
+		return permissionValue(permissions, name)
 	}
-	if permissions, ok := workflow.document["permissions"].(map[string]any); ok {
-		return scalarString(permissions[name])
-	}
-	return ""
+	return permissionValue(workflow.document["permissions"], name)
 }
 
-func marshalYAML(t *testing.T, value any, context string) string {
-	t.Helper()
-	data, err := yaml.Marshal(value)
-	if err != nil {
-		t.Fatalf("marshal %s: %v", context, err)
+func permissionValue(value any, name string) string {
+	switch permissions := value.(type) {
+	case map[string]any:
+		return scalarString(permissions[name])
+	case string:
+		if permissions == "write-all" {
+			return "write"
+		}
+		if permissions == "read-all" {
+			return "read"
+		}
 	}
-	return string(data)
+	return ""
 }
 
 func vkeDeployJob(t *testing.T) map[string]any {
@@ -427,23 +480,87 @@ func selectedImageTag(t *testing.T, deploy map[string]any) string {
 	return imageTag
 }
 
-func manualImageTagInput(t *testing.T, workflow workflowFile) string {
-	t.Helper()
-	dispatch := requireMappingValue(t, workflow.triggers, "workflow_dispatch", "deploy-vke.yml triggers")
-	inputs := requireMappingValue(t, dispatch, "inputs", "deploy-vke.yml workflow_dispatch")
-	for _, name := range sortedKeys(inputs) {
-		input, ok := inputs[name].(map[string]any)
+func workflowRunSteps(job map[string]any) []workflowRunStep {
+	defaultDirectory := ""
+	if defaults, ok := job["defaults"].(map[string]any); ok {
+		if runDefaults, ok := defaults["run"].(map[string]any); ok {
+			defaultDirectory = scalarString(runDefaults["working-directory"])
+		}
+	}
+
+	var steps []workflowRunStep
+	for _, value := range anyList(job["steps"]) {
+		step, ok := value.(map[string]any)
 		if !ok {
 			continue
 		}
-		description := strings.ToLower(scalarString(input["description"]))
-		if strings.Contains(strings.ToLower(name), "tag") ||
-			(name == "ref" && strings.Contains(description, "image") && strings.Contains(description, "tag")) {
-			return name
+		run := scalarString(step["run"])
+		if run == "" {
+			continue
+		}
+		workingDirectory := scalarString(step["working-directory"])
+		if workingDirectory == "" {
+			workingDirectory = defaultDirectory
+		}
+		steps = append(steps, workflowRunStep{run: run, workingDirectory: workingDirectory})
+	}
+	return steps
+}
+
+func hasRunCommand(job map[string]any, command, workingDirectory string) bool {
+	for _, step := range workflowRunSteps(job) {
+		if workingDirectoryMatches(step.workingDirectory, workingDirectory) && containsShellCommand(step.run, command) {
+			return true
 		}
 	}
-	t.Fatal("deploy-vke.yml workflow_dispatch must declare an image tag input")
-	return ""
+	return false
+}
+
+func hasAnyRunCommand(job map[string]any, commands []string, workingDirectory string) bool {
+	for _, command := range commands {
+		if hasRunCommand(job, command, workingDirectory) {
+			return true
+		}
+	}
+	return false
+}
+
+func workingDirectoryMatches(got, want string) bool {
+	return want == "" || filepath.Clean(got) == filepath.Clean(want)
+}
+
+func containsShellCommand(script, command string) bool {
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "if "))
+		line = strings.TrimSpace(strings.TrimPrefix(line, "! "))
+		if line == command || strings.HasPrefix(line, command+" ") || strings.HasPrefix(line, command+";") {
+			return true
+		}
+	}
+	return false
+}
+
+func findUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
+	for _, value := range anyList(job["steps"]) {
+		step, ok := value.(map[string]any)
+		if ok && strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
+			return step, true
+		}
+	}
+	return nil, false
+}
+
+func delimitedValues(value any) []string {
+	var values []string
+	for _, raw := range stringList(value) {
+		for _, item := range strings.FieldsFunc(raw, func(r rune) bool { return r == '\n' || r == ',' }) {
+			if item = strings.TrimSpace(item); item != "" {
+				values = append(values, item)
+			}
+		}
+	}
+	return values
 }
 
 func checkoutRef(job map[string]any) (string, bool) {
