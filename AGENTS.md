@@ -22,6 +22,13 @@
 - **Kubernetes gauge callbacks** (`internal/metrics/kubernetes.go`): `RegisterKubernetesGaugeCallbacks` lists Applications/Releases from K8s API on each scrape, populates `applications_active`, `applications_by_phase`, `releases_active`, `releases_by_phase` with `phase` attribute.
 - **OTel added to all modes**: `runAPIMode`, `runWebhookMode`, `runRepoServerMode`, `runAgentMode` all call `observability.NewTelemetry()` + `defer telemetry.Shutdown()`.
 - **Rebuilt and deployed** (amd64, ttl.sh `4h` tag), verified OTel metrics on controller-manager (git, SSE, events, gauges all visible).
+- **Fast canonical CI**: `.github/workflows/ci.yml` runs on pull requests and `master` pushes with five parallel validation lanes: Go race tests, Go lint, UI test/lint/build, generated-code drift, and Helm lint/template.
+- **Gated amd64 publication**: only a validated `master` push publishes `ghcr.io/paprikacd/paprika` for `linux/amd64`. `latest` and `sha-<commit>` remain discoverability tags; the publish job exposes the immutable registry digest.
+- **Deterministic VKE promotion**: CI passes the published digest directly to the trusted local reusable VKE workflow. Automatic deployment uses `ghcr.io/paprikacd/paprika@sha256:<digest>`, not a tag, and there is no separate privileged `workflow_run` trigger.
+- **Digest-only manual deployment**: manual VKE, GKE, and Cloud Run runs require exactly `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>`; GKE and Cloud Run remain manual-only.
+- **Hardened workflow contract**: Go contract tests enforce validation dependencies, failure propagation, branch/event restrictions, digest data flow and grammar, action pins, permissions, timeouts, the pinned Kind checksum, Helm publishing from `master`, and nightly/manual E2E.
+- **Deployment values aligned with GHCR**: `deploy/test-values.yaml` already uses `ghcr.io/paprikacd/paprika`; the VKE workflow overrides each Paprika component image repository with the promoted digest, so its `latest` defaults are not deployed by the workflow.
+- **No live deployment for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed as part of the change.
 
 ### In Progress
 - (none)
@@ -30,10 +37,9 @@
 - (none)
 
 ## Next Steps
-1. Commit and push to `master` → GHA builds `ghcr.io/paprikacd/paprika:latest`
-2. Switch `test-values.yaml` from `ttl.sh/paprika-amd64:4h` to `ghcr.io/paprikacd/paprika:latest`
-3. Redeploy with `helm upgrade`
-4. Create a scoped Cloudflare API token for `benebsworth.com` zone (currently using Global API key)
+1. Merge the fast CI changes and observe the first `master` publish and automatic digest-based VKE promotion end to end.
+2. Add defense-in-depth checks in the custom GitHub OIDC exchange for the expected `event_name`, `ref`, and `job_workflow_ref` before minting a Kubernetes credential.
+3. Create a scoped Cloudflare API token for the `benebsworth.com` zone (currently using the Global API key).
 
 ## Verified Metrics on Controller-Manager
 - `paprika_git_duration_seconds_bucket` (1 fetch at 22.5s)
@@ -51,7 +57,9 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - **All modes get OTel**: `NewTelemetry` called in all 5 `run*Mode` functions (operator, API, webhook, repo-server, agent). Each creates its own MeterProvider scoped to that process's lifecycle.
 - **Observable gauges register callbacks only in operator mode** (where cache-backed `mgr.GetClient()` is available). API/webhook/repo-server/agent modes don't register K8s callbacks — gauges silently absent from their `/metrics` output.
 - **`_ratio` suffix on observable gauge names** is expected OTel Prometheus exporter behavior for dimensionless (unit "1") instruments. Not a bug.
-- **GitHub Actions CI/CD**: existing `.github/workflows/build-push.yml` builds and pushes `ghcr.io/paprikacd/paprika:{latest,sha-<sha>}` on push to `master`. The `GITHUB_TOKEN` has `packages: write` scope (unlike local machine's token).
+- **GitHub Actions CI/CD**: `.github/workflows/ci.yml` validates pull requests and `master` pushes. Only the gated `publish` job receives `packages: write`; it publishes `linux/amd64` discovery tags and returns the digest consumed by the reusable VKE deployment.
+- **Trusted deployment handoff**: the VKE call is a job in the same CI run and receives only the publish output digest. Manual deployment workflows enforce the same full GHCR digest grammar before authentication or deployment.
+- **Workflow hardening**: fast CI, deploy, E2E, and Helm-publish actions are pinned to immutable revisions, jobs have bounded timeouts, permissions are scoped, and Kind installation verifies a repository-pinned checksum.
 - **`ttl.sh` fallback**: when local builds can't push to ghcr.io, use `ttl.sh/paprika-amd64:<tag>` with `<tag>` being the TTL duration (e.g., `4h`). Image auto-deletes after TTL. Must rebuild before expiry.
 - **`--platform linux/amd64` for Docker builds**: build host is Apple Silicon (arm64) → images are arm64-only. VKE nodes are amd64. Must explicitly target `linux/amd64`.
 - **`metric.WithExplicitBucketBoundaries`** takes variadic `float64`, not a slice. Use `defBuckets...` to spread the slice.
@@ -67,12 +75,23 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - `internal/api/events/broker.go`: instrumented `Subscribe`/`Unsubscribe` (SSEConnections up/down), `Publish` (EventsPublished + topic attr).
 - `cmd/main.go`: all `run*Mode` functions with `NewTelemetry`/`Shutdown`.
 - `cmd/main_operator.go`: `runOperatorMode` with `RegisterKubernetesGaugeCallbacks`.
-- `deploy/test-values.yaml`: image repository and tag, resource limits, gateway-api config.
-- `.github/workflows/build-push.yml`: CI/CD build+push to ghcr.io on push to master.
+- `deploy/test-values.yaml`: GHCR image defaults, resource limits, gateway-api config; automated VKE deployment overrides component repositories with a full digest.
+- `.github/workflows/ci.yml`: canonical parallel validation, gated `linux/amd64` publication, digest output, and reusable VKE promotion.
+- `.github/workflows/deploy-vke.yml`: reusable/manual digest-only VKE deployment and health validation.
+- `.github/workflows/deploy-gke.yml`, `.github/workflows/deploy-cloudrun.yml`: manual-only digest deployments.
+- `.github/workflows/test-e2e.yml`: nightly/manual Kind end-to-end suite with checksum-verified Kind binary.
+- `.github/workflows/helm-publish.yml`: chart publication for `master` chart changes or manual version input.
+- `internal/cicontract/workflows_test.go`: executable workflow security and data-flow contract.
+- `docs/superpowers/specs/2026-07-27-fast-ci-deployment-flow-design.md`: final CI/deployment architecture and invariants.
+- `docs/superpowers/plans/2026-07-27-fast-ci-deployment-flow.md`: completed implementation and verification record.
 
 ## Commands
 - `make test`, `make lint`, `just build/lint/test`
+- `make test-race`
+- `(cd ui && npm test && npm run lint && npm run build)`
 - `helm lint charts/chart/`
+- `helm template paprika charts/chart/`
+- `go test ./internal/cicontract -v`
 - `source .env && helm upgrade paprika-e2e charts/chart/ --namespace paprika-e2e --values deploy/test-values.yaml --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" --wait --timeout 5m`
 - `docker build --platform linux/amd64 -t ttl.sh/paprika-amd64:<tag> . && docker push ttl.sh/paprika-amd64:<tag>`
 - `kubectl port-forward -n paprika-e2e svc/paprika-e2e-controller-manager-metrics-service <local_port>:8443`

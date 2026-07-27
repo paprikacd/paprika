@@ -2,8 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CI](https://github.com/benebsworth/paprika/actions/workflows/test.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/test.yml)
-[![Lint](https://github.com/benebsworth/paprika/actions/workflows/lint.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/lint.yml)
+[![CI](https://github.com/benebsworth/paprika/actions/workflows/ci.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/benebsworth/paprika)](https://goreportcard.com/report/github.com/benebsworth/paprika)
 
 **paprika** is a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single operator. It replaces the need for separate ArgoCD, Argo Rollouts, and Argo Workflows deployments with a unified, controller-driven approach.
@@ -192,12 +191,13 @@ This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| Lint | push, PR | golangci-lint |
-| Tests | push, PR | Unit tests with coverage |
-| E2E | push, PR | End-to-end tests on Kind |
-| Build & Push | push to main | Build and push image to GHCR |
-| Deploy GKE Dev | after Build & Push | Deploy to GKE dev cluster |
-| Release | tag push (v*) | Build, release, deploy to production |
+| CI | PR; push to `master` | Runs Go race tests, Go lint, UI checks, generated-code drift, and Helm checks in five parallel lanes. After every lane passes on `master`, publishes a `linux/amd64` image with `latest` and `sha-<commit>` discovery tags and exposes its digest. |
+| Deploy VKE | Reusable call after CI publish; manual | CI automatically promotes its published digest through the reusable workflow. Manual runs require a full `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>` reference. |
+| Deploy GKE Dev | Manual | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| Deploy Cloud Run Dev | Manual | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| E2E Tests | Nightly; manual | Builds local images and runs the full end-to-end suite on Kind. |
+| Publish Helm Chart | Chart changes on `master`; manual | Packages and publishes the Helm chart to GHCR. |
+| Release | `v*` tag push | Runs GoReleaser and publishes the versioned Helm chart. |
 
 ## Roadmap
 
