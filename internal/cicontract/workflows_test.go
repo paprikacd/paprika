@@ -33,6 +33,9 @@ type workflowRunStep struct {
 
 func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI triggers fast validation jobs in parallel", testCanonicalCIValidation)
+	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
+	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
+	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
 	t.Run("publication is gated and produces immutable amd64 images", testPublication)
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
 	t.Run("VKE triggers are exact and preserve manual dispatch", testVKETriggers)
@@ -56,6 +59,10 @@ func testCanonicalCIValidation(t *testing.T) {
 			t.Errorf("ci.yml must declare the %s trigger", event)
 		}
 	}
+	push := requireMappingValue(t, workflow.triggers, "push", "ci.yml triggers")
+	if branches := stringList(push["branches"]); !exactly(branches, "master") {
+		t.Errorf("ci.yml push.branches = %v, want exactly [master]", branches)
+	}
 
 	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
@@ -72,6 +79,70 @@ func testCanonicalCIValidation(t *testing.T) {
 	}
 	for _, contract := range contracts {
 		assertValidationJob(t, workflow, contract)
+	}
+}
+
+func testCanonicalCIActionPins(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	pinnedSHA := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	for jobID, value := range workflow.jobs {
+		job, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		for index, value := range anyList(job["steps"]) {
+			step, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			uses := scalarString(step["uses"])
+			if uses == "" || strings.HasPrefix(uses, "./") {
+				continue
+			}
+			action, revision, found := strings.Cut(uses, "@")
+			if !found || action == "" || !pinnedSHA.MatchString(revision) {
+				t.Errorf("ci.yml job %q step %d uses %q, want a full 40-character commit SHA", jobID, index+1, uses)
+			}
+		}
+	}
+}
+
+func testCanonicalCIJobTimeouts(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "publish"} {
+		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
+		timeout, ok := job["timeout-minutes"].(int)
+		if !ok || timeout < 5 || timeout > 30 {
+			t.Errorf("ci.yml job %q timeout-minutes = %v, want an integer from 5 through 30", jobID, job["timeout-minutes"])
+		}
+	}
+}
+
+func testGeneratedDriftDetection(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	generated := requireMappingValue(t, workflow.jobs, "generated", "ci.yml jobs")
+	commands := []string{
+		"command -v protoc-gen-go",
+		"command -v protoc-gen-connect-go",
+		"command -v ui/node_modules/.bin/protoc-gen-es",
+		"command -v ui/node_modules/.bin/protoc-gen-connect-es",
+		"rm -rf -- internal/api/paprika ui/src/gen",
+		"make generate-proto",
+		"git diff --exit-code",
+		"git status --porcelain --untracked-files=all",
+		`test -z "$(git status --porcelain --untracked-files=all)"`,
+	}
+	positions := make([]int, len(commands))
+	for index, command := range commands {
+		positions[index] = runCommandPosition(generated, command)
+		if positions[index] < 0 {
+			t.Errorf("ci.yml generated job must actively run exact command %q and enforce its failure", command)
+		}
+	}
+	for index := 1; index < len(positions); index++ {
+		if positions[index-1] >= 0 && positions[index] >= 0 && positions[index-1] >= positions[index] {
+			t.Errorf("ci.yml generated commands must run in order; %q must precede %q", commands[index-1], commands[index])
+		}
 	}
 }
 
@@ -523,6 +594,19 @@ func hasRunCommand(job map[string]any, command, workingDirectory string) bool {
 		matched = true
 	}
 	return matched
+}
+
+func runCommandPosition(job map[string]any, command string) int {
+	position := 0
+	for _, step := range workflowRunSteps(job) {
+		for _, line := range strings.Split(step.run, "\n") {
+			if strings.TrimSpace(line) == command && step.failureEnforcing {
+				return position
+			}
+			position++
+		}
+	}
+	return -1
 }
 
 func workingDirectoryMatches(got, want string) bool {
