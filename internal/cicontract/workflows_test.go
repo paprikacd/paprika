@@ -88,6 +88,9 @@ func assertValidationJob(t *testing.T, workflow workflowFile, contract validatio
 	if needs := stringList(job["needs"]); len(needs) != 0 {
 		t.Errorf("ci.yml validation job %q must run in parallel without needs; got %v", contract.id, needs)
 	}
+	if !continueOnErrorSafe(job) {
+		t.Errorf("ci.yml validation job %q continue-on-error must be absent or boolean false", contract.id)
+	}
 	if len(workflowRunSteps(job)) == 0 {
 		t.Errorf("ci.yml validation job %q must declare structured run steps", contract.id)
 	}
@@ -557,14 +560,16 @@ func stepFailureEnforcing(step map[string]any) bool {
 	if _, conditional := step["if"]; conditional {
 		return false
 	}
-	return !isTrue(step["continue-on-error"])
+	return continueOnErrorSafe(step)
 }
 
-func isTrue(value any) bool {
-	if enabled, ok := value.(bool); ok {
-		return enabled
+func continueOnErrorSafe(values map[string]any) bool {
+	value, declared := values["continue-on-error"]
+	if !declared {
+		return true
 	}
-	return strings.EqualFold(strings.TrimSpace(scalarString(value)), "true")
+	enabled, boolean := value.(bool)
+	return boolean && !enabled
 }
 
 func delimitedValues(value any) []string {
