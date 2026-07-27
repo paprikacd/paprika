@@ -70,9 +70,9 @@ allowed `event_name`, exact `refs/heads/master`, an allowlisted caller `workflow
 `deploy-vke-manual.yml`), and the exact called `deploy-vke.yml` `job_workflow_ref`. Missing claims
 fail closed before service-account token minting.
 
-The GitHub `vke-production` environment must be configured externally to allow only `master`.
-That environment policy is required defense in depth but was not applied by this repository-only
-change.
+The GitHub `vke-production` environment policy was applied and verified on 2026-07-27. Its
+`deployment_branch_policy` has `custom_branch_policies=true` and `protected_branches=false`, with
+exactly one allowed policy: `{name: master, type: branch}`.
 
 ## Safety Properties
 

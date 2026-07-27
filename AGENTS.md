@@ -30,7 +30,8 @@
 - **Independent VKE OIDC boundary**: the exchange requires allowed `event_name`, exact `refs/heads/master`, an allowlisted caller `workflow_ref`, and the exact reusable VKE `job_workflow_ref` before minting a service-account token.
 - **Hardened workflow contract**: Go contract tests enforce validation dependencies, failure propagation, branch/event restrictions, digest data flow and grammar, action pins, permissions, timeouts, the pinned Kind checksum, Helm publishing from `master`, and nightly/manual E2E.
 - **Deployment values aligned with GHCR**: `deploy/test-values.yaml` already uses `ghcr.io/paprikacd/paprika`; the VKE workflow overrides each Paprika component image repository with the promoted digest, so its `latest` defaults are not deployed by the workflow.
-- **No live deployment or environment mutation for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed and no GitHub environment policy was changed as part of the work.
+- **Master-only VKE environment policy**: `vke-production` was configured and read back with `custom_branch_policies=true`, `protected_branches=false`, and exactly one `{name: master, type: branch}` policy.
+- **No live deployment for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed. The GitHub environment policy was changed separately as recorded above.
 
 ### In Progress
 - (none)
@@ -40,8 +41,7 @@
 
 ## Next Steps
 1. Merge the fast CI changes and observe the first `master` publish and automatic digest-based VKE promotion end to end.
-2. Restrict the GitHub `vke-production` environment externally so only `master` may deploy; the repository-side gate and OIDC claim checks are already in code, but this environment policy has not been applied.
-3. Create a scoped Cloudflare API token for the `benebsworth.com` zone (currently using the Global API key).
+2. Create a scoped Cloudflare API token for the `benebsworth.com` zone (currently using the Global API key).
 
 ## Verified Metrics on Controller-Manager
 - `paprika_git_duration_seconds_bucket` (1 fetch at 22.5s)

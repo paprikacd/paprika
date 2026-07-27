@@ -221,8 +221,8 @@ never cancelled; GitHub retains only the newest pending run and may replace an o
 The VKE token exchange independently requires the allowed event, exact
 `refs/heads/master` ref, trusted caller `workflow_ref`, and the reusable VKE
 `job_workflow_ref` before minting a Kubernetes credential. The GitHub `vke-production`
-environment must also be configured externally to permit only `master`; this repository change
-does not apply that environment policy.
+environment policy is configured and verified with custom branch policies enabled, protected
+branches disabled, and exactly one allowed branch policy: `master` of type `branch`.
 
 ## Roadmap
 

@@ -117,8 +117,9 @@ The privileged boundaries were tightened after the initial fast-flow implementat
   exact called `job_workflow_ref` claims before token minting.
 - [x] Require Helm lint and template checks before packaging, validate manual chart versions, give
   E2E image builds distinct cache scopes, and allowlist exact external action SHAs.
-- [ ] Configure the GitHub `vke-production` environment externally to permit only `master`. This
-  repository change deliberately did not mutate GitHub environment policy.
+- [x] Configure the GitHub `vke-production` environment to permit only `master`. External API
+  read-back verified `custom_branch_policies=true`, `protected_branches=false`, and exactly one
+  branch policy: `{name: master, type: branch}`.
 
 Privileged manual requests now use default-branch repository dispatch:
 
