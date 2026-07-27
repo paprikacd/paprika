@@ -36,13 +36,13 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
-	t.Run("publication is gated and produces immutable amd64 images", testPublication)
+	t.Run("publication is gated and exposes an immutable amd64 image digest", testPublication)
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
-	t.Run("VKE triggers are exact and preserve manual dispatch", testVKETriggers)
-	t.Run("VKE deploy permits manual or successful automatic runs", testVKEDeployCondition)
-	t.Run("VKE automatic deploy selects the triggering commit image", testVKEAutomaticProvenance)
-	t.Run("VKE manual tag input selects the deployed image", testVKEManualImageTag)
-	t.Run("VKE deploy safely applies its selected tag to every component", testVKEComponentImageTags)
+	t.Run("CI gates reusable VKE deployment on trusted published output", testCIDeployVKE)
+	t.Run("VKE is callable and manually dispatchable without workflow_run", testVKETriggers)
+	t.Run("VKE checks out the trusted caller commit and selects an image digest", testVKEProvenance)
+	t.Run("VKE validates the immutable image reference before privileged operations", testVKEImageValidation)
+	t.Run("VKE deploy applies one immutable reference to every component", testVKEComponentImageReferences)
 	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
 	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
 	t.Run("legacy deployments are manual only", testLegacyDeployments)
@@ -217,6 +217,83 @@ func assertJobTimeout(t *testing.T, workflowName, jobID string, job map[string]a
 	}
 }
 
+func assertExactImageReferenceInput(t *testing.T, trigger map[string]any, context string) {
+	t.Helper()
+	inputs := requireMappingValue(t, trigger, "inputs", context)
+	if got := sortedKeys(inputs); !exactly(got, "image_ref") {
+		t.Errorf("%s inputs = %v, want exactly [image_ref]", context, got)
+	}
+	imageReference := requireMappingValue(t, inputs, "image_ref", context+" inputs")
+	description := strings.ToLower(scalarString(imageReference["description"]))
+	if !strings.Contains(description, "image") || !strings.Contains(description, "digest") {
+		t.Errorf("%s image_ref description must mention an image digest; got %q", context, imageReference["description"])
+	}
+	if required, ok := imageReference["required"].(bool); !ok || !required {
+		t.Errorf("%s image_ref.required = %v, want true", context, imageReference["required"])
+	}
+	if inputType := scalarString(imageReference["type"]); inputType != "string" {
+		t.Errorf("%s image_ref.type = %q, want string", context, inputType)
+	}
+	if defaultValue, ok := imageReference["default"]; ok {
+		t.Errorf("%s image_ref must not declare a default; got %q", context, defaultValue)
+	}
+}
+
+func assertImageReferenceEnvironment(t *testing.T, job map[string]any, context string) {
+	t.Helper()
+	environment := requireMappingValue(t, job, "env", context)
+	if got := normalizeExpression(scalarString(environment["IMAGE_REFERENCE"])); got != "inputs.image_ref" {
+		t.Errorf("%s env.IMAGE_REFERENCE = %q after normalization, want inputs.image_ref", context, got)
+	}
+	if _, mutableTag := environment["IMAGE_TAG"]; mutableTag {
+		t.Errorf("%s must not declare IMAGE_TAG", context)
+	}
+}
+
+func assertImageReferenceValidator(t *testing.T, job map[string]any, context string, privilegedStepNames []string) {
+	t.Helper()
+	const digestPattern = `^ghcr\.io/paprikacd/paprika@sha256:[0-9a-f]{64}$`
+	validator, validatorIndex := requireNamedStepAt(t, job, "Validate image reference", context)
+	run := scalarString(validator["run"])
+	wantCondition := `if [[ ! "${IMAGE_REFERENCE}" =~ ` + digestPattern + ` ]]; then`
+	if !containsActiveShellLine(run, wantCondition) {
+		t.Errorf("%s validator must enforce exact digest grammar %q", context, digestPattern)
+	}
+	if !containsActiveShellFragment(run, "::error::") || !containsActiveShellLine(run, "exit 1") {
+		t.Errorf("%s validator must fail clearly for an invalid image reference", context)
+	}
+	if !stepFailureEnforcing(validator) {
+		t.Errorf("%s validator must be unconditional and failure-enforcing", context)
+	}
+	for _, stepName := range privilegedStepNames {
+		_, index := requireNamedStepAt(t, job, stepName, context)
+		if validatorIndex >= index {
+			t.Errorf("%s must validate the image reference before %q", context, stepName)
+		}
+	}
+
+	validatorPattern := regexp.MustCompile(digestPattern)
+	validDigest := "ghcr.io/paprikacd/paprika@sha256:" + strings.Repeat("a", 64)
+	if !validatorPattern.MatchString(validDigest) {
+		t.Fatalf("contract digest validator unexpectedly rejects valid reference %q", validDigest)
+	}
+	invalidReferences := []string{
+		"ghcr.io/paprikacd/paprika:latest",
+		"sha-0123456789abcdef",
+		"ghcr.io/other/paprika@sha256:" + strings.Repeat("a", 64),
+		validDigest + ",manager.image.tag=latest",
+		validDigest + " ",
+		" " + validDigest,
+		"ghcr.io/paprikacd/paprika@sha256:" + strings.Repeat("A", 64),
+		"ghcr.io/paprikacd/paprika@sha256:" + strings.Repeat("a", 63),
+	}
+	for _, imageReference := range invalidReferences {
+		if validatorPattern.MatchString(imageReference) {
+			t.Errorf("contract digest validator must reject adversarial reference %q", imageReference)
+		}
+	}
+}
+
 func testPublication(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
 	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
@@ -241,6 +318,13 @@ func testPublication(t *testing.T) {
 	if !ok {
 		t.Fatal("ci.yml publish job must contain an unconditional docker/build-push-action step that enforces failure")
 	}
+	if id := scalarString(buildPush["id"]); id != "build-push" {
+		t.Errorf("ci.yml docker/build-push-action step id = %q, want build-push", id)
+	}
+	outputs := requireMappingValue(t, publish, "outputs", "ci.yml publish job")
+	if got := normalizeExpression(scalarString(outputs["digest"])); got != "steps.build-push.outputs.digest" {
+		t.Errorf("ci.yml publish.outputs.digest = %q after normalization, want steps.build-push.outputs.digest", got)
+	}
 	with := requireMappingValue(t, buildPush, "with", "ci.yml docker/build-push-action step")
 	if push, ok := with["push"].(bool); !ok || !push {
 		t.Errorf("ci.yml docker/build-push-action with.push = %v, want true", with["push"])
@@ -259,6 +343,39 @@ func testPublication(t *testing.T) {
 	}
 }
 
+func testCIDeployVKE(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	deploy := requireMappingValue(t, workflow.jobs, "deploy-vke", "ci.yml jobs")
+	if needs := stringList(deploy["needs"]); !exactly(needs, "publish") {
+		t.Errorf("ci.yml deploy-vke.needs = %v, want exactly [publish]", needs)
+	}
+	wantCondition := "github.event_name == 'push' && github.ref == 'refs/heads/master'"
+	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantCondition {
+		t.Errorf("ci.yml deploy-vke.if = %q after normalization, want %q", condition, wantCondition)
+	}
+	if uses := scalarString(deploy["uses"]); uses != "./.github/workflows/deploy-vke.yml" {
+		t.Errorf("ci.yml deploy-vke.uses = %q, want local reusable VKE workflow", uses)
+	}
+	with := requireMappingValue(t, deploy, "with", "ci.yml deploy-vke job")
+	wantImageReference := "ghcr.io/paprikacd/paprika@${{ needs.publish.outputs.digest }}"
+	if imageReference := scalarString(with["image_ref"]); imageReference != wantImageReference {
+		t.Errorf("ci.yml deploy-vke.with.image_ref = %q, want %q", imageReference, wantImageReference)
+	}
+	permissions := requireMappingValue(t, deploy, "permissions", "ci.yml deploy-vke job")
+	if got := sortedKeys(permissions); len(got) != 2 || !contains(got, "contents") || !contains(got, "id-token") {
+		t.Errorf("ci.yml deploy-vke permissions = %v, want exactly contents and id-token", got)
+	}
+	if scalarString(permissions["contents"]) != "read" || scalarString(permissions["id-token"]) != "write" {
+		t.Errorf("ci.yml deploy-vke permissions = %v, want contents: read and id-token: write", permissions)
+	}
+	if _, hasSteps := deploy["steps"]; hasSteps {
+		t.Error("ci.yml deploy-vke must call the reusable workflow instead of declaring steps")
+	}
+	if _, hasRunner := deploy["runs-on"]; hasRunner {
+		t.Error("ci.yml deploy-vke reusable workflow call must not declare runs-on")
+	}
+}
+
 func testLegacyPublisherRemoved(t *testing.T) {
 	path := filepath.Join(repositoryRoot(t), ".github", "workflows", "build-push.yml")
 	if _, err := os.Stat(path); err == nil {
@@ -270,88 +387,66 @@ func testLegacyPublisherRemoved(t *testing.T) {
 
 func testVKETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
-	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "workflow_dispatch") || !contains(got, "workflow_run") {
-		t.Errorf("deploy-vke.yml triggers = %v, want exactly workflow_dispatch and workflow_run", got)
+	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "workflow_call") || !contains(got, "workflow_dispatch") {
+		t.Errorf("deploy-vke.yml triggers = %v, want exactly workflow_call and workflow_dispatch", got)
 	}
-	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
-		t.Error("deploy-vke.yml must preserve workflow_dispatch")
+	if _, exists := workflow.triggers["workflow_run"]; exists {
+		t.Error("deploy-vke.yml must not expose a workflow_run trigger")
 	}
-
-	workflowRun := requireMappingValue(t, workflow.triggers, "workflow_run", "deploy-vke.yml triggers")
-	if got := stringList(workflowRun["workflows"]); !exactly(got, "CI") {
-		t.Errorf("deploy-vke.yml workflow_run.workflows = %v, want exactly [CI]", got)
+	if containsParsedString(workflow.document, "workflow_run") {
+		t.Error("deploy-vke.yml must not retain workflow_run conditions or references")
 	}
-	if got := stringList(workflowRun["branches"]); !exactly(got, "master") {
-		t.Errorf("deploy-vke.yml workflow_run.branches = %v, want exactly [master]", got)
-	}
-	if got := stringList(workflowRun["types"]); !exactly(got, "completed") {
-		t.Errorf("deploy-vke.yml workflow_run.types = %v, want exactly [completed]", got)
+	for _, triggerName := range []string{"workflow_call", "workflow_dispatch"} {
+		trigger := requireMappingValue(t, workflow.triggers, triggerName, "deploy-vke.yml triggers")
+		assertExactImageReferenceInput(t, trigger, "deploy-vke.yml "+triggerName)
 	}
 }
 
-func testVKEDeployCondition(t *testing.T) {
-	deploy := vkeDeployJob(t)
-	wantCondition := "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'"
-	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantCondition {
-		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want %q", condition, wantCondition)
+func testVKEProvenance(t *testing.T) {
+	workflow := loadWorkflow(t, "deploy-vke.yml")
+	deploy := requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs")
+	if concurrency := scalarString(workflow.document["concurrency"]); concurrency != "deploy-vke" {
+		t.Errorf("deploy-vke.yml concurrency = %q, want deploy-vke", concurrency)
 	}
-}
-
-func testVKEAutomaticProvenance(t *testing.T) {
-	deploy := vkeDeployJob(t)
+	if environment := scalarString(deploy["environment"]); environment != "vke-production" {
+		t.Errorf("deploy-vke.yml deploy.environment = %q, want vke-production", environment)
+	}
+	if permission(workflow, deploy, "contents") != "read" || permission(workflow, deploy, "id-token") != "write" {
+		t.Error("deploy-vke.yml deploy job needs contents: read and id-token: write permissions")
+	}
 	checkoutRef, foundCheckout := checkoutRef(deploy)
 	if !foundCheckout {
 		t.Fatal("deploy-vke.yml deploy job has no actions/checkout step")
 	}
-	wantCheckoutRef := "github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha"
-	normalizedCheckoutRef := normalizeExpression(checkoutRef)
-	if normalizedCheckoutRef != wantCheckoutRef {
-		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want %q", normalizedCheckoutRef, wantCheckoutRef)
+	if got := normalizeExpression(checkoutRef); got != "github.sha" {
+		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want github.sha", got)
 	}
-
-	imageTag := selectedImageTag(t, deploy)
-	wantImageTag := "github.event_name == 'workflow_dispatch' && inputs.ref || format('sha-{0}', github.event.workflow_run.head_sha)"
-	normalizedImageTag := normalizeExpression(imageTag)
-	if normalizedImageTag != wantImageTag {
-		t.Errorf("deploy-vke.yml IMAGE_TAG = %q after normalization, want %q", normalizedImageTag, wantImageTag)
+	assertImageReferenceEnvironment(t, deploy, "deploy-vke.yml deploy job")
+	if _, hasCondition := deploy["if"]; hasCondition {
+		t.Errorf("deploy-vke.yml deploy job must trust its caller/manual authorization without a workflow_run condition; got %q", deploy["if"])
 	}
 }
 
-func testVKEManualImageTag(t *testing.T) {
-	workflow := loadWorkflow(t, "deploy-vke.yml")
-	dispatch := requireMappingValue(t, workflow.triggers, "workflow_dispatch", "deploy-vke.yml triggers")
-	inputs := requireMappingValue(t, dispatch, "inputs", "deploy-vke.yml workflow_dispatch")
-	if got := sortedKeys(inputs); !exactly(got, "ref") {
-		t.Errorf("deploy-vke.yml workflow_dispatch inputs = %v, want exactly [ref]", got)
-	}
-	ref := requireMappingValue(t, inputs, "ref", "deploy-vke.yml workflow_dispatch inputs")
-	description := strings.ToLower(scalarString(ref["description"]))
-	if !strings.Contains(description, "image") || !strings.Contains(description, "tag") || !strings.Contains(description, "ref") {
-		t.Errorf("deploy-vke.yml workflow_dispatch ref description must mention image tag/ref; got %q", ref["description"])
-	}
-	if required, ok := ref["required"].(bool); !ok || !required {
-		t.Errorf("deploy-vke.yml workflow_dispatch ref.required = %v, want true", ref["required"])
-	}
-	if inputType := scalarString(ref["type"]); inputType != "string" {
-		t.Errorf("deploy-vke.yml workflow_dispatch ref.type = %q, want string", inputType)
-	}
-	if defaultValue, ok := ref["default"]; ok {
-		t.Errorf("deploy-vke.yml workflow_dispatch ref must require an explicit tag without a default; got %q", defaultValue)
-	}
+func testVKEImageValidation(t *testing.T) {
+	assertImageReferenceValidator(t, vkeDeployJob(t), "deploy-vke.yml deploy job", []string{
+		"Setup Helm",
+		"Configure Kubernetes OIDC access",
+		"Deploy Paprika chart",
+	})
 }
 
-func testVKEComponentImageTags(t *testing.T) {
+func testVKEComponentImageReferences(t *testing.T) {
 	deploy := vkeDeployJob(t)
 	step := requireNamedStep(t, deploy, "Deploy Paprika chart", "deploy-vke.yml deploy job")
 	run := scalarString(step["run"])
 	for _, component := range []string{"manager", "apiServer", "repoServer", "webhookReceiver"} {
-		want := `--set-string ` + component + `.image.tag="${IMAGE_TAG}"`
-		if !containsActiveShellFragment(run, want) {
-			t.Errorf("deploy-vke.yml must deploy %s using quoted shell env IMAGE_TAG", component)
+		want := `--set-string ` + component + `.image.repository="${IMAGE_REFERENCE}" \`
+		if !containsActiveShellLine(run, want) {
+			t.Errorf("deploy-vke.yml must deploy %s using only the quoted immutable IMAGE_REFERENCE repository", component)
 		}
 	}
-	if containsActiveShellFragment(run, "${{ env.IMAGE_TAG }}") {
-		t.Error("deploy-vke.yml must not interpolate env.IMAGE_TAG directly into shell syntax")
+	if strings.Contains(activeShellText(run), ".image.tag") || strings.Contains(activeShellText(run), "IMAGE_TAG") {
+		t.Error("deploy-vke.yml must not deploy mutable image tags")
 	}
 	if containsActiveShellFragment(run, "${{ secrets.") {
 		t.Error("deploy-vke.yml must map secrets through the step environment instead of interpolating them into shell syntax")
@@ -372,8 +467,8 @@ func testVKEComponentImageTags(t *testing.T) {
 			t.Errorf("deploy-vke.yml must pass %s through a quoted shell environment expansion", environmentName)
 		}
 	}
-	if regexp.MustCompile(`(?i)\.image\.tag\s*=\s*["']?latest\b`).MatchString(activeShellText(run)) {
-		t.Error("deploy-vke.yml deployment must not hard-code latest for any component")
+	if strings.Contains(activeShellText(run), "latest") {
+		t.Error("deploy-vke.yml deployment must not consume latest")
 	}
 }
 
@@ -440,37 +535,22 @@ func testLegacyDeployments(t *testing.T) {
 			if !mapping {
 				t.Fatalf("%s workflow_dispatch must be a mapping, got %T", name, dispatch)
 			}
-			inputs := requireMappingValue(t, dispatchMapping, "inputs", name+" workflow_dispatch")
-			if got := sortedKeys(inputs); !exactly(got, "image_tag") {
-				t.Errorf("%s workflow_dispatch inputs = %v, want exactly [image_tag]", name, got)
-			}
-			imageTag := requireMappingValue(t, inputs, "image_tag", name+" workflow_dispatch inputs")
-			if required, ok := imageTag["required"].(bool); !ok || !required {
-				t.Errorf("%s image_tag.required = %v, want true", name, imageTag["required"])
-			}
-			if inputType := scalarString(imageTag["type"]); inputType != "string" {
-				t.Errorf("%s image_tag.type = %q, want string", name, inputType)
-			}
-			if defaultValue, ok := imageTag["default"]; ok {
-				t.Errorf("%s image_tag must not declare a default; got %q", name, defaultValue)
-			}
+			assertExactImageReferenceInput(t, dispatchMapping, name+" workflow_dispatch")
 
 			deploy := requireMappingValue(t, workflow.jobs, "deploy", name+" jobs")
+			assertImageReferenceEnvironment(t, deploy, name+" deploy job")
 			stepName := map[string]string{
 				"deploy-gke.yml":      "Deploy via Helm",
 				"deploy-cloudrun.yml": "Deploy to Cloud Run",
 			}[name]
+			assertImageReferenceValidator(t, deploy, name+" deploy job", []string{"Authenticate to GCP", stepName})
 			step := requireNamedStep(t, deploy, stepName, name+" deploy job")
-			stepEnv := requireMappingValue(t, step, "env", name+" "+stepName+" step")
-			if got := normalizeExpression(scalarString(stepEnv["IMAGE_TAG"])); got != "inputs.image_tag" {
-				t.Errorf("%s %s env.IMAGE_TAG = %q after normalization, want inputs.image_tag", name, stepName, got)
-			}
 			run := scalarString(step["run"])
-			if containsActiveShellFragment(run, "${{ inputs.image_tag }}") || containsActiveShellFragment(run, "github.sha") {
-				t.Errorf("%s must not interpolate the input or derive an unpublished github.sha image in shell syntax", name)
+			if containsActiveShellFragment(run, "${{ inputs.image_ref }}") || containsActiveShellFragment(run, "github.sha") {
+				t.Errorf("%s must not interpolate the input or derive an image reference in shell syntax", name)
 			}
-			if !containsActiveShellFragment(run, "${IMAGE_TAG}") {
-				t.Errorf("%s must deploy the explicit image tag through the shell environment", name)
+			if !containsActiveShellFragment(run, "${IMAGE_REFERENCE}") {
+				t.Errorf("%s must deploy the validated immutable reference through the shell environment", name)
 			}
 		})
 	}
@@ -478,21 +558,21 @@ func testLegacyDeployments(t *testing.T) {
 	gke := loadWorkflow(t, "deploy-gke.yml")
 	gkeDeploy := requireMappingValue(t, gke.jobs, "deploy", "deploy-gke.yml jobs")
 	gkeRun := scalarString(requireNamedStep(t, gkeDeploy, "Deploy via Helm", "deploy-gke.yml deploy job")["run"])
-	if !containsActiveShellFragment(gkeRun, `--set-string manager.image.repository="ghcr.io/paprikacd/paprika"`) {
-		t.Error("deploy-gke.yml must override manager.image.repository")
+	if !containsActiveShellLine(gkeRun, `--set-string manager.image.repository="${IMAGE_REFERENCE}" \`) {
+		t.Error("deploy-gke.yml must override only manager.image.repository with the immutable IMAGE_REFERENCE")
 	}
-	if !containsActiveShellFragment(gkeRun, `--set-string manager.image.tag="${IMAGE_TAG}"`) {
-		t.Error("deploy-gke.yml must override manager.image.tag with the explicit shell env tag")
-	}
-	if regexp.MustCompile(`(?:^|\s)--set(?:-string)?\s+image\.(?:repository|tag)=`).MatchString(activeShellText(gkeRun)) {
-		t.Error("deploy-gke.yml must not use ignored top-level image.repository/image.tag values")
+	if strings.Contains(activeShellText(gkeRun), ".image.tag") || strings.Contains(activeShellText(gkeRun), "IMAGE_TAG") {
+		t.Error("deploy-gke.yml must not deploy mutable image tags")
 	}
 
 	cloudRun := loadWorkflow(t, "deploy-cloudrun.yml")
 	cloudDeploy := requireMappingValue(t, cloudRun.jobs, "deploy", "deploy-cloudrun.yml jobs")
 	cloudRunScript := scalarString(requireNamedStep(t, cloudDeploy, "Deploy to Cloud Run", "deploy-cloudrun.yml deploy job")["run"])
-	if !containsActiveShellFragment(cloudRunScript, `--image="ghcr.io/paprikacd/paprika:${IMAGE_TAG}"`) {
-		t.Error("deploy-cloudrun.yml must deploy the explicit shell env image tag")
+	if !containsActiveShellLine(cloudRunScript, `--image="${IMAGE_REFERENCE}" \`) {
+		t.Error("deploy-cloudrun.yml must deploy the immutable IMAGE_REFERENCE directly")
+	}
+	if strings.Contains(activeShellText(cloudRunScript), "IMAGE_TAG") || strings.Contains(activeShellText(cloudRunScript), ":latest") {
+		t.Error("deploy-cloudrun.yml must not deploy mutable image tags")
 	}
 }
 
@@ -545,17 +625,24 @@ func testE2ETriggers(t *testing.T) {
 func testE2EKindChecksum(t *testing.T) {
 	workflow := loadWorkflow(t, "test-e2e.yml")
 	job := requireMappingValue(t, workflow.jobs, "test-e2e", "test-e2e.yml jobs")
+	environment := requireMappingValue(t, job, "env", "test-e2e.yml test-e2e job")
+	checksum := scalarString(environment["KIND_SHA256"])
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(checksum) {
+		t.Errorf("test-e2e.yml KIND_SHA256 = %q, want a pinned lowercase 64-hex digest", checksum)
+	}
 	step := requireNamedStep(t, job, "Install kind", "test-e2e.yml test-e2e job")
 	run := scalarString(step["run"])
 	for _, want := range []string{
 		"curl --fail --location --retry 5 --retry-all-errors",
-		`"${kind_url}"`,
-		`"${kind_url}.sha256sum"`,
-		"sha256sum --check kind.sha256sum",
+		"kind-linux-amd64",
+		`printf '%s  %s\n' "${KIND_SHA256}" "${kind_binary}" | sha256sum --check -`,
 	} {
 		if !containsActiveShellFragment(run, want) {
 			t.Errorf("test-e2e.yml Install kind step must actively use %q", want)
 		}
+	}
+	if strings.Contains(activeShellText(run), ".sha256sum") || strings.Count(activeShellText(run), "curl ") != 1 {
+		t.Error("test-e2e.yml must not download a same-origin checksum file")
 	}
 }
 
@@ -751,16 +838,6 @@ func vkeDeployJob(t *testing.T) map[string]any {
 	return requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs")
 }
 
-func selectedImageTag(t *testing.T, deploy map[string]any) string {
-	t.Helper()
-	environment := requireMappingValue(t, deploy, "env", "deploy-vke.yml deploy job")
-	imageTag := scalarString(environment["IMAGE_TAG"])
-	if imageTag == "" {
-		t.Fatal("deploy-vke.yml deploy job must compute env.IMAGE_TAG")
-	}
-	return imageTag
-}
-
 func workflowRunSteps(job map[string]any) []workflowRunStep {
 	defaultDirectory := ""
 	if defaults, ok := job["defaults"].(map[string]any); ok {
@@ -851,6 +928,15 @@ func containsActiveShellFragment(script, fragment string) bool {
 	return strings.Contains(activeShellText(script), fragment)
 }
 
+func containsActiveShellLine(script, want string) bool {
+	for _, line := range strings.Split(activeShellText(script), "\n") {
+		if line == want {
+			return true
+		}
+	}
+	return false
+}
+
 func findFailureEnforcingUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
 	var matched map[string]any
 	for _, value := range anyList(job["steps"]) {
@@ -908,14 +994,20 @@ func checkoutRef(job map[string]any) (string, bool) {
 
 func requireNamedStep(t *testing.T, job map[string]any, name, context string) map[string]any {
 	t.Helper()
-	for _, value := range anyList(job["steps"]) {
+	step, _ := requireNamedStepAt(t, job, name, context)
+	return step
+}
+
+func requireNamedStepAt(t *testing.T, job map[string]any, name, context string) (map[string]any, int) {
+	t.Helper()
+	for index, value := range anyList(job["steps"]) {
 		step, ok := value.(map[string]any)
 		if ok && scalarString(step["name"]) == name {
-			return step
+			return step, index
 		}
 	}
 	t.Fatalf("%s is missing step named %q", context, name)
-	return nil
+	return nil, -1
 }
 
 func requireUsesStep(t *testing.T, job map[string]any, actionPrefix, context string) map[string]any {

@@ -3,8 +3,8 @@ name: Deploy Cloud Run Dev
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Published image tag to deploy'
+      image_ref:
+        description: 'Published Paprika image digest reference'
         required: true
         type: string
 
@@ -19,11 +19,20 @@ jobs:
     name: Deploy API server to Cloud Run
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      IMAGE_REFERENCE: ${{ inputs.image_ref }}
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      - name: Validate image reference
+        run: |
+          if [[ ! "${IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image_ref must be ghcr.io/paprikacd/paprika@sha256 followed by exactly 64 lowercase hexadecimal characters"
+            exit 1
+          fi
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -50,13 +59,12 @@ jobs:
 
       - name: Deploy to Cloud Run
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
           K8S_API_SERVER: ${{ steps.gke-info.outputs.endpoint }}
           CLOUDRUN_REGION: ${{ vars.CLOUDRUN_REGION }}
           CLOUDRUN_SA: ${{ vars.CLOUDRUN_SA }}
         run: |
           gcloud run deploy paprika-api-dev \
-            --image="ghcr.io/paprikacd/paprika:${IMAGE_TAG}" \
+            --image="${IMAGE_REFERENCE}" \
             --args="--mode=api,--k8s-api-server=${K8S_API_SERVER}" \
             --region="${CLOUDRUN_REGION}" \
             --service-account="${CLOUDRUN_SA}" \

@@ -32,6 +32,7 @@ jobs:
       E2E_SKIP_IMAGE_BUILD: "true"
       E2E_SKIP_IMAGE_LOAD: "true"
       KIND_CLUSTER: paprika-test-e2e
+      KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -69,14 +70,11 @@ jobs:
 
       - name: Install kind
         run: |
-          kind_arch="$(go env GOARCH)"
-          kind_binary="kind-linux-${kind_arch}"
+          kind_binary="kind-linux-amd64"
           kind_url="https://kind.sigs.k8s.io/dl/v0.32.0/${kind_binary}"
           curl --fail --location --retry 5 --retry-all-errors \
             --output "${kind_binary}" "${kind_url}"
-          curl --fail --location --retry 5 --retry-all-errors \
-            --output kind.sha256sum "${kind_url}.sha256sum"
-          sha256sum --check kind.sha256sum
+          printf '%s  %s\n' "${KIND_SHA256}" "${kind_binary}" | sha256sum --check -
           sudo install -m 0755 "${kind_binary}" /usr/local/bin/kind
 
       - name: Create kind cluster
