@@ -7,12 +7,6 @@ on:
         description: 'Published Paprika image digest reference'
         required: true
         type: string
-  workflow_dispatch:
-    inputs:
-      image_ref:
-        description: 'Published Paprika image digest reference'
-        required: true
-        type: string
 
 concurrency: deploy-vke
 
@@ -29,6 +23,7 @@ env:
 jobs:
   deploy:
     name: Deploy and validate on VKE
+    if: (github.event_name == 'push' || github.event_name == 'repository_dispatch') && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: vke-production

@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -164,6 +164,9 @@ jobs:
 
       - name: Render chart
         run: helm template paprika charts/chart/
+
+      - name: Render VKE configuration
+        run: helm template paprika charts/chart/ --values deploy/test-values.yaml
 
   publish:
     name: Publish image

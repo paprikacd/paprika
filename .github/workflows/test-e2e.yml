@@ -54,8 +54,8 @@ jobs:
           push: false
           load: true
           tags: example.com/paprika:v0.0.1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=paprika-app-e2e
+          cache-to: type=gha,mode=max,scope=paprika-app-e2e
 
       - name: Build demo image
         uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
@@ -65,8 +65,8 @@ jobs:
           push: false
           load: true
           tags: localhost/paprika-demo:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=paprika-demo-e2e
+          cache-to: type=gha,mode=max,scope=paprika-demo-e2e
 
       - name: Install kind
         run: |

@@ -6,12 +6,8 @@ on:
       - "charts/chart/**"
     branches:
       - master
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Chart version to publish (e.g., 0.1.0)"
-        required: true
-        type: string
+  repository_dispatch:
+    types: [publish-helm]
 
 permissions:
   contents: read
@@ -36,14 +32,25 @@ jobs:
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_VERSION: ${{ github.event.client_payload.version }}
         run: |
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+          if [ "${EVENT_NAME}" = "repository_dispatch" ]; then
+            manual_version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+            if [[ ! "${REQUESTED_VERSION}" =~ ${manual_version_pattern} ]]; then
+              echo "::error::client_payload.version must be a safe semantic chart version"
+              exit 1
+            fi
             printf 'version=%s\n' "${REQUESTED_VERSION}" >> "${GITHUB_OUTPUT}"
           else
             chart_version="$(awk '/^version:/ { print $2; exit }' charts/chart/Chart.yaml)"
             printf 'version=%s\n' "${chart_version}" >> "${GITHUB_OUTPUT}"
           fi
+
+      - name: Lint chart
+        run: helm lint charts/chart/
+
+      - name: Render chart
+        run: helm template paprika charts/chart/
 
       - name: Package chart
         env:

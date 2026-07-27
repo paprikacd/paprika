@@ -6,7 +6,12 @@ on:
     paths:
       - "landing/**"
       - ".github/workflows/gh-pages.yml"
-  workflow_dispatch:
+  repository_dispatch:
+    types: [publish-pages]
+
+concurrency:
+  group: publish-pages
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -14,10 +19,13 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-      - uses: peaceiris/actions-gh-pages@v4
+      - uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: landing
