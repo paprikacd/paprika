@@ -200,6 +200,18 @@ api-server deployments.
 {{- if not .Values.githubActionsTokenExchange.repository }}
 {{- fail "githubActionsTokenExchange.repository is required when githubActionsTokenExchange.enabled=true" }}
 {{- end }}
+{{- if not .Values.githubActionsTokenExchange.allowedEventNames }}
+{{- fail "githubActionsTokenExchange.allowedEventNames is required when githubActionsTokenExchange.enabled=true" }}
+{{- end }}
+{{- if not .Values.githubActionsTokenExchange.ref }}
+{{- fail "githubActionsTokenExchange.ref is required when githubActionsTokenExchange.enabled=true" }}
+{{- end }}
+{{- if not .Values.githubActionsTokenExchange.allowedWorkflowRefs }}
+{{- fail "githubActionsTokenExchange.allowedWorkflowRefs is required when githubActionsTokenExchange.enabled=true" }}
+{{- end }}
+{{- if not .Values.githubActionsTokenExchange.jobWorkflowRef }}
+{{- fail "githubActionsTokenExchange.jobWorkflowRef is required when githubActionsTokenExchange.enabled=true" }}
+{{- end }}
 - name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED
   value: "true"
 - name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_AUDIENCE
@@ -214,6 +226,14 @@ api-server deployments.
 - name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SUBJECT
   value: {{ . | quote }}
 {{- end }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_EVENT_NAMES
+  value: {{ join "," .Values.githubActionsTokenExchange.allowedEventNames | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REF
+  value: {{ .Values.githubActionsTokenExchange.ref | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_WORKFLOW_REFS
+  value: {{ join "," .Values.githubActionsTokenExchange.allowedWorkflowRefs | quote }}
+- name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_JOB_WORKFLOW_REF
+  value: {{ .Values.githubActionsTokenExchange.jobWorkflowRef | quote }}
 - name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAMESPACE
   value: {{ default .Release.Namespace .Values.githubActionsTokenExchange.serviceAccount.namespace | quote }}
 - name: PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME

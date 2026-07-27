@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -24,6 +25,10 @@ type GitHubActionsTokenExchangeConfig struct {
 	Repository              string
 	Environment             string
 	Subject                 string
+	AllowedEventNames       []string
+	Ref                     string
+	AllowedWorkflowRefs     []string
+	JobWorkflowRef          string
 	ServiceAccountNamespace string
 	ServiceAccountName      string
 	ServiceAccountTokenTTL  time.Duration
@@ -31,9 +36,13 @@ type GitHubActionsTokenExchangeConfig struct {
 
 // GitHubActionsClaims are the claims this exchange authorizes against.
 type GitHubActionsClaims struct {
-	Subject     string
-	Repository  string `json:"repository"`
-	Environment string `json:"environment"`
+	Subject        string
+	Repository     string `json:"repository"`
+	Environment    string `json:"environment"`
+	EventName      string `json:"event_name"`
+	Ref            string `json:"ref"`
+	WorkflowRef    string `json:"workflow_ref"`
+	JobWorkflowRef string `json:"job_workflow_ref"`
 }
 
 // GitHubActionsTokenVerifier validates a raw GitHub Actions OIDC JWT.
@@ -148,6 +157,42 @@ func authorizeGitHubActionsClaims(cfg *GitHubActionsTokenExchangeConfig, claims 
 	}
 	if cfg.Subject != "" && claims.Subject != cfg.Subject {
 		return fmt.Errorf("subject %q is not allowed", claims.Subject)
+	}
+	if len(cfg.AllowedEventNames) == 0 {
+		return errors.New("allowed event names are required")
+	}
+	if claims.EventName == "" {
+		return errors.New("event name claim is required")
+	}
+	if !slices.Contains(cfg.AllowedEventNames, claims.EventName) {
+		return fmt.Errorf("event name %q is not allowed", claims.EventName)
+	}
+	if cfg.Ref == "" {
+		return errors.New("ref is required")
+	}
+	if claims.Ref == "" {
+		return errors.New("ref claim is required")
+	}
+	if claims.Ref != cfg.Ref {
+		return fmt.Errorf("ref %q is not allowed", claims.Ref)
+	}
+	if len(cfg.AllowedWorkflowRefs) == 0 {
+		return errors.New("allowed workflow refs are required")
+	}
+	if claims.WorkflowRef == "" {
+		return errors.New("workflow ref claim is required")
+	}
+	if !slices.Contains(cfg.AllowedWorkflowRefs, claims.WorkflowRef) {
+		return fmt.Errorf("workflow ref %q is not allowed", claims.WorkflowRef)
+	}
+	if cfg.JobWorkflowRef == "" {
+		return errors.New("job workflow ref is required")
+	}
+	if claims.JobWorkflowRef == "" {
+		return errors.New("job workflow ref claim is required")
+	}
+	if claims.JobWorkflowRef != cfg.JobWorkflowRef {
+		return fmt.Errorf("job workflow ref %q is not allowed", claims.JobWorkflowRef)
 	}
 	return nil
 }

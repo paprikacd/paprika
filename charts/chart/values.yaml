@@ -817,6 +817,14 @@ githubActionsTokenExchange:
   repository: ""
   environment: ""
   subject: ""
+  # GitHub event_name claim values accepted by the exchange.
+  allowedEventNames: []
+  # Exact Git ref required for every caller.
+  ref: ""
+  # Exact caller workflow_ref claims accepted by the exchange.
+  allowedWorkflowRefs: []
+  # Exact reusable workflow job_workflow_ref required by the exchange.
+  jobWorkflowRef: ""
   tokenTTL: "15m"
   serviceAccount:
     namespace: ""

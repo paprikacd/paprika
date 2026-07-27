@@ -251,6 +251,14 @@ githubActionsTokenExchange:
   repository: "paprikacd/paprika"
   environment: "vke-production"
   subject: "repo:paprikacd/paprika:environment:vke-production"
+  allowedEventNames:
+    - "push"
+    - "repository_dispatch"
+  ref: "refs/heads/master"
+  allowedWorkflowRefs:
+    - "paprikacd/paprika/.github/workflows/ci.yml@refs/heads/master"
+    - "paprikacd/paprika/.github/workflows/deploy-vke-manual.yml@refs/heads/master"
+  jobWorkflowRef: "paprikacd/paprika/.github/workflows/deploy-vke.yml@refs/heads/master"
   tokenTTL: "15m"
   serviceAccount:
     namespace: "paprika-e2e"
