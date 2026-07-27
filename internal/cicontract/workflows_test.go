@@ -31,24 +31,51 @@ type workflowRunStep struct {
 	failureEnforcing bool
 }
 
+var pinnedActionRevisions = map[string]string{
+	"actions/checkout":                   "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
+	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
+	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
+	"docker/build-push-action":           "ca052bb54ab0790a636c9b5f226502c73d547a25",
+	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
+	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
+	"google-github-actions/setup-gcloud": "aa5489c8933f4cc7a4f7d45035b3b1440c9c10db",
+	"peaceiris/actions-gh-pages":         "84c30a85c19949d7eee79c4ff27748b70285e453",
+}
+
+var localReusableWorkflowUses = map[string]map[string]string{
+	"ci.yml": {
+		"deploy-vke": "./.github/workflows/deploy-vke.yml",
+	},
+	"deploy-vke-manual.yml": {
+		"deploy": "./.github/workflows/deploy-vke.yml",
+	},
+}
+
 func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI triggers fast validation jobs in parallel", testCanonicalCIValidation)
+	t.Run("canonical CI only cancels superseded pull request runs", testCanonicalCIConcurrency)
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
 	t.Run("publication is gated and exposes an immutable amd64 image digest", testPublication)
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
 	t.Run("CI gates reusable VKE deployment on trusted published output", testCIDeployVKE)
-	t.Run("VKE is callable and manually dispatchable without workflow_run", testVKETriggers)
+	t.Run("VKE is callable only and has a trusted manual wrapper", testVKETriggers)
 	t.Run("VKE checks out the trusted caller commit and selects an image digest", testVKEProvenance)
 	t.Run("VKE validates the immutable image reference before privileged operations", testVKEImageValidation)
 	t.Run("VKE deploy applies one immutable reference to every component", testVKEComponentImageReferences)
 	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
 	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
-	t.Run("legacy deployments are manual only", testLegacyDeployments)
-	t.Run("Helm publishing targets master and never main", testHelmPublishing)
+	t.Run("privileged manual entrypoints use typed default-branch dispatch", testPrivilegedManualEntrypoints)
+	t.Run("legacy deployments consume repository dispatch payload digests", testLegacyDeployments)
+	t.Run("Helm publishing validates and renders before packaging", testHelmPublishing)
+	t.Run("GitHub Pages publishing uses a trusted manual entrypoint", testGitHubPagesPublishing)
 	t.Run("full e2e runs on a schedule and on demand", testE2ETriggers)
+	t.Run("full e2e isolates application and demo build caches", testE2ECacheScopes)
 	t.Run("full e2e verifies the Kind download", testE2EKindChecksum)
+	t.Run("VKE chart values render the complete token exchange boundary", testGitHubActionsTokenExchangeChartWiring)
 	t.Run("active workflows never target main", testNoMainBranchTargets)
 }
 
@@ -78,15 +105,32 @@ func testCanonicalCIValidation(t *testing.T) {
 		{id: "go-lint", commands: []string{"make lint-config", "make lint"}},
 		{id: "ui", commands: []string{"npm ci", "npm test", "npm run lint", "npm run build"}, workingDirectory: "ui"},
 		{id: "generated", commands: []string{"make generate-proto", "git diff --exit-code"}},
-		{id: "chart", commands: []string{"helm lint charts/chart/", "helm template paprika charts/chart/"}},
+		{id: "chart", commands: []string{
+			"helm lint charts/chart/",
+			"helm template paprika charts/chart/",
+			"helm template paprika charts/chart/ --values deploy/test-values.yaml",
+		}},
 	}
 	for _, contract := range contracts {
 		assertValidationJob(t, workflow, contract)
 	}
 }
 
+func testCanonicalCIConcurrency(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	concurrency := requireMappingValue(t, workflow.document, "concurrency", "ci.yml")
+	if group := scalarString(concurrency["group"]); group != "ci-${{ github.workflow }}-${{ github.ref }}" {
+		t.Errorf("ci.yml concurrency.group = %q, want shared workflow/ref group", group)
+	}
+	if cancel := normalizeExpression(scalarString(concurrency["cancel-in-progress"])); cancel != "github.event_name == 'pull_request'" {
+		t.Errorf("ci.yml concurrency.cancel-in-progress = %q after normalization, want pull-request-only cancellation", cancel)
+	}
+}
+
 func testCanonicalCIActionPins(t *testing.T) {
-	assertWorkflowActionPins(t, loadWorkflow(t, "ci.yml"))
+	workflow := loadWorkflow(t, "ci.yml")
+	assertWorkflowActionPins(t, workflow)
+	assertLocalReusableWorkflowUses(t, workflow)
 }
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
@@ -157,7 +201,6 @@ func assertValidationJob(t *testing.T, workflow workflowFile, contract validatio
 
 func assertWorkflowActionPins(t *testing.T, workflow workflowFile) {
 	t.Helper()
-	pinnedSHA := regexp.MustCompile(`^[0-9a-f]{40}$`)
 	for jobID, value := range workflow.jobs {
 		job, ok := value.(map[string]any)
 		if !ok {
@@ -173,9 +216,37 @@ func assertWorkflowActionPins(t *testing.T, workflow workflowFile) {
 				continue
 			}
 			action, revision, found := strings.Cut(uses, "@")
-			if !found || action == "" || !pinnedSHA.MatchString(revision) {
-				t.Errorf("%s job %q step %d uses %q, want a full 40-character commit SHA", workflow.name, jobID, index+1, uses)
+			wantRevision, allowed := pinnedActionRevisions[action]
+			if !found || !allowed || revision != wantRevision {
+				t.Errorf("%s job %q step %d uses %q, want an allowlisted action and exact revision", workflow.name, jobID, index+1, uses)
 			}
+		}
+	}
+}
+
+func assertLocalReusableWorkflowUses(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	wantUses := localReusableWorkflowUses[workflow.name]
+	found := make(map[string]bool, len(wantUses))
+	for jobID, value := range workflow.jobs {
+		job, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		uses := scalarString(job["uses"])
+		if uses == "" {
+			continue
+		}
+		want, allowed := wantUses[jobID]
+		if !allowed || uses != want || !strings.HasPrefix(uses, "./.github/workflows/") {
+			t.Errorf("%s job %q uses %q, want an explicitly allowlisted local reusable workflow", workflow.name, jobID, uses)
+			continue
+		}
+		found[jobID] = true
+	}
+	for jobID, want := range wantUses {
+		if !found[jobID] {
+			t.Errorf("%s job %q must use local reusable workflow %q", workflow.name, jobID, want)
 		}
 	}
 }
@@ -239,11 +310,11 @@ func assertExactImageReferenceInput(t *testing.T, trigger map[string]any, contex
 	}
 }
 
-func assertImageReferenceEnvironment(t *testing.T, job map[string]any, context string) {
+func assertImageReferenceEnvironment(t *testing.T, job map[string]any, context, wantExpression string) {
 	t.Helper()
 	environment := requireMappingValue(t, job, "env", context)
-	if got := normalizeExpression(scalarString(environment["IMAGE_REFERENCE"])); got != "inputs.image_ref" {
-		t.Errorf("%s env.IMAGE_REFERENCE = %q after normalization, want inputs.image_ref", context, got)
+	if got := normalizeExpression(scalarString(environment["IMAGE_REFERENCE"])); got != wantExpression {
+		t.Errorf("%s env.IMAGE_REFERENCE = %q after normalization, want %s", context, got, wantExpression)
 	}
 	if _, mutableTag := environment["IMAGE_TAG"]; mutableTag {
 		t.Errorf("%s must not declare IMAGE_TAG", context)
@@ -387,19 +458,27 @@ func testLegacyPublisherRemoved(t *testing.T) {
 
 func testVKETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
-	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "workflow_call") || !contains(got, "workflow_dispatch") {
-		t.Errorf("deploy-vke.yml triggers = %v, want exactly workflow_call and workflow_dispatch", got)
+	if got := sortedKeys(workflow.triggers); !exactly(got, "workflow_call") {
+		t.Errorf("deploy-vke.yml triggers = %v, want exactly workflow_call", got)
 	}
 	if _, exists := workflow.triggers["workflow_run"]; exists {
 		t.Error("deploy-vke.yml must not expose a workflow_run trigger")
 	}
-	if containsParsedString(workflow.document, "workflow_run") {
-		t.Error("deploy-vke.yml must not retain workflow_run conditions or references")
+	trigger := requireMappingValue(t, workflow.triggers, "workflow_call", "deploy-vke.yml triggers")
+	assertExactImageReferenceInput(t, trigger, "deploy-vke.yml workflow_call")
+
+	manual := loadWorkflow(t, "deploy-vke-manual.yml")
+	assertExactRepositoryDispatch(t, manual, "deploy-vke")
+	permissions := requireMappingValue(t, manual.document, "permissions", "deploy-vke-manual.yml")
+	if got := sortedKeys(permissions); len(got) != 2 || scalarString(permissions["contents"]) != "read" || scalarString(permissions["id-token"]) != "write" {
+		t.Errorf("deploy-vke-manual.yml permissions = %v, want exactly contents: read and id-token: write", permissions)
 	}
-	for _, triggerName := range []string{"workflow_call", "workflow_dispatch"} {
-		trigger := requireMappingValue(t, workflow.triggers, triggerName, "deploy-vke.yml triggers")
-		assertExactImageReferenceInput(t, trigger, "deploy-vke.yml "+triggerName)
+	deploy := requireMappingValue(t, manual.jobs, "deploy", "deploy-vke-manual.yml jobs")
+	with := requireMappingValue(t, deploy, "with", "deploy-vke-manual.yml deploy job")
+	if got := normalizeExpression(scalarString(with["image_ref"])); got != "github.event.client_payload.image_ref" {
+		t.Errorf("deploy-vke-manual.yml image_ref = %q after normalization, want github.event.client_payload.image_ref", got)
 	}
+	assertLocalReusableWorkflowUses(t, manual)
 }
 
 func testVKEProvenance(t *testing.T) {
@@ -421,9 +500,10 @@ func testVKEProvenance(t *testing.T) {
 	if got := normalizeExpression(checkoutRef); got != "github.sha" {
 		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want github.sha", got)
 	}
-	assertImageReferenceEnvironment(t, deploy, "deploy-vke.yml deploy job")
-	if _, hasCondition := deploy["if"]; hasCondition {
-		t.Errorf("deploy-vke.yml deploy job must trust its caller/manual authorization without a workflow_run condition; got %q", deploy["if"])
+	assertImageReferenceEnvironment(t, deploy, "deploy-vke.yml deploy job", "inputs.image_ref")
+	wantGate := "(github.event_name == 'push' || github.event_name == 'repository_dispatch') && github.ref == 'refs/heads/master'"
+	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantGate {
+		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want exact trusted event/ref gate %q", condition, wantGate)
 	}
 }
 
@@ -473,10 +553,20 @@ func testVKEComponentImageReferences(t *testing.T) {
 }
 
 func testDownstreamActionPins(t *testing.T) {
-	for _, name := range []string{"deploy-vke.yml", "deploy-gke.yml", "deploy-cloudrun.yml", "helm-publish.yml", "test-e2e.yml"} {
+	for _, name := range []string{
+		"deploy-vke.yml",
+		"deploy-vke-manual.yml",
+		"deploy-gke.yml",
+		"deploy-cloudrun.yml",
+		"helm-publish.yml",
+		"test-e2e.yml",
+		"gh-pages.yml",
+	} {
 		name := name
 		t.Run(name, func(t *testing.T) {
-			assertWorkflowActionPins(t, loadWorkflow(t, name))
+			workflow := loadWorkflow(t, name)
+			assertWorkflowActionPins(t, workflow)
+			assertLocalReusableWorkflowUses(t, workflow)
 		})
 	}
 
@@ -494,6 +584,7 @@ func testDownstreamActionPins(t *testing.T) {
 	assertActionRevision(t, loadWorkflow(t, "helm-publish.yml"), "azure/setup-helm", setupHelmRevision)
 	assertActionRevision(t, loadWorkflow(t, "test-e2e.yml"), "docker/setup-buildx-action", setupBuildxRevision)
 	assertActionRevision(t, loadWorkflow(t, "test-e2e.yml"), "docker/build-push-action", buildPushRevision)
+	assertActionRevision(t, loadWorkflow(t, "gh-pages.yml"), "peaceiris/actions-gh-pages", pinnedActionRevisions["peaceiris/actions-gh-pages"])
 }
 
 func testDownstreamJobTimeouts(t *testing.T) {
@@ -503,6 +594,7 @@ func testDownstreamJobTimeouts(t *testing.T) {
 		"deploy-cloudrun.yml": {"deploy": {5, 30}},
 		"helm-publish.yml":    {"publish": {5, 30}},
 		"test-e2e.yml":        {"test-e2e": {30, 60}},
+		"gh-pages.yml":        {"deploy": {5, 15}},
 	}
 	for workflowName, jobs := range contracts {
 		workflow := loadWorkflow(t, workflowName)
@@ -513,32 +605,48 @@ func testDownstreamJobTimeouts(t *testing.T) {
 	}
 }
 
+func testPrivilegedManualEntrypoints(t *testing.T) {
+	for _, path := range workflowPaths(t) {
+		workflow := loadWorkflowPath(t, path)
+		if !workflowIsPrivileged(workflow) {
+			continue
+		}
+		if _, found := workflow.triggers["workflow_dispatch"]; found {
+			t.Errorf("%s is privileged and must not expose workflow_dispatch", workflow.name)
+		}
+	}
+
+	contracts := map[string]string{
+		"deploy-vke-manual.yml": "deploy-vke",
+		"deploy-gke.yml":        "deploy-gke",
+		"deploy-cloudrun.yml":   "deploy-cloudrun",
+		"helm-publish.yml":      "publish-helm",
+		"gh-pages.yml":          "publish-pages",
+	}
+	for name, eventType := range contracts {
+		name, eventType := name, eventType
+		t.Run(name, func(t *testing.T) {
+			assertExactRepositoryDispatch(t, loadWorkflow(t, name), eventType)
+		})
+	}
+}
+
 func testLegacyDeployments(t *testing.T) {
-	for _, name := range []string{"deploy-gke.yml", "deploy-cloudrun.yml"} {
-		name := name
+	contracts := map[string]string{
+		"deploy-gke.yml":      "deploy-gke",
+		"deploy-cloudrun.yml": "deploy-cloudrun",
+	}
+	for name, eventType := range contracts {
+		name, eventType := name, eventType
 		t.Run(name, func(t *testing.T) {
 			workflow := loadWorkflow(t, name)
-			dispatch, ok := workflow.triggers["workflow_dispatch"]
-			if !ok {
-				t.Errorf("%s must declare workflow_dispatch", name)
-			}
-			if _, ok := workflow.triggers["workflow_run"]; ok {
-				t.Errorf("%s must not declare workflow_run", name)
-			}
+			assertExactRepositoryDispatch(t, workflow, eventType)
 			if len(workflow.triggers) != 1 {
-				t.Errorf("%s must be workflow_dispatch only; got triggers %v", name, sortedKeys(workflow.triggers))
+				t.Errorf("%s must be repository_dispatch only; got triggers %v", name, sortedKeys(workflow.triggers))
 			}
-			if containsParsedString(workflow.document, "workflow_run") {
-				t.Errorf("%s must not retain stale workflow_run conditions or references", name)
-			}
-			dispatchMapping, mapping := dispatch.(map[string]any)
-			if !mapping {
-				t.Fatalf("%s workflow_dispatch must be a mapping, got %T", name, dispatch)
-			}
-			assertExactImageReferenceInput(t, dispatchMapping, name+" workflow_dispatch")
 
 			deploy := requireMappingValue(t, workflow.jobs, "deploy", name+" jobs")
-			assertImageReferenceEnvironment(t, deploy, name+" deploy job")
+			assertImageReferenceEnvironment(t, deploy, name+" deploy job", "github.event.client_payload.image_ref")
 			stepName := map[string]string{
 				"deploy-gke.yml":      "Deploy via Helm",
 				"deploy-cloudrun.yml": "Deploy to Cloud Run",
@@ -546,7 +654,7 @@ func testLegacyDeployments(t *testing.T) {
 			assertImageReferenceValidator(t, deploy, name+" deploy job", []string{"Authenticate to GCP", stepName})
 			step := requireNamedStep(t, deploy, stepName, name+" deploy job")
 			run := scalarString(step["run"])
-			if containsActiveShellFragment(run, "${{ inputs.image_ref }}") || containsActiveShellFragment(run, "github.sha") {
+			if containsActiveShellFragment(run, "${{ github.event.client_payload.image_ref }}") || containsActiveShellFragment(run, "github.sha") {
 				t.Errorf("%s must not interpolate the input or derive an image reference in shell syntax", name)
 			}
 			if !containsActiveShellFragment(run, "${IMAGE_REFERENCE}") {
@@ -583,6 +691,7 @@ func testHelmPublishing(t *testing.T) {
 	if !exactly(branches, "master") {
 		t.Errorf("helm-publish.yml push.branches = %v, want exactly [master]", branches)
 	}
+	assertExactRepositoryDispatch(t, workflow, "publish-helm")
 
 	publish := requireMappingValue(t, workflow.jobs, "publish", "helm-publish.yml jobs")
 	checkout := requireUsesStep(t, publish, "actions/checkout@", "helm-publish.yml publish job")
@@ -594,6 +703,86 @@ func testHelmPublishing(t *testing.T) {
 	setupWith := requireMappingValue(t, setupHelm, "with", "helm-publish.yml setup-helm step")
 	if version := scalarString(setupWith["version"]); version != "v3.21.2" {
 		t.Errorf("helm-publish.yml Helm version = %q, want v3.21.2", version)
+	}
+
+	assertManualHelmVersionValidation(t, publish)
+	assertHelmPublishPreflightOrder(t, publish)
+}
+
+func assertManualHelmVersionValidation(t *testing.T, publish map[string]any) {
+	t.Helper()
+	determine := requireNamedStep(t, publish, "Determine version", "helm-publish.yml publish job")
+	determineEnv := requireMappingValue(t, determine, "env", "helm-publish.yml Determine version step")
+	if got := normalizeExpression(scalarString(determineEnv["REQUESTED_VERSION"])); got != "github.event.client_payload.version" {
+		t.Errorf("helm-publish.yml REQUESTED_VERSION = %q after normalization, want github.event.client_payload.version", got)
+	}
+	if got := normalizeExpression(scalarString(determineEnv["EVENT_NAME"])); got != "github.event_name" {
+		t.Errorf("helm-publish.yml EVENT_NAME = %q after normalization, want github.event_name", got)
+	}
+	const versionPattern = `^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$`
+	run := scalarString(determine["run"])
+	for _, line := range []string{
+		`manual_version_pattern='` + versionPattern + `'`,
+		`if [[ ! "${REQUESTED_VERSION}" =~ ${manual_version_pattern} ]]; then`,
+		"exit 1",
+	} {
+		if !containsActiveShellLine(run, line) {
+			t.Errorf("helm-publish.yml Determine version must actively run %q", line)
+		}
+	}
+	if !stepFailureEnforcing(determine) {
+		t.Error("helm-publish.yml version validation must be unconditional and failure-enforcing")
+	}
+	versionValidator := regexp.MustCompile(versionPattern)
+	for _, valid := range []string{"0.1.0", "12.34.56-rc.1+build.7"} {
+		if !versionValidator.MatchString(valid) {
+			t.Errorf("version validator unexpectedly rejects %q", valid)
+		}
+	}
+	for _, invalid := range []string{"1.2", "01.2.3", "1.2.3,evil", "1.2.3 ", "$(touch pwned)", "1.2.3;false"} {
+		if versionValidator.MatchString(invalid) {
+			t.Errorf("version validator must reject adversarial version %q", invalid)
+		}
+	}
+}
+
+func assertHelmPublishPreflightOrder(t *testing.T, publish map[string]any) {
+	t.Helper()
+	_, determineIndex := requireNamedStepAt(t, publish, "Determine version", "helm-publish.yml publish job")
+	lint, lintIndex := requireNamedStepAt(t, publish, "Lint chart", "helm-publish.yml publish job")
+	render, renderIndex := requireNamedStepAt(t, publish, "Render chart", "helm-publish.yml publish job")
+	_, packageIndex := requireNamedStepAt(t, publish, "Package chart", "helm-publish.yml publish job")
+	_, pushIndex := requireNamedStepAt(t, publish, "Push to OCI registry", "helm-publish.yml publish job")
+	if !containsActiveShellLine(scalarString(lint["run"]), "helm lint charts/chart/") || !stepFailureEnforcing(lint) {
+		t.Error("helm-publish.yml must actively enforce exact helm lint charts/chart/ before publication")
+	}
+	if !containsActiveShellLine(scalarString(render["run"]), "helm template paprika charts/chart/") || !stepFailureEnforcing(render) {
+		t.Error("helm-publish.yml must actively enforce exact helm template paprika charts/chart/ before publication")
+	}
+	if !(determineIndex < lintIndex && lintIndex < renderIndex && renderIndex < packageIndex && packageIndex < pushIndex) {
+		t.Errorf("helm-publish.yml steps must order version, lint, render, package, push; got %d, %d, %d, %d, %d", determineIndex, lintIndex, renderIndex, packageIndex, pushIndex)
+	}
+}
+
+func testGitHubPagesPublishing(t *testing.T) {
+	workflow := loadWorkflow(t, "gh-pages.yml")
+	push := requireMappingValue(t, workflow.triggers, "push", "gh-pages.yml triggers")
+	if branches := stringList(push["branches"]); !exactly(branches, "master") {
+		t.Errorf("gh-pages.yml push.branches = %v, want exactly [master]", branches)
+	}
+	assertExactRepositoryDispatch(t, workflow, "publish-pages")
+	concurrency := requireMappingValue(t, workflow.document, "concurrency", "gh-pages.yml")
+	if scalarString(concurrency["group"]) != "publish-pages" {
+		t.Errorf("gh-pages.yml concurrency.group = %q, want publish-pages", concurrency["group"])
+	}
+	if cancel, ok := concurrency["cancel-in-progress"].(bool); !ok || cancel {
+		t.Errorf("gh-pages.yml concurrency.cancel-in-progress = %v, want false", concurrency["cancel-in-progress"])
+	}
+	deploy := requireMappingValue(t, workflow.jobs, "deploy", "gh-pages.yml jobs")
+	checkout := requireUsesStep(t, deploy, "actions/checkout@", "gh-pages.yml deploy job")
+	checkoutWith := requireMappingValue(t, checkout, "with", "gh-pages.yml checkout step")
+	if persist, ok := checkoutWith["persist-credentials"].(bool); !ok || persist {
+		t.Errorf("gh-pages.yml checkout persist-credentials = %v, want false", checkoutWith["persist-credentials"])
 	}
 }
 
@@ -622,6 +811,25 @@ func testE2ETriggers(t *testing.T) {
 	}
 }
 
+func testE2ECacheScopes(t *testing.T) {
+	workflow := loadWorkflow(t, "test-e2e.yml")
+	job := requireMappingValue(t, workflow.jobs, "test-e2e", "test-e2e.yml jobs")
+	contracts := map[string]string{
+		"Build manager image": "paprika-app-e2e",
+		"Build demo image":    "paprika-demo-e2e",
+	}
+	for stepName, scope := range contracts {
+		step := requireNamedStep(t, job, stepName, "test-e2e.yml test-e2e job")
+		with := requireMappingValue(t, step, "with", "test-e2e.yml "+stepName)
+		if got := scalarString(with["cache-from"]); got != "type=gha,scope="+scope {
+			t.Errorf("test-e2e.yml %s cache-from = %q, want dedicated scope %q", stepName, got, scope)
+		}
+		if got := scalarString(with["cache-to"]); got != "type=gha,mode=max,scope="+scope {
+			t.Errorf("test-e2e.yml %s cache-to = %q, want dedicated scope %q", stepName, got, scope)
+		}
+	}
+}
+
 func testE2EKindChecksum(t *testing.T) {
 	workflow := loadWorkflow(t, "test-e2e.yml")
 	job := requireMappingValue(t, workflow.jobs, "test-e2e", "test-e2e.yml jobs")
@@ -643,6 +851,58 @@ func testE2EKindChecksum(t *testing.T) {
 	}
 	if strings.Contains(activeShellText(run), ".sha256sum") || strings.Count(activeShellText(run), "curl ") != 1 {
 		t.Error("test-e2e.yml must not download a same-origin checksum file")
+	}
+}
+
+func testGitHubActionsTokenExchangeChartWiring(t *testing.T) {
+	values := loadYAMLDocument(t, filepath.Join(repositoryRoot(t), "charts", "chart", "values.yaml"))
+	exchange := requireMappingValue(t, values, "githubActionsTokenExchange", "charts/chart/values.yaml")
+	for _, name := range []string{"allowedEventNames", "ref", "allowedWorkflowRefs", "jobWorkflowRef"} {
+		if _, found := exchange[name]; !found {
+			t.Errorf("charts/chart/values.yaml githubActionsTokenExchange must document %s", name)
+		}
+	}
+
+	testValues := loadYAMLDocument(t, filepath.Join(repositoryRoot(t), "deploy", "test-values.yaml"))
+	testExchange := requireMappingValue(t, testValues, "githubActionsTokenExchange", "deploy/test-values.yaml")
+	if got := stringList(testExchange["allowedEventNames"]); len(got) != 2 || !contains(got, "push") || !contains(got, "repository_dispatch") {
+		t.Errorf("deploy/test-values.yaml allowedEventNames = %v, want exactly push and repository_dispatch", got)
+	}
+	if got := scalarString(testExchange["ref"]); got != "refs/heads/master" {
+		t.Errorf("deploy/test-values.yaml ref = %q, want refs/heads/master", got)
+	}
+	wantWorkflows := []string{
+		"paprikacd/paprika/.github/workflows/ci.yml@refs/heads/master",
+		"paprikacd/paprika/.github/workflows/deploy-vke-manual.yml@refs/heads/master",
+	}
+	if got := stringList(testExchange["allowedWorkflowRefs"]); !sameStrings(got, wantWorkflows) {
+		t.Errorf("deploy/test-values.yaml allowedWorkflowRefs = %v, want %v", got, wantWorkflows)
+	}
+	if got := scalarString(testExchange["jobWorkflowRef"]); got != "paprikacd/paprika/.github/workflows/deploy-vke.yml@refs/heads/master" {
+		t.Errorf("deploy/test-values.yaml jobWorkflowRef = %q, want reusable VKE workflow on master", got)
+	}
+
+	helperPath := filepath.Join(repositoryRoot(t), "charts", "chart", "templates", "_helpers.tpl")
+	// #nosec G304 -- the path is repository-controlled test data.
+	helperData, err := os.ReadFile(helperPath)
+	if err != nil {
+		t.Fatalf("read chart helper: %v", err)
+	}
+	helper := string(helperData)
+	for _, environmentName := range []string{
+		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_EVENT_NAMES",
+		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REF",
+		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_WORKFLOW_REFS",
+		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_JOB_WORKFLOW_REF",
+	} {
+		if !strings.Contains(helper, environmentName) {
+			t.Errorf("chart helper must render %s", environmentName)
+		}
+	}
+	for _, requiredValue := range []string{"allowedEventNames", "ref", "allowedWorkflowRefs", "jobWorkflowRef"} {
+		if !strings.Contains(helper, "githubActionsTokenExchange."+requiredValue+" is required") {
+			t.Errorf("chart helper must fail rendering when githubActionsTokenExchange.%s is missing", requiredValue)
+		}
 	}
 }
 
@@ -692,6 +952,20 @@ func loadWorkflowPath(t *testing.T, path string) workflowFile {
 		triggers: requireMappingValue(t, document, "on", filepath.Base(path)),
 		jobs:     optionalMappingValue(t, document, "jobs"),
 	}
+}
+
+func loadYAMLDocument(t *testing.T, path string) map[string]any {
+	t.Helper()
+	// #nosec G304 -- callers pass repository-controlled test data paths.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read YAML document %s: %v", filepath.Base(path), err)
+	}
+	document := make(map[string]any)
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatalf("parse YAML document %s: %v", filepath.Base(path), err)
+	}
+	return document
 }
 
 func repositoryRoot(t *testing.T) string {
@@ -794,6 +1068,22 @@ func contains(values []string, want string) bool {
 	return false
 }
 
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	got = append([]string(nil), got...)
+	want = append([]string(nil), want...)
+	sort.Strings(got)
+	sort.Strings(want)
+	for index := range got {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func exactly(values []string, want string) bool {
 	return len(values) == 1 && values[0] == want
 }
@@ -830,6 +1120,30 @@ func permissionValue(value any, name string) string {
 		}
 	}
 	return ""
+}
+
+func assertExactRepositoryDispatch(t *testing.T, workflow workflowFile, eventType string) {
+	t.Helper()
+	dispatch := requireMappingValue(t, workflow.triggers, "repository_dispatch", workflow.name+" triggers")
+	if types := stringList(dispatch["types"]); !exactly(types, eventType) {
+		t.Errorf("%s repository_dispatch.types = %v, want exactly [%s]", workflow.name, types, eventType)
+	}
+}
+
+func workflowIsPrivileged(workflow workflowFile) bool {
+	for _, value := range mappingsNamed(workflow.document, "permissions") {
+		for _, permission := range allStrings(value) {
+			if permission == "write" || permission == "write-all" {
+				return true
+			}
+		}
+	}
+	for _, value := range mappingsNamed(workflow.jobs, "environment") {
+		if scalarString(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func vkeDeployJob(t *testing.T) map[string]any {
@@ -1020,15 +1334,6 @@ func requireUsesStep(t *testing.T, job map[string]any, actionPrefix, context str
 	}
 	t.Fatalf("%s is missing a %s step", context, actionPrefix)
 	return nil
-}
-
-func containsParsedString(value any, want string) bool {
-	for _, text := range allStrings(value) {
-		if strings.Contains(text, want) {
-			return true
-		}
-	}
-	return false
 }
 
 func allStrings(value any) []string {
