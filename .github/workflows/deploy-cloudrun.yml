@@ -1,11 +1,12 @@
 name: Deploy Cloud Run Dev
 
 on:
-  workflow_run:
-    workflows: [Build & Push]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Published image tag to deploy'
+        required: true
+        type: string
 
 concurrency: deploy-cloudrun-dev
 
@@ -15,9 +16,9 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     name: Deploy API server to Cloud Run
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -25,31 +26,40 @@ jobs:
           persist-credentials: false
 
       - name: Authenticate to GCP
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
 
       - id: gke-info
         name: Discover GKE API endpoint
+        env:
+          GKE_CLUSTER_NAME: ${{ vars.GKE_CLUSTER_NAME }}
+          GKE_CLUSTER_ZONE: ${{ vars.GKE_CLUSTER_ZONE }}
+          GKE_CLUSTER_PROJECT: ${{ vars.GKE_CLUSTER_PROJECT }}
         run: |
-          ENDPOINT=$(gcloud container clusters describe ${{ vars.GKE_CLUSTER_NAME }} \
-            --zone ${{ vars.GKE_CLUSTER_ZONE }} \
-            --project ${{ vars.GKE_CLUSTER_PROJECT }} \
-            --format 'value(endpoint)')
-          echo "endpoint=https://${ENDPOINT}:443"
-          echo "endpoint=https://${ENDPOINT}:443" >> $GITHUB_OUTPUT
+          endpoint="$(gcloud container clusters describe "${GKE_CLUSTER_NAME}" \
+            --zone "${GKE_CLUSTER_ZONE}" \
+            --project "${GKE_CLUSTER_PROJECT}" \
+            --format 'value(endpoint)')"
+          printf 'endpoint=https://%s:443\n' "${endpoint}"
+          printf 'endpoint=https://%s:443\n' "${endpoint}" >> "${GITHUB_OUTPUT}"
 
       - name: Deploy to Cloud Run
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          K8S_API_SERVER: ${{ steps.gke-info.outputs.endpoint }}
+          CLOUDRUN_REGION: ${{ vars.CLOUDRUN_REGION }}
+          CLOUDRUN_SA: ${{ vars.CLOUDRUN_SA }}
         run: |
           gcloud run deploy paprika-api-dev \
-            --image=ghcr.io/paprikacd/paprika:sha-${{ github.sha }} \
-            --args="--mode=api,--k8s-api-server=${{ steps.gke-info.outputs.endpoint }}" \
-            --region=${{ vars.CLOUDRUN_REGION }} \
-            --service-account=${{ vars.CLOUDRUN_SA }} \
+            --image="ghcr.io/paprikacd/paprika:${IMAGE_TAG}" \
+            --args="--mode=api,--k8s-api-server=${K8S_API_SERVER}" \
+            --region="${CLOUDRUN_REGION}" \
+            --service-account="${CLOUDRUN_SA}" \
             --allow-unauthenticated \
             --cpu=1 \
             --memory=256Mi \

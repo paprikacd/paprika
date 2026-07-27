@@ -42,10 +42,13 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("VKE deploy permits manual or successful automatic runs", testVKEDeployCondition)
 	t.Run("VKE automatic deploy selects the triggering commit image", testVKEAutomaticProvenance)
 	t.Run("VKE manual tag input selects the deployed image", testVKEManualImageTag)
-	t.Run("VKE deploy applies its selected tag to every component", testVKEComponentImageTags)
+	t.Run("VKE deploy safely applies its selected tag to every component", testVKEComponentImageTags)
+	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
+	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
 	t.Run("legacy deployments are manual only", testLegacyDeployments)
 	t.Run("Helm publishing targets master and never main", testHelmPublishing)
 	t.Run("full e2e runs on a schedule and on demand", testE2ETriggers)
+	t.Run("full e2e verifies the Kind download", testE2EKindChecksum)
 	t.Run("active workflows never target main", testNoMainBranchTargets)
 }
 
@@ -83,28 +86,7 @@ func testCanonicalCIValidation(t *testing.T) {
 }
 
 func testCanonicalCIActionPins(t *testing.T) {
-	workflow := loadWorkflow(t, "ci.yml")
-	pinnedSHA := regexp.MustCompile(`^[0-9a-f]{40}$`)
-	for jobID, value := range workflow.jobs {
-		job, ok := value.(map[string]any)
-		if !ok {
-			continue
-		}
-		for index, value := range anyList(job["steps"]) {
-			step, ok := value.(map[string]any)
-			if !ok {
-				continue
-			}
-			uses := scalarString(step["uses"])
-			if uses == "" || strings.HasPrefix(uses, "./") {
-				continue
-			}
-			action, revision, found := strings.Cut(uses, "@")
-			if !found || action == "" || !pinnedSHA.MatchString(revision) {
-				t.Errorf("ci.yml job %q step %d uses %q, want a full 40-character commit SHA", jobID, index+1, uses)
-			}
-		}
-	}
+	assertWorkflowActionPins(t, loadWorkflow(t, "ci.yml"))
 }
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
@@ -173,6 +155,68 @@ func assertValidationJob(t *testing.T, workflow workflowFile, contract validatio
 	}
 }
 
+func assertWorkflowActionPins(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	pinnedSHA := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	for jobID, value := range workflow.jobs {
+		job, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		for index, value := range anyList(job["steps"]) {
+			step, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			uses := scalarString(step["uses"])
+			if uses == "" || strings.HasPrefix(uses, "./") {
+				continue
+			}
+			action, revision, found := strings.Cut(uses, "@")
+			if !found || action == "" || !pinnedSHA.MatchString(revision) {
+				t.Errorf("%s job %q step %d uses %q, want a full 40-character commit SHA", workflow.name, jobID, index+1, uses)
+			}
+		}
+	}
+}
+
+func assertActionRevision(t *testing.T, workflow workflowFile, action, wantRevision string) {
+	t.Helper()
+	found := false
+	for _, value := range workflow.jobs {
+		job, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, stepValue := range anyList(job["steps"]) {
+			step, ok := stepValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			uses := scalarString(step["uses"])
+			gotAction, gotRevision, hasRevision := strings.Cut(uses, "@")
+			if !hasRevision || gotAction != action {
+				continue
+			}
+			found = true
+			if gotRevision != wantRevision {
+				t.Errorf("%s uses %s@%s, want revision %s", workflow.name, action, gotRevision, wantRevision)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("%s must use %s", workflow.name, action)
+	}
+}
+
+func assertJobTimeout(t *testing.T, workflowName, jobID string, job map[string]any, minimum, maximum int) {
+	t.Helper()
+	timeout, ok := job["timeout-minutes"].(int)
+	if !ok || timeout < minimum || timeout > maximum {
+		t.Errorf("%s job %q timeout-minutes = %v, want an integer from %d through %d", workflowName, jobID, job["timeout-minutes"], minimum, maximum)
+	}
+}
+
 func testPublication(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
 	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
@@ -226,6 +270,9 @@ func testLegacyPublisherRemoved(t *testing.T) {
 
 func testVKETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
+	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "workflow_dispatch") || !contains(got, "workflow_run") {
+		t.Errorf("deploy-vke.yml triggers = %v, want exactly workflow_dispatch and workflow_run", got)
+	}
 	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
 		t.Error("deploy-vke.yml must preserve workflow_dispatch")
 	}
@@ -236,6 +283,9 @@ func testVKETriggers(t *testing.T) {
 	}
 	if got := stringList(workflowRun["branches"]); !exactly(got, "master") {
 		t.Errorf("deploy-vke.yml workflow_run.branches = %v, want exactly [master]", got)
+	}
+	if got := stringList(workflowRun["types"]); !exactly(got, "completed") {
+		t.Errorf("deploy-vke.yml workflow_run.types = %v, want exactly [completed]", got)
 	}
 }
 
@@ -271,13 +321,19 @@ func testVKEManualImageTag(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
 	dispatch := requireMappingValue(t, workflow.triggers, "workflow_dispatch", "deploy-vke.yml triggers")
 	inputs := requireMappingValue(t, dispatch, "inputs", "deploy-vke.yml workflow_dispatch")
+	if got := sortedKeys(inputs); !exactly(got, "ref") {
+		t.Errorf("deploy-vke.yml workflow_dispatch inputs = %v, want exactly [ref]", got)
+	}
 	ref := requireMappingValue(t, inputs, "ref", "deploy-vke.yml workflow_dispatch inputs")
 	description := strings.ToLower(scalarString(ref["description"]))
-	if !strings.Contains(description, "image") || !strings.Contains(description, "tag") {
-		t.Errorf("deploy-vke.yml workflow_dispatch ref description must mention image and tag; got %q", ref["description"])
+	if !strings.Contains(description, "image") || !strings.Contains(description, "tag") || !strings.Contains(description, "ref") {
+		t.Errorf("deploy-vke.yml workflow_dispatch ref description must mention image tag/ref; got %q", ref["description"])
 	}
 	if required, ok := ref["required"].(bool); !ok || !required {
 		t.Errorf("deploy-vke.yml workflow_dispatch ref.required = %v, want true", ref["required"])
+	}
+	if inputType := scalarString(ref["type"]); inputType != "string" {
+		t.Errorf("deploy-vke.yml workflow_dispatch ref.type = %q, want string", inputType)
 	}
 	if defaultValue, ok := ref["default"]; ok {
 		t.Errorf("deploy-vke.yml workflow_dispatch ref must require an explicit tag without a default; got %q", defaultValue)
@@ -285,15 +341,80 @@ func testVKEManualImageTag(t *testing.T) {
 }
 
 func testVKEComponentImageTags(t *testing.T) {
-	deployText := strings.Join(allStrings(vkeDeployJob(t)), "\n")
+	deploy := vkeDeployJob(t)
+	step := requireNamedStep(t, deploy, "Deploy Paprika chart", "deploy-vke.yml deploy job")
+	run := scalarString(step["run"])
 	for _, component := range []string{"manager", "apiServer", "repoServer", "webhookReceiver"} {
-		pattern := regexp.MustCompile(regexp.QuoteMeta(component) + `\.image\.tag=["']?\$\{\{\s*env\.IMAGE_TAG\s*\}\}["']?`)
-		if !pattern.MatchString(deployText) {
-			t.Errorf("deploy-vke.yml must deploy %s with the computed env.IMAGE_TAG", component)
+		want := `--set-string ` + component + `.image.tag="${IMAGE_TAG}"`
+		if !containsActiveShellFragment(run, want) {
+			t.Errorf("deploy-vke.yml must deploy %s using quoted shell env IMAGE_TAG", component)
 		}
 	}
-	if regexp.MustCompile(`(?i)\.image\.tag\s*=\s*["']?latest\b`).MatchString(deployText) {
-		t.Error("deploy-vke.yml automatic deployment must not hard-code latest for any component")
+	if containsActiveShellFragment(run, "${{ env.IMAGE_TAG }}") {
+		t.Error("deploy-vke.yml must not interpolate env.IMAGE_TAG directly into shell syntax")
+	}
+	if containsActiveShellFragment(run, "${{ secrets.") {
+		t.Error("deploy-vke.yml must map secrets through the step environment instead of interpolating them into shell syntax")
+	}
+	stepEnv := requireMappingValue(t, step, "env", "deploy-vke.yml Deploy Paprika chart step")
+	// #nosec G101 -- These are GitHub expression names asserted by the contract, not credential values.
+	secretValues := map[string]string{
+		"VKE_OIDC_CLIENT_ID":      "secrets.VKE_OIDC_CLIENT_ID",
+		"VKE_OIDC_CLIENT_SECRET":  "secrets.VKE_OIDC_CLIENT_SECRET",
+		"VKE_AUTH_TOKEN_SECRET":   "secrets.VKE_AUTH_TOKEN_SECRET",
+		"VKE_BASIC_PASSWORD_HASH": "secrets.VKE_BASIC_PASSWORD_HASH",
+	}
+	for environmentName, expression := range secretValues {
+		if got := normalizeExpression(scalarString(stepEnv[environmentName])); got != expression {
+			t.Errorf("deploy-vke.yml Deploy Paprika chart env.%s = %q after normalization, want %q", environmentName, got, expression)
+		}
+		if !containsActiveShellFragment(run, `="${`+environmentName+`}"`) {
+			t.Errorf("deploy-vke.yml must pass %s through a quoted shell environment expansion", environmentName)
+		}
+	}
+	if regexp.MustCompile(`(?i)\.image\.tag\s*=\s*["']?latest\b`).MatchString(activeShellText(run)) {
+		t.Error("deploy-vke.yml deployment must not hard-code latest for any component")
+	}
+}
+
+func testDownstreamActionPins(t *testing.T) {
+	for _, name := range []string{"deploy-vke.yml", "deploy-gke.yml", "deploy-cloudrun.yml", "helm-publish.yml", "test-e2e.yml"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			assertWorkflowActionPins(t, loadWorkflow(t, name))
+		})
+	}
+
+	const (
+		checkoutRevision    = "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+		setupGoRevision     = "4a3601121dd01d1626a1e23e37211e3254c1c06c"
+		setupHelmRevision   = "59b1c81c6280f5abebb1fb1bc585696daa7dfb42"
+		setupBuildxRevision = "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c"
+		buildPushRevision   = "ca052bb54ab0790a636c9b5f226502c73d547a25"
+	)
+	assertActionRevision(t, loadWorkflow(t, "deploy-vke.yml"), "actions/checkout", checkoutRevision)
+	assertActionRevision(t, loadWorkflow(t, "deploy-vke.yml"), "actions/setup-go", setupGoRevision)
+	assertActionRevision(t, loadWorkflow(t, "deploy-vke.yml"), "azure/setup-helm", setupHelmRevision)
+	assertActionRevision(t, loadWorkflow(t, "helm-publish.yml"), "actions/checkout", checkoutRevision)
+	assertActionRevision(t, loadWorkflow(t, "helm-publish.yml"), "azure/setup-helm", setupHelmRevision)
+	assertActionRevision(t, loadWorkflow(t, "test-e2e.yml"), "docker/setup-buildx-action", setupBuildxRevision)
+	assertActionRevision(t, loadWorkflow(t, "test-e2e.yml"), "docker/build-push-action", buildPushRevision)
+}
+
+func testDownstreamJobTimeouts(t *testing.T) {
+	contracts := map[string]map[string][2]int{
+		"deploy-vke.yml":      {"deploy": {5, 30}},
+		"deploy-gke.yml":      {"deploy": {5, 30}},
+		"deploy-cloudrun.yml": {"deploy": {5, 30}},
+		"helm-publish.yml":    {"publish": {5, 30}},
+		"test-e2e.yml":        {"test-e2e": {30, 60}},
+	}
+	for workflowName, jobs := range contracts {
+		workflow := loadWorkflow(t, workflowName)
+		for jobID, bounds := range jobs {
+			job := requireMappingValue(t, workflow.jobs, jobID, workflowName+" jobs")
+			assertJobTimeout(t, workflowName, jobID, job, bounds[0], bounds[1])
+		}
 	}
 }
 
@@ -302,7 +423,8 @@ func testLegacyDeployments(t *testing.T) {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			workflow := loadWorkflow(t, name)
-			if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
+			dispatch, ok := workflow.triggers["workflow_dispatch"]
+			if !ok {
 				t.Errorf("%s must declare workflow_dispatch", name)
 			}
 			if _, ok := workflow.triggers["workflow_run"]; ok {
@@ -311,7 +433,66 @@ func testLegacyDeployments(t *testing.T) {
 			if len(workflow.triggers) != 1 {
 				t.Errorf("%s must be workflow_dispatch only; got triggers %v", name, sortedKeys(workflow.triggers))
 			}
+			if containsParsedString(workflow.document, "workflow_run") {
+				t.Errorf("%s must not retain stale workflow_run conditions or references", name)
+			}
+			dispatchMapping, mapping := dispatch.(map[string]any)
+			if !mapping {
+				t.Fatalf("%s workflow_dispatch must be a mapping, got %T", name, dispatch)
+			}
+			inputs := requireMappingValue(t, dispatchMapping, "inputs", name+" workflow_dispatch")
+			if got := sortedKeys(inputs); !exactly(got, "image_tag") {
+				t.Errorf("%s workflow_dispatch inputs = %v, want exactly [image_tag]", name, got)
+			}
+			imageTag := requireMappingValue(t, inputs, "image_tag", name+" workflow_dispatch inputs")
+			if required, ok := imageTag["required"].(bool); !ok || !required {
+				t.Errorf("%s image_tag.required = %v, want true", name, imageTag["required"])
+			}
+			if inputType := scalarString(imageTag["type"]); inputType != "string" {
+				t.Errorf("%s image_tag.type = %q, want string", name, inputType)
+			}
+			if defaultValue, ok := imageTag["default"]; ok {
+				t.Errorf("%s image_tag must not declare a default; got %q", name, defaultValue)
+			}
+
+			deploy := requireMappingValue(t, workflow.jobs, "deploy", name+" jobs")
+			stepName := map[string]string{
+				"deploy-gke.yml":      "Deploy via Helm",
+				"deploy-cloudrun.yml": "Deploy to Cloud Run",
+			}[name]
+			step := requireNamedStep(t, deploy, stepName, name+" deploy job")
+			stepEnv := requireMappingValue(t, step, "env", name+" "+stepName+" step")
+			if got := normalizeExpression(scalarString(stepEnv["IMAGE_TAG"])); got != "inputs.image_tag" {
+				t.Errorf("%s %s env.IMAGE_TAG = %q after normalization, want inputs.image_tag", name, stepName, got)
+			}
+			run := scalarString(step["run"])
+			if containsActiveShellFragment(run, "${{ inputs.image_tag }}") || containsActiveShellFragment(run, "github.sha") {
+				t.Errorf("%s must not interpolate the input or derive an unpublished github.sha image in shell syntax", name)
+			}
+			if !containsActiveShellFragment(run, "${IMAGE_TAG}") {
+				t.Errorf("%s must deploy the explicit image tag through the shell environment", name)
+			}
 		})
+	}
+
+	gke := loadWorkflow(t, "deploy-gke.yml")
+	gkeDeploy := requireMappingValue(t, gke.jobs, "deploy", "deploy-gke.yml jobs")
+	gkeRun := scalarString(requireNamedStep(t, gkeDeploy, "Deploy via Helm", "deploy-gke.yml deploy job")["run"])
+	if !containsActiveShellFragment(gkeRun, `--set-string manager.image.repository="ghcr.io/paprikacd/paprika"`) {
+		t.Error("deploy-gke.yml must override manager.image.repository")
+	}
+	if !containsActiveShellFragment(gkeRun, `--set-string manager.image.tag="${IMAGE_TAG}"`) {
+		t.Error("deploy-gke.yml must override manager.image.tag with the explicit shell env tag")
+	}
+	if regexp.MustCompile(`(?:^|\s)--set(?:-string)?\s+image\.(?:repository|tag)=`).MatchString(activeShellText(gkeRun)) {
+		t.Error("deploy-gke.yml must not use ignored top-level image.repository/image.tag values")
+	}
+
+	cloudRun := loadWorkflow(t, "deploy-cloudrun.yml")
+	cloudDeploy := requireMappingValue(t, cloudRun.jobs, "deploy", "deploy-cloudrun.yml jobs")
+	cloudRunScript := scalarString(requireNamedStep(t, cloudDeploy, "Deploy to Cloud Run", "deploy-cloudrun.yml deploy job")["run"])
+	if !containsActiveShellFragment(cloudRunScript, `--image="ghcr.io/paprikacd/paprika:${IMAGE_TAG}"`) {
+		t.Error("deploy-cloudrun.yml must deploy the explicit shell env image tag")
 	}
 }
 
@@ -319,11 +500,20 @@ func testHelmPublishing(t *testing.T) {
 	workflow := loadWorkflow(t, "helm-publish.yml")
 	push := requireMappingValue(t, workflow.triggers, "push", "helm-publish.yml triggers")
 	branches := stringList(push["branches"])
-	if !contains(branches, "master") {
-		t.Errorf("helm-publish.yml push.branches = %v, want master", branches)
+	if !exactly(branches, "master") {
+		t.Errorf("helm-publish.yml push.branches = %v, want exactly [master]", branches)
 	}
-	if contains(branches, "main") {
-		t.Errorf("helm-publish.yml push.branches must not target main; got %v", branches)
+
+	publish := requireMappingValue(t, workflow.jobs, "publish", "helm-publish.yml jobs")
+	checkout := requireUsesStep(t, publish, "actions/checkout@", "helm-publish.yml publish job")
+	checkoutWith := requireMappingValue(t, checkout, "with", "helm-publish.yml checkout step")
+	if persist, ok := checkoutWith["persist-credentials"].(bool); !ok || persist {
+		t.Errorf("helm-publish.yml checkout persist-credentials = %v, want false", checkoutWith["persist-credentials"])
+	}
+	setupHelm := requireUsesStep(t, publish, "azure/setup-helm@", "helm-publish.yml publish job")
+	setupWith := requireMappingValue(t, setupHelm, "with", "helm-publish.yml setup-helm step")
+	if version := scalarString(setupWith["version"]); version != "v3.21.2" {
+		t.Errorf("helm-publish.yml Helm version = %q, want v3.21.2", version)
 	}
 }
 
@@ -331,6 +521,9 @@ func testE2ETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "test-e2e.yml")
 	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
 		t.Error("test-e2e.yml must declare workflow_dispatch")
+	}
+	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "schedule") || !contains(got, "workflow_dispatch") {
+		t.Errorf("test-e2e.yml triggers = %v, want exactly schedule and workflow_dispatch", got)
 	}
 
 	schedules := anyList(workflow.triggers["schedule"])
@@ -346,6 +539,23 @@ func testE2ETriggers(t *testing.T) {
 	cron := scalarString(schedule["cron"])
 	if !isOnceDailyCron(cron) {
 		t.Errorf("test-e2e.yml schedule cron = %q, want exactly one run every day", cron)
+	}
+}
+
+func testE2EKindChecksum(t *testing.T) {
+	workflow := loadWorkflow(t, "test-e2e.yml")
+	job := requireMappingValue(t, workflow.jobs, "test-e2e", "test-e2e.yml jobs")
+	step := requireNamedStep(t, job, "Install kind", "test-e2e.yml test-e2e job")
+	run := scalarString(step["run"])
+	for _, want := range []string{
+		"curl --fail --location --retry 5 --retry-all-errors",
+		`"${kind_url}"`,
+		`"${kind_url}.sha256sum"`,
+		"sha256sum --check kind.sha256sum",
+	} {
+		if !containsActiveShellFragment(run, want) {
+			t.Errorf("test-e2e.yml Install kind step must actively use %q", want)
+		}
 	}
 }
 
@@ -625,6 +835,22 @@ func containsShellCommand(script, command string) bool {
 	return false
 }
 
+func activeShellText(script string) string {
+	var active []string
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		active = append(active, line)
+	}
+	return strings.Join(active, "\n")
+}
+
+func containsActiveShellFragment(script, fragment string) bool {
+	return strings.Contains(activeShellText(script), fragment)
+}
+
 func findFailureEnforcingUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
 	var matched map[string]any
 	for _, value := range anyList(job["steps"]) {
@@ -678,6 +904,39 @@ func checkoutRef(job map[string]any) (string, bool) {
 		return scalarString(with["ref"]), true
 	}
 	return "", false
+}
+
+func requireNamedStep(t *testing.T, job map[string]any, name, context string) map[string]any {
+	t.Helper()
+	for _, value := range anyList(job["steps"]) {
+		step, ok := value.(map[string]any)
+		if ok && scalarString(step["name"]) == name {
+			return step
+		}
+	}
+	t.Fatalf("%s is missing step named %q", context, name)
+	return nil
+}
+
+func requireUsesStep(t *testing.T, job map[string]any, actionPrefix, context string) map[string]any {
+	t.Helper()
+	for _, value := range anyList(job["steps"]) {
+		step, ok := value.(map[string]any)
+		if ok && strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
+			return step
+		}
+	}
+	t.Fatalf("%s is missing a %s step", context, actionPrefix)
+	return nil
+}
+
+func containsParsedString(value any, want string) bool {
+	for _, text := range allStrings(value) {
+		if strings.Contains(text, want) {
+			return true
+		}
+	}
+	return false
 }
 
 func allStrings(value any) []string {
