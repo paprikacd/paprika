@@ -197,6 +197,7 @@ This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 | Deploy Cloud Run Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
 | E2E Tests | Nightly; manual | Builds local images and runs the full end-to-end suite on Kind. |
 | Publish Helm Chart | Chart changes on `master`; typed repository dispatch | Lints, renders, packages, and publishes the Helm chart to GHCR. |
+| Deploy Landing to GitHub Pages | Landing changes on `master`; typed repository dispatch | Publishes the landing site from trusted default-branch workflow code. |
 | Release | `v*` tag push | Runs GoReleaser and publishes the versioned Helm chart. |
 
 Privileged manual requests use repository dispatch so GitHub loads workflow code from the default
@@ -212,6 +213,7 @@ gh api repos/paprikacd/paprika/dispatches --method POST \
   -f event_type=deploy-cloudrun -f "client_payload[image_ref]=${IMAGE_REF}"
 gh api repos/paprikacd/paprika/dispatches --method POST \
   -f event_type=publish-helm -f 'client_payload[version]=0.1.0'
+gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-pages
 ```
 
 CI cancels superseded pull-request runs, but `master` runs sharing the same workflow/ref queue and
