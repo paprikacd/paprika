@@ -22,24 +22,44 @@ type workflowFile struct {
 }
 
 func TestWorkflowContract(t *testing.T) {
-	t.Run("canonical CI workflow has every fast validation job", testCanonicalCIJobs)
+	t.Run("canonical CI triggers fast validation jobs in parallel", testCanonicalCIValidation)
 	t.Run("publication is gated and produces immutable amd64 images", testPublication)
-	t.Run("VKE deploy follows successful CI runs at the exact commit", testVKEDeploy)
+	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
+	t.Run("VKE triggers are exact and preserve manual dispatch", testVKETriggers)
+	t.Run("VKE deploy permits manual or successful automatic runs", testVKEDeployCondition)
+	t.Run("VKE automatic deploy selects the triggering commit image", testVKEAutomaticProvenance)
+	t.Run("VKE manual tag input selects the deployed image", testVKEManualImageTag)
+	t.Run("VKE deploy applies its selected tag to every component", testVKEComponentImageTags)
 	t.Run("legacy deployments are manual only", testLegacyDeployments)
 	t.Run("Helm publishing targets master and never main", testHelmPublishing)
 	t.Run("full e2e runs on a schedule and on demand", testE2ETriggers)
 	t.Run("active workflows never target main", testNoMainBranchTargets)
 }
 
-func testCanonicalCIJobs(t *testing.T) {
+func testCanonicalCIValidation(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
 	if got := scalarString(workflow.document["name"]); got != "CI" {
 		t.Errorf("ci.yml workflow name = %q, want %q", got, "CI")
+	}
+	for _, event := range []string{"push", "pull_request"} {
+		if _, ok := workflow.triggers[event]; !ok {
+			t.Errorf("ci.yml must declare the %s trigger", event)
+		}
 	}
 
 	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
 			t.Errorf("ci.yml is missing required job ID %q", jobID)
+		}
+	}
+
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart"} {
+		job, ok := workflow.jobs[jobID].(map[string]any)
+		if !ok {
+			continue
+		}
+		if needs := stringList(job["needs"]); len(needs) != 0 {
+			t.Errorf("ci.yml validation job %q must run in parallel without needs; got %v", jobID, needs)
 		}
 	}
 }
@@ -82,26 +102,46 @@ func testPublication(t *testing.T) {
 	}
 }
 
-func testVKEDeploy(t *testing.T) {
+func testLegacyPublisherRemoved(t *testing.T) {
+	path := filepath.Join(repositoryRoot(t), ".github", "workflows", "build-push.yml")
+	if _, err := os.Stat(path); err == nil {
+		t.Error("build-push.yml must be removed so CI is the only image publisher")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect build-push.yml: %v", err)
+	}
+}
+
+func testVKETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "deploy-vke.yml")
 	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
 		t.Error("deploy-vke.yml must preserve workflow_dispatch")
 	}
 
 	workflowRun := requireMappingValue(t, workflow.triggers, "workflow_run", "deploy-vke.yml triggers")
-	if got := stringList(workflowRun["workflows"]); !contains(got, "CI") {
-		t.Errorf("deploy-vke.yml workflow_run.workflows = %v, want CI", got)
+	if got := stringList(workflowRun["workflows"]); !exactly(got, "CI") {
+		t.Errorf("deploy-vke.yml workflow_run.workflows = %v, want exactly [CI]", got)
 	}
-	if got := stringList(workflowRun["branches"]); !contains(got, "master") {
-		t.Errorf("deploy-vke.yml workflow_run.branches = %v, want master", got)
+	if got := stringList(workflowRun["branches"]); !exactly(got, "master") {
+		t.Errorf("deploy-vke.yml workflow_run.branches = %v, want exactly [master]", got)
 	}
+}
 
-	deploy := requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs")
+func testVKEDeployCondition(t *testing.T) {
+	deploy := vkeDeployJob(t)
 	condition := compactExpression(scalarString(deploy["if"]))
+	if !strings.Contains(condition, "github.event_name=='workflow_dispatch'") {
+		t.Errorf("deploy-vke.yml deploy.if must allow workflow_dispatch; got %q", scalarString(deploy["if"]))
+	}
 	if !strings.Contains(condition, "github.event.workflow_run.conclusion=='success'") {
 		t.Errorf("deploy-vke.yml deploy.if must require a successful CI workflow_run; got %q", scalarString(deploy["if"]))
 	}
+	if !strings.Contains(condition, "||") {
+		t.Errorf("deploy-vke.yml deploy.if must allow manual runs or successful automatic runs; got %q", scalarString(deploy["if"]))
+	}
+}
 
+func testVKEAutomaticProvenance(t *testing.T) {
+	deploy := vkeDeployJob(t)
 	checkoutRef, foundCheckout := checkoutRef(deploy)
 	if !foundCheckout {
 		t.Fatal("deploy-vke.yml deploy job has no actions/checkout step")
@@ -110,12 +150,31 @@ func testVKEDeploy(t *testing.T) {
 		t.Errorf("deploy-vke.yml checkout ref must use github.event.workflow_run.head_sha; got %q", checkoutRef)
 	}
 
-	if !hasSHAImageTag(deploy) {
-		t.Error("deploy-vke.yml deploy job must derive its sha- image tag from github.event.workflow_run.head_sha")
+	imageTag := selectedImageTag(t, deploy)
+	if !usesWorkflowRunSHAImage(imageTag) {
+		t.Errorf("deploy-vke.yml IMAGE_TAG must select sha-${{ github.event.workflow_run.head_sha }} for automatic runs; got %q", imageTag)
 	}
-	deployText := marshalYAML(t, deploy, "deploy-vke.yml deploy job")
-	if !strings.Contains(deployText, "env.IMAGE_TAG") {
-		t.Error("deploy-vke.yml deployment steps must consume the exact IMAGE_TAG selected for the triggering SHA")
+}
+
+func testVKEManualImageTag(t *testing.T) {
+	workflow := loadWorkflow(t, "deploy-vke.yml")
+	inputName := manualImageTagInput(t, workflow)
+	imageTag := selectedImageTag(t, requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs"))
+	if !strings.Contains(compactExpression(imageTag), "inputs."+inputName) {
+		t.Errorf("deploy-vke.yml IMAGE_TAG must consume manual input %q; got %q", inputName, imageTag)
+	}
+}
+
+func testVKEComponentImageTags(t *testing.T) {
+	deployText := strings.Join(allStrings(vkeDeployJob(t)), "\n")
+	for _, component := range []string{"manager", "apiServer", "repoServer", "webhookReceiver"} {
+		pattern := regexp.MustCompile(regexp.QuoteMeta(component) + `\.image\.tag=["']?\$\{\{\s*env\.IMAGE_TAG\s*\}\}["']?`)
+		if !pattern.MatchString(deployText) {
+			t.Errorf("deploy-vke.yml must deploy %s with the computed env.IMAGE_TAG", component)
+		}
+	}
+	if regexp.MustCompile(`(?i)\.image\.tag\s*=\s*["']?latest\b`).MatchString(deployText) {
+		t.Error("deploy-vke.yml automatic deployment must not hard-code latest for any component")
 	}
 }
 
@@ -154,8 +213,20 @@ func testE2ETriggers(t *testing.T) {
 	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
 		t.Error("test-e2e.yml must declare workflow_dispatch")
 	}
-	if schedule, ok := workflow.triggers["schedule"]; !ok || len(anyList(schedule)) == 0 {
-		t.Error("test-e2e.yml must declare at least one schedule")
+
+	schedules := anyList(workflow.triggers["schedule"])
+	if len(schedules) != 1 {
+		t.Errorf("test-e2e.yml must declare one nightly schedule; got %d", len(schedules))
+		return
+	}
+	schedule, ok := schedules[0].(map[string]any)
+	if !ok {
+		t.Errorf("test-e2e.yml schedule must be a mapping, got %T", schedules[0])
+		return
+	}
+	cron := scalarString(schedule["cron"])
+	if !isOnceDailyCron(cron) {
+		t.Errorf("test-e2e.yml schedule cron = %q, want exactly one run every day", cron)
 	}
 }
 
@@ -305,6 +376,14 @@ func contains(values []string, want string) bool {
 	return false
 }
 
+func exactly(values []string, want string) bool {
+	return len(values) == 1 && values[0] == want
+}
+
+func isOnceDailyCron(cron string) bool {
+	return regexp.MustCompile(`^(?:[0-5]?\d)\s+(?:[01]?\d|2[0-3])\s+\*\s+\*\s+\*$`).MatchString(strings.TrimSpace(cron))
+}
+
 func compactExpression(expression string) string {
 	expression = strings.ReplaceAll(expression, `"`, `'`)
 	return strings.Map(func(r rune) rune {
@@ -336,6 +415,47 @@ func marshalYAML(t *testing.T, value any, context string) string {
 	return string(data)
 }
 
+func vkeDeployJob(t *testing.T) map[string]any {
+	t.Helper()
+	workflow := loadWorkflow(t, "deploy-vke.yml")
+	return requireMappingValue(t, workflow.jobs, "deploy", "deploy-vke.yml jobs")
+}
+
+func selectedImageTag(t *testing.T, deploy map[string]any) string {
+	t.Helper()
+	environment := requireMappingValue(t, deploy, "env", "deploy-vke.yml deploy job")
+	imageTag := scalarString(environment["IMAGE_TAG"])
+	if imageTag == "" {
+		t.Fatal("deploy-vke.yml deploy job must compute env.IMAGE_TAG")
+	}
+	return imageTag
+}
+
+func usesWorkflowRunSHAImage(expression string) bool {
+	expression = compactExpression(expression)
+	return strings.Contains(expression, "sha-${{github.event.workflow_run.head_sha}}") ||
+		strings.Contains(expression, "format('sha-{0}',github.event.workflow_run.head_sha)")
+}
+
+func manualImageTagInput(t *testing.T, workflow workflowFile) string {
+	t.Helper()
+	dispatch := requireMappingValue(t, workflow.triggers, "workflow_dispatch", "deploy-vke.yml triggers")
+	inputs := requireMappingValue(t, dispatch, "inputs", "deploy-vke.yml workflow_dispatch")
+	for _, name := range sortedKeys(inputs) {
+		input, ok := inputs[name].(map[string]any)
+		if !ok {
+			continue
+		}
+		description := strings.ToLower(scalarString(input["description"]))
+		if strings.Contains(strings.ToLower(name), "tag") ||
+			(name == "ref" && strings.Contains(description, "image") && strings.Contains(description, "tag")) {
+			return name
+		}
+	}
+	t.Fatal("deploy-vke.yml workflow_dispatch must declare an image tag input")
+	return ""
+}
+
 func checkoutRef(job map[string]any) (string, bool) {
 	for _, value := range anyList(job["steps"]) {
 		step, ok := value.(map[string]any)
@@ -346,15 +466,6 @@ func checkoutRef(job map[string]any) (string, bool) {
 		return scalarString(with["ref"]), true
 	}
 	return "", false
-}
-
-func hasSHAImageTag(job map[string]any) bool {
-	for _, value := range allStrings(job) {
-		if strings.Contains(value, "github.event.workflow_run.head_sha") && strings.Contains(value, "sha-") {
-			return true
-		}
-	}
-	return false
 }
 
 func allStrings(value any) []string {
