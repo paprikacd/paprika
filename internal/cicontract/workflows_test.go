@@ -55,7 +55,7 @@ var localReusableWorkflowUses = map[string]map[string]string{
 
 func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI triggers fast validation jobs in parallel", testCanonicalCIValidation)
-	t.Run("canonical CI only cancels superseded pull request runs", testCanonicalCIConcurrency)
+	t.Run("canonical CI protects running master and keeps only the latest pending run", testCanonicalCIConcurrency)
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
@@ -120,10 +120,13 @@ func testCanonicalCIConcurrency(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
 	concurrency := requireMappingValue(t, workflow.document, "concurrency", "ci.yml")
 	if group := scalarString(concurrency["group"]); group != "ci-${{ github.workflow }}-${{ github.ref }}" {
-		t.Errorf("ci.yml concurrency.group = %q, want shared workflow/ref group", group)
+		t.Errorf("ci.yml concurrency.group = %q, want the exact shared workflow/ref group", group)
 	}
 	if cancel := normalizeExpression(scalarString(concurrency["cancel-in-progress"])); cancel != "github.event_name == 'pull_request'" {
-		t.Errorf("ci.yml concurrency.cancel-in-progress = %q after normalization, want pull-request-only cancellation", cancel)
+		t.Errorf("ci.yml concurrency.cancel-in-progress = %q after normalization, want exact PR-only cancellation so a running master deployment is never cancelled", cancel)
+	}
+	if queue, configured := concurrency["queue"]; configured {
+		t.Errorf("ci.yml concurrency.queue = %q, want queue omitted so GitHub keeps its intentional newest-pending default", queue)
 	}
 }
 

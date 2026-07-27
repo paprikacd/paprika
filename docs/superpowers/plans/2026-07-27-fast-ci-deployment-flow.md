@@ -105,7 +105,9 @@ digest promotion, rollout, and post-deploy health checks.
 
 The privileged boundaries were tightened after the initial fast-flow implementation:
 
-- [x] Cancel superseded pull-request CI runs while serializing `master` runs without cancellation.
+- [x] Cancel superseded pull-request CI runs while protecting the in-flight `master` run from
+  cancellation; use GitHub's default newest-pending behavior, which may replace older pending
+  `master` runs.
 - [x] Replace privileged branch-selectable `workflow_dispatch` entrypoints with typed
   `repository_dispatch` events: `deploy-vke`, `deploy-gke`, `deploy-cloudrun`, `publish-helm`, and
   `publish-pages`.

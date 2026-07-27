@@ -19,9 +19,11 @@ pushes to `master`. Five independent validation lanes run in parallel:
 The publish job depends on all five lanes and runs only for a `master` push. Buildx produces only
 `linux/amd64` and publishes `latest` and `sha-<commit>` tags for operator discoverability. Tags are
 not the promotion contract: the build action exposes the pushed manifest digest as a job output.
-CI concurrency remains shared by workflow and ref. Superseded pull-request runs cancel, while
-`master` push runs queue without cancellation so a later push cannot cancel an in-flight reusable
-VKE deployment.
+CI concurrency remains shared by workflow and ref. Superseded pull-request runs cancel. For
+`master`, the running group member continues without cancellation, so a later push cannot cancel
+an in-flight reusable VKE deployment. GitHub's default retains only the newest pending group
+member and may replace an older pending `master` run; this is intentional latest-pending behavior,
+not an all-runs FIFO queue.
 
 After publication, CI calls `.github/workflows/deploy-vke.yml` as a local reusable workflow and
 passes `ghcr.io/paprikacd/paprika@<published digest>`. This keeps validation, publication, and the

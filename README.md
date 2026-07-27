@@ -216,8 +216,9 @@ gh api repos/paprikacd/paprika/dispatches --method POST \
 gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-pages
 ```
 
-CI cancels superseded pull-request runs, but `master` runs sharing the same workflow/ref queue and
-complete in order. The VKE token exchange independently requires the allowed event, exact
+CI cancels superseded pull-request runs. For `master`, the running workflow/ref-group member is
+never cancelled; GitHub retains only the newest pending run and may replace an older pending run.
+The VKE token exchange independently requires the allowed event, exact
 `refs/heads/master` ref, trusted caller `workflow_ref`, and the reusable VKE
 `job_workflow_ref` before minting a Kubernetes credential. The GitHub `vke-production`
 environment must also be configured externally to permit only `master`; this repository change
