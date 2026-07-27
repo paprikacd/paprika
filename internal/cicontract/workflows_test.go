@@ -22,13 +22,13 @@ type workflowFile struct {
 type validationJobContract struct {
 	id               string
 	commands         []string
-	oneOfCommands    []string
 	workingDirectory string
 }
 
 type workflowRunStep struct {
 	run              string
 	workingDirectory string
+	failureEnforcing bool
 }
 
 func TestWorkflowContract(t *testing.T) {
@@ -67,8 +67,8 @@ func testCanonicalCIValidation(t *testing.T) {
 		{id: "go-test", commands: []string{"make test-race"}},
 		{id: "go-lint", commands: []string{"make lint-config", "make lint"}},
 		{id: "ui", commands: []string{"npm ci", "npm test", "npm run lint", "npm run build"}, workingDirectory: "ui"},
-		{id: "generated", commands: []string{"git diff --exit-code"}, oneOfCommands: []string{"make generate", "make generate-proto"}},
-		{id: "chart", commands: []string{"helm lint", "helm template"}},
+		{id: "generated", commands: []string{"make generate-proto", "git diff --exit-code"}},
+		{id: "chart", commands: []string{"helm lint charts/chart/", "helm template paprika charts/chart/"}},
 	}
 	for _, contract := range contracts {
 		assertValidationJob(t, workflow, contract)
@@ -94,11 +94,8 @@ func assertValidationJob(t *testing.T, workflow workflowFile, contract validatio
 
 	for _, command := range contract.commands {
 		if !hasRunCommand(job, command, contract.workingDirectory) {
-			t.Errorf("ci.yml validation job %q must run %q", contract.id, command)
+			t.Errorf("ci.yml validation job %q must actively run exact command %q and enforce its failure", contract.id, command)
 		}
-	}
-	if len(contract.oneOfCommands) != 0 && !hasAnyRunCommand(job, contract.oneOfCommands, contract.workingDirectory) {
-		t.Errorf("ci.yml validation job %q must run one of %v", contract.id, contract.oneOfCommands)
 	}
 }
 
@@ -122,9 +119,9 @@ func testPublication(t *testing.T) {
 		t.Errorf("ci.yml publish job must have packages: write permission")
 	}
 
-	buildPush, ok := findUsesStep(publish, "docker/build-push-action@")
+	buildPush, ok := findFailureEnforcingUsesStep(publish, "docker/build-push-action@")
 	if !ok {
-		t.Fatal("ci.yml publish job must contain a docker/build-push-action step")
+		t.Fatal("ci.yml publish job must contain an unconditional docker/build-push-action step that enforces failure")
 	}
 	with := requireMappingValue(t, buildPush, "with", "ci.yml docker/build-push-action step")
 	if push, ok := with["push"].(bool); !ok || !push {
@@ -502,53 +499,72 @@ func workflowRunSteps(job map[string]any) []workflowRunStep {
 		if workingDirectory == "" {
 			workingDirectory = defaultDirectory
 		}
-		steps = append(steps, workflowRunStep{run: run, workingDirectory: workingDirectory})
+		steps = append(steps, workflowRunStep{
+			run:              run,
+			workingDirectory: workingDirectory,
+			failureEnforcing: stepFailureEnforcing(step),
+		})
 	}
 	return steps
 }
 
 func hasRunCommand(job map[string]any, command, workingDirectory string) bool {
+	matched := false
 	for _, step := range workflowRunSteps(job) {
-		if workingDirectoryMatches(step.workingDirectory, workingDirectory) && containsShellCommand(step.run, command) {
-			return true
+		if !workingDirectoryMatches(step.workingDirectory, workingDirectory) || !containsShellCommand(step.run, command) {
+			continue
 		}
-	}
-	return false
-}
-
-func hasAnyRunCommand(job map[string]any, commands []string, workingDirectory string) bool {
-	for _, command := range commands {
-		if hasRunCommand(job, command, workingDirectory) {
-			return true
+		if !step.failureEnforcing {
+			return false
 		}
+		matched = true
 	}
-	return false
+	return matched
 }
 
 func workingDirectoryMatches(got, want string) bool {
-	return want == "" || filepath.Clean(got) == filepath.Clean(want)
+	if want == "" {
+		return got == "" || got == "."
+	}
+	return got == want
 }
 
 func containsShellCommand(script, command string) bool {
 	for _, line := range strings.Split(script, "\n") {
-		line = strings.TrimSpace(line)
-		line = strings.TrimSpace(strings.TrimPrefix(line, "if "))
-		line = strings.TrimSpace(strings.TrimPrefix(line, "! "))
-		if line == command || strings.HasPrefix(line, command+" ") || strings.HasPrefix(line, command+";") {
+		if strings.TrimSpace(line) == command {
 			return true
 		}
 	}
 	return false
 }
 
-func findUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
+func findFailureEnforcingUsesStep(job map[string]any, actionPrefix string) (map[string]any, bool) {
+	var matched map[string]any
 	for _, value := range anyList(job["steps"]) {
 		step, ok := value.(map[string]any)
-		if ok && strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
-			return step, true
+		if !ok || !strings.HasPrefix(scalarString(step["uses"]), actionPrefix) {
+			continue
 		}
+		if !stepFailureEnforcing(step) {
+			return nil, false
+		}
+		matched = step
 	}
-	return nil, false
+	return matched, matched != nil
+}
+
+func stepFailureEnforcing(step map[string]any) bool {
+	if _, conditional := step["if"]; conditional {
+		return false
+	}
+	return !isTrue(step["continue-on-error"])
+}
+
+func isTrue(value any) bool {
+	if enabled, ok := value.(bool); ok {
+		return enabled
+	}
+	return strings.EqualFold(strings.TrimSpace(scalarString(value)), "true")
 }
 
 func delimitedValues(value any) []string {
