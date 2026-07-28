@@ -17,3 +17,8 @@ jobs:
     uses: ./.github/workflows/deploy-vke.yml
     with:
       image_ref: ${{ github.event.client_payload.image_ref }}
+    secrets:
+      VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
+      VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}
+      VKE_OIDC_CLIENT_ID: ${{ secrets.VKE_OIDC_CLIENT_ID }}
+      VKE_OIDC_CLIENT_SECRET: ${{ secrets.VKE_OIDC_CLIENT_SECRET }}

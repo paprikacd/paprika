@@ -64,6 +64,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
 	t.Run("CI gates reusable VKE deployment on trusted published output", testCIDeployVKE)
 	t.Run("VKE is callable only and has a trusted manual wrapper", testVKETriggers)
+	t.Run("VKE callers propagate only the required deployment secrets", testVKESecretPropagation)
 	t.Run("VKE checks out the trusted caller commit and selects an image digest", testVKEProvenance)
 	t.Run("VKE validates the immutable image reference before privileged operations", testVKEImageValidation)
 	t.Run("VKE deploy applies one immutable reference to every component", testVKEComponentImageReferences)
@@ -512,6 +513,71 @@ func testVKETriggers(t *testing.T) {
 		t.Errorf("deploy-vke-manual.yml image_ref = %q after normalization, want github.event.client_payload.image_ref", got)
 	}
 	assertLocalReusableWorkflowUses(t, manual)
+}
+
+func testVKESecretPropagation(t *testing.T) {
+	secretNames := []string{
+		"VKE_AUTH_TOKEN_SECRET",
+		"VKE_BASIC_PASSWORD_HASH",
+		"VKE_OIDC_CLIENT_ID",
+		"VKE_OIDC_CLIENT_SECRET",
+	}
+
+	reusable := loadWorkflow(t, "deploy-vke.yml")
+	trigger := requireMappingValue(t, reusable.triggers, "workflow_call", "deploy-vke.yml triggers")
+	declarations := requireMappingValue(t, trigger, "secrets", "deploy-vke.yml workflow_call")
+	if got := sortedKeys(declarations); !sameStrings(got, secretNames) {
+		t.Errorf("deploy-vke.yml workflow_call.secrets = %v, want exactly %v", got, secretNames)
+	}
+	for _, name := range secretNames {
+		declaration := requireMappingValue(t, declarations, name, "deploy-vke.yml workflow_call secrets")
+		if required, ok := declaration["required"].(bool); !ok || !required {
+			t.Errorf("deploy-vke.yml workflow_call.secrets.%s.required = %v, want true", name, declaration["required"])
+		}
+	}
+
+	callers := map[string]string{
+		"ci.yml":                "deploy-vke",
+		"deploy-vke-manual.yml": "deploy",
+	}
+	for workflowName, jobID := range callers {
+		workflow := loadWorkflow(t, workflowName)
+		job := requireMappingValue(t, workflow.jobs, jobID, workflowName+" jobs")
+		secretMappings := requireMappingValue(t, job, "secrets", workflowName+" "+jobID+" job")
+		if got := sortedKeys(secretMappings); !sameStrings(got, secretNames) {
+			t.Errorf("%s %s.secrets = %v, want exactly %v", workflowName, jobID, got, secretNames)
+		}
+		for _, name := range secretNames {
+			want := "secrets." + name
+			if got := normalizeExpression(scalarString(secretMappings[name])); got != want {
+				t.Errorf("%s %s.secrets.%s = %q after normalization, want %q", workflowName, jobID, name, got, want)
+			}
+		}
+	}
+
+	deploy := vkeDeployJob(t)
+	step := requireNamedStep(t, deploy, "Deploy Paprika chart", "deploy-vke.yml deploy job")
+	run := scalarString(step["run"])
+	validationLines := []string{
+		"missing=0",
+		"for name in VKE_OIDC_CLIENT_ID VKE_OIDC_CLIENT_SECRET VKE_AUTH_TOKEN_SECRET VKE_BASIC_PASSWORD_HASH; do",
+		`if [ -z "${!name:-}" ]; then`,
+		`echo "::error::$name is required"`,
+		"missing=1",
+		`if [ "$missing" -ne 0 ]; then`,
+		"exit 1",
+	}
+	for _, line := range validationLines {
+		if !containsActiveShellLine(run, line) {
+			t.Errorf("deploy-vke.yml Deploy Paprika chart must actively run secret validation line %q", line)
+		}
+	}
+	activeRun := activeShellText(run)
+	validationPosition := strings.Index(activeRun, validationLines[1])
+	helmPosition := strings.Index(activeRun, "helm upgrade --install")
+	if validationPosition < 0 || helmPosition < 0 || validationPosition >= helmPosition {
+		t.Error("deploy-vke.yml must reject missing deployment secrets before running Helm")
+	}
 }
 
 func testVKEProvenance(t *testing.T) {
