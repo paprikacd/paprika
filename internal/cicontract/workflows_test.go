@@ -102,7 +102,11 @@ func testCanonicalCIValidation(t *testing.T) {
 	}
 
 	contracts := []validationJobContract{
-		{id: "go-test", commands: []string{"make test-race"}},
+		{id: "go-test", commands: []string{
+			"make test-race",
+			"bash hack/test-github-actions-oidc-token.sh",
+			"bash hack/test-github-actions-vke-token.sh",
+		}},
 		{id: "go-lint", commands: []string{"make lint-config", "make lint"}},
 		{id: "ui", commands: []string{"npm ci", "npm test", "npm run lint", "npm run build"}, workingDirectory: "ui"},
 		{id: "generated", commands: []string{"make generate-proto", "git diff --exit-code"}},

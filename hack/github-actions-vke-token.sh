@@ -28,6 +28,10 @@ payload="$(jq -cn --arg token "$github_token" '{token: $token}')"
 
 exchange_response="$(
   curl -fsSL \
+    --retry 6 \
+    --retry-delay 2 \
+    --retry-max-time 30 \
+    --retry-connrefused \
     -H "Content-Type: application/json" \
     --data "$payload" \
     "$GITHUB_ACTIONS_TOKEN_EXCHANGE_URL"

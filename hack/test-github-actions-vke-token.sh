@@ -18,6 +18,16 @@ assert_eq() {
   fi
 }
 
+assert_contains() {
+  local needle="$1"
+  local haystack="$2"
+  local msg="$3"
+  case "$haystack" in
+    *"$needle"*) ;;
+    *) fail "$msg: expected '$needle' in '$haystack'" ;;
+  esac
+}
+
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -58,6 +68,11 @@ assert_eq "client.authentication.k8s.io/v1" "$(printf '%s' "$OUTPUT" | jq -r '.a
 assert_eq "ExecCredential" "$(printf '%s' "$OUTPUT" | jq -r '.kind')" "kind"
 assert_eq "k8s-token" "$(printf '%s' "$OUTPUT" | jq -r '.status.token')" "token"
 grep -q 'https://paprika.example/auth/github-actions/token' "$CURL_ARGS_FILE" || fail "exchange URL was not called"
+exchange_args="$(grep 'https://paprika.example/auth/github-actions/token' "$CURL_ARGS_FILE")"
+assert_contains "--retry 6" "$exchange_args" "exchange should retry transient HTTP failures"
+assert_contains "--retry-delay 2" "$exchange_args" "exchange retries should be paced"
+assert_contains "--retry-max-time 30" "$exchange_args" "exchange retries should be bounded"
+assert_contains "--retry-connrefused" "$exchange_args" "exchange should retry restart connection gaps"
 
 unset GITHUB_ACTIONS_TOKEN_EXCHANGE_URL
 if "$SCRIPT" >/tmp/github-actions-vke-token.out 2>/tmp/github-actions-vke-token.err; then
