@@ -34,6 +34,11 @@ jobs:
       - name: Run race tests
         run: make test-race
 
+      - name: Test deployment credential helpers
+        run: |
+          bash hack/test-github-actions-oidc-token.sh
+          bash hack/test-github-actions-vke-token.sh
+
   go-lint:
     name: Go lint
     runs-on: ubuntu-latest
