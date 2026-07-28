@@ -5,13 +5,9 @@ on:
     paths:
       - "charts/chart/**"
     branches:
-      - main
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Chart version to publish (e.g., 0.1.0)"
-        required: true
-        type: string
+      - master
+  repository_dispatch:
+    types: [publish-helm]
 
 permissions:
   contents: read
@@ -20,35 +16,59 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
         with:
-          version: "latest"
+          version: v3.21.2
 
       - name: Determine version
         id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_VERSION: ${{ github.event.client_payload.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          if [ "${EVENT_NAME}" = "repository_dispatch" ]; then
+            manual_version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+            if [[ ! "${REQUESTED_VERSION}" =~ ${manual_version_pattern} ]]; then
+              echo "::error::client_payload.version must be a safe semantic chart version"
+              exit 1
+            fi
+            printf 'version=%s\n' "${REQUESTED_VERSION}" >> "${GITHUB_OUTPUT}"
           else
-            echo "version=$(grep '^version:' charts/chart/Chart.yaml | awk '{print $2}')" >> $GITHUB_OUTPUT
+            chart_version="$(awk '/^version:/ { print $2; exit }' charts/chart/Chart.yaml)"
+            printf 'version=%s\n' "${chart_version}" >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: Lint chart
+        run: helm lint charts/chart/
+
+      - name: Render chart
+        run: helm template paprika charts/chart/
+
       - name: Package chart
+        env:
+          CHART_VERSION: ${{ steps.version.outputs.version }}
         run: |
           helm package charts/chart \
             --destination .dist/ \
-            --version ${{ steps.version.outputs.version }} \
-            --app-version ${{ steps.version.outputs.version }}
+            --version "${CHART_VERSION}" \
+            --app-version "${CHART_VERSION}"
 
       - name: Push to OCI registry
+        env:
+          CHART_VERSION: ${{ steps.version.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
-            --username ${{ github.actor }} \
+          printf '%s' "${GHCR_TOKEN}" | helm registry login ghcr.io \
+            --username "${GHCR_USERNAME}" \
             --password-stdin
-          helm push .dist/paprika-${{ steps.version.outputs.version }}.tgz \
+          helm push ".dist/paprika-${CHART_VERSION}.tgz" \
             oci://ghcr.io/paprikacd/charts

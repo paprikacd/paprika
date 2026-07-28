@@ -1,11 +1,8 @@
 name: Deploy GKE Dev
 
 on:
-  workflow_run:
-    workflows: [Build & Push]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch: {}
+  repository_dispatch:
+    types: [deploy-gke]
 
 concurrency: deploy-gke-dev
 
@@ -15,16 +12,24 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     name: Deploy operator to GKE dev
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GOTOOLCHAIN: auto
+      IMAGE_REFERENCE: ${{ github.event.client_payload.image_ref }}
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      - name: Validate image reference
+        run: |
+          if [[ ! "${IMAGE_REFERENCE}" =~ ^ghcr\.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::image_ref must be ghcr.io/paprikacd/paprika@sha256 followed by exactly 64 lowercase hexadecimal characters"
+            exit 1
+          fi
 
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
@@ -32,19 +37,23 @@ jobs:
           go-version-file: go.mod
 
       - name: Authenticate to GCP
-        uses: google-github-actions/auth@v3
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
 
       - name: Get GKE credentials
+        env:
+          GKE_CLUSTER_NAME: ${{ vars.GKE_CLUSTER_NAME }}
+          GKE_CLUSTER_ZONE: ${{ vars.GKE_CLUSTER_ZONE }}
+          GKE_CLUSTER_PROJECT: ${{ vars.GKE_CLUSTER_PROJECT }}
         run: |
-          gcloud container clusters get-credentials ${{ vars.GKE_CLUSTER_NAME }} \
-            --zone ${{ vars.GKE_CLUSTER_ZONE }} \
-            --project ${{ vars.GKE_CLUSTER_PROJECT }}
+          gcloud container clusters get-credentials "${GKE_CLUSTER_NAME}" \
+            --zone "${GKE_CLUSTER_ZONE}" \
+            --project "${GKE_CLUSTER_PROJECT}"
 
       - name: Install CRDs
         run: make install
@@ -52,8 +61,7 @@ jobs:
       - name: Deploy via Helm
         run: |
           helm upgrade --install paprika-dev ./charts/chart \
-            --set image.repository=ghcr.io/paprikacd/paprika \
-            --set image.tag=sha-${{ github.sha }} \
-            --set mode=operator \
+            --set-string manager.image.repository="${IMAGE_REFERENCE}" \
+            --set-string mode="operator" \
             --wait \
             --timeout 5m

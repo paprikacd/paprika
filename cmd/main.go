@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -124,6 +125,10 @@ type cliConfig struct {
 	githubActionsTokenExchangeRepository                          string
 	githubActionsTokenExchangeEnvironment                         string
 	githubActionsTokenExchangeSubject                             string
+	githubActionsTokenExchangeAllowedEventNames                   []string
+	githubActionsTokenExchangeRef                                 string
+	githubActionsTokenExchangeAllowedWorkflowRefs                 []string
+	githubActionsTokenExchangeJobWorkflowRef                      string
 	githubActionsTokenExchangeServiceAccountNamespace             string
 	githubActionsTokenExchangeServiceAccountName                  string
 	githubActionsTokenExchangeTTL                                 time.Duration
@@ -346,6 +351,10 @@ func configureGitHubActionsTokenExchange(getenv func(string) string, cfg *cliCon
 	cfg.githubActionsTokenExchangeRepository = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REPOSITORY")
 	cfg.githubActionsTokenExchangeEnvironment = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENVIRONMENT")
 	cfg.githubActionsTokenExchangeSubject = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SUBJECT")
+	cfg.githubActionsTokenExchangeAllowedEventNames = commaSeparatedValues(getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_EVENT_NAMES"))
+	cfg.githubActionsTokenExchangeRef = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REF")
+	cfg.githubActionsTokenExchangeAllowedWorkflowRefs = commaSeparatedValues(getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_WORKFLOW_REFS"))
+	cfg.githubActionsTokenExchangeJobWorkflowRef = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_JOB_WORKFLOW_REF")
 	cfg.githubActionsTokenExchangeServiceAccountNamespace = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAMESPACE")
 	cfg.githubActionsTokenExchangeServiceAccountName = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME")
 	cfg.githubActionsTokenExchangeTTL = 15 * time.Minute
@@ -354,6 +363,16 @@ func configureGitHubActionsTokenExchange(getenv func(string) string, cfg *cliCon
 			cfg.githubActionsTokenExchangeTTL = parsed
 		}
 	}
+}
+
+func commaSeparatedValues(raw string) []string {
+	var values []string
+	for value := range strings.SplitSeq(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
 }
 
 func buildAPIServerOptions(
@@ -677,6 +696,10 @@ func buildGitHubActionsTokenExchangeHandlers(ctx context.Context, cfg *cliConfig
 		Repository:              cfg.githubActionsTokenExchangeRepository,
 		Environment:             cfg.githubActionsTokenExchangeEnvironment,
 		Subject:                 cfg.githubActionsTokenExchangeSubject,
+		AllowedEventNames:       cfg.githubActionsTokenExchangeAllowedEventNames,
+		Ref:                     cfg.githubActionsTokenExchangeRef,
+		AllowedWorkflowRefs:     cfg.githubActionsTokenExchangeAllowedWorkflowRefs,
+		JobWorkflowRef:          cfg.githubActionsTokenExchangeJobWorkflowRef,
 		ServiceAccountNamespace: cfg.githubActionsTokenExchangeServiceAccountNamespace,
 		ServiceAccountName:      cfg.githubActionsTokenExchangeServiceAccountName,
 		ServiceAccountTokenTTL:  cfg.githubActionsTokenExchangeTTL,

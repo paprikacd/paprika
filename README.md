@@ -2,8 +2,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CI](https://github.com/benebsworth/paprika/actions/workflows/test.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/test.yml)
-[![Lint](https://github.com/benebsworth/paprika/actions/workflows/lint.yml/badge.svg)](https://github.com/benebsworth/paprika/actions/workflows/lint.yml)
+[![CI](https://github.com/paprikacd/paprika/actions/workflows/ci.yml/badge.svg)](https://github.com/paprikacd/paprika/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/benebsworth/paprika)](https://goreportcard.com/report/github.com/benebsworth/paprika)
 
 **paprika** is a Kubernetes-native application delivery platform that consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single operator. It replaces the need for separate ArgoCD, Argo Rollouts, and Argo Workflows deployments with a unified, controller-driven approach.
@@ -89,15 +88,15 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 
 ```sh
 # Clone the repository
-git clone https://github.com/benebsworth/paprika.git
+git clone https://github.com/paprikacd/paprika.git
 cd paprika
 
 # Install CRDs
 make install
 
 # Build and deploy the operator
-make docker-build docker-push IMG=ghcr.io/benebsworth/paprika:latest
-make deploy IMG=ghcr.io/benebsworth/paprika:latest
+make docker-build docker-push IMG=ghcr.io/paprikacd/paprika:latest
+make deploy IMG=ghcr.io/paprikacd/paprika:latest
 
 # Verify the operator is running
 kubectl get pods -n paprika-system
@@ -136,7 +135,7 @@ make test-e2e
 ### Single YAML Bundle
 
 ```sh
-make build-installer IMG=ghcr.io/benebsworth/paprika:<tag>
+make build-installer IMG=ghcr.io/paprikacd/paprika:<tag>
 # Generates dist/install.yaml — apply with:
 kubectl apply -f dist/install.yaml
 ```
@@ -192,12 +191,38 @@ This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| Lint | push, PR | golangci-lint |
-| Tests | push, PR | Unit tests with coverage |
-| E2E | push, PR | End-to-end tests on Kind |
-| Build & Push | push to main | Build and push image to GHCR |
-| Deploy GKE Dev | after Build & Push | Deploy to GKE dev cluster |
-| Release | tag push (v*) | Build, release, deploy to production |
+| CI | PR; push to `master` | Runs Go race tests, Go lint, UI checks, fleet browser/scale gates, generated-code drift, Helm checks, and Kind deployment integration in eight parallel lanes. After every lane passes on `master`, publishes a `linux/amd64` image with `latest` and `sha-<commit>` discovery tags and exposes its digest. |
+| Deploy VKE | Reusable call after CI publish; typed repository dispatch | CI automatically promotes its published digest through the reusable workflow. Manual requests run default-branch workflow code and require a full `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>` reference. |
+| Deploy GKE Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| Deploy Cloud Run Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
+| E2E Tests | Nightly; manual | Builds local images and runs the full end-to-end suite on Kind. |
+| Publish Helm Chart | Chart changes on `master`; typed repository dispatch | Lints, renders, packages, and publishes the Helm chart to GHCR. |
+| Deploy Landing to GitHub Pages | Landing changes on `master`; typed repository dispatch | Publishes the landing site from trusted default-branch workflow code. |
+| Release | `v*` tag push | Runs GoReleaser and publishes the versioned Helm chart. |
+
+Privileged manual requests use repository dispatch so GitHub loads workflow code from the default
+branch. Supply an immutable image digest or a safe semantic chart version:
+
+```sh
+IMAGE_REF='ghcr.io/paprikacd/paprika@sha256:<64-lowercase-hex>'
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-vke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-gke -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=deploy-cloudrun -f "client_payload[image_ref]=${IMAGE_REF}"
+gh api repos/paprikacd/paprika/dispatches --method POST \
+  -f event_type=publish-helm -f 'client_payload[version]=0.1.0'
+gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-pages
+```
+
+CI cancels superseded pull-request runs. For `master`, the running workflow/ref-group member is
+never cancelled; GitHub retains only the newest pending run and may replace an older pending run.
+The VKE token exchange independently requires the allowed event, exact
+`refs/heads/master` ref, trusted caller `workflow_ref`, and the reusable VKE
+`job_workflow_ref` before minting a Kubernetes credential. The GitHub `vke-production`
+environment policy is configured and verified with custom branch policies enabled, protected
+branches disabled, and exactly one allowed branch policy: `master` of type `branch`.
 
 ## Roadmap
 

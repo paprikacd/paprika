@@ -1,6 +1,8 @@
 name: E2E Tests
 
 on:
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       ginkgo_focus:
@@ -24,11 +26,13 @@ jobs:
       contents: read
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       GOTOOLCHAIN: auto
       E2E_SKIP_IMAGE_BUILD: "true"
       E2E_SKIP_IMAGE_LOAD: "true"
       KIND_CLUSTER: paprika-test-e2e
+      KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
     steps:
       - name: Clone the code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -41,50 +45,55 @@ jobs:
           go-version-file: go.mod
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build manager image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           push: false
           load: true
           tags: example.com/paprika:v0.0.1
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=paprika-app-e2e
+          cache-to: type=gha,mode=max,scope=paprika-app-e2e
 
       - name: Build demo image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: ./demo
           file: ./demo/Dockerfile
           push: false
           load: true
           tags: localhost/paprika-demo:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=paprika-demo-e2e
+          cache-to: type=gha,mode=max,scope=paprika-demo-e2e
 
       - name: Install kind
         run: |
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-$(go env GOARCH)"
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+          kind_binary="kind-linux-amd64"
+          kind_url="https://kind.sigs.k8s.io/dl/v0.32.0/${kind_binary}"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output "${kind_binary}" "${kind_url}"
+          printf '%s  %s\n' "${KIND_SHA256}" "${kind_binary}" | sha256sum --check -
+          sudo install -m 0755 "${kind_binary}" /usr/local/bin/kind
 
       - name: Create kind cluster
         run: make setup-test-e2e
 
       - name: Load images into kind
         run: |
-          kind load docker-image example.com/paprika:v0.0.1 --name ${{ env.KIND_CLUSTER }}
-          kind load docker-image localhost/paprika-demo:latest --name ${{ env.KIND_CLUSTER }}
+          kind load docker-image example.com/paprika:v0.0.1 --name "${KIND_CLUSTER}"
+          kind load docker-image localhost/paprika-demo:latest --name "${KIND_CLUSTER}"
 
       - name: Run e2e tests
+        env:
+          GINKGO_FOCUS: ${{ inputs.ginkgo_focus }}
         run: |
-          focus_flag=""
-          if [ -n "${{ inputs.ginkgo_focus }}" ]; then
-            focus_flag="-ginkgo.focus=${{ inputs.ginkgo_focus }}"
+          focus_args=()
+          if [ -n "${GINKGO_FOCUS}" ]; then
+            focus_args+=("-ginkgo.focus=${GINKGO_FOCUS}")
           fi
-          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m $focus_flag
+          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m "${focus_args[@]}"
 
       - name: Cleanup kind cluster
         if: always() && inputs.retain_cluster != 'true'

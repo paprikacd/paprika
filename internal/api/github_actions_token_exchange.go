@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -24,16 +25,26 @@ type GitHubActionsTokenExchangeConfig struct {
 	Repository              string
 	Environment             string
 	Subject                 string
+	AllowedEventNames       []string
+	Ref                     string
+	AllowedWorkflowRefs     []string
+	JobWorkflowRef          string
 	ServiceAccountNamespace string
 	ServiceAccountName      string
 	ServiceAccountTokenTTL  time.Duration
 }
 
 // GitHubActionsClaims are the claims this exchange authorizes against.
+//
+//nolint:tagliatelle // GitHub Actions OIDC claim names are externally defined snake_case fields.
 type GitHubActionsClaims struct {
-	Subject     string
-	Repository  string `json:"repository"`
-	Environment string `json:"environment"`
+	Subject        string
+	Repository     string `json:"repository"`
+	Environment    string `json:"environment"`
+	EventName      string `json:"event_name"`
+	Ref            string `json:"ref"`
+	WorkflowRef    string `json:"workflow_ref"`
+	JobWorkflowRef string `json:"job_workflow_ref"`
 }
 
 // GitHubActionsTokenVerifier validates a raw GitHub Actions OIDC JWT.
@@ -137,17 +148,67 @@ func authorizeGitHubActionsClaims(cfg *GitHubActionsTokenExchangeConfig, claims 
 	if claims == nil {
 		return errors.New("missing claims")
 	}
-	if cfg.Repository == "" {
-		return errors.New("repository is required")
+	if err := authorizeGitHubIdentityClaims(cfg, claims); err != nil {
+		return err
 	}
-	if claims.Repository != cfg.Repository {
-		return fmt.Errorf("repository %q is not allowed", claims.Repository)
+	return authorizeGitHubWorkflowClaims(cfg, claims)
+}
+
+func authorizeGitHubIdentityClaims(cfg *GitHubActionsTokenExchangeConfig, claims *GitHubActionsClaims) error {
+	if err := authorizeRequiredExactClaim("repository", cfg.Repository, claims.Repository); err != nil {
+		return err
 	}
-	if cfg.Environment != "" && claims.Environment != cfg.Environment {
-		return fmt.Errorf("environment %q is not allowed", claims.Environment)
+	if err := authorizeOptionalExactClaim("environment", cfg.Environment, claims.Environment); err != nil {
+		return err
 	}
-	if cfg.Subject != "" && claims.Subject != cfg.Subject {
-		return fmt.Errorf("subject %q is not allowed", claims.Subject)
+	return authorizeOptionalExactClaim("subject", cfg.Subject, claims.Subject)
+}
+
+func authorizeGitHubWorkflowClaims(cfg *GitHubActionsTokenExchangeConfig, claims *GitHubActionsClaims) error {
+	if err := authorizeAllowedClaim("event name", "allowed event names", cfg.AllowedEventNames, claims.EventName); err != nil {
+		return err
+	}
+	if err := authorizeRequiredExactClaim("ref", cfg.Ref, claims.Ref); err != nil {
+		return err
+	}
+	if err := authorizeAllowedClaim("workflow ref", "allowed workflow refs", cfg.AllowedWorkflowRefs, claims.WorkflowRef); err != nil {
+		return err
+	}
+	return authorizeRequiredExactClaim("job workflow ref", cfg.JobWorkflowRef, claims.JobWorkflowRef)
+}
+
+func authorizeRequiredExactClaim(name, expected, actual string) error {
+	if expected == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	if actual == "" {
+		return fmt.Errorf("%s claim is required", name)
+	}
+	if actual != expected {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
+	}
+	return nil
+}
+
+func authorizeOptionalExactClaim(name, expected, actual string) error {
+	if expected == "" {
+		return nil
+	}
+	if actual != expected {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
+	}
+	return nil
+}
+
+func authorizeAllowedClaim(name, configName string, allowed []string, actual string) error {
+	if len(allowed) == 0 {
+		return fmt.Errorf("%s are required", configName)
+	}
+	if actual == "" {
+		return fmt.Errorf("%s claim is required", name)
+	}
+	if !slices.Contains(allowed, actual) {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
 	}
 	return nil
 }
