@@ -34,8 +34,9 @@ jobs:
       - name: Run race tests
         run: make test-race
 
-      - name: Test deployment credential helpers
+      - name: Test deployment helpers
         run: |
+          bash hack/test-check-vke-pod-conditions.sh
           bash hack/test-github-actions-oidc-token.sh
           bash hack/test-github-actions-vke-token.sh
 

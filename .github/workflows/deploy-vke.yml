@@ -187,33 +187,7 @@ jobs:
           kubectl get pods -n "${VKE_NAMESPACE}" -o wide
 
       - name: Check pod conditions
-        run: |
-          PASS=0
-          FAIL=0
-          for component in controller-manager api-server webhook-receiver repo-server; do
-            selector="app.kubernetes.io/component=${component}"
-            if [ "$component" = "controller-manager" ]; then
-              selector="control-plane=controller-manager"
-            fi
-            count=$(kubectl get pods -n "${VKE_NAMESPACE}" \
-              -l "$selector" \
-              -o json | jq '[.items[] | select(.status.phase == "Running")] | length')
-            expected=$(kubectl get pods -n "${VKE_NAMESPACE}" \
-              -l "$selector" \
-              -o json | jq '.items | length')
-            if [ "$count" -gt 0 ] && [ "$count" -eq "$expected" ]; then
-              echo "  PASS  ${component}: ${count}/${expected} pods Running"
-              PASS=$((PASS + 1))
-            else
-              echo "  FAIL  ${component}: ${count}/${expected} pods Running"
-              FAIL=$((FAIL + 1))
-            fi
-          done
-          if [ "$FAIL" -gt 0 ]; then
-            echo "::error::$FAIL component(s) have unhealthy pods"
-            exit 1
-          fi
-          echo "All components healthy ($PASS passed)"
+        run: bash hack/check-vke-pod-conditions.sh
 
       - name: Health check via port-forward
         run: |
