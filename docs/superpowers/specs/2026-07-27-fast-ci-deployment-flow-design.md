@@ -8,15 +8,18 @@ Make pull-request feedback fast and make every automatic VKE deployment consume 
 ## Architecture
 
 `.github/workflows/ci.yml` is the canonical fast path. It runs for every pull request and only for
-pushes to `master`. Five independent validation lanes run in parallel:
+pushes to `master`. Eight independent validation lanes run in parallel:
 
 - Go race tests;
 - Go lint and linter-configuration validation;
 - UI tests, lint, and production build;
+- a real fleet-console browser smoke test;
+- the controlled `linux/amd64` fleet-scale gate;
 - regenerated protobuf drift detection; and
-- Helm lint and template rendering.
+- Helm lint and template rendering; and
+- a Kind-backed Helm deployment smoke with split-plane metrics validation.
 
-The publish job depends on all five lanes and runs only for a `master` push. Buildx produces only
+The publish job depends on all eight lanes and runs only for a `master` push. Buildx produces only
 `linux/amd64` and publishes `latest` and `sha-<commit>` tags for operator discoverability. Tags are
 not the promotion contract: the build action exposes the pushed manifest digest as a job output.
 CI concurrency remains shared by workflow and ref. Superseded pull-request runs cancel. For

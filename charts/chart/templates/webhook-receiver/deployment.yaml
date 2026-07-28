@@ -1,4 +1,5 @@
 {{- if and (eq .Values.deploymentMode "split") .Values.webhookReceiver.enabled }}
+{{- $metricsBindAddress := toString .Values.metrics.bindAddress }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -78,7 +79,11 @@ spec:
         - --mode=webhook
         - --health-probe-bind-address=:8081
         - --webhook-bind-address=:8080
-        - --metrics-bind-address={{ .Values.metrics.bindAddress }}
+        {{- if or (eq $metricsBindAddress "") (eq $metricsBindAddress "0") (eq $metricsBindAddress ":0") }}
+        - --metrics-bind-address=0
+        {{- else }}
+        - --metrics-bind-address={{ regexReplaceAll ":[^:]+$" $metricsBindAddress ":8082" }}
+        {{- end }}
         {{- end }}
         command:
         - /manager

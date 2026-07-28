@@ -191,7 +191,7 @@ This project uses [GitHub Actions](.github/workflows/) for CI/CD:
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| CI | PR; push to `master` | Runs Go race tests, Go lint, UI checks, generated-code drift, and Helm checks in five parallel lanes. After every lane passes on `master`, publishes a `linux/amd64` image with `latest` and `sha-<commit>` discovery tags and exposes its digest. |
+| CI | PR; push to `master` | Runs Go race tests, Go lint, UI checks, fleet browser/scale gates, generated-code drift, Helm checks, and Kind deployment integration in eight parallel lanes. After every lane passes on `master`, publishes a `linux/amd64` image with `latest` and `sha-<commit>` discovery tags and exposes its digest. |
 | Deploy VKE | Reusable call after CI publish; typed repository dispatch | CI automatically promotes its published digest through the reusable workflow. Manual requests run default-branch workflow code and require a full `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>` reference. |
 | Deploy GKE Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |
 | Deploy Cloud Run Dev | Typed repository dispatch | Deploys only an explicitly supplied full Paprika GHCR digest. |

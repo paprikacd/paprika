@@ -40,3 +40,4 @@ internal/api/uistatic/*
 # Test output
 test-results/
 output/
+/artifacts/

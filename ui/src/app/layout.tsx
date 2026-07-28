@@ -4,6 +4,7 @@ import "./globals.css"
 import { Nav } from "@/components/layout/nav"
 import { AuthProvider } from "@/lib/auth-context"
 import { ConnectionProvider } from "@/lib/connection-context"
+import { QueryProvider } from "@/lib/query-provider"
 
 const instrumentSans = Instrument_Sans({
   variable: "--font-sans",
@@ -40,10 +41,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           <ConnectionProvider>
-            <Nav />
-            <main className="flex-1">
-              {children}
-            </main>
+            <QueryProvider>
+              <Nav />
+              <div className="flex-1">{children}</div>
+            </QueryProvider>
           </ConnectionProvider>
         </AuthProvider>
       </body>

@@ -168,6 +168,151 @@ jobs:
       - name: Render VKE configuration
         run: helm template paprika charts/chart/ --values deploy/test-values.yaml
 
+  fleet-ui-smoke:
+    name: Fleet console browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOTOOLCHAIN: auto
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci
+        working-directory: ui
+
+      - name: Build compiled UI
+        run: npm run build
+        working-directory: ui
+
+      - name: Build real fleet fixture
+        run: go build -o bin/fleet-console-fixture ./test/fleetconsole
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+
+      - name: Run real fleet console smoke
+        run: npm run test:e2e -- fleet-console.spec.ts
+        working-directory: ui
+
+      - name: Upload browser diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: fleet-ui-smoke
+          path: |
+            ui/playwright-report
+            ui/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  fleet-scale:
+    name: Controlled fleet scale gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Run controlled linux amd64 scale gate
+        run: bash hack/test-fleet-scale.sh
+
+      - name: Upload fleet scale evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: fleet-scale
+          path: artifacts/fleet-scale
+          if-no-files-found: warn
+          retention-days: 30
+
+  cluster-integration:
+    name: Kind and Helm integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMG: controller:latest
+      KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build manager image
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: controller:latest
+          cache-from: type=gha,scope=paprika-cluster-integration
+          cache-to: type=gha,mode=max,scope=paprika-cluster-integration
+
+      - name: Install kind
+        run: |
+          kind_binary="kind-linux-amd64"
+          kind_url="https://kind.sigs.k8s.io/dl/v0.32.0/${kind_binary}"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --output "${kind_binary}" "${kind_url}"
+          printf '%s  %s\n' "${KIND_SHA256}" "${kind_binary}" | sha256sum --check -
+          sudo install -m 0755 "${kind_binary}" /usr/local/bin/kind
+
+      - name: Create kind cluster
+        run: kind create cluster --name paprika-ci-integration
+
+      - name: Load manager image
+        run: kind load docker-image "${IMG}" --name paprika-ci-integration
+
+      - name: Verify split-plane metrics wiring
+        run: bash hack/test-split-metrics.sh
+
+      - name: Deploy manager via Helm
+        run: make helm-deploy
+
+      - name: Check Helm release status
+        run: make helm-status
+
+      - name: Wait for controller-manager
+        run: kubectl wait --for=condition=available deployment/paprika-controller-manager -n paprika-system --timeout=120s
+
+      - name: Cleanup kind cluster
+        if: ${{ always() }}
+        run: kind delete cluster --name paprika-ci-integration
+
   publish:
     name: Publish image
     runs-on: ubuntu-latest
@@ -180,6 +325,9 @@ jobs:
       - ui
       - generated
       - chart
+      - fleet-ui-smoke
+      - fleet-scale
+      - cluster-integration
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read

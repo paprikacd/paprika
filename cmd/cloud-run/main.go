@@ -1,6 +1,6 @@
 // Cloud Run entrypoint for the Paprika stateless plane.
 // Serves: Connect RPC API (CRUD + source resolve + rendering),
-// webhook receiver, SSE events, and the Next.js UI.
+// webhook receiver and the Next.js UI.
 // Connects to K8s via kubeconfig (local dev, Kind) or in-cluster config (Cloud Run with Workload Identity).
 // Controllers stay in the K8s cluster; this binary never reconciles.
 package main
@@ -220,17 +220,16 @@ func run(setupLog logr.Logger) error {
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 
-	mux := http.NewServeMux()
-	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
-	mux.Handle("/events", apiserver.NewSSEHandler(paprikaServer.Broker()))
-	mux.Handle("/webhook", receiver.NewHandler(k8sClient, webhookSecret))
-	mux.HandleFunc("/healthz", healthzHandler(setupLog))
-	mux.HandleFunc("/readyz", healthzHandler(setupLog))
 	uiHandler, uiErr := apiserver.UIHandler()
 	if uiErr != nil {
 		return fmt.Errorf("build UI handler: %w", uiErr)
 	}
-	mux.Handle("/", uiHandler)
+	mux := buildCloudRunMux(
+		connectHandler,
+		receiver.NewHandler(k8sClient, webhookSecret),
+		uiHandler,
+		setupLog,
+	)
 
 	server := &http.Server{
 		Addr:              addr,
@@ -268,6 +267,24 @@ func run(setupLog logr.Logger) error {
 
 	setupLog.Info("Server exited")
 	return nil
+}
+
+func buildCloudRunMux(
+	connectHandler http.Handler,
+	webhookHandler http.Handler,
+	uiHandler http.Handler,
+	setupLog logr.Logger,
+) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/paprika.v1.PaprikaService/", connectHandler)
+	// Fail the legacy unauthenticated browser stream closed. The embedded UI is
+	// a catch-all, so omitting this exact route would incorrectly return 200.
+	mux.Handle("/events", http.NotFoundHandler())
+	mux.Handle("/webhook", webhookHandler)
+	mux.HandleFunc("/healthz", healthzHandler(setupLog))
+	mux.HandleFunc("/readyz", healthzHandler(setupLog))
+	mux.Handle("/", uiHandler)
+	return mux
 }
 
 // bridgeZapWithOTel tees raw's zap core with an otelzap core that forwards

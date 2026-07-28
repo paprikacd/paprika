@@ -12,6 +12,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/metrics"
 )
 
@@ -54,6 +55,9 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 			metrics.AuthAttempts.Add(ctx, 1, metric.WithAttributes(attribute.String("subject", principal.Subject)))
 
 			ctx = WithPrincipal(ctx, principal)
+			if defersProjectSetAuthorization(proc) {
+				return next(ctx, req)
+			}
 
 			action, resource := classify(proc)
 			namespace := namespaceFromRequest(req)
@@ -71,6 +75,17 @@ func Interceptor(ctx context.Context, cfg Config, reader client.Reader) (connect
 			return next(ctx, req)
 		}
 	}, nil
+}
+
+func defersProjectSetAuthorization(procedure string) bool {
+	switch procedure {
+	case v1connect.PaprikaServiceQueryApplicationsProcedure,
+		v1connect.PaprikaServiceQueryFleetMapProcedure,
+		v1connect.PaprikaServiceQueryFleetMatrixProcedure:
+		return true
+	default:
+		return false
+	}
 }
 
 func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Authenticator, Authorizer, error) {
@@ -138,6 +153,49 @@ func (m *multiAuthorizer) Authorize(ctx context.Context, p *Principal, action Ac
 		}
 	}
 	return nil
+}
+
+func (m *multiAuthorizer) AuthorizedProjects(
+	ctx context.Context,
+	p *Principal,
+	action Action,
+	resource Resource,
+	candidates []ProjectRef,
+) ([]ProjectRef, error) {
+	authorized := intersectProjectRefs(candidates, candidates)
+	for _, authorizer := range m.authorizers {
+		if len(authorized) == 0 {
+			return nil, nil
+		}
+		providerResult, err := authorizer.AuthorizedProjects(ctx, p, action, resource, authorized)
+		if err != nil {
+			return nil, fmt.Errorf("filter authorized projects: %w", err)
+		}
+		authorized = intersectProjectRefs(authorized, providerResult)
+	}
+	return authorized, nil
+}
+
+func intersectProjectRefs(input, allowed []ProjectRef) []ProjectRef {
+	if len(input) == 0 || len(allowed) == 0 {
+		return nil
+	}
+	allowedSet := make(map[ProjectRef]struct{}, len(allowed))
+	for _, project := range allowed {
+		allowedSet[project] = struct{}{}
+	}
+	seen := make(map[ProjectRef]struct{}, len(input))
+	intersection := make([]ProjectRef, 0, len(input))
+	for _, project := range input {
+		if _, duplicate := seen[project]; duplicate {
+			continue
+		}
+		seen[project] = struct{}{}
+		if _, accepted := allowedSet[project]; accepted {
+			intersection = append(intersection, project)
+		}
+	}
+	return intersection
 }
 
 func projectFromRequest(req connect.AnyRequest) string {

@@ -52,6 +52,8 @@ import { ResourceGraph, type ResourceGraphNode } from "@/components/dashboard/re
 import { InvestigationTriage } from "@/components/dashboard/investigation-triage";
 import { SyncDiffWorkbench } from "@/components/dashboard/sync-diff-workbench";
 import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history";
+import { useConnection } from "@/lib/connection-context";
+import { useFocusedRefresh } from "@/lib/fleet-refresh";
 
 import { PaprikaService } from "@/gen/paprika/v1/api_connect";
 import type { Application, InvestigateResponse, Release } from "@/gen/paprika/v1/api_pb";
@@ -134,6 +136,7 @@ function ApplicationDetail() {
   const [viewMode, setViewMode] = useState<"graph" | "list">("graph");
   const [treeNodes, setTreeNodes] = useState<ResourceGraphNode[]>([]);
   const [detailedTreeNodes, setDetailedTreeNodes] = useState<ResourceTableNode[]>([]);
+  const { reportRequestOutcome } = useConnection();
 
   const fetchData = useCallback(async () => {
     if (!namespace || !name) return;
@@ -149,29 +152,16 @@ function ApplicationDetail() {
     } catch (err) {
       setError("Failed to load application details");
       console.error(err);
+      throw err;
     } finally {
       setLoading(false);
     }
   }, [namespace, name]);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchData();
-  }, [fetchData]);
-
-  // SSE: live-refresh on application/release events (debounced)
-  useEffect(() => {
-    let debounce: ReturnType<typeof setTimeout> | null = null;
-    const es = new EventSource("/events?topic=dashboard");
-    es.onmessage = () => {
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(fetchData, 500);
-    };
-    return () => {
-      es.close();
-      if (debounce) clearTimeout(debounce);
-    };
-  }, [fetchData]);
+  useFocusedRefresh(fetchData, {
+    enabled: Boolean(namespace && name),
+    onRequestOutcome: reportRequestOutcome,
+  });
 
   // Fetch resource tree when application is loaded.
   useEffect(() => {
@@ -213,7 +203,7 @@ function ApplicationDetail() {
           namespace: release.namespace,
           name: release.name,
         });
-        setTimeout(fetchData, 1500);
+        setTimeout(() => void fetchData().catch(() => {}), 1500);
       } catch (err) {
         setError(`Rollback failed for ${release.name}`);
         console.error(err);
@@ -280,7 +270,11 @@ function ApplicationDetail() {
           <h1 className="text-3xl font-bold tracking-tight">{pageTitle}</h1>
           <p className="text-muted-foreground">{pageNamespace}</p>
         </div>
-        <Button variant="outline" onClick={fetchData} disabled={loading}>
+        <Button
+          variant="outline"
+          onClick={() => void fetchData().catch(() => {})}
+          disabled={loading}
+        >
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </Button>

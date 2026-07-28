@@ -1,22 +1,28 @@
 "use client"
 
-import { useState, useEffect, memo, Component, type ReactNode, useCallback, useRef } from "react"
+import { useSearchParams } from "next/navigation"
+import { useState, memo, Component, Suspense, type ReactNode, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
+import { Application } from "@/gen/paprika/v1/api_pb"
 import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 import type { Release } from "@/gen/paprika/v1/api_pb"
 import type { Rollout } from "@/gen/paprika/v1/api_pb"
-import type { Application } from "@/gen/paprika/v1/api_pb"
 import type { ApplicationSet } from "@/gen/paprika/v1/api_pb"
 import type { Policy } from "@/gen/paprika/v1/api_pb"
 import { PipelineCard } from "@/components/dashboard/pipeline-card"
-import { ApplicationCard } from "@/components/dashboard/application-card"
 import { DashboardCommandCenter } from "@/components/dashboard/dashboard-command-center"
+import { FleetOverview } from "@/components/fleet/fleet-overview"
+import { FleetStateNotice } from "@/components/fleet/fleet-states"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useConnection } from "@/lib/connection-context"
+import { useFleetRefresh, useSingleFlightRefresh } from "@/lib/fleet-refresh"
+import { mergeFleetQuery, parseFleetQuery, serializeFleetQuery } from "@/lib/fleet-query"
+import { useFleetData } from "@/lib/use-fleet-data"
+import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { ToastStack } from "@/components/notifications/toast-stack"
 import {
   GitBranch,
@@ -93,7 +99,7 @@ function SkeletonCard() {
 
 const SectionError = memo(function SectionError({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
+    <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
       <AlertTriangle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
       <p className="flex-1 text-xs text-destructive">{message}</p>
       {onRetry && (
@@ -132,193 +138,141 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 }
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div role="status" className="px-6 py-8 text-sm text-muted-foreground">Loading operations overview…</div>}>
+      <DashboardContent />
+    </Suspense>
+  )
+}
+
+function DashboardContent() {
+  const searchParams = useSearchParams()
+  const rawQuery = searchParams.toString()
+  const sharedFleetState = useMemo(() => parseFleetQuery(rawQuery).state, [rawQuery])
+  const overviewFleetState = useMemo(
+    () => mergeFleetQuery(sharedFleetState, { view: "queue", sort: "impact", direction: "desc" }),
+    [sharedFleetState],
+  )
+  const fleet = useFleetData(overviewFleetState)
+  const refreshFleet = fleet.refresh
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [releases, setReleases] = useState<Release[]>([])
-  const [applications, setApplications] = useState<Application[]>([])
   const [applicationSets, setApplicationSets] = useState<ApplicationSet[]>([])
   const [policies, setPolicies] = useState<Policy[]>([])
   const [rollouts, setRollouts] = useState<Rollout[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const { setConnected } = useConnection()
+  const { reportRequestOutcome } = useConnection()
 
-  const fetchPipelines = useCallback(() =>
-    client.listPipelines({}).then(r => setPipelines(r.pipelines)), [])
-
-  const fetchReleases = useCallback(() =>
-    client.listReleases({ pageSize: DASHBOARD_RELEASE_SEARCH_LIMIT }).then(r => setReleases(r.releases)), [])
-
-  const fetchApplications = useCallback(() =>
-    client.listApplications({}).then(r => setApplications(r.applications)), [])
-
-  const fetchRollouts = useCallback(() =>
-    client.listRollouts({}).then(r => setRollouts(r.rollouts)), [])
-
-  const fetchApplicationSets = useCallback(() =>
-    client.listApplicationSets({}).then(r => setApplicationSets(r.applicationsets)), [])
-
-  const fetchData = useCallback(() => {
+  const fetchData = useCallback(async () => {
     setErrors({})
-    Promise.allSettled([
+    const [pr, rr, asr, por, ror] = await Promise.allSettled([
       client.listPipelines({}),
       client.listReleases({ pageSize: DASHBOARD_RELEASE_SEARCH_LIMIT }),
-      client.listApplications({}),
       client.listApplicationSets({}),
       client.listPolicies({}),
       client.listRollouts({}),
     ])
-      .then(([pr, rr, ar, asr, por, ror]) => {
-        let anySuccess = false
-        const next: Record<string, string> = {}
+    let anySuccess = false
+    const next: Record<string, string> = {}
 
-        if (pr.status === "fulfilled") {
-          setPipelines(pr.value.pipelines)
-          anySuccess = true
-        } else {
-          next.pipelines = pr.reason?.message ?? "Failed to load pipelines"
-        }
-
-        if (rr.status === "fulfilled") {
-          setReleases(rr.value.releases)
-          anySuccess = true
-        } else {
-          next.releases = rr.reason?.message ?? "Failed to load releases"
-        }
-
-        if (ar.status === "fulfilled") {
-          setApplications(ar.value.applications)
-          anySuccess = true
-        } else {
-          next.applications = ar.reason?.message ?? "Failed to load applications"
-        }
-
-        if (asr.status === "fulfilled") {
-          setApplicationSets(asr.value.applicationsets)
-          anySuccess = true
-        } else {
-          next.applicationSets = asr.reason?.message ?? "Failed to load application sets"
-        }
-
-        if (por.status === "fulfilled") {
-          setPolicies(por.value.policies)
-          anySuccess = true
-        } else {
-          next.policies = por.reason?.message ?? "Failed to load policies"
-        }
-
-        if (ror.status === "fulfilled") {
-          setRollouts(ror.value.rollouts)
-          anySuccess = true
-        } else {
-          next.rollouts = ror.reason?.message ?? "Failed to load rollouts"
-        }
-
-        setErrors(next)
-        setConnected(anySuccess)
-      })
-      .catch(() => setConnected(false))
-      .finally(() => setLoading(false))
-  }, [setConnected])
-
-  const refetchByEvent = useCallback((eventType: string) => {
-    switch (eventType) {
-      case "pipeline":
-        fetchPipelines()
-        break
-      case "application":
-        fetchApplications()
-        fetchApplicationSets()
-        break
-      case "release":
-        fetchReleases()
-        fetchApplications()
-        fetchRollouts()
-        break
-      case "rollout":
-        fetchRollouts()
-        break
-      default:
-        fetchData()
-    }
-  }, [fetchApplications, fetchApplicationSets, fetchPipelines, fetchReleases, fetchRollouts, fetchData])
-
-  const debounceRef = useRef<number | null>(null)
-  const sseConnectedRef = useRef(true)
-  const lastFetchRef = useRef(0)
-  const MIN_FETCH_INTERVAL = 5000
-
-  useEffect(() => {
-    const timeout = setTimeout(() => fetchData(), 0)
-    let fallback: ReturnType<typeof setInterval> | null = null
-
-    const startFallback = () => {
-      if (fallback != null) return
-      fallback = setInterval(() => {
-        if (!sseConnectedRef.current) {
-          fetchData()
-        }
-      }, 60000)
-    }
-    const stopFallback = () => {
-      if (fallback != null) {
-        clearInterval(fallback)
-        fallback = null
-      }
+    if (pr.status === "fulfilled") {
+      setPipelines(pr.value.pipelines)
+      anySuccess = true
+    } else {
+      next.pipelines = pr.reason?.message ?? "Failed to load pipelines"
     }
 
-    const eventSource = new EventSource("/events?topic=dashboard")
-    eventSource.onopen = () => {
-      sseConnectedRef.current = true
-      stopFallback()
-    }
-    eventSource.onmessage = (e) => {
-      sseConnectedRef.current = true
-      const now = Date.now()
-      if (now - lastFetchRef.current < MIN_FETCH_INTERVAL) return
-      if (debounceRef.current) {
-        window.clearTimeout(debounceRef.current)
-      }
-      debounceRef.current = window.setTimeout(() => {
-        lastFetchRef.current = Date.now()
-        let eventType = "audit"
-        try { const parsed = JSON.parse(e.data); if (typeof parsed.type === "string") eventType = parsed.type } catch {}
-        refetchByEvent(eventType)
-      }, 300)
-    }
-    eventSource.onerror = () => {
-      sseConnectedRef.current = false
-      startFallback()
+    if (rr.status === "fulfilled") {
+      setReleases(rr.value.releases)
+      anySuccess = true
+    } else {
+      next.releases = rr.reason?.message ?? "Failed to load releases"
     }
 
-    return () => {
-      clearTimeout(timeout)
-      stopFallback()
-      eventSource.close()
-      if (debounceRef.current) {
-        window.clearTimeout(debounceRef.current)
-      }
+    if (asr.status === "fulfilled") {
+      setApplicationSets(asr.value.applicationsets)
+      anySuccess = true
+    } else {
+      next.applicationSets = asr.reason?.message ?? "Failed to load application sets"
     }
-  }, [fetchData, refetchByEvent])
+
+    if (por.status === "fulfilled") {
+      setPolicies(por.value.policies)
+      anySuccess = true
+    } else {
+      next.policies = por.reason?.message ?? "Failed to load policies"
+    }
+
+    if (ror.status === "fulfilled") {
+      setRollouts(ror.value.rollouts)
+      anySuccess = true
+    } else {
+      next.rollouts = ror.reason?.message ?? "Failed to load rollouts"
+    }
+
+    setErrors(next)
+    setLoading(false)
+    if (!anySuccess) throw new Error("dashboard refresh failed")
+  }, [])
+
+  const performDashboardRefresh = useCallback(async () => {
+    await Promise.all([fetchData(), refreshFleet()])
+  }, [fetchData, refreshFleet])
+  const refreshDashboard = useSingleFlightRefresh(performDashboardRefresh)
+
+  useFleetRefresh(refreshDashboard, { onRequestOutcome: reportRequestOutcome })
+
+  const manualRefresh = useCallback(() => {
+    void refreshDashboard().then(
+      () => reportRequestOutcome(true),
+      () => reportRequestOutcome(false),
+    )
+  }, [refreshDashboard, reportRequestOutcome])
 
   const runningCount = pipelines.filter((p) => p.phase === "Running").length
   const succeededCount = pipelines.filter((p) => p.phase === "Succeeded").length
   const failedCount = pipelines.filter((p) => p.phase === "Failed").length
-  const appCount = applications.length
+  const fleetApplications =
+    fleet.displayData?.kind === "applications" ? fleet.displayData : undefined
+  const commandApplications = useMemo(
+    () => toDashboardApplications(fleetApplications?.applications ?? []),
+    [fleetApplications?.applications],
+  )
+  const appCount = fleetApplications?.total.toString() ?? "—"
   const activeRolloutCount = rollouts.filter((r) => r.phase === "Progressing" || r.phase === "Paused").length
-  const releaseByName = new Map(releases.map((r) => [r.name, r]))
+  const inventoryHref = fleetInventoryHref(sharedFleetState)
+  const queueHref = fleetInventoryHref(overviewFleetState)
 
   return (
     <ErrorBoundary>
       <div className="mx-auto max-w-7xl space-y-10 px-6 py-8">
         <h1 className="sr-only">Dashboard</h1>
 
+        <FleetStateNotice status={fleet.status} />
+        {fleetApplications ? (
+          <FleetOverview
+            applications={fleetApplications.applications}
+            facets={fleetApplications.facets}
+            total={fleetApplications.total}
+            inventoryHref={inventoryHref}
+            queueHref={queueHref}
+            selectedHealth={overviewFleetState.health}
+            selectedRelease={overviewFleetState.release}
+            selectedRollout={overviewFleetState.rollout}
+          />
+        ) : null}
+
         <motion.div
+          id="releases"
+          className="scroll-mt-28 lg:scroll-mt-16"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.04, ease: [0.22, 1, 0.36, 1] }}
         >
           <DashboardCommandCenter
-            applications={applications}
+            applications={commandApplications}
+            applicationTotal={fleetApplications?.total}
             pipelines={pipelines}
             releases={releases}
             rollouts={rollouts}
@@ -344,6 +298,7 @@ export default function DashboardPage() {
 
         <motion.section
           id="pipelines"
+          className="scroll-mt-28 lg:scroll-mt-16"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
@@ -356,11 +311,13 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          {errors.pipelines && <SectionError message={errors.pipelines} onRetry={fetchData} />}
+          {errors.pipelines && <SectionError message={errors.pipelines} onRetry={manualRefresh} />}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {loading
               ? [1, 2, 3].map((i) => <SkeletonCard key={i} />)
-              : pipelines.map((p) => <PipelineCard key={p.name} pipeline={p} />)}
+              : pipelines.map((p) => (
+                  <PipelineCard key={`${p.namespace}/${p.name}`} pipeline={p} />
+                ))}
             {!loading && pipelines.length === 0 && !errors.pipelines && (
               <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
                 <div className="flex size-10 items-center justify-center rounded-full bg-muted">
@@ -370,42 +327,6 @@ export default function DashboardPage() {
                   <p className="text-sm font-medium">No pipelines yet</p>
                   <p className="mt-1 text-xs text-muted-foreground max-w-sm">
                     Create a Pipeline resource in any namespace to get started
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </motion.section>
-
-        <motion.section
-          id="applications"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <div className="mb-4 flex items-baseline gap-2">
-            <h2 className="text-sm font-semibold">Applications</h2>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {applications.length} total
-              </span>
-          </div>
-          {errors.applications && <SectionError message={errors.applications} onRetry={fetchData} />}
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {loading
-              ? [1, 2].map((i) => <SkeletonCard key={i} />)
-              : applications.map((a) => {
-                  const release = a.releaseRef ? releaseByName.get(a.releaseRef) : undefined
-                  return <ApplicationCard key={a.name} application={a} release={release} onSynced={fetchData} />
-                })}
-            {!loading && applications.length === 0 && !errors.applications && (
-              <div className="col-span-full flex flex-col items-center gap-3 py-16 text-center">
-                <div className="flex size-10 items-center justify-center rounded-full bg-muted">
-                  <Rocket className="size-4 text-muted-foreground" aria-hidden="true" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium">No applications yet</p>
-                  <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-                    Create an Application resource to deploy workloads across stages
                   </p>
                 </div>
               </div>
@@ -434,7 +355,7 @@ export default function DashboardPage() {
               </Link>
             )}
           </div>
-          {errors.applicationSets && <SectionError message={errors.applicationSets} onRetry={fetchData} />}
+          {errors.applicationSets && <SectionError message={errors.applicationSets} onRetry={manualRefresh} />}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {loading
               ? [1, 2].map((i) => <SkeletonCard key={i} />)
@@ -485,7 +406,7 @@ export default function DashboardPage() {
                 {policies.length} total
               </span>
           </div>
-          {errors.policies && <SectionError message={errors.policies} onRetry={fetchData} />}
+          {errors.policies && <SectionError message={errors.policies} onRetry={manualRefresh} />}
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {loading
               ? [1, 2].map((i) => <SkeletonCard key={i} />)
@@ -521,4 +442,37 @@ export default function DashboardPage() {
       <ToastStack />
     </ErrorBoundary>
   )
+}
+
+function fleetInventoryHref(state: ReturnType<typeof parseFleetQuery>["state"]): string {
+  const query = serializeFleetQuery(state).toString()
+  return query ? `/dashboard/applications?${query}` : "/dashboard/applications"
+}
+
+function toDashboardApplications(
+  applications: readonly FleetApplicationSummary[],
+): Application[] {
+  return applications.flatMap((summary) => {
+    const identity = summary.identity
+    if (!identity) return []
+    return [
+      new Application({
+        name: identity.name,
+        namespace: identity.namespace,
+        phase: summary.releaseState,
+        currentStage: summary.currentStage,
+        revision: summary.sourceRevision,
+        sourceRevision: summary.sourceRevision,
+        synced: summary.sync === "synced",
+        health: summary.health,
+        outOfSync:
+          summary.sync === "out_of_sync"
+            ? Math.max(1, summary.driftCount)
+            : summary.driftCount,
+        project: summary.project
+          ? `${summary.project.namespace}/${summary.project.name}`
+          : "",
+      }),
+    ]
+  })
 }

@@ -172,6 +172,16 @@ spec:
                   intervalSeconds:
                     description: Seconds to wait between canary weight steps
                     type: integer
+                  progressDeadlineSeconds:
+                    description: |-
+                      ProgressDeadlineSeconds is the maximum number of seconds a canary step
+                      may remain not-ready (rendered Deployments not converged on the target
+                      cluster) before the release is failed with reason
+                      ProgressDeadlineExceeded. Measured from CanaryStepStartedAt — the moment
+                      the step's manifests were applied — independently of the step-interval
+                      throttle. Defaults to 600 when unset.
+                    minimum: 1
+                    type: integer
                   steps:
                     description: Traffic weight percentages at each canary step, e.g.
                       [10, 30, 60, 100]

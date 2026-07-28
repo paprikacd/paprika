@@ -6,16 +6,16 @@ import { ChevronLeft, Loader2 } from "lucide-react"
 
 import { createPromiseClient } from "@connectrpc/connect"
 import { createTransport } from "@/lib/transport"
-import { toPlainMessage } from "@bufbuild/protobuf"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
-import { Pipeline } from "@/gen/paprika/v1/api_pb"
+import type { Pipeline } from "@/gen/paprika/v1/api_pb"
 
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { ArtifactCard } from "@/components/dashboard/artifact-card"
 import { PipelineDAG } from "@/components/dashboard/pipeline-dag"
 import { StepDetailPanel } from "@/components/dashboard/step-detail-panel"
-import { usePipelineSSE, type PipelineSSEEvent } from "@/lib/pipeline-sse"
+import { useConnection } from "@/lib/connection-context"
+import { usePipelineRefresh } from "@/lib/pipeline-refresh"
 import { useStepArtifacts } from "@/lib/use-step-artifacts"
 
 const transport = createTransport()
@@ -41,54 +41,25 @@ function PipelineDetail() {
   const [logsLoading, setLogsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const { reportRequestOutcome } = useConnection()
 
   const pipelineArtifacts = useStepArtifacts(pipeline?.artifacts ?? [], "")
 
-  const fetchPipeline = useCallback(() => {
+  const fetchPipeline = useCallback(async () => {
     if (!namespace || !name) return
-    client
-      .getPipeline({ namespace, name })
-      .then((res) => setPipeline(res.pipeline ?? null))
-      .catch((err) => setError(err.message ?? "Failed to load pipeline"))
+    setError(null)
+    try {
+      const response = await client.getPipeline({ namespace, name })
+      setPipeline(response.pipeline ?? null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load pipeline")
+      throw err
+    }
   }, [namespace, name])
 
-  const onPipelineEvent = useCallback(
-    (event: PipelineSSEEvent) => {
-      if (event.type === "pipeline-artifact") {
-        // Artifact phase change — refetch so the artifact list updates.
-        fetchPipeline()
-        return
-      }
-      setPipeline((prev) => {
-        if (!prev) return prev
-        const plain = toPlainMessage(prev)
-        plain.stepStatuses = (plain.stepStatuses ?? []).map((st) =>
-          st.name === event.name
-            ? {
-                ...st,
-                phase: event.phase,
-                startedAt: event.startedAt !== undefined ? BigInt(event.startedAt) : st.startedAt,
-                completedAt: event.completedAt !== undefined ? BigInt(event.completedAt) : st.completedAt,
-              }
-            : st
-        )
-        if (event.name === "" && event.phase) {
-          plain.phase = event.phase
-        }
-        return new Pipeline(plain)
-      })
-    },
-    [fetchPipeline]
-  )
-
-  usePipelineSSE(namespace, name, onPipelineEvent)
-
-  useEffect(() => {
-    if (!namespace || !name) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setError(null)
-    fetchPipeline()
-  }, [namespace, name, fetchPipeline])
+  usePipelineRefresh(namespace, name, fetchPipeline, {
+    onRequestOutcome: reportRequestOutcome,
+  })
 
   useEffect(() => {
     if (!selectedStep || !namespace || !name) return
@@ -115,10 +86,11 @@ function PipelineDetail() {
         pipelineNamespace: namespace,
         stepName: selectedStep,
       })
+      await fetchPipeline()
     } catch {
-      // SSE will push the update
+      // The next bounded refresh will reconcile a transient failure.
     }
-  }, [selectedStep, name, namespace])
+  }, [selectedStep, name, namespace, fetchPipeline])
 
   const handleSkip = useCallback(async () => {
     if (!selectedStep || !name || !namespace) return
@@ -128,21 +100,24 @@ function PipelineDetail() {
         pipelineNamespace: namespace,
         stepName: selectedStep,
       })
+      await fetchPipeline()
     } catch {
-      // SSE will push the update
+      // The next bounded refresh will reconcile a transient failure.
     }
-  }, [selectedStep, name, namespace])
+  }, [selectedStep, name, namespace, fetchPipeline])
 
   const handleCancel = useCallback(async () => {
     if (!name || !namespace) return
     setCancelling(true)
     try {
       await client.cancelPipeline({ name, namespace })
-      // Stay on page — SSE will update the DAG
+      await fetchPipeline()
     } catch {
+      // The next bounded refresh will reconcile a transient failure.
+    } finally {
       setCancelling(false)
     }
-  }, [name, namespace])
+  }, [name, namespace, fetchPipeline])
 
   if (!namespace || !name) {
     return (
@@ -155,7 +130,7 @@ function PipelineDetail() {
     )
   }
 
-  if (error) {
+  if (error && !pipeline) {
     return (
       <div className="mx-auto max-w-4xl py-8">
         <div className="rounded-md border border-destructive/20 bg-destructive/5 p-4 text-destructive">
@@ -204,6 +179,16 @@ function PipelineDetail() {
           )}
         </div>
       </div>
+
+      {error ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning"
+        >
+          Showing the last loaded pipeline state. Refresh failed: {error}
+        </div>
+      ) : null}
 
       <div className="flex gap-6">
         <div className="flex-1">

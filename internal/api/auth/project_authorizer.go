@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -45,6 +46,33 @@ func (a *ProjectAuthorizer) Authorize(ctx context.Context, p *Principal, action 
 		}
 	}
 	return fmt.Errorf("principal %q cannot %s %s in project %q: %w", p.Subject, action, resource, project, ErrUnauthorized)
+}
+
+// AuthorizedProjects filters only the supplied candidates, preserving their
+// order and full namespaced identity.
+func (a *ProjectAuthorizer) AuthorizedProjects(
+	ctx context.Context,
+	p *Principal,
+	action Action,
+	resource Resource,
+	candidates []ProjectRef,
+) ([]ProjectRef, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	authorized := make([]ProjectRef, 0, len(candidates))
+	for _, candidate := range candidates {
+		err := a.Authorize(ctx, p, action, resource, candidate.Namespace, candidate.Name)
+		switch {
+		case err == nil:
+			authorized = append(authorized, candidate)
+		case errors.Is(err, ErrUnauthorized), apierrors.IsNotFound(err):
+			continue
+		default:
+			return nil, fmt.Errorf("authorize project %s/%s: %w", candidate.Namespace, candidate.Name, err)
+		}
+	}
+	return authorized, nil
 }
 
 // actionAllowed reports whether the supplied role actions permit action.

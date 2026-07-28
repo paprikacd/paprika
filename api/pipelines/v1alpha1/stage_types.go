@@ -77,6 +77,15 @@ type CanaryConfig struct {
 	Steps []int `json:"steps"`
 	// Seconds to wait between canary weight steps
 	IntervalSeconds int `json:"intervalSeconds,omitempty"`
+	// ProgressDeadlineSeconds is the maximum number of seconds a canary step
+	// may remain not-ready (rendered Deployments not converged on the target
+	// cluster) before the release is failed with reason
+	// ProgressDeadlineExceeded. Measured from CanaryStepStartedAt — the moment
+	// the step's manifests were applied — independently of the step-interval
+	// throttle. Defaults to 600 when unset.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ProgressDeadlineSeconds int `json:"progressDeadlineSeconds,omitempty"`
 	// PDV analysis configuration
 	Analysis *AnalysisConfig `json:"analysis,omitempty"`
 }

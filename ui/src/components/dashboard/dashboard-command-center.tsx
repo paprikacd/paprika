@@ -36,6 +36,7 @@ type HealthFilter = "All" | "Healthy" | "Degraded" | "Progressing" | "OutOfSync"
 
 interface DashboardCommandCenterProps {
   applications: Application[]
+  applicationTotal?: bigint
   pipelines: Pipeline[]
   releases: Release[]
   rollouts: Rollout[]
@@ -406,6 +407,7 @@ function HeatmapTile({ application }: { application: Application }) {
 
 export function DashboardCommandCenter({
   applications,
+  applicationTotal,
   pipelines,
   releases,
   rollouts,
@@ -599,7 +601,9 @@ export function DashboardCommandCenter({
             </div>
             <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground tabular-nums">
               <Clock3 className="size-3.5" aria-hidden="true" />
-              {applications.length} apps
+              {applicationTotal === undefined
+                ? `${applications.length} apps`
+                : `${applications.length}/${applicationTotal.toString()} apps loaded`}
             </span>
           </div>
 

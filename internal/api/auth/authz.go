@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -28,9 +29,17 @@ const (
 	ResourceRollouts     Resource = "rollouts"
 )
 
+// ProjectRef is the full identity of an AppProject. Project names are only
+// unique within their Kubernetes namespace.
+type ProjectRef struct {
+	Namespace string
+	Name      string
+}
+
 // Authorizer decides if a principal can perform an action on a resource.
 type Authorizer interface {
 	Authorize(ctx context.Context, p *Principal, action Action, resource Resource, namespace, project string) error
+	AuthorizedProjects(ctx context.Context, p *Principal, action Action, resource Resource, candidates []ProjectRef) ([]ProjectRef, error)
 }
 
 // RBACRule defines a single RBAC permission.
@@ -68,6 +77,17 @@ func (a *AllowAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action
 	return nil
 }
 
+// AuthorizedProjects returns a defensive copy of every supplied candidate.
+func (a *AllowAllAuthorizer) AuthorizedProjects(
+	_ context.Context,
+	_ *Principal,
+	_ Action,
+	_ Resource,
+	candidates []ProjectRef,
+) ([]ProjectRef, error) {
+	return append([]ProjectRef(nil), candidates...), nil
+}
+
 // DenyAllAuthorizer denies all requests. Used as a safe default fallback when
 // no authorizer is configured, so that silence does not mean "allow".
 type DenyAllAuthorizer struct{}
@@ -75,6 +95,17 @@ type DenyAllAuthorizer struct{}
 // Authorize always returns ErrUnauthorized.
 func (a *DenyAllAuthorizer) Authorize(_ context.Context, _ *Principal, _ Action, _ Resource, _, _ string) error {
 	return ErrUnauthorized
+}
+
+// AuthorizedProjects returns an empty authorized set.
+func (a *DenyAllAuthorizer) AuthorizedProjects(
+	context.Context,
+	*Principal,
+	Action,
+	Resource,
+	[]ProjectRef,
+) ([]ProjectRef, error) {
+	return nil, nil
 }
 
 // Authorize checks if the principal can perform the action.
@@ -99,6 +130,46 @@ func (r *RBACAuthorizer) Authorize(_ context.Context, p *Principal, action Actio
 		return nil
 	}
 	return fmt.Errorf("%s cannot %s %s/%s (project=%s): %w", p.Subject, action, resource, namespace, project, ErrUnauthorized)
+}
+
+// AuthorizedProjects filters only the supplied candidates through the same
+// RBAC rules used by Authorize.
+func (r *RBACAuthorizer) AuthorizedProjects(
+	ctx context.Context,
+	p *Principal,
+	action Action,
+	resource Resource,
+	candidates []ProjectRef,
+) ([]ProjectRef, error) {
+	return filterAuthorizedProjects(ctx, r, p, action, resource, candidates)
+}
+
+func filterAuthorizedProjects(
+	ctx context.Context,
+	authorizer interface {
+		Authorize(context.Context, *Principal, Action, Resource, string, string) error
+	},
+	p *Principal,
+	action Action,
+	resource Resource,
+	candidates []ProjectRef,
+) ([]ProjectRef, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	authorized := make([]ProjectRef, 0, len(candidates))
+	for _, candidate := range candidates {
+		err := authorizer.Authorize(ctx, p, action, resource, candidate.Namespace, candidate.Name)
+		switch {
+		case err == nil:
+			authorized = append(authorized, candidate)
+		case errors.Is(err, ErrUnauthorized):
+			continue
+		default:
+			return nil, fmt.Errorf("authorize project %s/%s: %w", candidate.Namespace, candidate.Name, err)
+		}
+	}
+	return authorized, nil
 }
 
 func (r *RBACAuthorizer) matchesSubjects(rule *RBACRule, p *Principal) bool {

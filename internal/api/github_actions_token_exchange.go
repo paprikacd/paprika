@@ -35,6 +35,8 @@ type GitHubActionsTokenExchangeConfig struct {
 }
 
 // GitHubActionsClaims are the claims this exchange authorizes against.
+//
+//nolint:tagliatelle // GitHub Actions OIDC claim names are externally defined snake_case fields.
 type GitHubActionsClaims struct {
 	Subject        string
 	Repository     string `json:"repository"`
@@ -146,53 +148,67 @@ func authorizeGitHubActionsClaims(cfg *GitHubActionsTokenExchangeConfig, claims 
 	if claims == nil {
 		return errors.New("missing claims")
 	}
-	if cfg.Repository == "" {
-		return errors.New("repository is required")
+	if err := authorizeGitHubIdentityClaims(cfg, claims); err != nil {
+		return err
 	}
-	if claims.Repository != cfg.Repository {
-		return fmt.Errorf("repository %q is not allowed", claims.Repository)
+	return authorizeGitHubWorkflowClaims(cfg, claims)
+}
+
+func authorizeGitHubIdentityClaims(cfg *GitHubActionsTokenExchangeConfig, claims *GitHubActionsClaims) error {
+	if err := authorizeRequiredExactClaim("repository", cfg.Repository, claims.Repository); err != nil {
+		return err
 	}
-	if cfg.Environment != "" && claims.Environment != cfg.Environment {
-		return fmt.Errorf("environment %q is not allowed", claims.Environment)
+	if err := authorizeOptionalExactClaim("environment", cfg.Environment, claims.Environment); err != nil {
+		return err
 	}
-	if cfg.Subject != "" && claims.Subject != cfg.Subject {
-		return fmt.Errorf("subject %q is not allowed", claims.Subject)
+	return authorizeOptionalExactClaim("subject", cfg.Subject, claims.Subject)
+}
+
+func authorizeGitHubWorkflowClaims(cfg *GitHubActionsTokenExchangeConfig, claims *GitHubActionsClaims) error {
+	if err := authorizeAllowedClaim("event name", "allowed event names", cfg.AllowedEventNames, claims.EventName); err != nil {
+		return err
 	}
-	if len(cfg.AllowedEventNames) == 0 {
-		return errors.New("allowed event names are required")
+	if err := authorizeRequiredExactClaim("ref", cfg.Ref, claims.Ref); err != nil {
+		return err
 	}
-	if claims.EventName == "" {
-		return errors.New("event name claim is required")
+	if err := authorizeAllowedClaim("workflow ref", "allowed workflow refs", cfg.AllowedWorkflowRefs, claims.WorkflowRef); err != nil {
+		return err
 	}
-	if !slices.Contains(cfg.AllowedEventNames, claims.EventName) {
-		return fmt.Errorf("event name %q is not allowed", claims.EventName)
+	return authorizeRequiredExactClaim("job workflow ref", cfg.JobWorkflowRef, claims.JobWorkflowRef)
+}
+
+func authorizeRequiredExactClaim(name, expected, actual string) error {
+	if expected == "" {
+		return fmt.Errorf("%s is required", name)
 	}
-	if cfg.Ref == "" {
-		return errors.New("ref is required")
+	if actual == "" {
+		return fmt.Errorf("%s claim is required", name)
 	}
-	if claims.Ref == "" {
-		return errors.New("ref claim is required")
+	if actual != expected {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
 	}
-	if claims.Ref != cfg.Ref {
-		return fmt.Errorf("ref %q is not allowed", claims.Ref)
+	return nil
+}
+
+func authorizeOptionalExactClaim(name, expected, actual string) error {
+	if expected == "" {
+		return nil
 	}
-	if len(cfg.AllowedWorkflowRefs) == 0 {
-		return errors.New("allowed workflow refs are required")
+	if actual != expected {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
 	}
-	if claims.WorkflowRef == "" {
-		return errors.New("workflow ref claim is required")
+	return nil
+}
+
+func authorizeAllowedClaim(name, configName string, allowed []string, actual string) error {
+	if len(allowed) == 0 {
+		return fmt.Errorf("%s are required", configName)
 	}
-	if !slices.Contains(cfg.AllowedWorkflowRefs, claims.WorkflowRef) {
-		return fmt.Errorf("workflow ref %q is not allowed", claims.WorkflowRef)
+	if actual == "" {
+		return fmt.Errorf("%s claim is required", name)
 	}
-	if cfg.JobWorkflowRef == "" {
-		return errors.New("job workflow ref is required")
-	}
-	if claims.JobWorkflowRef == "" {
-		return errors.New("job workflow ref claim is required")
-	}
-	if claims.JobWorkflowRef != cfg.JobWorkflowRef {
-		return fmt.Errorf("job workflow ref %q is not allowed", claims.JobWorkflowRef)
+	if !slices.Contains(allowed, actual) {
+		return fmt.Errorf("%s %q is not allowed", name, actual)
 	}
 	return nil
 }

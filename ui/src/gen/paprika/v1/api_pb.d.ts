@@ -32,6 +32,491 @@ export declare enum Severity {
 }
 
 /**
+ * @generated from enum paprika.v1.FleetHealth
+ */
+export declare enum FleetHealth {
+  /**
+   * @generated from enum value: FLEET_HEALTH_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_HEALTHY = 1;
+   */
+  HEALTHY = 1,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_PROGRESSING = 2;
+   */
+  PROGRESSING = 2,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_DEGRADED = 3;
+   */
+  DEGRADED = 3,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_FAILED = 4;
+   */
+  FAILED = 4,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_UNKNOWN = 5;
+   */
+  UNKNOWN = 5,
+
+  /**
+   * @generated from enum value: FLEET_HEALTH_MISSING = 6;
+   */
+  MISSING = 6,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetSyncState
+ */
+export declare enum FleetSyncState {
+  /**
+   * @generated from enum value: FLEET_SYNC_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_SYNC_STATE_SYNCED = 1;
+   */
+  SYNCED = 1,
+
+  /**
+   * @generated from enum value: FLEET_SYNC_STATE_OUT_OF_SYNC = 2;
+   */
+  OUT_OF_SYNC = 2,
+
+  /**
+   * @generated from enum value: FLEET_SYNC_STATE_UNKNOWN = 3;
+   */
+  UNKNOWN = 3,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetSourceType
+ */
+export declare enum FleetSourceType {
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_GIT = 1;
+   */
+  GIT = 1,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_HELM = 2;
+   */
+  HELM = 2,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_KUSTOMIZE = 3;
+   */
+  KUSTOMIZE = 3,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_S3 = 4;
+   */
+  S3 = 4,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_OCI = 5;
+   */
+  OCI = 5,
+
+  /**
+   * @generated from enum value: FLEET_SOURCE_TYPE_INLINE = 6;
+   */
+  INLINE = 6,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetReleaseState
+ */
+export declare enum FleetReleaseState {
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_PROMOTING = 2;
+   */
+  PROMOTING = 2,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_CANARYING = 3;
+   */
+  CANARYING = 3,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_VERIFYING = 4;
+   */
+  VERIFYING = 4,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_COMPLETE = 5;
+   */
+  COMPLETE = 5,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_FAILED = 6;
+   */
+  FAILED = 6,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_ROLLED_BACK = 7;
+   */
+  ROLLED_BACK = 7,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_SUPERSEDED = 8;
+   */
+  SUPERSEDED = 8,
+
+  /**
+   * @generated from enum value: FLEET_RELEASE_STATE_AWAITING_APPROVAL = 9;
+   */
+  AWAITING_APPROVAL = 9,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetRolloutState
+ */
+export declare enum FleetRolloutState {
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_PROGRESSING = 2;
+   */
+  PROGRESSING = 2,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_PAUSED = 3;
+   */
+  PAUSED = 3,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_HEALTHY = 4;
+   */
+  HEALTHY = 4,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_DEGRADED = 5;
+   */
+  DEGRADED = 5,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_FAILED = 6;
+   */
+  FAILED = 6,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_ROLLED_BACK = 7;
+   */
+  ROLLED_BACK = 7,
+
+  /**
+   * @generated from enum value: FLEET_ROLLOUT_STATE_ABORTED = 8;
+   */
+  ABORTED = 8,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetSortField
+ */
+export declare enum FleetSortField {
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_NAME = 1;
+   */
+  NAME = 1,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_PROJECT = 2;
+   */
+  PROJECT = 2,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_CLUSTER = 3;
+   */
+  CLUSTER = 3,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_STAGE = 4;
+   */
+  STAGE = 4,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_HEALTH = 5;
+   */
+  HEALTH = 5,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_SYNC = 6;
+   */
+  SYNC = 6,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_RELEASE = 7;
+   */
+  RELEASE = 7,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_ROLLOUT = 8;
+   */
+  ROLLOUT = 8,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_RESOURCE_COUNT = 9;
+   */
+  RESOURCE_COUNT = 9,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_LAST_TRANSITION = 10;
+   */
+  LAST_TRANSITION = 10,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_IMPACT = 11;
+   */
+  IMPACT = 11,
+
+  /**
+   * @generated from enum value: FLEET_SORT_FIELD_RELEVANCE = 12;
+   */
+  RELEVANCE = 12,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetSortDirection
+ */
+export declare enum FleetSortDirection {
+  /**
+   * @generated from enum value: FLEET_SORT_DIRECTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_SORT_DIRECTION_ASC = 1;
+   */
+  ASC = 1,
+
+  /**
+   * @generated from enum value: FLEET_SORT_DIRECTION_DESC = 2;
+   */
+  DESC = 2,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetGroupDimension
+ */
+export declare enum FleetGroupDimension {
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_PROJECT = 1;
+   */
+  PROJECT = 1,
+
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_CLUSTER = 2;
+   */
+  CLUSTER = 2,
+
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_STAGE = 3;
+   */
+  STAGE = 3,
+
+  /**
+   * @generated from enum value: FLEET_GROUP_DIMENSION_HEALTH = 4;
+   */
+  HEALTH = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetSizeMetric
+ */
+export declare enum FleetSizeMetric {
+  /**
+   * @generated from enum value: FLEET_SIZE_METRIC_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_SIZE_METRIC_RESOURCE_COUNT = 1;
+   */
+  RESOURCE_COUNT = 1,
+
+  /**
+   * @generated from enum value: FLEET_SIZE_METRIC_REQUEST_RATE = 2;
+   */
+  REQUEST_RATE = 2,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetFacetDimension
+ */
+export declare enum FleetFacetDimension {
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_PROJECT = 1;
+   */
+  PROJECT = 1,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_NAMESPACE = 2;
+   */
+  NAMESPACE = 2,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_CLUSTER = 3;
+   */
+  CLUSTER = 3,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_STAGE = 4;
+   */
+  STAGE = 4,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_HEALTH = 5;
+   */
+  HEALTH = 5,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_SYNC = 6;
+   */
+  SYNC = 6,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_RELEASE = 7;
+   */
+  RELEASE = 7,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_ROLLOUT = 8;
+   */
+  ROLLOUT = 8,
+
+  /**
+   * @generated from enum value: FLEET_FACET_DIMENSION_SOURCE_TYPE = 9;
+   */
+  SOURCE_TYPE = 9,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetCapability
+ */
+export declare enum FleetCapability {
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_APPLICATION_SYNC = 1;
+   */
+  APPLICATION_SYNC = 1,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_RELEASE_ROLLBACK = 2;
+   */
+  RELEASE_ROLLBACK = 2,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_GATE_APPROVE = 3;
+   */
+  GATE_APPROVE = 3,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_PIPELINE_RETRY = 4;
+   */
+  PIPELINE_RETRY = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetConnectionState
+ */
+export declare enum FleetConnectionState {
+  /**
+   * @generated from enum value: FLEET_CONNECTION_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_CONNECTION_STATE_HEALTHY = 1;
+   */
+  HEALTHY = 1,
+
+  /**
+   * @generated from enum value: FLEET_CONNECTION_STATE_UNHEALTHY = 2;
+   */
+  UNHEALTHY = 2,
+
+  /**
+   * @generated from enum value: FLEET_CONNECTION_STATE_DISABLED = 3;
+   */
+  DISABLED = 3,
+
+  /**
+   * @generated from enum value: FLEET_CONNECTION_STATE_NOT_CONFIGURED = 4;
+   */
+  NOT_CONFIGURED = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.FleetMapNodeKind
+ */
+export declare enum FleetMapNodeKind {
+  /**
+   * @generated from enum value: FLEET_MAP_NODE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FLEET_MAP_NODE_KIND_GROUP = 1;
+   */
+  GROUP = 1,
+
+  /**
+   * @generated from enum value: FLEET_MAP_NODE_KIND_APPLICATION = 2;
+   */
+  APPLICATION = 2,
+}
+
+/**
  * @generated from message paprika.v1.Step
  */
 export declare class Step extends Message<Step> {
@@ -4775,5 +5260,831 @@ export declare class LogChunk extends Message<LogChunk> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LogChunk;
 
   static equals(a: LogChunk | PlainMessage<LogChunk> | undefined, b: LogChunk | PlainMessage<LogChunk> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetObjectKey
+ */
+export declare class FleetObjectKey extends Message<FleetObjectKey> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<FleetObjectKey>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetObjectKey";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetObjectKey;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetObjectKey;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetObjectKey;
+
+  static equals(a: FleetObjectKey | PlainMessage<FleetObjectKey> | undefined, b: FleetObjectKey | PlainMessage<FleetObjectKey> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetFilter
+ */
+export declare class FleetFilter extends Message<FleetFilter> {
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey projects = 1;
+   */
+  projects: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated string namespaces = 2;
+   */
+  namespaces: string[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey clusters = 3;
+   */
+  clusters: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated string stages = 4;
+   */
+  stages: string[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetHealth health = 5;
+   */
+  health: FleetHealth[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetSyncState sync = 6;
+   */
+  sync: FleetSyncState[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetReleaseState release_states = 7;
+   */
+  releaseStates: FleetReleaseState[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetRolloutState rollout_states = 8;
+   */
+  rolloutStates: FleetRolloutState[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetSourceType source_types = 9;
+   */
+  sourceTypes: FleetSourceType[];
+
+  constructor(data?: PartialMessage<FleetFilter>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetFilter";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetFilter;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetFilter;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetFilter;
+
+  static equals(a: FleetFilter | PlainMessage<FleetFilter> | undefined, b: FleetFilter | PlainMessage<FleetFilter> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.StageTargetSummary
+ */
+export declare class StageTargetSummary extends Message<StageTargetSummary> {
+  /**
+   * @generated from field: string stable_id = 1;
+   */
+  stableId: string;
+
+  /**
+   * @generated from field: string stage = 2;
+   */
+  stage: string;
+
+  /**
+   * @generated from field: int32 ring = 3;
+   */
+  ring: number;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey cluster = 4;
+   */
+  cluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: string cluster_label = 5;
+   */
+  clusterLabel: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetHealth health = 6;
+   */
+  health: FleetHealth;
+
+  /**
+   * @generated from field: paprika.v1.FleetConnectionState cluster_connection = 7;
+   */
+  clusterConnection: FleetConnectionState;
+
+  /**
+   * @generated from field: bool unmanaged_inline_cluster = 8;
+   */
+  unmanagedInlineCluster: boolean;
+
+  constructor(data?: PartialMessage<StageTargetSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.StageTargetSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StageTargetSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StageTargetSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StageTargetSummary;
+
+  static equals(a: StageTargetSummary | PlainMessage<StageTargetSummary> | undefined, b: StageTargetSummary | PlainMessage<StageTargetSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplicationSummary
+ */
+export declare class ApplicationSummary extends Message<ApplicationSummary> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey identity = 1;
+   */
+  identity?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey project = 2;
+   */
+  project?: FleetObjectKey;
+
+  /**
+   * @generated from field: repeated paprika.v1.StageTargetSummary targets = 3;
+   */
+  targets: StageTargetSummary[];
+
+  /**
+   * @generated from field: string current_stage = 4;
+   */
+  currentStage: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey current_cluster = 5;
+   */
+  currentCluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: string current_cluster_label = 6;
+   */
+  currentClusterLabel: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetSourceType source_type = 7;
+   */
+  sourceType: FleetSourceType;
+
+  /**
+   * @generated from field: string source_revision = 8;
+   */
+  sourceRevision: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetHealth health = 9;
+   */
+  health: FleetHealth;
+
+  /**
+   * @generated from field: paprika.v1.FleetSyncState sync = 10;
+   */
+  sync: FleetSyncState;
+
+  /**
+   * @generated from field: uint32 drift_count = 11;
+   */
+  driftCount: number;
+
+  /**
+   * @generated from field: uint32 missing_resource_count = 12;
+   */
+  missingResourceCount: number;
+
+  /**
+   * @generated from field: paprika.v1.FleetReleaseState release_state = 13;
+   */
+  releaseState: FleetReleaseState;
+
+  /**
+   * @generated from field: paprika.v1.FleetRolloutState rollout_state = 14;
+   */
+  rolloutState: FleetRolloutState;
+
+  /**
+   * @generated from field: uint32 resource_count = 15;
+   */
+  resourceCount: number;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey repository = 16;
+   */
+  repository?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetConnectionState repository_connection = 17;
+   */
+  repositoryConnection: FleetConnectionState;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey effective_observability_source = 18;
+   */
+  effectiveObservabilitySource?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetConnectionState observability_connection = 19;
+   */
+  observabilityConnection: FleetConnectionState;
+
+  /**
+   * @generated from field: uint32 blocked_gate_count = 20;
+   */
+  blockedGateCount: number;
+
+  /**
+   * @generated from field: int64 last_transition_unix_ms = 21;
+   */
+  lastTransitionUnixMs: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetCapability capabilities = 22;
+   */
+  capabilities: FleetCapability[];
+
+  constructor(data?: PartialMessage<ApplicationSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplicationSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplicationSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplicationSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationSummary;
+
+  static equals(a: ApplicationSummary | PlainMessage<ApplicationSummary> | undefined, b: ApplicationSummary | PlainMessage<ApplicationSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetFacetBucket
+ */
+export declare class FleetFacetBucket extends Message<FleetFacetBucket> {
+  /**
+   * @generated from field: paprika.v1.FleetFacetDimension dimension = 1;
+   */
+  dimension: FleetFacetDimension;
+
+  /**
+   * @generated from oneof paprika.v1.FleetFacetBucket.key
+   */
+  key: {
+    /**
+     * @generated from field: paprika.v1.FleetObjectKey object = 2;
+     */
+    value: FleetObjectKey;
+    case: "object";
+  } | {
+    /**
+     * @generated from field: string value = 3;
+     */
+    value: string;
+    case: "value";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * @generated from field: string label = 4;
+   */
+  label: string;
+
+  /**
+   * @generated from field: uint64 count = 5;
+   */
+  count: bigint;
+
+  constructor(data?: PartialMessage<FleetFacetBucket>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetFacetBucket";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetFacetBucket;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetFacetBucket;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetFacetBucket;
+
+  static equals(a: FleetFacetBucket | PlainMessage<FleetFacetBucket> | undefined, b: FleetFacetBucket | PlainMessage<FleetFacetBucket> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetHealthBucket
+ */
+export declare class FleetHealthBucket extends Message<FleetHealthBucket> {
+  /**
+   * @generated from field: paprika.v1.FleetHealth health = 1;
+   */
+  health: FleetHealth;
+
+  /**
+   * @generated from field: uint64 count = 2;
+   */
+  count: bigint;
+
+  constructor(data?: PartialMessage<FleetHealthBucket>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetHealthBucket";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetHealthBucket;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetHealthBucket;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetHealthBucket;
+
+  static equals(a: FleetHealthBucket | PlainMessage<FleetHealthBucket> | undefined, b: FleetHealthBucket | PlainMessage<FleetHealthBucket> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryApplicationsRequest
+ */
+export declare class QueryApplicationsRequest extends Message<QueryApplicationsRequest> {
+  /**
+   * @generated from field: paprika.v1.FleetFilter filter = 1;
+   */
+  filter?: FleetFilter;
+
+  /**
+   * @generated from field: string search = 2;
+   */
+  search: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetSortField sort = 3;
+   */
+  sort: FleetSortField;
+
+  /**
+   * @generated from field: paprika.v1.FleetSortDirection direction = 4;
+   */
+  direction: FleetSortDirection;
+
+  /**
+   * @generated from field: uint32 page_size = 5;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 6;
+   */
+  cursor: string;
+
+  constructor(data?: PartialMessage<QueryApplicationsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryApplicationsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryApplicationsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryApplicationsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryApplicationsRequest;
+
+  static equals(a: QueryApplicationsRequest | PlainMessage<QueryApplicationsRequest> | undefined, b: QueryApplicationsRequest | PlainMessage<QueryApplicationsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryApplicationsResponse
+ */
+export declare class QueryApplicationsResponse extends Message<QueryApplicationsResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.ApplicationSummary applications = 1;
+   */
+  applications: ApplicationSummary[];
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: string next_cursor = 3;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: uint64 index_generation = 4;
+   */
+  indexGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetFacetBucket facets = 5;
+   */
+  facets: FleetFacetBucket[];
+
+  constructor(data?: PartialMessage<QueryApplicationsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryApplicationsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryApplicationsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryApplicationsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryApplicationsResponse;
+
+  static equals(a: QueryApplicationsResponse | PlainMessage<QueryApplicationsResponse> | undefined, b: QueryApplicationsResponse | PlainMessage<QueryApplicationsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetMapNode
+ */
+export declare class FleetMapNode extends Message<FleetMapNode> {
+  /**
+   * @generated from field: string stable_id = 1;
+   */
+  stableId: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetMapNodeKind kind = 2;
+   */
+  kind: FleetMapNodeKind;
+
+  /**
+   * @generated from field: string label = 3;
+   */
+  label: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 4;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from oneof paprika.v1.FleetMapNode.group_key
+   */
+  groupKey: {
+    /**
+     * @generated from field: paprika.v1.FleetObjectKey group_object = 5;
+     */
+    value: FleetObjectKey;
+    case: "groupObject";
+  } | {
+    /**
+     * @generated from field: string group_value = 6;
+     */
+    value: string;
+    case: "groupValue";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * @generated from field: uint64 application_count = 7;
+   */
+  applicationCount: bigint;
+
+  /**
+   * @generated from field: uint64 target_count = 8;
+   */
+  targetCount: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetHealthBucket health = 9;
+   */
+  health: FleetHealthBucket[];
+
+  /**
+   * @generated from field: uint64 resource_weight = 10;
+   */
+  resourceWeight: bigint;
+
+  /**
+   * @generated from field: double request_rate_weight = 11;
+   */
+  requestRateWeight: number;
+
+  /**
+   * @generated from field: double effective_weight = 12;
+   */
+  effectiveWeight: number;
+
+  /**
+   * @generated from field: bool used_resource_fallback = 13;
+   */
+  usedResourceFallback: boolean;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetMapNode children = 14;
+   */
+  children: FleetMapNode[];
+
+  constructor(data?: PartialMessage<FleetMapNode>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetMapNode";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetMapNode;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetMapNode;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetMapNode;
+
+  static equals(a: FleetMapNode | PlainMessage<FleetMapNode> | undefined, b: FleetMapNode | PlainMessage<FleetMapNode> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryFleetMapRequest
+ */
+export declare class QueryFleetMapRequest extends Message<QueryFleetMapRequest> {
+  /**
+   * @generated from field: paprika.v1.FleetFilter filter = 1;
+   */
+  filter?: FleetFilter;
+
+  /**
+   * @generated from field: string search = 2;
+   */
+  search: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetGroupDimension group = 3;
+   */
+  group: FleetGroupDimension;
+
+  /**
+   * @generated from field: paprika.v1.FleetSizeMetric size_metric = 4;
+   */
+  sizeMetric: FleetSizeMetric;
+
+  constructor(data?: PartialMessage<QueryFleetMapRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryFleetMapRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryFleetMapRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryFleetMapRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMapRequest;
+
+  static equals(a: QueryFleetMapRequest | PlainMessage<QueryFleetMapRequest> | undefined, b: QueryFleetMapRequest | PlainMessage<QueryFleetMapRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryFleetMapResponse
+ */
+export declare class QueryFleetMapResponse extends Message<QueryFleetMapResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.FleetMapNode roots = 1;
+   */
+  roots: FleetMapNode[];
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: uint64 index_generation = 3;
+   */
+  indexGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetFacetBucket facets = 4;
+   */
+  facets: FleetFacetBucket[];
+
+  constructor(data?: PartialMessage<QueryFleetMapResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryFleetMapResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryFleetMapResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryFleetMapResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMapResponse;
+
+  static equals(a: QueryFleetMapResponse | PlainMessage<QueryFleetMapResponse> | undefined, b: QueryFleetMapResponse | PlainMessage<QueryFleetMapResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetMatrixHeader
+ */
+export declare class FleetMatrixHeader extends Message<FleetMatrixHeader> {
+  /**
+   * @generated from field: string stable_id = 1;
+   */
+  stableId: string;
+
+  /**
+   * @generated from field: string label = 2;
+   */
+  label: string;
+
+  /**
+   * @generated from oneof paprika.v1.FleetMatrixHeader.key
+   */
+  key: {
+    /**
+     * @generated from field: paprika.v1.FleetObjectKey object = 3;
+     */
+    value: FleetObjectKey;
+    case: "object";
+  } | {
+    /**
+     * @generated from field: string value = 4;
+     */
+    value: string;
+    case: "value";
+  } | { case: undefined; value?: undefined };
+
+  constructor(data?: PartialMessage<FleetMatrixHeader>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetMatrixHeader";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetMatrixHeader;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetMatrixHeader;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetMatrixHeader;
+
+  static equals(a: FleetMatrixHeader | PlainMessage<FleetMatrixHeader> | undefined, b: FleetMatrixHeader | PlainMessage<FleetMatrixHeader> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.FleetMatrixCell
+ */
+export declare class FleetMatrixCell extends Message<FleetMatrixCell> {
+  /**
+   * @generated from field: string row_id = 1;
+   */
+  rowId: string;
+
+  /**
+   * @generated from field: string column_id = 2;
+   */
+  columnId: string;
+
+  /**
+   * @generated from field: uint64 application_count = 3;
+   */
+  applicationCount: bigint;
+
+  /**
+   * @generated from field: uint64 target_count = 4;
+   */
+  targetCount: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetHealthBucket health = 5;
+   */
+  health: FleetHealthBucket[];
+
+  /**
+   * @generated from field: uint64 resource_weight = 6;
+   */
+  resourceWeight: bigint;
+
+  /**
+   * @generated from field: double request_rate_weight = 7;
+   */
+  requestRateWeight: number;
+
+  /**
+   * @generated from field: bool used_resource_fallback = 8;
+   */
+  usedResourceFallback: boolean;
+
+  constructor(data?: PartialMessage<FleetMatrixCell>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetMatrixCell";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetMatrixCell;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetMatrixCell;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetMatrixCell;
+
+  static equals(a: FleetMatrixCell | PlainMessage<FleetMatrixCell> | undefined, b: FleetMatrixCell | PlainMessage<FleetMatrixCell> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryFleetMatrixRequest
+ */
+export declare class QueryFleetMatrixRequest extends Message<QueryFleetMatrixRequest> {
+  /**
+   * @generated from field: paprika.v1.FleetFilter filter = 1;
+   */
+  filter?: FleetFilter;
+
+  /**
+   * @generated from field: string search = 2;
+   */
+  search: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetGroupDimension row_group = 3;
+   */
+  rowGroup: FleetGroupDimension;
+
+  /**
+   * @generated from field: paprika.v1.FleetGroupDimension column_group = 4;
+   */
+  columnGroup: FleetGroupDimension;
+
+  /**
+   * @generated from field: paprika.v1.FleetSizeMetric size_metric = 5;
+   */
+  sizeMetric: FleetSizeMetric;
+
+  constructor(data?: PartialMessage<QueryFleetMatrixRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryFleetMatrixRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryFleetMatrixRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryFleetMatrixRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMatrixRequest;
+
+  static equals(a: QueryFleetMatrixRequest | PlainMessage<QueryFleetMatrixRequest> | undefined, b: QueryFleetMatrixRequest | PlainMessage<QueryFleetMatrixRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryFleetMatrixResponse
+ */
+export declare class QueryFleetMatrixResponse extends Message<QueryFleetMatrixResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.FleetMatrixHeader rows = 1;
+   */
+  rows: FleetMatrixHeader[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetMatrixHeader columns = 2;
+   */
+  columns: FleetMatrixHeader[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetMatrixCell cells = 3;
+   */
+  cells: FleetMatrixCell[];
+
+  /**
+   * @generated from field: uint64 total = 4;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: uint64 index_generation = 5;
+   */
+  indexGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetFacetBucket facets = 6;
+   */
+  facets: FleetFacetBucket[];
+
+  constructor(data?: PartialMessage<QueryFleetMatrixResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryFleetMatrixResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryFleetMatrixResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryFleetMatrixResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMatrixResponse;
+
+  static equals(a: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined, b: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined): boolean;
 }
 

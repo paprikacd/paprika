@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -104,4 +105,153 @@ func TestProjectAuthorizer(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAuthorizedProjectsProjectAuthorizerPreservesNamespacedIdentity(t *testing.T) {
+	t.Parallel()
+	objects := []client.Object{
+		appProject("tenant-a", "payments", "alice"),
+		appProject("tenant-b", "payments", "bob"),
+		appProject("tenant-a", "orders", "alice"),
+	}
+	authorizer := NewProjectAuthorizer(fake.NewClientBuilder().WithObjects(objects...).Build())
+	candidates := []ProjectRef{
+		{Namespace: "tenant-b", Name: "payments"},
+		{Namespace: "tenant-a", Name: "payments"},
+		{Namespace: "tenant-a", Name: "orders"},
+	}
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, candidates,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []ProjectRef{
+		{Namespace: "tenant-a", Name: "payments"},
+		{Namespace: "tenant-a", Name: "orders"},
+	}, got)
+}
+
+func TestAuthorizedProjectsProjectAuthorizerAllowsMissingDefaultCompatibility(t *testing.T) {
+	t.Parallel()
+	authorizer := NewProjectAuthorizer(fake.NewClientBuilder().Build())
+	candidates := []ProjectRef{{Namespace: "tenant-a", Name: "default"}}
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, candidates,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, candidates, got)
+}
+
+func TestAuthorizedProjectsProjectAuthorizerOmitsMissingNonDefaultCandidate(t *testing.T) {
+	t.Parallel()
+	valid := appProject("tenant-a", "payments", "alice")
+	authorizer := NewProjectAuthorizer(fake.NewClientBuilder().WithObjects(valid).Build())
+	candidates := []ProjectRef{
+		{Namespace: "tenant-a", Name: "deleted-project"},
+		{Namespace: "tenant-a", Name: "payments"},
+	}
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, candidates,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, []ProjectRef{{Namespace: "tenant-a", Name: "payments"}}, got)
+}
+
+func TestAuthorizedProjectsProjectAuthorizerReflectsRevocationImmediately(t *testing.T) {
+	t.Parallel()
+	project := appProject("tenant-a", "payments", "alice")
+	reader := fake.NewClientBuilder().WithObjects(project).Build()
+	authorizer := NewProjectAuthorizer(reader)
+	candidates := []ProjectRef{{Namespace: "tenant-a", Name: "payments"}}
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, candidates,
+	)
+	require.NoError(t, err)
+	require.Equal(t, candidates, got)
+
+	var stored corev1alpha1.AppProject
+	require.NoError(t, reader.Get(context.Background(), client.ObjectKeyFromObject(project), &stored))
+	stored.Spec.Roles = nil
+	require.NoError(t, reader.Update(context.Background(), &stored))
+
+	got, err = authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, candidates,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
+func TestAuthorizedProjectsProjectAuthorizerShortCircuitsEmptyCandidates(t *testing.T) {
+	t.Parallel()
+	reader := &failingProjectReader{err: errors.New("must not read")}
+	authorizer := NewProjectAuthorizer(reader)
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, nil,
+	)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+	assert.Zero(t, reader.getCalls)
+	assert.Zero(t, reader.listCalls)
+}
+
+func TestAuthorizedProjectsProjectAuthorizerPropagatesOperationalErrors(t *testing.T) {
+	t.Parallel()
+	operationalErr := errors.New("cache unavailable")
+	reader := &failingProjectReader{err: operationalErr}
+	authorizer := NewProjectAuthorizer(reader)
+
+	got, err := authorizer.AuthorizedProjects(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications,
+		[]ProjectRef{{Namespace: "tenant-a", Name: "payments"}},
+	)
+	assert.Nil(t, got)
+	assert.ErrorIs(t, err, operationalErr)
+	assert.Equal(t, 1, reader.getCalls)
+	assert.Zero(t, reader.listCalls, "candidate filtering must never list or invent projects")
+}
+
+func appProject(namespace, name, subject string) *corev1alpha1.AppProject {
+	return &corev1alpha1.AppProject{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name},
+		Spec: corev1alpha1.AppProjectSpec{Roles: []corev1alpha1.AppProjectRole{{
+			Subjects: []string{subject},
+			Actions:  []string{"read"},
+		}}},
+	}
+}
+
+type failingProjectReader struct {
+	err       error
+	getCalls  int
+	listCalls int
+}
+
+func (r *failingProjectReader) Get(
+	_ context.Context,
+	_ client.ObjectKey,
+	_ client.Object,
+	_ ...client.GetOption,
+) error {
+	r.getCalls++
+	return r.err
+}
+
+func (r *failingProjectReader) List(
+	_ context.Context,
+	_ client.ObjectList,
+	_ ...client.ListOption,
+) error {
+	r.listCalls++
+	return r.err
 }

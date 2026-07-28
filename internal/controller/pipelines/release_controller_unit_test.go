@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	ktesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1059,5 +1061,76 @@ func TestReleaseReconciler_handleAwaitingApprovalPhase_promotesWhenApproved(t *t
 	}
 	if updated.Status.Phase != pipelinesv1alpha1.ReleasePromoting {
 		t.Errorf("phase = %s, want Promoting", updated.Status.Phase)
+	}
+}
+
+func TestReleaseReconciler_applyDocument_ForceRetriesOnFieldManagerConflict(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMapList"}, &unstructured.UnstructuredList{})
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	patches := 0
+	dynClient.PrependReactor("patch", "configmaps", func(ktesting.Action) (bool, runtime.Object, error) {
+		patches++
+		if patches == 1 {
+			return true, nil, apierrors.NewApplyConflict(
+				[]metav1.StatusCause{{Type: metav1.CauseTypeFieldManagerConflict, Field: ".data.foo"}},
+				`Apply failed with 1 conflict: conflict with "kubectl-client-side-apply" using v1: .data.foo`)
+		}
+		return true, &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]interface{}{"name": "demo", "namespace": "paprika-e2e"},
+		}}, nil
+	})
+
+	obj := map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata":   map[string]interface{}{"name": "demo"},
+		"data":       map[string]interface{}{"foo": "bar"},
+	}
+
+	r := &ReleaseReconciler{}
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	if err != nil {
+		t.Fatalf("applyDocument returned error after force retry: %v", err)
+	}
+	if !ok {
+		t.Fatal("applyDocument reported resource as not applied")
+	}
+	if patches != 2 {
+		t.Fatalf("expected conflict then force retry (2 patches), got %d", patches)
+	}
+}
+
+func TestReleaseReconciler_applyDocument_PropagatesPersistentApplyError(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMapList"}, &unstructured.UnstructuredList{})
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	dynClient.PrependReactor("patch", "configmaps", func(ktesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewInternalError(errors.New("boom"))
+	})
+
+	obj := map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata":   map[string]interface{}{"name": "demo"},
+	}
+
+	r := &ReleaseReconciler{}
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	if err == nil {
+		t.Fatal("expected persistent apply error to propagate, got nil")
+	}
+	if ok {
+		t.Fatal("applyDocument reported resource as applied despite error")
 	}
 }

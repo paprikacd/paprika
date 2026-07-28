@@ -33,6 +33,7 @@ type workflowRunStep struct {
 
 var pinnedActionRevisions = map[string]string{
 	"actions/checkout":                   "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+	"actions/upload-artifact":            "bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
 	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
 	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
 	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
@@ -94,7 +95,7 @@ func testCanonicalCIValidation(t *testing.T) {
 		t.Errorf("ci.yml push.branches = %v, want exactly [master]", branches)
 	}
 
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "publish"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
 			t.Errorf("ci.yml is missing required job ID %q", jobID)
 		}
@@ -110,9 +111,30 @@ func testCanonicalCIValidation(t *testing.T) {
 			"helm template paprika charts/chart/",
 			"helm template paprika charts/chart/ --values deploy/test-values.yaml",
 		}},
+		{id: "fleet-scale", commands: []string{"bash hack/test-fleet-scale.sh"}},
+		{id: "cluster-integration", commands: []string{
+			"kind create cluster --name paprika-ci-integration",
+			"kind load docker-image \"${IMG}\" --name paprika-ci-integration",
+			"bash hack/test-split-metrics.sh",
+			"make helm-deploy",
+			"make helm-status",
+			"kubectl wait --for=condition=available deployment/paprika-controller-manager -n paprika-system --timeout=120s",
+		}},
 	}
 	for _, contract := range contracts {
 		assertValidationJob(t, workflow, contract)
+	}
+
+	fleetUI := validationJobContract{id: "fleet-ui-smoke"}
+	assertValidationJob(t, workflow, fleetUI)
+	fleetUIJob := requireMappingValue(t, workflow.jobs, fleetUI.id, "ci.yml jobs")
+	for _, command := range []string{"npm ci", "npm run build", "npx playwright install --with-deps chromium", "npm run test:e2e -- fleet-console.spec.ts"} {
+		if !hasRunCommand(fleetUIJob, command, "ui") {
+			t.Errorf("ci.yml validation job %q must actively run exact command %q in ui and enforce its failure", fleetUI.id, command)
+		}
+	}
+	if !hasRunCommand(fleetUIJob, "go build -o bin/fleet-console-fixture ./test/fleetconsole", "") {
+		t.Errorf("ci.yml validation job %q must build the real fleet fixture", fleetUI.id)
 	}
 }
 
@@ -138,12 +160,16 @@ func testCanonicalCIActionPins(t *testing.T) {
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "publish"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "fleet-ui-smoke", "cluster-integration", "publish"} {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		timeout, ok := job["timeout-minutes"].(int)
 		if !ok || timeout < 5 || timeout > 30 {
 			t.Errorf("ci.yml job %q timeout-minutes = %v, want an integer from 5 through 30", jobID, job["timeout-minutes"])
 		}
+	}
+	fleetScale := requireMappingValue(t, workflow.jobs, "fleet-scale", "ci.yml jobs")
+	if timeout, ok := fleetScale["timeout-minutes"].(int); !ok || timeout != 90 {
+		t.Errorf("ci.yml job %q timeout-minutes = %v, want exactly 90", "fleet-scale", fleetScale["timeout-minutes"])
 	}
 }
 
@@ -373,7 +399,7 @@ func testPublication(t *testing.T) {
 	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
 
 	needs := stringList(publish["needs"])
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "fleet-ui-smoke", "fleet-scale", "cluster-integration"} {
 		if !contains(needs, jobID) {
 			t.Errorf("ci.yml publish.needs = %v, want dependency on %q", needs, jobID)
 		}

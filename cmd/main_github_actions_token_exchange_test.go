@@ -9,6 +9,7 @@ import (
 func TestConfigureGitHubActionsTokenExchangeParsesTrustedWorkflowBoundary(t *testing.T) {
 	t.Parallel()
 
+	//nolint:gosec // Test-only configuration fixtures contain no credentials.
 	environment := map[string]string{
 		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED":                   "true",
 		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_AUDIENCE":                  "paprika-vke-deploy",
