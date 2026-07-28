@@ -68,6 +68,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("VKE checks out the trusted caller commit and selects an image digest", testVKEProvenance)
 	t.Run("VKE validates the immutable image reference before privileged operations", testVKEImageValidation)
 	t.Run("VKE deploy applies one immutable reference to every component", testVKEComponentImageReferences)
+	t.Run("VKE post-deploy validation uses the race-free pod checker", testVKEPodConditionValidation)
 	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
 	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
 	t.Run("privileged manual entrypoints use typed default-branch dispatch", testPrivilegedManualEntrypoints)
@@ -105,6 +106,7 @@ func testCanonicalCIValidation(t *testing.T) {
 	contracts := []validationJobContract{
 		{id: "go-test", commands: []string{
 			"make test-race",
+			"bash hack/test-check-vke-pod-conditions.sh",
 			"bash hack/test-github-actions-oidc-token.sh",
 			"bash hack/test-github-actions-vke-token.sh",
 		}},
@@ -648,6 +650,14 @@ func testVKEComponentImageReferences(t *testing.T) {
 	}
 	if strings.Contains(activeShellText(run), "latest") {
 		t.Error("deploy-vke.yml deployment must not consume latest")
+	}
+}
+
+func testVKEPodConditionValidation(t *testing.T) {
+	deploy := vkeDeployJob(t)
+	step := requireNamedStep(t, deploy, "Check pod conditions", "deploy-vke.yml deploy job")
+	if run := strings.TrimSpace(scalarString(step["run"])); run != "bash hack/check-vke-pod-conditions.sh" {
+		t.Errorf("deploy-vke.yml Check pod conditions run = %q, want only the tested race-free checker", run)
 	}
 }
 
