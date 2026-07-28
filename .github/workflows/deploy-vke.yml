@@ -7,6 +7,15 @@ on:
         description: 'Published Paprika image digest reference'
         required: true
         type: string
+    secrets:
+      VKE_AUTH_TOKEN_SECRET:
+        required: true
+      VKE_BASIC_PASSWORD_HASH:
+        required: true
+      VKE_OIDC_CLIENT_ID:
+        required: true
+      VKE_OIDC_CLIENT_SECRET:
+        required: true
 
 concurrency: deploy-vke
 
@@ -135,6 +144,17 @@ jobs:
           VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
           VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}
         run: |
+          missing=0
+          for name in VKE_OIDC_CLIENT_ID VKE_OIDC_CLIENT_SECRET VKE_AUTH_TOKEN_SECRET VKE_BASIC_PASSWORD_HASH; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
