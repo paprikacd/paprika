@@ -167,6 +167,10 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
+// cert-manager Certificates are applyable for the same reason HTTPRoutes are:
+// a chart that exposes a service over TLS declares both, and without this the
+// whole release fails to apply with a forbidden error on the Certificate.
+// +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
@@ -472,6 +476,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	approved, rejected, err := r.checkApprovalGates(ctx, release)
 	if err != nil {
 		log.Error(err, "Failed to check approval gates", "release", release.Name)
+		r.recordFailure(release, "ApprovalGateError", err)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
 		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
@@ -505,6 +510,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 			return ctrl.Result{RequeueAfter: conftestBlockedRequeueInterval}, nil
 		}
 		log.Error(err, "Promotion failed", "release", release.Name)
+		r.recordFailure(release, "PromotionFailed", err)
 		release.Status.Phase = paprikav1.ReleaseFailed
 		metrics.ReleasePhaseTotal.WithLabelValues(release.Name, release.Namespace, "Failed").Inc()
 		if updateErr := r.patchReleaseStatus(ctx, release, oldPhase); updateErr != nil {
@@ -1938,6 +1944,34 @@ func sortReleasesByCreation(releases []*paprikav1.Release) {
 			}
 		}
 	}
+}
+
+// recordFailure writes WHY a release failed onto the release itself.
+//
+// Without this the reason exists only in the controller log: the phase becomes
+// Failed with no condition, rollback then appends its own "RolledBack"
+// condition, and `kubectl describe release` shows a terminal release with no
+// explanation. Diagnosing then means correlating controller logs by timestamp,
+// which is exactly the moment when logs have usually rotated. The operator
+// should be able to read the cause off the object.
+func (r *ReleaseReconciler) recordFailure(release *paprikav1.Release, reason string, err error) {
+	release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
+		Type:               "Failed",
+		Status:             metav1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            truncateConditionMessage(err.Error()),
+	})
+}
+
+// truncateConditionMessage keeps a message inside the 32KiB the API server
+// allows for a condition message, leaving room for the rest of the object.
+func truncateConditionMessage(msg string) string {
+	const limit = 2048
+	if len(msg) <= limit {
+		return msg
+	}
+	return msg[:limit] + "… (truncated)"
 }
 
 func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprikav1.Release, rolledBackTo, message string) error {
