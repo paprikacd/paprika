@@ -228,9 +228,10 @@ func TestLoginRejectsOccupiedCallbackPortWithoutChangingConfig(t *testing.T) {
 	globalConfigPath = path
 
 	err = executeLogin(context.Background(), &strings.Builder{}, defaultLoginDependencies())
-	if err == nil || !strings.Contains(err.Error(), "callback port 17632 is unavailable") {
+	if err == nil || !strings.Contains(err.Error(), "callback URI "+loginCallbackURI+" is unavailable") {
 		t.Fatalf("executeLogin() error = %v, want occupied port error", err)
 	}
+	assertNoMarkers(t, err.Error(), "bind", "listen tcp", "address already in use")
 	assertConfigSnapshot(t, path, before)
 }
 

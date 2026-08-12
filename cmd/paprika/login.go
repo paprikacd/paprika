@@ -111,7 +111,7 @@ func executeLogin(ctx context.Context, writer io.Writer, dependencies loginDepen
 
 	listener, err := dependencies.listen("tcp", loginCallbackAddress)
 	if err != nil {
-		return errors.New("login callback port 17632 is unavailable")
+		return fmt.Errorf("login callback URI %s is unavailable", loginCallbackURI)
 	}
 
 	login, err := requestLogin(ctx, dependencies.client, server, loginCallbackURI)
