@@ -808,6 +808,11 @@ func TestLoginCallbackShutdownWaitsForServeExit(t *testing.T) {
 	callback.shutdown(canceledCtx)
 
 	select {
+	case <-callback.serveDone:
+	default:
+		t.Fatal("callback shutdown returned before the Serve goroutine exited")
+	}
+	select {
 	case <-closed:
 	default:
 		t.Fatal("callback shutdown returned before the Serve goroutine closed its listener")
