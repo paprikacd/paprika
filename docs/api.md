@@ -1,6 +1,89 @@
-# Connect-RPC API — Apply & Rollback
+# Connect-RPC API
 
-This page documents the Connect-RPC methods used by `paprika apply` and rollback workflows. The full service definition is in `proto/paprika/v1/api.proto`.
+This page documents direct Connect JSON access and selected Paprika RPCs. The
+full service definition is in `proto/paprika/v1/api.proto`.
+
+## Direct Connect JSON requests
+
+Unary RPCs are available at
+`/{package}.{service}/{method}`. A direct JSON client must send both
+`Content-Type: application/json` and `Connect-Protocol-Version: 1`.
+When authentication is enabled, also send an `Authorization` header. For an
+OIDC session this is `Bearer <ID token>`; HTTP Basic credentials are accepted
+when Basic authentication is configured.
+
+The examples below assume the server and a bearer token are already in shell
+variables. Keep tokens out of source files, logs, and shared shell history.
+
+## `GetSystemStatus`
+
+Return one immutable, authorization-filtered application status snapshot. This
+is the RPC used by `paprika status`.
+
+### Request
+
+```protobuf
+message GetSystemStatusRequest {
+  optional string namespace = 1;
+  uint32 attention_limit = 2;
+}
+```
+
+Omit `namespace` to include every namespace the principal is allowed to read;
+an explicitly empty namespace is invalid. `attention_limit` may be 0 through
+100. Zero or omission uses the server default of 20.
+
+### Direct JSON example
+
+```sh
+curl --silent --show-error \
+  -H "Content-Type: application/json" \
+  -H "Connect-Protocol-Version: 1" \
+  -H "Authorization: Bearer ${PAPRIKA_TOKEN}" \
+  --data '{"namespace":"payments","attentionLimit":20}' \
+  "${PAPRIKA_SERVER}/paprika.v1.PaprikaService/GetSystemStatus"
+```
+
+To request all authorized namespaces and the server's default attention limit,
+send an empty JSON object:
+
+```sh
+curl --silent --show-error \
+  -H "Content-Type: application/json" \
+  -H "Connect-Protocol-Version: 1" \
+  -H "Authorization: Bearer ${PAPRIKA_TOKEN}" \
+  --data '{}' \
+  "${PAPRIKA_SERVER}/paprika.v1.PaprikaService/GetSystemStatus"
+```
+
+### Response
+
+```protobuf
+message GetSystemStatusResponse {
+  uint64 index_generation = 1;
+  uint64 total = 2;
+  repeated FleetHealthBucket health = 3;
+  repeated FleetSyncBucket sync = 4;
+  uint64 attention_total = 5;
+  repeated ApplicationSummary attention = 6;
+  bool has_more_attention = 7;
+}
+```
+
+`total`, every bucket count, `attention_total`, and the returned application
+names are derived only from projects on which the authenticated principal may
+`read` `applications`. Project authorization happens before aggregation, so an
+unauthorized application cannot influence even anonymous-looking totals. If
+the principal is authenticated but has no authorized projects, the RPC
+succeeds with a zero-valued view. `has_more_attention` is true when
+`attention_total` exceeds the number of returned attention records.
+
+Connect's protobuf JSON encoding represents 64-bit integer values as JSON
+strings and uses enum names such as `FLEET_HEALTH_HEALTHY`.
+
+An absent, invalid, or expired credential returns `Unauthenticated`. Other
+authorization failures return `PermissionDenied`; index startup or
+unavailability returns `Unavailable`.
 
 ## `ApplyBundle`
 
@@ -59,6 +142,7 @@ message PolicyResult {
 ```sh
 curl -H "Content-Type: application/json" \
   -H "Connect-Protocol-Version: 1" \
+  -H "Authorization: Bearer ${PAPRIKA_TOKEN}" \
   --data '{
     "namespace": "production",
     "name": "payments-api",
@@ -124,6 +208,7 @@ The server fetches the named `Release`, sets the annotation `paprika.io/rollback
 ```sh
 curl -H "Content-Type: application/json" \
   -H "Connect-Protocol-Version: 1" \
+  -H "Authorization: Bearer ${PAPRIKA_TOKEN}" \
   --data '{
     "namespace": "production",
     "name": "payments-api-release-a1b2c3d4-1750000000"
