@@ -347,6 +347,37 @@ func TestOIDCTokenExchangeFailuresAreBoundedClosedAndSanitized(t *testing.T) {
 	}
 }
 
+func TestOIDCTokenExchangeMalformedEndpointIsSanitized(t *testing.T) {
+	const malformedEndpointMarker = "malformed-token-endpoint-marker"
+	authenticator := &OIDCAuthenticator{
+		oauth2Config: oauth2.Config{
+			ClientID:     testOIDCClientID,
+			ClientSecret: testOIDCClientSecret,
+			RedirectURL:  "https://paprika.example.com/auth/callback",
+			Endpoint: oauth2.Endpoint{
+				TokenURL: "://" + malformedEndpointMarker,
+			},
+		},
+		httpClient: &http.Client{Timeout: time.Second},
+	}
+	tokenReq := &TokenRequest{
+		Code:         testOIDCCode,
+		CodeVerifier: testOIDCVerifier,
+		RedirectURI:  CLIRedirectURL,
+	}
+
+	_, _, err := authenticator.exchangeAndValidate(context.Background(), tokenReq)
+	require.EqualError(t, err, "token request failed")
+	assert.NotContains(t, err.Error(), malformedEndpointMarker)
+	assertNoOIDCSecrets(t, err.Error())
+
+	resp := performTokenRequest(t, authenticator, *tokenReq)
+	assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	assert.Equal(t, "token request failed\n", resp.Body.String())
+	assert.NotContains(t, resp.Body.String(), malformedEndpointMarker)
+	assertNoOIDCSecrets(t, resp.Body.String())
+}
+
 type oidcProviderFixture struct {
 	server       *httptest.Server
 	signingKey   *rsa.PrivateKey

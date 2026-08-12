@@ -113,7 +113,7 @@ func exchangeCode(ctx context.Context, o *OIDCAuthenticator, code, codeVerifier,
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.tokenEndpoint(), strings.NewReader(data.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("create token request: %w", err)
+		return nil, errors.New("token request failed")
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
