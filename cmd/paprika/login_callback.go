@@ -26,8 +26,11 @@ import (
 )
 
 const (
-	loginCallbackAddress = "127.0.0.1:17632"
-	loginCallbackURI     = "http://127.0.0.1:17632/callback"
+	loginCallbackAddress        = "127.0.0.1:17632"
+	loginCallbackURI            = "http://127.0.0.1:17632/callback"
+	loginCallbackMaxHeaderBytes = 8 << 10
+	loginCallbackIdleTimeout    = 30 * time.Second
+	loginCallbackWriteTimeout   = 30 * time.Second
 )
 
 type loginCallbackEvent struct {
@@ -60,6 +63,9 @@ func newLoginCallbackServer(listener net.Listener, expectedState string) *loginC
 	callback.server = &http.Server{
 		Handler:           http.HandlerFunc(callback.handle),
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    loginCallbackMaxHeaderBytes,
+		IdleTimeout:       loginCallbackIdleTimeout,
+		WriteTimeout:      loginCallbackWriteTimeout,
 	}
 	go func() {
 		if serveErr := callback.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
@@ -78,23 +84,29 @@ func (c *loginCallbackServer) handle(w http.ResponseWriter, r *http.Request) { /
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	query := r.URL.Query()
+	if query.Get("state") == "" || query.Get("state") != c.expectedState {
+		writeLoginCallbackFailure(w, http.StatusBadRequest)
+		return
+	}
 
 	c.mu.Lock()
-	if !c.accepted {
-		c.accepted = true
-		event := loginCallbackEvent{}
-		switch {
-		case r.URL.Query().Get("state") != c.expectedState:
-			event.err = errAuthenticationFailed
-		case r.URL.Query().Get("error") != "":
-			event.err = errAuthenticationFailed
-		case r.URL.Query().Get("code") == "":
-			event.err = errAuthenticationFailed
-		default:
-			event.code = r.URL.Query().Get("code")
-		}
-		c.events <- event
+	if c.accepted {
+		c.mu.Unlock()
+		writeLoginCallbackFailure(w, http.StatusConflict)
+		return
 	}
+	c.accepted = true
+	event := loginCallbackEvent{}
+	switch {
+	case query.Get("error") != "":
+		event.err = errAuthenticationFailed
+	case query.Get("code") == "":
+		event.err = errAuthenticationFailed
+	default:
+		event.code = query.Get("code")
+	}
+	c.events <- event
 	c.mu.Unlock()
 
 	<-c.done
@@ -110,6 +122,16 @@ func (c *loginCallbackServer) handle(w http.ResponseWriter, r *http.Request) { /
 		return
 	}
 	w.WriteHeader(http.StatusBadRequest)
+	writeLoginCallbackFailureBody(w)
+}
+
+func writeLoginCallbackFailure(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	writeLoginCallbackFailureBody(w)
+}
+
+func writeLoginCallbackFailureBody(w http.ResponseWriter) {
 	if _, writeErr := w.Write([]byte("<!doctype html><title>Login failed</title><h1>Login failed</h1><p>Authentication failed; return to the terminal and try again.</p>")); writeErr != nil {
 		return
 	}

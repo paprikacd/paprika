@@ -30,29 +30,36 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
 
 const defaultLoginCallbackTimeout = 5 * time.Minute
 
-const loginBrowserResultGrace = time.Second
+const (
+	defaultBrowserLaunchTimeout  = 10 * time.Second
+	loginBrowserResultGrace      = time.Second
+	maxLoginIdentityDisplayBytes = 256
+)
 
 type loginDependencies struct {
-	client          *http.Client
-	listen          func(network, address string) (net.Listener, error)
-	openBrowser     func(context.Context, string) error
-	callbackTimeout time.Duration
-	now             func() time.Time
+	client               *http.Client
+	listen               func(network, address string) (net.Listener, error)
+	openBrowser          func(context.Context, string) error
+	callbackTimeout      time.Duration
+	browserLaunchTimeout time.Duration
+	now                  func() time.Time
 }
 
 func defaultLoginDependencies() loginDependencies {
 	return loginDependencies{
-		client:          newLoginHTTPClient(),
-		listen:          net.Listen,
-		openBrowser:     openBrowserURL,
-		callbackTimeout: defaultLoginCallbackTimeout,
-		now:             time.Now,
+		client:               newLoginHTTPClient(),
+		listen:               net.Listen,
+		openBrowser:          openBrowserURL,
+		callbackTimeout:      defaultLoginCallbackTimeout,
+		browserLaunchTimeout: defaultBrowserLaunchTimeout,
+		now:                  time.Now,
 	}
 }
 
@@ -84,6 +91,9 @@ func executeLogin(ctx context.Context, writer io.Writer, dependencies loginDepen
 	}
 	if dependencies.callbackTimeout <= 0 {
 		dependencies.callbackTimeout = defaultLoginCallbackTimeout
+	}
+	if dependencies.browserLaunchTimeout <= 0 {
+		dependencies.browserLaunchTimeout = defaultBrowserLaunchTimeout
 	}
 	if dependencies.now == nil {
 		dependencies.now = time.Now
@@ -134,11 +144,25 @@ func executeLogin(ctx context.Context, writer io.Writer, dependencies loginDepen
 	callback := newLoginCallbackServer(listener, login.State)
 	defer callback.shutdown(ctx)
 
+	browserCtx, browserCancel := context.WithTimeout(ctx, dependencies.browserLaunchTimeout)
 	openResult := make(chan error, 1)
 	go func() {
-		openResult <- dependencies.openBrowser(ctx, login.URL)
+		openResult <- dependencies.openBrowser(browserCtx, login.URL)
 	}()
 	browserAttemptFinished := false
+	defer func() {
+		browserCancel()
+		if browserAttemptFinished {
+			return
+		}
+		grace := time.NewTimer(loginBrowserResultGrace)
+		defer grace.Stop()
+		select {
+		case <-openResult:
+			browserAttemptFinished = true
+		case <-grace.C:
+		}
+	}()
 	var browserOutputErr error
 	reportBrowserResult := func(wait bool) {
 		if browserAttemptFinished {
@@ -338,5 +362,25 @@ func parseLoginIDToken(raw string, now time.Time) (time.Time, string, error) { /
 	if identity == "" {
 		identity = claims.Subject
 	}
-	return expiresAt, identity, nil
+	return expiresAt, sanitizeLoginIdentity(identity), nil
+}
+
+func sanitizeLoginIdentity(identity string) string {
+	var display strings.Builder
+	display.Grow(min(len(identity), maxLoginIdentityDisplayBytes))
+	for identity != "" {
+		r, size := utf8.DecodeRuneInString(identity)
+		identity = identity[size:]
+		var rendered string
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			rendered = fmt.Sprintf("\\u%04X", r)
+		} else {
+			rendered = string(r)
+		}
+		if display.Len()+len(rendered) > maxLoginIdentityDisplayBytes {
+			break
+		}
+		display.WriteString(rendered)
+	}
+	return display.String()
 }

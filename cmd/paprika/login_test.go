@@ -241,7 +241,6 @@ func TestLoginCallbackValidationIsTerminalAndDoesNotExchange(t *testing.T) {
 		query string
 	}{
 		{name: "missing code", query: "state=expected-state"},
-		{name: "state mismatch", query: "code=code-marker&state=wrong-state-marker"},
 		{name: "provider error", query: "error=access_denied&error_description=provider-secret-marker&state=expected-state"},
 	}
 	for _, tt := range tests {
@@ -279,6 +278,84 @@ func TestLoginCallbackValidationIsTerminalAndDoesNotExchange(t *testing.T) {
 	}
 }
 
+func TestLoginWrongStateDoesNotClaimCallbackOrExchangeToken(t *testing.T) {
+	resetLoginGlobals(t)
+	var tokenCalls atomic.Int32
+	server := newLoginTestServer(t, "expected-state", "verifier-marker", func(w http.ResponseWriter, _ *http.Request) {
+		tokenCalls.Add(1)
+		http.Error(w, "unexpected token exchange", http.StatusInternalServerError)
+	})
+	defer server.Close()
+	path, before := writeLoginConfig(t, &Config{Server: server.URL, Token: "old-token-marker"})
+	globalConfigPath = path
+	wrongResponse := make(chan callbackHTTPResponse, 1)
+	dependencies := defaultLoginDependencies()
+	dependencies.callbackTimeout = 50 * time.Millisecond
+	dependencies.openBrowser = func(ctx context.Context, _ string) error {
+		callbackCtx := context.WithoutCancel(ctx)
+		go func() {
+			wrongResponse <- getCallbackResponse(callbackCtx, "/callback?code=wrong-code-marker&state=wrong-state-marker")
+		}()
+		return nil
+	}
+
+	err := executeLogin(context.Background(), &strings.Builder{}, dependencies)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("executeLogin() error = %v, want timeout after ignored wrong state", err)
+	}
+	response := receiveCallbackResponse(t, wrongResponse)
+	if response.status != http.StatusBadRequest {
+		t.Errorf("wrong-state status = %d, want 400", response.status)
+	}
+	if !strings.Contains(response.body, "Authentication failed") {
+		t.Errorf("wrong-state body = %q, want generic failure", response.body)
+	}
+	assertNoMarkers(t, response.body+err.Error(), "wrong-code-marker", "wrong-state-marker", "verifier-marker", "old-token-marker")
+	if tokenCalls.Load() != 0 {
+		t.Errorf("token calls = %d, want 0", tokenCalls.Load())
+	}
+	assertConfigSnapshot(t, path, before)
+}
+
+func TestLoginWrongStateThenValidCallbackSucceeds(t *testing.T) {
+	resetLoginGlobals(t)
+	exp := time.Now().Add(time.Hour).Truncate(time.Second)
+	token := testJWT(t, map[string]any{"sub": "subject-marker", "exp": exp.Unix()})
+	var tokenCalls atomic.Int32
+	server := newLoginTestServer(t, "expected-state", "verifier-marker", func(w http.ResponseWriter, _ *http.Request) {
+		tokenCalls.Add(1)
+		writeTestJSON(t, w, map[string]any{"idToken": token})
+	})
+	defer server.Close()
+	path, _ := writeLoginConfig(t, &Config{Server: server.URL, Token: "old-token-marker"})
+	globalConfigPath = path
+	wrongResponse := make(chan callbackHTTPResponse, 1)
+	validPage := make(chan string, 1)
+	dependencies := defaultLoginDependencies()
+	dependencies.callbackTimeout = time.Second
+	dependencies.openBrowser = func(ctx context.Context, _ string) error {
+		callbackCtx := context.WithoutCancel(ctx)
+		go func() {
+			wrongResponse <- getCallbackResponse(callbackCtx, "/callback?code=wrong-code-marker&state=wrong-state-marker")
+			requestCallback(callbackCtx, "/callback?code=valid-code-marker&state=expected-state", validPage)
+		}()
+		return nil
+	}
+
+	if err := executeLogin(context.Background(), &strings.Builder{}, dependencies); err != nil {
+		t.Fatalf("executeLogin() error = %v", err)
+	}
+	if response := receiveCallbackResponse(t, wrongResponse); response.status != http.StatusBadRequest {
+		t.Errorf("wrong-state status = %d, want 400", response.status)
+	}
+	if page := receiveString(t, validPage); !strings.Contains(page, "Login successful") {
+		t.Errorf("valid callback page = %q, want success", page)
+	}
+	if tokenCalls.Load() != 1 {
+		t.Errorf("token calls = %d, want 1", tokenCalls.Load())
+	}
+}
+
 func TestLoginWrongMethodAndPathRemainPending(t *testing.T) {
 	resetLoginGlobals(t)
 	exp := time.Now().Add(time.Hour).Truncate(time.Second)
@@ -297,10 +374,11 @@ func TestLoginWrongMethodAndPathRemainPending(t *testing.T) {
 	dependencies := defaultLoginDependencies()
 	dependencies.callbackTimeout = time.Second
 	dependencies.openBrowser = func(ctx context.Context, _ string) error {
+		callbackCtx := context.WithoutCancel(ctx)
 		go func() {
-			statuses <- callbackStatus(ctx, http.MethodGet, "/not-callback")
-			statuses <- callbackStatus(ctx, http.MethodPost, "/callback?code=code-marker&state=expected-state")
-			requestCallback(ctx, "/callback?code=code-marker&state=expected-state", validPage)
+			statuses <- callbackStatus(callbackCtx, http.MethodGet, "/not-callback")
+			statuses <- callbackStatus(callbackCtx, http.MethodPost, "/callback?code=code-marker&state=expected-state")
+			requestCallback(callbackCtx, "/callback?code=code-marker&state=expected-state", validPage)
 		}()
 		return nil
 	}
@@ -440,7 +518,7 @@ func TestLoginBrowserOpenFailurePrintsValidatedURLAndContinues(t *testing.T) {
 	dependencies := defaultLoginDependencies()
 	dependencies.callbackTimeout = time.Second
 	dependencies.openBrowser = func(ctx context.Context, providerURL string) error {
-		go requestCallback(ctx, "/callback?code=code-marker&state=expected-state", make(chan string, 1))
+		go requestCallback(context.WithoutCancel(ctx), "/callback?code=code-marker&state=expected-state", make(chan string, 1))
 		return errors.New("browser-command-secret-marker")
 	}
 
@@ -469,7 +547,7 @@ func TestLoginBrowserOpenFailureIsReportedWhenCallbackArrivesFirst(t *testing.T)
 	dependencies := defaultLoginDependencies()
 	dependencies.callbackTimeout = time.Second
 	dependencies.openBrowser = func(ctx context.Context, _ string) error {
-		go requestCallback(ctx, "/callback?code=code-marker&state=expected-state", make(chan string, 1))
+		go requestCallback(context.WithoutCancel(ctx), "/callback?code=code-marker&state=expected-state", make(chan string, 1))
 		<-tokenStarted
 		return errors.New("browser-command-secret-marker")
 	}
@@ -500,12 +578,17 @@ func TestLoginDuplicateValidCallbacksExchangeExactlyOnce(t *testing.T) {
 	defer server.Close()
 	path, _ := writeLoginConfig(t, &Config{Server: server.URL})
 	globalConfigPath = path
-	pages := make(chan string, 2)
+	firstPage := make(chan string, 1)
+	duplicateResponse := make(chan callbackHTTPResponse, 1)
 	dependencies := defaultLoginDependencies()
 	dependencies.callbackTimeout = time.Second
 	dependencies.openBrowser = func(ctx context.Context, _ string) error {
-		go requestCallback(ctx, "/callback?code=first-code-marker&state=expected-state", pages)
-		go requestCallback(ctx, "/callback?code=second-code-marker&state=expected-state", pages)
+		callbackCtx := context.WithoutCancel(ctx)
+		go requestCallback(callbackCtx, "/callback?code=first-code-marker&state=expected-state", firstPage)
+		<-tokenStarted
+		go func() {
+			duplicateResponse <- getCallbackResponse(callbackCtx, "/callback?code=second-code-marker&state=expected-state")
+		}()
 		return nil
 	}
 	done := make(chan error, 1)
@@ -515,6 +598,14 @@ func TestLoginDuplicateValidCallbacksExchangeExactlyOnce(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("token exchange did not start")
 	}
+	duplicate := receiveCallbackResponse(t, duplicateResponse)
+	if duplicate.status != http.StatusConflict {
+		t.Errorf("duplicate status = %d, want 409", duplicate.status)
+	}
+	if !strings.Contains(duplicate.body, "Authentication failed") {
+		t.Errorf("duplicate body = %q, want generic rejection", duplicate.body)
+	}
+	assertNoMarkers(t, duplicate.body, "second-code-marker", "expected-state")
 	close(allowToken)
 	if err := <-done; err != nil {
 		t.Fatalf("executeLogin() error = %v", err)
@@ -522,10 +613,8 @@ func TestLoginDuplicateValidCallbacksExchangeExactlyOnce(t *testing.T) {
 	if tokenCalls.Load() != 1 {
 		t.Errorf("token calls = %d, want exactly 1", tokenCalls.Load())
 	}
-	for range 2 {
-		if page := receiveString(t, pages); !strings.Contains(page, "Login successful") {
-			t.Errorf("duplicate callback page = %q, want shared success result", page)
-		}
+	if page := receiveString(t, firstPage); !strings.Contains(page, "Login successful") {
+		t.Errorf("first callback page = %q, want success", page)
 	}
 }
 
@@ -597,6 +686,107 @@ func TestLoginIdentityFallback(t *testing.T) {
 				t.Errorf("identity = %q, want %q", identity, tt.want)
 			}
 		})
+	}
+}
+
+func TestLoginIdentityIsTerminalSafeAndBounded(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	identity := "alice@example.com\nNEWLINE_MARKER\x1b]0;OSC_MARKER\x07\u0085END" + strings.Repeat("x", 600)
+	token := testJWT(t, map[string]any{"email": identity, "sub": "subject", "exp": now.Add(time.Hour).Unix()})
+	_, display, err := parseLoginIDToken(token, now)
+	if err != nil {
+		t.Fatalf("parseLoginIDToken() error = %v", err)
+	}
+	for _, control := range []string{"\n", "\r", "\x1b", "\x07", "\u0085"} {
+		if strings.Contains(display, control) {
+			t.Errorf("display identity contains raw terminal control %q: %q", control, display)
+		}
+	}
+	for _, escaped := range []string{`\u000A`, `\u001B`, `\u0007`, `\u0085`} {
+		if !strings.Contains(display, escaped) {
+			t.Errorf("display identity = %q, want visible escape %q", display, escaped)
+		}
+	}
+	if !strings.Contains(display, "NEWLINE_MARKER") || !strings.Contains(display, "OSC_MARKER") {
+		t.Errorf("display identity lost safe marker text: %q", display)
+	}
+	if len(display) > maxLoginIdentityDisplayBytes {
+		t.Errorf("display identity length = %d, want <= %d", len(display), maxLoginIdentityDisplayBytes)
+	}
+	parts := strings.Split(token, ".")
+	payload, decodeErr := base64.RawURLEncoding.DecodeString(parts[1])
+	if decodeErr != nil || !strings.Contains(string(payload), "NEWLINE_MARKER") {
+		t.Errorf("raw token payload was altered: %q, error=%v", payload, decodeErr)
+	}
+}
+
+func TestLoginTimeoutAndCancelBoundedlyReapStuckBrowserOpener(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(loginDependencies) error
+	}{
+		{
+			name: "callback timeout",
+			run: func(dependencies loginDependencies) error {
+				dependencies.callbackTimeout = 30 * time.Millisecond
+				return executeLogin(context.Background(), &strings.Builder{}, dependencies)
+			},
+		},
+		{
+			name: "cancellation",
+			run: func(dependencies loginDependencies) error {
+				ctx, cancel := context.WithCancel(context.Background())
+				time.AfterFunc(20*time.Millisecond, cancel)
+				return executeLogin(ctx, &strings.Builder{}, dependencies)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetLoginGlobals(t)
+			server := newLoginTestServer(t, "expected-state", "verifier-marker", func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "unexpected token exchange", http.StatusInternalServerError)
+			})
+			defer server.Close()
+			path, before := writeLoginConfig(t, &Config{Server: server.URL, Token: "old-token-marker"})
+			globalConfigPath = path
+			openerDone := make(chan struct{})
+			dependencies := defaultLoginDependencies()
+			dependencies.browserLaunchTimeout = time.Second
+			dependencies.openBrowser = func(ctx context.Context, _ string) error {
+				<-ctx.Done()
+				close(openerDone)
+				return ctx.Err()
+			}
+
+			if err := tt.run(dependencies); err == nil {
+				t.Fatal("executeLogin() error = nil, want terminal error")
+			}
+			select {
+			case <-openerDone:
+			default:
+				t.Fatal("login returned before reaping the canceled browser opener")
+			}
+			assertConfigSnapshot(t, path, before)
+		})
+	}
+}
+
+func TestLoginCallbackServerHasExplicitHTTPBounds(t *testing.T) {
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	callback := newLoginCallbackServer(listener, "expected-state")
+	defer callback.shutdown(context.Background())
+	if callback.server.MaxHeaderBytes != loginCallbackMaxHeaderBytes {
+		t.Errorf("MaxHeaderBytes = %d, want %d", callback.server.MaxHeaderBytes, loginCallbackMaxHeaderBytes)
+	}
+	if callback.server.IdleTimeout != loginCallbackIdleTimeout {
+		t.Errorf("IdleTimeout = %s, want %s", callback.server.IdleTimeout, loginCallbackIdleTimeout)
+	}
+	if callback.server.WriteTimeout != loginCallbackWriteTimeout {
+		t.Errorf("WriteTimeout = %s, want %s", callback.server.WriteTimeout, loginCallbackWriteTimeout)
 	}
 }
 
@@ -746,6 +936,39 @@ type trackingBody struct {
 	closed atomic.Bool
 }
 
+type callbackHTTPResponse struct {
+	status int
+	body   string
+}
+
+func getCallbackResponse(ctx context.Context, path string) callbackHTTPResponse {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+loginCallbackAddress+path, http.NoBody)
+	if err != nil {
+		return callbackHTTPResponse{body: "callback request failed"}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return callbackHTTPResponse{body: "callback request failed"}
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return callbackHTTPResponse{status: resp.StatusCode, body: "callback response failed"}
+	}
+	return callbackHTTPResponse{status: resp.StatusCode, body: string(body)}
+}
+
+func receiveCallbackResponse(t *testing.T, responses <-chan callbackHTTPResponse) callbackHTTPResponse {
+	t.Helper()
+	select {
+	case response := <-responses:
+		return response
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for callback HTTP response")
+		return callbackHTTPResponse{}
+	}
+}
+
 func (b *trackingBody) Read(p []byte) (int, error) {
 	if b.ctx != nil {
 		<-b.ctx.Done()
@@ -786,7 +1009,7 @@ func newLoginTestServer(t *testing.T, state, verifier string, tokenHandler http.
 
 func callbackBrowser(path string, page chan<- string) func(context.Context, string) error {
 	return func(ctx context.Context, _ string) error {
-		go requestCallback(ctx, path, page)
+		go requestCallback(context.WithoutCancel(ctx), path, page)
 		return nil
 	}
 }
