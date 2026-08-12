@@ -98,6 +98,9 @@ spec:
               fieldPath: metadata.name
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
+        {{- if eq .Values.deploymentMode "monolith" }}
+        {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
+        {{- end }}
         {{- if .Values.repoServer.enabled }}
         - name: PAPRIKA_REPO_SERVER_ADDR
           value: http://{{ include "paprika.resourceName" (dict "suffix" "repo-server" "context" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.repoServer.service.port }}

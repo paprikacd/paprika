@@ -28,6 +28,80 @@ import (
 	"github.com/benebsworth/paprika/internal/fleet"
 )
 
+func TestRegisterFlagsOIDCSecret(t *testing.T) {
+	testRegisterFlagsEnvDefaultAndOverride(
+		t,
+		"PAPRIKA_OIDC_CLIENT_SECRET",
+		"environment-secret-marker",
+		"--auth-oidc-client-secret=flag-secret-marker",
+		"flag-secret-marker",
+		func(cfg *cliConfig) string { return cfg.authOIDCClientSecret },
+	)
+}
+
+func TestRegisterFlagsOIDCRedirect(t *testing.T) {
+	testRegisterFlagsEnvDefaultAndOverride(
+		t,
+		"PAPRIKA_OIDC_REDIRECT_URL",
+		"https://environment.example.com/auth/callback",
+		"--auth-oidc-redirect-url=https://flag.example.com/auth/callback",
+		"https://flag.example.com/auth/callback",
+		func(cfg *cliConfig) string { return cfg.authOIDCRedirectURL },
+	)
+}
+
+func testRegisterFlagsEnvDefaultAndOverride(
+	t *testing.T,
+	envKey, envValue, flagArg, flagValue string,
+	configValue func(*cliConfig) string,
+) {
+	t.Helper()
+
+	getenv := func(key string) string {
+		if key == envKey {
+			return envValue
+		}
+		return ""
+	}
+
+	t.Run("defaults from environment", func(t *testing.T) {
+		cfg, err := registerFlags(nil, getenv, io.Discard)
+		if err != nil {
+			t.Fatalf("register flags: %v", err)
+		}
+		if got := configValue(cfg); got != envValue {
+			t.Fatalf("config value = %q, want environment value %q", got, envValue)
+		}
+	})
+
+	t.Run("explicit flag overrides environment", func(t *testing.T) {
+		cfg, err := registerFlags([]string{flagArg}, getenv, io.Discard)
+		if err != nil {
+			t.Fatalf("register flags: %v", err)
+		}
+		if got := configValue(cfg); got != flagValue {
+			t.Fatalf("config value = %q, want explicit flag value %q", got, flagValue)
+		}
+	})
+}
+
+func TestBuildAuthConfigCopiesOIDCRedirectURL(t *testing.T) {
+	const redirectURL = "https://paprika.example.com/auth/callback"
+
+	cfg := buildAuthConfig(
+		true,
+		"", "", "",
+		"https://issuer.example.com", "client-id", "client-secret-marker", redirectURL,
+		"", "", logr.Discard(),
+	)
+	if cfg.OIDC == nil {
+		t.Fatal("OIDC config is nil")
+	}
+	if cfg.OIDC.RedirectURL != redirectURL {
+		t.Fatalf("OIDC RedirectURL = %q, want %q", cfg.OIDC.RedirectURL, redirectURL)
+	}
+}
+
 func TestStandaloneEventsRouteDisabled(t *testing.T) {
 	t.Parallel()
 

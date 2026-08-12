@@ -233,12 +233,12 @@ auth:
   oidc:
     enabled: true
     issuerURL: "https://accounts.google.com"
-    # WARNING: These must be overridden via --set or extraEnv. Deployment with
-    # placeholder values will cause "invalid_client" OAuth errors. Source .env
-    # before upgrade:
-    #   source .env && helm upgrade ... --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET"
+    # The deployment path overrides the client ID and creates the referenced
+    # Kubernetes Secret before installing the chart.
     clientID: ""
-    clientSecret: ""
+    existingSecretName: ""
+    existingSecretKey: ""
+    redirectURL: "https://paprika.benebsworth.com/auth/callback"
   rbac:
     - subjects: ["*"]
       actions: ["*"]

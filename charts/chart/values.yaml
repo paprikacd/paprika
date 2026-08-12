@@ -780,11 +780,14 @@ auth:
     enabled: false
     issuerURL: ""
     clientID: ""
+    # -- Deprecated and rejected when nonempty. Use existingSecretName/existingSecretKey.
     clientSecret: ""
-    # -- Pull OIDC client secret from a Kubernetes Secret (e.g. managed by external-secrets).
-    # If set, takes precedence over .clientSecret.
-    # existingSecretName: ""
-    # existingSecretKey: "client-secret"
+    # -- Pull the OIDC client secret from a Kubernetes Secret. Leave both fields
+    # empty for a public client; otherwise both fields must be set.
+    existingSecretName: ""
+    existingSecretKey: ""
+    # -- OIDC callback URL used by the browser login flow.
+    redirectURL: ""
 
   # -- Secret key for signing self-issued auth tokens (HMAC-SHA256).
   # Required for the basic auth login flow. Set via env var PAPRIKA_AUTH_TOKEN_SECRET
@@ -1012,7 +1015,7 @@ externalSecrets:
     #   targetKey: secret
 
     ## OIDC client secret pulled from external provider.
-    ## The resulting secret name is referenced via auth.oidc.clientSecret.existingSecretName.
+    ## The resulting secret name is referenced via auth.oidc.existingSecretName.
     ##
     # - name: paprika-oidc-secret
     #   remoteRef:

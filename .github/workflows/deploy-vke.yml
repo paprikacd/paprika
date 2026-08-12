@@ -155,6 +155,10 @@ jobs:
             exit 1
           fi
 
+          kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-oidc \
+            --from-literal=client-secret="${VKE_OIDC_CLIENT_SECRET}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
@@ -163,7 +167,8 @@ jobs:
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string webhookReceiver.image.repository="${IMAGE_REFERENCE}" \
             --set-string auth.oidc.clientID="${VKE_OIDC_CLIENT_ID}" \
-            --set-string auth.oidc.clientSecret="${VKE_OIDC_CLIENT_SECRET}" \
+            --set-string auth.oidc.existingSecretName=paprika-oidc \
+            --set-string auth.oidc.existingSecretKey=client-secret \
             --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
             --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
             --wait \
