@@ -50,7 +50,7 @@ Logged in as ben@example.com
 
 The command listens only on `127.0.0.1:17632` and accepts exactly one callback at `/callback`. The OIDC provider must allow the exact redirect URI `http://127.0.0.1:17632/callback`.
 
-On success, the CLI stores the ID token and its expiration time in the selected Paprika config file, preserving unrelated configuration. It does not persist the OAuth access token, authorization code, PKCE verifier, state, or refresh token. Re-running `paprika login` replaces the saved ID token.
+On success, the CLI stores the ID token and its expiration time in the selected Paprika config file, preserving unrelated configuration. It does not persist the OAuth access token, authorization code, PKCE verifier, state, or refresh token. Re-running `paprika login` replaces the saved ID token. Bearer tokens take precedence over saved Basic credentials for all API commands, so a successful login is immediately effective without deleting a user's fallback Basic configuration.
 
 ### Status
 
@@ -73,10 +73,11 @@ apps       payments     default  Degraded    Synced       Complete    8m ago
 2. It requests `GET /auth/login?redirect_uri=http%3A%2F%2F127.0.0.1%3A17632%2Fcallback` from the configured Paprika server using an HTTP client with explicit timeouts and bounded response reads.
 3. Paprika validates the redirect URI against an exact allowlist containing its configured browser redirect and the fixed CLI loopback redirect. It generates cryptographically random state and PKCE verifier values and returns the provider URL as it does today.
 4. The CLI retains state and verifier only in memory, opens the returned provider URL, and waits for the loopback callback for at most five minutes.
-5. The callback accepts only `GET /callback`, validates the returned state before using the code, and renders a small success or failure page. Error callbacks are handled without attempting exchange.
-6. The CLI posts the code, verifier, and exact loopback redirect URI to `/auth/token`. The token endpoint applies the same exact redirect allowlist before contacting the provider and continues to validate the returned ID token.
-7. The CLI parses the validated ID token only to display identity and record expiration. The API remains responsible for authenticating it on every request.
-8. Temporary values are released when the command completes. Callback and token-exchange errors never include codes, tokens, or verifier values.
+5. The callback accepts only `GET /callback`, validates the returned state before using the code, and hands the result to the command. Error callbacks are handled without attempting exchange. Wrong paths and methods receive a local error response but do not consume the pending login flow.
+6. The callback response waits while the CLI posts the code, verifier, and exact loopback redirect URI to `/auth/token`. The token endpoint applies the same exact redirect allowlist before contacting the provider and continues to validate the returned ID token.
+7. The CLI reports the exchange outcome back to the waiting callback. Only then does the browser render a terminal success or failure page, so it cannot claim success for a failed exchange.
+8. The CLI parses the validated ID token only to display identity and record expiration. Display identity falls back in this order: `email`, `preferred_username`, then `sub`. The API remains responsible for authenticating the token on every request.
+9. Temporary values are released when the command completes. Callback and token-exchange errors never include codes, tokens, verifier values, provider response bodies, or client secrets.
 
 The server accepts the CLI redirect only when OIDC is enabled. The callback listener is loopback-only and shuts down after one terminal result, timeout, or context cancellation.
 
@@ -95,9 +96,10 @@ The first version intentionally omits arbitrary search, sorting, and mutation co
 
 - Fleet index generation.
 - Total authorized applications.
-- Exact counts by health: healthy, progressing, degraded, failed, unknown, and missing.
-- Exact counts by sync state: synced, out of sync, and unknown.
+- Exact counts for every health enum, including unspecified, healthy, progressing, degraded, failed, unknown, and missing.
+- Exact counts for every sync enum, including unspecified, synced, out of sync, and unknown.
 - A deterministic, impact-ordered list of authorized applications needing attention, capped by `attention_limit`.
+- The exact total number of applications needing attention.
 - Whether more attention records exist beyond the returned list.
 
 An application needs attention when any of the following is true:
@@ -110,17 +112,31 @@ An application needs attention when any of the following is true:
 
 Each attention record reuses the existing `ApplicationSummary` protobuf so consumers receive stable identity, project, health, sync, release, rollout, resource, connection, and transition fields without a parallel model.
 
+Impact ordering is a descending lexicographic tuple followed by an ascending identity tie-breaker:
+
+1. Health severity: failed, missing, degraded, progressing, unknown, unspecified, healthy.
+2. Sync severity: out of sync, unknown, unspecified, synced.
+3. Blocked gate count.
+4. Change severity: failed/degraded/aborted, rolled back, awaiting approval/paused, active, terminal healthy, unspecified.
+5. Number of unhealthy cluster, repository, and observability connections.
+6. Managed resource count.
+7. Last transition time, newest first.
+8. Application namespace and name, ascending.
+
+`attention_limit=0` means the default of 20 because zero is the protobuf omitted value. Values from 1 through 100 are accepted; values above 100 return `InvalidArgument`. Version one does not provide a zero-detail mode.
+
 ## Server Architecture
 
-Add a narrow `QueryStatus` method to the fleet reader and immutable snapshot. It performs authorization filtering, request filtering, aggregation, and attention ordering against one loaded snapshot. It returns provider-neutral data and never performs live Kubernetes reads.
+Add `ProjectKeys(namespaces)` and `QueryStatus(scope, filter, limit)` methods to the immutable fleet snapshot. `ProjectKeys` derives candidates only from that snapshot, while `QueryStatus` performs authorization filtering, request filtering, aggregation, and attention ordering against the same snapshot. They return provider-neutral data and never perform live Kubernetes reads.
 
 The API handler:
 
 1. Validates `attention_limit` and the namespace value.
-2. Loads candidate projects from the fleet reader.
-3. Builds an authorized query scope with the authenticated principal and existing project authorizer.
-4. Calls `QueryStatus` once.
-5. Converts the result to protobuf and returns it.
+2. Calls the reader's existing `LoadSnapshot` exactly once.
+3. Derives candidate projects from that immutable snapshot.
+4. Builds an authorized query scope from those candidates with the authenticated principal and existing project authorizer.
+5. Calls `QueryStatus` on the same snapshot.
+6. Converts the result to protobuf and returns it.
 
 The existing Connect auth interceptor classifies `GetSystemStatus` as a read operation on applications. The handler still builds a project-filtered scope because aggregate endpoints must not reveal unauthorized counts, names, projects, or health states.
 
@@ -131,7 +147,7 @@ The login command is split into independently testable units:
 - A login client that calls `/auth/login` and `/auth/token` with bounded HTTP behavior.
 - A loopback receiver that owns the fixed listener, validates method/path/state, and returns one result.
 - A browser opener with a platform implementation and a printable-URL fallback.
-- A config update function that persists only the server, ID token, and token expiration while preserving unrelated fields.
+- A config update function that persists only the server, ID token, and token expiration while preserving unrelated fields. It writes a temporary file in the same directory, sets mode `0600`, atomically renames it into place, and corrects an existing overly permissive config to `0600`.
 
 The status command uses the generated Connect client and current config. Table formatting is human-oriented; JSON and YAML use the protobuf response directly.
 
@@ -143,9 +159,22 @@ The status command uses the generated Connect client and current config. Table f
 - OAuth state and PKCE values come from `crypto/rand`, remain in memory, and are never logged.
 - The loopback listener binds only IPv4 loopback, handles one flow, has a five-minute deadline, and accepts only its fixed callback route.
 - HTTP clients use explicit timeouts, close response bodies, and cap response size.
+- The server-side provider exchange uses an injected bounded HTTP client, caps the provider body, and returns redacted status errors without echoing provider bodies.
 - Tokens and authorization codes do not appear in URLs generated by Paprika, logs, process arguments, or command output.
 - The CLI config remains mode `0600`. Only the validated ID token is persisted; short-lived exchange material is not.
 - No API response contains Kubernetes Secrets, provider credentials, raw manifests, or inaccessible fleet metadata.
+
+## Deployment Credential Hardening
+
+The existing chart documents `auth.oidc.existingSecretName` and `existingSecretKey`, but current templates do not consume them and instead render the client secret in container arguments. This rollout completes that contract:
+
+- The binary reads `PAPRIKA_OIDC_CLIENT_SECRET` as the default OIDC client secret.
+- API and monolith workloads populate that variable from the configured Kubernetes Secret key.
+- When an existing Secret is configured, Helm does not render `--auth-oidc-client-secret`.
+- The deployment values use the Secret reference, not an inline client secret.
+- The currently exposed Google OAuth client secret is rotated before final live verification.
+
+The non-secret issuer URL and client ID may remain in arguments. The Secret value must not appear in rendered manifests, pod arguments, logs, test snapshots, or command output.
 
 ## Error Handling
 
@@ -169,11 +198,15 @@ The status command uses the generated Connect client and current config. Table f
 - Loopback receiver rejects wrong methods, paths, missing codes, provider errors, and state mismatches.
 - Login timeout and cancellation release the listener.
 - Token exchange requests are bounded and secrets are absent from errors.
-- Config updates preserve unrelated fields and maintain `0600` permissions.
+- Provider exchange uses the injected timeout, rejects oversized responses, and redacts provider bodies.
+- Config updates preserve unrelated fields, use atomic replacement, correct permissions, and maintain `0600` permissions.
+- Saved bearer tokens take precedence over saved Basic credentials.
 - Status aggregation is exact for every health/sync value and attention reason.
-- Attention ordering and truncation are deterministic.
+- Attention total, ordering, truncation, zero/default limit, and maximum limit are deterministic.
 - Authentication rejects missing, malformed, invalid, and expired bearer tokens.
 - Authorization tests prove cross-project applications and aggregate counts are absent.
+- Snapshot consistency tests replace the index between candidate derivation and aggregation and prove one request remains bound to one generation.
+- Chart rendering tests prove a referenced OIDC Secret becomes `PAPRIKA_OIDC_CLIENT_SECRET` and never a container argument or inline value.
 - Protobuf descriptor and generated-code drift checks pass.
 - CLI table, JSON, and YAML golden/structural tests pass.
 
@@ -193,7 +226,8 @@ After pushing and deploying an amd64 image to `paprika-e2e`:
 4. Verify the snapshot matches the authorized applications visible in the dashboard and direct Kubernetes evidence.
 5. Verify an unauthenticated status request is rejected.
 6. Verify a restricted principal cannot infer another project's application names or counts.
-7. Confirm the deployed workloads are ready and the demo application remains healthy.
+7. Confirm pod arguments and rendered workload manifests do not contain the OIDC client secret.
+8. Confirm the deployed workloads are ready and the demo application remains healthy.
 
 ## Non-Goals
 
