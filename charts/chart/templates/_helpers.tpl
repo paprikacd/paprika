@@ -247,7 +247,6 @@ api-server deployments.
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}
-{{- include "paprika.validateOIDCSecret" . }}
 {{- if .Values.auth.enabled }}
 - --auth-enabled=true
 {{- if .Values.auth.basic.enabled }}

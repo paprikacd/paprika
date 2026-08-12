@@ -150,12 +150,13 @@ chart_deploy() {
         if [ -n "${PAPRIKA_OIDC_CLIENT_SECRET:-}" ]; then
             local oidc_secret_result
             oidc_secret_result="$(
-                kubectl --kubeconfig "$KUBECONFIG" -n "$NAMESPACE" create secret generic paprika-oidc \
-                    --from-literal=client-secret="${PAPRIKA_OIDC_CLIENT_SECRET}" \
+                printf '%s' "${PAPRIKA_OIDC_CLIENT_SECRET}" | \
+                    kubectl --kubeconfig "$KUBECONFIG" -n "$NAMESPACE" create secret generic paprika-oidc \
+                    --from-file=client-secret=/dev/stdin \
                     --dry-run=client -o yaml | kubectl --kubeconfig "$KUBECONFIG" apply -f -
             )"
             case "${oidc_secret_result}" in
-                "secret/paprika-oidc created"|"secret/paprika-oidc configured") ;;
+                "secret/paprika-oidc created"|"secret/paprika-oidc configured"|"secret/paprika-oidc unchanged") ;;
                 *) die "Failed to create or configure the paprika-oidc Secret" ;;
             esac
             set_args+=(--set-string "auth.oidc.existingSecretName=paprika-oidc")

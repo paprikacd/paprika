@@ -293,7 +293,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"OIDC issuer URL. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCClientID, "auth-oidc-client-id", "",
 		"OIDC client ID. Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", getenv("PAPRIKA_OIDC_CLIENT_SECRET"),
+	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
 		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
 	fs.StringVar(&cfg.authOIDCRedirectURL, "auth-oidc-redirect-url", getenv("PAPRIKA_OIDC_REDIRECT_URL"),
 		"OIDC redirect URL. Only used when --auth-enabled=true.")
@@ -338,7 +338,18 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
 	}
-	return &cfg, nil
+	return setOIDCClientSecretEnvFallback(fs, &cfg, getenv), nil
+}
+
+func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) *cliConfig {
+	explicit := false
+	fs.Visit(func(f *flag.Flag) {
+		explicit = explicit || f.Name == "auth-oidc-client-secret"
+	})
+	if !explicit {
+		cfg.authOIDCClientSecret = getenv("PAPRIKA_OIDC_CLIENT_SECRET")
+	}
+	return cfg
 }
 
 func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {

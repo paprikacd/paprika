@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +39,39 @@ func TestRegisterFlagsOIDCSecret(t *testing.T) {
 		"flag-secret-marker",
 		func(cfg *cliConfig) string { return cfg.authOIDCClientSecret },
 	)
+
+	t.Run("explicit empty flag overrides environment", func(t *testing.T) {
+		cfg, err := registerFlags([]string{"--auth-oidc-client-secret="}, func(key string) string {
+			if key == "PAPRIKA_OIDC_CLIENT_SECRET" {
+				return "environment-secret-marker"
+			}
+			return ""
+		}, io.Discard)
+		if err != nil {
+			t.Fatalf("register flags: %v", err)
+		}
+		if cfg.authOIDCClientSecret != "" {
+			t.Fatalf("authOIDCClientSecret = %q, want explicit empty value", cfg.authOIDCClientSecret)
+		}
+	})
+}
+
+func TestRegisterFlagsOIDCSecretHelpRedactsEnvironment(t *testing.T) {
+	const secretMarker = "help-secret-marker-do-not-print"
+	var stderr bytes.Buffer
+
+	_, err := registerFlags([]string{"--help"}, func(key string) string {
+		if key == "PAPRIKA_OIDC_CLIENT_SECRET" {
+			return secretMarker
+		}
+		return ""
+	}, &stderr)
+	if !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("register flags error = %v, want flag.ErrHelp", err)
+	}
+	if strings.Contains(stderr.String(), secretMarker) {
+		t.Fatal("help output contains the OIDC client secret environment value")
+	}
 }
 
 func TestRegisterFlagsOIDCRedirect(t *testing.T) {

@@ -57,7 +57,6 @@ assert_secret_env 'sharded monolith StatefulSet' "${sharded_output}"
 
 inline_output="$(mktemp)"
 if helm template paprika "${CHART}" \
-  --show-only templates/api-server/deployment.yaml \
   --set-string deploymentMode=split \
   --set auth.enabled=true \
   --set auth.oidc.enabled=true \
@@ -72,7 +71,6 @@ for partial in name key; do
   partial_output="$(mktemp)"
   partial_args=(
     template paprika "${CHART}"
-    --show-only templates/api-server/deployment.yaml
     --set-string deploymentMode=split
     --set auth.enabled=true
     --set auth.oidc.enabled=true
@@ -98,10 +96,10 @@ public_output="$(helm template paprika "${CHART}" \
   --set-string auth.oidc.clientID=public-client-marker)"
 [[ "${public_output}" != *'PAPRIKA_OIDC_CLIENT_SECRET'* ]] || fail 'public client unexpectedly rendered an OIDC secret environment variable'
 [[ "${public_output}" != *'--auth-oidc-client-secret'* ]] || fail 'public client unexpectedly rendered an OIDC secret argument'
+[[ "${public_output}" != *'# Source: paprika/templates/validate.yaml'* ]] || fail 'validation template emitted a spurious manifest'
 
 inactive_inline_output="$(mktemp)"
 if helm template paprika "${CHART}" \
-  --show-only templates/api-server/deployment.yaml \
   --set-string deploymentMode=split \
   --set auth.enabled=false \
   --set auth.oidc.enabled=false \
@@ -116,7 +114,6 @@ for partial in name key; do
   inactive_partial_output="$(mktemp)"
   inactive_partial_args=(
     template paprika "${CHART}"
-    --show-only templates/api-server/deployment.yaml
     --set-string deploymentMode=split
     --set auth.enabled=false
     --set auth.oidc.enabled=false
@@ -132,5 +129,52 @@ for partial in name key; do
   grep -Fq "${PARTIAL_ERROR}" "${inactive_partial_output}" || fail "inactive partial OIDC Secret ${partial} failure did not require both settings"
   rm -f "${inactive_partial_output}"
 done
+
+disabled_workload_args=(
+  template paprika "${CHART}"
+  --set-string deploymentMode=monolith
+  --set manager.enabled=false
+  --set apiServer.enabled=false
+  --set webhookReceiver.enabled=false
+  --set repoServer.enabled=false
+  --set agent.enabled=false
+  --set auth.enabled=false
+  --set auth.oidc.enabled=false
+)
+
+disabled_inline_output="$(mktemp)"
+if helm "${disabled_workload_args[@]}" \
+  --set-string auth.oidc.clientSecret=DO-NOT-RENDER >"${disabled_inline_output}" 2>&1; then
+  fail 'disabled-workload inline OIDC clientSecret unexpectedly rendered successfully'
+fi
+grep -Fq "${INLINE_ERROR}" "${disabled_inline_output}" || fail 'disabled-workload inline clientSecret failure did not contain the migration error'
+grep -Fq 'DO-NOT-RENDER' "${disabled_inline_output}" && fail 'disabled-workload inline secret marker appeared in Helm failure output'
+rm -f "${disabled_inline_output}"
+
+for partial in name key; do
+  disabled_partial_output="$(mktemp)"
+  disabled_partial_args=("${disabled_workload_args[@]}")
+  if [[ "${partial}" == name ]]; then
+    disabled_partial_args+=(--set-string auth.oidc.existingSecretName=paprika-oidc)
+  else
+    disabled_partial_args+=(--set-string auth.oidc.existingSecretKey=client-secret)
+  fi
+  if helm "${disabled_partial_args[@]}" >"${disabled_partial_output}" 2>&1; then
+    fail "disabled-workload partial OIDC Secret ${partial} configuration unexpectedly rendered successfully"
+  fi
+  grep -Fq "${PARTIAL_ERROR}" "${disabled_partial_output}" || fail "disabled-workload partial OIDC Secret ${partial} failure did not require both settings"
+  rm -f "${disabled_partial_output}"
+done
+
+split_sharded_api_output="$(render_workload templates/api-server/deployment.yaml \
+  --set-string deploymentMode=split \
+  --set manager.sharding.enabled=true)"
+assert_secret_env 'split sharded API Deployment' "${split_sharded_api_output}"
+
+split_sharded_manager_output="$(render_workload templates/manager/statefulset.yaml \
+  --set-string deploymentMode=split \
+  --set manager.sharding.enabled=true)"
+[[ "${split_sharded_manager_output}" != *'PAPRIKA_OIDC_CLIENT_SECRET'* ]] || fail 'split sharded controller StatefulSet unexpectedly owns the OIDC Secret env'
+[[ "${split_sharded_manager_output}" != *'--auth-oidc-'* ]] || fail 'split sharded controller StatefulSet unexpectedly receives OIDC arguments'
 
 printf 'OIDC Secret rendering checks passed\n'
