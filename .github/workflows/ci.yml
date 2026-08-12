@@ -165,6 +165,12 @@ jobs:
         with:
           version: v3.21.2
 
+      - name: Verify OIDC Secret rendering
+        run: bash hack/test-oidc-secret-rendering.sh
+
+      - name: Verify OIDC deployment migration
+        run: bash hack/test-oidc-deployment-migration.sh
+
       - name: Lint chart
         run: helm lint charts/chart/
 

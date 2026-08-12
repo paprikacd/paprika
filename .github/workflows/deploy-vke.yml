@@ -144,6 +144,7 @@ jobs:
           VKE_AUTH_TOKEN_SECRET: ${{ secrets.VKE_AUTH_TOKEN_SECRET }}
           VKE_BASIC_PASSWORD_HASH: ${{ secrets.VKE_BASIC_PASSWORD_HASH }}
         run: |
+          set -o pipefail
           missing=0
           for name in VKE_OIDC_CLIENT_ID VKE_OIDC_CLIENT_SECRET VKE_AUTH_TOKEN_SECRET VKE_BASIC_PASSWORD_HASH; do
             if [ -z "${!name:-}" ]; then
@@ -155,6 +156,20 @@ jobs:
             exit 1
           fi
 
+          oidc_secret_result="$(
+            printf '%s' "${VKE_OIDC_CLIENT_SECRET}" | \
+              kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-oidc \
+              --from-file=client-secret=/dev/stdin \
+              --dry-run=client -o yaml | kubectl apply -f -
+          )"
+          case "${oidc_secret_result}" in
+            "secret/paprika-oidc created"|"secret/paprika-oidc configured"|"secret/paprika-oidc unchanged") ;;
+            *)
+              echo "::error::failed to create or configure the paprika-oidc Secret"
+              exit 1
+              ;;
+          esac
+
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
@@ -163,7 +178,8 @@ jobs:
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string webhookReceiver.image.repository="${IMAGE_REFERENCE}" \
             --set-string auth.oidc.clientID="${VKE_OIDC_CLIENT_ID}" \
-            --set-string auth.oidc.clientSecret="${VKE_OIDC_CLIENT_SECRET}" \
+            --set-string auth.oidc.existingSecretName=paprika-oidc \
+            --set-string auth.oidc.existingSecretKey=client-secret \
             --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
             --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
             --wait \

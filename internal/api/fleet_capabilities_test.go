@@ -218,6 +218,24 @@ func TestFleetCapabilitiesStillAuthorizeAnEmptyCandidateSetOnce(t *testing.T) {
 	require.Empty(t, authorizer.authorizeCalls)
 }
 
+func TestFleetCapabilitiesBuildsScopeFromFixedSnapshotProjects(t *testing.T) {
+	t.Parallel()
+
+	principal := &auth.Principal{Subject: "alice"}
+	project := fleet.ProjectKey{Namespace: "tenant", Name: "payments"}
+	authorizer := &fleetScopeAuthorizer{
+		authorized: []auth.ProjectRef{{Namespace: project.Namespace, Name: project.Name}},
+	}
+
+	scope, err := buildFleetQueryScopeFromProjects(
+		context.Background(), authorizer, principal, []fleet.ProjectKey{project, project},
+	)
+	require.NoError(t, err)
+	require.Equal(t, fleet.ProjectSet{project: {}}, scope.Projects)
+	require.Len(t, authorizer.authorizedCalls, 1)
+	require.Equal(t, []auth.ProjectRef{{Namespace: project.Namespace, Name: project.Name}}, authorizer.authorizedCalls[0].candidates)
+}
+
 func TestFleetCapabilitiesNilReaderIsUnavailable(t *testing.T) {
 	t.Parallel()
 

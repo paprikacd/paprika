@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -75,4 +77,24 @@ func stringPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func sanitizeTerminalDisplay(value string, maxBytes int) string {
+	var display strings.Builder
+	display.Grow(min(len(value), maxBytes))
+	for value != "" {
+		r, size := utf8.DecodeRuneInString(value)
+		value = value[size:]
+		var rendered string
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			rendered = fmt.Sprintf("\\u%04X", r)
+		} else {
+			rendered = string(r)
+		}
+		if display.Len()+len(rendered) > maxBytes {
+			break
+		}
+		display.WriteString(rendered)
+	}
+	return display.String()
 }

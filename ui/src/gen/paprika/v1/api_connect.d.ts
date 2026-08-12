@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, GetSystemStatusRequest, GetSystemStatusResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -370,6 +370,15 @@ export declare const PaprikaService: {
       readonly name: "QueryFleetMatrix",
       readonly I: typeof QueryFleetMatrixRequest,
       readonly O: typeof QueryFleetMatrixResponse,
+      readonly kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetSystemStatus
+     */
+    readonly getSystemStatus: {
+      readonly name: "GetSystemStatus",
+      readonly I: typeof GetSystemStatusRequest,
+      readonly O: typeof GetSystemStatusResponse,
       readonly kind: MethodKind.Unary,
     },
   }

@@ -58,6 +58,17 @@ func buildFleetQueryScope(
 	if err != nil {
 		return fleet.QueryScope{}, fmt.Errorf("load fleet project candidates: %w", err)
 	}
+	return buildFleetQueryScopeFromProjects(ctx, authorizer, principal, projectKeys)
+}
+
+// buildFleetQueryScopeFromProjects derives authorization from candidates held
+// by one already-loaded immutable snapshot.
+func buildFleetQueryScopeFromProjects(
+	ctx context.Context,
+	authorizer auth.Authorizer,
+	principal *auth.Principal,
+	projectKeys []fleet.ProjectKey,
+) (fleet.QueryScope, error) {
 	projectKeys = uniqueFleetProjectKeys(projectKeys)
 
 	if authorizer == nil {

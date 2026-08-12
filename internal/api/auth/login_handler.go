@@ -25,9 +25,10 @@ func (o *OIDCAuthenticator) LoginHandler() http.HandlerFunc {
 			return
 		}
 
-		redirectURI := r.URL.Query().Get("redirect_uri")
-		if redirectURI == "" {
-			redirectURI = o.oauth2Config.RedirectURL
+		redirectURI, err := o.validateRedirectURL(r.URL.Query().Get("redirect_uri"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		state, err := randomString(32)

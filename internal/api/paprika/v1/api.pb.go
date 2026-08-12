@@ -9697,6 +9697,202 @@ func (x *FleetHealthBucket) GetCount() uint64 {
 	return 0
 }
 
+type FleetSyncBucket struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sync          FleetSyncState         `protobuf:"varint,1,opt,name=sync,proto3,enum=paprika.v1.FleetSyncState" json:"sync,omitempty"`
+	Count         uint64                 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FleetSyncBucket) Reset() {
+	*x = FleetSyncBucket{}
+	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FleetSyncBucket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FleetSyncBucket) ProtoMessage() {}
+
+func (x *FleetSyncBucket) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FleetSyncBucket.ProtoReflect.Descriptor instead.
+func (*FleetSyncBucket) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{126}
+}
+
+func (x *FleetSyncBucket) GetSync() FleetSyncState {
+	if x != nil {
+		return x.Sync
+	}
+	return FleetSyncState_FLEET_SYNC_STATE_UNSPECIFIED
+}
+
+func (x *FleetSyncBucket) GetCount() uint64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+type GetSystemStatusRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Namespace      *string                `protobuf:"bytes,1,opt,name=namespace,proto3,oneof" json:"namespace,omitempty"`
+	AttentionLimit uint32                 `protobuf:"varint,2,opt,name=attention_limit,json=attentionLimit,proto3" json:"attention_limit,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GetSystemStatusRequest) Reset() {
+	*x = GetSystemStatusRequest{}
+	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemStatusRequest) ProtoMessage() {}
+
+func (x *GetSystemStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetSystemStatusRequest) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{127}
+}
+
+func (x *GetSystemStatusRequest) GetNamespace() string {
+	if x != nil && x.Namespace != nil {
+		return *x.Namespace
+	}
+	return ""
+}
+
+func (x *GetSystemStatusRequest) GetAttentionLimit() uint32 {
+	if x != nil {
+		return x.AttentionLimit
+	}
+	return 0
+}
+
+type GetSystemStatusResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	IndexGeneration  uint64                 `protobuf:"varint,1,opt,name=index_generation,json=indexGeneration,proto3" json:"index_generation,omitempty"`
+	Total            uint64                 `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"`
+	Health           []*FleetHealthBucket   `protobuf:"bytes,3,rep,name=health,proto3" json:"health,omitempty"`
+	Sync             []*FleetSyncBucket     `protobuf:"bytes,4,rep,name=sync,proto3" json:"sync,omitempty"`
+	AttentionTotal   uint64                 `protobuf:"varint,5,opt,name=attention_total,json=attentionTotal,proto3" json:"attention_total,omitempty"`
+	Attention        []*ApplicationSummary  `protobuf:"bytes,6,rep,name=attention,proto3" json:"attention,omitempty"`
+	HasMoreAttention bool                   `protobuf:"varint,7,opt,name=has_more_attention,json=hasMoreAttention,proto3" json:"has_more_attention,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GetSystemStatusResponse) Reset() {
+	*x = GetSystemStatusResponse{}
+	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemStatusResponse) ProtoMessage() {}
+
+func (x *GetSystemStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetSystemStatusResponse) Descriptor() ([]byte, []int) {
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{128}
+}
+
+func (x *GetSystemStatusResponse) GetIndexGeneration() uint64 {
+	if x != nil {
+		return x.IndexGeneration
+	}
+	return 0
+}
+
+func (x *GetSystemStatusResponse) GetTotal() uint64 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *GetSystemStatusResponse) GetHealth() []*FleetHealthBucket {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *GetSystemStatusResponse) GetSync() []*FleetSyncBucket {
+	if x != nil {
+		return x.Sync
+	}
+	return nil
+}
+
+func (x *GetSystemStatusResponse) GetAttentionTotal() uint64 {
+	if x != nil {
+		return x.AttentionTotal
+	}
+	return 0
+}
+
+func (x *GetSystemStatusResponse) GetAttention() []*ApplicationSummary {
+	if x != nil {
+		return x.Attention
+	}
+	return nil
+}
+
+func (x *GetSystemStatusResponse) GetHasMoreAttention() bool {
+	if x != nil {
+		return x.HasMoreAttention
+	}
+	return false
+}
+
 type QueryApplicationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Filter        *FleetFilter           `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
@@ -9711,7 +9907,7 @@ type QueryApplicationsRequest struct {
 
 func (x *QueryApplicationsRequest) Reset() {
 	*x = QueryApplicationsRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	mi := &file_paprika_v1_api_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9723,7 +9919,7 @@ func (x *QueryApplicationsRequest) String() string {
 func (*QueryApplicationsRequest) ProtoMessage() {}
 
 func (x *QueryApplicationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[126]
+	mi := &file_paprika_v1_api_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9736,7 +9932,7 @@ func (x *QueryApplicationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryApplicationsRequest.ProtoReflect.Descriptor instead.
 func (*QueryApplicationsRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{126}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *QueryApplicationsRequest) GetFilter() *FleetFilter {
@@ -9794,7 +9990,7 @@ type QueryApplicationsResponse struct {
 
 func (x *QueryApplicationsResponse) Reset() {
 	*x = QueryApplicationsResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	mi := &file_paprika_v1_api_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9806,7 +10002,7 @@ func (x *QueryApplicationsResponse) String() string {
 func (*QueryApplicationsResponse) ProtoMessage() {}
 
 func (x *QueryApplicationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[127]
+	mi := &file_paprika_v1_api_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9819,7 +10015,7 @@ func (x *QueryApplicationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryApplicationsResponse.ProtoReflect.Descriptor instead.
 func (*QueryApplicationsResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{127}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *QueryApplicationsResponse) GetApplications() []*ApplicationSummary {
@@ -9882,7 +10078,7 @@ type FleetMapNode struct {
 
 func (x *FleetMapNode) Reset() {
 	*x = FleetMapNode{}
-	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	mi := &file_paprika_v1_api_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -9894,7 +10090,7 @@ func (x *FleetMapNode) String() string {
 func (*FleetMapNode) ProtoMessage() {}
 
 func (x *FleetMapNode) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[128]
+	mi := &file_paprika_v1_api_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -9907,7 +10103,7 @@ func (x *FleetMapNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetMapNode.ProtoReflect.Descriptor instead.
 func (*FleetMapNode) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{128}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *FleetMapNode) GetStableId() string {
@@ -10047,7 +10243,7 @@ type QueryFleetMapRequest struct {
 
 func (x *QueryFleetMapRequest) Reset() {
 	*x = QueryFleetMapRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[129]
+	mi := &file_paprika_v1_api_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10059,7 +10255,7 @@ func (x *QueryFleetMapRequest) String() string {
 func (*QueryFleetMapRequest) ProtoMessage() {}
 
 func (x *QueryFleetMapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[129]
+	mi := &file_paprika_v1_api_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10072,7 +10268,7 @@ func (x *QueryFleetMapRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryFleetMapRequest.ProtoReflect.Descriptor instead.
 func (*QueryFleetMapRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{129}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *QueryFleetMapRequest) GetFilter() *FleetFilter {
@@ -10115,7 +10311,7 @@ type QueryFleetMapResponse struct {
 
 func (x *QueryFleetMapResponse) Reset() {
 	*x = QueryFleetMapResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[130]
+	mi := &file_paprika_v1_api_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10127,7 +10323,7 @@ func (x *QueryFleetMapResponse) String() string {
 func (*QueryFleetMapResponse) ProtoMessage() {}
 
 func (x *QueryFleetMapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[130]
+	mi := &file_paprika_v1_api_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10140,7 +10336,7 @@ func (x *QueryFleetMapResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryFleetMapResponse.ProtoReflect.Descriptor instead.
 func (*QueryFleetMapResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{130}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *QueryFleetMapResponse) GetRoots() []*FleetMapNode {
@@ -10186,7 +10382,7 @@ type FleetMatrixHeader struct {
 
 func (x *FleetMatrixHeader) Reset() {
 	*x = FleetMatrixHeader{}
-	mi := &file_paprika_v1_api_proto_msgTypes[131]
+	mi := &file_paprika_v1_api_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10198,7 +10394,7 @@ func (x *FleetMatrixHeader) String() string {
 func (*FleetMatrixHeader) ProtoMessage() {}
 
 func (x *FleetMatrixHeader) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[131]
+	mi := &file_paprika_v1_api_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10211,7 +10407,7 @@ func (x *FleetMatrixHeader) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetMatrixHeader.ProtoReflect.Descriptor instead.
 func (*FleetMatrixHeader) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{131}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *FleetMatrixHeader) GetStableId() string {
@@ -10285,7 +10481,7 @@ type FleetMatrixCell struct {
 
 func (x *FleetMatrixCell) Reset() {
 	*x = FleetMatrixCell{}
-	mi := &file_paprika_v1_api_proto_msgTypes[132]
+	mi := &file_paprika_v1_api_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10297,7 +10493,7 @@ func (x *FleetMatrixCell) String() string {
 func (*FleetMatrixCell) ProtoMessage() {}
 
 func (x *FleetMatrixCell) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[132]
+	mi := &file_paprika_v1_api_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10310,7 +10506,7 @@ func (x *FleetMatrixCell) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FleetMatrixCell.ProtoReflect.Descriptor instead.
 func (*FleetMatrixCell) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{132}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *FleetMatrixCell) GetRowId() string {
@@ -10382,7 +10578,7 @@ type QueryFleetMatrixRequest struct {
 
 func (x *QueryFleetMatrixRequest) Reset() {
 	*x = QueryFleetMatrixRequest{}
-	mi := &file_paprika_v1_api_proto_msgTypes[133]
+	mi := &file_paprika_v1_api_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10394,7 +10590,7 @@ func (x *QueryFleetMatrixRequest) String() string {
 func (*QueryFleetMatrixRequest) ProtoMessage() {}
 
 func (x *QueryFleetMatrixRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[133]
+	mi := &file_paprika_v1_api_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10407,7 +10603,7 @@ func (x *QueryFleetMatrixRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryFleetMatrixRequest.ProtoReflect.Descriptor instead.
 func (*QueryFleetMatrixRequest) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{133}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *QueryFleetMatrixRequest) GetFilter() *FleetFilter {
@@ -10459,7 +10655,7 @@ type QueryFleetMatrixResponse struct {
 
 func (x *QueryFleetMatrixResponse) Reset() {
 	*x = QueryFleetMatrixResponse{}
-	mi := &file_paprika_v1_api_proto_msgTypes[134]
+	mi := &file_paprika_v1_api_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -10471,7 +10667,7 @@ func (x *QueryFleetMatrixResponse) String() string {
 func (*QueryFleetMatrixResponse) ProtoMessage() {}
 
 func (x *QueryFleetMatrixResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_paprika_v1_api_proto_msgTypes[134]
+	mi := &file_paprika_v1_api_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -10484,7 +10680,7 @@ func (x *QueryFleetMatrixResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryFleetMatrixResponse.ProtoReflect.Descriptor instead.
 func (*QueryFleetMatrixResponse) Descriptor() ([]byte, []int) {
-	return file_paprika_v1_api_proto_rawDescGZIP(), []int{134}
+	return file_paprika_v1_api_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *QueryFleetMatrixResponse) GetRows() []*FleetMatrixHeader {
@@ -11323,7 +11519,23 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x03key\"Z\n" +
 	"\x11FleetHealthBucket\x12/\n" +
 	"\x06health\x18\x01 \x01(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x04R\x05count\"\x86\x02\n" +
+	"\x05count\x18\x02 \x01(\x04R\x05count\"W\n" +
+	"\x0fFleetSyncBucket\x12.\n" +
+	"\x04sync\x18\x01 \x01(\x0e2\x1a.paprika.v1.FleetSyncStateR\x04sync\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x04R\x05count\"r\n" +
+	"\x16GetSystemStatusRequest\x12!\n" +
+	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12'\n" +
+	"\x0fattention_limit\x18\x02 \x01(\rR\x0eattentionLimitB\f\n" +
+	"\n" +
+	"_namespace\"\xd7\x02\n" +
+	"\x17GetSystemStatusResponse\x12)\n" +
+	"\x10index_generation\x18\x01 \x01(\x04R\x0findexGeneration\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x04R\x05total\x125\n" +
+	"\x06health\x18\x03 \x03(\v2\x1d.paprika.v1.FleetHealthBucketR\x06health\x12/\n" +
+	"\x04sync\x18\x04 \x03(\v2\x1b.paprika.v1.FleetSyncBucketR\x04sync\x12'\n" +
+	"\x0fattention_total\x18\x05 \x01(\x04R\x0eattentionTotal\x12<\n" +
+	"\tattention\x18\x06 \x03(\v2\x1e.paprika.v1.ApplicationSummaryR\tattention\x12,\n" +
+	"\x12has_more_attention\x18\a \x01(\bR\x10hasMoreAttention\"\x86\x02\n" +
 	"\x18QueryApplicationsRequest\x12/\n" +
 	"\x06filter\x18\x01 \x01(\v2\x17.paprika.v1.FleetFilterR\x06filter\x12\x16\n" +
 	"\x06search\x18\x02 \x01(\tR\x06search\x12.\n" +
@@ -11498,7 +11710,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x10FleetMapNodeKind\x12#\n" +
 	"\x1fFLEET_MAP_NODE_KIND_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19FLEET_MAP_NODE_KIND_GROUP\x10\x01\x12#\n" +
-	"\x1fFLEET_MAP_NODE_KIND_APPLICATION\x10\x022\xc4\x1b\n" +
+	"\x1fFLEET_MAP_NODE_KIND_APPLICATION\x10\x022\xa0\x1c\n" +
 	"\x0ePaprikaService\x12T\n" +
 	"\rListPipelines\x12 .paprika.v1.ListPipelinesRequest\x1a!.paprika.v1.ListPipelinesResponse\x12Q\n" +
 	"\fListReleases\x12\x1f.paprika.v1.ListReleasesRequest\x1a .paprika.v1.ListReleasesResponse\x12K\n" +
@@ -11542,7 +11754,8 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x17ListInvestigatorPlugins\x12*.paprika.v1.ListInvestigatorPluginsRequest\x1a+.paprika.v1.ListInvestigatorPluginsResponse\x12`\n" +
 	"\x11QueryApplications\x12$.paprika.v1.QueryApplicationsRequest\x1a%.paprika.v1.QueryApplicationsResponse\x12T\n" +
 	"\rQueryFleetMap\x12 .paprika.v1.QueryFleetMapRequest\x1a!.paprika.v1.QueryFleetMapResponse\x12]\n" +
-	"\x10QueryFleetMatrix\x12#.paprika.v1.QueryFleetMatrixRequest\x1a$.paprika.v1.QueryFleetMatrixResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
+	"\x10QueryFleetMatrix\x12#.paprika.v1.QueryFleetMatrixRequest\x1a$.paprika.v1.QueryFleetMatrixResponse\x12Z\n" +
+	"\x0fGetSystemStatus\x12\".paprika.v1.GetSystemStatusRequest\x1a#.paprika.v1.GetSystemStatusResponseB8Z6github.com/benebsworth/paprika/internal/api/paprika/v1b\x06proto3"
 
 var (
 	file_paprika_v1_api_proto_rawDescOnce sync.Once
@@ -11557,7 +11770,7 @@ func file_paprika_v1_api_proto_rawDescGZIP() []byte {
 }
 
 var file_paprika_v1_api_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 143)
+var file_paprika_v1_api_proto_msgTypes = make([]protoimpl.MessageInfo, 146)
 var file_paprika_v1_api_proto_goTypes = []any{
 	(Severity)(0),                           // 0: paprika.v1.Severity
 	(FleetHealth)(0),                        // 1: paprika.v1.FleetHealth
@@ -11699,36 +11912,39 @@ var file_paprika_v1_api_proto_goTypes = []any{
 	(*ApplicationSummary)(nil),              // 137: paprika.v1.ApplicationSummary
 	(*FleetFacetBucket)(nil),                // 138: paprika.v1.FleetFacetBucket
 	(*FleetHealthBucket)(nil),               // 139: paprika.v1.FleetHealthBucket
-	(*QueryApplicationsRequest)(nil),        // 140: paprika.v1.QueryApplicationsRequest
-	(*QueryApplicationsResponse)(nil),       // 141: paprika.v1.QueryApplicationsResponse
-	(*FleetMapNode)(nil),                    // 142: paprika.v1.FleetMapNode
-	(*QueryFleetMapRequest)(nil),            // 143: paprika.v1.QueryFleetMapRequest
-	(*QueryFleetMapResponse)(nil),           // 144: paprika.v1.QueryFleetMapResponse
-	(*FleetMatrixHeader)(nil),               // 145: paprika.v1.FleetMatrixHeader
-	(*FleetMatrixCell)(nil),                 // 146: paprika.v1.FleetMatrixCell
-	(*QueryFleetMatrixRequest)(nil),         // 147: paprika.v1.QueryFleetMatrixRequest
-	(*QueryFleetMatrixResponse)(nil),        // 148: paprika.v1.QueryFleetMatrixResponse
-	nil,                                     // 149: paprika.v1.HTTPProbe.HeadersEntry
-	nil,                                     // 150: paprika.v1.AnalysisRun.ArgsEntry
-	nil,                                     // 151: paprika.v1.Application.ParametersEntry
-	nil,                                     // 152: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
-	nil,                                     // 153: paprika.v1.NotificationDestination.HeadersEntry
-	nil,                                     // 154: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
-	nil,                                     // 155: paprika.v1.GetResourceResponse.LabelsEntry
-	nil,                                     // 156: paprika.v1.GetResourceResponse.AnnotationsEntry
+	(*FleetSyncBucket)(nil),                 // 140: paprika.v1.FleetSyncBucket
+	(*GetSystemStatusRequest)(nil),          // 141: paprika.v1.GetSystemStatusRequest
+	(*GetSystemStatusResponse)(nil),         // 142: paprika.v1.GetSystemStatusResponse
+	(*QueryApplicationsRequest)(nil),        // 143: paprika.v1.QueryApplicationsRequest
+	(*QueryApplicationsResponse)(nil),       // 144: paprika.v1.QueryApplicationsResponse
+	(*FleetMapNode)(nil),                    // 145: paprika.v1.FleetMapNode
+	(*QueryFleetMapRequest)(nil),            // 146: paprika.v1.QueryFleetMapRequest
+	(*QueryFleetMapResponse)(nil),           // 147: paprika.v1.QueryFleetMapResponse
+	(*FleetMatrixHeader)(nil),               // 148: paprika.v1.FleetMatrixHeader
+	(*FleetMatrixCell)(nil),                 // 149: paprika.v1.FleetMatrixCell
+	(*QueryFleetMatrixRequest)(nil),         // 150: paprika.v1.QueryFleetMatrixRequest
+	(*QueryFleetMatrixResponse)(nil),        // 151: paprika.v1.QueryFleetMatrixResponse
+	nil,                                     // 152: paprika.v1.HTTPProbe.HeadersEntry
+	nil,                                     // 153: paprika.v1.AnalysisRun.ArgsEntry
+	nil,                                     // 154: paprika.v1.Application.ParametersEntry
+	nil,                                     // 155: paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	nil,                                     // 156: paprika.v1.NotificationDestination.HeadersEntry
+	nil,                                     // 157: paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	nil,                                     // 158: paprika.v1.GetResourceResponse.LabelsEntry
+	nil,                                     // 159: paprika.v1.GetResourceResponse.AnnotationsEntry
 }
 var file_paprika_v1_api_proto_depIdxs = []int32{
 	17,  // 0: paprika.v1.ApplicationSource.chart:type_name -> paprika.v1.ChartRef
 	18,  // 1: paprika.v1.ApplicationSource.inline:type_name -> paprika.v1.InlineSource
 	19,  // 2: paprika.v1.ApplicationSource.oci:type_name -> paprika.v1.OCISource
-	149, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
+	152, // 3: paprika.v1.HTTPProbe.headers:type_name -> paprika.v1.HTTPProbe.HeadersEntry
 	22,  // 4: paprika.v1.HealthCheck.http_probe:type_name -> paprika.v1.HTTPProbe
-	150, // 5: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
+	153, // 5: paprika.v1.AnalysisRun.args:type_name -> paprika.v1.AnalysisRun.ArgsEntry
 	30,  // 6: paprika.v1.AnalysisRun.results:type_name -> paprika.v1.AnalysisRunResult
 	28,  // 7: paprika.v1.AnalysisRun.conditions:type_name -> paprika.v1.Condition
 	21,  // 8: paprika.v1.Application.stages:type_name -> paprika.v1.ApplicationStage
 	20,  // 9: paprika.v1.Application.source:type_name -> paprika.v1.ApplicationSource
-	151, // 10: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
+	154, // 10: paprika.v1.Application.parameters:type_name -> paprika.v1.Application.ParametersEntry
 	24,  // 11: paprika.v1.Application.health_checks:type_name -> paprika.v1.HealthCheckResult
 	25,  // 12: paprika.v1.Application.resources:type_name -> paprika.v1.ResourceSync
 	26,  // 13: paprika.v1.Application.resource_health:type_name -> paprika.v1.ResourceHealth
@@ -11745,7 +11961,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	38,  // 24: paprika.v1.Release.hook_statuses:type_name -> paprika.v1.HookStatus
 	41,  // 25: paprika.v1.TrafficRouter.istio:type_name -> paprika.v1.IstioRouterConfig
 	42,  // 26: paprika.v1.TrafficRouter.gateway_api:type_name -> paprika.v1.GatewayAPIRouterConfig
-	152, // 27: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
+	155, // 27: paprika.v1.RolloutAnalysisCheck.http_headers:type_name -> paprika.v1.RolloutAnalysisCheck.HttpHeadersEntry
 	33,  // 28: paprika.v1.ListPipelinesResponse.pipelines:type_name -> paprika.v1.Pipeline
 	36,  // 29: paprika.v1.ListReleasesResponse.releases:type_name -> paprika.v1.Release
 	39,  // 30: paprika.v1.ListStagesResponse.stages:type_name -> paprika.v1.Stage
@@ -11755,7 +11971,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	59,  // 34: paprika.v1.ListApplicationSetsResponse.applicationsets:type_name -> paprika.v1.ApplicationSet
 	59,  // 35: paprika.v1.GetApplicationSetResponse.applicationset:type_name -> paprika.v1.ApplicationSet
 	32,  // 36: paprika.v1.SyncApplicationResponse.application:type_name -> paprika.v1.Application
-	153, // 37: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
+	156, // 37: paprika.v1.NotificationDestination.headers:type_name -> paprika.v1.NotificationDestination.HeadersEntry
 	66,  // 38: paprika.v1.NotificationConfig.triggers:type_name -> paprika.v1.NotificationTrigger
 	67,  // 39: paprika.v1.NotificationConfig.destinations:type_name -> paprika.v1.NotificationDestination
 	68,  // 40: paprika.v1.NotificationConfig.smtp:type_name -> paprika.v1.SMTPConfig
@@ -11764,7 +11980,7 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	32,  // 43: paprika.v1.ApproveGateResponse.application:type_name -> paprika.v1.Application
 	27,  // 44: paprika.v1.ListGateStatusResponse.gates:type_name -> paprika.v1.GateStatus
 	32,  // 45: paprika.v1.RejectGateResponse.application:type_name -> paprika.v1.Application
-	154, // 46: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
+	157, // 46: paprika.v1.ApplyBundleRequest.policy_overrides:type_name -> paprika.v1.ApplyBundleRequest.PolicyOverridesEntry
 	32,  // 47: paprika.v1.ApplyBundleResponse.application:type_name -> paprika.v1.Application
 	36,  // 48: paprika.v1.ApplyBundleResponse.release:type_name -> paprika.v1.Release
 	35,  // 49: paprika.v1.ApplyBundleResponse.policy_results:type_name -> paprika.v1.PolicyResult
@@ -11784,8 +12000,8 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	16,  // 63: paprika.v1.GetArtifactResponse.artifact:type_name -> paprika.v1.ArtifactRef
 	16,  // 64: paprika.v1.ListArtifactsResponse.artifacts:type_name -> paprika.v1.ArtifactRef
 	115, // 65: paprika.v1.GetResourceResponse.events:type_name -> paprika.v1.KubernetesEvent
-	155, // 66: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
-	156, // 67: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
+	158, // 66: paprika.v1.GetResourceResponse.labels:type_name -> paprika.v1.GetResourceResponse.LabelsEntry
+	159, // 67: paprika.v1.GetResourceResponse.annotations:type_name -> paprika.v1.GetResourceResponse.AnnotationsEntry
 	118, // 68: paprika.v1.GetResourceTreeResponse.nodes:type_name -> paprika.v1.ResourceNode
 	123, // 69: paprika.v1.GetResourceTreeDetailedResponse.nodes:type_name -> paprika.v1.ResourceTreeNode
 	0,   // 70: paprika.v1.InvestigationFinding.severity:type_name -> paprika.v1.Severity
@@ -11819,116 +12035,122 @@ var file_paprika_v1_api_proto_depIdxs = []int32{
 	10,  // 98: paprika.v1.FleetFacetBucket.dimension:type_name -> paprika.v1.FleetFacetDimension
 	134, // 99: paprika.v1.FleetFacetBucket.object:type_name -> paprika.v1.FleetObjectKey
 	1,   // 100: paprika.v1.FleetHealthBucket.health:type_name -> paprika.v1.FleetHealth
-	135, // 101: paprika.v1.QueryApplicationsRequest.filter:type_name -> paprika.v1.FleetFilter
-	6,   // 102: paprika.v1.QueryApplicationsRequest.sort:type_name -> paprika.v1.FleetSortField
-	7,   // 103: paprika.v1.QueryApplicationsRequest.direction:type_name -> paprika.v1.FleetSortDirection
-	137, // 104: paprika.v1.QueryApplicationsResponse.applications:type_name -> paprika.v1.ApplicationSummary
-	138, // 105: paprika.v1.QueryApplicationsResponse.facets:type_name -> paprika.v1.FleetFacetBucket
-	13,  // 106: paprika.v1.FleetMapNode.kind:type_name -> paprika.v1.FleetMapNodeKind
-	134, // 107: paprika.v1.FleetMapNode.application:type_name -> paprika.v1.FleetObjectKey
-	134, // 108: paprika.v1.FleetMapNode.group_object:type_name -> paprika.v1.FleetObjectKey
-	139, // 109: paprika.v1.FleetMapNode.health:type_name -> paprika.v1.FleetHealthBucket
-	142, // 110: paprika.v1.FleetMapNode.children:type_name -> paprika.v1.FleetMapNode
-	135, // 111: paprika.v1.QueryFleetMapRequest.filter:type_name -> paprika.v1.FleetFilter
-	8,   // 112: paprika.v1.QueryFleetMapRequest.group:type_name -> paprika.v1.FleetGroupDimension
-	9,   // 113: paprika.v1.QueryFleetMapRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
-	142, // 114: paprika.v1.QueryFleetMapResponse.roots:type_name -> paprika.v1.FleetMapNode
-	138, // 115: paprika.v1.QueryFleetMapResponse.facets:type_name -> paprika.v1.FleetFacetBucket
-	134, // 116: paprika.v1.FleetMatrixHeader.object:type_name -> paprika.v1.FleetObjectKey
-	139, // 117: paprika.v1.FleetMatrixCell.health:type_name -> paprika.v1.FleetHealthBucket
-	135, // 118: paprika.v1.QueryFleetMatrixRequest.filter:type_name -> paprika.v1.FleetFilter
-	8,   // 119: paprika.v1.QueryFleetMatrixRequest.row_group:type_name -> paprika.v1.FleetGroupDimension
-	8,   // 120: paprika.v1.QueryFleetMatrixRequest.column_group:type_name -> paprika.v1.FleetGroupDimension
-	9,   // 121: paprika.v1.QueryFleetMatrixRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
-	145, // 122: paprika.v1.QueryFleetMatrixResponse.rows:type_name -> paprika.v1.FleetMatrixHeader
-	145, // 123: paprika.v1.QueryFleetMatrixResponse.columns:type_name -> paprika.v1.FleetMatrixHeader
-	146, // 124: paprika.v1.QueryFleetMatrixResponse.cells:type_name -> paprika.v1.FleetMatrixCell
-	138, // 125: paprika.v1.QueryFleetMatrixResponse.facets:type_name -> paprika.v1.FleetFacetBucket
-	46,  // 126: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
-	48,  // 127: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
-	50,  // 128: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
-	52,  // 129: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
-	54,  // 130: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
-	60,  // 131: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
-	62,  // 132: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
-	71,  // 133: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
-	57,  // 134: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
-	64,  // 135: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
-	73,  // 136: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
-	75,  // 137: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
-	77,  // 138: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
-	79,  // 139: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
-	81,  // 140: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
-	83,  // 141: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
-	85,  // 142: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
-	88,  // 143: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
-	90,  // 144: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
-	92,  // 145: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
-	94,  // 146: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
-	96,  // 147: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
-	98,  // 148: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
-	100, // 149: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
-	102, // 150: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
-	104, // 151: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
-	106, // 152: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
-	108, // 153: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
-	110, // 154: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
-	112, // 155: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
-	114, // 156: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
-	117, // 157: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
-	120, // 158: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
-	122, // 159: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
-	132, // 160: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
-	125, // 161: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
-	129, // 162: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
-	140, // 163: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
-	143, // 164: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
-	147, // 165: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
-	47,  // 166: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
-	49,  // 167: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
-	51,  // 168: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
-	53,  // 169: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
-	55,  // 170: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
-	61,  // 171: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
-	63,  // 172: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
-	72,  // 173: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
-	58,  // 174: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
-	65,  // 175: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
-	74,  // 176: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
-	76,  // 177: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
-	78,  // 178: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
-	80,  // 179: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
-	82,  // 180: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
-	84,  // 181: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
-	86,  // 182: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
-	89,  // 183: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
-	91,  // 184: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
-	93,  // 185: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
-	95,  // 186: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
-	97,  // 187: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
-	99,  // 188: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
-	101, // 189: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
-	103, // 190: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
-	105, // 191: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
-	107, // 192: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
-	109, // 193: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
-	111, // 194: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
-	113, // 195: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
-	116, // 196: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
-	119, // 197: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
-	121, // 198: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
-	124, // 199: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
-	133, // 200: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
-	128, // 201: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
-	131, // 202: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
-	141, // 203: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
-	144, // 204: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
-	148, // 205: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
-	166, // [166:206] is the sub-list for method output_type
-	126, // [126:166] is the sub-list for method input_type
-	126, // [126:126] is the sub-list for extension type_name
-	126, // [126:126] is the sub-list for extension extendee
-	0,   // [0:126] is the sub-list for field type_name
+	2,   // 101: paprika.v1.FleetSyncBucket.sync:type_name -> paprika.v1.FleetSyncState
+	139, // 102: paprika.v1.GetSystemStatusResponse.health:type_name -> paprika.v1.FleetHealthBucket
+	140, // 103: paprika.v1.GetSystemStatusResponse.sync:type_name -> paprika.v1.FleetSyncBucket
+	137, // 104: paprika.v1.GetSystemStatusResponse.attention:type_name -> paprika.v1.ApplicationSummary
+	135, // 105: paprika.v1.QueryApplicationsRequest.filter:type_name -> paprika.v1.FleetFilter
+	6,   // 106: paprika.v1.QueryApplicationsRequest.sort:type_name -> paprika.v1.FleetSortField
+	7,   // 107: paprika.v1.QueryApplicationsRequest.direction:type_name -> paprika.v1.FleetSortDirection
+	137, // 108: paprika.v1.QueryApplicationsResponse.applications:type_name -> paprika.v1.ApplicationSummary
+	138, // 109: paprika.v1.QueryApplicationsResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	13,  // 110: paprika.v1.FleetMapNode.kind:type_name -> paprika.v1.FleetMapNodeKind
+	134, // 111: paprika.v1.FleetMapNode.application:type_name -> paprika.v1.FleetObjectKey
+	134, // 112: paprika.v1.FleetMapNode.group_object:type_name -> paprika.v1.FleetObjectKey
+	139, // 113: paprika.v1.FleetMapNode.health:type_name -> paprika.v1.FleetHealthBucket
+	145, // 114: paprika.v1.FleetMapNode.children:type_name -> paprika.v1.FleetMapNode
+	135, // 115: paprika.v1.QueryFleetMapRequest.filter:type_name -> paprika.v1.FleetFilter
+	8,   // 116: paprika.v1.QueryFleetMapRequest.group:type_name -> paprika.v1.FleetGroupDimension
+	9,   // 117: paprika.v1.QueryFleetMapRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
+	145, // 118: paprika.v1.QueryFleetMapResponse.roots:type_name -> paprika.v1.FleetMapNode
+	138, // 119: paprika.v1.QueryFleetMapResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	134, // 120: paprika.v1.FleetMatrixHeader.object:type_name -> paprika.v1.FleetObjectKey
+	139, // 121: paprika.v1.FleetMatrixCell.health:type_name -> paprika.v1.FleetHealthBucket
+	135, // 122: paprika.v1.QueryFleetMatrixRequest.filter:type_name -> paprika.v1.FleetFilter
+	8,   // 123: paprika.v1.QueryFleetMatrixRequest.row_group:type_name -> paprika.v1.FleetGroupDimension
+	8,   // 124: paprika.v1.QueryFleetMatrixRequest.column_group:type_name -> paprika.v1.FleetGroupDimension
+	9,   // 125: paprika.v1.QueryFleetMatrixRequest.size_metric:type_name -> paprika.v1.FleetSizeMetric
+	148, // 126: paprika.v1.QueryFleetMatrixResponse.rows:type_name -> paprika.v1.FleetMatrixHeader
+	148, // 127: paprika.v1.QueryFleetMatrixResponse.columns:type_name -> paprika.v1.FleetMatrixHeader
+	149, // 128: paprika.v1.QueryFleetMatrixResponse.cells:type_name -> paprika.v1.FleetMatrixCell
+	138, // 129: paprika.v1.QueryFleetMatrixResponse.facets:type_name -> paprika.v1.FleetFacetBucket
+	46,  // 130: paprika.v1.PaprikaService.ListPipelines:input_type -> paprika.v1.ListPipelinesRequest
+	48,  // 131: paprika.v1.PaprikaService.ListReleases:input_type -> paprika.v1.ListReleasesRequest
+	50,  // 132: paprika.v1.PaprikaService.ListStages:input_type -> paprika.v1.ListStagesRequest
+	52,  // 133: paprika.v1.PaprikaService.ListApplications:input_type -> paprika.v1.ListApplicationsRequest
+	54,  // 134: paprika.v1.PaprikaService.ListPolicies:input_type -> paprika.v1.ListPoliciesRequest
+	60,  // 135: paprika.v1.PaprikaService.ListApplicationSets:input_type -> paprika.v1.ListApplicationSetsRequest
+	62,  // 136: paprika.v1.PaprikaService.GetApplicationSet:input_type -> paprika.v1.GetApplicationSetRequest
+	71,  // 137: paprika.v1.PaprikaService.ListNotificationConfigs:input_type -> paprika.v1.ListNotificationConfigsRequest
+	57,  // 138: paprika.v1.PaprikaService.GetApplication:input_type -> paprika.v1.GetApplicationRequest
+	64,  // 139: paprika.v1.PaprikaService.SyncApplication:input_type -> paprika.v1.SyncApplicationRequest
+	73,  // 140: paprika.v1.PaprikaService.ApproveGate:input_type -> paprika.v1.ApproveGateRequest
+	75,  // 141: paprika.v1.PaprikaService.ListGateStatus:input_type -> paprika.v1.ListGateStatusRequest
+	77,  // 142: paprika.v1.PaprikaService.RejectGate:input_type -> paprika.v1.RejectGateRequest
+	79,  // 143: paprika.v1.PaprikaService.ResolveSource:input_type -> paprika.v1.ResolveSourceRequest
+	81,  // 144: paprika.v1.PaprikaService.Render:input_type -> paprika.v1.RenderRequest
+	83,  // 145: paprika.v1.PaprikaService.ApplyBundle:input_type -> paprika.v1.ApplyBundleRequest
+	85,  // 146: paprika.v1.PaprikaService.RollbackRelease:input_type -> paprika.v1.RollbackReleaseRequest
+	88,  // 147: paprika.v1.PaprikaService.ListRollouts:input_type -> paprika.v1.ListRolloutsRequest
+	90,  // 148: paprika.v1.PaprikaService.GetRollout:input_type -> paprika.v1.GetRolloutRequest
+	92,  // 149: paprika.v1.PaprikaService.PromoteRollout:input_type -> paprika.v1.PromoteRolloutRequest
+	94,  // 150: paprika.v1.PaprikaService.AbortRollout:input_type -> paprika.v1.AbortRolloutRequest
+	96,  // 151: paprika.v1.PaprikaService.ListAnalysisRuns:input_type -> paprika.v1.ListAnalysisRunsRequest
+	98,  // 152: paprika.v1.PaprikaService.GetAnalysisRun:input_type -> paprika.v1.GetAnalysisRunRequest
+	100, // 153: paprika.v1.PaprikaService.GetPipeline:input_type -> paprika.v1.GetPipelineRequest
+	102, // 154: paprika.v1.PaprikaService.GetArtifact:input_type -> paprika.v1.GetArtifactRequest
+	104, // 155: paprika.v1.PaprikaService.ListArtifacts:input_type -> paprika.v1.ListArtifactsRequest
+	106, // 156: paprika.v1.PaprikaService.RetryStep:input_type -> paprika.v1.RetryStepRequest
+	108, // 157: paprika.v1.PaprikaService.SkipStep:input_type -> paprika.v1.SkipStepRequest
+	110, // 158: paprika.v1.PaprikaService.CancelPipeline:input_type -> paprika.v1.CancelPipelineRequest
+	112, // 159: paprika.v1.PaprikaService.GetStepLogs:input_type -> paprika.v1.GetStepLogsRequest
+	114, // 160: paprika.v1.PaprikaService.GetResource:input_type -> paprika.v1.GetResourceRequest
+	117, // 161: paprika.v1.PaprikaService.GetResourceTree:input_type -> paprika.v1.GetResourceTreeRequest
+	120, // 162: paprika.v1.PaprikaService.GetResourceLogs:input_type -> paprika.v1.GetResourceLogsRequest
+	122, // 163: paprika.v1.PaprikaService.GetResourceTreeDetailed:input_type -> paprika.v1.GetResourceTreeDetailedRequest
+	132, // 164: paprika.v1.PaprikaService.StreamResourceLogs:input_type -> paprika.v1.StreamResourceLogsRequest
+	125, // 165: paprika.v1.PaprikaService.Investigate:input_type -> paprika.v1.InvestigateRequest
+	129, // 166: paprika.v1.PaprikaService.ListInvestigatorPlugins:input_type -> paprika.v1.ListInvestigatorPluginsRequest
+	143, // 167: paprika.v1.PaprikaService.QueryApplications:input_type -> paprika.v1.QueryApplicationsRequest
+	146, // 168: paprika.v1.PaprikaService.QueryFleetMap:input_type -> paprika.v1.QueryFleetMapRequest
+	150, // 169: paprika.v1.PaprikaService.QueryFleetMatrix:input_type -> paprika.v1.QueryFleetMatrixRequest
+	141, // 170: paprika.v1.PaprikaService.GetSystemStatus:input_type -> paprika.v1.GetSystemStatusRequest
+	47,  // 171: paprika.v1.PaprikaService.ListPipelines:output_type -> paprika.v1.ListPipelinesResponse
+	49,  // 172: paprika.v1.PaprikaService.ListReleases:output_type -> paprika.v1.ListReleasesResponse
+	51,  // 173: paprika.v1.PaprikaService.ListStages:output_type -> paprika.v1.ListStagesResponse
+	53,  // 174: paprika.v1.PaprikaService.ListApplications:output_type -> paprika.v1.ListApplicationsResponse
+	55,  // 175: paprika.v1.PaprikaService.ListPolicies:output_type -> paprika.v1.ListPoliciesResponse
+	61,  // 176: paprika.v1.PaprikaService.ListApplicationSets:output_type -> paprika.v1.ListApplicationSetsResponse
+	63,  // 177: paprika.v1.PaprikaService.GetApplicationSet:output_type -> paprika.v1.GetApplicationSetResponse
+	72,  // 178: paprika.v1.PaprikaService.ListNotificationConfigs:output_type -> paprika.v1.ListNotificationConfigsResponse
+	58,  // 179: paprika.v1.PaprikaService.GetApplication:output_type -> paprika.v1.GetApplicationResponse
+	65,  // 180: paprika.v1.PaprikaService.SyncApplication:output_type -> paprika.v1.SyncApplicationResponse
+	74,  // 181: paprika.v1.PaprikaService.ApproveGate:output_type -> paprika.v1.ApproveGateResponse
+	76,  // 182: paprika.v1.PaprikaService.ListGateStatus:output_type -> paprika.v1.ListGateStatusResponse
+	78,  // 183: paprika.v1.PaprikaService.RejectGate:output_type -> paprika.v1.RejectGateResponse
+	80,  // 184: paprika.v1.PaprikaService.ResolveSource:output_type -> paprika.v1.ResolveSourceResponse
+	82,  // 185: paprika.v1.PaprikaService.Render:output_type -> paprika.v1.RenderResponse
+	84,  // 186: paprika.v1.PaprikaService.ApplyBundle:output_type -> paprika.v1.ApplyBundleResponse
+	86,  // 187: paprika.v1.PaprikaService.RollbackRelease:output_type -> paprika.v1.RollbackReleaseResponse
+	89,  // 188: paprika.v1.PaprikaService.ListRollouts:output_type -> paprika.v1.ListRolloutsResponse
+	91,  // 189: paprika.v1.PaprikaService.GetRollout:output_type -> paprika.v1.GetRolloutResponse
+	93,  // 190: paprika.v1.PaprikaService.PromoteRollout:output_type -> paprika.v1.PromoteRolloutResponse
+	95,  // 191: paprika.v1.PaprikaService.AbortRollout:output_type -> paprika.v1.AbortRolloutResponse
+	97,  // 192: paprika.v1.PaprikaService.ListAnalysisRuns:output_type -> paprika.v1.ListAnalysisRunsResponse
+	99,  // 193: paprika.v1.PaprikaService.GetAnalysisRun:output_type -> paprika.v1.GetAnalysisRunResponse
+	101, // 194: paprika.v1.PaprikaService.GetPipeline:output_type -> paprika.v1.GetPipelineResponse
+	103, // 195: paprika.v1.PaprikaService.GetArtifact:output_type -> paprika.v1.GetArtifactResponse
+	105, // 196: paprika.v1.PaprikaService.ListArtifacts:output_type -> paprika.v1.ListArtifactsResponse
+	107, // 197: paprika.v1.PaprikaService.RetryStep:output_type -> paprika.v1.RetryStepResponse
+	109, // 198: paprika.v1.PaprikaService.SkipStep:output_type -> paprika.v1.SkipStepResponse
+	111, // 199: paprika.v1.PaprikaService.CancelPipeline:output_type -> paprika.v1.CancelPipelineResponse
+	113, // 200: paprika.v1.PaprikaService.GetStepLogs:output_type -> paprika.v1.GetStepLogsResponse
+	116, // 201: paprika.v1.PaprikaService.GetResource:output_type -> paprika.v1.GetResourceResponse
+	119, // 202: paprika.v1.PaprikaService.GetResourceTree:output_type -> paprika.v1.GetResourceTreeResponse
+	121, // 203: paprika.v1.PaprikaService.GetResourceLogs:output_type -> paprika.v1.GetResourceLogsResponse
+	124, // 204: paprika.v1.PaprikaService.GetResourceTreeDetailed:output_type -> paprika.v1.GetResourceTreeDetailedResponse
+	133, // 205: paprika.v1.PaprikaService.StreamResourceLogs:output_type -> paprika.v1.LogChunk
+	128, // 206: paprika.v1.PaprikaService.Investigate:output_type -> paprika.v1.InvestigateResponse
+	131, // 207: paprika.v1.PaprikaService.ListInvestigatorPlugins:output_type -> paprika.v1.ListInvestigatorPluginsResponse
+	144, // 208: paprika.v1.PaprikaService.QueryApplications:output_type -> paprika.v1.QueryApplicationsResponse
+	147, // 209: paprika.v1.PaprikaService.QueryFleetMap:output_type -> paprika.v1.QueryFleetMapResponse
+	151, // 210: paprika.v1.PaprikaService.QueryFleetMatrix:output_type -> paprika.v1.QueryFleetMatrixResponse
+	142, // 211: paprika.v1.PaprikaService.GetSystemStatus:output_type -> paprika.v1.GetSystemStatusResponse
+	171, // [171:212] is the sub-list for method output_type
+	130, // [130:171] is the sub-list for method input_type
+	130, // [130:130] is the sub-list for extension type_name
+	130, // [130:130] is the sub-list for extension extendee
+	0,   // [0:130] is the sub-list for field type_name
 }
 
 func init() { file_paprika_v1_api_proto_init() }
@@ -11952,11 +12174,12 @@ func file_paprika_v1_api_proto_init() {
 		(*FleetFacetBucket_Object)(nil),
 		(*FleetFacetBucket_Value)(nil),
 	}
-	file_paprika_v1_api_proto_msgTypes[128].OneofWrappers = []any{
+	file_paprika_v1_api_proto_msgTypes[127].OneofWrappers = []any{}
+	file_paprika_v1_api_proto_msgTypes[131].OneofWrappers = []any{
 		(*FleetMapNode_GroupObject)(nil),
 		(*FleetMapNode_GroupValue)(nil),
 	}
-	file_paprika_v1_api_proto_msgTypes[131].OneofWrappers = []any{
+	file_paprika_v1_api_proto_msgTypes[134].OneofWrappers = []any{
 		(*FleetMatrixHeader_Object)(nil),
 		(*FleetMatrixHeader_Value)(nil),
 	}
@@ -11966,7 +12189,7 @@ func file_paprika_v1_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_paprika_v1_api_proto_rawDesc), len(file_paprika_v1_api_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   143,
+			NumMessages:   146,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

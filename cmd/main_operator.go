@@ -305,7 +305,8 @@ func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setup
 
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
+		cfg.authTokenSecret, cfg.authRBACRules, setupLog)
 
 	resolver := governance.NewProjectResolver(mgr.GetClient())
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())

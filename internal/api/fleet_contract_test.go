@@ -114,6 +114,73 @@ func TestFleetDescriptor(t *testing.T) {
 	}
 }
 
+func TestSystemStatusContract(t *testing.T) {
+	file := paprikav1.File_paprika_v1_api_proto
+
+	assertMessage := func(name string, want map[string]fleetFieldDescriptorContract) {
+		t.Helper()
+		message := file.Messages().ByName(protoreflect.Name(name))
+		require.NotNilf(t, message, "missing message %s", name)
+		require.Equalf(t, len(want), message.Fields().Len(), "message %s field count changed", name)
+		for fieldName, wantField := range want {
+			field := message.Fields().ByName(protoreflect.Name(fieldName))
+			require.NotNilf(t, field, "message %s missing field %s", name, fieldName)
+			require.Equalf(t, wantField.number, field.Number(), "message %s field %s number changed", name, fieldName)
+			require.Equalf(t, wantField.kind, field.Kind(), "message %s field %s kind changed", name, fieldName)
+			require.Equalf(t, wantField.cardinality, field.Cardinality(), "message %s field %s cardinality changed", name, fieldName)
+
+			var gotReferencedType protoreflect.FullName
+			if field.Kind() == protoreflect.EnumKind {
+				gotReferencedType = field.Enum().FullName()
+			}
+			if field.Kind() == protoreflect.MessageKind || field.Kind() == protoreflect.GroupKind {
+				gotReferencedType = field.Message().FullName()
+			}
+			require.Equalf(t, wantField.referencedType, gotReferencedType, "message %s field %s referenced type changed", name, fieldName)
+		}
+	}
+
+	assertMessage("FleetSyncBucket", map[string]fleetFieldDescriptorContract{
+		"sync": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSyncState",
+		},
+		"count": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	})
+	assertMessage("GetSystemStatusRequest", map[string]fleetFieldDescriptorContract{
+		"namespace":       {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"attention_limit": {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	})
+	request := file.Messages().ByName("GetSystemStatusRequest")
+	require.True(t, request.Fields().ByName("namespace").HasPresence(), "namespace must preserve explicit presence")
+	assertMessage("GetSystemStatusResponse", map[string]fleetFieldDescriptorContract{
+		"index_generation": {number: 1, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"health": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetHealthBucket",
+		},
+		"sync": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetSyncBucket",
+		},
+		"attention_total": {number: 5, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"attention": {
+			number: 6, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ApplicationSummary",
+		},
+		"has_more_attention": {number: 7, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+	})
+
+	service := file.Services().ByName("PaprikaService")
+	require.NotNil(t, service)
+	method := service.Methods().ByName("GetSystemStatus")
+	require.NotNil(t, method, "missing RPC GetSystemStatus")
+	assertFleetMethodDescriptor(t, method, fleetMethodDescriptorContract{
+		name: "GetSystemStatus", input: "paprika.v1.GetSystemStatusRequest", output: "paprika.v1.GetSystemStatusResponse",
+	})
+}
+
 type fleetFieldDescriptorContract struct {
 	number         protoreflect.FieldNumber
 	kind           protoreflect.Kind

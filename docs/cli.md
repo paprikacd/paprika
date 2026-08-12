@@ -1,4 +1,105 @@
-# `paprika apply`
+# Paprika CLI
+
+The CLI reads `~/.paprika/config.yaml` by default. Global flags such as
+`--server`, `--namespace`, `--token`, and `--config` override the corresponding
+stored values for the current command.
+
+## `paprika login`
+
+`paprika login` performs an OIDC authorization-code flow with PKCE in the
+system browser. Before using it, register this exact redirect URI with the OIDC
+provider:
+
+```text
+http://127.0.0.1:17632/callback
+```
+
+The scheme, numeric loopback address, port, path, and absence of a trailing
+slash are all significant. This fixed callback is for the CLI; keep the HTTPS
+dashboard callback configured by `auth.oidc.redirectURL` registered as well if
+browser login to the dashboard is enabled.
+
+Configure a server once, then log in:
+
+```sh
+paprika config init --server https://paprika.example.com
+paprika login
+```
+
+Or select and persist a different server for this login:
+
+```sh
+paprika --server https://paprika.example.com login
+```
+
+`--server` overrides the server in the config file. Non-loopback servers must
+use HTTPS; HTTP is accepted only for `localhost`, `127.0.0.1`, or `::1`.
+
+The command binds `127.0.0.1:17632`, asks the Paprika API to start a login,
+opens the returned provider URL, validates the callback state, and exchanges
+the authorization code using the in-memory PKCE verifier. If the browser
+cannot be opened, the CLI prints the validated URL so it can be opened
+manually. The callback waits for up to five minutes. If the port is already in
+use, the command stops before starting the provider flow and reports that the
+callback URI is unavailable.
+
+After the API validates the ID token, the CLI stores the token and its `exp`
+time in the selected config file. The file is written atomically with mode
+`0600`. Paprika does not currently refresh CLI OIDC sessions. When the token
+expires, an authenticated RPC returns `Unauthenticated`; `paprika status`
+reports `authentication required; run 'paprika login'`. Run `paprika login`
+again to replace the expired token.
+
+## `paprika status`
+
+`paprika status` shows a single, authorization-filtered snapshot of the
+applications the current principal may read:
+
+```sh
+paprika status
+```
+
+The default table contains total application and attention counts, selected
+health counts, the out-of-sync count, and the highest-priority applications
+requiring attention. An application requires attention when it has an
+unhealthy or unknown state, sync drift, blocked gates, an active high-impact
+change, or an unhealthy referenced connection. The server ranks attention
+rows deterministically by operational impact.
+
+The configured namespace is used when present. Override it for one request
+with the global flag, or leave it unset to query every authorized namespace:
+
+```sh
+paprika --namespace payments status
+```
+
+The CLI requests at most 20 attention rows by default. Explicit limits from 1
+through 100 are accepted. `0` asks the server to use its default, which is also
+20; values above 100 are rejected before the RPC is made.
+
+```sh
+paprika status --attention-limit 50
+paprika status --attention-limit 0
+```
+
+Table output is the default. JSON and YAML use the protobuf response shape and
+include `indexGeneration`, all health and sync buckets, `attentionTotal`, and
+`hasMoreAttention` in addition to the returned attention rows:
+
+```sh
+paprika status -o json
+paprika status -o yaml --attention-limit 100
+```
+
+Counts and names are computed only after the server has restricted the
+snapshot to projects on which the principal has `read` access to
+`applications`. An unauthorized application cannot affect totals, buckets, or
+attention rows. An authenticated principal with no authorized projects gets a
+successful zero-valued view.
+
+For the equivalent Connect JSON request, see the [API reference](api.md#getsystemstatus).
+
+## `paprika apply`
 
 Apply raw Kubernetes manifests through Paprika so they are versioned, governed by policy, and tracked in the dashboard.
 

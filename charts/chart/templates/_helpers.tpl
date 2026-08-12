@@ -256,9 +256,38 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 {{- if .Values.auth.oidc.enabled }}
 - --auth-oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
 - --auth-oidc-client-id={{ .Values.auth.oidc.clientID }}
-{{- if .Values.auth.oidc.clientSecret }}
-- --auth-oidc-client-secret={{ .Values.auth.oidc.clientSecret }}
+{{- if .Values.auth.oidc.redirectURL }}
+- --auth-oidc-redirect-url={{ .Values.auth.oidc.redirectURL }}
 {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Validate OIDC Secret configuration. Inline secrets are rejected to keep them
+out of Helm values and rendered process arguments. Public clients may leave
+both Secret reference fields empty.
+*/}}
+{{- define "paprika.validateOIDCSecret" -}}
+{{- if .Values.auth.oidc.clientSecret -}}
+{{- fail "auth.oidc.clientSecret is no longer supported; create a Kubernetes Secret and set auth.oidc.existingSecretName/existingSecretKey" -}}
+{{- end -}}
+{{- if ne (empty .Values.auth.oidc.existingSecretName) (empty .Values.auth.oidc.existingSecretKey) -}}
+{{- fail "auth.oidc.existingSecretName and auth.oidc.existingSecretKey must both be set" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+OIDC client secret environment variable shared by authenticated API workloads.
+*/}}
+{{- define "paprika.oidcSecretEnv" -}}
+{{- if and .Values.auth.enabled .Values.auth.oidc.enabled -}}
+{{- if and .Values.auth.oidc.existingSecretName .Values.auth.oidc.existingSecretKey }}
+- name: PAPRIKA_OIDC_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.auth.oidc.existingSecretName | quote }}
+      key: {{ .Values.auth.oidc.existingSecretKey | quote }}
 {{- end }}
 {{- end }}
 {{- end }}

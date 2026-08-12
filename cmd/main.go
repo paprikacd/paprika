@@ -119,6 +119,7 @@ type cliConfig struct {
 	authEnabled, enableWebhooks                                   bool
 	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
 	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
+	authOIDCRedirectURL                                           string
 	authTokenSecret                                               string
 	githubActionsTokenExchangeEnabled                             bool
 	githubActionsTokenExchangeAudience                            string
@@ -294,6 +295,8 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"OIDC client ID. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
 		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
+	fs.StringVar(&cfg.authOIDCRedirectURL, "auth-oidc-redirect-url", getenv("PAPRIKA_OIDC_REDIRECT_URL"),
+		"OIDC redirect URL. Only used when --auth-enabled=true.")
 	fs.StringVar(&cfg.authTokenSecret, "auth-token-secret", "",
 		"Secret key for signing self-issued auth tokens. Required for basic auth login flow. "+
 			"Prefer setting via PAPRIKA_AUTH_TOKEN_SECRET env var.")
@@ -335,7 +338,18 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("parse flags: %w", err)
 	}
-	return &cfg, nil
+	return setOIDCClientSecretEnvFallback(fs, &cfg, getenv), nil
+}
+
+func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) *cliConfig {
+	explicit := false
+	fs.Visit(func(f *flag.Flag) {
+		explicit = explicit || f.Name == "auth-oidc-client-secret"
+	})
+	if !explicit {
+		cfg.authOIDCClientSecret = getenv("PAPRIKA_OIDC_CLIENT_SECRET")
+	}
+	return cfg
 }
 
 func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {
@@ -616,7 +630,8 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	}
 
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
+		cfg.authTokenSecret, cfg.authRBACRules, setupLog)
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, apiClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -1169,7 +1184,7 @@ func newCacheFromConfig(ctx context.Context, cacheCfg cache.Config, setupLog log
 	return c, nil
 }
 
-func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, tokenSecret, rbacRules string, log logr.Logger) auth.Config {
+func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHash, oidcIssuerURL, oidcClientID, oidcClientSecret, oidcRedirectURL, tokenSecret, rbacRules string, log logr.Logger) auth.Config {
 	cfg := auth.Config{
 		Enabled: enabled,
 	}
@@ -1198,6 +1213,7 @@ func buildAuthConfig(enabled bool, basicUsername, basicPassword, basicPasswordHa
 			IssuerURL:    oidcIssuerURL,
 			ClientID:     oidcClientID,
 			ClientSecret: oidcClientSecret,
+			RedirectURL:  oidcRedirectURL,
 			Scopes:       []string{"openid", "profile", "email"},
 		}
 	}

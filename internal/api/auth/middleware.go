@@ -81,7 +81,8 @@ func defersProjectSetAuthorization(procedure string) bool {
 	switch procedure {
 	case v1connect.PaprikaServiceQueryApplicationsProcedure,
 		v1connect.PaprikaServiceQueryFleetMapProcedure,
-		v1connect.PaprikaServiceQueryFleetMatrixProcedure:
+		v1connect.PaprikaServiceQueryFleetMatrixProcedure,
+		v1connect.PaprikaServiceGetSystemStatusProcedure:
 		return true
 	default:
 		return false

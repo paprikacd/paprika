@@ -2,19 +2,557 @@ package auth
 
 import (
 	"context"
+	"crypto"
+	cryptorand "crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
+
+func TestOIDCRedirectValidation(t *testing.T) {
+	const configuredRedirect = "https://paprika.example.com/auth/callback"
+
+	var tokenRequests atomic.Int64
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenRequests.Add(1)
+		http.Error(w, "provider request should not have happened", http.StatusBadGateway)
+	}))
+	t.Cleanup(provider.Close)
+
+	authenticator := &OIDCAuthenticator{oauth2Config: oauth2.Config{
+		ClientID:     "client-id",
+		ClientSecret: "client-secret-marker",
+		RedirectURL:  configuredRedirect,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  provider.URL + "/authorize",
+			TokenURL: provider.URL + "/token",
+		},
+	}}
+
+	t.Run("login accepts exact UI and CLI redirects", func(t *testing.T) {
+		for _, redirectURI := range []string{configuredRedirect, "http://127.0.0.1:17632/callback"} {
+			t.Run(redirectURI, func(t *testing.T) {
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
+				resp := httptest.NewRecorder()
+
+				authenticator.LoginHandler().ServeHTTP(resp, req)
+
+				require.Equal(t, http.StatusOK, resp.Code)
+				var login LoginResponse
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&login))
+				authURL, err := url.Parse(login.URL)
+				require.NoError(t, err)
+				assert.Equal(t, redirectURI, authURL.Query().Get("redirect_uri"))
+			})
+		}
+	})
+
+	t.Run("login defaults omitted redirect to configured UI", func(t *testing.T) {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", http.NoBody)
+		resp := httptest.NewRecorder()
+
+		authenticator.LoginHandler().ServeHTTP(resp, req)
+
+		require.Equal(t, http.StatusOK, resp.Code)
+		var login LoginResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&login))
+		authURL, err := url.Parse(login.URL)
+		require.NoError(t, err)
+		assert.Equal(t, configuredRedirect, authURL.Query().Get("redirect_uri"))
+	})
+
+	invalidRedirects := []string{
+		"https://127.0.0.1:17632/callback",
+		"http://localhost:17632/callback",
+		"http://127.0.0.1:17633/callback",
+		"http://127.0.0.1:17632/wrong",
+		"http://127.0.0.1:17632/callback?extra=true",
+		configuredRedirect + "?extra=true",
+	}
+	for _, redirectURI := range invalidRedirects {
+		t.Run("login rejects "+redirectURI, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
+			resp := httptest.NewRecorder()
+
+			authenticator.LoginHandler().ServeHTTP(resp, req)
+
+			assert.Equal(t, http.StatusBadRequest, resp.Code)
+		})
+
+		t.Run("token rejects "+redirectURI, func(t *testing.T) {
+			body := fmt.Sprintf(`{"code":"code-marker","codeVerifier":"verifier-marker","redirectUri":%q}`, redirectURI)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(body))
+			resp := httptest.NewRecorder()
+
+			authenticator.TokenHandler().ServeHTTP(resp, req)
+
+			assert.Equal(t, http.StatusBadRequest, resp.Code)
+		})
+	}
+	assert.Zero(t, tokenRequests.Load(), "invalid redirects must be rejected before a provider request")
+}
+
+func TestOIDCRedirectValidationRejectsOmittedRedirectWithoutConfiguration(t *testing.T) {
+	var tokenRequests atomic.Int64
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenRequests.Add(1)
+		http.Error(w, "provider request should not have happened", http.StatusBadGateway)
+	}))
+	t.Cleanup(provider.Close)
+
+	authenticator := &OIDCAuthenticator{oauth2Config: oauth2.Config{
+		ClientID: "client-id",
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  provider.URL + "/authorize",
+			TokenURL: provider.URL + "/token",
+		},
+	}}
+
+	loginReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", http.NoBody)
+	loginResp := httptest.NewRecorder()
+	authenticator.LoginHandler().ServeHTTP(loginResp, loginReq)
+	assert.Equal(t, http.StatusBadRequest, loginResp.Code)
+
+	tokenReq := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(
+		`{"code":"code-marker","codeVerifier":"verifier-marker"}`,
+	))
+	tokenResp := httptest.NewRecorder()
+	authenticator.TokenHandler().ServeHTTP(tokenResp, tokenReq)
+	assert.Equal(t, http.StatusBadRequest, tokenResp.Code)
+	assert.Zero(t, tokenRequests.Load(), "an omitted invalid redirect must not reach the provider")
+}
+
+const (
+	testOIDCClientID       = "oidc-client-id"
+	testOIDCClientSecret   = "client-secret-marker"
+	testOIDCCode           = "authorization-code-marker"
+	testOIDCVerifier       = "code-verifier-marker"
+	testOIDCAccessToken    = "access-token-marker"
+	testOIDCInvalidIDToken = "id-token-marker"
+	testOIDCProviderBody   = "provider-body-marker"
+	testOIDCTransportError = "transport-error-marker"
+)
+
+func TestOIDCTokenExchangeAcceptsAllowedRedirectsAndValidatesIDToken(t *testing.T) {
+	fixture := newOIDCProviderFixture(t)
+	validIDToken := fixture.signIDToken(t)
+	var redirectsMu sync.Mutex
+	var redirects []string
+	fixture.tokenHandler = func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		assert.Equal(t, testOIDCCode, r.Form.Get("code"))
+		assert.Equal(t, testOIDCVerifier, r.Form.Get("code_verifier"))
+		assert.Equal(t, testOIDCClientSecret, r.Form.Get("client_secret"))
+		redirectsMu.Lock()
+		redirects = append(redirects, r.Form.Get("redirect_uri"))
+		redirectsMu.Unlock()
+		writeJSON(t, w, map[string]interface{}{
+			"access_token": testOIDCAccessToken,
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+			"id_token":     validIDToken,
+		})
+	}
+
+	tracker := &trackingTransport{base: fixture.server.Client().Transport}
+	client := &http.Client{Transport: tracker, Timeout: time.Second}
+	authenticator := newOIDCTestAuthenticator(t, fixture, client)
+
+	for _, tc := range []struct {
+		name        string
+		redirectURI string
+		expected    string
+	}{
+		{name: "configured UI", redirectURI: "https://paprika.example.com/auth/callback", expected: "https://paprika.example.com/auth/callback"},
+		{name: "fixed CLI", redirectURI: "http://127.0.0.1:17632/callback", expected: "http://127.0.0.1:17632/callback"},
+		{name: "omitted defaults to UI", expected: "https://paprika.example.com/auth/callback"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := performTokenRequest(t, authenticator, TokenRequest{
+				Code:         testOIDCCode,
+				CodeVerifier: testOIDCVerifier,
+				RedirectURI:  tc.redirectURI,
+			})
+
+			require.Equal(t, http.StatusOK, resp.Code)
+			var token TokenResponse
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&token))
+			assert.Equal(t, validIDToken, token.IDToken)
+			assert.Equal(t, testOIDCAccessToken, token.AccessToken)
+		})
+	}
+
+	redirectsMu.Lock()
+	assert.Equal(t, []string{
+		"https://paprika.example.com/auth/callback",
+		"http://127.0.0.1:17632/callback",
+		"https://paprika.example.com/auth/callback",
+	}, redirects)
+	redirectsMu.Unlock()
+	assert.GreaterOrEqual(t, tracker.callsFor("/.well-known/openid-configuration"), 1)
+	assert.GreaterOrEqual(t, tracker.callsFor("/jwks"), 1, "ID token validation must use the injected client")
+	assert.Equal(t, 3, tracker.callsFor("/token"), "token exchanges must use the injected client")
+	tracker.requireAllBodiesClosed(t)
+}
+
+func TestOIDCTokenExchangeUsesBoundedDefaultHTTPClient(t *testing.T) {
+	fixture := newOIDCProviderFixture(t)
+	authenticator := newOIDCTestAuthenticator(t, fixture, nil)
+
+	require.NotNil(t, authenticator.httpClient)
+	assert.NotSame(t, http.DefaultClient, authenticator.httpClient)
+	assert.Equal(t, oidcHTTPTimeout, authenticator.httpClient.Timeout)
+}
+
+func TestOIDCTokenExchangeFailuresAreBoundedClosedAndSanitized(t *testing.T) {
+	tests := []struct {
+		name          string
+		configure     func(t *testing.T, fixture *oidcProviderFixture) *http.Client
+		expectedError string
+	}{
+		{
+			name: "timeout during response body",
+			configure: func(t *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					_, err := io.WriteString(w, `{"access_token":"`)
+					require.NoError(t, err)
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+					<-r.Context().Done()
+				}
+				return &http.Client{
+					Transport: &trackingTransport{base: fixture.server.Client().Transport},
+					Timeout:   25 * time.Millisecond,
+				}
+			},
+			expectedError: "token request failed",
+		},
+		{
+			name: "transport error",
+			configure: func(_ *testing.T, fixture *oidcProviderFixture) *http.Client {
+				base := fixture.server.Client().Transport
+				transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					if req.URL.Path == "/token" {
+						return nil, errors.New(testOIDCTransportError)
+					}
+					return base.RoundTrip(req)
+				})
+				return &http.Client{Transport: &trackingTransport{base: transport}, Timeout: time.Second}
+			},
+			expectedError: "token request failed",
+		},
+		{
+			name: "non-200 response",
+			configure: func(_ *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, _ *http.Request) {
+					http.Error(w, testOIDCProviderBody, http.StatusTeapot)
+				}
+				return fixture.trackedClient(time.Second)
+			},
+			expectedError: "token endpoint returned HTTP 418",
+		},
+		{
+			name: "oversized response",
+			configure: func(_ *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = io.WriteString(w, strings.Repeat(testOIDCProviderBody, maxTokenResponseSize/len(testOIDCProviderBody)+2))
+				}
+				return fixture.trackedClient(time.Second)
+			},
+			expectedError: "token endpoint response too large",
+		},
+		{
+			name: "malformed JSON response",
+			configure: func(_ *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = io.WriteString(w, "{"+testOIDCProviderBody)
+				}
+				return fixture.trackedClient(time.Second)
+			},
+			expectedError: "invalid token endpoint response",
+		},
+		{
+			name: "missing ID token",
+			configure: func(t *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, _ *http.Request) {
+					writeJSON(t, w, map[string]interface{}{"access_token": testOIDCAccessToken})
+				}
+				return fixture.trackedClient(time.Second)
+			},
+			expectedError: "no id_token in response",
+		},
+		{
+			name: "invalid ID token",
+			configure: func(t *testing.T, fixture *oidcProviderFixture) *http.Client {
+				fixture.tokenHandler = func(w http.ResponseWriter, _ *http.Request) {
+					writeJSON(t, w, map[string]interface{}{
+						"access_token": testOIDCAccessToken,
+						"id_token":     testOIDCInvalidIDToken,
+					})
+				}
+				return fixture.trackedClient(time.Second)
+			},
+			expectedError: "id_token validation failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newOIDCProviderFixture(t)
+			client := tc.configure(t, fixture)
+			authenticator := newOIDCTestAuthenticator(t, fixture, client)
+			tokenReq := &TokenRequest{
+				Code:         testOIDCCode,
+				CodeVerifier: testOIDCVerifier,
+				RedirectURI:  CLIRedirectURL,
+			}
+
+			_, _, err := authenticator.exchangeAndValidate(context.Background(), tokenReq)
+			require.EqualError(t, err, tc.expectedError)
+			assertNoOIDCSecrets(t, err.Error())
+
+			resp := performTokenRequest(t, authenticator, *tokenReq)
+			assert.Equal(t, http.StatusUnauthorized, resp.Code)
+			assert.Equal(t, tc.expectedError+"\n", resp.Body.String())
+			assertNoOIDCSecrets(t, resp.Body.String())
+
+			if tracker, ok := client.Transport.(*trackingTransport); ok {
+				tracker.requireAllBodiesClosed(t)
+			}
+		})
+	}
+}
+
+func TestOIDCTokenExchangeMalformedEndpointIsSanitized(t *testing.T) {
+	const malformedEndpointMarker = "malformed-token-endpoint-marker"
+	authenticator := &OIDCAuthenticator{
+		oauth2Config: oauth2.Config{
+			ClientID:     testOIDCClientID,
+			ClientSecret: testOIDCClientSecret,
+			RedirectURL:  "https://paprika.example.com/auth/callback",
+			Endpoint: oauth2.Endpoint{
+				TokenURL: "://" + malformedEndpointMarker,
+			},
+		},
+		httpClient: &http.Client{Timeout: time.Second},
+	}
+	tokenReq := &TokenRequest{
+		Code:         testOIDCCode,
+		CodeVerifier: testOIDCVerifier,
+		RedirectURI:  CLIRedirectURL,
+	}
+
+	_, _, err := authenticator.exchangeAndValidate(context.Background(), tokenReq)
+	require.EqualError(t, err, "token request failed")
+	assert.NotContains(t, err.Error(), malformedEndpointMarker)
+	assertNoOIDCSecrets(t, err.Error())
+
+	resp := performTokenRequest(t, authenticator, *tokenReq)
+	assert.Equal(t, http.StatusUnauthorized, resp.Code)
+	assert.Equal(t, "token request failed\n", resp.Body.String())
+	assert.NotContains(t, resp.Body.String(), malformedEndpointMarker)
+	assertNoOIDCSecrets(t, resp.Body.String())
+}
+
+type oidcProviderFixture struct {
+	server       *httptest.Server
+	signingKey   *rsa.PrivateKey
+	tokenHandler http.HandlerFunc
+}
+
+func newOIDCProviderFixture(t *testing.T) *oidcProviderFixture {
+	t.Helper()
+	signingKey, err := rsa.GenerateKey(cryptorand.Reader, 2048)
+	require.NoError(t, err)
+
+	fixture := &oidcProviderFixture{signingKey: signingKey}
+	fixture.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			writeJSON(t, w, map[string]interface{}{
+				"issuer":                                fixture.server.URL,
+				"authorization_endpoint":                fixture.server.URL + "/authorize",
+				"token_endpoint":                        fixture.server.URL + "/token",
+				"jwks_uri":                              fixture.server.URL + "/jwks",
+				"response_types_supported":              []string{"code"},
+				"subject_types_supported":               []string{"public"},
+				"id_token_signing_alg_values_supported": []string{"RS256"},
+			})
+		case "/jwks":
+			publicKey := fixture.signingKey.PublicKey
+			writeJSON(t, w, map[string]interface{}{"keys": []map[string]string{{
+				"kty": "RSA",
+				"kid": "test-key",
+				"use": "sig",
+				"alg": "RS256",
+				"n":   base64.RawURLEncoding.EncodeToString(publicKey.N.Bytes()),
+				"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(publicKey.E)).Bytes()),
+			}}})
+		case "/token":
+			if fixture.tokenHandler == nil {
+				http.Error(w, "token handler not configured", http.StatusInternalServerError)
+				return
+			}
+			fixture.tokenHandler(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(fixture.server.Close)
+	return fixture
+}
+
+func (f *oidcProviderFixture) signIDToken(t *testing.T) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]interface{}{"alg": "RS256", "kid": "test-key", "typ": "JWT"})
+	require.NoError(t, err)
+	claims, err := json.Marshal(map[string]interface{}{
+		"iss": f.server.URL,
+		"sub": "test-user",
+		"aud": testOIDCClientID,
+		"iat": time.Now().Add(-time.Minute).Unix(),
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	require.NoError(t, err)
+
+	unsigned := base64.RawURLEncoding.EncodeToString(header) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	digest := crypto.SHA256.New()
+	_, err = digest.Write([]byte(unsigned))
+	require.NoError(t, err)
+	signature, err := rsa.SignPKCS1v15(cryptorand.Reader, f.signingKey, crypto.SHA256, digest.Sum(nil))
+	require.NoError(t, err)
+	return unsigned + "." + base64.RawURLEncoding.EncodeToString(signature)
+}
+
+func (f *oidcProviderFixture) trackedClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: &trackingTransport{base: f.server.Client().Transport},
+		Timeout:   timeout,
+	}
+}
+
+func newOIDCTestAuthenticator(t *testing.T, fixture *oidcProviderFixture, client *http.Client) *OIDCAuthenticator {
+	t.Helper()
+	authenticator, err := NewOIDCAuthenticator(context.Background(), &OIDCConfig{
+		IssuerURL:    fixture.server.URL,
+		ClientID:     testOIDCClientID,
+		ClientSecret: testOIDCClientSecret,
+		RedirectURL:  "https://paprika.example.com/auth/callback",
+		HTTPClient:   client,
+	})
+	require.NoError(t, err)
+	return authenticator
+}
+
+func performTokenRequest(t *testing.T, authenticator *OIDCAuthenticator, tokenReq TokenRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(tokenReq)
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(string(body)))
+	resp := httptest.NewRecorder()
+	authenticator.TokenHandler().ServeHTTP(resp, req)
+	return resp
+}
+
+func writeJSON(t *testing.T, w http.ResponseWriter, value interface{}) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	require.NoError(t, json.NewEncoder(w).Encode(value))
+}
+
+func assertNoOIDCSecrets(t *testing.T, value string) {
+	t.Helper()
+	for _, marker := range []string{
+		testOIDCCode,
+		testOIDCVerifier,
+		testOIDCClientSecret,
+		testOIDCAccessToken,
+		testOIDCInvalidIDToken,
+		testOIDCProviderBody,
+		testOIDCTransportError,
+	} {
+		assert.NotContains(t, value, marker)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type trackingTransport struct {
+	base http.RoundTripper
+	mu   sync.Mutex
+	path map[string]int
+	body []*trackingBody
+}
+
+func (t *trackingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.path == nil {
+		t.path = make(map[string]int)
+	}
+	t.path[req.URL.Path]++
+	if resp != nil && resp.Body != nil {
+		body := &trackingBody{ReadCloser: resp.Body}
+		t.body = append(t.body, body)
+		resp.Body = body
+	}
+	return resp, err
+}
+
+func (t *trackingTransport) callsFor(path string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.path[path]
+}
+
+func (t *trackingTransport) requireAllBodiesClosed(testingT *testing.T) {
+	testingT.Helper()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	require.NotEmpty(testingT, t.body)
+	for _, body := range t.body {
+		assert.True(testingT, body.closed.Load(), "response body was not closed")
+	}
+}
+
+type trackingBody struct {
+	io.ReadCloser
+	closed atomic.Bool
+}
+
+func (b *trackingBody) Close() error {
+	b.closed.Store(true)
+	return b.ReadCloser.Close()
+}
 
 const (
 	testPassword = "secret"
@@ -170,6 +708,10 @@ func TestClassify(t *testing.T) {
 	action, resource = classify("/paprika.v1.PaprikaService/SyncApplication")
 	assert.Equal(t, ActionWrite, action)
 	assert.Equal(t, ResourceApplications, resource)
+
+	action, resource = classify(v1connect.PaprikaServiceGetSystemStatusProcedure)
+	assert.Equal(t, ActionRead, action)
+	assert.Equal(t, ResourceApplications, resource)
 }
 
 func TestNamespaceFromRequest(t *testing.T) {
@@ -309,20 +851,29 @@ func TestFleetQueryInterceptorDefersProjectSetAuthorization(t *testing.T) {
 				return callErr
 			},
 		},
+		{
+			name: "system status",
+			call: func() error {
+				req := connect.NewRequest(&paprikav1.GetSystemStatusRequest{})
+				req.Header().Set("Authorization", authorization)
+				_, callErr := client.GetSystemStatus(context.Background(), req)
+				return callErr
+			},
+		},
 	}
 	for _, tc := range calls {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NoError(t, tc.call())
 		})
 	}
-	assert.Equal(t, 3, service.fleetCalls)
+	assert.Equal(t, 4, service.fleetCalls)
 
-	_, err = client.QueryApplications(
+	_, err = client.GetSystemStatus(
 		context.Background(),
-		connect.NewRequest(&paprikav1.QueryApplicationsRequest{}),
+		connect.NewRequest(&paprikav1.GetSystemStatusRequest{}),
 	)
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	assert.Equal(t, 3, service.fleetCalls, "authentication must still precede the fleet handler")
+	assert.Equal(t, 4, service.fleetCalls, "authentication must still precede the fleet handler")
 
 	listReq := connect.NewRequest(&paprikav1.ListApplicationsRequest{})
 	listReq.Header().Set("Authorization", authorization)
@@ -363,6 +914,15 @@ func (s *fleetAuthTestService) QueryFleetMatrix(
 	s.requirePrincipal(ctx)
 	s.fleetCalls++
 	return connect.NewResponse(&paprikav1.QueryFleetMatrixResponse{}), nil
+}
+
+func (s *fleetAuthTestService) GetSystemStatus(
+	ctx context.Context,
+	_ *connect.Request[paprikav1.GetSystemStatusRequest],
+) (*connect.Response[paprikav1.GetSystemStatusResponse], error) {
+	s.requirePrincipal(ctx)
+	s.fleetCalls++
+	return connect.NewResponse(&paprikav1.GetSystemStatusResponse{}), nil
 }
 
 func (s *fleetAuthTestService) ListApplications(

@@ -17,4 +17,4 @@ spec:
       script: go test ./...
   artifacts:
     - name: image
-      path: registry.example.com/app:latest
+      path: oci://registry.example.com/app:latest

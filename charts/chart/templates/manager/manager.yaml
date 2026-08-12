@@ -186,6 +186,9 @@ spec:
         {{- include "paprika.cacheEnv" . | nindent 8 }}
         {{- include "paprika.auditEnv" . | nindent 8 }}
         {{- include "paprika.githubActionsTokenExchangeEnv" . | nindent 8 }}
+        {{- if eq .Values.deploymentMode "monolith" }}
+        {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
+        {{- end }}
         {{- if not .Values.webhook.enabled }}
         - name: ENABLE_WEBHOOKS
           value: "false"

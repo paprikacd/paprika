@@ -1884,6 +1884,44 @@ export const FleetHealthBucket = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.FleetSyncBucket
+ */
+export const FleetSyncBucket = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.FleetSyncBucket",
+  () => [
+    { no: 1, name: "sync", kind: "enum", T: proto3.getEnumType(FleetSyncState) },
+    { no: 2, name: "count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetSystemStatusRequest
+ */
+export const GetSystemStatusRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetSystemStatusRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "attention_limit", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetSystemStatusResponse
+ */
+export const GetSystemStatusResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetSystemStatusResponse",
+  () => [
+    { no: 1, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "health", kind: "message", T: FleetHealthBucket, repeated: true },
+    { no: 4, name: "sync", kind: "message", T: FleetSyncBucket, repeated: true },
+    { no: 5, name: "attention_total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 6, name: "attention", kind: "message", T: ApplicationSummary, repeated: true },
+    { no: 7, name: "has_more_attention", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export const QueryApplicationsRequest = /*@__PURE__*/ proto3.makeMessageType(
