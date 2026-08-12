@@ -155,9 +155,18 @@ jobs:
             exit 1
           fi
 
-          kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-oidc \
-            --from-literal=client-secret="${VKE_OIDC_CLIENT_SECRET}" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          oidc_secret_result="$(
+            kubectl -n "${VKE_NAMESPACE}" create secret generic paprika-oidc \
+              --from-literal=client-secret="${VKE_OIDC_CLIENT_SECRET}" \
+              --dry-run=client -o yaml | kubectl apply -f -
+          )"
+          case "${oidc_secret_result}" in
+            "secret/paprika-oidc created"|"secret/paprika-oidc configured") ;;
+            *)
+              echo "::error::failed to create or configure the paprika-oidc Secret"
+              exit 1
+              ;;
+          esac
 
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \

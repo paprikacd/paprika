@@ -20,6 +20,8 @@ grep -Fq -- '--from-literal=client-secret="${VKE_OIDC_CLIENT_SECRET}"' "${WORKFL
 grep -Fq -- '--dry-run=client -o yaml | kubectl apply -f -' "${WORKFLOW}" || fail 'VKE workflow does not safely apply the OIDC Secret'
 grep -Fq -- '--set-string auth.oidc.existingSecretName=paprika-oidc' "${WORKFLOW}" || fail 'VKE workflow does not configure the OIDC Secret name'
 grep -Fq -- '--set-string auth.oidc.existingSecretKey=client-secret' "${WORKFLOW}" || fail 'VKE workflow does not configure the OIDC Secret key'
+grep -Fq 'oidc_secret_result="$(' "${WORKFLOW}" || fail 'VKE workflow does not capture the OIDC Secret apply result'
+grep -Fq '"secret/paprika-oidc created"|"secret/paprika-oidc configured")' "${WORKFLOW}" || fail 'VKE workflow does not assert the OIDC Secret was created or configured'
 
 workflow_secret_uses="$(grep -Fc '${VKE_OIDC_CLIENT_SECRET}' "${WORKFLOW}")"
 [[ "${workflow_secret_uses}" == 1 ]] || fail 'VKE_OIDC_CLIENT_SECRET is interpolated outside Secret creation'
@@ -31,5 +33,14 @@ grep -Fq -- '--from-literal=client-secret="${PAPRIKA_OIDC_CLIENT_SECRET}"' "${VU
 grep -Fq -- '--dry-run=client -o yaml | kubectl --kubeconfig "$KUBECONFIG" apply -f -' "${VULTR}" || fail 'Vultr deploy does not safely apply the OIDC Secret'
 grep -Fq 'auth.oidc.existingSecretName=paprika-oidc' "${VULTR}" || fail 'Vultr deploy does not configure the OIDC Secret name'
 grep -Fq 'auth.oidc.existingSecretKey=client-secret' "${VULTR}" || fail 'Vultr deploy does not configure the OIDC Secret key'
+grep -Fq 'oidc_secret_result="$(' "${VULTR}" || fail 'Vultr deploy does not capture the OIDC Secret apply result'
+grep -Fq '"secret/paprika-oidc created"|"secret/paprika-oidc configured")' "${VULTR}" || fail 'Vultr deploy does not assert the OIDC Secret was created or configured'
+vultr_secret_uses="$(grep -Fc '${PAPRIKA_OIDC_CLIENT_SECRET}' "${VULTR}")"
+[[ "${vultr_secret_uses}" == 1 ]] || fail 'PAPRIKA_OIDC_CLIENT_SECRET is interpolated outside Secret creation'
+grep -Eq '(^|[[:space:]])set[[:space:]]+-[^[:space:]]*x' "${VULTR}" && fail 'Vultr deploy enables shell tracing near secret handling'
+grep -E 'echo|printf' "${VULTR}" | grep -Fq 'PAPRIKA_OIDC_CLIENT_SECRET' && fail 'Vultr deploy prints the OIDC client secret'
+
+grep -Eq '^[[:space:]]+existingSecretName:[[:space:]]+paprika-oidc$' "${VALUES}" || fail 'production values do not reference the paprika-oidc Secret'
+grep -Eq '^[[:space:]]+existingSecretKey:[[:space:]]+client-secret$' "${VALUES}" || fail 'production values do not reference the client-secret key'
 
 printf 'OIDC deployment migration checks passed\n'

@@ -247,6 +247,7 @@ api-server deployments.
 Auth CLI args shared between manager (monolith) and api-server deployments.
 */}}
 {{- define "paprika.authArgs" -}}
+{{- include "paprika.validateOIDCSecret" . }}
 {{- if .Values.auth.enabled }}
 - --auth-enabled=true
 {{- if .Values.auth.basic.enabled }}
@@ -254,7 +255,6 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 - --auth-basic-password-hash={{ .Values.auth.basic.passwordHash }}
 {{- end }}
 {{- if .Values.auth.oidc.enabled }}
-{{- include "paprika.validateOIDCSecret" . }}
 - --auth-oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
 - --auth-oidc-client-id={{ .Values.auth.oidc.clientID }}
 {{- if .Values.auth.oidc.redirectURL }}
@@ -283,7 +283,6 @@ OIDC client secret environment variable shared by authenticated API workloads.
 */}}
 {{- define "paprika.oidcSecretEnv" -}}
 {{- if and .Values.auth.enabled .Values.auth.oidc.enabled -}}
-{{- include "paprika.validateOIDCSecret" . }}
 {{- if and .Values.auth.oidc.existingSecretName .Values.auth.oidc.existingSecretKey }}
 - name: PAPRIKA_OIDC_CLIENT_SECRET
   valueFrom:

@@ -99,4 +99,38 @@ public_output="$(helm template paprika "${CHART}" \
 [[ "${public_output}" != *'PAPRIKA_OIDC_CLIENT_SECRET'* ]] || fail 'public client unexpectedly rendered an OIDC secret environment variable'
 [[ "${public_output}" != *'--auth-oidc-client-secret'* ]] || fail 'public client unexpectedly rendered an OIDC secret argument'
 
+inactive_inline_output="$(mktemp)"
+if helm template paprika "${CHART}" \
+  --show-only templates/api-server/deployment.yaml \
+  --set-string deploymentMode=split \
+  --set auth.enabled=false \
+  --set auth.oidc.enabled=false \
+  --set-string auth.oidc.clientSecret=DO-NOT-RENDER >"${inactive_inline_output}" 2>&1; then
+  fail 'inactive inline OIDC clientSecret unexpectedly rendered successfully'
+fi
+grep -Fq "${INLINE_ERROR}" "${inactive_inline_output}" || fail 'inactive inline clientSecret failure did not contain the migration error'
+grep -Fq 'DO-NOT-RENDER' "${inactive_inline_output}" && fail 'inactive inline secret marker appeared in Helm failure output'
+rm -f "${inactive_inline_output}"
+
+for partial in name key; do
+  inactive_partial_output="$(mktemp)"
+  inactive_partial_args=(
+    template paprika "${CHART}"
+    --show-only templates/api-server/deployment.yaml
+    --set-string deploymentMode=split
+    --set auth.enabled=false
+    --set auth.oidc.enabled=false
+  )
+  if [[ "${partial}" == name ]]; then
+    inactive_partial_args+=(--set-string auth.oidc.existingSecretName=paprika-oidc)
+  else
+    inactive_partial_args+=(--set-string auth.oidc.existingSecretKey=client-secret)
+  fi
+  if helm "${inactive_partial_args[@]}" >"${inactive_partial_output}" 2>&1; then
+    fail "inactive partial OIDC Secret ${partial} configuration unexpectedly rendered successfully"
+  fi
+  grep -Fq "${PARTIAL_ERROR}" "${inactive_partial_output}" || fail "inactive partial OIDC Secret ${partial} failure did not require both settings"
+  rm -f "${inactive_partial_output}"
+done
+
 printf 'OIDC Secret rendering checks passed\n'

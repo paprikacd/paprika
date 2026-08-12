@@ -236,8 +236,8 @@ auth:
     # The deployment path overrides the client ID and creates the referenced
     # Kubernetes Secret before installing the chart.
     clientID: ""
-    existingSecretName: ""
-    existingSecretKey: ""
+    existingSecretName: paprika-oidc
+    existingSecretKey: client-secret
     redirectURL: "https://paprika.benebsworth.com/auth/callback"
   rbac:
     - subjects: ["*"]
