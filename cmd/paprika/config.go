@@ -31,12 +31,10 @@ type Config struct {
 	Server         string    `yaml:"server"`
 	Namespace      string    `yaml:"namespace,omitempty"`
 	Username       string    `yaml:"username,omitempty"`
-	Password       string    `yaml:"password,omitempty"` //nolint:gosec // CLI config intentionally persists Basic credentials at mode 0600.
+	Password       string    `yaml:"password,omitempty"` // #nosec G117 -- CLI config intentionally persists Basic credentials at mode 0600.
 	Token          string    `yaml:"token,omitempty"`
 	TokenExpiresAt time.Time `yaml:"tokenExpiresAt,omitempty"`
 }
-
-var renameConfigFile = os.Rename
 
 func configDir() string {
 	home, err := os.UserHomeDir()
@@ -66,7 +64,11 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func (c *Config) Save(path string) (saveErr error) {
+func (c *Config) Save(path string) error {
+	return c.save(path, os.Rename)
+}
+
+func (c *Config) save(path string, renameFile func(string, string) error) (saveErr error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
@@ -101,13 +103,10 @@ func (c *Config) Save(path string) (saveErr error) {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temporary config: %w", err)
 	}
-	if err := renameConfigFile(tmpPath, path); err != nil {
+	if err := renameFile(tmpPath, path); err != nil {
 		return fmt.Errorf("replace config: %w", err)
 	}
 	tmpRenamed = true
-	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("set config permissions: %w", err)
-	}
 	return nil
 }
 

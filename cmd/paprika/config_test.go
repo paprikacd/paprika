@@ -127,8 +127,7 @@ func TestConfigSaveAtomicallyReplacesExistingFile(t *testing.T) {
 	}
 
 	wantErr := errors.New("injected rename failure")
-	originalRename := renameConfigFile
-	renameConfigFile = func(oldPath, newPath string) error {
+	renameFile := func(oldPath, newPath string) error {
 		if newPath != path {
 			t.Errorf("rename destination = %q, want %q", newPath, path)
 		}
@@ -142,9 +141,8 @@ func TestConfigSaveAtomicallyReplacesExistingFile(t *testing.T) {
 		}
 		return wantErr
 	}
-	t.Cleanup(func() { renameConfigFile = originalRename })
 
-	err := (&Config{Server: "https://new.example.com"}).Save(path)
+	err := (&Config{Server: "https://new.example.com"}).save(path, renameFile)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Save() error = %v, want wrapped %v", err, wantErr)
 	}
@@ -178,6 +176,48 @@ func TestConfigSaveCorrectsExistingPermissions(t *testing.T) {
 		t.Errorf("config mode = %o, want 600", got)
 	}
 	assertOnlyConfigFile(t, dir, path)
+}
+
+func TestConfigSaveDoesNotChmodPathAfterRename(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	sentinelPath := filepath.Join(t.TempDir(), "sentinel")
+	if err := os.WriteFile(sentinelPath, []byte("do not modify"), 0o400); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	renameFile := func(oldPath, newPath string) error {
+		// #nosec G703 -- oldPath is produced by os.CreateTemp in the test's t.TempDir.
+		info, err := os.Stat(oldPath)
+		if err != nil {
+			t.Fatalf("stat temporary config before rename: %v", err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Errorf("temporary config mode before rename = %o, want 600", got)
+		}
+		// #nosec G703 -- both paths are confined to the test's t.TempDir.
+		if err := os.Rename(oldPath, newPath); err != nil {
+			return err
+		}
+		if err := os.Remove(newPath); err != nil {
+			t.Fatalf("replace renamed config: %v", err)
+		}
+		if err := os.Symlink(sentinelPath, newPath); err != nil {
+			t.Fatalf("symlink replacement target: %v", err)
+		}
+		return nil
+	}
+
+	if err := (&Config{Server: "https://paprika.example.com"}).save(path, renameFile); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	info, err := os.Stat(sentinelPath)
+	if err != nil {
+		t.Fatalf("stat sentinel: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o400 {
+		t.Errorf("replacement target mode = %o, want unchanged 400", got)
+	}
 }
 
 func TestLoadConfigMissingFile(t *testing.T) {
