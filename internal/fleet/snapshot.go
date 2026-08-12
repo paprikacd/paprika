@@ -119,6 +119,34 @@ func (i *Index) LoadSnapshot() (*Snapshot, error) {
 	return snapshot, nil
 }
 
+// ProjectKeys returns the complete declared and application-indexed project
+// identities from this immutable snapshot, optionally filtered by namespace.
+func (s *Snapshot) ProjectKeys(namespaces []string) []ProjectKey {
+	if s == nil {
+		return []ProjectKey{}
+	}
+
+	namespaceSet := projectNamespaceSet(namespaces)
+	projects := make(map[ProjectKey]struct{}, len(s.Projects)+len(s.Applications))
+	for project := range s.Projects {
+		if completeObjectKey(project) && projectNamespaceAllowed(project, namespaceSet) {
+			projects[project] = struct{}{}
+		}
+	}
+	for id := range s.Applications {
+		project := s.Applications[id].Project
+		if completeObjectKey(project) && projectNamespaceAllowed(project, namespaceSet) {
+			projects[project] = struct{}{}
+		}
+	}
+
+	keys := make([]ProjectKey, 0, len(projects))
+	for project := range projects {
+		keys = append(keys, project)
+	}
+	return sortedUniqueObjectKeys(keys)
+}
+
 func validateSnapshot(builder *Snapshot) error {
 	if err := validateRecordIdentities(builder); err != nil {
 		return err

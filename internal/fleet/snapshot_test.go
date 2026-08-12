@@ -26,6 +26,35 @@ func TestSnapshotInitialLoadIsTypedUnavailable(t *testing.T) {
 	require.NotEmpty(t, unavailable.Reason)
 }
 
+func TestSnapshotProjectKeysAreCompleteSortedUniqueAndNamespaceFiltered(t *testing.T) {
+	t.Parallel()
+
+	declared := fleetID("projects-a", "declared")
+	indexed := fleetID("projects-b", "indexed")
+	shared := fleetID("projects-a", "shared")
+	phantom := fleetID("projects-z", "phantom")
+	snapshot := NewSnapshot(17)
+	snapshot.Projects[declared] = ProjectSummary{Identity: declared}
+	snapshot.Projects[shared] = ProjectSummary{Identity: shared}
+	snapshot.Projects[ProjectKey{Name: "missing-namespace"}] = ProjectSummary{
+		Identity: ProjectKey{Name: "missing-namespace"},
+	}
+	addApplicationMutable(snapshot, &ApplicationSummary{
+		Identity: fleetID("apps", "indexed"), Project: indexed,
+	})
+	addApplicationMutable(snapshot, &ApplicationSummary{
+		Identity: fleetID("apps", "shared"), Project: shared,
+	})
+	// An empty posting is neither a declared project nor an indexed application.
+	snapshot.ByProject[phantom] = IDSet{}
+
+	require.Equal(t, []ProjectKey{declared, shared, indexed}, snapshot.ProjectKeys(nil))
+	require.Equal(t, []ProjectKey{declared, shared}, snapshot.ProjectKeys([]string{
+		"projects-a", "", "projects-a",
+	}))
+	require.Empty(t, snapshot.ProjectKeys([]string{"not-authorized"}))
+}
+
 func TestSnapshotInstallNilDoesNotChangeSnapshotOrHealth(t *testing.T) {
 	t.Parallel()
 

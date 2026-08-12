@@ -3,7 +3,6 @@ package fleet
 import (
 	"context"
 	"errors"
-	"sort"
 	"time"
 
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
@@ -42,17 +41,7 @@ func (i *Index) ProjectKeys(ctx context.Context, namespaces []string) (keys []Pr
 	}
 	observation.observeSnapshot(snapshot, fleetSnapshotCacheOutcome(i, snapshot))
 
-	namespaceSet := projectNamespaceSet(namespaces)
-	projects := snapshotProjectCandidates(snapshot)
-	keys = make([]ProjectKey, 0, len(projects))
-	for project := range projects {
-		if projectNamespaceAllowed(project, namespaceSet) {
-			keys = append(keys, project)
-		}
-	}
-	sort.Slice(keys, func(left, right int) bool {
-		return compareObjectKeys(keys[left], keys[right]) < 0
-	})
+	keys = snapshot.ProjectKeys(namespaces)
 	observation.fields.ResultCount = uint64(len(keys))
 	return keys, nil
 }
@@ -65,21 +54,6 @@ func projectNamespaceSet(namespaces []string) map[string]struct{} {
 		}
 	}
 	return set
-}
-
-func snapshotProjectCandidates(snapshot *Snapshot) map[ProjectKey]struct{} {
-	projects := make(map[ProjectKey]struct{}, len(snapshot.Projects)+len(snapshot.ByProject))
-	for project := range snapshot.Projects {
-		if completeObjectKey(project) {
-			projects[project] = struct{}{}
-		}
-	}
-	for project := range snapshot.ByProject {
-		if completeObjectKey(project) {
-			projects[project] = struct{}{}
-		}
-	}
-	return projects
 }
 
 func projectNamespaceAllowed(project ProjectKey, namespaces map[string]struct{}) bool {
