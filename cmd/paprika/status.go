@@ -36,6 +36,7 @@ const (
 	defaultStatusAttentionLimit uint32 = 20
 	maximumStatusAttentionLimit uint32 = 100
 	statusRequestTimeout               = 15 * time.Second
+	maxStatusTableFieldBytes           = 64
 )
 
 func newStatusCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceClient, error), nsFn func() string, output *string) *cobra.Command {
@@ -55,6 +56,9 @@ func newStatusCmdWithClock(
 		Short: "Show authorized system status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := validateStatusOutput(*output); err != nil {
+				return err
+			}
 			if attentionLimit > maximumStatusAttentionLimit {
 				return fmt.Errorf("attention limit must not exceed %d", maximumStatusAttentionLimit)
 			}
@@ -77,6 +81,15 @@ func newStatusCmdWithClock(
 	}
 	cmd.Flags().Uint32Var(&attentionLimit, "attention-limit", defaultStatusAttentionLimit, "Maximum applications requiring attention to show (maximum 100; 0 uses server default)")
 	return cmd
+}
+
+func validateStatusOutput(output string) error {
+	switch output {
+	case outputTable, outputJSON, outputYAML:
+		return nil
+	default:
+		return fmt.Errorf("unknown output format %q", output)
+	}
 }
 
 func statusRPCError(err error) error {
@@ -128,12 +141,12 @@ func writeSystemStatusTable(w io.Writer, status *paprikav1.GetSystemStatusRespon
 		}
 		for _, application := range status.GetAttention() {
 			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-				application.GetIdentity().GetNamespace(),
-				application.GetIdentity().GetName(),
-				application.GetProject().GetName(),
-				statusHealthName(application.GetHealth()),
-				statusSyncName(application.GetSync()),
-				statusReleaseName(application.GetReleaseState()),
+				statusTableField(application.GetIdentity().GetNamespace()),
+				statusTableField(application.GetIdentity().GetName()),
+				statusTableField(application.GetProject().GetName()),
+				statusTableField(statusHealthName(application.GetHealth())),
+				statusTableField(statusSyncName(application.GetSync())),
+				statusTableField(statusReleaseName(application.GetReleaseState())),
 				formatRelativeUpdate(now, application.GetLastTransitionUnixMs()),
 			); err != nil {
 				return fmt.Errorf("write attention row: %w", err)
@@ -145,6 +158,10 @@ func writeSystemStatusTable(w io.Writer, status *paprikav1.GetSystemStatusRespon
 		return fmt.Errorf("flush status table: %w", err)
 	}
 	return nil
+}
+
+func statusTableField(value string) string {
+	return sanitizeTerminalDisplay(value, maxStatusTableFieldBytes)
 }
 
 func healthBucketCount(buckets []*paprikav1.FleetHealthBucket, health paprikav1.FleetHealth) uint64 {

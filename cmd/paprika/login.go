@@ -30,7 +30,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
@@ -366,21 +365,5 @@ func parseLoginIDToken(raw string, now time.Time) (time.Time, string, error) { /
 }
 
 func sanitizeLoginIdentity(identity string) string {
-	var display strings.Builder
-	display.Grow(min(len(identity), maxLoginIdentityDisplayBytes))
-	for identity != "" {
-		r, size := utf8.DecodeRuneInString(identity)
-		identity = identity[size:]
-		var rendered string
-		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
-			rendered = fmt.Sprintf("\\u%04X", r)
-		} else {
-			rendered = string(r)
-		}
-		if display.Len()+len(rendered) > maxLoginIdentityDisplayBytes {
-			break
-		}
-		display.WriteString(rendered)
-	}
-	return display.String()
+	return sanitizeTerminalDisplay(identity, maxLoginIdentityDisplayBytes)
 }

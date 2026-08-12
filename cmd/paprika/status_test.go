@@ -24,8 +24,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
@@ -139,6 +141,27 @@ func TestStatusRejectsAttentionLimitAboveMaximumBeforeCreatingClient(t *testing.
 	}
 }
 
+func TestStatusRejectsUnknownOutputBeforeCreatingClient(t *testing.T) {
+	clientCreations := 0
+	client := &fakeStatusClient{}
+	output := outputTable
+	root := &cobra.Command{Use: "paprika", SilenceUsage: true, SilenceErrors: true}
+	root.PersistentFlags().StringVarP(&output, "output", "o", outputTable, "Output format")
+	root.AddCommand(newStatusCmdWithClock(context.Background(), func() (v1connect.PaprikaServiceClient, error) {
+		clientCreations++
+		return client, nil
+	}, func() string { return "" }, &output, time.Now))
+	root.SetArgs([]string{"status", "-o", "xml"})
+
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), `unknown output format "xml"`) {
+		t.Fatalf("status error = %v, want local output format error", err)
+	}
+	if clientCreations != 0 || client.calls != 0 {
+		t.Fatalf("client creations/RPC calls = %d/%d, want 0/0", clientCreations, client.calls)
+	}
+}
+
 func TestStatusTableOutput(t *testing.T) {
 	now := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
 	client := &fakeStatusClient{response: statusResponseFixture(now)}
@@ -162,6 +185,68 @@ func TestStatusTableOutput(t *testing.T) {
 		"apps       payments     default  Degraded  Synced     Complete  8m ago\n"
 	if got := stdout.String(); got != want {
 		t.Fatalf("status table output mismatch\n--- got ---\n%s--- want ---\n%s", got, want)
+	}
+}
+
+func TestStatusTableOutputIsTerminalSafeAndBounded(t *testing.T) {
+	now := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
+	malicious := "apps\tcolumn\nFORGED-ROW\r\x1b]0;OSC\x07\u0085" + strings.Repeat("x", 600)
+	status := &paprikav1.GetSystemStatusResponse{
+		Total:          1,
+		AttentionTotal: 1,
+		Attention: []*paprikav1.ApplicationSummary{{
+			Identity:             &paprikav1.FleetObjectKey{Namespace: malicious, Name: malicious},
+			Project:              &paprikav1.FleetObjectKey{Name: malicious},
+			Health:               paprikav1.FleetHealth_FLEET_HEALTH_FAILED,
+			Sync:                 paprikav1.FleetSyncState_FLEET_SYNC_STATE_OUT_OF_SYNC,
+			ReleaseState:         paprikav1.FleetReleaseState_FLEET_RELEASE_STATE_AWAITING_APPROVAL,
+			LastTransitionUnixMs: now.Add(-time.Minute).UnixMilli(),
+		}},
+	}
+	var output bytes.Buffer
+	if err := writeSystemStatus(&output, outputTable, status, now); err != nil {
+		t.Fatalf("writeSystemStatus() error = %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
+	if got, want := len(lines), 6; got != want {
+		t.Fatalf("status output line count = %d, want %d; output:\n%s", got, want, output.String())
+	}
+	row := lines[len(lines)-1]
+	if !strings.Contains(row, "FORGED-ROW") {
+		t.Fatalf("safe attention row lost marker text: %q", row)
+	}
+	if len(row) > 320 {
+		t.Errorf("attention row length = %d, want <= 320: %q", len(row), row)
+	}
+	if strings.Contains(row, strings.Repeat("x", 65)) {
+		t.Errorf("attention row contains an unbounded field: %q", row)
+	}
+	for text := output.String(); text != ""; {
+		r, size := utf8.DecodeRuneInString(text)
+		text = text[size:]
+		if (r < 0x20 && r != '\n') || (r >= 0x7f && r <= 0x9f) {
+			t.Errorf("status output contains raw terminal control U+%04X: %q", r, output.String())
+		}
+	}
+	for _, visibleEscape := range []string{`\u0009`, `\u000A`, `\u000D`, `\u001B`, `\u0007`, `\u0085`} {
+		if !strings.Contains(row, visibleEscape) {
+			t.Errorf("attention row = %q, want visible control escape %q", row, visibleEscape)
+		}
+	}
+
+	for _, format := range []string{outputJSON, outputYAML} {
+		var structured bytes.Buffer
+		if err := writeSystemStatus(&structured, format, status, now); err != nil {
+			t.Fatalf("writeSystemStatus(%s) error = %v", format, err)
+		}
+		var raw bytes.Buffer
+		if err := writeProtoOutput(&raw, format, status); err != nil {
+			t.Fatalf("writeProtoOutput(%s) error = %v", format, err)
+		}
+		if got, want := structured.String(), raw.String(); got != want {
+			t.Errorf("%s output differs from raw protobuf helper\ngot:  %q\nwant: %q", format, got, want)
+		}
 	}
 }
 
