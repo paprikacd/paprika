@@ -790,6 +790,35 @@ func TestLoginCallbackServerHasExplicitHTTPBounds(t *testing.T) {
 	}
 }
 
+func TestLoginCallbackShutdownWaitsForServeExit(t *testing.T) {
+	previousMaxProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previousMaxProcs) })
+
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	address := listener.Addr().String()
+	t.Cleanup(func() { _ = listener.Close() })
+	closed := make(chan struct{}, 1)
+	callback := newLoginCallbackServer(&closeTrackingListener{Listener: listener, closed: closed}, "expected-state")
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	callback.shutdown(canceledCtx)
+
+	select {
+	case <-closed:
+	default:
+		t.Fatal("callback shutdown returned before the Serve goroutine closed its listener")
+	}
+	rebound, listenErr := (&net.ListenConfig{}).Listen(context.Background(), "tcp", address)
+	if listenErr != nil {
+		t.Fatalf("callback listener was not released: %v", listenErr)
+	}
+	_ = rebound.Close()
+}
+
 func TestLoginHTTPClientIsBoundedAndDoesNotFollowRedirects(t *testing.T) {
 	client := newLoginHTTPClient()
 	if client.Timeout != 15*time.Second {
@@ -939,6 +968,19 @@ type trackingBody struct {
 type callbackHTTPResponse struct {
 	status int
 	body   string
+}
+
+type closeTrackingListener struct {
+	net.Listener
+	closed chan<- struct{}
+}
+
+func (l *closeTrackingListener) Close() error {
+	select {
+	case l.closed <- struct{}{}:
+	default:
+	}
+	return l.Listener.Close()
 }
 
 func getCallbackResponse(ctx context.Context, path string) callbackHTTPResponse {

@@ -47,6 +47,7 @@ type loginCallbackServer struct {
 	server        *http.Server
 	events        chan loginCallbackEvent
 	done          chan struct{}
+	serveDone     chan struct{}
 
 	mu       sync.Mutex
 	accepted bool
@@ -59,6 +60,7 @@ func newLoginCallbackServer(listener net.Listener, expectedState string) *loginC
 		expectedState: expectedState,
 		events:        make(chan loginCallbackEvent, 1),
 		done:          make(chan struct{}),
+		serveDone:     make(chan struct{}),
 	}
 	callback.server = &http.Server{
 		Handler:           http.HandlerFunc(callback.handle),
@@ -68,6 +70,7 @@ func newLoginCallbackServer(listener net.Listener, expectedState string) *loginC
 		WriteTimeout:      loginCallbackWriteTimeout,
 	}
 	go func() {
+		defer close(callback.serveDone)
 		if serveErr := callback.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 			callback.complete(loginCallbackResult{})
 		}
@@ -148,7 +151,8 @@ func (c *loginCallbackServer) complete(result loginCallbackResult) {
 
 func (c *loginCallbackServer) shutdown(parent context.Context) {
 	c.complete(loginCallbackResult{})
-	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer func() { <-c.serveDone }()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Second)
 	defer cancel()
 	if err := c.server.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		if closeErr := c.server.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
