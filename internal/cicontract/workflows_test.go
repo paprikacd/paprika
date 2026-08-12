@@ -636,7 +636,6 @@ func testVKEComponentImageReferences(t *testing.T) {
 	// #nosec G101 -- These are GitHub expression names asserted by the contract, not credential values.
 	secretValues := map[string]string{
 		"VKE_OIDC_CLIENT_ID":      "secrets.VKE_OIDC_CLIENT_ID",
-		"VKE_OIDC_CLIENT_SECRET":  "secrets.VKE_OIDC_CLIENT_SECRET",
 		"VKE_AUTH_TOKEN_SECRET":   "secrets.VKE_AUTH_TOKEN_SECRET",
 		"VKE_BASIC_PASSWORD_HASH": "secrets.VKE_BASIC_PASSWORD_HASH",
 	}
@@ -647,6 +646,17 @@ func testVKEComponentImageReferences(t *testing.T) {
 		if !containsActiveShellFragment(run, `="${`+environmentName+`}"`) {
 			t.Errorf("deploy-vke.yml must pass %s through a quoted shell environment expansion", environmentName)
 		}
+	}
+	// The OIDC client secret is materialized as a Kubernetes Secret through
+	// stdin, rather than passed through a Helm value or process argument.
+	if got := normalizeExpression(scalarString(stepEnv["VKE_OIDC_CLIENT_SECRET"])); got != "secrets.VKE_OIDC_CLIENT_SECRET" {
+		t.Errorf("deploy-vke.yml Deploy Paprika chart env.VKE_OIDC_CLIENT_SECRET = %q after normalization, want %q", got, "secrets.VKE_OIDC_CLIENT_SECRET")
+	}
+	if !containsActiveShellFragment(run, `printf '%s' "${VKE_OIDC_CLIENT_SECRET}"`) {
+		t.Error("deploy-vke.yml must send VKE_OIDC_CLIENT_SECRET to kubectl through quoted stdin")
+	}
+	if !containsActiveShellFragment(run, `--from-file=client-secret=/dev/stdin`) {
+		t.Error("deploy-vke.yml must create the OIDC Secret from stdin instead of a process argument")
 	}
 	if strings.Contains(activeShellText(run), "latest") {
 		t.Error("deploy-vke.yml deployment must not consume latest")
