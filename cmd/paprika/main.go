@@ -94,6 +94,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 
 	root.AddCommand(newApplyCmd(ctx))
 	root.AddCommand(newConfigCmd())
+	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newAppsCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newPipelinesCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newReleasesCmd(ctx, clientFn, nsFn, &globalOutput))
