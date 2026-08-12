@@ -21,6 +21,17 @@ type unhealthyConnectionKey struct {
 	identity types.NamespacedName
 }
 
+type attentionEntry struct {
+	identity             types.NamespacedName
+	healthSeverity       uint8
+	syncSeverity         uint8
+	blockedGates         uint32
+	changeSeverity       uint8
+	unhealthyConnections uint32
+	resourceCount        uint32
+	lastTransitionUnixMS int64
+}
+
 // StatusQuery is an authorized fleet-status request over one snapshot.
 type StatusQuery struct {
 	Filter         ApplicationFilter
@@ -57,18 +68,19 @@ func (s *Snapshot) QueryStatus(
 		Health:     newHealthStatusBuckets(),
 		Sync:       newSyncStatusBuckets(),
 	}
-	attention := make([]*ApplicationSummary, 0, len(filtered.IDs))
+	attention := make([]attentionEntry, 0, len(filtered.IDs))
 	for id := range filtered.IDs {
 		summary := s.Applications[id]
 		result.Health[statusHealthBucket(summary.Health)]++
 		result.Sync[statusSyncBucket(summary.Sync)]++
-		if needsAttention(&summary) {
-			attention = append(attention, &summary)
+		entry := newAttentionEntry(&summary)
+		if needsAttention(&entry) {
+			attention = append(attention, entry)
 		}
 	}
 
 	sort.Slice(attention, func(left, right int) bool {
-		return compareAttention(attention[left], attention[right]) < 0
+		return compareAttention(&attention[left], &attention[right]) < 0
 	})
 	result.AttentionTotal = uint64(len(attention))
 	limit := query.AttentionLimit
@@ -80,9 +92,10 @@ func (s *Snapshot) QueryStatus(
 		end = int(limit)
 	}
 	result.Attention = make([]ApplicationQueryResult, 0, end)
-	for _, summary := range attention[:end] {
+	for _, entry := range attention[:end] {
+		summary := s.Applications[entry.identity]
 		result.Attention = append(result.Attention, ApplicationQueryResult{
-			Summary:      cloneQueryApplicationSummary(summary),
+			Summary:      cloneQueryApplicationSummary(&summary),
 			Capabilities: scope.SortedCapabilities(summary.Project),
 		})
 	}
@@ -125,18 +138,25 @@ func statusSyncBucket(syncState SyncState) SyncState {
 	return syncState
 }
 
-func needsAttention(summary *ApplicationSummary) bool {
-	switch summary.Health {
-	case HealthProgressing, HealthDegraded, HealthFailed, HealthUnknown, HealthMissing:
-		return true
-	case HealthUnspecified, HealthHealthy:
+func newAttentionEntry(summary *ApplicationSummary) attentionEntry {
+	return attentionEntry{
+		identity:             summary.Identity,
+		healthSeverity:       healthSeverity(summary.Health),
+		syncSeverity:         syncSeverity(summary.Sync),
+		blockedGates:         summary.BlockedGateCount,
+		changeSeverity:       changeSeverity(summary),
+		unhealthyConnections: unhealthyConnectionCount(summary),
+		resourceCount:        summary.ResourceCount,
+		lastTransitionUnixMS: summary.LastTransitionUnixMS,
 	}
-	if summary.Sync == SyncStateOutOfSync || summary.Sync == SyncStateUnknown {
-		return true
-	}
-	return summary.BlockedGateCount > 0 ||
-		changeSeverity(summary) >= 3 ||
-		unhealthyConnectionCount(summary) > 0
+}
+
+func needsAttention(entry *attentionEntry) bool {
+	return entry.healthSeverity >= healthSeverity(HealthUnknown) ||
+		entry.syncSeverity >= syncSeverity(SyncStateUnknown) ||
+		entry.blockedGates > 0 ||
+		entry.changeSeverity >= 3 ||
+		entry.unhealthyConnections > 0
 }
 
 func healthSeverity(health Health) uint8 {
@@ -248,19 +268,19 @@ func unhealthyConnectionCount(summary *ApplicationSummary) uint32 {
 	return uint32(len(identities)) // #nosec G115 -- bounded by in-memory summary references.
 }
 
-func compareAttention(left, right *ApplicationSummary) int {
+func compareAttention(left, right *attentionEntry) int {
 	for _, compared := range [...]int{
-		compareOrdered(healthSeverity(left.Health), healthSeverity(right.Health)),
-		compareOrdered(syncSeverity(left.Sync), syncSeverity(right.Sync)),
-		compareOrdered(left.BlockedGateCount, right.BlockedGateCount),
-		compareOrdered(changeSeverity(left), changeSeverity(right)),
-		compareOrdered(unhealthyConnectionCount(left), unhealthyConnectionCount(right)),
-		compareOrdered(left.ResourceCount, right.ResourceCount),
-		compareOrdered(left.LastTransitionUnixMS, right.LastTransitionUnixMS),
+		compareOrdered(left.healthSeverity, right.healthSeverity),
+		compareOrdered(left.syncSeverity, right.syncSeverity),
+		compareOrdered(left.blockedGates, right.blockedGates),
+		compareOrdered(left.changeSeverity, right.changeSeverity),
+		compareOrdered(left.unhealthyConnections, right.unhealthyConnections),
+		compareOrdered(left.resourceCount, right.resourceCount),
+		compareOrdered(left.lastTransitionUnixMS, right.lastTransitionUnixMS),
 	} {
 		if compared != 0 {
 			return -compared
 		}
 	}
-	return compareObjectKeys(left.Identity, right.Identity)
+	return compareObjectKeys(left.identity, right.identity)
 }

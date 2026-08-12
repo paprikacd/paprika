@@ -386,6 +386,36 @@ func TestQueryStatusCountsUnhealthyConnectionsByKindAndIdentity(t *testing.T) {
 		"repeated references to one cluster collapse")
 }
 
+func TestQueryStatusAttentionComparatorUsesPrecomputedScalarKeys(t *testing.T) {
+	project := fleetID("projects", "precomputed")
+	left := statusAttentionApplication("apps", "left", project)
+	for index := 0; index < 16; index++ {
+		left.Targets = append(left.Targets, StageTargetSummary{
+			StableID: statusName(index), Cluster: fleetID("clusters", statusName(index)),
+			ClusterConnection: ConnectionStateUnhealthy,
+		})
+	}
+	right := statusAttentionApplication("apps", "right", project)
+	leftEntry := newAttentionEntry(&left)
+	rightEntry := newAttentionEntry(&right)
+	require.Equal(t, uint32(16), leftEntry.unhealthyConnections)
+
+	// Mutating the source after construction cannot trigger derived work during
+	// comparison; the immutable snapshot contract makes the cached key valid.
+	left.Targets = append(left.Targets, StageTargetSummary{
+		StableID: "later", Cluster: fleetID("clusters", "later"),
+		ClusterConnection: ConnectionStateUnhealthy,
+	})
+	require.Equal(t, uint32(16), leftEntry.unhealthyConnections)
+
+	var compared int
+	allocations := testing.AllocsPerRun(1000, func() {
+		compared = compareAttention(&leftEntry, &rightEntry)
+	})
+	require.Negative(t, compared)
+	require.Zero(t, allocations, "sorting precomputed attention entries must not allocate")
+}
+
 func TestQueryStatusReturnsDefensiveClones(t *testing.T) {
 	t.Parallel()
 
@@ -416,6 +446,32 @@ func TestQueryStatusReturnsDefensiveClones(t *testing.T) {
 	require.Equal(t, "metrics", second.Attention[0].Summary.ObservabilityBindings[0].Name)
 	require.Equal(t, []Capability{CapabilityApplicationSync, CapabilityGateApprove}, second.Attention[0].Capabilities)
 	require.Equal(t, uint64(1), second.Health[HealthFailed])
+}
+
+func BenchmarkQueryStatusAttentionRanking(b *testing.B) {
+	project := fleetID("projects", "benchmark")
+	snapshot := NewSnapshot(1)
+	for index := 0; index < 256; index++ {
+		application := statusAttentionApplication("apps", statusName(index), project)
+		application.Targets = make([]StageTargetSummary, 16)
+		for target := range application.Targets {
+			application.Targets[target] = StageTargetSummary{
+				StableID:          statusName(target),
+				Cluster:           fleetID("clusters", statusName(target)),
+				ClusterConnection: ConnectionStateUnhealthy,
+			}
+		}
+		addApplicationMutable(snapshot, &application)
+	}
+	snapshot.rebuildSearchIndex()
+	scope := QueryScope{Projects: ProjectSet{project: {}}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for iteration := 0; iteration < b.N; iteration++ {
+		if _, err := snapshot.QueryStatus(scope, StatusQuery{AttentionLimit: 100}); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 type statusOrderingValue struct {
