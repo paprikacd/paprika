@@ -1035,6 +1035,26 @@ message FleetHealthBucket {
   uint64 count = 2;
 }
 
+message FleetSyncBucket {
+  FleetSyncState sync = 1;
+  uint64 count = 2;
+}
+
+message GetSystemStatusRequest {
+  optional string namespace = 1;
+  uint32 attention_limit = 2;
+}
+
+message GetSystemStatusResponse {
+  uint64 index_generation = 1;
+  uint64 total = 2;
+  repeated FleetHealthBucket health = 3;
+  repeated FleetSyncBucket sync = 4;
+  uint64 attention_total = 5;
+  repeated ApplicationSummary attention = 6;
+  bool has_more_attention = 7;
+}
+
 message QueryApplicationsRequest {
   FleetFilter filter = 1;
   string search = 2;
@@ -1163,4 +1183,5 @@ service PaprikaService {
   rpc QueryApplications(QueryApplicationsRequest) returns (QueryApplicationsResponse);
   rpc QueryFleetMap(QueryFleetMapRequest) returns (QueryFleetMapResponse);
   rpc QueryFleetMatrix(QueryFleetMatrixRequest) returns (QueryFleetMatrixResponse);
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse);
 }

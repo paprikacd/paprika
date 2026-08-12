@@ -151,6 +151,9 @@ const (
 	// PaprikaServiceQueryFleetMatrixProcedure is the fully-qualified name of the PaprikaService's
 	// QueryFleetMatrix RPC.
 	PaprikaServiceQueryFleetMatrixProcedure = "/paprika.v1.PaprikaService/QueryFleetMatrix"
+	// PaprikaServiceGetSystemStatusProcedure is the fully-qualified name of the PaprikaService's
+	// GetSystemStatus RPC.
+	PaprikaServiceGetSystemStatusProcedure = "/paprika.v1.PaprikaService/GetSystemStatus"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -195,6 +198,7 @@ type PaprikaServiceClient interface {
 	QueryApplications(context.Context, *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error)
 	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
 	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
+	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -448,6 +452,12 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMatrix")),
 			connect.WithClientOptions(opts...),
 		),
+		getSystemStatus: connect.NewClient[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetSystemStatusProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetSystemStatus")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -493,6 +503,7 @@ type paprikaServiceClient struct {
 	queryApplications       *connect.Client[v1.QueryApplicationsRequest, v1.QueryApplicationsResponse]
 	queryFleetMap           *connect.Client[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse]
 	queryFleetMatrix        *connect.Client[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse]
+	getSystemStatus         *connect.Client[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -695,6 +706,11 @@ func (c *paprikaServiceClient) QueryFleetMatrix(ctx context.Context, req *connec
 	return c.queryFleetMatrix.CallUnary(ctx, req)
 }
 
+// GetSystemStatus calls paprika.v1.PaprikaService.GetSystemStatus.
+func (c *paprikaServiceClient) GetSystemStatus(ctx context.Context, req *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error) {
+	return c.getSystemStatus.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -737,6 +753,7 @@ type PaprikaServiceHandler interface {
 	QueryApplications(context.Context, *connect.Request[v1.QueryApplicationsRequest]) (*connect.Response[v1.QueryApplicationsResponse], error)
 	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
 	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
+	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -986,6 +1003,12 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("QueryFleetMatrix")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetSystemStatusHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetSystemStatusProcedure,
+		svc.GetSystemStatus,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetSystemStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -1068,6 +1091,8 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceQueryFleetMapHandler.ServeHTTP(w, r)
 		case PaprikaServiceQueryFleetMatrixProcedure:
 			paprikaServiceQueryFleetMatrixHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetSystemStatusProcedure:
+			paprikaServiceGetSystemStatusHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1235,4 +1260,8 @@ func (UnimplementedPaprikaServiceHandler) QueryFleetMap(context.Context, *connec
 
 func (UnimplementedPaprikaServiceHandler) QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryFleetMatrix is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetSystemStatus is not implemented"))
 }

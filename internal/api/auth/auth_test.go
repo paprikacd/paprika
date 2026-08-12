@@ -708,6 +708,10 @@ func TestClassify(t *testing.T) {
 	action, resource = classify("/paprika.v1.PaprikaService/SyncApplication")
 	assert.Equal(t, ActionWrite, action)
 	assert.Equal(t, ResourceApplications, resource)
+
+	action, resource = classify(v1connect.PaprikaServiceGetSystemStatusProcedure)
+	assert.Equal(t, ActionRead, action)
+	assert.Equal(t, ResourceApplications, resource)
 }
 
 func TestNamespaceFromRequest(t *testing.T) {
@@ -847,20 +851,29 @@ func TestFleetQueryInterceptorDefersProjectSetAuthorization(t *testing.T) {
 				return callErr
 			},
 		},
+		{
+			name: "system status",
+			call: func() error {
+				req := connect.NewRequest(&paprikav1.GetSystemStatusRequest{})
+				req.Header().Set("Authorization", authorization)
+				_, callErr := client.GetSystemStatus(context.Background(), req)
+				return callErr
+			},
+		},
 	}
 	for _, tc := range calls {
 		t.Run(tc.name, func(t *testing.T) {
 			require.NoError(t, tc.call())
 		})
 	}
-	assert.Equal(t, 3, service.fleetCalls)
+	assert.Equal(t, 4, service.fleetCalls)
 
-	_, err = client.QueryApplications(
+	_, err = client.GetSystemStatus(
 		context.Background(),
-		connect.NewRequest(&paprikav1.QueryApplicationsRequest{}),
+		connect.NewRequest(&paprikav1.GetSystemStatusRequest{}),
 	)
 	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err))
-	assert.Equal(t, 3, service.fleetCalls, "authentication must still precede the fleet handler")
+	assert.Equal(t, 4, service.fleetCalls, "authentication must still precede the fleet handler")
 
 	listReq := connect.NewRequest(&paprikav1.ListApplicationsRequest{})
 	listReq.Header().Set("Authorization", authorization)
@@ -901,6 +914,15 @@ func (s *fleetAuthTestService) QueryFleetMatrix(
 	s.requirePrincipal(ctx)
 	s.fleetCalls++
 	return connect.NewResponse(&paprikav1.QueryFleetMatrixResponse{}), nil
+}
+
+func (s *fleetAuthTestService) GetSystemStatus(
+	ctx context.Context,
+	_ *connect.Request[paprikav1.GetSystemStatusRequest],
+) (*connect.Response[paprikav1.GetSystemStatusResponse], error) {
+	s.requirePrincipal(ctx)
+	s.fleetCalls++
+	return connect.NewResponse(&paprikav1.GetSystemStatusResponse{}), nil
 }
 
 func (s *fleetAuthTestService) ListApplications(

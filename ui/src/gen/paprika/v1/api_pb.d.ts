@@ -5624,6 +5624,118 @@ export declare class FleetHealthBucket extends Message<FleetHealthBucket> {
 }
 
 /**
+ * @generated from message paprika.v1.FleetSyncBucket
+ */
+export declare class FleetSyncBucket extends Message<FleetSyncBucket> {
+  /**
+   * @generated from field: paprika.v1.FleetSyncState sync = 1;
+   */
+  sync: FleetSyncState;
+
+  /**
+   * @generated from field: uint64 count = 2;
+   */
+  count: bigint;
+
+  constructor(data?: PartialMessage<FleetSyncBucket>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.FleetSyncBucket";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): FleetSyncBucket;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): FleetSyncBucket;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): FleetSyncBucket;
+
+  static equals(a: FleetSyncBucket | PlainMessage<FleetSyncBucket> | undefined, b: FleetSyncBucket | PlainMessage<FleetSyncBucket> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetSystemStatusRequest
+ */
+export declare class GetSystemStatusRequest extends Message<GetSystemStatusRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: uint32 attention_limit = 2;
+   */
+  attentionLimit: number;
+
+  constructor(data?: PartialMessage<GetSystemStatusRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetSystemStatusRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetSystemStatusRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetSystemStatusRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetSystemStatusRequest;
+
+  static equals(a: GetSystemStatusRequest | PlainMessage<GetSystemStatusRequest> | undefined, b: GetSystemStatusRequest | PlainMessage<GetSystemStatusRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetSystemStatusResponse
+ */
+export declare class GetSystemStatusResponse extends Message<GetSystemStatusResponse> {
+  /**
+   * @generated from field: uint64 index_generation = 1;
+   */
+  indexGeneration: bigint;
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetHealthBucket health = 3;
+   */
+  health: FleetHealthBucket[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetSyncBucket sync = 4;
+   */
+  sync: FleetSyncBucket[];
+
+  /**
+   * @generated from field: uint64 attention_total = 5;
+   */
+  attentionTotal: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.ApplicationSummary attention = 6;
+   */
+  attention: ApplicationSummary[];
+
+  /**
+   * @generated from field: bool has_more_attention = 7;
+   */
+  hasMoreAttention: boolean;
+
+  constructor(data?: PartialMessage<GetSystemStatusResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetSystemStatusResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetSystemStatusResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetSystemStatusResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetSystemStatusResponse;
+
+  static equals(a: GetSystemStatusResponse | PlainMessage<GetSystemStatusResponse> | undefined, b: GetSystemStatusResponse | PlainMessage<GetSystemStatusResponse> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.QueryApplicationsRequest
  */
 export declare class QueryApplicationsRequest extends Message<QueryApplicationsRequest> {
