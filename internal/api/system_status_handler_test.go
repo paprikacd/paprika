@@ -167,7 +167,7 @@ func TestGetSystemStatusAuthorizesBeforeAggregation(t *testing.T) {
 
 	visible := systemStatusApplication("tenant-a", "checkout", "payments", fleet.HealthFailed, fleet.SyncStateOutOfSync)
 	visible.SourceRevision = "visible-revision"
-	hidden := systemStatusApplication("tenant-b", "secret-app-marker", "payments", fleet.HealthHealthy, fleet.SyncStateSynced)
+	hidden := systemStatusApplication("tenant-b", "secret-app-marker", "secret-project-marker", fleet.HealthFailed, fleet.SyncStateSynced)
 	hidden.SourceRevision = "secret-revision-marker"
 	hidden.CurrentClusterLabel = "secret-cluster-marker"
 	hidden.Targets = []fleet.StageTargetSummary{{
@@ -176,6 +176,16 @@ func TestGetSystemStatusAuthorizesBeforeAggregation(t *testing.T) {
 		ClusterLabel: "secret-cluster-label-marker", Health: fleet.HealthFailed,
 	}}
 	snapshot := buildSystemStatusSnapshot(t, 18, []fleet.ApplicationSummary{visible, hidden})
+	leakyStatus, err := snapshot.QueryStatus(fleet.QueryScope{Projects: fleet.ProjectSet{
+		visible.Project: {},
+		hidden.Project:  {},
+	}}, fleet.StatusQuery{})
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), leakyStatus.AttentionTotal, "fixture must expose an attention leak under unrestricted scope")
+	require.Len(t, leakyStatus.Attention, 2)
+	require.Equal(t, hidden.Identity, leakyStatus.Attention[1].Summary.Identity)
+	require.Equal(t, "secret-revision-marker", leakyStatus.Attention[1].Summary.SourceRevision)
+
 	authorizer := auth.NewRBACAuthorizer([]auth.RBACRule{{
 		Subjects: []string{"alice"}, Actions: []string{string(auth.ActionRead)},
 		Resources:  []string{string(auth.ResourceApplications)},
@@ -200,7 +210,7 @@ func TestGetSystemStatusAuthorizesBeforeAggregation(t *testing.T) {
 	encoded, marshalErr := protojson.Marshal(response.Msg)
 	require.NoError(t, marshalErr)
 	for _, marker := range []string{
-		"tenant-b", "secret-app-marker", "secret-revision-marker", "secret-cluster-marker",
+		"tenant-b", "secret-app-marker", "secret-project-marker", "secret-revision-marker", "secret-cluster-marker",
 		"secret-target-marker", "secret-stage-marker", "secret-cluster-label-marker",
 	} {
 		require.NotContains(t, string(encoded), marker)
