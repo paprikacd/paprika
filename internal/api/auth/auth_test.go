@@ -53,7 +53,7 @@ func TestOIDCRedirectValidation(t *testing.T) {
 	t.Run("login accepts exact UI and CLI redirects", func(t *testing.T) {
 		for _, redirectURI := range []string{configuredRedirect, "http://127.0.0.1:17632/callback"} {
 			t.Run(redirectURI, func(t *testing.T) {
-				req := httptest.NewRequest(http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
 				resp := httptest.NewRecorder()
 
 				authenticator.LoginHandler().ServeHTTP(resp, req)
@@ -69,7 +69,7 @@ func TestOIDCRedirectValidation(t *testing.T) {
 	})
 
 	t.Run("login defaults omitted redirect to configured UI", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/auth/login", http.NoBody)
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", http.NoBody)
 		resp := httptest.NewRecorder()
 
 		authenticator.LoginHandler().ServeHTTP(resp, req)
@@ -92,7 +92,7 @@ func TestOIDCRedirectValidation(t *testing.T) {
 	}
 	for _, redirectURI := range invalidRedirects {
 		t.Run("login rejects "+redirectURI, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login?redirect_uri="+url.QueryEscape(redirectURI), http.NoBody)
 			resp := httptest.NewRecorder()
 
 			authenticator.LoginHandler().ServeHTTP(resp, req)
@@ -102,7 +102,7 @@ func TestOIDCRedirectValidation(t *testing.T) {
 
 		t.Run("token rejects "+redirectURI, func(t *testing.T) {
 			body := fmt.Sprintf(`{"code":"code-marker","codeVerifier":"verifier-marker","redirectUri":%q}`, redirectURI)
-			req := httptest.NewRequest(http.MethodPost, "/auth/token", strings.NewReader(body))
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(body))
 			resp := httptest.NewRecorder()
 
 			authenticator.TokenHandler().ServeHTTP(resp, req)
@@ -129,12 +129,12 @@ func TestOIDCRedirectValidationRejectsOmittedRedirectWithoutConfiguration(t *tes
 		},
 	}}
 
-	loginReq := httptest.NewRequest(http.MethodGet, "/auth/login", http.NoBody)
+	loginReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", http.NoBody)
 	loginResp := httptest.NewRecorder()
 	authenticator.LoginHandler().ServeHTTP(loginResp, loginReq)
 	assert.Equal(t, http.StatusBadRequest, loginResp.Code)
 
-	tokenReq := httptest.NewRequest(http.MethodPost, "/auth/token", strings.NewReader(
+	tokenReq := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(
 		`{"code":"code-marker","codeVerifier":"verifier-marker"}`,
 	))
 	tokenResp := httptest.NewRecorder()
@@ -472,7 +472,7 @@ func performTokenRequest(t *testing.T, authenticator *OIDCAuthenticator, tokenRe
 	t.Helper()
 	body, err := json.Marshal(tokenReq)
 	require.NoError(t, err)
-	req := httptest.NewRequest(http.MethodPost, "/auth/token", strings.NewReader(string(body)))
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/token", strings.NewReader(string(body)))
 	resp := httptest.NewRecorder()
 	authenticator.TokenHandler().ServeHTTP(resp, req)
 	return resp

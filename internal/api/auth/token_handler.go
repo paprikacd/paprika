@@ -117,7 +117,6 @@ func exchangeCode(ctx context.Context, o *OIDCAuthenticator, code, codeVerifier,
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	//nolint:gosec // token endpoint is supplied by trusted OIDC discovery
 	resp, err := o.httpClient.Do(req)
 	if err != nil {
 		return nil, errors.New("token request failed")
