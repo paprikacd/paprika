@@ -21,11 +21,14 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
+
+var apiHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
 func newClient(cfg *Config) (v1connect.PaprikaServiceClient, error) {
 	if cfg.Server == "" {
@@ -33,14 +36,14 @@ func newClient(cfg *Config) (v1connect.PaprikaServiceClient, error) {
 	}
 
 	interceptors := []connect.Interceptor{}
-	if cfg.Username != "" && cfg.Password != "" {
-		interceptors = append(interceptors, basicAuthInterceptor(cfg.Username, cfg.Password))
-	} else if cfg.Token != "" {
+	if cfg.Token != "" {
 		interceptors = append(interceptors, bearerAuthInterceptor(cfg.Token))
+	} else if cfg.Username != "" && cfg.Password != "" {
+		interceptors = append(interceptors, basicAuthInterceptor(cfg.Username, cfg.Password))
 	}
 
 	return v1connect.NewPaprikaServiceClient(
-		http.DefaultClient,
+		apiHTTPClient,
 		cfg.Server,
 		connect.WithInterceptors(interceptors...),
 	), nil
