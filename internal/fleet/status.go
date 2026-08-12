@@ -8,6 +8,19 @@ import (
 
 const defaultAttentionLimit uint32 = 20
 
+type connectionReferenceKind uint8
+
+const (
+	connectionReferenceRepository connectionReferenceKind = iota
+	connectionReferenceObservability
+	connectionReferenceCluster
+)
+
+type unhealthyConnectionKey struct {
+	kind     connectionReferenceKind
+	identity types.NamespacedName
+}
+
 // StatusQuery is an authorized fleet-status request over one snapshot.
 type StatusQuery struct {
 	Filter         ApplicationFilter
@@ -213,17 +226,23 @@ func rolloutChangeSeverity(state RolloutState) uint8 {
 }
 
 func unhealthyConnectionCount(summary *ApplicationSummary) uint32 {
-	identities := make(map[types.NamespacedName]struct{}, len(summary.Targets)+2)
+	identities := make(map[unhealthyConnectionKey]struct{}, len(summary.Targets)+2)
 	if summary.RepositoryConnection == ConnectionStateUnhealthy && completeObjectKey(summary.Repository) {
-		identities[summary.Repository] = struct{}{}
+		identities[unhealthyConnectionKey{
+			kind: connectionReferenceRepository, identity: summary.Repository,
+		}] = struct{}{}
 	}
 	if summary.ObservabilityConnection == ConnectionStateUnhealthy &&
 		completeObjectKey(summary.EffectiveObservabilitySource) {
-		identities[summary.EffectiveObservabilitySource] = struct{}{}
+		identities[unhealthyConnectionKey{
+			kind: connectionReferenceObservability, identity: summary.EffectiveObservabilitySource,
+		}] = struct{}{}
 	}
 	for _, target := range summary.Targets {
 		if target.ClusterConnection == ConnectionStateUnhealthy && completeObjectKey(target.Cluster) {
-			identities[target.Cluster] = struct{}{}
+			identities[unhealthyConnectionKey{
+				kind: connectionReferenceCluster, identity: target.Cluster,
+			}] = struct{}{}
 		}
 	}
 	return uint32(len(identities)) // #nosec G115 -- bounded by in-memory summary references.

@@ -363,6 +363,29 @@ func TestQueryStatusAttentionOrderingIsStableAcrossMapInsertion(t *testing.T) {
 	}
 }
 
+func TestQueryStatusCountsUnhealthyConnectionsByKindAndIdentity(t *testing.T) {
+	t.Parallel()
+
+	shared := fleetID("connections", "shared")
+	application := statusApplication("apps", "shared-identities", fleetID("projects", "connections"))
+	application.Repository = shared
+	application.RepositoryConnection = ConnectionStateUnhealthy
+	application.EffectiveObservabilitySource = shared
+	application.ObservabilityConnection = ConnectionStateUnhealthy
+	application.Targets = []StageTargetSummary{
+		{StableID: "first", Cluster: shared, ClusterConnection: ConnectionStateUnhealthy},
+		{StableID: "second", Cluster: shared, ClusterConnection: ConnectionStateUnhealthy},
+	}
+
+	require.Equal(t, uint32(3), unhealthyConnectionCount(&application),
+		"different connection kinds sharing one identity remain distinct")
+
+	clusterOnly := statusApplication("apps", "repeated-cluster", application.Project)
+	clusterOnly.Targets = append([]StageTargetSummary(nil), application.Targets...)
+	require.Equal(t, uint32(1), unhealthyConnectionCount(&clusterOnly),
+		"repeated references to one cluster collapse")
+}
+
 func TestQueryStatusReturnsDefensiveClones(t *testing.T) {
 	t.Parallel()
 
