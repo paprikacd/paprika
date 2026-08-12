@@ -196,6 +196,9 @@ func executeLogin(ctx context.Context, writer io.Writer, dependencies loginDepen
 	defer timer.Stop()
 	for {
 		select {
+		case callbackErr := <-callback.failures:
+			reportBrowserResult(true)
+			return callbackErr
 		case event := <-callback.events:
 			if event.err != nil {
 				callback.complete(loginCallbackResult{})

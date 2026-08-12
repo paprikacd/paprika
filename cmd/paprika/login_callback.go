@@ -33,6 +33,8 @@ const (
 	loginCallbackWriteTimeout   = 30 * time.Second
 )
 
+var errLoginCallbackServerStopped = errors.New("login callback server stopped unexpectedly")
+
 type loginCallbackEvent struct {
 	code string
 	err  error
@@ -46,6 +48,7 @@ type loginCallbackServer struct {
 	expectedState string
 	server        *http.Server
 	events        chan loginCallbackEvent
+	failures      chan error
 	done          chan struct{}
 	serveDone     chan struct{}
 
@@ -59,6 +62,7 @@ func newLoginCallbackServer(listener net.Listener, expectedState string) *loginC
 	callback := &loginCallbackServer{
 		expectedState: expectedState,
 		events:        make(chan loginCallbackEvent, 1),
+		failures:      make(chan error, 1),
 		done:          make(chan struct{}),
 		serveDone:     make(chan struct{}),
 	}
@@ -72,7 +76,7 @@ func newLoginCallbackServer(listener net.Listener, expectedState string) *loginC
 	go func() {
 		defer close(callback.serveDone)
 		if serveErr := callback.server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			callback.complete(loginCallbackResult{})
+			callback.failServe()
 		}
 	}()
 	return callback
@@ -147,6 +151,18 @@ func (c *loginCallbackServer) complete(result loginCallbackResult) {
 		c.mu.Unlock()
 		close(c.done)
 	})
+}
+
+func (c *loginCallbackServer) failServe() {
+	c.mu.Lock()
+	if c.accepted {
+		c.mu.Unlock()
+		return
+	}
+	c.accepted = true
+	c.mu.Unlock()
+	c.complete(loginCallbackResult{})
+	c.failures <- errLoginCallbackServerStopped
 }
 
 func (c *loginCallbackServer) shutdown(parent context.Context) {

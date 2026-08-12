@@ -476,6 +476,46 @@ func TestLoginTimeoutAndCancellationReleaseListenerAndLeaveConfigUnchanged(t *te
 	}
 }
 
+func TestLoginCallbackServeFailureReturnsPromptlyWithoutDetails(t *testing.T) {
+	resetLoginGlobals(t)
+	server := newLoginTestServer(t, "expected-state", "verifier-marker", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unexpected token exchange", http.StatusInternalServerError)
+	})
+	defer server.Close()
+	path, before := writeLoginConfig(t, &Config{Server: server.URL, Token: "old-token-marker"})
+	globalConfigPath = path
+	listener := &failingLoginListener{
+		failed: make(chan struct{}, 1),
+		err:    errors.New("accept failed: raw-listener-secret-marker"),
+	}
+	dependencies := defaultLoginDependencies()
+	dependencies.callbackTimeout = time.Hour
+	dependencies.listen = func(string, string) (net.Listener, error) { return listener, nil }
+	dependencies.openBrowser = func(context.Context, string) error { return nil }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- executeLogin(ctx, &strings.Builder{}, dependencies) }()
+
+	select {
+	case <-listener.failed:
+	case <-time.After(time.Second):
+		t.Fatal("callback server did not attempt to accept a connection")
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "login callback server stopped unexpectedly") {
+			t.Fatalf("executeLogin() error = %v, want sanitized callback server failure", err)
+		}
+		assertNoMarkers(t, err.Error(), "raw-listener-secret-marker", "accept failed")
+	case <-time.After(time.Second):
+		cancel()
+		err := <-done
+		t.Fatalf("executeLogin() waited after callback server failure; eventual error = %v", err)
+	}
+	assertConfigSnapshot(t, path, before)
+}
+
 func TestLoginCommandUsesInjectedContextCancellation(t *testing.T) {
 	resetLoginGlobals(t)
 	server := newLoginTestServer(t, "expected-state", "verifier-marker", func(w http.ResponseWriter, _ *http.Request) {
@@ -813,6 +853,11 @@ func TestLoginCallbackShutdownWaitsForServeExit(t *testing.T) {
 		t.Fatal("callback shutdown returned before the Serve goroutine exited")
 	}
 	select {
+	case err := <-callback.failures:
+		t.Fatalf("intentional callback shutdown reported a Serve failure: %v", err)
+	default:
+	}
+	select {
 	case <-closed:
 	default:
 		t.Fatal("callback shutdown returned before the Serve goroutine closed its listener")
@@ -822,6 +867,53 @@ func TestLoginCallbackShutdownWaitsForServeExit(t *testing.T) {
 		t.Fatalf("callback listener was not released: %v", listenErr)
 	}
 	_ = rebound.Close()
+}
+
+func TestLoginCallbackAcceptedBeforeServeFailureWins(t *testing.T) {
+	fail := make(chan struct{})
+	listener := &gatedFailingLoginListener{
+		fail: fail,
+		stop: make(chan struct{}, 1),
+		err:  errors.New("accept failed: raw-listener-secret-marker"),
+	}
+	callback := newLoginCallbackServer(listener, "expected-state")
+	defer callback.shutdown(context.Background())
+	response := httptest.NewRecorder()
+	responseDone := make(chan struct{})
+	go func() {
+		callback.handle(response, httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+			"/callback?code=code-marker&state=expected-state", http.NoBody))
+		close(responseDone)
+	}()
+
+	select {
+	case event := <-callback.events:
+		if event.code != "code-marker" {
+			t.Fatalf("callback code = %q, want code-marker", event.code)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback was not accepted")
+	}
+	close(fail)
+	select {
+	case <-callback.serveDone:
+	case <-time.After(time.Second):
+		t.Fatal("callback Serve did not exit")
+	}
+	select {
+	case err := <-callback.failures:
+		t.Fatalf("accepted callback lost to Serve failure: %v", err)
+	default:
+	}
+	callback.complete(loginCallbackResult{success: true})
+	select {
+	case <-responseDone:
+	case <-time.After(time.Second):
+		t.Fatal("accepted callback did not receive its result")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("callback status = %d, want 200", response.Code)
+	}
 }
 
 func TestLoginHTTPClientIsBoundedAndDoesNotFollowRedirects(t *testing.T) {
@@ -987,6 +1079,47 @@ func (l *closeTrackingListener) Close() error {
 	}
 	return l.Listener.Close()
 }
+
+type failingLoginListener struct {
+	failed chan struct{}
+	err    error
+}
+
+func (l *failingLoginListener) Accept() (net.Conn, error) {
+	select {
+	case l.failed <- struct{}{}:
+	default:
+	}
+	return nil, l.err
+}
+
+func (*failingLoginListener) Close() error   { return nil }
+func (*failingLoginListener) Addr() net.Addr { return &net.TCPAddr{} }
+
+type gatedFailingLoginListener struct {
+	fail <-chan struct{}
+	stop chan struct{}
+	err  error
+}
+
+func (l *gatedFailingLoginListener) Accept() (net.Conn, error) {
+	select {
+	case <-l.fail:
+		return nil, l.err
+	case <-l.stop:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *gatedFailingLoginListener) Close() error {
+	select {
+	case l.stop <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (*gatedFailingLoginListener) Addr() net.Addr { return &net.TCPAddr{} }
 
 func getCallbackResponse(ctx context.Context, path string) callbackHTTPResponse {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+loginCallbackAddress+path, http.NoBody)
