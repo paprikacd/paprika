@@ -51,6 +51,10 @@ func (o *OIDCAuthenticator) TokenHandler() http.HandlerFunc {
 			http.Error(w, "code and codeVerifier are required", http.StatusBadRequest)
 			return
 		}
+		if _, err := o.validateRedirectURL(req.RedirectURI); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		rawIDToken, tokenResp, err := o.exchangeAndValidate(r.Context(), &req)
 		if err != nil {
@@ -75,14 +79,14 @@ func (o *OIDCAuthenticator) TokenHandler() http.HandlerFunc {
 }
 
 func (o *OIDCAuthenticator) exchangeAndValidate(ctx context.Context, req *TokenRequest) (string, *oauth2Token, error) {
-	redirectURI := req.RedirectURI
-	if redirectURI == "" {
-		redirectURI = o.oauth2Config.RedirectURL
+	redirectURI, err := o.validateRedirectURL(req.RedirectURI)
+	if err != nil {
+		return "", nil, err
 	}
 
 	token, err := exchangeCode(ctx, o, req.Code, req.CodeVerifier, redirectURI)
 	if err != nil {
-		return "", nil, fmt.Errorf("token exchange failed: %w", err)
+		return "", nil, err
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
@@ -91,7 +95,7 @@ func (o *OIDCAuthenticator) exchangeAndValidate(ctx context.Context, req *TokenR
 	}
 
 	if err := o.validateIDToken(ctx, rawIDToken); err != nil {
-		return "", nil, fmt.Errorf("id_token validation failed: %w", err)
+		return "", nil, errors.New("id_token validation failed")
 	}
 
 	return rawIDToken, token, nil
@@ -113,29 +117,29 @@ func exchangeCode(ctx context.Context, o *OIDCAuthenticator, code, codeVerifier,
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	//nolint:gosec // token endpoint is supplied by trusted OIDC discovery
+	resp, err := o.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("token request: %w", err)
+		return nil, errors.New("token request failed")
 	}
+	//nolint:errcheck // response body cleanup is best-effort after the bounded read
+	defer resp.Body.Close()
 
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("close token response body: %w", cerr)
-		}
-	}()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseSize+1))
 	if err != nil {
-		return nil, fmt.Errorf("read token response: %w", err)
+		return nil, errors.New("token request failed")
+	}
+	if len(body) > maxTokenResponseSize {
+		return nil, errors.New("token endpoint response too large")
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
 	}
 
 	var token oauth2Token
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, fmt.Errorf("parse token response: %w", err)
+		return nil, errors.New("invalid token endpoint response")
 	}
 
 	return &token, nil

@@ -4,11 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+)
+
+const (
+	CLIRedirectURL       = "http://127.0.0.1:17632/callback"
+	maxTokenResponseSize = 1 << 20
+	oidcHTTPTimeout      = 15 * time.Second
 )
 
 // OIDCConfig configures OpenID Connect authentication.
@@ -21,6 +28,7 @@ type OIDCConfig struct {
 	GroupsClaim  string
 	EmailClaim   string
 	NameClaim    string
+	HTTPClient   *http.Client
 }
 
 // OIDCAuthenticator validates OIDC bearer tokens.
@@ -28,6 +36,7 @@ type OIDCAuthenticator struct {
 	provider     *oidc.Provider
 	verifier     *oidc.IDTokenVerifier
 	oauth2Config oauth2.Config
+	httpClient   *http.Client
 	groupsClaim  string
 	emailClaim   string
 	nameClaim    string
@@ -42,7 +51,12 @@ func NewOIDCAuthenticator(ctx context.Context, cfg *OIDCConfig) (*OIDCAuthentica
 		return nil, errors.New("oidc client ID is required")
 	}
 
-	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
+	httpClient := cfg.HTTPClient
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: oidcHTTPTimeout}
+	}
+	providerCtx := context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	provider, err := oidc.NewProvider(providerCtx, cfg.IssuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("create OIDC provider: %w", err)
 	}
@@ -69,6 +83,7 @@ func NewOIDCAuthenticator(ctx context.Context, cfg *OIDCConfig) (*OIDCAuthentica
 		provider:     provider,
 		verifier:     verifier,
 		oauth2Config: oauth2Config,
+		httpClient:   httpClient,
 		groupsClaim:  defaultString(cfg.GroupsClaim, "groups"),
 		emailClaim:   defaultString(cfg.EmailClaim, "email"),
 		nameClaim:    defaultString(cfg.NameClaim, "name"),
@@ -129,6 +144,19 @@ func (o *OIDCAuthenticator) Authenticate(ctx context.Context) (*Principal, error
 // OAuth2Config returns the OAuth2 config for the login flow.
 func (o *OIDCAuthenticator) OAuth2Config() oauth2.Config {
 	return o.oauth2Config
+}
+
+func (o *OIDCAuthenticator) validateRedirectURL(redirectURL string) (string, error) {
+	if redirectURL == "" {
+		redirectURL = o.oauth2Config.RedirectURL
+	}
+	if redirectURL == "" {
+		return "", errors.New("redirect URI is required")
+	}
+	if redirectURL != o.oauth2Config.RedirectURL && redirectURL != CLIRedirectURL {
+		return "", errors.New("redirect URI is not allowed")
+	}
+	return redirectURL, nil
 }
 
 func defaultString(a, b string) string {
