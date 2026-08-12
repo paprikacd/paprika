@@ -117,8 +117,8 @@ Impact ordering is a descending lexicographic tuple followed by an ascending ide
 1. Health severity: failed, missing, degraded, progressing, unknown, unspecified, healthy.
 2. Sync severity: out of sync, unknown, unspecified, synced.
 3. Blocked gate count.
-4. Change severity: failed/degraded/aborted, rolled back, awaiting approval/paused, active, terminal healthy, unspecified.
-5. Number of unhealthy cluster, repository, and observability connections.
+4. Change severity, taking the maximum rank across current release and rollout: failed/degraded/aborted, rolled back, awaiting approval/paused, active pending/promoting/canarying/verifying/progressing, terminal complete/healthy/superseded, unspecified.
+5. Number of unique unhealthy connection identities across clusters, repository, and observability source. Repeated stage targets referencing the same cluster count once.
 6. Managed resource count.
 7. Last transition time, newest first.
 8. Application namespace and name, ascending.
@@ -149,7 +149,7 @@ The login command is split into independently testable units:
 - A browser opener with a platform implementation and a printable-URL fallback.
 - A config update function that persists only the server, ID token, and token expiration while preserving unrelated fields. It writes a temporary file in the same directory, sets mode `0600`, atomically renames it into place, and corrects an existing overly permissive config to `0600`.
 
-The status command uses the generated Connect client and current config. Table formatting is human-oriented; JSON and YAML use the protobuf response directly.
+The status command uses the generated Connect client and current config. The shared API client uses an explicit 30-second HTTP timeout, and `paprika status` applies a tighter 15-second overall request context. Login uses its own bounded client because its five-minute browser wait is not an API request. Table formatting is human-oriented; JSON and YAML use the protobuf response directly.
 
 ## Security Properties
 
@@ -170,7 +170,9 @@ The existing chart documents `auth.oidc.existingSecretName` and `existingSecretK
 
 - The binary reads `PAPRIKA_OIDC_CLIENT_SECRET` as the default OIDC client secret.
 - API and monolith workloads populate that variable from the configured Kubernetes Secret key.
-- When an existing Secret is configured, Helm does not render `--auth-oidc-client-secret`.
+- The chart no longer supports inline `auth.oidc.clientSecret`; a non-empty legacy value fails rendering with migration guidance.
+- OIDC deployments that need a confidential-client secret must set `existingSecretName` and `existingSecretKey` together. Partial or conflicting configuration fails rendering.
+- Helm never renders `--auth-oidc-client-secret`.
 - The deployment values use the Secret reference, not an inline client secret.
 - The currently exposed Google OAuth client secret is rotated before final live verification.
 
@@ -207,6 +209,7 @@ The non-secret issuer URL and client ID may remain in arguments. The Secret valu
 - Authorization tests prove cross-project applications and aggregate counts are absent.
 - Snapshot consistency tests replace the index between candidate derivation and aggregation and prove one request remains bound to one generation.
 - Chart rendering tests prove a referenced OIDC Secret becomes `PAPRIKA_OIDC_CLIENT_SECRET` and never a container argument or inline value.
+- Chart validation tests reject inline, partial, and conflicting OIDC client-secret configuration.
 - Protobuf descriptor and generated-code drift checks pass.
 - CLI table, JSON, and YAML golden/structural tests pass.
 
