@@ -34,8 +34,8 @@ spec:
       depends:
         - build
   artifacts:
-    - name: binaries
-      path: /out/bin
+    - name: image
+      path: oci://my-registry/my-app:$TAG
 ```
 
 ## Step Fields
@@ -77,7 +77,7 @@ spec:
 
 ## Artifacts
 
-Artifacts are declared outputs that steps can write to a shared path:
+Artifacts are declared outputs using an `oci://` or `configmap://` reference:
 
 ```yaml
 spec:
@@ -87,11 +87,11 @@ spec:
       script: |
         go build -o /out/bin/my-app ./cmd/my-app
   artifacts:
-    - name: binaries
-      path: /out/bin
+    - name: image
+      path: oci://my-registry/my-app:$TAG
 ```
 
-The operator captures the artifact path for downstream releases or pipelines.
+The operator records the artifact reference for downstream releases or pipelines. OCI references must include the `oci://` prefix; ConfigMap references use `configmap://<name>[/<key>]`.
 
 ## Full Example
 
@@ -138,8 +138,8 @@ spec:
       timeout: 600
 
   artifacts:
-    - name: binaries
-      path: /out/bin
+    - name: image
+      path: oci://my-registry/my-app:$GIT_SHA
 ```
 
 Apply and watch:

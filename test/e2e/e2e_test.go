@@ -433,7 +433,7 @@ var _ = Describe("Manager", Ordered, func() {
 				"spec": {
 					"maxParallel": 1,
 					"steps": [{"name": "build", "image": "alpine:3.19", "script": "echo built"}],
-					"artifacts": [{"name": "image", "path": "e2e-registry.io/app:v1"}]
+					"artifacts": [{"name": "image", "path": "oci://e2e-registry.io/app:v1"}]
 				}
 			}`, namespace)
 			cmd := exec.Command("kubectl", "apply", "-f", "-")
