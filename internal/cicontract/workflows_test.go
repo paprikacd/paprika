@@ -942,7 +942,21 @@ func assertReleaseVerifyPublishJob(t *testing.T, workflow workflowFile) {
 	if !sameStrings(stringList(verify["needs"]), []string{"artifacts", "helm"}) {
 		t.Errorf("release.yml verify-publish needs = %v, want artifacts and helm", stringList(verify["needs"]))
 	}
+	checkout, checkoutIndex := requireNamedStepAt(t, verify, "Checkout", "release.yml verify-publish job")
+	if uses := scalarString(checkout["uses"]); uses != "actions/checkout@"+pinnedActionRevisions["actions/checkout"] {
+		t.Errorf("release.yml verify-publish checkout uses = %q, want pinned actions/checkout", uses)
+	}
+	checkoutWith := requireMappingValue(t, checkout, "with", "release.yml verify-publish checkout")
+	if persist, ok := checkoutWith["persist-credentials"].(bool); !ok || persist {
+		t.Errorf("release.yml verify-publish checkout persist-credentials = %v, want false", checkoutWith["persist-credentials"])
+	}
+	if checkoutIndex != 0 {
+		t.Errorf("release.yml verify-publish checkout step index = %d, want first step", checkoutIndex)
+	}
 	verifyStep := requireNamedStep(t, verify, "Verify exact artifacts and publish", "release.yml verify-publish job")
+	if verifyIndex := namedStepIndex(t, verify, "Verify exact artifacts and publish", "release.yml verify-publish job"); checkoutIndex >= verifyIndex {
+		t.Error("release.yml verify-publish must checkout before final verification")
+	}
 	verifyScript := scalarString(verifyStep["run"])
 	for _, fragment := range []string{
 		`needs.artifacts.outputs.release_id`, `gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"`,
