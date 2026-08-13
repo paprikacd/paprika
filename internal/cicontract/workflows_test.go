@@ -42,6 +42,7 @@ var pinnedActionRevisions = map[string]string{
 	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
 	"google-github-actions/setup-gcloud": "aa5489c8933f4cc7a4f7d45035b3b1440c9c10db",
+	"go-task/setup-task":                 "70f2430ad412f838533de8c0515c749ffb2b8bd3",
 	"goreleaser/goreleaser-action":       "f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
 	"peaceiris/actions-gh-pages":         "84c30a85c19949d7eee79c4ff27748b70285e453",
 }
@@ -61,6 +62,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
 	t.Run("canonical CI validates the CLI release contract", testCLIReleaseContractJob)
+	t.Run("canonical CI validates distribution entrypoints", testDistributionContractsJob)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
 	t.Run("publication is gated and exposes an immutable amd64 image digest", testPublication)
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
@@ -100,7 +102,7 @@ func testCanonicalCIValidation(t *testing.T) {
 		t.Errorf("ci.yml push.branches = %v, want exactly [master]", branches)
 	}
 
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "fleet-scale", "cluster-integration", "publish"} {
 		if _, ok := workflow.jobs[jobID]; !ok {
 			t.Errorf("ci.yml is missing required job ID %q", jobID)
 		}
@@ -117,6 +119,7 @@ func testCanonicalCIValidation(t *testing.T) {
 		{id: "ui", commands: []string{"npm ci", "npm test", "npm run lint", "npm run build"}, workingDirectory: "ui"},
 		{id: "generated", commands: []string{"make generate-proto", "git diff --exit-code"}},
 		{id: "chart", commands: []string{
+			"bash hack/compare-helm-chart.sh --self-test",
 			"helm lint charts/chart/",
 			"helm template paprika charts/chart/",
 			"helm template paprika charts/chart/ --values deploy/test-values.yaml",
@@ -170,7 +173,7 @@ func testCanonicalCIActionPins(t *testing.T) {
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "fleet-ui-smoke", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "distribution-contracts", "fleet-ui-smoke", "cluster-integration", "publish"} {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		timeout, ok := job["timeout-minutes"].(int)
 		if !ok || timeout < 5 || timeout > 30 {
@@ -197,6 +200,24 @@ func testCLIReleaseContractJob(t *testing.T) {
 	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
 	if !contains(stringList(publish["needs"]), "release-contract") {
 		t.Error("ci.yml publish job must need release-contract")
+	}
+}
+
+func testDistributionContractsJob(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	assertValidationJob(t, workflow, validationJobContract{id: "distribution-contracts", commands: []string{
+		"bash hack/test-cli-install.sh",
+		"bash hack/test-taskfile-contract.sh",
+		"bash hack/test-landing-install.sh",
+	}})
+	job := requireMappingValue(t, workflow.jobs, "distribution-contracts", "ci.yml jobs")
+	setup := requireUsesStep(t, job, "go-task/setup-task@", "ci.yml distribution-contracts job")
+	if got := scalarString(requireMappingValue(t, setup, "with", "ci.yml Task install step")["version"]); got != "3.52.0" {
+		t.Errorf("ci.yml Task version = %q, want 3.52.0", got)
+	}
+	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
+	if !contains(stringList(publish["needs"]), "distribution-contracts") {
+		t.Error("ci.yml publish job must need distribution-contracts")
 	}
 }
 
@@ -735,7 +756,7 @@ func testDownstreamJobTimeouts(t *testing.T) {
 		"helm-publish.yml":    {"publish": {5, 30}},
 		"test-e2e.yml":        {"test-e2e": {30, 60}},
 		"gh-pages.yml":        {"deploy": {5, 15}},
-		"release.yml":         {"goreleaser": {5, 30}, "helm-package": {5, 30}},
+		"release.yml":         {"preflight": {5, 15}, "artifacts": {5, 30}, "helm": {5, 20}, "verify-publish": {5, 20}},
 	}
 	for workflowName, jobs := range contracts {
 		workflow := loadWorkflow(t, workflowName)
@@ -748,23 +769,168 @@ func testDownstreamJobTimeouts(t *testing.T) {
 
 func testTaggedReleaseWorkflow(t *testing.T) {
 	workflow := loadWorkflow(t, "release.yml")
+	goreleaserConfig := loadYAMLDocument(t, filepath.Join(repositoryRoot(t), ".goreleaser.yaml"))
+	releaseConfig := requireMappingValue(t, goreleaserConfig, "release", ".goreleaser.yaml")
+	if useExisting, ok := releaseConfig["use_existing_draft"].(bool); !ok || !useExisting {
+		t.Errorf(".goreleaser.yaml release.use_existing_draft = %v, want true for safe draft reruns", releaseConfig["use_existing_draft"])
+	}
 	if _, declared := workflow.document["permissions"]; declared {
 		t.Error("release.yml must scope permissions per job, not globally")
 	}
-	goreleaser := requireMappingValue(t, workflow.jobs, "goreleaser", "release.yml jobs")
-	goreleaserPermissions := requireMappingValue(t, goreleaser, "permissions", "release.yml goreleaser job")
-	if !sameStrings(sortedKeys(goreleaserPermissions), []string{"contents", "packages"}) || permission(workflow, goreleaser, "contents") != "write" || permission(workflow, goreleaser, "packages") != "write" {
-		t.Errorf("release.yml goreleaser permissions must be exactly contents/packages write, got %v", goreleaser["permissions"])
+	concurrency := requireMappingValue(t, workflow.document, "concurrency", "release.yml")
+	if got := scalarString(concurrency["group"]); got != "release-${{ github.ref_name }}" {
+		t.Errorf("release.yml concurrency.group = %q, want exact same-tag serialization", got)
 	}
-	helm := requireMappingValue(t, workflow.jobs, "helm-package", "release.yml jobs")
-	helmPermissions := requireMappingValue(t, helm, "permissions", "release.yml helm-package job")
-	if !sameStrings(sortedKeys(helmPermissions), []string{"contents", "packages"}) || permission(workflow, helm, "contents") != "read" || permission(workflow, helm, "packages") != "write" {
-		t.Errorf("release.yml helm-package permissions must be contents read/packages write, got %v", helm["permissions"])
+	if cancel, ok := concurrency["cancel-in-progress"].(bool); !ok || cancel {
+		t.Errorf("release.yml concurrency.cancel-in-progress = %v, want false", concurrency["cancel-in-progress"])
 	}
-	step := requireUsesStep(t, goreleaser, "goreleaser/goreleaser-action@", "release.yml goreleaser job")
+	assertReleasePreflightJob(t, workflow)
+	assertReleaseArtifactsJob(t, workflow)
+	assertReleaseHelmJob(t, workflow)
+	assertReleaseVerifyPublishJob(t, workflow)
+}
+
+func assertReleasePreflightJob(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	preflight := requireMappingValue(t, workflow.jobs, "preflight", "release.yml jobs")
+	assertExactJobPermissions(t, workflow, preflight, "release.yml preflight", map[string]string{"contents": "read", "packages": "read"})
+	if len(stringList(preflight["needs"])) != 0 {
+		t.Error("release.yml preflight must run before and independently of all mutation jobs")
+	}
+	if got := sortedKeys(requireMappingValue(t, preflight, "outputs", "release.yml preflight job")); !sameStrings(got, []string{"chart_action", "release_state"}) {
+		t.Errorf("release.yml preflight outputs = %v, want chart_action and release_state", got)
+	}
+	guard, guardIndex := requireNamedStepAt(t, preflight, "Guard exact release and chart tags", "release.yml preflight job")
+	guardScript := scalarString(guard["run"])
+	for _, fragment := range []string{
+		`TAG="${GITHUB_REF_NAME}"`, `VERSION="${TAG#v}"`,
+		`gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}"`,
+		`jq -e '.draft == true'`, `release_state=draft`, `release_state=absent`,
+		`helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`,
+		`helm package charts/chart --destination "${local_dir}" --version "${VERSION}" --app-version "${VERSION}"`,
+		`bash hack/compare-helm-chart.sh "${local_archive}" "${remote_archive}"`, `chart_action=reuse`, `chart_action=publish`,
+	} {
+		if !containsActiveShellFragment(guardScript, fragment) {
+			t.Errorf("release.yml exact-tag preflight must contain %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"gh release delete", "gh release edit", "helm push", "goreleaser release", "/releases/latest"} {
+		if containsActiveShellFragment(guardScript, forbidden) {
+			t.Errorf("release.yml preflight must not mutate releases/images or use latest; found %q", forbidden)
+		}
+	}
+	login := requireNamedStep(t, preflight, "Log in to chart registry for read", "release.yml preflight job")
+	if loginIndex := namedStepIndex(t, preflight, "Log in to chart registry for read", "release.yml preflight job"); loginIndex >= guardIndex {
+		t.Error("release.yml must authenticate for OCI reads before the exact chart-tag guard")
+	}
+	if !containsActiveShellFragment(scalarString(login["run"]), "helm registry login ghcr.io") {
+		t.Error("release.yml preflight must authenticate Helm registry reads")
+	}
+}
+
+func assertReleaseArtifactsJob(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	artifacts := requireMappingValue(t, workflow.jobs, "artifacts", "release.yml jobs")
+	assertExactJobPermissions(t, workflow, artifacts, "release.yml artifacts", map[string]string{"contents": "write", "packages": "write"})
+	if !exactly(stringList(artifacts["needs"]), "preflight") {
+		t.Errorf("release.yml artifacts needs = %v, want exactly preflight", stringList(artifacts["needs"]))
+	}
+	cleanup := requireNamedStep(t, artifacts, "Clean resumable draft assets", "release.yml artifacts job")
+	cleanupScript := scalarString(cleanup["run"])
+	for _, fragment := range []string{`needs.preflight.outputs.release_state`, `jq -e '.draft == true'`, `gh release delete-asset "${TAG}" "${asset}" --yes`, `checksums.txt`} {
+		if !containsActiveShellFragment(cleanupScript, fragment) {
+			t.Errorf("release.yml draft resumption guard must contain %q", fragment)
+		}
+	}
+	if containsActiveShellFragment(cleanupScript, "gh release delete ") {
+		t.Error("release.yml must never delete an existing release")
+	}
+	step := requireUsesStep(t, artifacts, "goreleaser/goreleaser-action@", "release.yml artifacts job")
 	if got := scalarString(requireMappingValue(t, step, "with", "release.yml GoReleaser step")["version"]); got != "v2.16.0" {
 		t.Errorf("release.yml GoReleaser version = %q, want v2.16.0", got)
 	}
+	if args := scalarString(requireMappingValue(t, step, "with", "release.yml GoReleaser step")["args"]); args != "release --clean" {
+		t.Errorf("release.yml GoReleaser args = %q, want release --clean", args)
+	}
+}
+
+func assertReleaseHelmJob(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	helm := requireMappingValue(t, workflow.jobs, "helm", "release.yml jobs")
+	assertExactJobPermissions(t, workflow, helm, "release.yml helm", map[string]string{"contents": "read", "packages": "write"})
+	if !sameStrings(stringList(helm["needs"]), []string{"preflight", "artifacts"}) {
+		t.Errorf("release.yml helm needs = %v, want preflight and artifacts", stringList(helm["needs"]))
+	}
+	helmPublish := requireNamedStep(t, helm, "Publish chart only when absent", "release.yml helm job")
+	if got := normalizeExpression(scalarString(helmPublish["if"])); got != "needs.preflight.outputs.chart_action == 'publish'" {
+		t.Errorf("release.yml Helm publish condition = %q, want preflight publish decision", got)
+	}
+	helmScript := scalarString(helmPublish["run"])
+	for _, fragment := range []string{`VERSION="${GITHUB_REF_NAME#v}"`, `helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`, `refusing to overwrite it`, `--version "${VERSION}"`, `--app-version "${VERSION}"`, `helm push ".dist/paprika-${VERSION}.tgz"`} {
+		if !containsActiveShellFragment(helmScript, fragment) {
+			t.Errorf("release.yml Helm publication must contain %q", fragment)
+		}
+	}
+}
+
+func assertReleaseVerifyPublishJob(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	verify := requireMappingValue(t, workflow.jobs, "verify-publish", "release.yml jobs")
+	assertExactJobPermissions(t, workflow, verify, "release.yml verify-publish", map[string]string{"contents": "write", "packages": "read"})
+	if !sameStrings(stringList(verify["needs"]), []string{"artifacts", "helm"}) {
+		t.Errorf("release.yml verify-publish needs = %v, want artifacts and helm", stringList(verify["needs"]))
+	}
+	verifyStep := requireNamedStep(t, verify, "Verify exact artifacts and publish", "release.yml verify-publish job")
+	verifyScript := scalarString(verifyStep["run"])
+	for _, fragment := range []string{
+		`gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}"`, `jq -e '.draft == true'`,
+		`paprika_${VERSION}_darwin_amd64.tar.gz`, `paprika_${VERSION}_darwin_arm64.tar.gz`,
+		`paprika_${VERSION}_linux_amd64.tar.gz`, `paprika_${VERSION}_linux_arm64.tar.gz`, `checksums.txt`,
+		`gh release download "${TAG}"`, `sha256sum --check checksums.txt`, `tar -tzf`,
+		`./paprika version`, `./paprika login --help`, `./paprika status --help`, `./paprika version --help`,
+		`docker buildx imagetools inspect "${image_tag}"`, `docker pull --platform linux/amd64 "${image_tag}"`,
+		`docker image inspect --format '{{.Os}}/{{.Architecture}}'`, `linux/amd64`, `ghcr.io/paprikacd/paprika@`,
+		`helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`,
+	} {
+		if !containsActiveShellFragment(verifyScript, fragment) {
+			t.Errorf("release.yml final verification must contain %q", fragment)
+		}
+	}
+	if containsActiveShellFragment(verifyScript, "/releases/latest") || containsActiveShellFragment(verifyScript, "gh release view --json") {
+		t.Error("release.yml final verification must query the exact tag, never latest or implicit release state")
+	}
+	activeLines := strings.Split(activeShellText(verifyScript), "\n")
+	if got := activeLines[len(activeLines)-1]; got != `gh release edit "$TAG" --draft=false --latest` {
+		t.Errorf("release.yml final active command = %q, want exact publish mutation last", got)
+	}
+}
+
+func assertExactJobPermissions(t *testing.T, workflow workflowFile, job map[string]any, context string, want map[string]string) {
+	t.Helper()
+	permissions := requireMappingValue(t, job, "permissions", context+" job")
+	if !sameStrings(sortedKeys(permissions), sortedKeysString(want)) {
+		t.Errorf("%s permissions = %v, want exactly %v", context, permissions, want)
+	}
+	for name, value := range want {
+		if got := permission(workflow, job, name); got != value {
+			t.Errorf("%s permission %s = %q, want %q", context, name, got, value)
+		}
+	}
+}
+
+func sortedKeysString(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func namedStepIndex(t *testing.T, job map[string]any, name, context string) int {
+	t.Helper()
+	_, index := requireNamedStepAt(t, job, name, context)
+	return index
 }
 
 func testPrivilegedManualEntrypoints(t *testing.T) {

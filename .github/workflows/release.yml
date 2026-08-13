@@ -5,14 +5,100 @@ on:
     tags:
       - "v*"
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  goreleaser:
+  preflight:
+    name: Guard exact release and chart tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      release_state: ${{ steps.guard.outputs.release_state }}
+      chart_action: ${{ steps.guard.outputs.chart_action }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Log in to chart registry for read
+        run: |
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Guard exact release and chart tags
+        id: guard
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+          if [[ "${TAG}" != "v${VERSION}" || ! "${VERSION}" =~ ${version_pattern} ]]; then
+            printf 'release tag %q must be v followed by an exact semantic version\n' "${TAG}" >&2
+            exit 1
+          fi
+
+          release_error="$(mktemp)"
+          if release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" 2>"${release_error}")"; then
+            if ! jq -e '.draft == true' <<<"${release_json}" >/dev/null; then
+              printf 'release %s already exists publicly; refusing to delete or overwrite it\n' "${TAG}" >&2
+              exit 1
+            fi
+            printf 'release_state=draft\n' >>"${GITHUB_OUTPUT}"
+          elif grep -Eiq '(HTTP 404|not found)' "${release_error}"; then
+            printf 'release_state=absent\n' >>"${GITHUB_OUTPUT}"
+          else
+            cat "${release_error}" >&2
+            exit 1
+          fi
+
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${work_dir}" "${release_error}"' EXIT
+          local_dir="${work_dir}/local"
+          remote_dir="${work_dir}/remote"
+          mkdir -p "${local_dir}" "${remote_dir}"
+          helm package charts/chart --destination "${local_dir}" --version "${VERSION}" --app-version "${VERSION}"
+
+          pull_error="${work_dir}/helm-pull.error"
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination "${remote_dir}" 2>"${pull_error}"; then
+            local_archive="${local_dir}/paprika-${VERSION}.tgz"
+            remote_archive="${remote_dir}/paprika-${VERSION}.tgz"
+            if ! bash hack/compare-helm-chart.sh "${local_archive}" "${remote_archive}"; then
+              printf 'chart %s already exists with different substantive contents; refusing overwrite\n' "${VERSION}" >&2
+              exit 1
+            fi
+            printf 'chart_action=reuse\n' >>"${GITHUB_OUTPUT}"
+          elif grep -Eiq '(not found|manifest unknown)' "${pull_error}"; then
+            printf 'chart_action=publish\n' >>"${GITHUB_OUTPUT}"
+          else
+            cat "${pull_error}" >&2
+            exit 1
+          fi
+
+  artifacts:
+    name: Build draft release artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: preflight
     permissions:
       contents: write
       packages: write
     env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GOTOOLCHAIN: auto
     steps:
       - name: Checkout
@@ -37,6 +123,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
+      - name: Clean resumable draft assets
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          RELEASE_STATE="${{ needs.preflight.outputs.release_state }}"
+          if [[ "${RELEASE_STATE}" == "draft" ]]; then
+            VERSION="${TAG#v}"
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")"
+            jq -e '.draft == true' <<<"${release_json}" >/dev/null
+            existing_assets="$(jq -r '.assets[].name' <<<"${release_json}")"
+            assets=(
+              "paprika_${VERSION}_darwin_amd64.tar.gz"
+              "paprika_${VERSION}_darwin_arm64.tar.gz"
+              "paprika_${VERSION}_linux_amd64.tar.gz"
+              "paprika_${VERSION}_linux_arm64.tar.gz"
+              "checksums.txt"
+            )
+            for asset in "${assets[@]}"; do
+              if grep -Fxq "${asset}" <<<"${existing_assets}"; then
+                gh release delete-asset "${TAG}" "${asset}" --yes
+              fi
+            done
+          fi
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
@@ -45,13 +155,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  helm-package:
+  helm:
+    name: Publish or reuse exact Helm chart
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: goreleaser
+    timeout-minutes: 20
+    needs:
+      - preflight
+      - artifacts
     permissions:
       contents: read
       packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -63,17 +178,147 @@ jobs:
         with:
           version: v3.21.2
 
-      - name: Package Helm chart
+      - name: Log in to chart registry
         run: |
-          helm package charts/chart \
-            --destination .dist/ \
-            --version ${{ github.ref_name }} \
-            --app-version ${{ github.ref_name }}
-
-      - name: Push Helm chart to OCI
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
-            --username ${{ github.actor }} \
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
             --password-stdin
-          helm push .dist/paprika-${{ github.ref_name }}.tgz \
+
+      - name: Publish chart only when absent
+        if: ${{ needs.preflight.outputs.chart_action == 'publish' }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p .dist
+          collision_error="$(mktemp)"
+          trap 'rm -f -- "${collision_error}"' EXIT
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist 2>"${collision_error}"; then
+            printf 'chart %s appeared after preflight; refusing to overwrite it\n' "${VERSION}" >&2
+            exit 1
+          elif ! grep -Eiq '(not found|manifest unknown)' "${collision_error}"; then
+            cat "${collision_error}" >&2
+            exit 1
+          fi
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
+          helm push ".dist/paprika-${VERSION}.tgz" \
             oci://ghcr.io/paprikacd/charts
+
+      - name: Reuse verified existing chart
+        if: ${{ needs.preflight.outputs.chart_action == 'reuse' }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p .dist/remote
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
+          helm pull "oci://ghcr.io/paprikacd/charts/paprika" \
+            --version "${VERSION}" \
+            --destination .dist/remote
+          bash hack/compare-helm-chart.sh \
+            ".dist/paprika-${VERSION}.tgz" \
+            ".dist/remote/paprika-${VERSION}.tgz"
+
+  verify-publish:
+    name: Verify exact release and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - artifacts
+      - helm
+    permissions:
+      contents: write
+      packages: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to chart registry for verification
+        run: |
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Verify exact artifacts and publish
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")"
+          jq -e '.draft == true' <<<"${release_json}" >/dev/null
+
+          expected_assets=(
+            "paprika_${VERSION}_darwin_amd64.tar.gz"
+            "paprika_${VERSION}_darwin_arm64.tar.gz"
+            "paprika_${VERSION}_linux_amd64.tar.gz"
+            "paprika_${VERSION}_linux_arm64.tar.gz"
+            "checksums.txt"
+          )
+          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"${release_json}" | sort)
+          mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
+          diff --unified \
+            <(printf '%s\n' "${sorted_expected_assets[@]}") \
+            <(printf '%s\n' "${actual_assets[@]}")
+
+          mkdir -p assets
+          for asset in "${expected_assets[@]}"; do
+            gh release download "${TAG}" --pattern "${asset}" --dir assets
+          done
+          cd assets
+
+          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | sort)
+          mapfile -t archive_assets < <(printf '%s\n' "${expected_assets[@]}" | grep '\.tar\.gz$' | sort)
+          diff --unified \
+            <(printf '%s\n' "${archive_assets[@]}") \
+            <(printf '%s\n' "${checksummed_assets[@]}")
+          sha256sum --check checksums.txt
+
+          for archive in "${archive_assets[@]}"; do
+            mapfile -t entries < <(tar -tzf "${archive}")
+            if [[ ${#entries[@]} -ne 1 || "${entries[0]}" != "paprika" ]]; then
+              printf '%s must contain exactly one root entry named paprika\n' "${archive}" >&2
+              exit 1
+            fi
+          done
+
+          mkdir linux-amd64
+          tar -xzf "paprika_${VERSION}_linux_amd64.tar.gz" -C linux-amd64
+          cd linux-amd64
+          version_output="$(./paprika version)"
+          grep -Fx "paprika ${VERSION}" <<<"${version_output}"
+          ./paprika login --help >/dev/null
+          ./paprika status --help >/dev/null
+          ./paprika version --help >/dev/null
+          cd ..
+
+          image_repository="ghcr.io/paprikacd/paprika"
+          image_tag="${image_repository}:${VERSION}"
+          image_inspect="$(docker buildx imagetools inspect "${image_tag}")"
+          grep -Eq '^Digest:[[:space:]]+sha256:[0-9a-f]{64}$' <<<"${image_inspect}"
+          image_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${image_inspect}")"
+          digest_ref="ghcr.io/paprikacd/paprika@${image_digest}"
+          docker buildx imagetools inspect "${digest_ref}" >/dev/null
+          docker pull --platform linux/amd64 "${image_tag}" >/dev/null
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image_tag}")" = "linux/amd64"
+          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_tag}" | grep -Fx "${digest_ref}"
+
+          mkdir helm
+          helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination helm
+          chart_archive="helm/paprika-${VERSION}.tgz"
+          test -f "${chart_archive}"
+          test "$(helm show chart "${chart_archive}" | awk '$1 == "version:" {print $2}')" = "${VERSION}"
+
+          gh release edit "$TAG" --draft=false --latest

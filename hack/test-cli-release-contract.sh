@@ -28,8 +28,9 @@ type config struct {
 	Archives []archive `yaml:"archives"`
 	Dockers []docker `yaml:"dockers"`
 	Release struct {
-		Draft bool `yaml:"draft"`
-		Header string `yaml:"header"`
+		Draft            bool `yaml:"draft"`
+		UseExistingDraft bool `yaml:"use_existing_draft"`
+		Header           string `yaml:"header"`
 	} `yaml:"release"`
 }
 
@@ -127,6 +128,7 @@ func main() {
 		fail("image templates = %v, must contain only the version tag", d.ImageTemplates)
 	}
 	if !cfg.Release.Draft { fail("release.draft must be true") }
+	if !cfg.Release.UseExistingDraft { fail("release.use_existing_draft must be true for safe reruns") }
 	if strings.Contains(cfg.Release.Header, "install.yaml") { fail("release header must not link an asset GoReleaser does not upload") }
 	if !strings.Contains(cfg.Release.Header, "https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh") { fail("release header must document the canonical CLI installer") }
 	if !strings.Contains(cfg.Release.Header, "releases/download/{{ .Tag }}/checksums.txt") { fail("release header must link the canonical checksums asset using .Tag") }

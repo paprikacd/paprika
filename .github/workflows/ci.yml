@@ -171,6 +171,9 @@ jobs:
       - name: Verify OIDC deployment migration
         run: bash hack/test-oidc-deployment-migration.sh
 
+      - name: Verify release chart comparison
+        run: bash hack/compare-helm-chart.sh --self-test
+
       - name: Lint chart
         run: helm lint charts/chart/
 
@@ -234,6 +237,27 @@ jobs:
           grep -Eq '(^|[[:space:]])login([[:space:]]|$)' <<<"$help_output"
           grep -Eq '(^|[[:space:]])status([[:space:]]|$)' <<<"$help_output"
           grep -Eq '(^|[[:space:]])version([[:space:]]|$)' <<<"$help_output"
+
+  distribution-contracts:
+    name: Distribution entrypoint contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+        with:
+          version: 3.52.0
+
+      - name: Verify distribution entrypoints
+        run: |
+          bash hack/test-cli-install.sh
+          bash hack/test-taskfile-contract.sh
+          bash hack/test-landing-install.sh
 
   fleet-ui-smoke:
     name: Fleet console browser smoke
@@ -393,6 +417,7 @@ jobs:
       - generated
       - chart
       - release-contract
+      - distribution-contracts
       - fleet-ui-smoke
       - fleet-scale
       - cluster-integration

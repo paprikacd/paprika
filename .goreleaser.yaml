@@ -93,6 +93,7 @@ changelog:
 
 release:
   draft: true
+  use_existing_draft: true
   github:
     owner: paprikacd
     name: paprika
