@@ -2,6 +2,48 @@
 
 This guide walks through deploying paprika on a Kubernetes cluster, creating an Application CR, and understanding what happens under the hood.
 
+## Install the CLI
+
+The release installer supports Darwin (macOS) and Linux on `amd64` and `arm64`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+```
+
+It downloads the archive from the canonical GitHub release and verifies its
+checksum before installation. For a reproducible install, pin
+`PAPRIKA_VERSION`; the corresponding checksum file uses this exact URL pattern:
+
+<https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt>
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh
+```
+
+The installer does not invoke `sudo`. It chooses a writable directory on your
+`PATH` when possible and falls back to `~/.local/bin` with an exact `PATH` note.
+Set `PAPRIKA_INSTALL_DIR` to choose a different writable destination:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Homebrew is not yet supported. For a source install, clone the repository and
+build the CLI directly:
+
+```sh
+git clone https://github.com/paprikacd/paprika.git
+cd paprika
+go build -o ./bin/paprika ./cmd/paprika
+```
+
+Log in to the hosted API and confirm the CLI can read your fleet:
+
+```sh
+paprika login --server https://paprika.benebsworth.com
+paprika status
+```
+
 ## Prerequisites
 
 - Kubernetes cluster (v1.29+)

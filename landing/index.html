@@ -37,6 +37,22 @@
     }
     a { color: inherit; text-decoration: none; }
     img, svg { display: block; max-width: 100%; }
+    a:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
 
     /* Layout */
     .max-w-7xl { max-width: 80rem; margin: 0 auto; padding: 0 1.5rem; }
@@ -227,6 +243,81 @@
       max-width: 36rem;
     }
     .hero-actions { margin-top: 2rem; display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; }
+    .quick-start {
+      max-width: 56rem;
+      margin: 2rem auto 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-card);
+      text-align: left;
+    }
+    .quick-start-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-size: 0.6875rem;
+      font-weight: 500;
+    }
+    .quick-start-header span:last-child { font-family: var(--font-mono); }
+    .command-row {
+      display: grid;
+      grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 3rem;
+      padding: 0.625rem 0.75rem 0.625rem 1rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+    }
+    .command-row:last-child { border-bottom: 0; }
+    .command-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.5rem;
+      height: 1.5rem;
+      border-radius: 9999px;
+      background: color-mix(in srgb, var(--primary) 10%, transparent);
+      color: var(--primary);
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 500;
+    }
+    .command-text {
+      min-width: 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .command-text code {
+      display: block;
+      width: max-content;
+      min-width: 100%;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      line-height: 1.6;
+      color: color-mix(in srgb, var(--fg) 88%, transparent);
+      white-space: nowrap;
+    }
+    .copy-button {
+      min-width: 4.5rem;
+      min-height: 2rem;
+      padding: 0.25rem 0.625rem;
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      background: var(--bg-secondary);
+      color: var(--fg-muted);
+      font: 500 0.6875rem/1 var(--font-sans);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+    .copy-button:hover {
+      border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+      color: var(--fg);
+    }
     .hero-viz { margin-top: 4rem; }
 
     .viz-card {
@@ -236,6 +327,93 @@
       padding: 0.75rem;
       box-shadow: 0 4px 24px color-mix(in srgb, black 5%, transparent);
       backdrop-filter: blur(4px);
+    }
+
+    /* Install */
+    .install-intro {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      margin-bottom: 3rem;
+    }
+    .install-intro h2 {
+      max-width: 18ch;
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
+    .install-intro p {
+      max-width: 38rem;
+      color: var(--fg-muted);
+      font-size: 0.875rem;
+      line-height: 1.7;
+    }
+    .install-layout {
+      display: grid;
+      gap: 2.5rem;
+      align-items: start;
+    }
+    .install-terminal {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-card);
+    }
+    .install-terminal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+    }
+    .install-terminal .command-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .install-command-label {
+      display: block;
+      margin-bottom: 0.25rem;
+      color: var(--fg-muted);
+      font-family: var(--font-sans);
+      font-size: 0.625rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .install-notes { border-top: 1px solid var(--border); }
+    .install-note {
+      padding: 1.25rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .install-note h3 { font-size: 0.8125rem; font-weight: 600; }
+    .install-note p {
+      margin-top: 0.375rem;
+      color: var(--fg-muted);
+      font-size: 0.75rem;
+      line-height: 1.65;
+    }
+    .install-note code,
+    .install-note a {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+    }
+    .install-note a {
+      color: var(--primary);
+      overflow-wrap: anywhere;
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+    .source-command {
+      margin-top: 0.75rem;
+      overflow-x: auto;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      background: var(--bg-card);
+      color: color-mix(in srgb, var(--fg) 88%, transparent);
+      font: 0.6875rem/1.6 var(--font-mono);
+      white-space: pre;
     }
 
     /* Feature grid */
@@ -417,11 +595,39 @@
     @media (min-width: 640px) {
       .hero h1 { font-size: 3rem; }
       .feature-grid { grid-template-columns: repeat(2, 1fr); }
+      .install-intro { flex-direction: row; align-items: end; justify-content: space-between; }
+      .install-intro p { max-width: 28rem; }
+    }
+    @media (min-width: 840px) {
+      .install-layout { grid-template-columns: minmax(0, 1.45fr) minmax(16rem, 0.75fr); gap: 4rem; }
     }
     @media (min-width: 1024px) {
       .hero h1 { font-size: 3.75rem; }
       .hero { padding: 8rem 0 10rem; }
       .feature-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 479px) {
+      .nav-inner { padding: 0 1rem; }
+      .nav-github { display: none !important; }
+      .hero { padding: 4.5rem 0 6rem; }
+      .max-w-7xl, .max-w-5xl { padding-left: 1rem; padding-right: 1rem; }
+      .quick-start { margin-top: 1.5rem; }
+      .command-row { grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.5rem; padding: 0.75rem; }
+      .command-row .copy-button { grid-column: 2; justify-self: start; }
+      .install-terminal .command-row { grid-template-columns: minmax(0, 1fr); }
+      .install-terminal .command-row .copy-button { grid-column: 1; }
+      .footer-inner { padding: 0 1rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+      .reveal,
+      .reveal-left { opacity: 1; transform: none; }
     }
   </style>
 </head>
@@ -434,8 +640,9 @@
         <span>Paprika</span>
       </a>
       <div class="nav-links">
+        <a href="#install">Install CLI</a>
         <a href="https://paprika.benebsworth.com/login">Dashboard</a>
-        <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener">
+        <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="nav-github">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>
           GitHub
         </a>
@@ -452,7 +659,7 @@
         <div class="reveal show">
           <span class="hero-badge">
             <span class="hero-badge-dot"></span>
-            v0.1.0 — First release
+            Open source · Early access
           </span>
         </div>
         <h1 class="reveal show" style="transition-delay: 0.1s">
@@ -462,13 +669,34 @@
           Paprika consolidates CI/CD pipelines, progressive delivery, traffic routing, and multi-cluster management into a single Kubernetes operator. One resource model. One API. One dashboard.
         </p>
         <div class="hero-actions reveal show" style="transition-delay: 0.3s">
-          <a href="https://paprika.benebsworth.com/login" class="btn-primary">
-            Get Started
+          <a href="#install" class="btn-primary">
+            Install CLI
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
           </a>
-          <a href="https://github.com/paprikacd/paprika" target="_blank" rel="noopener" class="btn-secondary">
-            Star on GitHub
+          <a href="https://paprika.benebsworth.com/login" class="btn-secondary">
+            Open Dashboard
           </a>
+        </div>
+        <div class="quick-start reveal show" style="transition-delay: 0.35s" aria-label="CLI quick start">
+          <div class="quick-start-header">
+            <span>Three commands to a live fleet view</span>
+            <span>terminal</span>
+          </div>
+          <div class="command-row">
+            <span class="command-number" aria-hidden="true">1</span>
+            <span class="command-text"><code id="hero-install-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span>
+            <button type="button" data-copy-target="hero-install-command" aria-label="Copy install command" class="copy-button">Copy</button>
+          </div>
+          <div class="command-row">
+            <span class="command-number" aria-hidden="true">2</span>
+            <span class="command-text"><code id="hero-login-command">paprika login --server https://paprika.benebsworth.com</code></span>
+            <button type="button" data-copy-target="hero-login-command" aria-label="Copy login command" class="copy-button">Copy</button>
+          </div>
+          <div class="command-row">
+            <span class="command-number" aria-hidden="true">3</span>
+            <span class="command-text"><code id="hero-status-command">paprika status</code></span>
+            <button type="button" data-copy-target="hero-status-command" aria-label="Copy status command" class="copy-button">Copy</button>
+          </div>
         </div>
         <div class="hero-viz reveal show" style="transition-delay: 0.4s">
           <div class="viz-card">
@@ -495,6 +723,67 @@
               <g><rect x="590" y="-21" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="-6" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Canary</text></g>
               <g><rect x="590" y="119" width="60" height="22" rx="6" fill="var(--bg-card)" stroke="var(--border)" stroke-width="1"/><text x="620" y="134" text-anchor="middle" fill="var(--fg)" font-size="10" font-weight="500" font-family="var(--font-sans)">Production</text></g>
             </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install" class="py-24">
+      <div class="max-w-5xl">
+        <div class="install-intro reveal">
+          <h2>Install the CLI. See what needs attention.</h2>
+          <p>The installer chooses the release archive for your machine, verifies it before installation, and leaves privilege decisions with you. Then authenticate against the hosted Paprika API and inspect your fleet.</p>
+        </div>
+        <div class="install-layout">
+          <div class="install-terminal reveal-left">
+            <div class="install-terminal-header">
+              <span>install.sh</span>
+              <span>verified release archive</span>
+            </div>
+            <div class="command-row">
+              <span class="command-text">
+                <span class="install-command-label">Latest published release</span>
+                <code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code>
+              </span>
+              <button type="button" data-copy-target="install-latest-command" aria-label="Copy latest release install command" class="copy-button">Copy</button>
+            </div>
+            <div class="command-row">
+              <span class="command-text">
+                <span class="install-command-label">Pin a release</span>
+                <code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code>
+              </span>
+              <button type="button" data-copy-target="install-version-command" aria-label="Copy pinned release install command" class="copy-button">Copy</button>
+            </div>
+            <div class="command-row">
+              <span class="command-text">
+                <span class="install-command-label">Choose a writable destination</span>
+                <code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code>
+              </span>
+              <button type="button" data-copy-target="install-dir-command" aria-label="Copy custom install directory command" class="copy-button">Copy</button>
+            </div>
+          </div>
+
+          <div class="install-notes reveal">
+            <div class="install-note">
+              <h3>Platform and integrity</h3>
+              <p>Supports Darwin (macOS) and Linux on amd64 and arm64. The installer downloads over HTTPS and verifies the selected archive against the release checksum before replacing the binary.</p>
+            </div>
+            <div class="install-note">
+              <h3>Version and checksum</h3>
+              <p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code> for a reproducible install. Audit the selected release at <a href="https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt" target="_blank" rel="noopener">https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</a>.</p>
+            </div>
+            <div class="install-note">
+              <h3>No implicit privilege escalation</h3>
+              <p>The script never invokes <code>sudo</code>. Set <code>PAPRIKA_INSTALL_DIR</code> to any writable directory; if it falls back to <code>~/.local/bin</code>, it prints the exact <code>PATH</code> export to add. A Homebrew formula is not yet supported.</p>
+            </div>
+            <div class="install-note">
+              <h3>Build from source</h3>
+              <p>Prefer to inspect and compile the CLI yourself? Clone the canonical repository and build the CLI with the pinned Go toolchain.</p>
+              <pre class="source-command">git clone https://github.com/paprikacd/paprika.git
+cd paprika
+go build -o ./bin/paprika ./cmd/paprika</pre>
+            </div>
           </div>
         </div>
       </div>
@@ -725,6 +1014,8 @@ spec:
     </div>
   </footer>
 
+  <p id="copy-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+
   <script>
     // Intersection Observer for scroll reveals
     const observer = new IntersectionObserver((entries) => {
@@ -737,6 +1028,58 @@ spec:
 
     document.querySelectorAll('.reveal, .reveal-left').forEach(el => {
       observer.observe(el);
+    });
+
+    const copyStatus = document.getElementById('copy-status');
+
+    async function writeToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (_) {
+          // Continue to the selection-based fallback when permission is denied.
+        }
+      }
+
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      textarea.style.pointerEvents = 'none';
+      document.body.appendChild(textarea);
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } finally {
+        textarea.remove();
+      }
+      if (!copied) throw new Error('Copy command was rejected');
+    }
+
+    document.querySelectorAll('[data-copy-target]').forEach(button => {
+      const defaultLabel = button.textContent.trim();
+      button.addEventListener('click', async () => {
+        const target = document.getElementById(button.dataset.copyTarget);
+        if (!target) return;
+
+        try {
+          await writeToClipboard(target.textContent.trim());
+          button.textContent = 'Copied';
+          copyStatus.textContent = `${button.getAttribute('aria-label')} copied.`;
+        } catch (_) {
+          button.textContent = 'Try again';
+          copyStatus.textContent = 'Copy failed. Select the command and copy it manually.';
+        }
+
+        window.setTimeout(() => {
+          button.textContent = defaultLabel;
+        }, 1800);
+      });
     });
   </script>
 </body>
