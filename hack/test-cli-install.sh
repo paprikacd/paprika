@@ -53,7 +53,9 @@ for os in darwin linux; do
 done
 
 real_stat="$(command -v stat)"
-tool_names=(awk basename chmod dirname grep mkdir mktemp mv rm sed tr)
+real_chmod="$(command -v chmod)"
+real_mkdir="$(command -v mkdir)"
+tool_names=(awk basename dirname grep mktemp mv rm sed tr)
 if command -v sha256sum >/dev/null 2>&1; then hash_tool=sha256sum; else hash_tool=shasum; fi
 
 make_toolbox() {
@@ -112,6 +114,14 @@ if [ -d "$parent/extract" ]; then
 	fi
 fi
 printf 'download-dir=%s extract-dir=%s\n' "$mode" "$extract_mode" >>"$MODE_LOG"
+if [ "${CURL_MODE-}" = malicious_body ]; then
+	case "$url" in
+		*/checksums.txt)
+			printf 'MALICIOUS_DOWNLOADED_MARKER secret=%s\n' "${PAPRIKA_SUPER_SECRET-}" >"$output"
+			exit 0
+			;;
+	esac
+fi
 relative=${url#https://github.com/paprikacd/paprika/releases/}
 source_path="$FAKE_RELEASE_ROOT/$relative"
 [ -f "$source_path" ] || exit 92
@@ -132,6 +142,33 @@ case " $* " in *' -x'*|*' x'*) [ "${FAIL_TOOL-}" = tar_extract ] && exit 1 ;; es
 exec "$PAPRIKA_REAL_TAR" "$@"
 EOF
 	chmod 0755 "$bin/tar"
+
+	cat >"$bin/chmod" <<'EOF'
+#!/bin/sh
+last_arg=
+for last_arg do :; done
+if [ "${FAIL_TOOL-}" = chmod_work ]; then
+	case "$last_arg" in
+		*/paprika-install.*/*) ;;
+		*/paprika-install.*) exit 1 ;;
+	esac
+fi
+exec "$PAPRIKA_REAL_CHMOD" "$@"
+EOF
+	chmod 0755 "$bin/chmod"
+
+	cat >"$bin/mkdir" <<'EOF'
+#!/bin/sh
+last_arg=
+for last_arg do :; done
+if [ "${FAIL_TOOL-}" = mkdir_work ]; then
+	case "$last_arg" in
+		*/paprika-install.*/extract) exit 1 ;;
+	esac
+fi
+exec "$PAPRIKA_REAL_MKDIR" "$@"
+EOF
+	chmod 0755 "$bin/mkdir"
 
 	cat >"$bin/$hash_tool" <<EOF
 #!/bin/sh
@@ -172,7 +209,7 @@ new_case() {
 run_case() {
 	local -a environment
 	environment=(
-		PATH="$case_bin" HOME="$case_home" TMPDIR="$case_tmp"
+		PATH="$case_bin${TEST_PATH_SUFFIX:+:$TEST_PATH_SUFFIX}" HOME="$case_home" TMPDIR="$case_tmp"
 		PAPRIKA_INSTALL_DIR="${PAPRIKA_INSTALL_DIR-$case_install}"
 		PAPRIKA_TEST_DEFAULT_ROOT="${PAPRIKA_TEST_DEFAULT_ROOT-}"
 		TEST_UNAME_S="${TEST_UNAME_S:-Darwin}" TEST_UNAME_M="${TEST_UNAME_M:-x86_64}"
@@ -180,10 +217,14 @@ run_case() {
 		FAIL_TOOL="${FAIL_TOOL-}" FAKE_RELEASE_ROOT="$case_release"
 		CURL_LOG="$case_curl_log" MODE_LOG="$case_mode_log"
 		PAPRIKA_REAL_CP="$(command -v cp)" PAPRIKA_REAL_TAR="$(command -v tar)"
-		PAPRIKA_REAL_STAT="$real_stat"
+		PAPRIKA_REAL_STAT="$real_stat" PAPRIKA_REAL_CHMOD="$real_chmod"
+		PAPRIKA_REAL_MKDIR="$real_mkdir"
 	)
 	if [[ ${PAPRIKA_VERSION+x} ]]; then
 		environment+=(PAPRIKA_VERSION="$PAPRIKA_VERSION")
+	fi
+	if [[ ${PAPRIKA_SUPER_SECRET+x} ]]; then
+		environment+=(PAPRIKA_SUPER_SECRET="$PAPRIKA_SUPER_SECRET")
 	fi
 	set +e
 	env -i "${environment[@]}" /bin/sh "$installer" >"$case_output" 2>&1
@@ -358,22 +399,50 @@ test_private_temps_and_success_replace() {
 	pass 'private 0700 temp directories precede downloads and success replaces atomically'
 }
 
+test_early_cleanup_trap() {
+	local kind
+	for kind in chmod-failure mkdir-failure; do
+		new_case "early-cleanup-$kind"
+		case "$kind" in
+			chmod-failure) FAIL_TOOL=chmod_work ;;
+			mkdir-failure) FAIL_TOOL=mkdir_work ;;
+		esac
+		PAPRIKA_VERSION=v0.1.0 FAIL_TOOL="$FAIL_TOOL" run_case
+		unset FAIL_TOOL
+		[[ "$status" -ne 0 ]] || { fail "$kind must fail"; return; }
+		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "$kind happens before download" || return
+		assert_clean "$kind cleans a newly created private work directory" || return
+	done
+	pass 'cleanup trap covers chmod and mkdir failures immediately after private temp creation'
+}
+
 test_destination_selection() {
 	new_case destination-order; rm -rf "$case_install"
 	default_root="$case_dir/default-root"
 	mkdir -p "$default_root/opt/homebrew/bin" "$default_root/usr/local/bin" "$case_home/.local/bin"
-	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" run_case
+	path_candidates="$case_home/.local/bin:$default_root/usr/local/bin:$default_root/opt/homebrew/bin"
+	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" TEST_PATH_SUFFIX="$path_candidates" run_case
 	assert_eq 0 "$status" 'default candidate install succeeds' || return
 	[[ -x "$default_root/opt/homebrew/bin/paprika" ]] || { fail 'first writable existing candidate not selected'; return; }
 	[[ ! -e "$default_root/usr/local/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'later default candidate selected'; return; }
-	new_case destination-fallback; rm -rf "$case_install" "$case_home/.local"
+
+	new_case destination-path-filter; rm -rf "$case_install"
+	default_root="$case_dir/default-root"
+	mkdir -p "$default_root/opt/homebrew/bin" "$default_root/usr/local/bin" "$case_home/.local/bin"
+	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" TEST_PATH_SUFFIX="$default_root/usr/local/bin" run_case
+	assert_eq 0 "$status" 'PATH-filtered candidate install succeeds' || return
+	[[ -x "$default_root/usr/local/bin/paprika" ]] || { fail 'first candidate present on PATH not selected'; return; }
+	[[ ! -e "$default_root/opt/homebrew/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'off-PATH candidate selected'; return; }
+
+	new_case destination-fallback; rm -rf "$case_install"
 	default_root="$case_dir/default-root"; mkdir -p "$default_root"
+	mkdir -p "$default_root/opt/homebrew/bin" "$default_root/usr/local/bin" "$case_home/.local/bin"
 	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" run_case
 	assert_eq 0 "$status" 'home fallback succeeds' || return
 	[[ -x "$case_home/.local/bin/paprika" ]] || { fail 'home fallback not created'; return; }
 	assert_contains "$case_output" "Add $case_home/.local/bin to your PATH:" 'fallback PATH heading' || return
 	assert_contains "$case_output" "export PATH=\"$case_home/.local/bin:\$PATH\"" 'fallback exact PATH command' || return
-	pass 'default destination order and ~/.local/bin fallback behave safely'
+	pass 'default destination considers PATH candidates in priority order and falls back safely'
 }
 
 test_missing_tools() {
@@ -396,15 +465,23 @@ test_missing_tools() {
 test_http_failures_and_redaction() {
 	new_case latest-http-failure; seed_destination
 	unset PAPRIKA_VERSION
-	CURL_MODE=latest_fail PAPRIKA_SUPER_SECRET='do-not-print-this-secret' run_case
+	CURL_MODE=latest_fail run_case
 	[[ "$status" -ne 0 ]] || { fail 'latest HTTP failure must fail'; return; }
 	assert_preserved 'latest HTTP failure preserves destination' || return
-	assert_not_contains "$case_output" 'do-not-print-this-secret' 'errors redact secret environment values' || return
-	assert_not_contains "$case_output" 'fixture-darwin-amd64' 'errors hide downloaded content' || return
 	if grep -Ev '^https://github\.com/paprikacd/paprika/releases/(latest|download/)' "$case_curl_log" | grep -q .; then
 		fail 'installer attempted noncanonical or insecure URL'; return
 	fi
-	pass 'HTTP failures preserve destination, never downgrade HTTPS, and redact data'
+
+	new_case downloaded-content-redaction; seed_destination
+	PAPRIKA_VERSION=v0.1.0 CURL_MODE=malicious_body PAPRIKA_SUPER_SECRET='do-not-print-this-secret' run_case
+	[[ "$status" -ne 0 ]] || { fail 'malicious downloaded checksum body must fail'; return; }
+	assert_preserved 'malicious downloaded body preserves destination' || return
+	assert_contains "$case_curl_log" '/checksums.txt' 'redaction failure occurs after checksum body download' || return
+	assert_contains "$case_curl_log" '/paprika_0.1.0_darwin_amd64.tar.gz' 'redaction failure occurs after archive download' || return
+	assert_not_contains "$case_output" 'do-not-print-this-secret' 'errors redact forwarded secret environment values' || return
+	assert_not_contains "$case_output" 'MALICIOUS_DOWNLOADED_MARKER' 'errors hide malicious downloaded content' || return
+	assert_clean 'malicious downloaded body failure cleans temporary files' || return
+	pass 'HTTP failures stay HTTPS and post-download errors redact secrets and remote content'
 }
 
 if [[ ! -f "$installer" ]]; then
@@ -412,16 +489,17 @@ if [[ ! -f "$installer" ]]; then
 	exit 1
 fi
 
-test_explicit_versions
-test_latest_resolution
-test_platform_mappings
-test_versions_rejected_before_download
-test_checksum_failures
-test_archive_failures
-test_failure_atomicity
-test_private_temps_and_success_replace
-test_destination_selection
-test_missing_tools
-test_http_failures_and_redaction
+test_explicit_versions || true
+test_latest_resolution || true
+test_platform_mappings || true
+test_versions_rejected_before_download || true
+test_checksum_failures || true
+test_archive_failures || true
+test_failure_atomicity || true
+test_private_temps_and_success_replace || true
+test_destination_selection || true
+test_missing_tools || true
+test_http_failures_and_redaction || true
+test_early_cleanup_trap || true
 printf '%s passed; %s failed\n' "$passes" "$failures"
 [[ "$failures" -eq 0 ]]

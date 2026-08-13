@@ -31,6 +31,13 @@ require_tool() {
 	command -v "$1" >/dev/null 2>&1 || die "required tool not found: $1"
 }
 
+path_contains_dir() {
+	case ":${PATH-}:" in
+		*:"$1":*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
 is_digits() {
 	case "$1" in
 		''|*[!0-9]*) return 1 ;;
@@ -105,12 +112,12 @@ umask 077
 temp_parent=${TMPDIR:-/tmp}
 work_dir=$(mktemp -d "$temp_parent/paprika-install.XXXXXX" 2>/dev/null) ||
 	die 'could not create private temporary directory'
+trap cleanup 0
+trap interrupted HUP INT TERM
 chmod 0700 "$work_dir" 2>/dev/null || die 'could not secure temporary directory'
 extract_dir=$work_dir/extract
 mkdir "$extract_dir" 2>/dev/null || die 'could not create extraction directory'
 chmod 0700 "$extract_dir" 2>/dev/null || die 'could not secure extraction directory'
-trap cleanup 0
-trap interrupted HUP INT TERM
 
 if [ "$explicit_version" -eq 0 ]; then
 	if ! effective_url=$(curl --proto '=https' --proto-redir '=https' -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_URL" 2>/dev/null); then
@@ -225,7 +232,7 @@ else
 	user_dir=${HOME:?HOME must be set}/.local/bin
 	install_dir=
 	for candidate_dir in "$homebrew_dir" "$local_dir" "$user_dir"; do
-		if [ -d "$candidate_dir" ] && [ -w "$candidate_dir" ]; then
+		if [ -d "$candidate_dir" ] && [ -w "$candidate_dir" ] && path_contains_dir "$candidate_dir"; then
 			install_dir=$candidate_dir
 			break
 		fi
