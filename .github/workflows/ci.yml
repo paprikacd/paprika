@@ -208,7 +208,9 @@ jobs:
           version: v2.16.0
 
       - name: Verify release configuration
-        run: bash hack/test-cli-release-contract.sh
+        run: |
+          bash hack/test-cli-release-contract.sh
+          bash hack/test-find-github-release.sh
 
       - name: Build and exercise linux amd64 CLI
         shell: bash

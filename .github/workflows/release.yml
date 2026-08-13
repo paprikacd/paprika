@@ -19,6 +19,7 @@ jobs:
       packages: read
     outputs:
       release_state: ${{ steps.guard.outputs.release_state }}
+      release_id: ${{ steps.guard.outputs.release_id }}
       chart_action: ${{ steps.guard.outputs.chart_action }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,22 +53,18 @@ jobs:
             exit 1
           fi
 
-          release_error="$(mktemp)"
-          if release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" 2>"${release_error}")"; then
-            if ! jq -e '.draft == true' <<<"${release_json}" >/dev/null; then
-              printf 'release %s already exists publicly; refusing to delete or overwrite it\n' "${TAG}" >&2
-              exit 1
-            fi
-            printf 'release_state=draft\n' >>"${GITHUB_OUTPUT}"
-          elif grep -Eiq '(HTTP 404|not found)' "${release_error}"; then
-            printf 'release_state=absent\n' >>"${GITHUB_OUTPUT}"
-          else
-            cat "${release_error}" >&2
+          release_result="$(bash hack/find-github-release.sh "${GITHUB_REPOSITORY}" "${TAG}")"
+          release_state="$(jq -r '.state' <<<"${release_result}")"
+          release_id="$(jq -r '.id // ""' <<<"${release_result}")"
+          if [[ "${release_state}" == "public" ]]; then
+            printf 'release %s already exists publicly; refusing to delete or overwrite it\n' "${TAG}" >&2
             exit 1
           fi
+          printf 'release_state=%s\n' "${release_state}" >>"${GITHUB_OUTPUT}"
+          printf 'release_id=%s\n' "${release_id}" >>"${GITHUB_OUTPUT}"
 
           work_dir="$(mktemp -d)"
-          trap 'rm -rf -- "${work_dir}" "${release_error}"' EXIT
+          trap 'rm -rf -- "${work_dir}"' EXIT
           local_dir="${work_dir}/local"
           remote_dir="${work_dir}/remote"
           mkdir -p "${local_dir}" "${remote_dir}"
@@ -94,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: preflight
+    outputs:
+      release_id: ${{ steps.resolve-release.outputs.release_id }}
     permissions:
       contents: write
       packages: write
@@ -130,9 +129,11 @@ jobs:
           RELEASE_STATE="${{ needs.preflight.outputs.release_state }}"
           if [[ "${RELEASE_STATE}" == "draft" ]]; then
             VERSION="${TAG#v}"
-            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")"
-            jq -e '.draft == true' <<<"${release_json}" >/dev/null
-            existing_assets="$(jq -r '.assets[].name' <<<"${release_json}")"
+            RELEASE_ID="${{ needs.preflight.outputs.release_id }}"
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+            jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+              '.id == $id and .tag_name == $tag and .draft == true' \
+              <<<"${release_json}" >/dev/null
             assets=(
               "paprika_${VERSION}_darwin_amd64.tar.gz"
               "paprika_${VERSION}_darwin_arm64.tar.gz"
@@ -141,8 +142,12 @@ jobs:
               "checksums.txt"
             )
             for asset in "${assets[@]}"; do
-              if grep -Fxq "${asset}" <<<"${existing_assets}"; then
-                gh release delete-asset "${TAG}" "${asset}" --yes
+              mapfile -t asset_ids < <(jq -r --arg name "${asset}" '.assets[] | select(.name == $name) | .id' <<<"${release_json}")
+              if [[ ${#asset_ids[@]} -gt 1 ]]; then
+                printf 'draft release contains duplicate asset %s\n' "${asset}" >&2
+                exit 1
+              elif [[ ${#asset_ids[@]} -eq 1 ]]; then
+                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_ids[0]}"
               fi
             done
           fi
@@ -154,6 +159,18 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve exact draft release ID
+        id: resolve-release
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          release_result="$(bash hack/find-github-release.sh "${GITHUB_REPOSITORY}" "${TAG}")"
+          if ! jq -e '.state == "draft" and (.id | type == "number")' <<<"${release_result}" >/dev/null; then
+            printf 'GoReleaser did not leave the exact release as a draft\n' >&2
+            exit 1
+          fi
+          printf 'release_id=%s\n' "$(jq -r '.id' <<<"${release_result}")" >>"${GITHUB_OUTPUT}"
 
   helm:
     name: Publish or reuse exact Helm chart
@@ -257,8 +274,11 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")"
-          jq -e '.draft == true' <<<"${release_json}" >/dev/null
+          RELEASE_ID="${{ needs.artifacts.outputs.release_id }}"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+            '.id == $id and .tag_name == $tag and .draft == true' \
+            <<<"${release_json}" >/dev/null
 
           expected_assets=(
             "paprika_${VERSION}_darwin_amd64.tar.gz"
@@ -275,7 +295,13 @@ jobs:
 
           mkdir -p assets
           for asset in "${expected_assets[@]}"; do
-            gh release download "${TAG}" --pattern "${asset}" --dir assets
+            asset_id="$(jq -er --arg name "${asset}" \
+              '.assets[] | select(.name == $name) | .id | select(type == "number")' \
+              <<<"${release_json}")"
+            gh api \
+              --header 'Accept: application/octet-stream' \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+              >"assets/${asset}"
           done
           cd assets
 
