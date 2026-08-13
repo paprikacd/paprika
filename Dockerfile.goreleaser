@@ -1,13 +1,25 @@
-FROM alpine:3.24 AS helm-builder
+# Digests: https://hub.docker.com/_/alpine/tags and
+# https://github.com/GoogleContainerTools/distroless#what-images-are-available
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS helm-builder
+ARG TARGETARCH
+# Checksums: https://get.helm.sh/helm-v3.16.1-linux-amd64.tar.gz.sha256 and
+# https://get.helm.sh/helm-v3.16.1-linux-arm64.tar.gz.sha256
+ARG HELM_SHA256_amd64=e57e826410269d72be3113333dbfaac0d8dfdd1b0cc4e9cb08bdf97722731ca9
+ARG HELM_SHA256_arm64=780b5b86f0db5546769b3e9f0204713bbdd2f6696dfdaac122fbe7f2f31541d2
 RUN apk add --no-cache curl && \
-    ARCH=$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/') && \
-    curl -fsSL https://get.helm.sh/helm-v3.16.1-linux-${ARCH}.tar.gz -o /tmp/helm.tar.gz && \
+    case "${TARGETARCH}" in \
+      amd64) HELM_SHA256="${HELM_SHA256_amd64}" ;; \
+      arm64) HELM_SHA256="${HELM_SHA256_arm64}" ;; \
+      *) echo "unsupported Helm architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL "https://get.helm.sh/helm-v3.16.1-linux-${TARGETARCH}.tar.gz" -o /tmp/helm.tar.gz && \
+    echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c - && \
     tar -xzf /tmp/helm.tar.gz -C /tmp && \
-    mv /tmp/linux-${ARCH}/helm /helm
+    mv "/tmp/linux-${TARGETARCH}/helm" /helm
 
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
 WORKDIR /
-COPY paprika .
+COPY paprika-server /paprika
 COPY --from=helm-builder /helm /usr/local/bin/helm
 ENV HELM_CACHE_HOME=/tmp/helm/cache \
     HELM_CONFIG_HOME=/tmp/helm/config \

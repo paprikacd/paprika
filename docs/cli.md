@@ -1,5 +1,50 @@
 # Paprika CLI
 
+## Install
+
+Install the latest published CLI release on Darwin (macOS) or Linux, for
+`amd64` or `arm64`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+```
+
+The installer downloads only from the canonical GitHub release, verifies the
+archive against the release checksums, and then installs the binary. Audit the
+[latest published checksums](https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt).
+A pinned release uses this exact URL pattern:
+
+`https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt`
+
+Pin a release by passing `PAPRIKA_VERSION` to the installer shell:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh
+```
+
+The installer never invokes `sudo`. It selects a writable directory already on
+your `PATH` when possible and otherwise falls back to `~/.local/bin`, printing
+the exact `PATH` export needed. To choose the destination yourself, pass
+`PAPRIKA_INSTALL_DIR`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Homebrew is not yet supported. To build from source instead, clone
+<https://github.com/paprikacd/paprika> and run:
+
+```sh
+go build -o ./bin/paprika ./cmd/paprika
+```
+
+Authenticate with the hosted service, then request the current fleet snapshot:
+
+```sh
+paprika login --server https://paprika.benebsworth.com
+paprika status
+```
+
 The CLI reads `~/.paprika/config.yaml` by default. Global flags such as
 `--server`, `--namespace`, `--token`, and `--config` override the corresponding
 stored values for the current command.

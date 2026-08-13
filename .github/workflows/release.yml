@@ -3,87 +3,428 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
-    runs-on: ubuntu-latest
+  # The GitHub-hosted Ubuntu 24.04 image and its preinstalled gh/jq/file tools
+  # are an accepted trust boundary; runtime minimum versions are checked below.
+  preflight:
+    name: Guard exact release and chart tags
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      release_state: ${{ steps.guard.outputs.release_state }}
+      release_id: ${{ steps.guard.outputs.release_id }}
+      chart_action: ${{ steps.guard.outputs.chart_action }}
     env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Log in to chart registry for read
+        run: |
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Guard exact release and chart tags
+        id: guard
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          # gh and jq are part of the GitHub-hosted Ubuntu runner trust boundary.
+          gh_version="$(gh --version | awk 'NR == 1 {sub(/^v/, "", $3); print $3}')"
+          jq_version="$(jq --version | sed 's/^jq-//')"
+          printf '%s\n%s\n' "${gh_version}" "${jq_version}" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          test "$(printf '%s\n%s\n' 2.45.0 "${gh_version}" | sort -V | head -n1)" = "2.45.0"
+          test "$(printf '%s\n%s\n' 1.6 "${jq_version}" | sort -V | head -n1)" = "1.6"
+          version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ "${TAG}" != "v${VERSION}" || ! "${VERSION}" =~ ${version_pattern} ]]; then
+            printf 'release tag %q must be v followed by an exact semantic version\n' "${TAG}" >&2
+            exit 1
+          fi
+
+          release_result="$(bash hack/find-github-release.sh "${GITHUB_REPOSITORY}" "${TAG}")"
+          release_state="$(jq -r '.state' <<<"${release_result}")"
+          release_id="$(jq -r '.id // ""' <<<"${release_result}")"
+          if [[ "${release_state}" == "public" ]]; then
+            printf 'release %s already exists publicly; refusing to delete or overwrite it\n' "${TAG}" >&2
+            exit 1
+          fi
+          if [[ "${release_state}" == "draft" ]]; then
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+            if ! jq -e --arg tag "${TAG}" --argjson id "${release_id}" \
+              '.id == $id and .tag_name == $tag and .draft == true and (.assets | length == 0)' \
+              <<<"${release_json}" >/dev/null; then
+              printf 'existing draft is not empty; manually delete the draft and restart the release\n' >&2
+              exit 1
+            fi
+          fi
+          printf 'release_state=%s\n' "${release_state}" >>"${GITHUB_OUTPUT}"
+          printf 'release_id=%s\n' "${release_id}" >>"${GITHUB_OUTPUT}"
+
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${work_dir}"' EXIT
+          local_dir="${work_dir}/local"
+          remote_dir="${work_dir}/remote"
+          mkdir -p "${local_dir}" "${remote_dir}"
+          helm package charts/chart --destination "${local_dir}" --version "${VERSION}" --app-version "${VERSION}"
+
+          pull_error="${work_dir}/helm-pull.error"
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination "${remote_dir}" 2>"${pull_error}"; then
+            local_archive="${local_dir}/paprika-${VERSION}.tgz"
+            remote_archive="${remote_dir}/paprika-${VERSION}.tgz"
+            if ! bash hack/compare-helm-chart.sh "${local_archive}" "${remote_archive}"; then
+              printf 'chart %s already exists with different substantive contents; refusing overwrite\n' "${VERSION}" >&2
+              exit 1
+            fi
+            printf 'chart_action=reuse\n' >>"${GITHUB_OUTPUT}"
+          elif grep -Eiq '(not found|manifest unknown)' "${pull_error}"; then
+            printf 'chart_action=publish\n' >>"${GITHUB_OUTPUT}"
+          else
+            cat "${pull_error}" >&2
+            exit 1
+          fi
+
+  artifacts:
+    name: Build draft release artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    needs: preflight
+    outputs:
+      release_id: ${{ steps.resolve-release.outputs.release_id }}
+      image_digest_ref: ${{ steps.capture-image.outputs.image_digest_ref }}
+    permissions:
+      contents: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GOTOOLCHAIN: auto
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: ui/package-lock.json
-
-      - name: Install UI dependencies
-        run: npm ci
-        working-directory: ui
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v5
-        with:
-          version: "latest"
-
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
+
+      - name: Require resumable draft to remain empty
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          RELEASE_STATE="${{ needs.preflight.outputs.release_state }}"
+          if [[ "${RELEASE_STATE}" == "draft" ]]; then
+            RELEASE_ID="${{ needs.preflight.outputs.release_id }}"
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+            if ! jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+              '.id == $id and .tag_name == $tag and .draft == true and (.assets | length == 0)' \
+              <<<"${release_json}" >/dev/null; then
+              printf 'existing draft is not empty; manually delete the draft and restart the release\n' >&2
+              exit 1
+            fi
+          fi
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
-          version: "~> 2"
+          version: v2.16.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  helm-package:
-    runs-on: ubuntu-latest
-    needs: goreleaser
+      - name: Resolve exact draft release ID
+        id: resolve-release
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          release_result="$(bash hack/find-github-release.sh "${GITHUB_REPOSITORY}" "${TAG}")"
+          if ! jq -e '.state == "draft" and (.id | type == "number")' <<<"${release_result}" >/dev/null; then
+            printf 'GoReleaser did not leave the exact release as a draft\n' >&2
+            exit 1
+          fi
+          printf 'release_id=%s\n' "$(jq -r '.id' <<<"${release_result}")" >>"${GITHUB_OUTPUT}"
+
+      - name: Capture immutable server image
+        id: capture-image
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          image_tag="ghcr.io/paprikacd/paprika:${VERSION}"
+          docker pull --platform linux/amd64 "${image_tag}" >/dev/null
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image_tag}")" = "linux/amd64"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image_tag}")" = "${GITHUB_SHA}"
+          mapfile -t digest_refs < <(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_tag}" | grep '^ghcr.io/paprikacd/paprika@sha256:')
+          if [[ ${#digest_refs[@]} -ne 1 || ! "${digest_refs[0]}" =~ ^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'server image did not resolve to one immutable digest\n' >&2
+            exit 1
+          fi
+          printf 'image_digest_ref=%s\n' "${digest_refs[0]}" >>"${GITHUB_OUTPUT}"
+
+  helm:
+    name: Publish or reuse exact Helm chart
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs:
+      - preflight
+      - artifacts
+    outputs:
+      chart_digest_ref: ${{ steps.capture-chart.outputs.chart_digest_ref }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
         with:
-          version: "latest"
+          version: v3.21.2
 
-      - name: Package Helm chart
-        run: |
-          helm package charts/chart \
-            --destination .dist/ \
-            --version ${{ github.ref_name }} \
-            --app-version ${{ github.ref_name }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
 
-      - name: Push Helm chart to OCI
+      - name: Log in to GitHub Container Registry for digest inspection
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to chart registry
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
-            --username ${{ github.actor }} \
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
             --password-stdin
-          helm push .dist/paprika-${{ github.ref_name }}.tgz \
+
+      - name: Publish chart only when absent
+        if: ${{ needs.preflight.outputs.chart_action == 'publish' }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p .dist
+          collision_error="$(mktemp)"
+          trap 'rm -f -- "${collision_error}"' EXIT
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist 2>"${collision_error}"; then
+            printf 'chart %s appeared after preflight; refusing to overwrite it\n' "${VERSION}" >&2
+            exit 1
+          elif ! grep -Eiq '(not found|manifest unknown)' "${collision_error}"; then
+            cat "${collision_error}" >&2
+            exit 1
+          fi
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
+          helm push ".dist/paprika-${VERSION}.tgz" \
             oci://ghcr.io/paprikacd/charts
+
+      - name: Reuse verified existing chart
+        if: ${{ needs.preflight.outputs.chart_action == 'reuse' }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p .dist/remote
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
+          helm pull "oci://ghcr.io/paprikacd/charts/paprika" \
+            --version "${VERSION}" \
+            --destination .dist/remote
+          bash hack/compare-helm-chart.sh \
+            ".dist/paprika-${VERSION}.tgz" \
+            ".dist/remote/paprika-${VERSION}.tgz"
+
+      - name: Capture immutable chart digest
+        id: capture-chart
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          chart_tag="ghcr.io/paprikacd/charts/paprika:${VERSION}"
+          chart_inspect="$(docker buildx imagetools inspect "${chart_tag}")"
+          chart_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${chart_inspect}")"
+          chart_digest_ref="ghcr.io/paprikacd/charts/paprika@${chart_digest}"
+          if [[ ! "${chart_digest_ref}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'chart tag did not resolve to an immutable digest\n' >&2
+            exit 1
+          fi
+          mkdir -p .dist/captured
+          helm package charts/chart --destination .dist/captured --version "${VERSION}" --app-version "${VERSION}"
+          bash hack/compare-helm-chart.sh --oci \
+            ".dist/captured/paprika-${VERSION}.tgz" \
+            "oci://${chart_digest_ref}"
+          printf 'chart_digest_ref=%s\n' "${chart_digest_ref}" >>"${GITHUB_OUTPUT}"
+
+  verify-publish:
+    name: Verify exact release and publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs:
+      - artifacts
+      - helm
+    permissions:
+      contents: write
+      packages: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
+        with:
+          version: v3.21.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
+
+      - name: Log in to GitHub Container Registry for verification
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to chart registry for verification
+        run: |
+          set -euo pipefail
+          printf '%s' "${GH_TOKEN}" | helm registry login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+
+      - name: Verify exact artifacts and publish
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          RELEASE_ID="${{ needs.artifacts.outputs.release_id }}"
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+            '.id == $id and .tag_name == $tag and .draft == true' \
+            <<<"${release_json}" >/dev/null
+
+          expected_assets=(
+            "paprika_${VERSION}_darwin_amd64.tar.gz"
+            "paprika_${VERSION}_darwin_arm64.tar.gz"
+            "paprika_${VERSION}_linux_amd64.tar.gz"
+            "paprika_${VERSION}_linux_arm64.tar.gz"
+            "checksums.txt"
+          )
+          mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"${release_json}" | sort)
+          mapfile -t sorted_expected_assets < <(printf '%s\n' "${expected_assets[@]}" | sort)
+          diff --unified \
+            <(printf '%s\n' "${sorted_expected_assets[@]}") \
+            <(printf '%s\n' "${actual_assets[@]}")
+
+          mkdir -p assets
+          for asset in "${expected_assets[@]}"; do
+            asset_id="$(jq -er --arg name "${asset}" \
+              '.assets[] | select(.name == $name) | .id | select(type == "number")' \
+              <<<"${release_json}")"
+            gh api \
+              --header 'Accept: application/octet-stream' \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+              >"assets/${asset}"
+          done
+          cd assets
+
+          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | sort)
+          mapfile -t archive_assets < <(printf '%s\n' "${expected_assets[@]}" | grep '\.tar\.gz$' | sort)
+          diff --unified \
+            <(printf '%s\n' "${archive_assets[@]}") \
+            <(printf '%s\n' "${checksummed_assets[@]}")
+          sha256sum --check checksums.txt
+
+          # file is part of the GitHub-hosted Ubuntu runner trust boundary.
+          file_version="$(file --version | awk 'NR == 1 {sub(/^file-/, "", $1); print $1}')"
+          test "$(printf '%s\n%s\n' 5.44 "${file_version}" | sort -V | head -n1)" = "5.44"
+          bash "${GITHUB_WORKSPACE}/hack/verify-release-archives.sh" . "${VERSION}"
+
+          mkdir linux-amd64
+          tar -xzf "paprika_${VERSION}_linux_amd64.tar.gz" -C linux-amd64
+          cd linux-amd64
+          version_output="$(./paprika version)"
+          grep -Fx "paprika ${VERSION}" <<<"${version_output}"
+          ./paprika login --help >/dev/null
+          ./paprika status --help >/dev/null
+          ./paprika version --help >/dev/null
+          cd ..
+
+          IMAGE_DIGEST_REF="${{ needs.artifacts.outputs.image_digest_ref }}"
+          if [[ ! "${IMAGE_DIGEST_REF}" =~ ^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'invalid immutable server image output\n' >&2
+            exit 1
+          fi
+          docker pull --platform linux/amd64 "${IMAGE_DIGEST_REF}" >/dev/null
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${IMAGE_DIGEST_REF}")" = "linux/amd64"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_DIGEST_REF}")" = "${GITHUB_SHA}"
+
+          CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
+          if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'invalid immutable chart output\n' >&2
+            exit 1
+          fi
+          mkdir -p helm/source
+          helm package ../charts/chart --destination helm/source --version "${VERSION}" --app-version "${VERSION}"
+          bash "${GITHUB_WORKSPACE}/hack/compare-helm-chart.sh" --oci \
+            "helm/source/paprika-${VERSION}.tgz" \
+            "oci://${CHART_DIGEST_REF}"
+          current_chart_inspect="$(docker buildx imagetools inspect "ghcr.io/paprikacd/charts/paprika:${VERSION}")"
+          current_chart_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${current_chart_inspect}")"
+          if [[ "${CHART_DIGEST_REF}" != "ghcr.io/paprikacd/charts/paprika@${current_chart_digest}" ]]; then
+            printf 'current chart tag digest changed after verification\n' >&2
+            exit 1
+          fi
+
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+            '.id == $id and .tag_name == $tag and .draft == true' \
+            <<<"${release_json}" >/dev/null
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false -f make_latest=true

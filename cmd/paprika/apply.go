@@ -33,13 +33,16 @@ type applyOptions struct {
 	server          string
 }
 
-func newApplyCmd(ctx context.Context) *cobra.Command {
+func newApplyCmd(ctx context.Context, getenv func(string) string) *cobra.Command {
 	opts := &applyOptions{}
 	cmd := &cobra.Command{
 		Use:   "apply -f <path> [-f <path>...]",
 		Short: "Apply a manifest bundle to Paprika",
 		Long:  "Render raw YAML files or directories into a manifest bundle and submit it to the Paprika API server.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("server") {
+				opts.server = defaultServer(getenv)
+			}
 			return runApply(ctx, opts)
 		},
 	}
@@ -52,13 +55,13 @@ func newApplyCmd(ctx context.Context) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Render and evaluate policies without mutating the cluster")
 	cmd.Flags().BoolVar(&opts.wait, "wait", true, "Block and watch until terminal phase")
 	cmd.Flags().DurationVar(&opts.timeout, "timeout", 5*time.Minute, "Watch timeout")
-	cmd.Flags().StringVar(&opts.server, "server", defaultServer(), "Paprika API server URL")
+	cmd.Flags().StringVar(&opts.server, "server", "", "Paprika API server URL (defaults to PAPRIKA_SERVER or localhost)")
 	cobra.CheckErr(cmd.MarkFlagRequired("file"))
 	return cmd
 }
 
-func defaultServer() string {
-	if s := os.Getenv("PAPRIKA_SERVER"); s != "" {
+func defaultServer(getenv func(string) string) string {
+	if s := getenv("PAPRIKA_SERVER"); s != "" {
 		return s
 	}
 	return "http://localhost:3000"

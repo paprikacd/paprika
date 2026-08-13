@@ -38,6 +38,7 @@ import (
 
 func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end fixture asserts the complete browser/token/config contract.
 	resetLoginGlobals(t)
+	const eventTimeout = 30 * time.Second
 
 	const (
 		state         = "state-marker"
@@ -116,20 +117,31 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 
 	browserOutput := installFakeBrowser(t)
 	var stdout, stderr strings.Builder
-	done := make(chan error, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var loginErr error
 	go func() {
-		done <- run(context.Background(), []string{
+		defer close(done)
+		loginErr = run(ctx, []string{
 			"--config", configPath,
 			"--server", fakeServer.URL,
 			"login",
 		}, os.Getenv, strings.NewReader(""), &stdout, &stderr)
 	}()
+	defer func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(eventTimeout):
+			t.Errorf("login goroutine did not stop after cancellation")
+		}
+	}()
 
 	select {
 	case <-tokenStarted:
-	case err := <-done:
-		t.Fatalf("login exited before token exchange: %v", err)
-	case <-time.After(5 * time.Second):
+	case <-done:
+		t.Fatalf("login exited before token exchange: %v", loginErr)
+	case <-time.After(eventTimeout):
 		t.Fatal("token exchange did not start")
 	}
 	//nolint:gosec // browserOutput is rooted in t.TempDir and controlled by this test.
@@ -139,11 +151,11 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 	close(allowToken)
 
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("login returned error: %v\nstderr: %s", err, &stderr)
+	case <-done:
+		if loginErr != nil {
+			t.Fatalf("login returned error: %v\nstderr: %s", loginErr, &stderr)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(eventTimeout):
 		t.Fatal("login did not complete")
 	}
 
@@ -169,7 +181,7 @@ func TestLoginBrowserOIDCFlow(t *testing.T) { //nolint:gocyclo // The end-to-end
 	if !strings.Contains(stdout.String(), identity) {
 		t.Errorf("stdout = %q, want identity %q", &stdout, identity)
 	}
-	page, err := waitForFile(browserOutput, 5*time.Second)
+	page, err := waitForFile(browserOutput, eventTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}

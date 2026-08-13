@@ -2,13 +2,11 @@ version: 2
 
 project_name: paprika
 
-before:
-  hooks:
-    - make build-ui
-    - go mod tidy
+dist: .goreleaser-dist
 
 builds:
-  - main: ./cmd/main.go
+  - id: cli
+    main: ./cmd/paprika
     binary: paprika
     ldflags:
       - -s -w
@@ -18,16 +16,28 @@ builds:
     env:
       - CGO_ENABLED=0
     goos:
-      - linux
       - darwin
+      - linux
     goarch:
       - amd64
       - arm64
+  - id: server
+    main: ./cmd
+    binary: paprika-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
 
 dockers:
-  - image_templates:
+  - ids:
+      - server
+    goos: linux
+    goarch: amd64
+    image_templates:
       - "ghcr.io/paprikacd/paprika:{{ .Version }}"
-      - "ghcr.io/paprikacd/paprika:latest"
     dockerfile: Dockerfile.goreleaser
     build_flag_templates:
       - "--platform=linux/amd64"
@@ -40,11 +50,12 @@ dockers:
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
 
 archives:
-  - formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - ids:
+      - cli
+    formats: [tar.gz]
+    name_template: "paprika_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - LICENSE
-      - README.md
+      - none*
 
 checksum:
   name_template: "checksums.txt"
@@ -53,7 +64,6 @@ snapshot:
   version_template: "{{ .Version }}-next"
 
 changelog:
-  enabled: true
   use: github
   filters:
     include:
@@ -82,6 +92,8 @@ changelog:
       order: 999
 
 release:
+  draft: true
+  use_existing_draft: true
   github:
     owner: paprikacd
     name: paprika
@@ -93,13 +105,19 @@ release:
     ### Installation
 
     ```bash
-    # Helm
-    helm repo add paprika https://paprikacd.github.io/paprika
-    helm install paprika paprika/paprika --namespace paprika-system --create-namespace
+    # CLI
+    curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
 
-    # Kustomize
-    kubectl apply -f https://github.com/paprikacd/paprika/releases/download/{{ .Version }}/install.yaml
+    # Helm OCI
+    helm install paprika oci://ghcr.io/paprikacd/charts/paprika \
+      --version {{ .Version }} \
+      --namespace paprika-system \
+      --create-namespace
     ```
+
+    Verify downloaded CLI archives with the canonical
+    [checksums.txt](https://github.com/paprikacd/paprika/releases/download/{{ .Tag }}/checksums.txt)
+    asset before installation.
   footer: |
     **Full Changelog**: https://github.com/paprikacd/paprika/compare/{{ .PreviousTag }}...{{ .Tag }}
 

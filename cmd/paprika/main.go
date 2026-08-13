@@ -29,6 +29,10 @@ import (
 )
 
 var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+
 	globalConfigPath string
 	globalServer     string
 	globalNamespace  string
@@ -46,7 +50,7 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
-	cmd := newRootCmd(ctx)
+	cmd := newRootCmdWithEnv(ctx, getenv)
 	cmd.SetArgs(args)
 	cmd.SetIn(stdin)
 	cmd.SetOut(stdout)
@@ -58,6 +62,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 }
 
 func newRootCmd(ctx context.Context) *cobra.Command {
+	return newRootCmdWithEnv(ctx, os.Getenv)
+}
+
+func newRootCmdWithEnv(ctx context.Context, getenv func(string) string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "paprika",
 		Short: "Paprika CLI for intelligent Kubernetes deployments",
@@ -92,10 +100,11 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 		return cfg.Namespace
 	}
 
-	root.AddCommand(newApplyCmd(ctx))
+	root.AddCommand(newApplyCmd(ctx, getenv))
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newStatusCmd(ctx, clientFn, nsFn, &globalOutput))
+	root.AddCommand(newVersionCmd())
 	root.AddCommand(newAppsCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newPipelinesCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newReleasesCmd(ctx, clientFn, nsFn, &globalOutput))
@@ -105,6 +114,25 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newResolveCmd(ctx, clientFn, &globalOutput))
 
 	return root
+}
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the Paprika CLI version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "paprika %s\n", version); err != nil {
+				return fmt.Errorf("write version: %w", err)
+			}
+			if commit != "none" || date != "unknown" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "commit=%s date=%s\n", commit, date); err != nil {
+					return fmt.Errorf("write build metadata: %w", err)
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func loadMergedConfig() (*Config, error) {
