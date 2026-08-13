@@ -1,12 +1,62 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestApplyDefersServerEnvironmentLookupUntilExecution(t *testing.T) {
+	var lookups []string
+	cmd := newApplyCmd(context.Background(), func(name string) string {
+		lookups = append(lookups, name)
+		return "https://environment.example.com"
+	})
+	if len(lookups) != 0 {
+		t.Fatalf("environment lookups during command construction = %v, want none", lookups)
+	}
+
+	cmd.SetArgs([]string{"--file", filepath.Join(t.TempDir(), "missing.yaml")})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "load manifests") {
+		t.Fatalf("apply error = %v, want load manifests error", err)
+	}
+	if got := strings.Join(lookups, ","); got != "PAPRIKA_SERVER" {
+		t.Fatalf("environment lookups during apply = %q, want %q", got, "PAPRIKA_SERVER")
+	}
+	server, flagErr := cmd.Flags().GetString("server")
+	if flagErr != nil {
+		t.Fatalf("get server flag: %v", flagErr)
+	}
+	if server != "https://environment.example.com" {
+		t.Fatalf("server flag = %q, want environment value", server)
+	}
+}
+
+func TestApplyExplicitServerSkipsEnvironmentDefault(t *testing.T) {
+	cmd := newApplyCmd(context.Background(), func(name string) string {
+		panic("explicit --server unexpectedly read environment variable " + name)
+	})
+	cmd.SetArgs([]string{
+		"--server", "https://explicit.example.com",
+		"--file", filepath.Join(t.TempDir(), "missing.yaml"),
+	})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "load manifests") {
+		t.Fatalf("apply error = %v, want load manifests error", err)
+	}
+	server, err := cmd.Flags().GetString("server")
+	if err != nil {
+		t.Fatalf("get server flag: %v", err)
+	}
+	if server != "https://explicit.example.com" {
+		t.Fatalf("server flag = %q, want explicit value", server)
+	}
+}
 
 func TestLoadPath(t *testing.T) {
 	t.Parallel()

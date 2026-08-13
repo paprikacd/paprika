@@ -90,6 +90,24 @@ func TestVersionDoesNotLoadConfig(t *testing.T) {
 	}
 }
 
+func TestVersionDoesNotLoadEnvironment(t *testing.T) {
+	preserveCLIFlagState(t)
+	var stdout bytes.Buffer
+	root := newRootCmdWithEnv(context.Background(), func(name string) string {
+		panic("version unexpectedly read environment variable " + name)
+	})
+	root.SetArgs([]string{"version"})
+	root.SetOut(&stdout)
+	root.SetErr(&bytes.Buffer{})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("execute paprika version: %v", err)
+	}
+	if got := stdout.String(); got != "paprika dev\n" {
+		t.Fatalf("version output = %q, want %q", got, "paprika dev\n")
+	}
+}
+
 func executeRootCommand(t *testing.T, args ...string) string {
 	t.Helper()
 	preserveCLIFlagState(t)

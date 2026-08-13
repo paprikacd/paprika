@@ -50,7 +50,7 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) error {
-	cmd := newRootCmd(ctx)
+	cmd := newRootCmdWithEnv(ctx, getenv)
 	cmd.SetArgs(args)
 	cmd.SetIn(stdin)
 	cmd.SetOut(stdout)
@@ -62,6 +62,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdin i
 }
 
 func newRootCmd(ctx context.Context) *cobra.Command {
+	return newRootCmdWithEnv(ctx, os.Getenv)
+}
+
+func newRootCmdWithEnv(ctx context.Context, getenv func(string) string) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "paprika",
 		Short: "Paprika CLI for intelligent Kubernetes deployments",
@@ -96,7 +100,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 		return cfg.Namespace
 	}
 
-	root.AddCommand(newApplyCmd(ctx))
+	root.AddCommand(newApplyCmd(ctx, getenv))
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newStatusCmd(ctx, clientFn, nsFn, &globalOutput))
