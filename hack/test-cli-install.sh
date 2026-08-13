@@ -56,6 +56,7 @@ real_stat="$(command -v stat)"
 real_chmod="$(command -v chmod)"
 real_mkdir="$(command -v mkdir)"
 real_mv="$(command -v mv)"
+real_gzip="$(command -v gzip)"
 if command -v sha256sum >/dev/null 2>&1; then
 	real_hash_tool="$(command -v sha256sum)"
 	real_hash_kind=sha256sum
@@ -168,6 +169,12 @@ case " $* " in *' -x'*|*' x'*) [ "${FAIL_TOOL-}" = tar_extract ] && exit 1 ;; es
 exec "$PAPRIKA_REAL_TAR" "$@"
 EOF
 	chmod 0755 "$bin/tar"
+
+	cat >"$bin/gzip" <<'EOF'
+#!/bin/sh
+exec "$PAPRIKA_REAL_GZIP" "$@"
+EOF
+	chmod 0755 "$bin/gzip"
 
 	cat >"$bin/mv" <<'EOF'
 #!/bin/sh
@@ -288,6 +295,7 @@ run_case() {
 		PAPRIKA_REAL_CP="$(command -v cp)" PAPRIKA_REAL_TAR="$(command -v tar)"
 		PAPRIKA_REAL_STAT="$real_stat" PAPRIKA_REAL_CHMOD="$real_chmod"
 		PAPRIKA_REAL_MKDIR="$real_mkdir" PAPRIKA_REAL_MV="$real_mv"
+		PAPRIKA_REAL_GZIP="$real_gzip"
 		PAPRIKA_REAL_HASH_TOOL="$real_hash_tool" PAPRIKA_REAL_HASH_KIND="$real_hash_kind"
 	)
 	if [[ ${PAPRIKA_VERSION+x} ]]; then
@@ -610,12 +618,13 @@ test_destination_selection() {
 
 test_missing_tools() {
 	local tool
-	for tool in curl tar mktemp mv chmod; do
+	for tool in curl tar gzip mktemp mv chmod; do
 		new_case "missing-tool-$tool"; seed_destination; rm "$case_bin/$tool"
 		PAPRIKA_VERSION=v0.1.0 run_case
 		[[ "$status" -ne 0 ]] || { fail "missing $tool must fail"; return 1; }
 		assert_preserved "missing $tool does not mutate destination" || return
 		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "missing $tool fails before download" || return
+		assert_contains "$case_output" "paprika installer: required tool not found: $tool" "missing $tool prints concise preflight error" || return
 	done
 	new_case missing-hash-tools; seed_destination; rm -f "$case_bin/sha256sum" "$case_bin/shasum"
 	PAPRIKA_VERSION=v0.1.0 run_case

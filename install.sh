@@ -76,7 +76,7 @@ validate_version() {
 	return 0
 }
 
-for required_tool in curl tar mktemp mv chmod cp mkdir rm tr uname; do
+for required_tool in curl tar gzip mktemp mv chmod cp mkdir rm tr uname; do
 	require_tool "$required_tool"
 done
 
