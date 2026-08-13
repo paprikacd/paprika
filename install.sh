@@ -120,7 +120,7 @@ mkdir "$extract_dir" 2>/dev/null || die 'could not create extraction directory'
 chmod 0700 "$extract_dir" 2>/dev/null || die 'could not secure extraction directory'
 
 if [ "$explicit_version" -eq 0 ]; then
-	if ! effective_url=$(curl --proto '=https' --proto-redir '=https' -fsSL -o /dev/null -w '%{url_effective}' "$LATEST_URL" 2>/dev/null); then
+	if ! effective_url=$(curl -q --proto '=https' --proto-redir '=https' -f -s -S -L -o /dev/null -w '%{url_effective}' "$LATEST_URL" 2>/dev/null); then
 		die 'could not resolve the latest Paprika release'
 	fi
 	tag_prefix=$GITHUB_BASE/releases/tag/
@@ -136,9 +136,9 @@ asset=paprika_${VERSION}_${target_os}_${target_arch}.tar.gz
 download_base=$GITHUB_BASE/releases/download/$TAG
 checksums_file=$work_dir/checksums.txt
 archive_file=$work_dir/$asset
-curl --proto '=https' --proto-redir '=https' -fsSL -o "$checksums_file" "$download_base/checksums.txt" 2>/dev/null ||
+curl -q --proto '=https' --proto-redir '=https' -f -s -S -L -o "$checksums_file" "$download_base/checksums.txt" 2>/dev/null ||
 	die 'could not download release checksums'
-curl --proto '=https' --proto-redir '=https' -fsSL -o "$archive_file" "$download_base/$asset" 2>/dev/null ||
+curl -q --proto '=https' --proto-redir '=https' -f -s -S -L -o "$archive_file" "$download_base/$asset" 2>/dev/null ||
 	die 'could not download the Paprika archive'
 
 checksum_count=0
@@ -188,7 +188,7 @@ actual_checksum=$(printf '%s' "$actual_checksum" | tr 'A-F' 'a-f')
 [ "$actual_checksum" = "$expected_checksum" ] || die 'archive checksum verification failed'
 
 entries_file=$work_dir/archive-entries
-tar -tzf "$archive_file" >"$entries_file" 2>/dev/null ||
+COPYFILE_DISABLE=1 TAR_OPTIONS='' tar -tzf "$archive_file" >"$entries_file" 2>/dev/null ||
 	die 'could not inspect the Paprika archive'
 entry_count=0
 archive_names_valid=1
@@ -200,7 +200,7 @@ done <"$entries_file"
 	die 'archive must contain exactly one root paprika file'
 
 verbose_file=$work_dir/archive-verbose
-tar -tvzf "$archive_file" >"$verbose_file" 2>/dev/null ||
+COPYFILE_DISABLE=1 TAR_OPTIONS='' tar -tvzf "$archive_file" >"$verbose_file" 2>/dev/null ||
 	die 'could not inspect the Paprika archive type'
 verbose_count=0
 regular_entry=1
@@ -212,7 +212,7 @@ done <"$verbose_file"
 [ "$regular_entry" -eq 1 ] && [ "$verbose_count" -eq 1 ] ||
 	die 'archive paprika entry must be a regular file'
 
-tar -xzf "$archive_file" -C "$extract_dir" >/dev/null 2>&1 ||
+COPYFILE_DISABLE=1 TAR_OPTIONS='' tar -xzf "$archive_file" -C "$extract_dir" >/dev/null 2>&1 ||
 	die 'could not extract the Paprika archive'
 [ -f "$extract_dir/paprika" ] && [ ! -L "$extract_dir/paprika" ] ||
 	die 'extracted paprika entry is not a regular file'
@@ -248,9 +248,12 @@ if [ ! -d "$install_dir" ]; then
 fi
 [ -w "$install_dir" ] || die 'installation directory is not writable'
 destination=$install_dir/$PROGRAM
+if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
+	die 'installation destination exists and is not a regular file'
+fi
 destination_tmp=$(mktemp "$install_dir/.paprika.install.XXXXXX" 2>/dev/null) ||
 	die 'could not create destination-local temporary file'
-cp "$extract_dir/paprika" "$destination_tmp" 2>/dev/null ||
+COPYFILE_DISABLE=1 cp "$extract_dir/paprika" "$destination_tmp" 2>/dev/null ||
 	die 'could not copy paprika into the installation directory'
 chmod 0755 "$destination_tmp" 2>/dev/null ||
 	die 'could not make the installed binary executable'

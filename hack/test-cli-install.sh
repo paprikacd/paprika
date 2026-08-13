@@ -9,8 +9,8 @@ trap 'rm -rf "$test_root"' EXIT
 passes=0
 failures=0
 
-fail() { printf 'not ok - %s\n' "$1" >&2; failures=$((failures + 1)); }
-pass() { printf 'ok - %s\n' "$1"; passes=$((passes + 1)); }
+fail() { printf 'not ok - %s\n' "$1" >&2; return 1; }
+pass() { printf 'ok - %s\n' "$1"; }
 assert_eq() {
 	local want="$1" got="$2" message="$3"
 	[[ "$got" == "$want" ]] || { fail "$message (want '$want', got '$got')"; return 1; }
@@ -55,8 +55,15 @@ done
 real_stat="$(command -v stat)"
 real_chmod="$(command -v chmod)"
 real_mkdir="$(command -v mkdir)"
-tool_names=(awk basename dirname grep mktemp mv rm sed tr)
-if command -v sha256sum >/dev/null 2>&1; then hash_tool=sha256sum; else hash_tool=shasum; fi
+real_mv="$(command -v mv)"
+if command -v sha256sum >/dev/null 2>&1; then
+	real_hash_tool="$(command -v sha256sum)"
+	real_hash_kind=sha256sum
+else
+	real_hash_tool="$(command -v shasum)"
+	real_hash_kind=shasum
+fi
+tool_names=(awk basename dirname grep mktemp rm sed tr)
 
 make_toolbox() {
 	local bin="$1" tool real
@@ -78,19 +85,30 @@ EOF
 
 	cat >"$bin/curl" <<'EOF'
 #!/bin/sh
+if [ "${1-}" != -q ] && [ "${1-}" != --disable ]; then
+	[ ! -f "$HOME/.curlrc" ] || : >"$CURL_CONFIG_MARKER"
+	exit 94
+fi
+shift
 output= write_format= url= proto= proto_redir=
+fail_flag= silent_flag= show_error_flag= location_flag=
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 		-o) shift; output=${1-} ;;
 		-w) shift; write_format=${1-} ;;
 		--proto) shift; proto=${1-} ;;
 		--proto-redir) shift; proto_redir=${1-} ;;
+		-f) fail_flag=1 ;;
+		-s) silent_flag=1 ;;
+		-S) show_error_flag=1 ;;
+		-L) location_flag=1 ;;
 		-*) ;;
 		*) url=$1 ;;
 	esac
 	shift
 done
 [ "$proto" = '=https' ] && [ "$proto_redir" = '=https' ] || exit 93
+[ -n "$fail_flag" ] && [ -n "$silent_flag" ] && [ -n "$show_error_flag" ] && [ -n "$location_flag" ] || exit 95
 printf '%s\n' "$url" >>"$CURL_LOG"
 case "$url" in
 	https://github.com/paprikacd/paprika/releases/latest)
@@ -131,6 +149,8 @@ EOF
 
 	cat >"$bin/cp" <<'EOF'
 #!/bin/sh
+[ -z "${CP_LOG-}" ] || printf '%s\n' "$*" >>"$CP_LOG"
+[ "${COPYFILE_DISABLE-}" = 1 ] || exit 99
 [ "${FAIL_TOOL-}" = cp ] && exit 1
 exec "$PAPRIKA_REAL_CP" "$@"
 EOF
@@ -138,10 +158,24 @@ EOF
 
 	cat >"$bin/tar" <<'EOF'
 #!/bin/sh
+[ -z "${TAR_LOG-}" ] || printf '%s\n' "${TAR_OPTIONS-unset}" >>"$TAR_LOG"
+if [ -n "${TAR_OPTIONS-}" ]; then
+	: >"$TAR_EXEC_MARKER"
+	exit 96
+fi
+[ "${COPYFILE_DISABLE-}" = 1 ] || exit 99
 case " $* " in *' -x'*|*' x'*) [ "${FAIL_TOOL-}" = tar_extract ] && exit 1 ;; esac
 exec "$PAPRIKA_REAL_TAR" "$@"
 EOF
 	chmod 0755 "$bin/tar"
+
+	cat >"$bin/mv" <<'EOF'
+#!/bin/sh
+[ -z "${MV_LOG-}" ] || printf '%s\n' "$*" >>"$MV_LOG"
+[ "${FAIL_TOOL-}" = mv ] && exit 1
+exec "$PAPRIKA_REAL_MV" "$@"
+EOF
+	chmod 0755 "$bin/mv"
 
 	cat >"$bin/chmod" <<'EOF'
 #!/bin/sh
@@ -170,13 +204,33 @@ exec "$PAPRIKA_REAL_MKDIR" "$@"
 EOF
 	chmod 0755 "$bin/mkdir"
 
-	cat >"$bin/$hash_tool" <<EOF
+	cat >"$bin/sha256sum" <<'EOF'
 #!/bin/sh
-[ "\${FAIL_TOOL-}" = checksum ] && exit 1
-exec "$(command -v "$hash_tool")" "\$@"
+[ "$#" -eq 1 ] || exit 97
+printf 'sha256sum:%s\n' "$*" >>"$HASH_LOG"
+[ "${FAIL_TOOL-}" = checksum ] && exit 1
+if [ "$PAPRIKA_REAL_HASH_KIND" = sha256sum ]; then
+	exec "$PAPRIKA_REAL_HASH_TOOL" "$1"
+fi
+exec "$PAPRIKA_REAL_HASH_TOOL" -a 256 "$1"
 EOF
-	chmod 0755 "$bin/$hash_tool"
+	chmod 0755 "$bin/sha256sum"
+
+	cat >"$bin/shasum" <<'EOF'
+#!/bin/sh
+[ "$#" -eq 3 ] && [ "$1" = -a ] && [ "$2" = 256 ] || exit 98
+printf 'shasum:%s\n' "$*" >>"$HASH_LOG"
+[ "${FAIL_TOOL-}" = checksum ] && exit 1
+if [ "$PAPRIKA_REAL_HASH_KIND" = sha256sum ]; then
+	exec "$PAPRIKA_REAL_HASH_TOOL" "$3"
+fi
+exec "$PAPRIKA_REAL_HASH_TOOL" -a 256 "$3"
+EOF
+	chmod 0755 "$bin/shasum"
 }
+
+toolbox_template="$test_root/toolbox-template"
+make_toolbox "$toolbox_template"
 
 case_dir=''
 case_release=''
@@ -187,6 +241,12 @@ case_install=''
 case_output=''
 case_curl_log=''
 case_mode_log=''
+case_cp_log=''
+case_mv_log=''
+case_tar_log=''
+case_hash_log=''
+case_curl_config_marker=''
+case_tar_exec_marker=''
 status=0
 
 new_case() {
@@ -200,10 +260,17 @@ new_case() {
 	case_output="$case_dir/output"
 	case_curl_log="$case_dir/curl.log"
 	case_mode_log="$case_dir/modes.log"
+	case_cp_log="$case_dir/cp.log"
+	case_mv_log="$case_dir/mv.log"
+	case_tar_log="$case_dir/tar.log"
+	case_hash_log="$case_dir/hash.log"
+	case_curl_config_marker="$case_dir/curl-config-executed"
+	case_tar_exec_marker="$case_dir/tar-options-executed"
 	mkdir -p "$case_dir" "$case_home" "$case_tmp" "$case_install"
 	cp -R "$release_root" "$case_release"
-	: >"$case_curl_log"; : >"$case_mode_log"
-	make_toolbox "$case_bin"
+	: >"$case_curl_log"; : >"$case_mode_log"; : >"$case_cp_log"; : >"$case_mv_log"
+	: >"$case_tar_log"; : >"$case_hash_log"
+	cp -R "$toolbox_template" "$case_bin"
 }
 
 run_case() {
@@ -215,16 +282,25 @@ run_case() {
 		TEST_UNAME_S="${TEST_UNAME_S:-Darwin}" TEST_UNAME_M="${TEST_UNAME_M:-x86_64}"
 		LATEST_EFFECTIVE_URL="${LATEST_EFFECTIVE_URL-}" CURL_MODE="${CURL_MODE-}"
 		FAIL_TOOL="${FAIL_TOOL-}" FAKE_RELEASE_ROOT="$case_release"
-		CURL_LOG="$case_curl_log" MODE_LOG="$case_mode_log"
+		CURL_LOG="$case_curl_log" MODE_LOG="$case_mode_log" CP_LOG="$case_cp_log"
+		MV_LOG="$case_mv_log" TAR_LOG="$case_tar_log" HASH_LOG="$case_hash_log"
+		CURL_CONFIG_MARKER="$case_curl_config_marker" TAR_EXEC_MARKER="$case_tar_exec_marker"
 		PAPRIKA_REAL_CP="$(command -v cp)" PAPRIKA_REAL_TAR="$(command -v tar)"
 		PAPRIKA_REAL_STAT="$real_stat" PAPRIKA_REAL_CHMOD="$real_chmod"
-		PAPRIKA_REAL_MKDIR="$real_mkdir"
+		PAPRIKA_REAL_MKDIR="$real_mkdir" PAPRIKA_REAL_MV="$real_mv"
+		PAPRIKA_REAL_HASH_TOOL="$real_hash_tool" PAPRIKA_REAL_HASH_KIND="$real_hash_kind"
 	)
 	if [[ ${PAPRIKA_VERSION+x} ]]; then
 		environment+=(PAPRIKA_VERSION="$PAPRIKA_VERSION")
 	fi
 	if [[ ${PAPRIKA_SUPER_SECRET+x} ]]; then
 		environment+=(PAPRIKA_SUPER_SECRET="$PAPRIKA_SUPER_SECRET")
+	fi
+	if [[ ${TAR_OPTIONS+x} ]]; then
+		environment+=(TAR_OPTIONS="$TAR_OPTIONS")
+	fi
+	if [[ ${COPYFILE_DISABLE+x} ]]; then
+		environment+=(COPYFILE_DISABLE="$COPYFILE_DISABLE")
 	fi
 	set +e
 	env -i "${environment[@]}" /bin/sh "$installer" >"$case_output" 2>&1
@@ -250,18 +326,26 @@ rewrite_checksum() {
 	printf '%s  %s\n' "$(sha256_file "$case_release/download/v0.1.0/$asset")" "$asset" >"$case_release/download/v0.1.0/checksums.txt"
 }
 
+select_hash_backend() {
+	case "$1" in
+		sha256sum) rm -f "$case_bin/shasum" ;;
+		shasum) rm -f "$case_bin/sha256sum" ;;
+		*) fail "unknown hash backend: $1" ;;
+	esac
+}
+
 test_explicit_versions() {
 	local input
 	for input in v0.1.0 0.1.0; do
 		new_case "version-${input//./-}"
 		PAPRIKA_VERSION="$input" run_case
-		assert_eq 0 "$status" "$input installs" || continue
-		assert_contains "$case_curl_log" '/download/v0.1.0/checksums.txt' "$input uses canonical tag" || continue
-		assert_contains "$case_curl_log" '/download/v0.1.0/paprika_0.1.0_darwin_amd64.tar.gz' "$input uses unprefixed asset version" || continue
-		assert_eq fixture-darwin-amd64 "$("$case_install/paprika")" "$input runs fixture" || continue
-		assert_eq 755 "$(file_mode "$case_install/paprika")" "$input mode is 0755" || continue
-		assert_contains "$case_output" 'paprika login --server https://paprika.benebsworth.com' "$input prints next step" || continue
-		assert_clean "$input cleans temps" || continue
+		assert_eq 0 "$status" "$input installs" || return 1
+		assert_contains "$case_curl_log" '/download/v0.1.0/checksums.txt' "$input uses canonical tag" || return 1
+		assert_contains "$case_curl_log" '/download/v0.1.0/paprika_0.1.0_darwin_amd64.tar.gz' "$input uses unprefixed asset version" || return 1
+		assert_eq fixture-darwin-amd64 "$("$case_install/paprika")" "$input runs fixture" || return 1
+		assert_eq 755 "$(file_mode "$case_install/paprika")" "$input mode is 0755" || return 1
+		assert_contains "$case_output" 'paprika login --server https://paprika.benebsworth.com' "$input prints next step" || return 1
+		assert_clean "$input cleans temps" || return 1
 		pass "explicit version $input normalizes and installs"
 	done
 }
@@ -277,7 +361,7 @@ test_latest_resolution() {
 	new_case latest-untrusted
 	unset PAPRIKA_VERSION
 	LATEST_EFFECTIVE_URL='https://evil.example/releases/tag/v0.1.0' run_case
-	[[ "$status" -ne 0 ]] || { fail 'untrusted latest redirect fails'; return; }
+	[[ "$status" -ne 0 ]] || { fail 'untrusted latest redirect fails'; return 1; }
 	assert_eq 1 "$(wc -l <"$case_curl_log" | tr -d ' ')" 'untrusted redirect stops downloads' || return
 	pass 'unpinned install rejects redirect outside fixed GitHub release path'
 }
@@ -299,7 +383,7 @@ EOF
 	for pair in 'FreeBSD x86_64' 'Linux i686'; do
 		new_case "unsupported-${pair// /-}"
 		PAPRIKA_VERSION=v0.1.0 TEST_UNAME_S="${pair%% *}" TEST_UNAME_M="${pair#* }" run_case
-		[[ "$status" -ne 0 ]] || { fail "$pair must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "$pair must fail"; return 1; }
 		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "$pair fails before download" || return
 	done
 	pass 'unsupported OS and architecture fail before download'
@@ -310,7 +394,7 @@ test_versions_rejected_before_download() {
 	while IFS='|' read -r label value; do
 		new_case "bad-version-$label"
 		PAPRIKA_VERSION="$value" run_case
-		[[ "$status" -ne 0 ]] || { fail "version $label must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "version $label must fail"; return 1; }
 		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "version $label fails before download" || return
 	done <<'EOF'
 empty|
@@ -341,7 +425,7 @@ test_checksum_failures() {
 			tool-failure) FAIL_TOOL=checksum ;;
 		esac
 		PAPRIKA_VERSION=v0.1.0 FAIL_TOOL="${FAIL_TOOL-}" run_case; unset FAIL_TOOL
-		[[ "$status" -ne 0 ]] || { fail "checksum $kind must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "checksum $kind must fail"; return 1; }
 		assert_preserved "checksum $kind preserves destination" || return
 		assert_clean "checksum $kind cleans temps" || return
 	done
@@ -367,7 +451,7 @@ test_archive_failures() {
 		archive="$case_release/download/v0.1.0/$asset"
 		make_hostile_archive "$kind" "$archive"; rewrite_checksum "$asset"
 		PAPRIKA_VERSION=v0.1.0 run_case
-		[[ "$status" -ne 0 ]] || { fail "archive $kind must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "archive $kind must fail"; return 1; }
 		assert_preserved "archive $kind preserves destination" || return
 		assert_clean "archive $kind cleans temps" || return
 	done
@@ -376,16 +460,16 @@ test_archive_failures() {
 
 test_failure_atomicity() {
 	local kind
-	for kind in download extract copy interrupt; do
+	for kind in download extract copy mv interrupt; do
 		new_case "atomic-$kind"; seed_destination
-		case "$kind" in download) CURL_MODE=download_fail ;; extract) FAIL_TOOL=tar_extract ;; copy) FAIL_TOOL='cp' ;; interrupt) CURL_MODE=interrupt ;; esac
+		case "$kind" in download) CURL_MODE=download_fail ;; extract) FAIL_TOOL=tar_extract ;; copy) FAIL_TOOL='cp' ;; mv) FAIL_TOOL='mv' ;; interrupt) CURL_MODE=interrupt ;; esac
 		PAPRIKA_VERSION=v0.1.0 CURL_MODE="${CURL_MODE-}" FAIL_TOOL="${FAIL_TOOL-}" run_case
 		unset CURL_MODE FAIL_TOOL
-		[[ "$status" -ne 0 ]] || { fail "$kind failure must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "$kind failure must fail"; return 1; }
 		assert_preserved "$kind failure preserves destination" || return
 		assert_clean "$kind failure cleans temps" || return
 	done
-	pass 'download, extraction, copy failures, and interruption preserve destination'
+	pass 'download, extraction, copy, final mv failures, and interruption preserve destination'
 }
 
 test_private_temps_and_success_replace() {
@@ -393,10 +477,89 @@ test_private_temps_and_success_replace() {
 	PAPRIKA_VERSION=v0.1.0 run_case
 	assert_eq 0 "$status" 'valid replacement succeeds' || return
 	assert_contains "$case_mode_log" 'download-dir=700 extract-dir=700' 'remote content only enters private directories' || return
+	assert_eq 1 "$(wc -l <"$case_mv_log" | tr -d ' ')" 'success uses one final promotion rename' || return
+	assert_contains "$case_mv_log" "$case_install/.paprika.install." 'promotion source is destination-local' || return
+	assert_contains "$case_mv_log" "$case_install/paprika" 'promotion rename targets the final destination' || return
+	assert_contains "$case_cp_log" "/extract/paprika $case_install/.paprika.install." 'copy only stages into a destination-local temp file' || return
+	if grep -Fq " $case_install/paprika" "$case_cp_log"; then
+		fail 'copy must not promote directly to the final destination'
+	fi
 	assert_eq fixture-darwin-amd64 "$("$case_install/paprika")" 'success replaces destination' || return
 	assert_eq 755 "$(file_mode "$case_install/paprika")" 'replacement mode is 0755' || return
 	assert_clean 'success cleans temps' || return
 	pass 'private 0700 temp directories precede downloads and success replaces atomically'
+}
+
+test_environment_option_hardening() {
+	new_case environment-options
+	printf '%s\n' '--insecure' >"$case_home/.curlrc"
+	TAR_OPTIONS='--paprika-test-exec' COPYFILE_DISABLE=0 PAPRIKA_VERSION=v0.1.0 run_case
+	assert_eq 0 "$status" 'hostile curl and tar environment options are neutralized' || return
+	[[ ! -e "$case_curl_config_marker" ]] || fail 'curl read the malicious HOME/.curlrc before -q'
+	[[ ! -e "$case_tar_exec_marker" ]] || fail 'tar observed hostile TAR_OPTIONS'
+	assert_eq 3 "$(wc -l <"$case_tar_log" | tr -d ' ')" 'all three tar invocations are observed' || return
+	if grep -q '[^[:space:]]' "$case_tar_log"; then
+		fail 'TAR_OPTIONS was nonempty for a tar invocation'
+	fi
+	pass 'curl config parsing is disabled first and archive metadata environment is neutralized'
+}
+
+test_nonregular_destinations() {
+	new_case destination-directory
+	mkdir "$case_install/paprika"
+	printf 'KEEP\n' >"$case_install/paprika/sentinel"
+	PAPRIKA_VERSION=v0.1.0 run_case
+	[[ "$status" -ne 0 ]] || { fail 'destination directory must be rejected'; return 1; }
+	assert_eq KEEP "$(tr -d '\n' <"$case_install/paprika/sentinel")" 'destination directory contents remain unchanged' || return
+	assert_clean 'destination directory rejection cleans temporary files' || return
+
+	new_case destination-symlink-directory
+	mkdir "$case_dir/linked-directory"
+	printf 'KEEP\n' >"$case_dir/linked-directory/sentinel"
+	ln -s "$case_dir/linked-directory" "$case_install/paprika"
+	PAPRIKA_VERSION=v0.1.0 run_case
+	[[ "$status" -ne 0 ]] || { fail 'destination symlink to directory must be rejected'; return 1; }
+	[[ -L "$case_install/paprika" ]] || fail 'destination symlink was replaced'
+	assert_eq KEEP "$(tr -d '\n' <"$case_dir/linked-directory/sentinel")" 'symlink target directory contents remain unchanged' || return
+	assert_clean 'destination symlink rejection cleans temporary files' || return
+
+	new_case destination-fifo
+	mkfifo "$case_install/paprika"
+	PAPRIKA_VERSION=v0.1.0 run_case
+	[[ "$status" -ne 0 ]] || { fail 'FIFO destination must be rejected'; return 1; }
+	[[ -p "$case_install/paprika" ]] || fail 'FIFO destination was replaced'
+	assert_clean 'FIFO destination rejection cleans temporary files' || return
+	pass 'directory, symlink-to-directory, and other non-regular destinations are rejected without mutation'
+}
+
+test_hash_backends() {
+	local backend asset='paprika_0.1.0_darwin_amd64.tar.gz'
+	for backend in sha256sum shasum; do
+		new_case "hash-$backend-success"
+		select_hash_backend "$backend"
+		PAPRIKA_VERSION=v0.1.0 run_case
+		assert_eq 0 "$status" "$backend valid checksum succeeds" || return
+		assert_contains "$case_hash_log" "$backend:" "$backend is exercised" || return
+		assert_clean "$backend success cleans temporary files" || return
+
+		new_case "hash-$backend-mismatch"; seed_destination
+		select_hash_backend "$backend"
+		printf '%064d  %s\n' 0 "$asset" >"$case_release/download/v0.1.0/checksums.txt"
+		PAPRIKA_VERSION=v0.1.0 run_case
+		[[ "$status" -ne 0 ]] || { fail "$backend mismatch must fail"; return 1; }
+		assert_contains "$case_hash_log" "$backend:" "$backend mismatch invokes selected tool" || return
+		assert_preserved "$backend mismatch preserves destination" || return
+		assert_clean "$backend mismatch cleans temporary files" || return
+
+		new_case "hash-$backend-error"; seed_destination
+		select_hash_backend "$backend"
+		PAPRIKA_VERSION=v0.1.0 FAIL_TOOL=checksum run_case
+		[[ "$status" -ne 0 ]] || { fail "$backend execution error must fail"; return 1; }
+		assert_contains "$case_hash_log" "$backend:" "$backend error invokes selected tool with valid args" || return
+		assert_preserved "$backend error preserves destination" || return
+		assert_clean "$backend error cleans temporary files" || return
+	done
+	pass 'sha256sum and shasum exact invocation paths cover success, mismatch, and tool error'
 }
 
 test_early_cleanup_trap() {
@@ -409,7 +572,7 @@ test_early_cleanup_trap() {
 		esac
 		PAPRIKA_VERSION=v0.1.0 FAIL_TOOL="$FAIL_TOOL" run_case
 		unset FAIL_TOOL
-		[[ "$status" -ne 0 ]] || { fail "$kind must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "$kind must fail"; return 1; }
 		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "$kind happens before download" || return
 		assert_clean "$kind cleans a newly created private work directory" || return
 	done
@@ -423,23 +586,23 @@ test_destination_selection() {
 	path_candidates="$case_home/.local/bin:$default_root/usr/local/bin:$default_root/opt/homebrew/bin"
 	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" TEST_PATH_SUFFIX="$path_candidates" run_case
 	assert_eq 0 "$status" 'default candidate install succeeds' || return
-	[[ -x "$default_root/opt/homebrew/bin/paprika" ]] || { fail 'first writable existing candidate not selected'; return; }
-	[[ ! -e "$default_root/usr/local/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'later default candidate selected'; return; }
+	[[ -x "$default_root/opt/homebrew/bin/paprika" ]] || { fail 'first writable existing candidate not selected'; return 1; }
+	[[ ! -e "$default_root/usr/local/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'later default candidate selected'; return 1; }
 
 	new_case destination-path-filter; rm -rf "$case_install"
 	default_root="$case_dir/default-root"
 	mkdir -p "$default_root/opt/homebrew/bin" "$default_root/usr/local/bin" "$case_home/.local/bin"
 	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" TEST_PATH_SUFFIX="$default_root/usr/local/bin" run_case
 	assert_eq 0 "$status" 'PATH-filtered candidate install succeeds' || return
-	[[ -x "$default_root/usr/local/bin/paprika" ]] || { fail 'first candidate present on PATH not selected'; return; }
-	[[ ! -e "$default_root/opt/homebrew/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'off-PATH candidate selected'; return; }
+	[[ -x "$default_root/usr/local/bin/paprika" ]] || { fail 'first candidate present on PATH not selected'; return 1; }
+	[[ ! -e "$default_root/opt/homebrew/bin/paprika" && ! -e "$case_home/.local/bin/paprika" ]] || { fail 'off-PATH candidate selected'; return 1; }
 
 	new_case destination-fallback; rm -rf "$case_install"
 	default_root="$case_dir/default-root"; mkdir -p "$default_root"
 	mkdir -p "$default_root/opt/homebrew/bin" "$default_root/usr/local/bin" "$case_home/.local/bin"
 	PAPRIKA_INSTALL_DIR='' PAPRIKA_VERSION=v0.1.0 PAPRIKA_TEST_DEFAULT_ROOT="$default_root" run_case
 	assert_eq 0 "$status" 'home fallback succeeds' || return
-	[[ -x "$case_home/.local/bin/paprika" ]] || { fail 'home fallback not created'; return; }
+	[[ -x "$case_home/.local/bin/paprika" ]] || { fail 'home fallback not created'; return 1; }
 	assert_contains "$case_output" "Add $case_home/.local/bin to your PATH:" 'fallback PATH heading' || return
 	assert_contains "$case_output" "export PATH=\"$case_home/.local/bin:\$PATH\"" 'fallback exact PATH command' || return
 	pass 'default destination considers PATH candidates in priority order and falls back safely'
@@ -450,13 +613,13 @@ test_missing_tools() {
 	for tool in curl tar mktemp mv chmod; do
 		new_case "missing-tool-$tool"; seed_destination; rm "$case_bin/$tool"
 		PAPRIKA_VERSION=v0.1.0 run_case
-		[[ "$status" -ne 0 ]] || { fail "missing $tool must fail"; return; }
+		[[ "$status" -ne 0 ]] || { fail "missing $tool must fail"; return 1; }
 		assert_preserved "missing $tool does not mutate destination" || return
 		assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" "missing $tool fails before download" || return
 	done
 	new_case missing-hash-tools; seed_destination; rm -f "$case_bin/sha256sum" "$case_bin/shasum"
 	PAPRIKA_VERSION=v0.1.0 run_case
-	[[ "$status" -ne 0 ]] || { fail 'missing checksum tools must fail'; return; }
+	[[ "$status" -ne 0 ]] || { fail 'missing checksum tools must fail'; return 1; }
 	assert_preserved 'missing checksum tools do not mutate destination' || return
 	assert_eq 0 "$(wc -l <"$case_curl_log" | tr -d ' ')" 'missing checksum tools fail before download' || return
 	pass 'missing required tools fail before downloads and destination mutation'
@@ -466,7 +629,7 @@ test_http_failures_and_redaction() {
 	new_case latest-http-failure; seed_destination
 	unset PAPRIKA_VERSION
 	CURL_MODE=latest_fail run_case
-	[[ "$status" -ne 0 ]] || { fail 'latest HTTP failure must fail'; return; }
+	[[ "$status" -ne 0 ]] || { fail 'latest HTTP failure must fail'; return 1; }
 	assert_preserved 'latest HTTP failure preserves destination' || return
 	if grep -Ev '^https://github\.com/paprikacd/paprika/releases/(latest|download/)' "$case_curl_log" | grep -q .; then
 		fail 'installer attempted noncanonical or insecure URL'; return
@@ -474,7 +637,7 @@ test_http_failures_and_redaction() {
 
 	new_case downloaded-content-redaction; seed_destination
 	PAPRIKA_VERSION=v0.1.0 CURL_MODE=malicious_body PAPRIKA_SUPER_SECRET='do-not-print-this-secret' run_case
-	[[ "$status" -ne 0 ]] || { fail 'malicious downloaded checksum body must fail'; return; }
+	[[ "$status" -ne 0 ]] || { fail 'malicious downloaded checksum body must fail'; return 1; }
 	assert_preserved 'malicious downloaded body preserves destination' || return
 	assert_contains "$case_curl_log" '/checksums.txt' 'redaction failure occurs after checksum body download' || return
 	assert_contains "$case_curl_log" '/paprika_0.1.0_darwin_amd64.tar.gz' 'redaction failure occurs after archive download' || return
@@ -484,22 +647,75 @@ test_http_failures_and_redaction() {
 	pass 'HTTP failures stay HTTPS and post-download errors redact secrets and remote content'
 }
 
+fail_fast_fixture() {
+	: >"$1"
+	false
+	: >"$2"
+}
+
+test_harness_fail_fast() {
+	local before="$test_root/fail-fast-before" after="$test_root/fail-fast-after" fixture_status
+	set +e
+	(
+		set -e
+		fail_fast_fixture "$before" "$after"
+	)
+	fixture_status=$?
+	set -e
+	[[ "$fixture_status" -ne 0 ]] || fail 'intentional failing fixture unexpectedly succeeded'
+	[[ -e "$before" ]] || fail 'intentional failing fixture did not start'
+	[[ ! -e "$after" ]] || fail 'test runner continued after the intentional fixture failure'
+	pass 'test subshells retain errexit and stop at their first unhandled failure'
+}
+
+run_test() {
+	local test_name="$1" test_status
+	set +e
+	(
+		set -e
+		"$test_name"
+	)
+	test_status=$?
+	set -e
+	if [[ "$test_status" -eq 0 ]]; then
+		passes=$((passes + 1))
+	else
+		printf 'not ok - test group %s failed\n' "$test_name" >&2
+		failures=$((failures + 1))
+	fi
+}
+
 if [[ ! -f "$installer" ]]; then
 	printf 'installer test prerequisite missing: %s\n' "$installer" >&2
 	exit 1
 fi
 
-test_explicit_versions || true
-test_latest_resolution || true
-test_platform_mappings || true
-test_versions_rejected_before_download || true
-test_checksum_failures || true
-test_archive_failures || true
-test_failure_atomicity || true
-test_private_temps_and_success_replace || true
-test_destination_selection || true
-test_missing_tools || true
-test_http_failures_and_redaction || true
-test_early_cleanup_trap || true
+test_groups=(
+	test_harness_fail_fast
+	test_explicit_versions
+	test_latest_resolution
+	test_platform_mappings
+	test_versions_rejected_before_download
+	test_checksum_failures
+	test_archive_failures
+	test_failure_atomicity
+	test_private_temps_and_success_replace
+	test_environment_option_hardening
+	test_nonregular_destinations
+	test_destination_selection
+	test_hash_backends
+	test_missing_tools
+	test_http_failures_and_redaction
+	test_early_cleanup_trap
+)
+if [[ -n ${PAPRIKA_INSTALLER_TEST_GROUP-} ]]; then
+	case " ${test_groups[*]} " in
+		*" $PAPRIKA_INSTALLER_TEST_GROUP "*) test_groups=("$PAPRIKA_INSTALLER_TEST_GROUP") ;;
+		*) printf 'unknown installer test group: %s\n' "$PAPRIKA_INSTALLER_TEST_GROUP" >&2; exit 2 ;;
+	esac
+fi
+for test_group in "${test_groups[@]}"; do
+	run_test "$test_group"
+done
 printf '%s passed; %s failed\n' "$passes" "$failures"
 [[ "$failures" -eq 0 ]]
