@@ -11,10 +11,12 @@ curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh
 ```
 
 It downloads the archive from the canonical GitHub release and verifies its
-checksum before installation. For a reproducible install, pin
-`PAPRIKA_VERSION`; the corresponding checksum file uses this exact URL pattern:
+checksum before installation. Audit the
+[latest published checksums](https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt).
+For a reproducible install, pin `PAPRIKA_VERSION`; the corresponding checksum
+file uses this exact URL pattern:
 
-<https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt>
+`https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt`
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh
@@ -56,7 +58,7 @@ paprika status
 ### Option 1: Deploy from Source
 
 ```sh
-git clone https://github.com/benebsworth/paprika.git
+git clone https://github.com/paprikacd/paprika.git
 cd paprika
 
 # Install CRDs

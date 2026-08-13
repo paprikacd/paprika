@@ -42,6 +42,20 @@
       outline: 2px solid var(--primary);
       outline-offset: 3px;
     }
+    .skip-link {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      z-index: 100;
+      padding: 0.625rem 0.875rem;
+      border-radius: 0.375rem;
+      background: var(--primary);
+      color: var(--primary-fg);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      transform: translateY(calc(-100% - 1rem));
+    }
+    .skip-link:focus-visible { transform: translateY(0); }
     .sr-only {
       position: absolute;
       width: 1px;
@@ -157,6 +171,7 @@
 
     /* Sections */
     section { border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+    section[id] { scroll-margin-top: 4rem; }
     .py-24 { padding-top: 6rem; padding-bottom: 6rem; }
     .py-16 { padding-top: 4rem; padding-bottom: 4rem; }
 
@@ -318,6 +333,29 @@
       border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
       color: var(--fg);
     }
+    .copy-support {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.75rem;
+      min-height: 2.5rem;
+      padding: 0.625rem 1rem;
+      border-top: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-size: 0.6875rem;
+      line-height: 1.5;
+    }
+    .copy-support p {
+      max-width: none;
+      margin: 0;
+      color: inherit;
+      font-size: inherit;
+      line-height: inherit;
+    }
+    .copy-feedback {
+      min-width: 9rem;
+      color: var(--fg);
+      text-align: right;
+    }
     .hero-viz { margin-top: 4rem; }
 
     .viz-card {
@@ -354,6 +392,7 @@
       gap: 2.5rem;
       align-items: start;
     }
+    .install-layout > * { min-width: 0; }
     .install-terminal {
       overflow: hidden;
       border: 1px solid var(--border);
@@ -398,6 +437,7 @@
       font-family: var(--font-mono);
       font-size: 0.6875rem;
     }
+    .install-note code { overflow-wrap: anywhere; }
     .install-note a {
       color: var(--primary);
       overflow-wrap: anywhere;
@@ -616,6 +656,8 @@
       .command-row .copy-button { grid-column: 2; justify-self: start; }
       .install-terminal .command-row { grid-template-columns: minmax(0, 1fr); }
       .install-terminal .command-row .copy-button { grid-column: 1; }
+      .copy-support { grid-template-columns: 1fr; }
+      .copy-feedback { min-width: 0; text-align: left; }
       .footer-inner { padding: 0 1rem; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -632,6 +674,8 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <!-- Nav -->
   <header class="nav">
     <div class="nav-inner">
@@ -650,7 +694,7 @@
     </div>
   </header>
 
-  <main>
+  <main id="main-content" tabindex="-1">
     <!-- Hero -->
     <section class="hero">
       <div class="hero-bg"></div>
@@ -685,17 +729,21 @@
           <div class="command-row">
             <span class="command-number" aria-hidden="true">1</span>
             <span class="command-text"><code id="hero-install-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code></span>
-            <button type="button" data-copy-target="hero-install-command" aria-label="Copy install command" class="copy-button">Copy</button>
+            <button type="button" data-copy-target="hero-install-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy install command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
           </div>
           <div class="command-row">
             <span class="command-number" aria-hidden="true">2</span>
             <span class="command-text"><code id="hero-login-command">paprika login --server https://paprika.benebsworth.com</code></span>
-            <button type="button" data-copy-target="hero-login-command" aria-label="Copy login command" class="copy-button">Copy</button>
+            <button type="button" data-copy-target="hero-login-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy login command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
           </div>
           <div class="command-row">
             <span class="command-number" aria-hidden="true">3</span>
             <span class="command-text"><code id="hero-status-command">paprika status</code></span>
-            <button type="button" data-copy-target="hero-status-command" aria-label="Copy status command" class="copy-button">Copy</button>
+            <button type="button" data-copy-target="hero-status-command" data-copy-feedback="hero-copy-feedback" aria-label="Copy status command" aria-describedby="hero-copy-guidance" class="copy-button">Copy</button>
+          </div>
+          <div class="copy-support">
+            <p id="hero-copy-guidance" class="copy-guidance">Copy unavailable? Select the command text and copy it manually.</p>
+            <p id="hero-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
           </div>
         </div>
         <div class="hero-viz reveal show" style="transition-delay: 0.4s">
@@ -746,21 +794,25 @@
                 <span class="install-command-label">Latest published release</span>
                 <code id="install-latest-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh</code>
               </span>
-              <button type="button" data-copy-target="install-latest-command" aria-label="Copy latest release install command" class="copy-button">Copy</button>
+              <button type="button" data-copy-target="install-latest-command" data-copy-feedback="install-copy-feedback" aria-label="Copy latest release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
             </div>
             <div class="command-row">
               <span class="command-text">
                 <span class="install-command-label">Pin a release</span>
                 <code id="install-version-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_VERSION=vX.Y.Z sh</code>
               </span>
-              <button type="button" data-copy-target="install-version-command" aria-label="Copy pinned release install command" class="copy-button">Copy</button>
+              <button type="button" data-copy-target="install-version-command" data-copy-feedback="install-copy-feedback" aria-label="Copy pinned release install command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
             </div>
             <div class="command-row">
               <span class="command-text">
                 <span class="install-command-label">Choose a writable destination</span>
                 <code id="install-dir-command">curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | PAPRIKA_INSTALL_DIR="$HOME/.local/bin" sh</code>
               </span>
-              <button type="button" data-copy-target="install-dir-command" aria-label="Copy custom install directory command" class="copy-button">Copy</button>
+              <button type="button" data-copy-target="install-dir-command" data-copy-feedback="install-copy-feedback" aria-label="Copy custom install directory command" aria-describedby="install-copy-guidance" class="copy-button">Copy</button>
+            </div>
+            <div class="copy-support">
+              <p id="install-copy-guidance" class="copy-guidance">Copy unavailable? Select the command text and copy it manually.</p>
+              <p id="install-copy-feedback" class="copy-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
             </div>
           </div>
 
@@ -771,7 +823,7 @@
             </div>
             <div class="install-note">
               <h3>Version and checksum</h3>
-              <p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code> for a reproducible install. Audit the selected release at <a href="https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt" target="_blank" rel="noopener">https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</a>.</p>
+              <p>Set <code>PAPRIKA_VERSION=vX.Y.Z</code> for a reproducible install. Audit the <a href="https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt" target="_blank" rel="noopener">latest published checksums</a>. A pinned release uses <code>https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt</code>.</p>
             </div>
             <div class="install-note">
               <h3>No implicit privilege escalation</h3>
@@ -1014,8 +1066,6 @@ spec:
     </div>
   </footer>
 
-  <p id="copy-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
-
   <script>
     // Intersection Observer for scroll reveals
     const observer = new IntersectionObserver((entries) => {
@@ -1030,7 +1080,8 @@ spec:
       observer.observe(el);
     });
 
-    const copyStatus = document.getElementById('copy-status');
+    const copyStates = new WeakMap();
+    const feedbackStates = new WeakMap();
 
     async function writeToClipboard(text) {
       if (navigator.clipboard && window.isSecureContext) {
@@ -1061,23 +1112,68 @@ spec:
       if (!copied) throw new Error('Copy command was rejected');
     }
 
+    function isCurrentCopy(button, state, feedback) {
+      return copyStates.get(button) === state && feedbackStates.get(feedback) === state;
+    }
+
+    function announceCopyFeedback(button, state, feedback, message) {
+      feedback.textContent = '';
+      window.requestAnimationFrame(() => {
+        if (isCurrentCopy(button, state, feedback)) {
+          feedback.textContent = message;
+        }
+      });
+    }
+
     document.querySelectorAll('[data-copy-target]').forEach(button => {
       const defaultLabel = button.textContent.trim();
       button.addEventListener('click', async () => {
+        const initiatingButton = button;
         const target = document.getElementById(button.dataset.copyTarget);
-        if (!target) return;
+        const feedback = document.getElementById(button.dataset.copyFeedback);
+        if (!target || !feedback) return;
+
+        const previous = copyStates.get(button);
+        if (previous && previous.timer) {
+          window.clearTimeout(previous.timer);
+        }
+        const previousFeedback = feedbackStates.get(feedback);
+        if (previousFeedback && previousFeedback.timer) {
+          window.clearTimeout(previousFeedback.timer);
+        }
+        const state = {
+          token: previous ? previous.token + 1 : 1,
+          timer: null,
+        };
+        copyStates.set(button, state);
+        feedbackStates.set(feedback, state);
+        feedback.textContent = '';
 
         try {
           await writeToClipboard(target.textContent.trim());
+          if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Copied';
-          copyStatus.textContent = `${button.getAttribute('aria-label')} copied.`;
+          announceCopyFeedback(button, state, feedback, 'Command copied.');
         } catch (_) {
+          if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Try again';
-          copyStatus.textContent = 'Copy failed. Select the command and copy it manually.';
+          announceCopyFeedback(button, state, feedback, 'Copy failed. Select the command text and copy it manually.');
+        } finally {
+          if (isCurrentCopy(button, state, feedback)) {
+            try {
+              initiatingButton.focus({ preventScroll: true });
+            } catch (_) {
+              initiatingButton.focus();
+            }
+          }
         }
 
-        window.setTimeout(() => {
+        if (!isCurrentCopy(button, state, feedback)) return;
+        state.timer = window.setTimeout(() => {
+          if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = defaultLabel;
+          feedback.textContent = '';
+          state.timer = null;
         }, 1800);
       });
     });

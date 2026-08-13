@@ -10,11 +10,11 @@ curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh
 ```
 
 The installer downloads only from the canonical GitHub release, verifies the
-archive against the release checksums, and then installs the binary. To audit a
-pinned release, compare its assets with the checksum file at this exact URL
-pattern:
+archive against the release checksums, and then installs the binary. Audit the
+[latest published checksums](https://github.com/paprikacd/paprika/releases/latest/download/checksums.txt).
+A pinned release uses this exact URL pattern:
 
-<https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt>
+`https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt`
 
 Pin a release by passing `PAPRIKA_VERSION` to the installer shell:
 
