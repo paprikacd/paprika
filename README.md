@@ -29,6 +29,12 @@ Install the latest Paprika CLI, authenticate with the hosted server, and check i
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+```
+
+The installer may create `~/.local/bin`; if it does, apply the printed `PATH` export in your shell
+before continuing:
+
+```sh
 paprika login --server https://paprika.benebsworth.com
 paprika status
 ```
@@ -45,6 +51,9 @@ go install ./cmd/paprika
 # Or, with Task v3 installed:
 task install
 ```
+
+Source installs write to `GOBIN` when it is set, or to Go's default bin directory otherwise. Ensure
+that Go bin directory is on `PATH` before invoking `paprika`.
 
 ## Architecture
 

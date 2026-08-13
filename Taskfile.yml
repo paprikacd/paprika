@@ -83,12 +83,19 @@ tasks:
 
   docker:build:
     desc: Build the container image.
-    vars:
-      DOCKER_IMG: '{{.IMG | default .DEFAULT_IMG}}'
+    env:
+      IMG: '{{.IMG | default .DEFAULT_IMG}}'
     cmds:
-      - make docker-build IMG="{{.DOCKER_IMG}}"
+      - make docker-build
 
   clean:
     desc: Remove local build and test output.
     cmds:
-      - rm -rf bin/paprika cover.out coverage.out .goreleaser-dist ui/out ui/coverage
+      - |
+        for path in bin .goreleaser-dist ui ui/out ui/coverage; do
+          if [ -L "$path" ]; then
+            echo "clean: refusing symlinked path: $path" >&2
+            exit 1
+          fi
+        done
+        rm -rf bin/paprika cover.out coverage.out .goreleaser-dist ui/out ui/coverage

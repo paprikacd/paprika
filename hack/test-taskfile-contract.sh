@@ -29,7 +29,9 @@ $actual"
 
 run_task() {
   : >"$contract_log"
-  PATH="$shim_dir:$PATH" CONTRACT_LOG="$contract_log" task --silent --dir "$repo_root" "$@"
+  PATH="$shim_dir:$PATH" CONTRACT_LOG="$contract_log" \
+    CONTRACT_IMG_CAPTURE="${CONTRACT_IMG_CAPTURE:-}" \
+    task --silent --dir "$repo_root" "$@"
 }
 
 [[ -f "$taskfile" ]] || fail "Taskfile.yml does not exist"
@@ -78,6 +80,9 @@ for command_name in make npm go; do
   cat >"$shim_dir/$command_name" <<'SHIM'
 #!/bin/sh
 printf '%s|%s|%s\n' "$(basename "$0")" "$PWD" "$*" >>"$CONTRACT_LOG"
+if [ "$(basename "$0")" = make ] && [ -n "${CONTRACT_IMG_CAPTURE:-}" ]; then
+  printf '%s' "${IMG-}" >"$CONTRACT_IMG_CAPTURE"
+fi
 SHIM
   chmod +x "$shim_dir/$command_name"
 done
@@ -126,10 +131,23 @@ make|$repo_root|lint
 npm|$repo_root/ui|run lint"
 
 run_task docker:build IMG=example.invalid/paprika:contract
-assert_log "make|$repo_root|docker-build IMG=example.invalid/paprika:contract"
+assert_log "make|$repo_root|docker-build"
 
-run_task docker:build
-assert_log "make|$repo_root|docker-build IMG=ghcr.io/paprikacd/paprika:latest"
+img_capture=$temp_dir/img.capture
+injection_one=$temp_dir/injected-one
+injection_two=$temp_dir/injected-two
+adversarial_img=$(printf '%s\n %s' \
+  "repo.invalid/paprika:tag'\"\$(touch $injection_one)\`touch $injection_two\`" \
+  'value with whitespace')
+CONTRACT_IMG_CAPTURE=$img_capture run_task docker:build IMG="$adversarial_img"
+assert_log "make|$repo_root|docker-build"
+[[ ! -e "$injection_one" && ! -e "$injection_two" ]] || fail 'IMG executed shell content'
+[[ $(cat "$img_capture") == "$adversarial_img" ]] || fail 'docker:build did not preserve IMG exactly'
+
+CONTRACT_IMG_CAPTURE=$img_capture run_task docker:build
+assert_log "make|$repo_root|docker-build"
+[[ $(cat "$img_capture") == 'ghcr.io/paprikacd/paprika:latest' ]] ||
+  fail 'docker:build did not provide the default IMG environment value'
 
 clean_root=$temp_dir/clean-fixture
 mkdir -p "$clean_root/bin" "$clean_root/.goreleaser-dist" "$clean_root/ui/out" \
@@ -152,11 +170,32 @@ for preserved_path in dist/install.yaml bin/manager unrelated.out; do
 done
 assert_file_contains "$clean_root/dist/install.yaml" 'tracked installer bundle'
 
+for symlink_parent in bin .goreleaser-dist ui ui/out ui/coverage; do
+  symlink_root=$temp_dir/symlink-${symlink_parent//\//-}
+  external_root=$temp_dir/external-${symlink_parent//\//-}
+  mkdir -p "$symlink_root/bin" "$symlink_root/.goreleaser-dist" \
+    "$symlink_root/ui/out" "$symlink_root/ui/coverage" "$external_root"
+  cp "$taskfile" "$symlink_root/Taskfile.yml"
+  printf 'external canary\n' >"$external_root/canary"
+  rm -rf "${symlink_root:?}/$symlink_parent"
+  ln -s "$external_root" "$symlink_root/$symlink_parent"
+
+  if task --silent --dir "$symlink_root" clean >/dev/null 2>&1; then
+    fail "clean accepted symlinked scoped parent: $symlink_parent"
+  fi
+  assert_file_contains "$external_root/canary" 'external canary'
+done
+
 readme=$repo_root/README.md
 installer_command='curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh'
 login_command='paprika login --server https://paprika.benebsworth.com'
 status_command='paprika status'
 checksum_url='https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt'
+markdown_tick=$(printf '\140')
+local_bin='~'/.local/bin
+path_guidance="printed ${markdown_tick}PATH${markdown_tick} export"
+gobin_guidance="${markdown_tick}GOBIN${markdown_tick}"
+go_bin_guidance="Go bin directory is on ${markdown_tick}PATH${markdown_tick}"
 
 assert_file_contains "$readme" "$installer_command"
 assert_file_contains "$readme" "$login_command"
@@ -164,12 +203,17 @@ assert_file_contains "$readme" "$status_command"
 assert_file_contains "$readme" 'go install ./cmd/paprika'
 assert_file_contains "$readme" 'task install'
 assert_file_contains "$readme" "$checksum_url"
+assert_file_contains "$readme" "$local_bin"
+assert_file_contains "$readme" "$path_guidance"
+assert_file_contains "$readme" "$gobin_guidance"
+assert_file_contains "$readme" "$go_bin_guidance"
 
 installer_line=$(grep -Fn "$installer_command" "$readme" | head -1 | cut -d: -f1)
+path_line=$(grep -Fn "$path_guidance" "$readme" | head -1 | cut -d: -f1)
 login_line=$(grep -Fn "$login_command" "$readme" | head -1 | cut -d: -f1)
 status_line=$(grep -Fn "$status_command" "$readme" | head -1 | cut -d: -f1)
-((installer_line < login_line && login_line < status_line)) ||
-  fail 'README must lead the CLI flow with install, login, then status'
+((installer_line < path_line && path_line < login_line && login_line < status_line)) ||
+  fail 'README must explain PATH before leading into login and status'
 
 if grep -Eqi 'homebrew|brew install' "$readme"; then
   fail 'README must not claim Homebrew support'
