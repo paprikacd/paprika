@@ -42,6 +42,7 @@ var pinnedActionRevisions = map[string]string{
 	"docker/setup-buildx-action":         "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
 	"google-github-actions/auth":         "7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
 	"google-github-actions/setup-gcloud": "aa5489c8933f4cc7a4f7d45035b3b1440c9c10db",
+	"goreleaser/goreleaser-action":       "f06c13b6b1a9625abc9e6e439d9c05a8f2190e94",
 	"peaceiris/actions-gh-pages":         "84c30a85c19949d7eee79c4ff27748b70285e453",
 }
 
@@ -59,6 +60,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("canonical CI protects running master and keeps only the latest pending run", testCanonicalCIConcurrency)
 	t.Run("canonical CI pins third-party actions", testCanonicalCIActionPins)
 	t.Run("canonical CI bounds job runtime", testCanonicalCIJobTimeouts)
+	t.Run("canonical CI validates the CLI release contract", testCLIReleaseContractJob)
 	t.Run("generated drift detects stale and untracked output", testGeneratedDriftDetection)
 	t.Run("publication is gated and exposes an immutable amd64 image digest", testPublication)
 	t.Run("legacy image publisher is removed", testLegacyPublisherRemoved)
@@ -71,6 +73,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("VKE post-deploy validation uses the race-free pod checker", testVKEPodConditionValidation)
 	t.Run("downstream workflows pin third-party actions", testDownstreamActionPins)
 	t.Run("downstream jobs bound their runtime", testDownstreamJobTimeouts)
+	t.Run("tagged release is pinned and least privilege", testTaggedReleaseWorkflow)
 	t.Run("privileged manual entrypoints use typed default-branch dispatch", testPrivilegedManualEntrypoints)
 	t.Run("legacy deployments consume repository dispatch payload digests", testLegacyDeployments)
 	t.Run("Helm publishing validates and renders before packaging", testHelmPublishing)
@@ -167,7 +170,7 @@ func testCanonicalCIActionPins(t *testing.T) {
 
 func testCanonicalCIJobTimeouts(t *testing.T) {
 	workflow := loadWorkflow(t, "ci.yml")
-	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "fleet-ui-smoke", "cluster-integration", "publish"} {
+	for _, jobID := range []string{"go-test", "go-lint", "ui", "generated", "chart", "release-contract", "fleet-ui-smoke", "cluster-integration", "publish"} {
 		job := requireMappingValue(t, workflow.jobs, jobID, "ci.yml jobs")
 		timeout, ok := job["timeout-minutes"].(int)
 		if !ok || timeout < 5 || timeout > 30 {
@@ -177,6 +180,23 @@ func testCanonicalCIJobTimeouts(t *testing.T) {
 	fleetScale := requireMappingValue(t, workflow.jobs, "fleet-scale", "ci.yml jobs")
 	if timeout, ok := fleetScale["timeout-minutes"].(int); !ok || timeout != 90 {
 		t.Errorf("ci.yml job %q timeout-minutes = %v, want exactly 90", "fleet-scale", fleetScale["timeout-minutes"])
+	}
+}
+
+func testCLIReleaseContractJob(t *testing.T) {
+	workflow := loadWorkflow(t, "ci.yml")
+	assertValidationJob(t, workflow, validationJobContract{id: "release-contract", commands: []string{
+		"bash hack/test-cli-release-contract.sh",
+		"goreleaser build --snapshot --clean --id cli",
+	}})
+	job := requireMappingValue(t, workflow.jobs, "release-contract", "ci.yml jobs")
+	step := requireUsesStep(t, job, "goreleaser/goreleaser-action@", "ci.yml release-contract job")
+	if got := scalarString(requireMappingValue(t, step, "with", "ci.yml GoReleaser install step")["version"]); got != "v2.16.0" {
+		t.Errorf("ci.yml GoReleaser version = %q, want v2.16.0", got)
+	}
+	publish := requireMappingValue(t, workflow.jobs, "publish", "ci.yml jobs")
+	if !contains(stringList(publish["needs"]), "release-contract") {
+		t.Error("ci.yml publish job must need release-contract")
 	}
 }
 
@@ -680,6 +700,7 @@ func testDownstreamActionPins(t *testing.T) {
 		"helm-publish.yml",
 		"test-e2e.yml",
 		"gh-pages.yml",
+		"release.yml",
 	} {
 		name := name
 		t.Run(name, func(t *testing.T) {
@@ -714,6 +735,7 @@ func testDownstreamJobTimeouts(t *testing.T) {
 		"helm-publish.yml":    {"publish": {5, 30}},
 		"test-e2e.yml":        {"test-e2e": {30, 60}},
 		"gh-pages.yml":        {"deploy": {5, 15}},
+		"release.yml":         {"goreleaser": {5, 30}, "helm-package": {5, 30}},
 	}
 	for workflowName, jobs := range contracts {
 		workflow := loadWorkflow(t, workflowName)
@@ -721,6 +743,27 @@ func testDownstreamJobTimeouts(t *testing.T) {
 			job := requireMappingValue(t, workflow.jobs, jobID, workflowName+" jobs")
 			assertJobTimeout(t, workflowName, jobID, job, bounds[0], bounds[1])
 		}
+	}
+}
+
+func testTaggedReleaseWorkflow(t *testing.T) {
+	workflow := loadWorkflow(t, "release.yml")
+	if _, declared := workflow.document["permissions"]; declared {
+		t.Error("release.yml must scope permissions per job, not globally")
+	}
+	goreleaser := requireMappingValue(t, workflow.jobs, "goreleaser", "release.yml jobs")
+	goreleaserPermissions := requireMappingValue(t, goreleaser, "permissions", "release.yml goreleaser job")
+	if !sameStrings(sortedKeys(goreleaserPermissions), []string{"contents", "packages"}) || permission(workflow, goreleaser, "contents") != "write" || permission(workflow, goreleaser, "packages") != "write" {
+		t.Errorf("release.yml goreleaser permissions must be exactly contents/packages write, got %v", goreleaser["permissions"])
+	}
+	helm := requireMappingValue(t, workflow.jobs, "helm-package", "release.yml jobs")
+	helmPermissions := requireMappingValue(t, helm, "permissions", "release.yml helm-package job")
+	if !sameStrings(sortedKeys(helmPermissions), []string{"contents", "packages"}) || permission(workflow, helm, "contents") != "read" || permission(workflow, helm, "packages") != "write" {
+		t.Errorf("release.yml helm-package permissions must be contents read/packages write, got %v", helm["permissions"])
+	}
+	step := requireUsesStep(t, goreleaser, "goreleaser/goreleaser-action@", "release.yml goreleaser job")
+	if got := scalarString(requireMappingValue(t, step, "with", "release.yml GoReleaser step")["version"]); got != "v2.16.0" {
+		t.Errorf("release.yml GoReleaser version = %q, want v2.16.0", got)
 	}
 }
 

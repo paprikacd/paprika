@@ -27,7 +27,10 @@ type config struct {
 	Builds []build `yaml:"builds"`
 	Archives []archive `yaml:"archives"`
 	Dockers []docker `yaml:"dockers"`
-	Release struct { Draft bool `yaml:"draft"` } `yaml:"release"`
+	Release struct {
+		Draft bool `yaml:"draft"`
+		Header string `yaml:"header"`
+	} `yaml:"release"`
 }
 
 type build struct {
@@ -124,11 +127,30 @@ func main() {
 		fail("image templates = %v, must contain only the version tag", d.ImageTemplates)
 	}
 	if !cfg.Release.Draft { fail("release.draft must be true") }
+	if strings.Contains(cfg.Release.Header, "install.yaml") { fail("release header must not link an asset GoReleaser does not upload") }
+	if !strings.Contains(cfg.Release.Header, "https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh") { fail("release header must document the canonical CLI installer") }
+	if !strings.Contains(cfg.Release.Header, "releases/download/{{ .Tag }}/checksums.txt") { fail("release header must link the canonical checksums asset using .Tag") }
 
 	dockerfile, err := os.ReadFile("Dockerfile.goreleaser")
 	if err != nil { fail("read Dockerfile.goreleaser: %v", err) }
 	if !strings.Contains(string(dockerfile), "COPY paprika-server /paprika") {
 		fail("Dockerfile.goreleaser must copy paprika-server to /paprika")
+	}
+	for _, base := range []string{
+		"alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
+		"gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6",
+	} {
+		if !strings.Contains(string(dockerfile), "FROM "+base) { fail("Dockerfile.goreleaser base %q must retain its verified digest", base) }
+	}
+	for architecture, checksum := range map[string]string{
+		"amd64": "e57e826410269d72be3113333dbfaac0d8dfdd1b0cc4e9cb08bdf97722731ca9",
+		"arm64": "780b5b86f0db5546769b3e9f0204713bbdd2f6696dfdaac122fbe7f2f31541d2",
+	} {
+		if !strings.Contains(string(dockerfile), "HELM_SHA256_"+architecture+"="+checksum) { fail("Dockerfile.goreleaser missing verified Helm checksum for %s", architecture) }
+	}
+	if !strings.Contains(string(dockerfile), "sha256sum -c -") { fail("Dockerfile.goreleaser must verify Helm before extraction") }
+	if strings.Index(string(dockerfile), "sha256sum -c -") > strings.Index(string(dockerfile), "tar -xzf") {
+		fail("Dockerfile.goreleaser must verify Helm before extracting it")
 	}
 }
 EOF

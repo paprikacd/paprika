@@ -104,13 +104,17 @@ release:
     ### Installation
 
     ```bash
+    # CLI
+    curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+
     # Helm
     helm repo add paprika https://paprikacd.github.io/paprika
     helm install paprika paprika/paprika --namespace paprika-system --create-namespace
-
-    # Kustomize
-    kubectl apply -f https://github.com/paprikacd/paprika/releases/download/{{ .Version }}/install.yaml
     ```
+
+    Verify downloaded CLI archives with the canonical
+    [checksums.txt](https://github.com/paprikacd/paprika/releases/download/{{ .Tag }}/checksums.txt)
+    asset before installation.
   footer: |
     **Full Changelog**: https://github.com/paprikacd/paprika/compare/{{ .PreviousTag }}...{{ .Tag }}
 
