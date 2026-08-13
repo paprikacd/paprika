@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 taskfile=$repo_root/Taskfile.yml
+real_make=$(command -v make)
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -148,6 +149,63 @@ CONTRACT_IMG_CAPTURE=$img_capture run_task docker:build
 assert_log "make|$repo_root|docker-build"
 [[ $(cat "$img_capture") == 'ghcr.io/paprikacd/paprika:latest' ]] ||
   fail 'docker:build did not provide the default IMG environment value'
+
+container_tool=$temp_dir/container-tool
+container_log=$temp_dir/container.log
+cat >"$container_tool" <<'SHIM'
+#!/bin/sh
+printf '<%s>\n' "$@" >>"$CONTRACT_CONTAINER_LOG"
+SHIM
+chmod +x "$container_tool"
+
+valid_digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+for valid_img in \
+  ghcr.io/paprikacd/paprika:latest \
+  ttl.sh/paprika-amd64:4h \
+  registry.example:5000/team/paprika:v1.2.3 \
+  "ghcr.io/paprikacd/paprika@$valid_digest"; do
+  : >"$container_log"
+  CONTRACT_CONTAINER_LOG=$container_log "$real_make" --silent -C "$repo_root" docker-build \
+    CONTAINER_TOOL="$container_tool" IMG="$valid_img"
+  expected_container_log=$(printf '<build>\n<-t>\n<%s>\n<.>' "$valid_img")
+  [[ $(cat "$container_log") == "$expected_container_log" ]] ||
+    fail "make docker-build did not preserve valid IMG argv: $valid_img"
+done
+
+make_injection_one=$temp_dir/make-injected-one
+make_injection_two=$temp_dir/make-injected-two
+make_injection_three=$temp_dir/make-injected-three
+make_injection_four=$temp_dir/make-injected-four
+invalid_imgs=(
+  "ghcr.io/paprikacd/paprika:bad; touch $make_injection_one"
+  "ghcr.io/paprikacd/paprika:bad\$(touch $make_injection_two)"
+  "ghcr.io/paprikacd/paprika:bad\`touch $make_injection_three\`"
+  "ghcr.io/paprikacd/paprika:bad\$(shell touch $make_injection_four)"
+  $'ghcr.io/paprikacd/paprika:bad\'"\nvalue with whitespace'
+)
+invalid_index=0
+for invalid_img in "${invalid_imgs[@]}"; do
+  invalid_index=$((invalid_index + 1))
+  : >"$container_log"
+  if CONTRACT_CONTAINER_LOG=$container_log "$real_make" --silent -C "$repo_root" docker-build \
+    CONTAINER_TOOL="$container_tool" IMG="$invalid_img" >/dev/null 2>&1; then
+    fail "make docker-build accepted invalid IMG case $invalid_index"
+  fi
+  [[ ! -s "$container_log" ]] || fail 'invalid IMG reached the container tool'
+done
+[[ ! -e "$make_injection_one" && ! -e "$make_injection_two" && ! -e "$make_injection_three" &&
+  ! -e "$make_injection_four" ]] ||
+  fail 'Makefile IMG executed shell content'
+
+task_injection=$temp_dir/task-make-injected
+task_invalid_img="ghcr.io/paprikacd/paprika:bad\$(shell touch $task_injection)"
+: >"$container_log"
+if CONTRACT_CONTAINER_LOG=$container_log CONTAINER_TOOL=$container_tool \
+  task --silent --dir "$repo_root" docker:build IMG="$task_invalid_img" >/dev/null 2>&1; then
+  fail 'task docker:build accepted a Make-expansion IMG payload'
+fi
+[[ ! -s "$container_log" && ! -e "$task_injection" ]] ||
+  fail 'task docker:build allowed IMG to reach execution'
 
 clean_root=$temp_dir/clean-fixture
 mkdir -p "$clean_root/bin" "$clean_root/.goreleaser-dist" "$clean_root/ui/out" \

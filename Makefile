@@ -1,5 +1,6 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/paprikacd/paprika:latest
+export IMG
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 
@@ -166,8 +167,12 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
+# Preserve IMG as literal data for this target. In particular, do not recursively
+# expand make syntax such as $(shell ...) from a command-line variable.
+docker-build: override IMG := $(value IMG)
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	go run ./hack/validate-image-ref.go
+	$(CONTAINER_TOOL) build -t "$${IMG}" .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
