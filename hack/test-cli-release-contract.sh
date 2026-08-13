@@ -135,6 +135,8 @@ func main() {
 	if !strings.Contains(cfg.Release.Header, "helm install paprika oci://ghcr.io/paprikacd/charts/paprika") { fail("release header must document the canonical OCI Helm install") }
 	if !strings.Contains(cfg.Release.Header, "--version {{ .Version }}") { fail("release header must pin the Helm chart version") }
 	if strings.Contains(cfg.Release.Header, "helm repo add") { fail("release header must not advertise a classic Helm repository") }
+	if !strings.Contains(cfg.Release.Header, "{{ .ReleaseNotes }}") { fail("release header must render GoReleaser's supported .ReleaseNotes field") }
+	if strings.Contains(cfg.Release.Header, "{{ .Changelog }}") { fail("release header must not use the unsupported .Changelog field") }
 
 	dockerfile, err := os.ReadFile("Dockerfile.goreleaser")
 	if err != nil { fail("read Dockerfile.goreleaser: %v", err) }
