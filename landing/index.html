@@ -1138,12 +1138,18 @@ spec:
           window.clearTimeout(previous.timer);
         }
         const previousFeedback = feedbackStates.get(feedback);
-        if (previousFeedback && previousFeedback.timer) {
-          window.clearTimeout(previousFeedback.timer);
+        if (previousFeedback) {
+          if (previousFeedback.timer) {
+            window.clearTimeout(previousFeedback.timer);
+            previousFeedback.timer = null;
+          }
+          previousFeedback.owner.textContent = previousFeedback.defaultLabel;
         }
         const state = {
           token: previous ? previous.token + 1 : 1,
           timer: null,
+          owner: button,
+          defaultLabel,
         };
         copyStates.set(button, state);
         feedbackStates.set(feedback, state);
@@ -1171,7 +1177,7 @@ spec:
         if (!isCurrentCopy(button, state, feedback)) return;
         state.timer = window.setTimeout(() => {
           if (!isCurrentCopy(button, state, feedback)) return;
-          button.textContent = defaultLabel;
+          state.owner.textContent = state.defaultLabel;
           feedback.textContent = '';
           state.timer = null;
         }, 1800);

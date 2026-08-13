@@ -179,6 +179,8 @@ script = re.sub(r"/\*.*?\*/|//[^\n]*", "", script, flags=re.S)
 for invariant in ("navigator.clipboard", "document.execCommand", "focus({ preventScroll: true })", "WeakMap", "feedbackStates", "clearTimeout", "requestAnimationFrame"):
     if invariant not in script:
         fail(f"copy behavior missing {invariant!r}")
+if not re.search(r"previousFeedback\.owner\.textContent\s*=\s*previousFeedback\.defaultLabel", script):
+    fail("superseding feedback must synchronously restore the previous button label")
 if "innerHTML" in script:
     fail("copy behavior must not use an innerHTML sink")
 if not re.search(r"@media\s*\(prefers-reduced-motion:\s*reduce\)", html) or ":focus-visible" not in html or ".skip-link:focus-visible" not in html:
