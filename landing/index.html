@@ -1093,6 +1093,7 @@ spec:
         }
       }
 
+      const previousFocus = document.activeElement;
       const textarea = document.createElement('textarea');
       textarea.value = text;
       textarea.setAttribute('readonly', '');
@@ -1107,7 +1108,15 @@ spec:
       try {
         copied = document.execCommand('copy');
       } finally {
+        const textareaHadFocus = document.activeElement === textarea;
         textarea.remove();
+        if (textareaHadFocus && document.activeElement === document.body && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+          try {
+            previousFocus.focus({ preventScroll: true });
+          } catch (_) {
+            previousFocus.focus();
+          }
+        }
       }
       if (!copied) throw new Error('Copy command was rejected');
     }
@@ -1128,7 +1137,6 @@ spec:
     document.querySelectorAll('[data-copy-target]').forEach(button => {
       const defaultLabel = button.textContent.trim();
       button.addEventListener('click', async () => {
-        const initiatingButton = button;
         const target = document.getElementById(button.dataset.copyTarget);
         const feedback = document.getElementById(button.dataset.copyFeedback);
         if (!target || !feedback) return;
@@ -1164,14 +1172,6 @@ spec:
           if (!isCurrentCopy(button, state, feedback)) return;
           button.textContent = 'Try again';
           announceCopyFeedback(button, state, feedback, 'Copy failed. Select the command text and copy it manually.');
-        } finally {
-          if (isCurrentCopy(button, state, feedback)) {
-            try {
-              initiatingButton.focus({ preventScroll: true });
-            } catch (_) {
-              initiatingButton.focus();
-            }
-          }
         }
 
         if (!isCurrentCopy(button, state, feedback)) return;

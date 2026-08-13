@@ -176,9 +176,11 @@ if "git clone https://github.com/paprikacd/paprika.git" not in visible_install:
 
 script = "\n".join("".join(node.data) for node in nodes if node.tag == "script")
 script = re.sub(r"/\*.*?\*/|//[^\n]*", "", script, flags=re.S)
-for invariant in ("navigator.clipboard", "document.execCommand", "focus({ preventScroll: true })", "WeakMap", "feedbackStates", "clearTimeout", "requestAnimationFrame"):
+for invariant in ("navigator.clipboard", "document.execCommand", "previousFocus", "isConnected", "focus({ preventScroll: true })", "WeakMap", "feedbackStates", "clearTimeout", "requestAnimationFrame"):
     if invariant not in script:
         fail(f"copy behavior missing {invariant!r}")
+if "initiatingButton" in script:
+    fail("async copy handlers must not reclaim focus after the user moves on")
 if not re.search(r"previousFeedback\.owner\.textContent\s*=\s*previousFeedback\.defaultLabel", script):
     fail("superseding feedback must synchronously restore the previous button label")
 if "innerHTML" in script:
