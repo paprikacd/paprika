@@ -23,6 +23,29 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 - **Dashboard UI** — Next.js dashboard with real-time application, release, and resource status
 - **Prometheus Metrics** — Controller-runtime metrics for reconciliation duration, phase transitions, and resource counts
 
+## CLI Quickstart
+
+Install the latest Paprika CLI, authenticate with the hosted server, and check its status:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
+paprika login --server https://paprika.benebsworth.com
+paprika status
+```
+
+The installer supports macOS and Linux on amd64 and arm64. To audit a pinned release before
+installing it, download its exact checksum asset, following the
+[`vX.Y.Z/checksums.txt`](https://github.com/paprikacd/paprika/releases/download/vX.Y.Z/checksums.txt)
+pattern.
+
+Contributors who have cloned the repository can install the CLI from source instead:
+
+```sh
+go install ./cmd/paprika
+# Or, with Task v3 installed:
+task install
+```
+
 ## Architecture
 
 ```
@@ -121,14 +144,17 @@ ENABLE_WEBHOOKS=false make run
 
 ```sh
 # Unit tests (Kubernetes envtest)
-make test
+task test
 
-# Lint
-make lint
+# Go and UI lint
+task lint
 
 # E2E tests (creates an isolated Kind cluster)
-make test-e2e
+task test:e2e
 ```
+
+These contributor shortcuts require [Task v3](https://taskfile.dev/). The underlying Make
+targets remain supported and are the source of truth for existing project automation.
 
 ## Project Distribution
 
@@ -174,16 +200,20 @@ docs/                         Design docs, plans, guides
 ### Key Commands
 
 ```sh
-make help              # Show all available targets
-make manifests         # Regenerate CRDs + RBAC from kubebuilder markers
-make generate          # Regenerate DeepCopy methods
-make test              # Run unit tests
-make lint              # Run linter
-make run               # Run operator locally (no webhooks)
-make deploy            # Deploy to current cluster
-make docker-build      # Build Docker image
-make build-installer   # Build single-file YAML bundle
+task --list             # Show everyday contributor tasks
+task build              # Build the CLI to bin/paprika
+task build:all          # Build the CLI, embedded UI, and server
+task generate           # Regenerate project code
+task test               # Run unit tests
+task test:race          # Run unit tests with the race detector
+task lint               # Run Go and UI linters
+task check              # Run generation, tests, and linters
+task ui:dev             # Run the UI development server
+task docker:build       # Build the default Docker image
 ```
+
+Task is a thin interface over the existing Make and npm workflows. `make help` still lists the
+complete automation surface, including operator deployment and release-oriented commands.
 
 ### Workflows
 

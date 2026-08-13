@@ -1,0 +1,94 @@
+version: '3'
+
+vars:
+  DEFAULT_IMG: ghcr.io/paprikacd/paprika:latest
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the Paprika CLI to bin/paprika.
+    cmds:
+      - make build-cli
+
+  build:all:
+    desc: Build the CLI, embedded UI, and server.
+    cmds:
+      - make build-cli build-with-ui
+
+  install:
+    desc: Install the Paprika CLI from source.
+    cmds:
+      - go install ./cmd/paprika
+
+  test:
+    desc: Run Go tests.
+    cmds:
+      - make test
+
+  test:race:
+    desc: Run Go tests with the race detector.
+    cmds:
+      - make test-race
+
+  test:e2e:
+    desc: Run the Kind end-to-end test suite.
+    cmds:
+      - make test-e2e
+
+  lint:
+    desc: Run Go and UI linters.
+    cmds:
+      - make lint
+      - task: ui:lint
+
+  check:
+    desc: Run generation, tests, and linters.
+    cmds:
+      - task: generate
+      - task: test
+      - task: lint
+
+  generate:
+    desc: Run project code generation.
+    cmds:
+      - make generate
+
+  ui:dev:
+    desc: Run the UI development server.
+    cmds:
+      - npm run dev
+    dir: ui
+
+  ui:lint:
+    internal: true
+    cmds:
+      - npm run lint
+    dir: ui
+
+  ui:test:
+    desc: Run UI tests.
+    cmds:
+      - npm run test
+    dir: ui
+
+  ui:build:
+    desc: Build the UI.
+    cmds:
+      - npm run build
+    dir: ui
+
+  docker:build:
+    desc: Build the container image.
+    vars:
+      DOCKER_IMG: '{{.IMG | default .DEFAULT_IMG}}'
+    cmds:
+      - make docker-build IMG="{{.DOCKER_IMG}}"
+
+  clean:
+    desc: Remove local build and test output.
+    cmds:
+      - rm -rf bin/paprika cover.out coverage.out .goreleaser-dist ui/out ui/coverage
