@@ -43,6 +43,7 @@ func TestVersionReportsInjectedBuildMetadata(t *testing.T) {
 }
 
 func TestRootRegistersLoginStatusAndVersionCommands(t *testing.T) {
+	preserveCLIFlagState(t)
 	root := newRootCmd(context.Background())
 	for _, name := range []string{"login", "status", "version"} {
 		command, _, err := root.Find([]string{name})
@@ -55,26 +56,43 @@ func TestRootRegistersLoginStatusAndVersionCommands(t *testing.T) {
 	}
 }
 
-func TestVersionDoesNotLoadEnvironmentOrConfig(t *testing.T) {
-	var stdout bytes.Buffer
-	err := run(
-		context.Background(),
-		[]string{"--config", t.TempDir(), "version"},
-		func(string) string { panic("version unexpectedly loaded the environment") },
-		strings.NewReader(""),
-		&stdout,
-		&bytes.Buffer{},
-	)
-	if err != nil {
-		t.Fatalf("run version with unreadable config path: %v", err)
+func TestRootCommandExecutionRestoresGlobalFlagState(t *testing.T) {
+	original := currentCLIFlagState()
+	t.Cleanup(func() { setCLIFlagState(original) })
+	want := cliFlagState{
+		configPath: "config-before-test",
+		server:     "server-before-test",
+		namespace:  "namespace-before-test",
+		username:   "username-before-test",
+		password:   "password-before-test",
+		token:      "token-before-test",
+		output:     "output-before-test",
 	}
-	if got := stdout.String(); got != "paprika dev\n" {
+	setCLIFlagState(want)
+
+	t.Run("version", func(t *testing.T) {
+		executeRootCommand(t, "version")
+	})
+
+	if got := currentCLIFlagState(); got != want {
+		t.Fatalf("CLI flag state after command = %#v, want %#v", got, want)
+	}
+}
+
+func TestVersionDoesNotLoadConfig(t *testing.T) {
+	invalidConfigPath := t.TempDir()
+	if _, err := loadConfig(invalidConfigPath); err == nil {
+		t.Fatalf("loadConfig(%q) unexpectedly succeeded; test requires an invalid config path", invalidConfigPath)
+	}
+
+	if got := executeRootCommand(t, "--config", invalidConfigPath, "version"); got != "paprika dev\n" {
 		t.Fatalf("version output = %q, want %q", got, "paprika dev\n")
 	}
 }
 
 func executeRootCommand(t *testing.T, args ...string) string {
 	t.Helper()
+	preserveCLIFlagState(t)
 	var stdout bytes.Buffer
 	root := newRootCmd(context.Background())
 	root.SetArgs(args)
@@ -93,4 +111,42 @@ func setBuildMetadata(t *testing.T, buildVersion, buildCommit, buildDate string)
 	t.Cleanup(func() {
 		version, commit, date = previousVersion, previousCommit, previousDate
 	})
+}
+
+type cliFlagState struct {
+	configPath string
+	server     string
+	namespace  string
+	username   string
+	password   string
+	token      string
+	output     string
+}
+
+func currentCLIFlagState() cliFlagState {
+	return cliFlagState{
+		configPath: globalConfigPath,
+		server:     globalServer,
+		namespace:  globalNamespace,
+		username:   globalUsername,
+		password:   globalPassword,
+		token:      globalToken,
+		output:     globalOutput,
+	}
+}
+
+func setCLIFlagState(state cliFlagState) {
+	globalConfigPath = state.configPath
+	globalServer = state.server
+	globalNamespace = state.namespace
+	globalUsername = state.username
+	globalPassword = state.password
+	globalToken = state.token
+	globalOutput = state.output
+}
+
+func preserveCLIFlagState(t *testing.T) {
+	t.Helper()
+	state := currentCLIFlagState()
+	t.Cleanup(func() { setCLIFlagState(state) })
 }
