@@ -108,9 +108,11 @@ release:
     # CLI
     curl -fsSL https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh | sh
 
-    # Helm
-    helm repo add paprika https://paprikacd.github.io/paprika
-    helm install paprika paprika/paprika --namespace paprika-system --create-namespace
+    # Helm OCI
+    helm install paprika oci://ghcr.io/paprikacd/charts/paprika \
+      --version {{ .Version }} \
+      --namespace paprika-system \
+      --create-namespace
     ```
 
     Verify downloaded CLI archives with the canonical

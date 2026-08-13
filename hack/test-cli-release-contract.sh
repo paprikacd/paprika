@@ -132,6 +132,9 @@ func main() {
 	if strings.Contains(cfg.Release.Header, "install.yaml") { fail("release header must not link an asset GoReleaser does not upload") }
 	if !strings.Contains(cfg.Release.Header, "https://raw.githubusercontent.com/paprikacd/paprika/master/install.sh") { fail("release header must document the canonical CLI installer") }
 	if !strings.Contains(cfg.Release.Header, "releases/download/{{ .Tag }}/checksums.txt") { fail("release header must link the canonical checksums asset using .Tag") }
+	if !strings.Contains(cfg.Release.Header, "helm install paprika oci://ghcr.io/paprikacd/charts/paprika") { fail("release header must document the canonical OCI Helm install") }
+	if !strings.Contains(cfg.Release.Header, "--version {{ .Version }}") { fail("release header must pin the Helm chart version") }
+	if strings.Contains(cfg.Release.Header, "helm repo add") { fail("release header must not advertise a classic Helm repository") }
 
 	dockerfile, err := os.ReadFile("Dockerfile.goreleaser")
 	if err != nil { fail("read Dockerfile.goreleaser: %v", err) }
