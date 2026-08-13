@@ -36,7 +36,7 @@ var pinnedActionRevisions = map[string]string{
 	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
 	"actions/upload-artifact":            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
 	"actions/setup-go":                   "b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
-	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
+	"actions/setup-node":                 "820762786026740c76f36085b0efc47a31fe5020",
 	"azure/setup-helm":                   "59b1c81c6280f5abebb1fb1bc585696daa7dfb42",
 	"docker/build-push-action":           "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
 	"docker/login-action":                "abd2ef45e78c5afb21d64d4ca52ee8550d9572c7",
