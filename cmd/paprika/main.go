@@ -29,6 +29,10 @@ import (
 )
 
 var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+
 	globalConfigPath string
 	globalServer     string
 	globalNamespace  string
@@ -96,6 +100,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newStatusCmd(ctx, clientFn, nsFn, &globalOutput))
+	root.AddCommand(newVersionCmd())
 	root.AddCommand(newAppsCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newPipelinesCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newReleasesCmd(ctx, clientFn, nsFn, &globalOutput))
@@ -105,6 +110,25 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newResolveCmd(ctx, clientFn, &globalOutput))
 
 	return root
+}
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the Paprika CLI version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "paprika %s\n", version); err != nil {
+				return fmt.Errorf("write version: %w", err)
+			}
+			if commit != "none" || date != "unknown" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "commit=%s date=%s\n", commit, date); err != nil {
+					return fmt.Errorf("write build metadata: %w", err)
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func loadMergedConfig() (*Config, error) {
