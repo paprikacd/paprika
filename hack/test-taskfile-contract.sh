@@ -37,17 +37,17 @@ run_task() {
 
 [[ -f "$taskfile" ]] || fail "Taskfile.yml does not exist"
 
-task_list=$(task --dir "$repo_root" --list)
-default_list=$(task --silent --dir "$repo_root")
+task_list=$(NO_COLOR=1 task --color=false --dir "$repo_root" --list)
+task_list_json=$(NO_COLOR=1 task --color=false --dir "$repo_root" --list --json)
+default_list=$(NO_COLOR=1 task --color=false --silent --dir "$repo_root")
 [[ "$default_list" == "$task_list" ]] || fail 'the default task must list available tasks'
 
 assert_listed_task() {
   local task_name=$1
   local description=$2
-  local task_line
-  task_line=$(grep -E "^[[:space:]]*\*[[:space:]]+$task_name:" <<<"$task_list" || true)
-  [[ -n "$task_line" ]] || fail "task --list does not expose $task_name"
-  [[ "$task_line" == *"$description"* ]] ||
+  grep -Fq -- "\"name\": \"$task_name\"" <<<"$task_list_json" ||
+    fail "task --list does not expose $task_name"
+  grep -Fq -- "\"desc\": \"$description\"" <<<"$task_list_json" ||
     fail "task $task_name does not show its documented description"
 }
 
