@@ -299,7 +299,7 @@ Extend the CI contract suite so `release.yml` must:
 - use commit-pinned allowlisted Actions;
 - have bounded job timeouts;
 - serialize runs for the same tag;
-- run a pre-mutation exact-tag guard that fails for an existing public release and permits only no release or a resumable draft;
+- run a pre-mutation exact-tag guard that fails for an existing public release and permits only no release or an empty same-tag draft; a non-empty draft fails closed and requires explicit operator deletion before restart;
 - preflight the versioned Helm OCI tag before GoReleaser or image publication: package the source chart at the exact version, unpack both the local package and pulled OCI artifact, normalize Helm-generated metadata, and reuse the existing tag only when those normalized trees match; otherwise fail without overwriting it;
 - create GoReleaser output as a draft release;
 - make Helm publication depend on successful GoReleaser output;
@@ -310,7 +310,7 @@ Extend the CI contract suite so `release.yml` must:
 - execute a CLI artifact and check `version`, `login`, and `status`;
 - verify the versioned server image is Linux/amd64 and digest-addressable;
 - publish the GitHub release only as the final command after all assertions;
-- never delete/overwrite an existing public release.
+- never delete release assets automatically and never delete/overwrite an existing public release.
 
 - [ ] **Step 2: Verify RED**
 
@@ -322,10 +322,10 @@ Expected: FAIL because `release.yml` publishes inside the first job and uses unp
 
 - [ ] **Step 3: Implement the three-stage release workflow**
 
-1. **Preflight:** under same-tag concurrency, inspect the exact GitHub release state and fail if it is public. Permit no release or a same-tag draft. Inspect the exact semantic Helm OCI tag before any other release mutation. If absent, mark it for publication; if present, package the source chart to a temporary archive with the same version, unpack both archives, normalize only Helm-generated `Chart.yaml` formatting/metadata, and compare the normalized trees. Reuse only an exact normalized match and fail on any substantive mismatch.
-2. **Artifacts:** after preflight, GoReleaser creates or resumes only the draft release, uploads CLI archives/checksums, and pushes the versioned server image.
+1. **Preflight:** under same-tag concurrency, inspect the exact GitHub release state and fail if it is public. Permit no release or an empty same-tag draft; fail closed on any draft assets, which must be removed only by an explicit operator decision outside the workflow. Inspect the exact semantic Helm OCI tag before any other release mutation. If absent, mark it for publication; if present, package the source chart to a temporary archive with the same version, unpack both archives, normalize only Helm-generated `Chart.yaml` formatting/metadata, and compare the normalized trees. Reuse only an exact normalized match and fail on any substantive mismatch.
+2. **Artifacts:** after preflight, GoReleaser creates or resumes only the empty draft release, uploads CLI archives/checksums, and pushes the versioned server image. The workflow never deletes existing release assets.
 3. **Helm:** after preflight, package and push the semantic chart version without the leading `v` only when preflight proved it absent; otherwise verify/reuse the identical existing artifact without overwriting it.
-4. **Verify and publish:** fetch draft assets for the exact tag, enforce the asset allowlist/count, verify checksums and CLI behavior, inspect the server image platform/digest, then run `gh release edit "$TAG" --draft=false --latest` as the final mutation.
+4. **Verify and publish:** resolve and retain the exact numeric draft release ID, enforce the asset allowlist/count, verify checksums and CLI behavior, inspect digest-bound server image and Helm artifacts, then immediately revalidate that same ID/tag/draft tuple and publish through an ID-addressed REST `PATCH` as the literal final mutation. Never switch back to tag resolution for publication.
 
 Use least-privilege job permissions and pin every third-party Action to a full commit SHA. Ensure a failure leaves a draft release that the default installer cannot select.
 

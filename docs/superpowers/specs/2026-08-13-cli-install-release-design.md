@@ -118,6 +118,7 @@ An offline shell test will place fake release archives/checksums behind a contro
 - `goreleaser check` validates configuration.
 - A snapshot CLI build is executed and the produced binary must expose `login`, `status`, and `version`.
 - GoReleaser creates a draft GitHub release and uploads archives/checksums to it. The workflow verifies the exact four archives, checksum asset, CLI contents, server image, and Helm publication before changing the release from draft to public/latest. A failed workflow therefore cannot become the release selected by the installer.
+- Publication is bound to the immutable numeric release ID resolved and revalidated by the workflow; it must not switch back to a tag lookup for the final mutation. A rerun may reuse an empty same-tag draft, but fails closed on a draft that already contains assets. Operators must explicitly delete that incomplete draft before restarting, avoiding any workflow path that could delete assets after an out-of-band publication race.
 - After tagging, a clean temporary environment runs the public installer pinned to `v0.1.0`, verifies `paprika version`, completes a real browser login, and queries `paprika status`.
 
 ### Taskfile
