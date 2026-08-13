@@ -100,7 +100,7 @@ release:
   header: |
     ## Paprika {{ .Version }}
 
-    {{ .Changelog }}
+    {{ .ReleaseNotes }}
 
     ### Installation
 
