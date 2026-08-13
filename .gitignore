@@ -41,3 +41,4 @@ internal/api/uistatic/*
 test-results/
 output/
 /artifacts/
+.goreleaser-dist/
