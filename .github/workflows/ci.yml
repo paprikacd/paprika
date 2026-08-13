@@ -211,6 +211,7 @@ jobs:
         run: |
           bash hack/test-cli-release-contract.sh
           bash hack/test-find-github-release.sh
+          bash hack/test-verify-release-archives.sh
 
       - name: Build and exercise linux amd64 CLI
         shell: bash

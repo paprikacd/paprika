@@ -3,16 +3,18 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  # The GitHub-hosted Ubuntu 24.04 image and its preinstalled gh/jq/file tools
+  # are an accepted trust boundary; runtime minimum versions are checked below.
   preflight:
     name: Guard exact release and chart tags
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -47,7 +49,13 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+          # gh and jq are part of the GitHub-hosted Ubuntu runner trust boundary.
+          gh_version="$(gh --version | awk 'NR == 1 {sub(/^v/, "", $3); print $3}')"
+          jq_version="$(jq --version | sed 's/^jq-//')"
+          printf '%s\n%s\n' "${gh_version}" "${jq_version}" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          test "$(printf '%s\n%s\n' 2.45.0 "${gh_version}" | sort -V | head -n1)" = "2.45.0"
+          test "$(printf '%s\n%s\n' 1.6 "${jq_version}" | sort -V | head -n1)" = "1.6"
+          version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           if [[ "${TAG}" != "v${VERSION}" || ! "${VERSION}" =~ ${version_pattern} ]]; then
             printf 'release tag %q must be v followed by an exact semantic version\n' "${TAG}" >&2
             exit 1
@@ -59,6 +67,15 @@ jobs:
           if [[ "${release_state}" == "public" ]]; then
             printf 'release %s already exists publicly; refusing to delete or overwrite it\n' "${TAG}" >&2
             exit 1
+          fi
+          if [[ "${release_state}" == "draft" ]]; then
+            release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}")"
+            if ! jq -e --arg tag "${TAG}" --argjson id "${release_id}" \
+              '.id == $id and .tag_name == $tag and .draft == true and (.assets | length == 0)' \
+              <<<"${release_json}" >/dev/null; then
+              printf 'existing draft is not empty; manually delete the draft and restart the release\n' >&2
+              exit 1
+            fi
           fi
           printf 'release_state=%s\n' "${release_state}" >>"${GITHUB_OUTPUT}"
           printf 'release_id=%s\n' "${release_id}" >>"${GITHUB_OUTPUT}"
@@ -88,11 +105,12 @@ jobs:
 
   artifacts:
     name: Build draft release artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: preflight
     outputs:
       release_id: ${{ steps.resolve-release.outputs.release_id }}
+      image_digest_ref: ${{ steps.capture-image.outputs.image_digest_ref }}
     permissions:
       contents: write
       packages: write
@@ -121,35 +139,23 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
 
-      - name: Clean resumable draft assets
+      - name: Require resumable draft to remain empty
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           RELEASE_STATE="${{ needs.preflight.outputs.release_state }}"
           if [[ "${RELEASE_STATE}" == "draft" ]]; then
-            VERSION="${TAG#v}"
             RELEASE_ID="${{ needs.preflight.outputs.release_id }}"
             release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
-            jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
-              '.id == $id and .tag_name == $tag and .draft == true' \
-              <<<"${release_json}" >/dev/null
-            assets=(
-              "paprika_${VERSION}_darwin_amd64.tar.gz"
-              "paprika_${VERSION}_darwin_arm64.tar.gz"
-              "paprika_${VERSION}_linux_amd64.tar.gz"
-              "paprika_${VERSION}_linux_arm64.tar.gz"
-              "checksums.txt"
-            )
-            for asset in "${assets[@]}"; do
-              mapfile -t asset_ids < <(jq -r --arg name "${asset}" '.assets[] | select(.name == $name) | .id' <<<"${release_json}")
-              if [[ ${#asset_ids[@]} -gt 1 ]]; then
-                printf 'draft release contains duplicate asset %s\n' "${asset}" >&2
-                exit 1
-              elif [[ ${#asset_ids[@]} -eq 1 ]]; then
-                gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_ids[0]}"
-              fi
-            done
+            if ! jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+              '.id == $id and .tag_name == $tag and .draft == true and (.assets | length == 0)' \
+              <<<"${release_json}" >/dev/null; then
+              printf 'existing draft is not empty; manually delete the draft and restart the release\n' >&2
+              exit 1
+            fi
           fi
 
       - name: Run GoReleaser
@@ -172,13 +178,31 @@ jobs:
           fi
           printf 'release_id=%s\n' "$(jq -r '.id' <<<"${release_result}")" >>"${GITHUB_OUTPUT}"
 
+      - name: Capture immutable server image
+        id: capture-image
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          image_tag="ghcr.io/paprikacd/paprika:${VERSION}"
+          docker pull --platform linux/amd64 "${image_tag}" >/dev/null
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image_tag}")" = "linux/amd64"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${image_tag}")" = "${GITHUB_SHA}"
+          mapfile -t digest_refs < <(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_tag}" | grep '^ghcr.io/paprikacd/paprika@sha256:')
+          if [[ ${#digest_refs[@]} -ne 1 || ! "${digest_refs[0]}" =~ ^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'server image did not resolve to one immutable digest\n' >&2
+            exit 1
+          fi
+          printf 'image_digest_ref=%s\n' "${digest_refs[0]}" >>"${GITHUB_OUTPUT}"
+
   helm:
     name: Publish or reuse exact Helm chart
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs:
       - preflight
       - artifacts
+    outputs:
+      chart_digest_ref: ${{ steps.capture-chart.outputs.chart_digest_ref }}
     permissions:
       contents: read
       packages: write
@@ -194,6 +218,18 @@ jobs:
         uses: azure/setup-helm@59b1c81c6280f5abebb1fb1bc585696daa7dfb42 # v5
         with:
           version: v3.21.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
+
+      - name: Log in to GitHub Container Registry for digest inspection
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to chart registry
         run: |
@@ -241,9 +277,29 @@ jobs:
             ".dist/paprika-${VERSION}.tgz" \
             ".dist/remote/paprika-${VERSION}.tgz"
 
+      - name: Capture immutable chart digest
+        id: capture-chart
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          chart_tag="ghcr.io/paprikacd/charts/paprika:${VERSION}"
+          chart_inspect="$(docker buildx imagetools inspect "${chart_tag}")"
+          chart_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${chart_inspect}")"
+          chart_digest_ref="ghcr.io/paprikacd/charts/paprika@${chart_digest}"
+          if [[ ! "${chart_digest_ref}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'chart tag did not resolve to an immutable digest\n' >&2
+            exit 1
+          fi
+          mkdir -p .dist/captured
+          helm package charts/chart --destination .dist/captured --version "${VERSION}" --app-version "${VERSION}"
+          bash hack/compare-helm-chart.sh --oci \
+            ".dist/captured/paprika-${VERSION}.tgz" \
+            "oci://${chart_digest_ref}"
+          printf 'chart_digest_ref=%s\n' "${chart_digest_ref}" >>"${GITHUB_OUTPUT}"
+
   verify-publish:
     name: Verify exact release and publish
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs:
       - artifacts
@@ -261,6 +317,15 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          version: v0.29.1
+
+      - name: Log in to GitHub Container Registry for verification
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7 # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to chart registry for verification
         run: |
@@ -312,13 +377,10 @@ jobs:
             <(printf '%s\n' "${checksummed_assets[@]}")
           sha256sum --check checksums.txt
 
-          for archive in "${archive_assets[@]}"; do
-            mapfile -t entries < <(tar -tzf "${archive}")
-            if [[ ${#entries[@]} -ne 1 || "${entries[0]}" != "paprika" ]]; then
-              printf '%s must contain exactly one root entry named paprika\n' "${archive}" >&2
-              exit 1
-            fi
-          done
+          # file is part of the GitHub-hosted Ubuntu runner trust boundary.
+          file_version="$(file --version | awk 'NR == 1 {sub(/^file-/, "", $1); print $1}')"
+          test "$(printf '%s\n%s\n' 5.44 "${file_version}" | sort -V | head -n1)" = "5.44"
+          bash "${GITHUB_WORKSPACE}/hack/verify-release-archives.sh" . "${VERSION}"
 
           mkdir linux-amd64
           tar -xzf "paprika_${VERSION}_linux_amd64.tar.gz" -C linux-amd64
@@ -330,21 +392,34 @@ jobs:
           ./paprika version --help >/dev/null
           cd ..
 
-          image_repository="ghcr.io/paprikacd/paprika"
-          image_tag="${image_repository}:${VERSION}"
-          image_inspect="$(docker buildx imagetools inspect "${image_tag}")"
-          grep -Eq '^Digest:[[:space:]]+sha256:[0-9a-f]{64}$' <<<"${image_inspect}"
-          image_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${image_inspect}")"
-          digest_ref="ghcr.io/paprikacd/paprika@${image_digest}"
-          docker buildx imagetools inspect "${digest_ref}" >/dev/null
-          docker pull --platform linux/amd64 "${image_tag}" >/dev/null
-          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${image_tag}")" = "linux/amd64"
-          docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${image_tag}" | grep -Fx "${digest_ref}"
+          IMAGE_DIGEST_REF="${{ needs.artifacts.outputs.image_digest_ref }}"
+          if [[ ! "${IMAGE_DIGEST_REF}" =~ ^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'invalid immutable server image output\n' >&2
+            exit 1
+          fi
+          docker pull --platform linux/amd64 "${IMAGE_DIGEST_REF}" >/dev/null
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${IMAGE_DIGEST_REF}")" = "linux/amd64"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_DIGEST_REF}")" = "${GITHUB_SHA}"
 
-          mkdir helm
-          helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination helm
-          chart_archive="helm/paprika-${VERSION}.tgz"
-          test -f "${chart_archive}"
-          test "$(helm show chart "${chart_archive}" | awk '$1 == "version:" {print $2}')" = "${VERSION}"
+          CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
+          if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
+            printf 'invalid immutable chart output\n' >&2
+            exit 1
+          fi
+          mkdir -p helm/source
+          helm package ../charts/chart --destination helm/source --version "${VERSION}" --app-version "${VERSION}"
+          bash "${GITHUB_WORKSPACE}/hack/compare-helm-chart.sh" --oci \
+            "helm/source/paprika-${VERSION}.tgz" \
+            "oci://${CHART_DIGEST_REF}"
+          current_chart_inspect="$(docker buildx imagetools inspect "ghcr.io/paprikacd/charts/paprika:${VERSION}")"
+          current_chart_digest="$(awk '$1 == "Digest:" {print $2; exit}' <<<"${current_chart_inspect}")"
+          if [[ "${CHART_DIGEST_REF}" != "ghcr.io/paprikacd/charts/paprika@${current_chart_digest}" ]]; then
+            printf 'current chart tag digest changed after verification\n' >&2
+            exit 1
+          fi
 
-          gh release edit "$TAG" --draft=false --latest
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}")"
+          jq -e --arg tag "${TAG}" --argjson id "${RELEASE_ID}" \
+            '.id == $id and .tag_name == $tag and .draft == true' \
+            <<<"${release_json}" >/dev/null
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false -f make_latest=true

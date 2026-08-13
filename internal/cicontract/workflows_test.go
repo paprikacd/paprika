@@ -191,6 +191,7 @@ func testCLIReleaseContractJob(t *testing.T) {
 	assertValidationJob(t, workflow, validationJobContract{id: "release-contract", commands: []string{
 		"bash hack/test-cli-release-contract.sh",
 		"bash hack/test-find-github-release.sh",
+		"bash hack/test-verify-release-archives.sh",
 		"goreleaser build --snapshot --clean --id cli",
 	}})
 	job := requireMappingValue(t, workflow.jobs, "release-contract", "ci.yml jobs")
@@ -770,13 +771,9 @@ func testDownstreamJobTimeouts(t *testing.T) {
 
 func testTaggedReleaseWorkflow(t *testing.T) {
 	workflow := loadWorkflow(t, "release.yml")
-	for _, text := range allStrings(workflow.document) {
-		if strings.Contains(text, "/releases/tags/") || strings.Contains(text, "/releases/latest") ||
-			strings.Contains(text, "gh release view") || strings.Contains(text, "gh release download") {
-			t.Errorf("release.yml must not use a published-only or latest release endpoint: %q", text)
-		}
-	}
+	assertReleaseWorkflowBoundary(t, workflow)
 	assertExactReleaseResolver(t)
+	assertReleaseArchiveVerifier(t)
 	goreleaserConfig := loadYAMLDocument(t, filepath.Join(repositoryRoot(t), ".goreleaser.yaml"))
 	releaseConfig := requireMappingValue(t, goreleaserConfig, "release", ".goreleaser.yaml")
 	if useExisting, ok := releaseConfig["use_existing_draft"].(bool); !ok || !useExisting {
@@ -798,6 +795,38 @@ func testTaggedReleaseWorkflow(t *testing.T) {
 	assertReleaseVerifyPublishJob(t, workflow)
 }
 
+func assertReleaseWorkflowBoundary(t *testing.T, workflow workflowFile) {
+	t.Helper()
+	for _, text := range allStrings(workflow.document) {
+		if strings.Contains(text, "/releases/tags/") || strings.Contains(text, "/releases/latest") ||
+			strings.Contains(text, "gh release view") || strings.Contains(text, "gh release download") ||
+			strings.Contains(text, "--method DELETE") || strings.Contains(text, "gh release edit") {
+			t.Errorf("release.yml must not use a published-only or latest release endpoint: %q", text)
+		}
+	}
+	push := requireMappingValue(t, workflow.triggers, "push", "release.yml triggers")
+	if tags := stringList(push["tags"]); !exactly(tags, "v[0-9]+.[0-9]+.[0-9]+") {
+		t.Errorf("release.yml push.tags = %v, want exact stable semantic-version pattern", tags)
+	}
+	stableTag := regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	for _, tag := range []string{"v0.1.0", "v12.34.56"} {
+		if !stableTag.MatchString(tag) {
+			t.Errorf("stable release tag validator rejects %q", tag)
+		}
+	}
+	for _, tag := range []string{"v1.2", "v01.2.3", "v1.2.3-rc.1", "v1.2.3+build.1", "1.2.3", "v1.2.3x"} {
+		if stableTag.MatchString(tag) {
+			t.Errorf("stable release tag validator accepts %q", tag)
+		}
+	}
+	for _, jobID := range []string{"preflight", "artifacts", "helm", "verify-publish"} {
+		job := requireMappingValue(t, workflow.jobs, jobID, "release.yml jobs")
+		if got := scalarString(job["runs-on"]); got != "ubuntu-24.04" {
+			t.Errorf("release.yml job %q runs-on = %q, want pinned ubuntu-24.04", jobID, got)
+		}
+	}
+}
+
 func assertReleasePreflightJob(t *testing.T, workflow workflowFile) {
 	t.Helper()
 	preflight := requireMappingValue(t, workflow.jobs, "preflight", "release.yml jobs")
@@ -812,8 +841,10 @@ func assertReleasePreflightJob(t *testing.T, workflow workflowFile) {
 	guardScript := scalarString(guard["run"])
 	for _, fragment := range []string{
 		`TAG="${GITHUB_REF_NAME}"`, `VERSION="${TAG#v}"`,
+		`version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'`,
 		`bash hack/find-github-release.sh "${GITHUB_REPOSITORY}" "${TAG}"`,
-		`release_state`, `release_id`, `public`,
+		`release_state`, `release_id`, `public`, `.assets | length == 0`, `manually delete the draft`,
+		`gh --version`, `jq --version`,
 		`helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`,
 		`helm package charts/chart --destination "${local_dir}" --version "${VERSION}" --app-version "${VERSION}"`,
 		`bash hack/compare-helm-chart.sh "${local_archive}" "${remote_archive}"`, `chart_action=reuse`, `chart_action=publish`,
@@ -840,21 +871,18 @@ func assertReleaseArtifactsJob(t *testing.T, workflow workflowFile) {
 	t.Helper()
 	artifacts := requireMappingValue(t, workflow.jobs, "artifacts", "release.yml jobs")
 	assertExactJobPermissions(t, workflow, artifacts, "release.yml artifacts", map[string]string{"contents": "write", "packages": "write"})
-	if got := sortedKeys(requireMappingValue(t, artifacts, "outputs", "release.yml artifacts job")); !exactly(got, "release_id") {
-		t.Errorf("release.yml artifacts outputs = %v, want exactly release_id", got)
-	}
 	if !exactly(stringList(artifacts["needs"]), "preflight") {
 		t.Errorf("release.yml artifacts needs = %v, want exactly preflight", stringList(artifacts["needs"]))
 	}
-	cleanup := requireNamedStep(t, artifacts, "Clean resumable draft assets", "release.yml artifacts job")
+	cleanup := requireNamedStep(t, artifacts, "Require resumable draft to remain empty", "release.yml artifacts job")
 	cleanupScript := scalarString(cleanup["run"])
-	for _, fragment := range []string{`needs.preflight.outputs.release_state`, `needs.preflight.outputs.release_id`, `gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"`, `'.id == $id and .tag_name == $tag and .draft == true'`, `gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_ids[0]}"`, `checksums.txt`} {
+	for _, fragment := range []string{`needs.preflight.outputs.release_state`, `needs.preflight.outputs.release_id`, `gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"`, `'.id == $id and .tag_name == $tag and .draft == true and (.assets | length == 0)'`, `manually delete the draft`} {
 		if !containsActiveShellFragment(cleanupScript, fragment) {
 			t.Errorf("release.yml draft resumption guard must contain %q", fragment)
 		}
 	}
-	if containsActiveShellFragment(cleanupScript, "gh release delete ") {
-		t.Error("release.yml must never delete an existing release")
+	if got := sortedKeys(requireMappingValue(t, artifacts, "outputs", "release.yml artifacts job")); !sameStrings(got, []string{"image_digest_ref", "release_id"}) {
+		t.Errorf("release.yml artifacts outputs = %v, want image_digest_ref and release_id", got)
 	}
 	step := requireUsesStep(t, artifacts, "goreleaser/goreleaser-action@", "release.yml artifacts job")
 	if got := scalarString(requireMappingValue(t, step, "with", "release.yml GoReleaser step")["version"]); got != "v2.16.0" {
@@ -870,6 +898,13 @@ func assertReleaseArtifactsJob(t *testing.T, workflow workflowFile) {
 			t.Errorf("release.yml artifact release-ID resolution must contain %q", fragment)
 		}
 	}
+	image := requireNamedStep(t, artifacts, "Capture immutable server image", "release.yml artifacts job")
+	imageScript := scalarString(image["run"])
+	for _, fragment := range []string{`docker pull --platform linux/amd64 "${image_tag}"`, `org.opencontainers.image.revision`, `GITHUB_SHA`, `^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$`, `image_digest_ref`} {
+		if !containsActiveShellFragment(imageScript, fragment) {
+			t.Errorf("release.yml immutable image capture must contain %q", fragment)
+		}
+	}
 }
 
 func assertReleaseHelmJob(t *testing.T, workflow workflowFile) {
@@ -879,6 +914,9 @@ func assertReleaseHelmJob(t *testing.T, workflow workflowFile) {
 	if !sameStrings(stringList(helm["needs"]), []string{"preflight", "artifacts"}) {
 		t.Errorf("release.yml helm needs = %v, want preflight and artifacts", stringList(helm["needs"]))
 	}
+	if got := sortedKeys(requireMappingValue(t, helm, "outputs", "release.yml helm job")); !exactly(got, "chart_digest_ref") {
+		t.Errorf("release.yml helm outputs = %v, want exactly chart_digest_ref", got)
+	}
 	helmPublish := requireNamedStep(t, helm, "Publish chart only when absent", "release.yml helm job")
 	if got := normalizeExpression(scalarString(helmPublish["if"])); got != "needs.preflight.outputs.chart_action == 'publish'" {
 		t.Errorf("release.yml Helm publish condition = %q, want preflight publish decision", got)
@@ -887,6 +925,12 @@ func assertReleaseHelmJob(t *testing.T, workflow workflowFile) {
 	for _, fragment := range []string{`VERSION="${GITHUB_REF_NAME#v}"`, `helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`, `refusing to overwrite it`, `--version "${VERSION}"`, `--app-version "${VERSION}"`, `helm push ".dist/paprika-${VERSION}.tgz"`} {
 		if !containsActiveShellFragment(helmScript, fragment) {
 			t.Errorf("release.yml Helm publication must contain %q", fragment)
+		}
+	}
+	capture := requireNamedStep(t, helm, "Capture immutable chart digest", "release.yml helm job")
+	for _, fragment := range []string{`^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$`, `bash hack/compare-helm-chart.sh --oci`, `chart_digest_ref`} {
+		if !containsActiveShellFragment(scalarString(capture["run"]), fragment) {
+			t.Errorf("release.yml immutable chart capture must contain %q", fragment)
 		}
 	}
 }
@@ -906,22 +950,56 @@ func assertReleaseVerifyPublishJob(t *testing.T, workflow workflowFile) {
 		`paprika_${VERSION}_darwin_amd64.tar.gz`, `paprika_${VERSION}_darwin_arm64.tar.gz`,
 		`paprika_${VERSION}_linux_amd64.tar.gz`, `paprika_${VERSION}_linux_arm64.tar.gz`, `checksums.txt`,
 		`select(.name == $name)`, `--header 'Accept: application/octet-stream'`,
-		`"repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"`, `sha256sum --check checksums.txt`, `tar -tzf`,
+		`"repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"`, `sha256sum --check checksums.txt`,
 		`./paprika version`, `./paprika login --help`, `./paprika status --help`, `./paprika version --help`,
-		`docker buildx imagetools inspect "${image_tag}"`, `docker pull --platform linux/amd64 "${image_tag}"`,
-		`docker image inspect --format '{{.Os}}/{{.Architecture}}'`, `linux/amd64`, `ghcr.io/paprikacd/paprika@`,
-		`helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}"`,
+		`needs.artifacts.outputs.image_digest_ref`, `^ghcr.io/paprikacd/paprika@sha256:[0-9a-f]{64}$`,
+		`docker pull --platform linux/amd64 "${IMAGE_DIGEST_REF}"`, `org.opencontainers.image.revision`, `GITHUB_SHA`,
+		`docker image inspect --format '{{.Os}}/{{.Architecture}}'`, `linux/amd64`,
+		`needs.helm.outputs.chart_digest_ref`, `^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$`,
+		`hack/compare-helm-chart.sh" --oci`, `current chart tag digest changed`,
+		`hack/verify-release-archives.sh" . "${VERSION}"`,
+		`gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false -f make_latest=true`,
 	} {
 		if !containsActiveShellFragment(verifyScript, fragment) {
 			t.Errorf("release.yml final verification must contain %q", fragment)
 		}
 	}
-	if containsActiveShellFragment(verifyScript, "/releases/latest") || containsActiveShellFragment(verifyScript, "gh release view --json") {
+	if containsActiveShellFragment(verifyScript, "/releases/latest") || containsActiveShellFragment(verifyScript, "gh release view --json") || containsActiveShellFragment(verifyScript, `ghcr.io/paprikacd/paprika:${VERSION}`) {
 		t.Error("release.yml final verification must query the exact tag, never latest or implicit release state")
 	}
 	activeLines := strings.Split(activeShellText(verifyScript), "\n")
-	if got := activeLines[len(activeLines)-1]; got != `gh release edit "$TAG" --draft=false --latest` {
+	if got := activeLines[len(activeLines)-1]; got != `gh api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" -F draft=false -f make_latest=true` {
 		t.Errorf("release.yml final active command = %q, want exact publish mutation last", got)
+	}
+	if strings.Count(activeShellText(verifyScript), `gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}"`) < 2 {
+		t.Error("release.yml must re-fetch and validate the draft by ID immediately before the final PATCH")
+	}
+
+	for _, jobID := range []string{"artifacts", "helm", "verify-publish"} {
+		job := requireMappingValue(t, workflow.jobs, jobID, "release.yml jobs")
+		buildx := requireUsesStep(t, job, "docker/setup-buildx-action@", "release.yml "+jobID+" job")
+		if got := scalarString(requireMappingValue(t, buildx, "with", "release.yml buildx step")["version"]); got != "v0.29.1" {
+			t.Errorf("release.yml %s Buildx version = %q, want v0.29.1", jobID, got)
+		}
+	}
+}
+
+func assertReleaseArchiveVerifier(t *testing.T) {
+	t.Helper()
+	path := filepath.Join(repositoryRoot(t), "hack", "verify-release-archives.sh")
+	// #nosec G304 -- the path is repository-controlled test data.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read release archive verifier: %v", err)
+	}
+	script := string(data)
+	for _, fragment := range []string{
+		`darwin_amd64 darwin_arm64 linux_amd64 linux_arm64`, `tar -tzf`, `tar -tvzf`,
+		`! -f`, `-L`, `! -x`, `file -b`, `Mach-O 64-bit`, `ELF 64-bit`, `x86-64`, `aarch64`,
+	} {
+		if !containsActiveShellFragment(script, fragment) {
+			t.Errorf("release archive verifier must contain %q", fragment)
+		}
 	}
 }
 

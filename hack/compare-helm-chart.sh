@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+helm_cmd() {
+  "${HELM_BIN:-helm}" "$@"
+}
+
 compare_archives() {
   (
     set -euo pipefail
@@ -20,8 +24,8 @@ compare_archives() {
     remote_chart="${remote_tree}/paprika/Chart.yaml"
     test -f "${local_chart}"
     test -f "${remote_chart}"
-    helm show chart "${local_archive}" >"${local_chart}"
-    helm show chart "${remote_archive}" >"${remote_chart}"
+    helm_cmd show chart "${local_archive}" >"${local_chart}"
+    helm_cmd show chart "${remote_archive}" >"${remote_chart}"
     diff --recursive --unified "${local_tree}" "${remote_tree}"
   )
 }
@@ -46,24 +50,84 @@ self_test() {
     printf '%s\n' 'kind: ConfigMap' >"${fixture_dir}/a/templates/config.yaml"
     cp "${fixture_dir}/a/templates/config.yaml" "${fixture_dir}/b/templates/config.yaml"
 
-    helm package "${fixture_dir}/a" --destination "${fixture_dir}/packages" >/dev/null
+    helm_cmd package "${fixture_dir}/a" --destination "${fixture_dir}/packages" >/dev/null
     mv "${fixture_dir}/packages/paprika-0.1.0.tgz" "${fixture_dir}/a.tgz"
-    helm package "${fixture_dir}/b" --destination "${fixture_dir}/packages" >/dev/null
+    helm_cmd package "${fixture_dir}/b" --destination "${fixture_dir}/packages" >/dev/null
     mv "${fixture_dir}/packages/paprika-0.1.0.tgz" "${fixture_dir}/b.tgz"
     compare_archives "${fixture_dir}/a.tgz" "${fixture_dir}/b.tgz"
 
     printf '%s\n' 'kind: Secret' >"${fixture_dir}/b/templates/config.yaml"
-    helm package "${fixture_dir}/b" --destination "${fixture_dir}/packages" >/dev/null
+    helm_cmd package "${fixture_dir}/b" --destination "${fixture_dir}/packages" >/dev/null
     mv "${fixture_dir}/packages/paprika-0.1.0.tgz" "${fixture_dir}/different.tgz"
     if compare_archives "${fixture_dir}/a.tgz" "${fixture_dir}/different.tgz" >/dev/null 2>&1; then
       printf 'chart comparison accepted different substantive contents\n' >&2
       exit 1
     fi
+
+    mock_helm="${fixture_dir}/mock-helm"
+    cat >"${mock_helm}" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == "pull" ]]; then
+  destination=""
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--destination" ]]; then
+      destination="$2"
+      break
+    fi
+    shift
+  done
+  cp "${MOCK_ARCHIVE}" "${destination}/paprika-0.1.0.tgz"
+else
+  exec "${REAL_HELM}" "$@"
+fi
+MOCK
+    chmod +x "${mock_helm}"
+    HELM_BIN="${mock_helm}" REAL_HELM="$(command -v helm)" MOCK_ARCHIVE="${fixture_dir}/b.tgz" \
+      compare_oci_ref "${fixture_dir}/a.tgz" \
+      'oci://ghcr.io/paprikacd/charts/paprika@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    if compare_oci_ref "${fixture_dir}/a.tgz" 'oci://ghcr.io/paprikacd/charts/paprika:0.1.0' >/dev/null 2>&1; then
+      printf 'mutable chart reference unexpectedly passed\n' >&2
+      exit 1
+    fi
+  )
+}
+
+compare_oci_ref() {
+  (
+    set -euo pipefail
+    local_archive="$1"
+    oci_digest_ref="$2"
+    if [[ ! "${oci_digest_ref}" =~ ^oci://[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+      printf 'chart OCI reference must be digest-addressed\n' >&2
+      exit 2
+    fi
+    pull_dir="$(mktemp -d)"
+    trap 'rm -rf -- "${pull_dir}"' EXIT
+    helm_cmd pull "${oci_digest_ref}" --destination "${pull_dir}"
+    archives=()
+    while IFS= read -r archive; do
+      archives+=("${archive}")
+    done < <(find "${pull_dir}" -maxdepth 1 -type f -name '*.tgz' -print)
+    if [[ ${#archives[@]} -ne 1 ]]; then
+      printf 'digest pull returned %s chart archives, want one\n' "${#archives[@]}" >&2
+      exit 1
+    fi
+    compare_archives "${local_archive}" "${archives[0]}"
   )
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then
   self_test
+  exit 0
+fi
+
+if [[ "${1:-}" == "--oci" ]]; then
+  if [[ $# -ne 3 ]]; then
+    printf 'usage: %s --oci LOCAL_CHART.tgz OCI_DIGEST_REF\n' "$0" >&2
+    exit 2
+  fi
+  compare_oci_ref "$2" "$3"
   exit 0
 fi
 
