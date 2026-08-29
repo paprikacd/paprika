@@ -313,7 +313,10 @@ func mapContains(path []string, dMap, lMap map[string]interface{}) bool {
 		fieldPath := appendPath(path, k)
 		lv, ok := lMap[k]
 		if !ok {
-			if isOmittedKubernetesDefault(fieldPath, dv) {
+			// An explicit null is the manifest-level way to say "field absent".
+			// server-side apply removes the field, so a live object whose key is
+			// missing matches a declared null and is not drift.
+			if dv == nil || isOmittedKubernetesDefault(fieldPath, dv) {
 				continue
 			}
 			return false

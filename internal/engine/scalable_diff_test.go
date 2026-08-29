@@ -496,3 +496,64 @@ func TestResourceEqual_IgnoresOmittedProbeInitialDelayDefault(t *testing.T) {
 	assert.True(t, resourceEqual(desired, live))
 	assert.False(t, resourceEqual(desiredWithLivenessDelay(int64(5)), live))
 }
+
+func TestResourceEqual_TreatsNullAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "worker",
+			"namespace": "deephost",
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{map[string]interface{}{
+						"name": "worker",
+						"env": []interface{}{
+							map[string]interface{}{
+								"name":  "AWS_ACCESS_KEY_ID",
+								"value": nil,
+								"valueFrom": map[string]interface{}{
+									"secretKeyRef": map[string]interface{}{
+										"name": "deephost-aws",
+										"key":  "accessKeyId",
+									},
+								},
+							},
+							map[string]interface{}{
+								"name":  "AWS_REGION",
+								"value": nil,
+							},
+						},
+					}},
+					"volumes": []interface{}{map[string]interface{}{
+						"name":     "data",
+						"emptyDir": nil,
+						"persistentVolumeClaim": map[string]interface{}{
+							"claimName": "deephost-minio",
+						},
+					}},
+				},
+			},
+		},
+	}}
+
+	// server-side apply drops declared-null keys from the stored object.
+	live := desired.DeepCopy()
+	spec := live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
+	env := spec["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
+	delete(env[0].(map[string]interface{}), "value")
+	delete(env[1].(map[string]interface{}), "value")
+	delete(spec["volumes"].([]interface{})[0].(map[string]interface{}), "emptyDir")
+
+	assert.True(t, resourceEqual(desired, *live))
+
+	// A declared null that live still carries as a value must remain drift.
+	stale := desired.DeepCopy()
+	staleSpec := stale.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
+	staleSpec["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{})["value"] = "AKIA-STALE"
+	assert.False(t, resourceEqual(desired, *stale))
+}
