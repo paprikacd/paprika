@@ -114,6 +114,11 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 }
 
 func classifyDiffs(result *DiffResult, desiredMap, liveMap map[string]unstructured.Unstructured) *DiffResult {
+	desiredKinds := make(map[string]bool, len(desiredMap))
+	for _, desiredObj := range desiredMap {
+		desiredKinds[desiredObj.GetKind()] = true
+	}
+
 	for key, desiredObj := range desiredMap {
 		liveObj, exists := liveMap[key]
 		if !exists {
@@ -142,6 +147,9 @@ func classifyDiffs(result *DiffResult, desiredMap, liveMap map[string]unstructur
 
 	for key, liveObj := range liveMap {
 		if _, exists := desiredMap[key]; !exists {
+			if isGeneratedChildResource(&liveObj, desiredKinds) {
+				continue
+			}
 			result.Deleted = append(result.Deleted, ResourceDiff{
 				Kind:      liveObj.GetKind(),
 				Name:      liveObj.GetName(),
@@ -152,6 +160,24 @@ func classifyDiffs(result *DiffResult, desiredMap, liveMap map[string]unstructur
 	}
 
 	return result
+}
+
+// isGeneratedChildResource reports whether a live-only resource is owned
+// exclusively by kinds absent from the desired set. Controllers frequently
+// copy Paprika management labels onto generated children (a Knative Route
+// materializes an ExternalName Service from an applied Knative Service, for
+// example); such children are neither drift nor prune candidates.
+func isGeneratedChildResource(obj *unstructured.Unstructured, desiredKinds map[string]bool) bool {
+	refs := obj.GetOwnerReferences()
+	if len(refs) == 0 {
+		return false
+	}
+	for _, ref := range refs {
+		if desiredKinds[ref.Kind] {
+			return false
+		}
+	}
+	return true
 }
 
 func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}) (map[string]unstructured.Unstructured, error) {
@@ -204,7 +230,14 @@ func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, 
 	kind := obj.GetKind()
 	group, version := parseAPIVersion(apiVersion)
 
-	if gvr, ok := knownGVRs[kind]; ok {
+	// Known kinds cover core resources and common aliases. Do not let a kind
+	// alias override the API group from the manifest: Knative also defines a
+	// Service, but it must resolve to serving.knative.dev/services.
+	if group == "" {
+		if gvr, ok := knownGVRs[kind]; ok {
+			return gvr, nil
+		}
+	} else if gvr, ok := knownGVRs[kind]; ok && gvr.Group == group && gvr.Version == version {
 		return gvr, nil
 	}
 

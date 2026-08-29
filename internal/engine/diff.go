@@ -110,8 +110,15 @@ func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Uns
 		}
 	}
 
+	desiredKinds := make(map[string]bool, len(desiredMap))
+	for _, desiredObj := range desiredMap {
+		desiredKinds[desiredObj.GetKind()] = true
+	}
 	for key, liveObj := range liveMap {
 		if _, exists := desiredMap[key]; !exists {
+			if isGeneratedChildResource(&liveObj, desiredKinds) {
+				continue
+			}
 			result.Deleted = append(result.Deleted, ResourceDiff{
 				Kind:      liveObj.GetKind(),
 				Name:      liveObj.GetName(),
@@ -174,7 +181,10 @@ func resourceKey(obj *unstructured.Unstructured) string {
 	if ns == "" {
 		ns = "default"
 	}
-	return fmt.Sprintf("%s/%s/%s", obj.GetKind(), ns, obj.GetName())
+	// Qualify by apiVersion: distinct API groups can reuse a Kind within one
+	// application (core Service vs serving.knative.dev Service). A bare
+	// Kind/namespace/name key collapses them onto each other.
+	return fmt.Sprintf("%s/%s/%s/%s", obj.GetAPIVersion(), obj.GetKind(), ns, obj.GetName())
 }
 
 // serverManagedAnnotationPrefixes lists annotation key prefixes that are

@@ -557,3 +557,88 @@ func TestResourceEqual_TreatsNullAsAbsent(t *testing.T) {
 	staleSpec["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{})["value"] = "AKIA-STALE"
 	assert.False(t, resourceEqual(desired, *stale))
 }
+
+func TestComputeDiff_KnativeServiceAndChildServiceDoNotCollide(t *testing.T) {
+	t.Parallel()
+
+	ksvc := func() *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "serving.knative.dev/v1",
+			"kind":       "Service",
+			"metadata": map[string]interface{}{
+				"name":      "deephost-hydra",
+				"namespace": "deephost",
+			},
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{
+						"containers": []interface{}{map[string]interface{}{
+							"name": "hydra",
+							"env": []interface{}{map[string]interface{}{
+								"name":  "AWS_ACCESS_KEY_ID",
+								"value": nil,
+								"valueFrom": map[string]interface{}{
+									"secretKeyRef": map[string]interface{}{"name": "deephost-aws", "key": "accessKeyId"},
+								},
+							}},
+						}},
+					},
+				},
+			},
+		}}
+	}
+	desired := []unstructured.Unstructured{*ksvc()}
+
+	// Live Knative Service: server-side apply dropped the declared-null value.
+	liveKsvc := ksvc()
+	liveKsvc.SetLabels(map[string]string{ManagedByLabelKey: ManagedByLabelValue, ApplicationNameLabelKey: "deephost"})
+	liveEnv := liveKsvc.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
+	delete(liveEnv[0].(map[string]interface{}), "value")
+
+	// Knative Route child: core Service with the same name; controllers copy
+	// the applied resource's labels onto generated children.
+	childSvc := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Service",
+		"metadata": map[string]interface{}{
+			"name":      "deephost-hydra",
+			"namespace": "deephost",
+			"labels": map[string]interface{}{
+				ManagedByLabelKey:       ManagedByLabelValue,
+				ApplicationNameLabelKey: "deephost",
+			},
+			"ownerReferences": []interface{}{map[string]interface{}{
+				"apiVersion": "serving.knative.dev/v1",
+				"kind":       "Route",
+				"name":       "deephost-hydra",
+				"controller": true,
+			}},
+		},
+		"spec": map[string]interface{}{
+			"type":         "ExternalName",
+			"externalName": "kourier-internal.kourier-system.svc.cluster.local",
+		},
+	}}
+
+	scheme := runtime.NewScheme()
+	listKinds := map[schema.GroupVersionResource]string{
+		{Group: "", Version: "v1", Resource: "services"}:                    "ServiceList",
+		{Group: "serving.knative.dev", Version: "v1", Resource: "services"}: "ServiceList",
+	}
+	dynClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds, liveKsvc, childSvc)
+	eng := NewScalableDiffEngine(dynClient)
+	eng.SetLiveCache(nil)
+
+	result, err := eng.ComputeDiff(context.Background(), desired, &DiffOptions{
+		Namespace:       "deephost",
+		LabelSelector:   ManagedByAppSelector("deephost").String(),
+		ApplicationName: "deephost",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Added)
+	assert.Empty(t, result.Modified)
+	assert.Empty(t, result.Deleted)
+	require.Len(t, result.Unchanged, 1)
+	assert.Equal(t, "deephost-hydra", result.Unchanged[0].Name)
+	assert.Zero(t, result.OutOfSyncCount())
+}
