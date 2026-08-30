@@ -1,0 +1,33 @@
+# Fast Go-only build for controller iteration. Skips the UI build stage
+# and uses build cache mounts for Go modules and build cache.
+# Usage: docker buildx build -f Dockerfile.fast --platform linux/amd64 -t <tag> --push .
+FROM golang:1.26 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace
+
+# Cache Go module downloads between builds
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Copy source and build with cache mounts. The UI static export is not
+# needed for the controller-manager; create a placeholder so the embed
+# directive compiles.
+COPY . .
+RUN mkdir -p internal/api/uistatic && \
+    echo '<!DOCTYPE html><html><body>Paprika</body></html>' > internal/api/uistatic/index.html
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w" -o manager ./cmd
+
+FROM alpine:3.24
+RUN apk add --no-cache ca-certificates git && \
+    addgroup -S -g 65532 nonroot && \
+    adduser -S -D -H -u 65532 -G nonroot nonroot
+COPY --from=builder /workspace/manager /manager
+COPY --from=builder /workspace/charts /charts
+USER 65532:65532
+ENTRYPOINT ["/manager"]

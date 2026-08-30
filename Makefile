@@ -178,6 +178,11 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
+.PHONY: docker-build-fast
+docker-build-fast: override IMG := $(value IMG)
+docker-build-fast: ## Build Go-only docker image (skips UI, uses cache mounts).
+	$(CONTAINER_TOOL) buildx build -f Dockerfile.fast --platform linux/amd64 -t "$${IMG}" --push .
+
 # ko settings — fast native Go cross-compilation (no QEMU emulation)
 KO ?= ko
 KO_PLATFORM ?= linux/amd64
