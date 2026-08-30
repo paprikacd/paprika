@@ -1116,6 +1116,12 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 		return fmt.Errorf("apply all documents: %w", err)
 	}
 	log.Info("Successfully applied manifests", "count", applied)
+
+	if pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts); pruneErr != nil {
+		// Prune is garbage collection; a failure here should not fail the
+		// release itself. Log and continue.
+		log.Error(pruneErr, "Failed to prune stale resources after apply")
+	}
 	return nil
 }
 
@@ -1293,6 +1299,82 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 		return nil, false
 	}
 	return obj, true
+}
+
+// pruneStaleResources deletes live resources that carry Paprika management
+// labels for the given app but are no longer present in the applied manifest
+// set. Only ownerless resources are pruned; controller-generated children
+// (e.g. a Knative Route's ExternalName Service) are skipped. Only namespaced
+// resources are considered, so cluster-scoped resources (Namespaces,
+// ClusterRoles, CRDs) are never touched.
+func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) error {
+	if appName == "" {
+		return nil
+	}
+
+	// Build the desired key set from the applied documents, using the same
+	// apiVersion-qualified identity as the diff engine so a Knative Service
+	// and a core Service with the same name do not collide.
+	desiredKeys := make(map[string]bool)
+	gvrSet := make(map[schema.GroupVersionResource]struct{})
+	for _, doc := range docs {
+		obj, ok := r.parseManifest(doc)
+		if !ok {
+			continue
+		}
+		u := &unstructured.Unstructured{Object: obj}
+		ns := u.GetNamespace()
+		if ns == "" {
+			ns = namespace
+		}
+		key := fmt.Sprintf("%s/%s/%s/%s", u.GetAPIVersion(), u.GetKind(), ns, u.GetName())
+		desiredKeys[key] = true
+
+		group, version := parseAPIVersion(u.GetAPIVersion())
+		if gvr, err := r.gvrFromKind(u.GetKind(), group, version); err == nil {
+			gvrSet[gvr] = struct{}{}
+		}
+	}
+
+	selector := labels.Set{
+		engine.ManagedByLabelKey:       engine.ManagedByLabelValue,
+		engine.ApplicationNameLabelKey: appName,
+	}.String()
+	deleteOpts := metav1.DeleteOptions{PropagationPolicy: propagationPolicy(opts)}
+	pruned := 0
+
+	for gvr := range gvrSet {
+		// Namespaced list only; cluster-scoped GVRs error and are skipped.
+		list, err := dynClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: selector,
+		})
+		if err != nil {
+			continue
+		}
+		for i := range list.Items {
+			item := &list.Items[i]
+			if len(item.GetOwnerReferences()) > 0 {
+				continue
+			}
+			key := fmt.Sprintf("%s/%s/%s/%s", item.GetAPIVersion(), item.GetKind(), item.GetNamespace(), item.GetName())
+			if desiredKeys[key] {
+				continue
+			}
+			log.Info("Pruning stale resource", "kind", item.GetKind(), "name", item.GetName(), "namespace", item.GetNamespace())
+			if err := dynClient.Resource(gvr).Namespace(namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return fmt.Errorf("pruning %s/%s: %w", gvr.Resource, item.GetName(), err)
+			}
+			pruned++
+		}
+	}
+
+	if pruned > 0 {
+		log.Info("Pruned stale resources after apply", "count", pruned)
+	}
+	return nil
 }
 
 //nolint:cyclop // apply path branches on sync options.
@@ -2077,7 +2159,7 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 
 func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
-	labelSelector := labels.Set{"paprika.io/release": release.Name}.String()
+	labelSelector := labels.Set{engine.ReleaseNameLabelKey: release.Name}.String()
 
 	gvrs, err := r.gvrsFromSnapshot(ctx, release)
 	if err != nil {

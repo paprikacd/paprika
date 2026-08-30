@@ -1134,3 +1134,88 @@ func TestReleaseReconciler_applyDocument_PropagatesPersistentApplyError(t *testi
 		t.Fatal("applyDocument reported resource as applied despite error")
 	}
 }
+
+func TestReleaseReconciler_pruneStaleResources(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	registerUnstructured := func(gvk schema.GroupVersionKind) {
+		scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		scheme.AddKnownTypeWithName(schema.GroupVersionKind{
+			Group:   gvk.Group,
+			Version: gvk.Version,
+			Kind:    gvk.Kind + "List",
+		}, &unstructured.UnstructuredList{})
+	}
+	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+
+	paprikaLabels := map[string]interface{}{
+		"app.paprika.io/managed-by": "paprika",
+		"app.paprika.io/name":       "test-app",
+	}
+
+	desiredCM := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "desired-config",
+			"namespace": "default",
+			"labels":    paprikaLabels,
+		},
+		"data": map[string]interface{}{"key": "value"},
+	}}
+	staleCM := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "stale-config",
+			"namespace": "default",
+			"labels":    paprikaLabels,
+		},
+		"data": map[string]interface{}{"key": "stale"},
+	}}
+	childCM := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "child-config",
+			"namespace": "default",
+			"labels":    paprikaLabels,
+			"ownerReferences": []interface{}{map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Secret",
+				"name":       "parent-secret",
+				"controller": true,
+			}},
+		},
+		"data": map[string]interface{}{"key": "child"},
+	}}
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme, desiredCM, staleCM, childCM)
+
+	docs := [][]byte{[]byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: desired-config
+  namespace: default
+data:
+  key: value
+`)}
+
+	r := &ReleaseReconciler{}
+	err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "default", "test-app", nil)
+	if err != nil {
+		t.Fatalf("pruneStaleResources returned error: %v", err)
+	}
+
+	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "desired-config", metav1.GetOptions{}); err != nil {
+		t.Errorf("desired-config should not be pruned: %v", err)
+	}
+	_, err = dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "stale-config", metav1.GetOptions{})
+	if err == nil {
+		t.Error("stale-config should have been pruned")
+	}
+	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "child-config", metav1.GetOptions{}); err != nil {
+		t.Errorf("child-config should not be pruned (has ownerReferences): %v", err)
+	}
+}

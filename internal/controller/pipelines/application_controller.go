@@ -1265,6 +1265,25 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 		Message:            message,
 	})
 
+	// When the application recovers to Healthy, clear the failure conditions
+	// left behind by the previous failure cycle. Without this, Degraded,
+	// RolledBack, Pending, and ReleaseRetriesExhausted stay True forever and
+	// mislead operators about the current state.
+	if phase == paprikav1.ApplicationHealthy {
+		now := metav1.Now()
+		for _, condType := range []string{"Degraded", "RolledBack", "Pending", releaseRetriesExhaustedCondition} {
+			if cond := meta.FindStatusCondition(app.Status.Conditions, condType); cond != nil && cond.Status == metav1.ConditionTrue {
+				meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+					Type:               condType,
+					Status:             metav1.ConditionFalse,
+					LastTransitionTime: now,
+					Reason:             "Recovered",
+					Message:            "recovered to Healthy",
+				})
+			}
+		}
+	}
+
 	for i := range app.Spec.Stages {
 		releasePhase := string(r.getCurrentReleasePhase(ctx, app))
 		if releasePhase == "" {
