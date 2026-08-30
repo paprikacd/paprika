@@ -567,7 +567,7 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 		AgentAddress: "http://agent.example:8083",
 	}
 
-	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", []byte("k: v\n"), nil); err != nil {
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", "my-release", []byte("k: v\n"), nil); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }
@@ -629,6 +629,7 @@ spec:
 		engine.SplitYAMLDocuments(manifests),
 		"paprika-e2e",
 		"telesis-api",
+		"telesis-api-release",
 		&pipelinesv1alpha1.SyncOptions{Replace: true},
 	)
 	if err != nil {
@@ -1111,7 +1112,7 @@ func TestReleaseReconciler_applyDocument_ForceRetriesOnFieldManagerConflict(t *t
 	}
 
 	r := &ReleaseReconciler{}
-	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", "demo-release", nil)
 	if err != nil {
 		t.Fatalf("applyDocument returned error after force retry: %v", err)
 	}
@@ -1142,7 +1143,7 @@ func TestReleaseReconciler_applyDocument_PropagatesPersistentApplyError(t *testi
 	}
 
 	r := &ReleaseReconciler{}
-	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", "demo-release", nil)
 	if err == nil {
 		t.Fatal("expected persistent apply error to propagate, got nil")
 	}
@@ -1176,7 +1177,7 @@ func TestReleaseReconciler_applyDocument_UsesClusterScopeForClusterResources(t *
 	}
 
 	r := &ReleaseReconciler{}
-	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", "demo-release", nil)
 	if err != nil {
 		t.Fatalf("applyDocument returned error: %v", err)
 	}

@@ -92,6 +92,11 @@ spec:
                       (skip the per-hook poll entirely).
                     format: int32
                     type: integer
+                  prune:
+                    description: |-
+                      Prune deletes live resources that carry Paprika management labels but are
+                      no longer present in the applied manifest set. Default false.
+                    type: boolean
                   prunePropagationPolicy:
                     description: |-
                       PrunePropagationPolicy selects the deletion propagation policy used when

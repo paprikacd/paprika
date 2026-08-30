@@ -1,11 +1,8 @@
-{{- if .Values.crd.enable }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    {{- if .Values.crd.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
     controller-gen.kubebuilder.io/version: v0.20.1
   name: releases.pipelines.paprika.io
 spec:
@@ -87,6 +84,18 @@ spec:
                     type: boolean
                   force:
                     description: Force enables force-conflicts for server-side apply.
+                    type: boolean
+                  hookTimeoutSeconds:
+                    description: |-
+                      HookTimeoutSeconds is the max time to wait for any single hook to reach
+                      a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
+                      (skip the per-hook poll entirely).
+                    format: int32
+                    type: integer
+                  prune:
+                    description: |-
+                      Prune deletes live resources that carry Paprika management labels but are
+                      no longer present in the applied manifest set. Default false.
                     type: boolean
                   prunePropagationPolicy:
                     description: |-
@@ -199,6 +208,52 @@ spec:
                 type: array
               currentStage:
                 type: string
+              hookStatuses:
+                description: |-
+                  HookStatuses tracks per-hook execution state across the four phases.
+                  Cleared at the start of each promote. Populated as hooks run.
+                items:
+                  description: HookStatus is the observed state of a single hook resource.
+                  properties:
+                    completedAt:
+                      format: date-time
+                      type: string
+                    kind:
+                      type: string
+                    message:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    phase:
+                      description: 'Phase is the hook phase: PreSync, Sync, PostSync,
+                        or SyncFail.'
+                      enum:
+                      - PreSync
+                      - Sync
+                      - PostSync
+                      - SyncFail
+                      type: string
+                    startedAt:
+                      format: date-time
+                      type: string
+                    status:
+                      description: 'Status is the execution state: Running, Succeeded,
+                        Failed, or Terminated.'
+                      enum:
+                      - Running
+                      - Succeeded
+                      - Failed
+                      - Terminated
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - phase
+                  - status
+                  type: object
+                type: array
               observedGeneration:
                 description: ObservedGeneration is the last observed generation of
                   the spec.
@@ -215,6 +270,7 @@ spec:
                 - Failed
                 - RolledBack
                 - Superseded
+                - AwaitingApproval
                 type: string
               policyResults:
                 description: PolicyResults records the outcome of policy evaluation
@@ -266,6 +322,10 @@ spec:
                 description: RolledBackTo records the release name that a rolled-back
                   release re-applied.
                 type: string
+              rolloutRef:
+                description: RolloutRef references the Rollout child when the stage
+                  uses an advanced strategy.
+                type: string
             type: object
         required:
         - metadata
@@ -275,4 +335,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

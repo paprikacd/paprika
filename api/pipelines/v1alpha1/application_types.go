@@ -57,6 +57,10 @@ const (
 
 // SyncOptions controls how manifests are applied and pruned.
 type SyncOptions struct {
+	// Prune deletes live resources that carry Paprika management labels but are
+	// no longer present in the applied manifest set. Default false.
+	// +optional
+	Prune bool `json:"prune,omitempty"`
 	// PrunePropagationPolicy selects the deletion propagation policy used when
 	// pruning managed resources.
 	// +kubebuilder:validation:Enum=Foreground;Background;Orphan

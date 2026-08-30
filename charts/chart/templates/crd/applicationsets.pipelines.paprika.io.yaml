@@ -1,13 +1,9 @@
-{{- if .Values.crd.enable }}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
-    {{- if .Values.crd.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
   name: applicationsets.pipelines.paprika.io
 spec:
   group: pipelines.paprika.io
@@ -348,6 +344,47 @@ spec:
                 description: Template is the Application template to render for each
                   parameter set.
                 properties:
+                  analysisTemplates:
+                    description: |-
+                      AnalysisTemplates references reusable analysis templates that run continuously
+                      in the background after the application is healthy.
+                    items:
+                      description: AnalysisTemplateRef references an AnalysisTemplate
+                        and supplies arguments.
+                      properties:
+                        args:
+                          additionalProperties:
+                            type: string
+                          description: Args override template arguments.
+                          type: object
+                        intervalSeconds:
+                          description: IntervalSeconds overrides the default analysis
+                            interval.
+                          type: integer
+                        name:
+                          description: Name of the AnalysisTemplate to use.
+                          type: string
+                        onFailure:
+                          description: OnFailure defines the action to take when the
+                            analysis fails.
+                          properties:
+                            action:
+                              enum:
+                              - rollback
+                              - halt
+                              - ignore
+                              type: string
+                            notify:
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - action
+                          type: object
+                      required:
+                      - name
+                      type: object
+                    type: array
                   approvalGates:
                     description: ApprovalGates define manual approval gates for stage
                       transitions.
@@ -355,6 +392,19 @@ spec:
                       description: ApprovalGate defines a manual or automated approval
                         gate for stage transitions.
                       properties:
+                        body:
+                          description: Body template sent to webhook gates.
+                          type: string
+                        headers:
+                          additionalProperties:
+                            type: string
+                          description: Headers to send with webhook requests.
+                          type: object
+                        method:
+                          default: POST
+                          description: HTTP method for webhook gates. Defaults to
+                            POST.
+                          type: string
                         name:
                           description: Name of the gate
                           type: string
@@ -362,9 +412,28 @@ spec:
                           default: true
                           description: Whether the gate is required (default true)
                           type: boolean
-                        stage:
-                          description: Stage at which this gate applies (e.g., "prod")
+                        secretRef:
+                          description: SecretRef names a Secret in the same namespace
+                            whose data is added to webhook headers.
                           type: string
+                        slackChannel:
+                          description: SlackChannel is the channel to notify for Slack
+                            gates.
+                          type: string
+                        slackWebhookUrl:
+                          description: |-
+                            SlackWebhookURL is the incoming Slack webhook URL used to notify a channel.
+                            Phase 2: actual Slack interaction handling.
+                          type: string
+                        stage:
+                          description: Stage at which this gate applies (e.g., "prod").
+                            Empty applies to all stages.
+                          type: string
+                        successStatus:
+                          default: 200
+                          description: SuccessStatus is the expected HTTP status code
+                            for approval (default any 2xx).
+                          type: integer
                         type:
                           description: 'Type of gate: manual, webhook, slack'
                           enum:
@@ -372,9 +441,11 @@ spec:
                           - webhook
                           - slack
                           type: string
+                        url:
+                          description: URL is the webhook URL for webhook gates.
+                          type: string
                       required:
                       - name
-                      - stage
                       - type
                       type: object
                     type: array
@@ -390,6 +461,8 @@ spec:
                             name:
                               type: string
                             path:
+                              type: string
+                            step:
                               type: string
                           required:
                           - name
@@ -470,6 +543,9 @@ spec:
                                   - latencyP99
                                   - restartRate
                                   type: string
+                                name:
+                                  description: Name of the check.
+                                  type: string
                                 requestCount:
                                   description: Number of requests to make per analysis
                                     cycle
@@ -529,6 +605,23 @@ spec:
                     required:
                     - steps
                     type: object
+                  conftestPolicies:
+                    description: |-
+                      ConftestPolicies are Rego policies evaluated against rendered manifests before each
+                      promotion. References are namespace-scoped. A missing or uncompilable policy blocks
+                      promotion (fail-closed).
+                    items:
+                      description: ConftestPolicyRef references a ConftestPolicy by
+                        name in the Application's namespace.
+                      properties:
+                        name:
+                          description: Name of the ConftestPolicy.
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
                   healthChecks:
                     description: HealthChecks define custom CEL-based health checks
                       for the application.
@@ -586,6 +679,23 @@ spec:
                       required:
                       - expression
                       - name
+                      type: object
+                    type: array
+                  ignoreDifferences:
+                    description: IgnoreDifferences lists JSON pointer paths to exclude
+                      from diff computation.
+                    items:
+                      description: |-
+                        IgnoreDiff specifies JSON pointer paths to ignore during diff computation,
+                        analogous to ArgoCD's ignoreDifferences.
+                      properties:
+                        jsonPointers:
+                          description: |-
+                            JSONPointers lists JSON paths to ignore during diff computation.
+                            Each path follows RFC 6901 JSON Pointer format (e.g., "/spec/replicas").
+                          items:
+                            type: string
+                          type: array
                       type: object
                     type: array
                   onFailure:
@@ -658,7 +768,8 @@ spec:
                           endpoint for testing)
                         type: string
                       image:
-                        description: OCI image reference (for type=oci), e.g. ghcr.io/org/app:1.2.3
+                        description: 'Deprecated: Image is the legacy OCI URL field.
+                          Use oci.url instead.'
                         type: string
                       inline:
                         description: Inline references a manifest snapshot ConfigMap
@@ -676,6 +787,27 @@ spec:
                       key:
                         description: S3 object key (for type=s3)
                         type: string
+                      oci:
+                        description: OCI registry reference (for type=oci)
+                        properties:
+                          insecure:
+                            description: Insecure allows plain HTTP for the OCI registry
+                            type: boolean
+                          secretRef:
+                            description: SecretRef references a Secret with dockerconfigjson
+                              or .dockerconfigjson
+                            type: string
+                          tag:
+                            description: Tag or digest of the artifact (e.g. "1.2.3",
+                              "@sha256:...")
+                            type: string
+                          url:
+                            description: URL of the OCI artifact, e.g. oci://registry.example.com/charts/mychart
+                            pattern: ^oci://
+                            type: string
+                        required:
+                        - url
+                        type: object
                       path:
                         description: Path within the repo to the chart/source (for
                           type=git or type=s3)
@@ -699,7 +831,14 @@ spec:
                         description: Git branch, tag, or commit (for type=git)
                         type: string
                       secretRef:
-                        description: Secret reference for private repos or S3 credentials
+                        description: |-
+                          Secret reference for private repos, S3, or OCI credentials.
+                          For OCI this should contain dockerconfigjson or username/password.
+                        type: string
+                      targetNamespace:
+                        description: |-
+                          TargetNamespace is the namespace passed to Helm for rendered resources.
+                          Defaults to the Application namespace.
                         type: string
                       type:
                         enum:
@@ -709,6 +848,10 @@ spec:
                         - s3
                         - oci
                         - inline
+                        type: string
+                      valuesFile:
+                        description: ValuesFile contains inline YAML Helm values merged
+                          with release parameters.
                         type: string
                     required:
                     - type
@@ -721,6 +864,71 @@ spec:
                         ApplicationPromotionStage defines a promotion stage.
                         ApplicationPromotionStage defines a promotion stage.
                       properties:
+                        approvalGates:
+                          description: ApprovalGates define manual/webhook/Slack approval
+                            gates for promotion into this stage.
+                          items:
+                            description: ApprovalGate defines a manual or automated
+                              approval gate for stage transitions.
+                            properties:
+                              body:
+                                description: Body template sent to webhook gates.
+                                type: string
+                              headers:
+                                additionalProperties:
+                                  type: string
+                                description: Headers to send with webhook requests.
+                                type: object
+                              method:
+                                default: POST
+                                description: HTTP method for webhook gates. Defaults
+                                  to POST.
+                                type: string
+                              name:
+                                description: Name of the gate
+                                type: string
+                              required:
+                                default: true
+                                description: Whether the gate is required (default
+                                  true)
+                                type: boolean
+                              secretRef:
+                                description: SecretRef names a Secret in the same
+                                  namespace whose data is added to webhook headers.
+                                type: string
+                              slackChannel:
+                                description: SlackChannel is the channel to notify
+                                  for Slack gates.
+                                type: string
+                              slackWebhookUrl:
+                                description: |-
+                                  SlackWebhookURL is the incoming Slack webhook URL used to notify a channel.
+                                  Phase 2: actual Slack interaction handling.
+                                type: string
+                              stage:
+                                description: Stage at which this gate applies (e.g.,
+                                  "prod"). Empty applies to all stages.
+                                type: string
+                              successStatus:
+                                default: 200
+                                description: SuccessStatus is the expected HTTP status
+                                  code for approval (default any 2xx).
+                                type: integer
+                              type:
+                                description: 'Type of gate: manual, webhook, slack'
+                                enum:
+                                - manual
+                                - webhook
+                                - slack
+                                type: string
+                              url:
+                                description: URL is the webhook URL for webhook gates.
+                                type: string
+                            required:
+                            - name
+                            - type
+                            type: object
+                          type: array
                         autoPromote:
                           description: Auto-promote to the next ring after this stage
                             is healthy
@@ -751,6 +959,9 @@ spec:
                                         - errorRate
                                         - latencyP99
                                         - restartRate
+                                        type: string
+                                      name:
+                                        description: Name of the check.
                                         type: string
                                       requestCount:
                                         description: Number of requests to make per
@@ -865,6 +1076,441 @@ spec:
                         ring:
                           description: Ring number (lower = earlier environment)
                           type: integer
+                        rolloutStrategy:
+                          description: |-
+                            RolloutStrategy is an advanced deployment strategy for this stage.
+                            Mutually exclusive with Canary.
+                          properties:
+                            abTest:
+                              description: ABTestStrategy routes traffic to stable
+                                or canary based on headers or cookies.
+                              properties:
+                                analysis:
+                                  description: RolloutAnalysis defines analysis checks
+                                    for a Rollout.
+                                  properties:
+                                    checks:
+                                      items:
+                                        description: AnalysisCheck defines a single
+                                          analysis check.
+                                        properties:
+                                          httpHeaders:
+                                            additionalProperties:
+                                              type: string
+                                            description: HTTP headers to send with
+                                              the request
+                                            type: object
+                                          metric:
+                                            description: Pod metric to check (for
+                                              type=podMetrics)
+                                            enum:
+                                            - errorRate
+                                            - latencyP99
+                                            - restartRate
+                                            type: string
+                                          requestCount:
+                                            description: Number of requests to make
+                                              per analysis cycle
+                                            type: integer
+                                          successThreshold:
+                                            description: Fraction of requests that
+                                              must succeed as a percentage string
+                                            type: string
+                                          threshold:
+                                            description: Threshold as a string
+                                            type: string
+                                          timeoutSeconds:
+                                            description: Timeout per request in seconds
+                                            type: integer
+                                          type:
+                                            enum:
+                                            - http
+                                            - podMetrics
+                                            type: string
+                                          url:
+                                            description: URL to probe (for type=http)
+                                            type: string
+                                          windowSeconds:
+                                            description: Time window in seconds to
+                                              evaluate the metric
+                                            type: integer
+                                        required:
+                                        - type
+                                        type: object
+                                      type: array
+                                    failedThreshold:
+                                      format: int32
+                                      type: integer
+                                    interval:
+                                      type: string
+                                    successThreshold:
+                                      format: int32
+                                      type: integer
+                                  type: object
+                                canaryService:
+                                  type: string
+                                routes:
+                                  items:
+                                    description: ABTestRoute matches a header or cookie
+                                      and routes to a service.
+                                    properties:
+                                      name:
+                                        type: string
+                                      service:
+                                        type: string
+                                      type:
+                                        type: string
+                                      value:
+                                        type: string
+                                    required:
+                                    - name
+                                    - service
+                                    - type
+                                    - value
+                                    type: object
+                                  type: array
+                                stableService:
+                                  type: string
+                              required:
+                              - routes
+                              type: object
+                            blueGreen:
+                              description: BlueGreenStrategy runs the new version
+                                behind a preview service, then cuts over.
+                              properties:
+                                activeService:
+                                  type: string
+                                analysis:
+                                  description: RolloutAnalysis defines analysis checks
+                                    for a Rollout.
+                                  properties:
+                                    checks:
+                                      items:
+                                        description: AnalysisCheck defines a single
+                                          analysis check.
+                                        properties:
+                                          httpHeaders:
+                                            additionalProperties:
+                                              type: string
+                                            description: HTTP headers to send with
+                                              the request
+                                            type: object
+                                          metric:
+                                            description: Pod metric to check (for
+                                              type=podMetrics)
+                                            enum:
+                                            - errorRate
+                                            - latencyP99
+                                            - restartRate
+                                            type: string
+                                          requestCount:
+                                            description: Number of requests to make
+                                              per analysis cycle
+                                            type: integer
+                                          successThreshold:
+                                            description: Fraction of requests that
+                                              must succeed as a percentage string
+                                            type: string
+                                          threshold:
+                                            description: Threshold as a string
+                                            type: string
+                                          timeoutSeconds:
+                                            description: Timeout per request in seconds
+                                            type: integer
+                                          type:
+                                            enum:
+                                            - http
+                                            - podMetrics
+                                            type: string
+                                          url:
+                                            description: URL to probe (for type=http)
+                                            type: string
+                                          windowSeconds:
+                                            description: Time window in seconds to
+                                              evaluate the metric
+                                            type: integer
+                                        required:
+                                        - type
+                                        type: object
+                                      type: array
+                                    failedThreshold:
+                                      format: int32
+                                      type: integer
+                                    interval:
+                                      type: string
+                                    successThreshold:
+                                      format: int32
+                                      type: integer
+                                  type: object
+                                autoPromotionSeconds:
+                                  format: int32
+                                  type: integer
+                                previewReplicaCount:
+                                  format: int32
+                                  type: integer
+                                previewService:
+                                  type: string
+                                scaleDownDelaySeconds:
+                                  format: int32
+                                  type: integer
+                              required:
+                              - activeService
+                              type: object
+                            canary:
+                              description: CanaryStrategy progressively shifts traffic
+                                to the canary version.
+                              properties:
+                                analysis:
+                                  description: RolloutAnalysis defines analysis checks
+                                    for a Rollout.
+                                  properties:
+                                    checks:
+                                      items:
+                                        description: AnalysisCheck defines a single
+                                          analysis check.
+                                        properties:
+                                          httpHeaders:
+                                            additionalProperties:
+                                              type: string
+                                            description: HTTP headers to send with
+                                              the request
+                                            type: object
+                                          metric:
+                                            description: Pod metric to check (for
+                                              type=podMetrics)
+                                            enum:
+                                            - errorRate
+                                            - latencyP99
+                                            - restartRate
+                                            type: string
+                                          requestCount:
+                                            description: Number of requests to make
+                                              per analysis cycle
+                                            type: integer
+                                          successThreshold:
+                                            description: Fraction of requests that
+                                              must succeed as a percentage string
+                                            type: string
+                                          threshold:
+                                            description: Threshold as a string
+                                            type: string
+                                          timeoutSeconds:
+                                            description: Timeout per request in seconds
+                                            type: integer
+                                          type:
+                                            enum:
+                                            - http
+                                            - podMetrics
+                                            type: string
+                                          url:
+                                            description: URL to probe (for type=http)
+                                            type: string
+                                          windowSeconds:
+                                            description: Time window in seconds to
+                                              evaluate the metric
+                                            type: integer
+                                        required:
+                                        - type
+                                        type: object
+                                      type: array
+                                    failedThreshold:
+                                      format: int32
+                                      type: integer
+                                    interval:
+                                      type: string
+                                    successThreshold:
+                                      format: int32
+                                      type: integer
+                                  type: object
+                                canaryService:
+                                  type: string
+                                stableService:
+                                  type: string
+                                steps:
+                                  items:
+                                    description: CanaryStep defines a single step
+                                      in a canary rollout.
+                                    properties:
+                                      analysis:
+                                        description: RolloutAnalysis defines analysis
+                                          checks for a Rollout.
+                                        properties:
+                                          checks:
+                                            items:
+                                              description: AnalysisCheck defines a
+                                                single analysis check.
+                                              properties:
+                                                httpHeaders:
+                                                  additionalProperties:
+                                                    type: string
+                                                  description: HTTP headers to send
+                                                    with the request
+                                                  type: object
+                                                metric:
+                                                  description: Pod metric to check
+                                                    (for type=podMetrics)
+                                                  enum:
+                                                  - errorRate
+                                                  - latencyP99
+                                                  - restartRate
+                                                  type: string
+                                                requestCount:
+                                                  description: Number of requests
+                                                    to make per analysis cycle
+                                                  type: integer
+                                                successThreshold:
+                                                  description: Fraction of requests
+                                                    that must succeed as a percentage
+                                                    string
+                                                  type: string
+                                                threshold:
+                                                  description: Threshold as a string
+                                                  type: string
+                                                timeoutSeconds:
+                                                  description: Timeout per request
+                                                    in seconds
+                                                  type: integer
+                                                type:
+                                                  enum:
+                                                  - http
+                                                  - podMetrics
+                                                  type: string
+                                                url:
+                                                  description: URL to probe (for type=http)
+                                                  type: string
+                                                windowSeconds:
+                                                  description: Time window in seconds
+                                                    to evaluate the metric
+                                                  type: integer
+                                              required:
+                                              - type
+                                              type: object
+                                            type: array
+                                          failedThreshold:
+                                            format: int32
+                                            type: integer
+                                          interval:
+                                            type: string
+                                          successThreshold:
+                                            format: int32
+                                            type: integer
+                                        type: object
+                                      duration:
+                                        type: string
+                                      setWeight:
+                                        format: int32
+                                        type: integer
+                                    required:
+                                    - setWeight
+                                    type: object
+                                  type: array
+                              required:
+                              - steps
+                              type: object
+                            mirror:
+                              description: MirrorStrategy mirrors a percentage of
+                                traffic to canary.
+                              properties:
+                                analysis:
+                                  description: RolloutAnalysis defines analysis checks
+                                    for a Rollout.
+                                  properties:
+                                    checks:
+                                      items:
+                                        description: AnalysisCheck defines a single
+                                          analysis check.
+                                        properties:
+                                          httpHeaders:
+                                            additionalProperties:
+                                              type: string
+                                            description: HTTP headers to send with
+                                              the request
+                                            type: object
+                                          metric:
+                                            description: Pod metric to check (for
+                                              type=podMetrics)
+                                            enum:
+                                            - errorRate
+                                            - latencyP99
+                                            - restartRate
+                                            type: string
+                                          requestCount:
+                                            description: Number of requests to make
+                                              per analysis cycle
+                                            type: integer
+                                          successThreshold:
+                                            description: Fraction of requests that
+                                              must succeed as a percentage string
+                                            type: string
+                                          threshold:
+                                            description: Threshold as a string
+                                            type: string
+                                          timeoutSeconds:
+                                            description: Timeout per request in seconds
+                                            type: integer
+                                          type:
+                                            enum:
+                                            - http
+                                            - podMetrics
+                                            type: string
+                                          url:
+                                            description: URL to probe (for type=http)
+                                            type: string
+                                          windowSeconds:
+                                            description: Time window in seconds to
+                                              evaluate the metric
+                                            type: integer
+                                        required:
+                                        - type
+                                        type: object
+                                      type: array
+                                    failedThreshold:
+                                      format: int32
+                                      type: integer
+                                    interval:
+                                      type: string
+                                    successThreshold:
+                                      format: int32
+                                      type: integer
+                                  type: object
+                                canaryService:
+                                  type: string
+                                duration:
+                                  type: string
+                                mirrorPercent:
+                                  format: int32
+                                  type: integer
+                                stableService:
+                                  type: string
+                              required:
+                              - mirrorPercent
+                              type: object
+                            rolling:
+                              description: RollingStrategy performs a standard rolling
+                                update.
+                              properties:
+                                maxSurge:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  x-kubernetes-int-or-string: true
+                                maxUnavailable:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  x-kubernetes-int-or-string: true
+                              type: object
+                            type:
+                              enum:
+                              - Rolling
+                              - Canary
+                              - BlueGreen
+                              - ABTest
+                              - Mirror
+                              type: string
+                          required:
+                          - type
+                          type: object
                         strategy:
                           description: Delivery strategy for this stage (overrides
                             spec.strategy if set)
@@ -897,6 +1543,18 @@ spec:
                         description: Force enables force-conflicts for server-side
                           apply.
                         type: boolean
+                      hookTimeoutSeconds:
+                        description: |-
+                          HookTimeoutSeconds is the max time to wait for any single hook to reach
+                          a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
+                          (skip the per-hook poll entirely).
+                        format: int32
+                        type: integer
+                      prune:
+                        description: |-
+                          Prune deletes live resources that carry Paprika management labels but are
+                          no longer present in the applied manifest set. Default false.
+                        type: boolean
                       prunePropagationPolicy:
                         description: |-
                           PrunePropagationPolicy selects the deletion propagation policy used when
@@ -917,6 +1575,47 @@ spec:
                     - Auto
                     - Manual
                     type: string
+                  syncWindows:
+                    description: SyncWindows restrict when automatic sync may run.
+                    items:
+                      description: SyncWindow defines a cron-based time window that
+                        controls automatic sync.
+                      properties:
+                        duration:
+                          description: |-
+                            Duration is how long the window stays active after each scheduled start.
+                            Parsed with time.ParseDuration, e.g. "8h".
+                          type: string
+                        kind:
+                          description: Kind is whether this window allows or blocks
+                            sync.
+                          enum:
+                          - Allow
+                          - Block
+                          type: string
+                        schedule:
+                          description: |-
+                            Schedule is a standard 5-field cron expression:
+                              MIN HOUR DOM MONTH DOW
+                            Example: "0 9 * * MON-FRI" for 09:00 on weekdays.
+                          type: string
+                        stages:
+                          description: Stages limits the window to the named stages.
+                            Empty means all stages.
+                          items:
+                            type: string
+                          type: array
+                        timezone:
+                          description: |-
+                            Timezone is an IANA timezone name (e.g. "America/New_York"). Defaults to
+                            UTC when empty.
+                          type: string
+                      required:
+                      - duration
+                      - kind
+                      - schedule
+                      type: object
+                    type: array
                 required:
                 - source
                 - stages
@@ -1006,4 +1705,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

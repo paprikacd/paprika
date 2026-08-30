@@ -1107,7 +1107,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 	return app, nil
 }
 
-func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName string, opts *paprikav1.SyncOptions) error {
+func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions) error {
 	log := logf.FromContext(ctx)
 
 	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, namespace)
@@ -1116,16 +1116,18 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	}
 
 	docs := engine.SplitYAMLDocuments(manifests)
-	applied, err := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName, opts)
+	applied, err := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName, releaseName, opts)
 	if err != nil {
 		return fmt.Errorf("apply all documents: %w", err)
 	}
 	log.Info("Successfully applied manifests", "count", applied)
 
-	if pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts); pruneErr != nil {
-		// Prune is garbage collection; a failure here should not fail the
-		// release itself. Log and continue.
-		log.Error(pruneErr, "Failed to prune stale resources after apply")
+	if opts != nil && opts.Prune {
+		if pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts); pruneErr != nil {
+			// Prune is garbage collection; a failure here should not fail the
+			// release itself. Log and continue.
+			log.Error(pruneErr, "Failed to prune stale resources after apply")
+		}
 	}
 	return nil
 }
@@ -1172,10 +1174,10 @@ func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release 
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions)
+	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions)
 }
 
-func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName string, manifests []byte, opts *paprikav1.SyncOptions) error {
+func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions) error {
 	start := time.Now()
 	var err error
 
@@ -1186,7 +1188,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		if cluster.KubeconfigSecret != "" {
 			kubeconfigSecret = cluster.KubeconfigSecret
 		}
-		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, opts)
+		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts)
 	}
 
 	elapsed := time.Since(start).Milliseconds()
@@ -1274,14 +1276,14 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	return out, nil
 }
 
-func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) (int, error) {
+func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (int, error) {
 	applied := 0
 	for _, doc := range docs {
 		obj, ok := r.parseManifest(doc)
 		if !ok {
 			continue
 		}
-		ok, err := r.applyDocument(ctx, log, dynClient, obj, namespace, appName, opts)
+		ok, err := r.applyDocument(ctx, log, dynClient, obj, namespace, appName, releaseName, opts)
 		if err != nil {
 			return applied, fmt.Errorf("apply document: %w", err)
 		}
@@ -1311,7 +1313,8 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 // set. Only ownerless resources are pruned; controller-generated children
 // (e.g. a Knative Route's ExternalName Service) are skipped. Only namespaced
 // resources are considered, so cluster-scoped resources (Namespaces,
-// ClusterRoles, CRDs) are never touched.
+// ClusterRoles, CRDs) are never touched. Resources annotated with
+// paprika.io/prune: "false" are never pruned regardless of ownership.
 func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) error {
 	if appName == "" {
 		return nil
@@ -1361,6 +1364,9 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 			if len(item.GetOwnerReferences()) > 0 {
 				continue
 			}
+			if item.GetAnnotations()["paprika.io/prune"] == "false" {
+				continue
+			}
 			key := fmt.Sprintf("%s/%s/%s/%s", item.GetAPIVersion(), item.GetKind(), item.GetNamespace(), item.GetName())
 			if desiredKeys[key] {
 				continue
@@ -1383,7 +1389,7 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 }
 
 //nolint:cyclop // apply path branches on sync options.
-func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName string, opts *paprikav1.SyncOptions) (bool, error) {
+func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (bool, error) {
 	kind, ok := obj["kind"].(string)
 	if !ok || kind == "" {
 		return false, errors.New("manifest has missing or invalid kind")
@@ -1403,7 +1409,7 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 		return false, errors.New("manifest metadata.name is not a string")
 	}
 
-	setPaprikaLabels(metadata, appName)
+	setPaprikaLabels(metadata, appName, releaseName)
 	targetNamespace := ""
 	if isClusterScopedKind(kind) {
 		delete(metadata, "namespace")
@@ -1554,7 +1560,7 @@ func isEmptyValue(v any) bool {
 	return false
 }
 
-func setPaprikaLabels(metadata map[string]interface{}, appName string) {
+func setPaprikaLabels(metadata map[string]interface{}, appName, releaseName string) {
 	labelsRaw, ok := metadata["labels"].(map[string]interface{})
 	if !ok || labelsRaw == nil {
 		labelsRaw = make(map[string]interface{})
@@ -1563,6 +1569,9 @@ func setPaprikaLabels(metadata map[string]interface{}, appName string) {
 	labelsRaw[engine.ManagedByLabelKey] = engine.ManagedByLabelValue
 	if appName != "" {
 		labelsRaw[engine.ApplicationNameLabelKey] = appName
+	}
+	if releaseName != "" {
+		labelsRaw[engine.ReleaseNameLabelKey] = releaseName
 	}
 }
 
@@ -1872,7 +1881,7 @@ func (r *ReleaseReconciler) applyHookObject(
 	if !ok || metadata == nil {
 		return errors.New("hook metadata is not an object")
 	}
-	setPaprikaLabels(metadata, appName)
+	setPaprikaLabels(metadata, appName, release.Name)
 
 	if obj.GetNamespace() == "" {
 		obj.SetNamespace(release.Namespace)
@@ -2583,7 +2592,7 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -2632,7 +2641,7 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, manifests, release.Spec.SyncOptions); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 
