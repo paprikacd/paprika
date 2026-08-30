@@ -1,109 +1,312 @@
+# Agent Instructions
+
 ## Goal
-- Operate and instrument Paprika on the omega VKE cluster, fixing auth/RBAC/renderer bugs, deploying a git-synced demo app, optimising resources, and adding OTel Prometheus metrics.
+
+Operate and improve Paprika on the VKE cluster. Fix bugs, add features,
+deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
 
 ## Constraints & Preferences
-- OTel SDK with Prometheus exporter for metrics (not direct Prometheus client for new metrics).
-- OTel Prometheus exporter registered on controller-runtime's `metrics.Registry` so OTel metrics appear alongside standard metrics at `/metrics` endpoint without a separate port or handler.
-- New metrics use OTel API (`otel.Meter("paprika").Int64Counter(...)`) while existing metrics (`internal/metrics/metrics.go`) remain as direct Prometheus.
-- GitHub Actions builds and pushes to `ghcr.io/paprikacd/paprika` (GHA `GITHUB_TOKEN` has `packages: write` scope). Local pushes go to `ttl.sh` (anonymous ephemeral) as fallback.
-- Images must be built for `linux/amd64` — VKE nodes are amd64 (x86_64), build host is Apple Silicon (arm64, QEMU emulated).
+
+- OTel SDK with Prometheus exporter for metrics (not direct Prometheus client
+  for new metrics). Existing metrics in `internal/metrics/metrics.go` use the
+  Prometheus client directly; both are registered on controller-runtime's
+  `metrics.Registry` and appear at `/metrics`.
+- GitHub Actions builds and pushes to `ghcr.io/paprikacd/paprika` (GHA
+  `GITHUB_TOKEN` has `packages: write`). Local iteration pushes go to
+  `ttl.sh/paprika-amd64:<tag>` (anonymous, TTL) as fallback.
+- Images must be built for `linux/amd64` — VKE nodes are amd64 (x86_64), build
+  host is Apple Silicon (arm64, QEMU emulated).
 - Vultr has no ARM plans globally; ARM VKE not feasible.
 
+## Safe Kubernetes Operations
+
+- Confirm `kubectl config current-context` before every cluster mutation.
+- Use the configured VKE context only for the VKE environment. Do not use
+  `kind-deephost` for paprika work.
+- Prefer `Taskfile.yml` tasks and `Makefile` targets over ad hoc commands so
+  workflows are repeatable.
+- Render Helm changes before applying them (`helm template`).
+- After a write, inspect the resulting object and status; API writes can race
+  or be retried by controllers.
+- Never commit kubeconfigs, Cloudflare credentials, registry credentials,
+  bearer tokens, or temporary rendered manifests containing secrets.
+- Never use destructive Git commands to discard work from another contributor.
+- Never solve a target ClusterRole escalation error by adding an unrelated
+  cluster-admin binding. Extend the chart-managed manager role with the exact
+  target permissions, render/lint the chart, upgrade Paprika, check
+  `kubectl auth can-i`, and retry.
+
+## Required Verification
+
+For Go changes, run:
+
+```sh
+go build ./...
+go test ./internal/engine ./internal/controller/pipelines -count=1
+go vet ./internal/... ./cmd/...
+```
+
+For chart, CRD, or controller changes, also run:
+
+```sh
+helm lint charts/chart/
+helm template paprika charts/chart/
+go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
+  crd:allowDangerousTypes=true paths=./api/... \
+  output:crd:artifacts:config=config/crd/bases
+# Then copy CRDs to the chart:
+#   for f in config/crd/bases/pipelines.paprika.io_{applications,applicationsets,releases}.yaml; do
+#     base=$(basename $f); chart_name=$(echo $base | sed 's/pipelines.paprika.io_//;s/\.yaml$/.pipelines.paprika.io.yaml/')
+#     cp "$f" "charts/chart/templates/crd/$chart_name"
+#   done
+```
+
+For deployed image changes, build an immutable tag, push it to the registry,
+update only the intended Deployment, wait for rollout, and verify the live
+endpoint:
+
+```sh
+# Fast iteration (Go-only, ~1s with cache):
+make docker-build-fast IMG=ghcr.io/paprikacd/paprika:<tag>
+
+# Full build (UI + Go, ~20 min):
+make docker-build IMG=ghcr.io/paprikacd/paprika:<tag>
+make docker-push IMG=ghcr.io/paprikacd/paprika:<tag>
+
+# Deploy to controller-manager only:
+kubectl -n paprika-e2e set image deployment/paprika-e2e-controller-manager \
+  manager=ghcr.io/paprikacd/paprika@sha256:<digest>
+kubectl -n paprika-e2e rollout status deployment/paprika-e2e-controller-manager --timeout=240s
+
+# Verify:
+kubectl get applications -n paprika-e2e
+kubectl get application <app> -n <ns> -o json | jq '.status.outOfSync'
+```
+
+For production deploys (not iteration), use Helm so `helm rollback` works:
+
+```sh
+helm upgrade paprika-e2e charts/chart/ \
+  --namespace paprika-e2e \
+  --values deploy/test-values.yaml \
+  --set manager.image.repository=ghcr.io/paprikacd/paprika \
+  --set manager.image.tag=<tag> \
+  --wait --timeout 5m
+```
+
+## Architecture Invariants
+
+- `Application`, `Release`, `Stage`, and `Template` CRs are the system of
+  record. The Application controller watches the source, creates Releases,
+  and evaluates health/drift. The Release controller applies manifests and
+  manages promotion.
+- The diff engine (`ScalableDiffEngine`) compares desired manifests against
+  live resources using label selectors (`app.paprika.io/managed-by=paprika`,
+  `app.paprika.io/name=<app>`). It uses apiVersion-qualified resource keys to
+  distinguish same-kind resources across API groups (e.g. Knative Service vs
+  core Service).
+- GVR resolution uses a three-tier strategy: static `knownGVRs` fast path,
+  discovery API with caching, pluralization fallback. The resolver is
+  `CachedGVRResolver` in `internal/engine/gvr_resolver.go`.
+- Prune is opt-in via `SyncOptions.Prune` (default false). When enabled,
+  `pruneStaleResources` deletes live resources that are paprika-labelled,
+  ownerless, and not in the desired manifest set. Resources annotated
+  `paprika.io/prune: "false"` are never pruned. Only namespaced resources are
+  pruned by default; ClusterRole and ClusterRoleBinding are eligible via
+  `SyncOptions.PruneClusterScopedKinds`.
+- The release controller sets `app.paprika.io/release` on every applied
+  resource so `cleanupManagedResources` can find them on release deletion.
+- Failure conditions (`Degraded`, `RolledBack`, `Pending`,
+  `ReleaseRetriesExhausted`) are cleared when the Application transitions to
+  Healthy.
+
+## Current State
+
+- All 14 apps in `paprika-e2e` are Healthy with outOfSync=0.
+- DeepHost is Healthy with outOfSync=0, all resources Synced.
+- The controller-manager runs an immutable GHCR digest.
+- Metrics live at `:8443/metrics` (HTTP, `--metrics-secure=false`).
+
+## Key Metrics
+
+- `paprika_out_of_sync{app, namespace}` — current out-of-sync resource count
+  (gauge). Alert on > 0 for > 5 minutes.
+- `paprika_prunable{app, namespace}` — current prunable resource count
+  (gauge). Alert on > 0 for > 10 minutes.
+- `paprika_prune_total{app, namespace, kind}` — resources pruned per apply
+  (counter). Alert on unexpected spikes.
+- `paprika_application_phase_total{application, namespace, phase}` — phase
+  transitions (counter).
+- `paprika_reconcile_total{controller, result}` — reconciliation count.
+
+## Commands
+
+### Build & Test
+
+```sh
+go build ./...
+go test ./internal/engine ./internal/controller/pipelines -count=1
+go test ./... -count=1
+go vet ./internal/... ./cmd/...
+helm lint charts/chart/
+```
+
+### Build Image
+
+```sh
+# Fast iteration (Go-only, ~1s with cache):
+make docker-build-fast IMG=ghcr.io/paprikacd/paprika:<tag>
+
+# Full build (UI + Go):
+make docker-build IMG=ghcr.io/paprikacd/paprika:<tag>
+make docker-push IMG=ghcr.io/paprikacd/paprika:<tag>
+
+# ttl.sh fallback:
+docker build --platform linux/amd64 -t ttl.sh/paprika-amd64:<tag> . && \
+  docker push ttl.sh/paprika-amd64:<tag>
+```
+
+### Deploy
+
+```sh
+# Iteration (controller-manager only):
+kubectl -n paprika-e2e set image deployment/paprika-e2e-controller-manager \
+  manager=ghcr.io/paprikacd/paprika@sha256:<digest>
+kubectl -n paprika-e2e rollout status deployment/paprika-e2e-controller-manager --timeout=240s
+
+# Production (all components, Helm-managed):
+source .env && helm upgrade paprika-e2e charts/chart/ \
+  --namespace paprika-e2e \
+  --values deploy/test-values.yaml \
+  --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" \
+  --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" \
+  --wait --timeout 5m
+```
+
+### Debug
+
+```sh
+# Controller logs:
+kubectl -n paprika-e2e logs deployment/paprika-e2e-controller-manager --since=10m
+
+# Application status:
+kubectl get application <app> -n <ns> -o json | jq '{
+  phase: .status.phase,
+  health: .status.health,
+  oos: .status.outOfSync,
+  notSynced: [.status.resources[] | select(.status!="Synced")]
+}'
+
+# Prunable resources preview:
+kubectl get application <app> -n <ns> -o json | jq '.status.prunableResources'
+
+# Metrics (HTTP, not HTTPS):
+kubectl -n paprika-e2e port-forward svc/paprika-e2e-controller-manager-metrics-service 8443:8443 &
+curl -s http://localhost:8443/metrics | grep paprika_
+
+# Manual sync (force release retry):
+kubectl -n <ns> annotate application <app> \
+  paprika.io/sync="$(date +%s)" paprika.io/manual-sync="$(date +%s)" --overwrite
+```
+
+### CRD Management
+
+```sh
+# Regenerate CRDs after API type changes:
+go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
+  crd:allowDangerousTypes=true paths=./api/... \
+  output:crd:artifacts:config=config/crd/bases
+
+# Copy to chart templates:
+for f in config/crd/bases/pipelines.paprika.io_{applications,applicationsets,releases}.yaml; do
+  base=$(basename $f)
+  chart_name=$(echo $base | sed 's/pipelines.paprika.io_//;s/\.yaml$/.pipelines.paprika.io.yaml/')
+  cp "$f" "charts/chart/templates/crd/$chart_name"
+done
+
+# Apply to cluster:
+kubectl apply -f config/crd/bases/pipelines.paprika.io_applications.yaml
+kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
+```
+
+## Relevant Files
+
+- `internal/engine/scalable_diff.go`: ScalableDiffEngine — label-selector
+  diff computation, apiVersion-qualified resource keys, generated-child
+  exclusion.
+- `internal/engine/diff.go`: DiffEngine (basic), resourceEqual, specContains,
+  mapContains — null-as-absent handling, Kubernetes default omission.
+- `internal/engine/gvr_resolver.go`: CachedGVRResolver — discovery API with
+  caching, knownGVRs fast path, pluralization fallback.
+- `internal/controller/pipelines/release_controller.go`: applyManifests,
+  applyAllDocuments, applyDocument, pruneStaleResources, setPaprikaLabels,
+  cleanupManagedResources, gvrFromKind.
+- `internal/controller/pipelines/application_controller.go`: evaluateDiff,
+  setApplicationPhase, handleActiveRelease, buildRelease.
+- `internal/metrics/metrics.go`: All Prometheus collectors (direct client).
+- `internal/metrics/otel.go`: All OTel instruments (counters, histograms,
+  observable gauges).
+- `api/pipelines/v1alpha1/application_types.go`: SyncOptions (Prune,
+  PruneClusterScopedKinds, PrunePropagationPolicy, Replace, Force,
+  ApplyOutOfSyncOnly, HookTimeoutSeconds).
+- `Dockerfile.fast`: Go-only build with cache mounts (~1s with cache).
+- `Dockerfile`: Full build (UI + Go, ~20 min).
+- `docs/guides/deephost.md`: DeepHost integration and E2E flow.
+- `docs/guides/operations.md`: Build, deploy, and debug operations.
+- `docs/guides/drift-and-prune.md`: Drift detection and pruning guide.
+- `docs/guides/metrics.md`: Metrics and alerting guide.
+
 ## Progress
+
 ### Done
-- **Fixed infinite redirect loop**: root cause was `cleanUIPath` returning trailing-slash paths → `embed.FS.Open()` failed → SPA fallback served root `index.html` for ALL routes → infinite self-redirect. Fix: strip trailing slashes in `cleanUIPath` (`internal/api/uihandler.go`).
-- **Fixed RBAC rules**: `subjects: ["*"]` (any authenticated user) instead of `group:users`.
-- **Fixed HelmSDKRenderer**: added `git`, `oci`, `s3` source types to `Render()`/`RenderAll()` switch; removed duplicate path join in `resolveChartPath`.
-- **Deployed git-synced demo app** (`paprika-demo.benebsworth.com`) via Application CR with nginx-unprivileged, port 8080, non-root.
-- **Resource trimming**: reduced limits 13× CPU / 10× memory based on actual usage. Reduced replicas from 2→1 per component. Disabled PDBs.
-- **OTel Prometheus exporter** wired up in `internal/observability/observability.go` — always creates Prometheus reader + MeterProvider (even without OTLP endpoint), registered on `crmetrics.Registry`.
-- **OTel instruments** (`internal/metrics/otel.go`): render (total/errors/duration), sync (total/errors/duration/last_timestamp), auth (attempts/failures/denials/decisions), git (operations/errors/duration), source resolve (total/errors), SSE (connections/events_published), release transitions, active applications, releases by phase.
-- **Instrumented code paths**: renderer (`helm_sdk_renderer.go`), auth middleware (`middleware.go`), release controller (`release_controller.go`), git source resolver (`git.go`), SSE broker (`broker.go`).
-- **Kubernetes gauge callbacks** (`internal/metrics/kubernetes.go`): `RegisterKubernetesGaugeCallbacks` lists Applications/Releases from K8s API on each scrape, populates `applications_active`, `applications_by_phase`, `releases_active`, `releases_by_phase` with `phase` attribute.
-- **OTel added to all modes**: `runAPIMode`, `runWebhookMode`, `runRepoServerMode`, `runAgentMode` all call `observability.NewTelemetry()` + `defer telemetry.Shutdown()`.
-- **Rebuilt and deployed** (amd64, ttl.sh `4h` tag), verified OTel metrics on controller-manager (git, SSE, events, gauges all visible).
-- **Fast canonical CI**: `.github/workflows/ci.yml` runs on pull requests and `master` pushes with eight parallel validation lanes: Go race tests, Go lint, UI test/lint/build, fleet browser smoke, controlled fleet scale, generated-code drift, Helm lint/template, and Kind deployment integration.
-- **Gated amd64 publication**: only a validated `master` push publishes `ghcr.io/paprikacd/paprika` for `linux/amd64`. `latest` and `sha-<commit>` remain discoverability tags; the publish job exposes the immutable registry digest.
-- **Deterministic VKE promotion**: CI passes the published digest directly to the trusted local reusable VKE workflow. Automatic deployment uses `ghcr.io/paprikacd/paprika@sha256:<digest>`, not a tag, and there is no separate privileged `workflow_run` trigger.
-- **Default-branch privileged entrypoints**: manual VKE, GKE, and Cloud Run requests use typed `repository_dispatch` events and require exactly `ghcr.io/paprikacd/paprika@sha256:<64 lowercase hex>`. Helm publishing uses `publish-helm` with a validated semantic chart version; Pages uses `publish-pages`.
-- **Safe CI concurrency**: pull-request runs cancel superseded work. For `master`, the in-flight workflow/ref-group run is never cancelled; GitHub's default keeps only the newest pending run and may replace older pending runs.
-- **Independent VKE OIDC boundary**: the exchange requires allowed `event_name`, exact `refs/heads/master`, an allowlisted caller `workflow_ref`, and the exact reusable VKE `job_workflow_ref` before minting a service-account token.
-- **Hardened workflow contract**: Go contract tests enforce validation dependencies, failure propagation, branch/event restrictions, digest data flow and grammar, action pins, permissions, timeouts, the pinned Kind checksum, Helm publishing from `master`, and nightly/manual E2E.
-- **Deployment values aligned with GHCR**: `deploy/test-values.yaml` already uses `ghcr.io/paprikacd/paprika`; the VKE workflow overrides each Paprika component image repository with the promoted digest, so its `latest` defaults are not deployed by the workflow.
-- **Master-only VKE environment policy**: `vke-production` was configured and read back with `custom_branch_policies=true`, `protected_branches=false`, and exactly one `{name: master, type: branch}` policy.
-- **Live VKE deployment verified**: the Paprika Helm release `paprika-e2e` is deployed on the configured VKE context with all four Paprika workloads ready on an immutable GHCR digest. DeepHost is delivered through `Application/deephost`; its operator, router, control plane, Hydra, Redis, and MinIO workloads are healthy, and the public HTTPS/HTTP paths return `200`/`301`.
+
+- **Null-drift false positives**: declared JSON `null` values (e.g. `env
+  value: null`) were flagged as drift forever because server-side apply drops
+  the key. Fixed: null = "field absent" in mapContains.
+- **API group key collision**: `resourceKey` used bare Kind/ns/name, collapsing
+  Knative Service and core Service onto each other. Fixed: apiVersion-qualified
+  keys. Also fixed `gvrForObject` to respect the manifest's API group.
+- **Generated-child prune exclusion**: Knative Route's ExternalName Service
+  (with copied paprika labels) was classified as Pruned. Fixed: skip live
+  resources owned by kinds absent from the desired set.
+- **Prune-after-apply**: `pruneStaleResources` runs after successful apply,
+  deleting ownerless paprika-labelled resources not in the desired set. Opt-in
+  via `SyncOptions.Prune`. Prune protection via `paprika.io/prune: "false"`
+  annotation.
+- **Cluster-scoped prune**: ClusterRole and ClusterRoleBinding eligible by
+  default; Namespaces and CRDs never pruned. Override via
+  `SyncOptions.PruneClusterScopedKinds`.
+- **Stale-condition cleanup**: failure conditions cleared on Healthy transition.
+- **Discovery-based GVR resolution**: `CachedGVRResolver` replaces hand-maintained
+  knownGVRs with discovery API + caching + pluralization fallback.
+- **Release label on applied resources**: `app.paprika.io/release` set on every
+  applied resource for cleanupManagedResources.
+- **Drift alerting gauges**: `paprika_out_of_sync` and `paprika_prunable`
+  gauges updated on every diff evaluation.
+- **Prune preview**: `status.prunableResources` lists what would be pruned.
+- **Prune metric**: `paprika_prune_total{app, namespace, kind}` counter.
+- **Dockerfile.fast**: Go-only build with cache mounts (~1s with cache vs 20+
+  min for full Dockerfile).
+- **WIP committed**: cluster-scoped resources, TargetNamespace, ValuesFile,
+  status sorting, RBAC, and documentation were committed as a coherent feature
+  set.
 
 ### In Progress
+
 - (none)
 
 ### Blocked
+
 - (none)
 
 ## Next Steps
-1. Merge the fast CI changes and observe the next `master` publish and automatic digest-based VKE promotion end to end.
-2. Replace the current broad Cloudflare credential with a scoped token for the `benebsworth.com` zone.
-3. Keep the Paprika-to-DeepHost runbook in `docs/guides/deephost.md` aligned with the deployed CRD and chart behavior.
 
-## Verified Metrics on Controller-Manager
-- `paprika_git_duration_seconds_bucket` (1 fetch at 22.5s)
-- `paprika_git_operations_total` (1 op)
-- `paprika_sse_connections` (1 active)
-- `paprika_events_published_total{topic="dashboard"}` (1 event)
-- `paprika_applications_active_ratio` (1 app: demo-app)
-- `paprika_applications_by_phase_ratio{phase="Healthy"}` (1)
-- `paprika_releases_active_ratio` (0 — release is terminal)
-- `paprika_releases_by_phase_ratio{phase="Complete"}` (1)
-
-Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names when unit is "1" (dimensionless). Synchronous instruments (counters, histograms, updowncounters) use the name as-is.
-
-## Key Decisions
-- **All modes get OTel**: `NewTelemetry` called in all 5 `run*Mode` functions (operator, API, webhook, repo-server, agent). Each creates its own MeterProvider scoped to that process's lifecycle.
-- **Observable gauges register callbacks only in operator mode** (where cache-backed `mgr.GetClient()` is available). API/webhook/repo-server/agent modes don't register K8s callbacks — gauges silently absent from their `/metrics` output.
-- **`_ratio` suffix on observable gauge names** is expected OTel Prometheus exporter behavior for dimensionless (unit "1") instruments. Not a bug.
-- **GitHub Actions CI/CD**: `.github/workflows/ci.yml` validates pull requests and `master` pushes. Only the gated `publish` job receives `packages: write`; it publishes `linux/amd64` discovery tags and returns the digest consumed by the reusable VKE deployment.
-- **Trusted deployment handoff**: the VKE call is a job in the same CI run and receives only the publish output digest. Typed repository-dispatch workflows load default-branch code and enforce the same full GHCR digest grammar before authentication or deployment.
-- **Defense in depth**: the reusable VKE job accepts only `push` or `repository_dispatch` on `refs/heads/master`; its token exchange separately binds the repository/environment/subject, event, ref, caller workflow, and called reusable workflow claims.
-- **Workflow hardening**: fast CI, deploy, E2E, and Helm-publish actions are pinned to immutable revisions, jobs have bounded timeouts, permissions are scoped, and Kind installation verifies a repository-pinned checksum.
-- **`ttl.sh` fallback**: when local builds can't push to ghcr.io, use `ttl.sh/paprika-amd64:<tag>` with `<tag>` being the TTL duration (e.g., `4h`). Image auto-deletes after TTL. Must rebuild before expiry.
-- **`--platform linux/amd64` for Docker builds**: build host is Apple Silicon (arm64) → images are arm64-only. VKE nodes are amd64. Must explicitly target `linux/amd64`.
-- **`metric.WithExplicitBucketBoundaries`** takes variadic `float64`, not a slice. Use `defBuckets...` to spread the slice.
-
-## Relevant Files
-- `internal/metrics/otel.go`: All OTel instrument definitions (counters, histograms, updowncounters, observable gauges).
-- `internal/metrics/kubernetes.go`: `RegisterKubernetesGaugeCallbacks` — populates observable gauges from K8s API.
-- `internal/observability/observability.go`: `NewTelemetry` — creates Prometheus exporter + MeterProvider. Wireup for OTel on controller-runtime metrics registry.
-- `internal/engine/helm_sdk_renderer.go`: instrumented `Render()` with duration/errors/total metrics.
-- `internal/api/auth/middleware.go`: instrumented authn/authz with `AuthAttempts`, `AuthFailures`, `AuthzDenials`, `AuthzDecisions`.
-- `internal/source/git.go`: instrumented `Resolve()` with `GitOperations`, `GitErrors`, `GitDuration`.
-- `internal/controller/pipelines/release_controller.go`: instrumented `patchReleaseStatus` with `ReleaseTransitions`, `applyManifestsForCluster` with `SyncDuration` + `SyncErrors`.
-- `internal/api/events/broker.go`: instrumented `Subscribe`/`Unsubscribe` (SSEConnections up/down), `Publish` (EventsPublished + topic attr).
-- `cmd/main.go`: all `run*Mode` functions with `NewTelemetry`/`Shutdown`.
-- `cmd/main_operator.go`: `runOperatorMode` with `RegisterKubernetesGaugeCallbacks`.
-- `deploy/test-values.yaml`: GHCR image defaults, resource limits, gateway-api config; automated VKE deployment overrides component repositories with a full digest.
-- `.github/workflows/ci.yml`: canonical parallel validation, gated `linux/amd64` publication, digest output, and reusable VKE promotion.
-- `.github/workflows/deploy-vke.yml`: reusable digest-only VKE deployment and health validation with an exact event/ref gate.
-- `.github/workflows/deploy-vke-manual.yml`: default-branch typed repository-dispatch wrapper for manual VKE promotion.
-- `.github/workflows/deploy-gke.yml`, `.github/workflows/deploy-cloudrun.yml`: manual-only digest deployments.
-- `.github/workflows/test-e2e.yml`: nightly/manual Kind end-to-end suite with checksum-verified Kind binary.
-- `.github/workflows/helm-publish.yml`: chart publication for `master` chart changes or manual version input.
-- `internal/cicontract/workflows_test.go`: executable workflow security and data-flow contract.
-- `docs/superpowers/specs/2026-07-27-fast-ci-deployment-flow-design.md`: final CI/deployment architecture and invariants.
-- `docs/superpowers/plans/2026-07-27-fast-ci-deployment-flow.md`: completed implementation and verification record.
-- `docs/guides/deephost.md`: Paprika-managed DeepHost ownership, RBAC, VKE, and E2E integration flow.
-
-## Commands
-- `make test`, `make lint`, `just build/lint/test`
-- `make test-race`
-- `(cd ui && npm test && npm run lint && npm run build)`
-- `helm lint charts/chart/`
-- `helm template paprika charts/chart/`
-- `go test ./internal/cicontract -v`
-- `source .env && helm upgrade paprika-e2e charts/chart/ --namespace paprika-e2e --values deploy/test-values.yaml --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" --wait --timeout 5m`
-- `docker build --platform linux/amd64 -t ttl.sh/paprika-amd64:<tag> . && docker push ttl.sh/paprika-amd64:<tag>`
-- `kubectl port-forward -n paprika-e2e svc/paprika-e2e-controller-manager-metrics-service <local_port>:8443`
-- `kubectl port-forward -n paprika-e2e pods/<api-server-pod> <local_port>:8080` (metrics) or `:3000` (UI)
-- `curl -s http://localhost:<port>/metrics | grep 'otel_scope_name="paprika"'`
-- `IMAGE_REF='ghcr.io/paprikacd/paprika@sha256:<64-lowercase-hex>'; gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=deploy-vke -f "client_payload[image_ref]=${IMAGE_REF}"`
-- `gh api repos/paprikacd/paprika/dispatches --method POST -f event_type=publish-helm -f 'client_payload[version]=0.1.0'`
-- `source .env && make omega-apply`
-- `kubectl --kubeconfig=terraform/omega-oidc.kubeconfig get nodes`
+1. Set up Prometheus alerting rules for `paprika_out_of_sync > 0` and
+   `paprika_prunable > 0` to surface drift accumulation automatically.
+2. Consider Grafana dashboards for the new drift and prune metrics.
+3. Replace the broad Cloudflare credential with a scoped token for the
+   `benebsworth.com` zone.
+4. Keep the Paprika-to-DeepHost runbook in `docs/guides/deephost.md` aligned
+   with the deployed CRD and chart behavior.
+5. When agent-mode is adopted for remote clusters, add prune support to the
+   agent server (currently local-apply only).

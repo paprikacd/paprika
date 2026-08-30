@@ -17,11 +17,13 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 - **Multi-Source Support** — Helm charts (local or remote), Git repositories, and S3 buckets as template sources
 - **Multi-Cluster Deployments** — Stage-level cluster references with kubeconfig-based authentication
 - **Health Evaluation** — CEL-based health checks with a library of built-in resource health rules
-- **Change Detection** — Diff engine with label-selector scoping to detect and report drift
+- **Drift Detection** — API-group-aware diff engine with label-selector scoping, null-value handling, and generated-child exclusion
+- **Garbage Collection** — Opt-in pruning of stale resources after apply, with protection annotations and cluster-scoped kind allowlists
+- **Drift Metrics** — `paprika_out_of_sync` and `paprika_prunable` gauges for real-time drift observability
 - **Approval Gates** — Manual approval gates that pause promotion between stages
 - **Pipeline Workflows** — Sequential step execution (build, test, deploy) with Kubernetes Job backing
 - **Dashboard UI** — Next.js dashboard with real-time application, release, and resource status
-- **Prometheus Metrics** — Controller-runtime metrics for reconciliation duration, phase transitions, and resource counts
+- **Prometheus Metrics** — Controller-runtime and OTel metrics for reconciliation, phase transitions, drift, and prune activity
 
 ## CLI Quickstart
 

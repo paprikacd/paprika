@@ -180,6 +180,13 @@ spec:
   strategy: Rolling               # Rolling or Canary
   syncPolicy: Auto                # Auto or Manual
 
+  # Optional sync options
+  syncOptions:
+    prune: true                   # Garbage-collect stale resources after apply
+    # pruneClusterScopedKinds:    # Cluster-scoped kinds eligible for pruning
+    #   - ClusterRole
+    #   - ClusterRoleBinding
+
   # Parameters passed as Helm values
   parameters:
     replicaCount: "3"
@@ -336,12 +343,24 @@ kubectl port-forward -n paprika-system deployment/paprika-controller-manager 844
 ```
 
 Key metrics:
-- `paprika_reconcile_total` — Reconciliation count by controller and result
+- `paprika_out_of_sync{app, namespace}` — Current out-of-sync resource count (gauge). Alert on > 0 for > 5 minutes.
+- `paprika_prunable{app, namespace}` — Current prunable resource count (gauge). Alert on > 0 for > 10 minutes.
+- `paprika_prune_total{app, namespace, kind}` — Resources pruned per apply (counter). Alert on unexpected spikes.
+- `paprika_reconcile_total{controller, result}` — Reconciliation count
 - `paprika_reconcile_duration_seconds` — Reconciliation duration histogram
 - `paprika_release_phase_total` — Release phase transitions
 - `paprika_application_phase_total` — Application phase transitions
 - `paprika_pipeline_phase_total` — Pipeline phase transitions
-- `paprika_resource_sync_total` — Synced/out-of-sync resource counts
+
+The metrics endpoint is HTTP on port 8443 (not HTTPS):
+
+```sh
+kubectl port-forward -n paprika-system svc/paprika-controller-manager-metrics-service 8443:8443
+curl -s http://localhost:8443/metrics | grep paprika_out_of_sync
+```
+
+For a complete metric reference and alerting rules, see the
+[Metrics and Alerting guide](guides/metrics.md).
 
 ## Cleanup
 
@@ -362,7 +381,9 @@ make uninstall
 ## Next Steps
 
 - Read the [architecture overview](README.md#architecture) to understand the system design
-- Check [PRODUCTION_ROADMAP.md](../PRODUCTION_ROADMAP.md) for upcoming features
 - Review the `config/samples/` directory for more examples
 - Explore the [API types](../api/pipelines/v1alpha1/) for all available fields
 - See the [design docs](superpowers/specs/) for detailed design decisions
+- Learn about [drift detection and pruning](guides/drift-and-prune.md)
+- Set up [metrics and alerting](guides/metrics.md)
+- Read the [operations guide](guides/operations.md) for build, deploy, and debug workflows

@@ -22,6 +22,22 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | **Health Checks** | CEL-based and HTTP-probe health evaluations for applications and resources. | [Getting Started](getting-started.md) |
 | **DeepHost delivery** | Git-sourced Helm delivery of a Kubernetes hosting platform with staged promotion, router health checks, rollback, and shared Envoy integration. | [DeepHost Integration](guides/deephost.md) |
 
+## Drift and Lifecycle
+
+| Feature | Description | Guide |
+|---------|-------------|-------|
+| **Drift Detection** | Label-selector diff engine comparing desired manifests against live state with API-group-aware resource keys and Kubernetes-default omission. | [Drift and Prune](guides/drift-and-prune.md) |
+| **Pruning** | Opt-in garbage collection of stale resources after apply, with prune protection annotations and cluster-scoped kind allowlists. | [Drift and Prune](guides/drift-and-prune.md) |
+| **Prune Preview** | `status.prunableResources` lists what would be pruned before enabling prune. | [Drift and Prune](guides/drift-and-prune.md) |
+
+## Observability
+
+| Feature | Description | Guide |
+|---------|-------------|-------|
+| **Drift Metrics** | `paprika_out_of_sync` and `paprika_prunable` gauges updated on every diff evaluation. | [Metrics and Alerting](guides/metrics.md) |
+| **Prune Metrics** | `paprika_prune_total` counter per application and kind. | [Metrics and Alerting](guides/metrics.md) |
+| **OTel Metrics** | Render, git, auth, SSE, and event metrics via OpenTelemetry with Prometheus export. | [Metrics and Alerting](guides/metrics.md) |
+
 ## Interfaces
 
 | Feature | Description | Guide |
@@ -43,3 +59,6 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 - Need progressive delivery? See [Canary](guides/canary.md) and [Gates](guides/gates.md).
 - Running across clusters? See [Multi-cluster](guides/multi-cluster.md).
 - Delivering DeepHost? See [DeepHost Integration](guides/deephost.md).
+- Managing drift and stale resources? See [Drift and Prune](guides/drift-and-prune.md).
+- Setting up monitoring? See [Metrics and Alerting](guides/metrics.md).
+- Building and deploying Paprika itself? See [Operations](guides/operations.md).
