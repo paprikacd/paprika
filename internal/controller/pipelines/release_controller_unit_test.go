@@ -1267,9 +1267,12 @@ data:
 `)}
 
 	r := &ReleaseReconciler{}
-	err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "default", "test-app", nil)
+	pruned, err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "default", "test-app", nil)
 	if err != nil {
 		t.Fatalf("pruneStaleResources returned error: %v", err)
+	}
+	if pruned != 1 {
+		t.Errorf("expected 1 pruned resource, got %d", pruned)
 	}
 
 	// desired-config should still exist.
@@ -1351,9 +1354,12 @@ spec:
 `)}
 
 	r := &ReleaseReconciler{}
-	err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "deephost", "deephost", nil)
+	pruned, err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "deephost", "deephost", nil)
 	if err != nil {
 		t.Fatalf("pruneStaleResources returned error: %v", err)
+	}
+	if pruned != 0 {
+		t.Errorf("expected 0 pruned resources, got %d", pruned)
 	}
 
 	// Knative Service should still exist (desired).

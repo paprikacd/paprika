@@ -1124,10 +1124,14 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	log.Info("Successfully applied manifests", "count", applied)
 
 	if opts != nil && opts.Prune {
-		if pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts); pruneErr != nil {
+		pruned, pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts)
+		if pruneErr != nil {
 			// Prune is garbage collection; a failure here should not fail the
 			// release itself. Log and continue.
 			log.Error(pruneErr, "Failed to prune stale resources after apply")
+		}
+		if pruned > 0 {
+			log.Info("Pruned stale resources after apply", "count", pruned)
 		}
 	}
 	return nil
@@ -1316,9 +1320,9 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 // resources are considered, so cluster-scoped resources (Namespaces,
 // ClusterRoles, CRDs) are never touched. Resources annotated with
 // paprika.io/prune: "false" are never pruned regardless of ownership.
-func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) error {
+func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) (int, error) {
 	if appName == "" {
-		return nil
+		return 0, nil
 	}
 
 	// Build the desired key set from the applied documents, using the same
@@ -1377,16 +1381,14 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 				if apierrors.IsNotFound(err) {
 					continue
 				}
-				return fmt.Errorf("pruning %s/%s: %w", gvr.Resource, item.GetName(), err)
+				return pruned, fmt.Errorf("pruning %s/%s: %w", gvr.Resource, item.GetName(), err)
 			}
 			pruned++
+			metrics.PruneTotal.WithLabelValues(appName, namespace, item.GetKind()).Inc()
 		}
 	}
 
-	if pruned > 0 {
-		log.Info("Pruned stale resources after apply", "count", pruned)
-	}
-	return nil
+	return pruned, nil
 }
 
 //nolint:cyclop // apply path branches on sync options.

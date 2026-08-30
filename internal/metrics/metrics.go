@@ -124,6 +124,15 @@ var (
 		[]string{"application", "namespace"},
 	)
 
+	// PruneTotal tracks the number of resources pruned per application.
+	PruneTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "paprika_prune_total",
+			Help: "Number of resources pruned after apply",
+		},
+		[]string{"app", "namespace", "kind"},
+	)
+
 	// APIRequestDuration tracks the duration of API requests.
 	APIRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -189,6 +198,7 @@ var allCollectors = []prometheus.Collector{
 	AnalysisCheckTotal,
 	ApplicationPhaseTotal,
 	ApplicationReconcileDuration,
+	PruneTotal,
 	APIRequestDuration,
 	APIRequestTotal,
 	ReconcileTotal,
