@@ -61,6 +61,12 @@ type SyncOptions struct {
 	// no longer present in the applied manifest set. Default false.
 	// +optional
 	Prune bool `json:"prune,omitempty"`
+	// PruneClusterScopedKinds lists cluster-scoped kinds eligible for pruning.
+	// Only these kinds are considered; Namespaces, CRDs, and other critical
+	// cluster resources are never pruned. Default ["ClusterRole",
+	// "ClusterRoleBinding"].
+	// +optional
+	PruneClusterScopedKinds []string `json:"pruneClusterScopedKinds,omitempty"`
 	// PrunePropagationPolicy selects the deletion propagation policy used when
 	// pruning managed resources.
 	// +kubebuilder:validation:Enum=Foreground;Background;Orphan

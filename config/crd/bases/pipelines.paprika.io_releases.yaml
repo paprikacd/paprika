@@ -97,6 +97,15 @@ spec:
                       Prune deletes live resources that carry Paprika management labels but are
                       no longer present in the applied manifest set. Default false.
                     type: boolean
+                  pruneClusterScopedKinds:
+                    description: |-
+                      PruneClusterScopedKinds lists cluster-scoped kinds eligible for pruning.
+                      Only these kinds are considered; Namespaces, CRDs, and other critical
+                      cluster resources are never pruned. Default ["ClusterRole",
+                      "ClusterRoleBinding"].
+                    items:
+                      type: string
+                    type: array
                   prunePropagationPolicy:
                     description: |-
                       PrunePropagationPolicy selects the deletion propagation policy used when

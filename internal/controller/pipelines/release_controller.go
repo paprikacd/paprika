@@ -1356,13 +1356,33 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 	deleteOpts := metav1.DeleteOptions{PropagationPolicy: propagationPolicy(opts)}
 	pruned := 0
 
+	// Cluster-scoped kinds eligible for pruning. Only these kinds are
+	// considered; Namespaces, CRDs, and other critical cluster resources
+	// are never pruned.
+	pruneClusterKinds := map[string]bool{"ClusterRole": true, "ClusterRoleBinding": true}
+	if opts != nil && len(opts.PruneClusterScopedKinds) > 0 {
+		pruneClusterKinds = make(map[string]bool, len(opts.PruneClusterScopedKinds))
+		for _, k := range opts.PruneClusterScopedKinds {
+			pruneClusterKinds[k] = true
+		}
+	}
+
 	for gvr := range gvrSet {
-		// Namespaced list only; cluster-scoped GVRs error and are skipped.
+		// Try namespaced list first; if it fails, try cluster-scoped list
+		// for eligible kinds.
 		list, err := dynClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: selector,
 		})
 		if err != nil {
-			continue
+			if !pruneClusterKinds[gvrResourceKind(gvr)] {
+				continue
+			}
+			list, err = dynClient.Resource(gvr).List(ctx, metav1.ListOptions{
+				LabelSelector: selector,
+			})
+			if err != nil {
+				continue
+			}
 		}
 		for i := range list.Items {
 			item := &list.Items[i]
@@ -1377,11 +1397,17 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 				continue
 			}
 			log.Info("Pruning stale resource", "kind", item.GetKind(), "name", item.GetName(), "namespace", item.GetNamespace())
-			if err := dynClient.Resource(gvr).Namespace(namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil {
-				if apierrors.IsNotFound(err) {
+			var deleteErr error
+			if item.GetNamespace() == "" {
+				deleteErr = dynClient.Resource(gvr).Delete(ctx, item.GetName(), deleteOpts)
+			} else {
+				deleteErr = dynClient.Resource(gvr).Namespace(item.GetNamespace()).Delete(ctx, item.GetName(), deleteOpts)
+			}
+			if deleteErr != nil {
+				if apierrors.IsNotFound(deleteErr) {
 					continue
 				}
-				return pruned, fmt.Errorf("pruning %s/%s: %w", gvr.Resource, item.GetName(), err)
+				return pruned, fmt.Errorf("pruning %s/%s: %w", gvr.Resource, item.GetName(), deleteErr)
 			}
 			pruned++
 			metrics.PruneTotal.WithLabelValues(appName, namespace, item.GetKind()).Inc()
@@ -1389,6 +1415,34 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 	}
 
 	return pruned, nil
+}
+
+// gvrResourceKind returns the singular Kind name for a GVR resource name.
+// This is a heuristic: it capitalizes the first letter and strips the
+// trailing "s" (or "es" for known plurals). It is only used for the
+// cluster-scoped prune eligibility check, where a false negative simply
+// skips pruning (safe).
+func gvrResourceKind(gvr schema.GroupVersionResource) string {
+	r := gvr.Resource
+	switch r {
+	case "clusterroles":
+		return "ClusterRole"
+	case "clusterrolebindings":
+		return "ClusterRoleBinding"
+	case "customresourcedefinitions":
+		return "CustomResourceDefinition"
+	case "namespaces":
+		return "Namespace"
+	}
+	if strings.HasSuffix(r, "es") && len(r) > 2 {
+		r = r[:len(r)-2]
+	} else if strings.HasSuffix(r, "s") && len(r) > 1 {
+		r = r[:len(r)-1]
+	}
+	if len(r) == 0 {
+		return ""
+	}
+	return strings.ToUpper(r[:1]) + r[1:]
 }
 
 //nolint:cyclop // apply path branches on sync options.
