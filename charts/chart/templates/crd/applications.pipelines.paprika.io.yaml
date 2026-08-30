@@ -1543,6 +1543,34 @@ spec:
                 type: string
               pipelineRef:
                 type: string
+              prunableResources:
+                description: |-
+                  PrunableResources lists live resources that would be pruned on the next
+                  apply with syncOptions.prune enabled. This is a preview; nothing is
+                  deleted unless prune is enabled.
+                items:
+                  description: ResourceSync tracks the sync status of a managed Kubernetes
+                    resource.
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    status:
+                      enum:
+                      - Synced
+                      - OutOfSync
+                      - Missing
+                      - Pruned
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  - status
+                  type: object
+                type: array
               prunedResources:
                 description: Pruned resources count
                 type: integer

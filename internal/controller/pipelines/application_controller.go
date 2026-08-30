@@ -1532,6 +1532,10 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
 	app.Status.OutOfSync = result.OutOfSyncCount()
 	app.Status.PrunedResources = len(result.Deleted)
+	app.Status.PrunableResources = convertDeletedToResourceSyncs(result.Deleted)
+
+	metrics.OutOfSyncGauge.WithLabelValues(app.Name, app.Namespace).Set(float64(result.OutOfSyncCount()))
+	metrics.PrunableGauge.WithLabelValues(app.Name, app.Namespace).Set(float64(len(result.Deleted)))
 
 	if app.Status.ReleaseRef == "" {
 		app.Status.HookStatuses = nil
@@ -1671,6 +1675,28 @@ func convertDiffToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.Resourc
 			Name:      d.Name,
 			Namespace: d.Namespace,
 			Status:    d.Action,
+		})
+	}
+	sort.Slice(syncs, func(i, j int) bool {
+		return resourceStatusSortKey(syncs[i].Kind, syncs[i].Namespace, syncs[i].Name, syncs[i].Status, "") <
+			resourceStatusSortKey(syncs[j].Kind, syncs[j].Namespace, syncs[j].Name, syncs[j].Status, "")
+	})
+	return syncs
+}
+
+// convertDeletedToResourceSyncs converts Deleted diff entries into a stable
+// preview list for status.prunableResources.
+func convertDeletedToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.ResourceSync {
+	if len(diffs) == 0 {
+		return nil
+	}
+	syncs := make([]paprikav1.ResourceSync, 0, len(diffs))
+	for _, d := range diffs {
+		syncs = append(syncs, paprikav1.ResourceSync{
+			Kind:      d.Kind,
+			Name:      d.Name,
+			Namespace: d.Namespace,
+			Status:    "Pruned",
 		})
 	}
 	sort.Slice(syncs, func(i, j int) bool {

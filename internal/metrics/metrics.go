@@ -133,6 +133,24 @@ var (
 		[]string{"app", "namespace", "kind"},
 	)
 
+	// OutOfSyncGauge tracks the current number of out-of-sync resources per application.
+	OutOfSyncGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "paprika_out_of_sync",
+			Help: "Number of out-of-sync resources (added, modified, or deleted) per application",
+		},
+		[]string{"app", "namespace"},
+	)
+
+	// PrunableGauge tracks the current number of prunable resources per application.
+	PrunableGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "paprika_prunable",
+			Help: "Number of prunable resources (live, paprika-labelled, not in desired set) per application",
+		},
+		[]string{"app", "namespace"},
+	)
+
 	// APIRequestDuration tracks the duration of API requests.
 	APIRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -199,6 +217,8 @@ var allCollectors = []prometheus.Collector{
 	ApplicationPhaseTotal,
 	ApplicationReconcileDuration,
 	PruneTotal,
+	OutOfSyncGauge,
+	PrunableGauge,
 	APIRequestDuration,
 	APIRequestTotal,
 	ReconcileTotal,

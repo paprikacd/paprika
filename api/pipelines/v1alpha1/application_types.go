@@ -605,6 +605,12 @@ type ApplicationStatus struct {
 	// +optional
 	PrunedResources int `json:"prunedResources,omitempty"`
 
+	// PrunableResources lists live resources that would be pruned on the next
+	// apply with syncOptions.prune enabled. This is a preview; nothing is
+	// deleted unless prune is enabled.
+	// +optional
+	PrunableResources []ResourceSync `json:"prunableResources,omitempty"`
+
 	// OutOfSync resources count
 	// +optional
 	OutOfSync int `json:"outOfSync,omitempty"`
