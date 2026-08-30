@@ -54,6 +54,7 @@ func ManagedByAppSelector(appName string) labels.Selector {
 // Unlike the basic DiffEngine, it does not scan all resources in a namespace.
 type ScalableDiffEngine struct {
 	DynClient dynamic.Interface
+	Resolver  GVRResolver
 	liveCache *LiveResourceCache
 }
 
@@ -63,6 +64,12 @@ func NewScalableDiffEngine(dynClient dynamic.Interface) *ScalableDiffEngine {
 		DynClient: dynClient,
 		liveCache: NewLiveResourceCache(dynClient),
 	}
+}
+
+// SetResolver injects a GVR resolver backed by the discovery API.
+// If unset, gvrForObject falls back to static aliases and pluralization.
+func (d *ScalableDiffEngine) SetResolver(r GVRResolver) {
+	d.Resolver = r
 }
 
 // SetLiveCache allows injecting a shared live resource cache.
@@ -94,7 +101,7 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		}
 		key := resourceKey(obj)
 		desiredMap[key] = *obj
-		if gvr, err := gvrForObject(obj); err == nil {
+		if gvr, err := gvrForObjectWithResolver(ctx, d.Resolver, obj); err == nil {
 			gvrSet[gvr] = struct{}{}
 			if isClusterScopedKind(obj.GetKind()) {
 				gvrNamespaces[gvr] = ""
@@ -247,9 +254,19 @@ func isClusterScopedKind(kind string) bool {
 }
 
 func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
+	return gvrForObjectWithResolver(context.Background(), nil, obj)
+}
+
+// gvrForObjectWithResolver resolves the GVR for an object, preferring the
+// given resolver (discovery API) over static aliases and pluralization.
+func gvrForObjectWithResolver(ctx context.Context, resolver GVRResolver, obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
 	apiVersion := obj.GetAPIVersion()
 	kind := obj.GetKind()
 	group, version := parseAPIVersion(apiVersion)
+
+	if resolver != nil {
+		return resolver.Resolve(ctx, group, version, kind)
+	}
 
 	// Known kinds cover core resources and common aliases. Do not let a kind
 	// alias override the API group from the manifest: Knative also defines a

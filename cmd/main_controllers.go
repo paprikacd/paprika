@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	k8sevents "k8s.io/client-go/tools/events"
@@ -269,6 +270,9 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	releaseRec.Namespace = operatorNamespace
 	releaseRec.DynamicClient = dynamicClient
 	releaseRec.RestConfig = mgr.GetConfig()
+	if disc, discErr := discovery.NewDiscoveryClientForConfig(mgr.GetConfig()); discErr == nil {
+		releaseRec.Resolver = engine.NewCachedGVRResolver(disc)
+	}
 	releaseRec.ClusterMgr = clusterMgr
 	releaseRec.Clock = clock.Real{}
 	releaseRec.GateExecutor = gates.NewSmokeGate(http.DefaultClient)
@@ -363,6 +367,9 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	}
 	renderer := newTemplateRenderer(ctx, mgr, cacheClient, "/tmp/paprika-sources", repoServerAddr)
 	diffEngine := engine.NewScalableDiffEngine(dynClient)
+	if disc, discErr := discovery.NewDiscoveryClientForConfig(mgr.GetConfig()); discErr == nil {
+		diffEngine.SetResolver(engine.NewCachedGVRResolver(disc))
+	}
 	appClusterMgr := controller.NewClusterConnectionPoolWithContext(ctx, mgr.GetClient(), mgr.GetConfig())
 	appClusterMgr.Clock = clock.Real{}
 	if err := mgr.Add(manager.RunnableFunc(func(stopCtx context.Context) error {

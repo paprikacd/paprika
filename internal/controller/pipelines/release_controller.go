@@ -126,6 +126,7 @@ type ReleaseReconciler struct {
 	RestConfig            *rest.Config
 	ClusterMgr            ClusterClientGetter
 	DynamicClient         dynamic.Interface
+	Resolver              engine.GVRResolver
 	GateExecutor          GateExecutor
 	ApprovalGateEvaluator ApprovalGateEvaluator
 	Analyzer              Analyzer
@@ -1605,6 +1606,10 @@ func isClusterScopedKind(kind string) bool {
 }
 
 func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.GroupVersionResource, error) {
+	if r.Resolver != nil {
+		return r.Resolver.Resolve(context.Background(), group, version, kind)
+	}
+
 	// Known kinds cover core resources and common aliases. Do not let a kind
 	// alias override the API group from the manifest: Knative also defines a
 	// Service, but it must resolve to serving.knative.dev/services.
