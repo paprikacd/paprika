@@ -31,7 +31,7 @@
 - **Hardened workflow contract**: Go contract tests enforce validation dependencies, failure propagation, branch/event restrictions, digest data flow and grammar, action pins, permissions, timeouts, the pinned Kind checksum, Helm publishing from `master`, and nightly/manual E2E.
 - **Deployment values aligned with GHCR**: `deploy/test-values.yaml` already uses `ghcr.io/paprikacd/paprika`; the VKE workflow overrides each Paprika component image repository with the promoted digest, so its `latest` defaults are not deployed by the workflow.
 - **Master-only VKE environment policy**: `vke-production` was configured and read back with `custom_branch_policies=true`, `protected_branches=false`, and exactly one `{name: master, type: branch}` policy.
-- **No live deployment for the CI redesign**: workflow and local contract validation completed, but no VKE, GKE, or Cloud Run deployment was executed. The GitHub environment policy was changed separately as recorded above.
+- **Live VKE deployment verified**: the Paprika Helm release `paprika-e2e` is deployed on the configured VKE context with all four Paprika workloads ready on an immutable GHCR digest. DeepHost is delivered through `Application/deephost`; its operator, router, control plane, Hydra, Redis, and MinIO workloads are healthy, and the public HTTPS/HTTP paths return `200`/`301`.
 
 ### In Progress
 - (none)
@@ -40,8 +40,9 @@
 - (none)
 
 ## Next Steps
-1. Merge the fast CI changes and observe the first `master` publish and automatic digest-based VKE promotion end to end.
-2. Create a scoped Cloudflare API token for the `benebsworth.com` zone (currently using the Global API key).
+1. Merge the fast CI changes and observe the next `master` publish and automatic digest-based VKE promotion end to end.
+2. Replace the current broad Cloudflare credential with a scoped token for the `benebsworth.com` zone.
+3. Keep the Paprika-to-DeepHost runbook in `docs/guides/deephost.md` aligned with the deployed CRD and chart behavior.
 
 ## Verified Metrics on Controller-Manager
 - `paprika_git_duration_seconds_bucket` (1 fetch at 22.5s)
@@ -88,6 +89,7 @@ Note: OTel Prometheus exporter adds `_ratio` suffix to observable gauge names wh
 - `internal/cicontract/workflows_test.go`: executable workflow security and data-flow contract.
 - `docs/superpowers/specs/2026-07-27-fast-ci-deployment-flow-design.md`: final CI/deployment architecture and invariants.
 - `docs/superpowers/plans/2026-07-27-fast-ci-deployment-flow.md`: completed implementation and verification record.
+- `docs/guides/deephost.md`: Paprika-managed DeepHost ownership, RBAC, VKE, and E2E integration flow.
 
 ## Commands
 - `make test`, `make lint`, `just build/lint/test`

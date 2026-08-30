@@ -10,11 +10,12 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// negotiateProtobuf configures the client-go rest.Config to prefer protobuf
-// over JSON for built-in K8s kinds. CRDs and Watch payloads without protobuf
-// schemas fall back to JSON automatically because AcceptContentTypes lists
-// both content types.
+// negotiateProtobuf configures the client-go rest.Config to ACCEPT protobuf
+// responses for built-in K8s kinds while always SENDING JSON. Sending
+// protobuf breaks controller-runtime typed writes for CRD groups (their Go
+// types do not implement the protobuf marshaller), so requests stay JSON;
+// responses may still be protobuf because built-in decoded types support it.
 func negotiateProtobuf(cfg *rest.Config) {
-	cfg.ContentType = runtime.ContentTypeProtobuf
 	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
+	cfg.ContentType = runtime.ContentTypeJSON
 }

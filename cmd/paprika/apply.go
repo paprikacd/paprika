@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,7 +16,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
-	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
 type applyOptions struct {
@@ -96,7 +94,24 @@ func runApply(ctx context.Context, opts *applyOptions) error {
 		return fmt.Errorf("parse policy overrides: %w", err)
 	}
 
-	client := v1connect.NewPaprikaServiceClient(http.DefaultClient, opts.server)
+	configPath := globalConfigPath
+	if configPath == "" {
+		configPath = defaultConfigPath()
+	}
+	cfg, cfgErr := loadConfig(configPath)
+	if cfgErr != nil {
+		return fmt.Errorf("load config: %w", cfgErr)
+	}
+	if opts.server != "" {
+		cfg.Server = opts.server
+	}
+	if globalToken != "" {
+		cfg.Token = globalToken
+	}
+	client, clientErr := newClient(cfg)
+	if clientErr != nil {
+		return fmt.Errorf("build client: %w", clientErr)
+	}
 
 	resp, err := client.ApplyBundle(ctx, connect.NewRequest(&paprikav1.ApplyBundleRequest{
 		Namespace:       namespace,

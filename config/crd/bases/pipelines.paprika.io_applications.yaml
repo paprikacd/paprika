@@ -542,6 +542,11 @@ spec:
                       Secret reference for private repos, S3, or OCI credentials.
                       For OCI this should contain dockerconfigjson or username/password.
                     type: string
+                  targetNamespace:
+                    description: |-
+                      TargetNamespace is the namespace passed to Helm for rendered resources.
+                      Defaults to the Application namespace.
+                    type: string
                   type:
                     enum:
                     - git
@@ -550,6 +555,10 @@ spec:
                     - s3
                     - oci
                     - inline
+                    type: string
+                  valuesFile:
+                    description: ValuesFile contains inline YAML Helm values merged
+                      with release parameters.
                     type: string
                 required:
                 - type

@@ -167,6 +167,7 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=referencegrants,verbs=get;list;watch;create;update;patch;delete
 // cert-manager Certificates are applyable for the same reason HTTPRoutes are:
 // a chart that exposes a service over TLS declares both, and without this the
 // whole release fails to apply with a forbidden error on the Certificate.
@@ -174,6 +175,10 @@ func NewReleaseReconciler(c client.Client) *ReleaseReconciler {
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;update;patch
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles Release reconciliation.
 //
@@ -1324,7 +1329,7 @@ func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Lo
 		}
 		u := &unstructured.Unstructured{Object: obj}
 		ns := u.GetNamespace()
-		if ns == "" {
+		if ns == "" && !isClusterScopedKind(u.GetKind()) {
 			ns = namespace
 		}
 		key := fmt.Sprintf("%s/%s/%s/%s", u.GetAPIVersion(), u.GetKind(), ns, u.GetName())
@@ -1399,7 +1404,13 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 	}
 
 	setPaprikaLabels(metadata, appName)
-	targetNamespace := setTargetNamespace(obj, metadata, namespace)
+	targetNamespace := ""
+	if isClusterScopedKind(kind) {
+		delete(metadata, "namespace")
+		obj["metadata"] = metadata
+	} else {
+		targetNamespace = setTargetNamespace(obj, metadata, namespace)
+	}
 
 	gvr, err := r.gvrFromKind(kind, group, version)
 	if err != nil {
@@ -1408,7 +1419,11 @@ func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, 
 	}
 
 	unstructuredObj := &unstructured.Unstructured{Object: obj}
-	ri := dynClient.Resource(gvr).Namespace(targetNamespace)
+	resource := dynClient.Resource(gvr)
+	var ri dynamic.ResourceInterface = resource
+	if targetNamespace != "" {
+		ri = resource.Namespace(targetNamespace)
+	}
 
 	//nolint:nestif // out-of-sync check is inherently conditional
 	if opts != nil && opts.ApplyOutOfSyncOnly {
@@ -1571,8 +1586,24 @@ func setTargetNamespace(obj, metadata map[string]interface{}, fallback string) s
 	return fallback
 }
 
+func isClusterScopedKind(kind string) bool {
+	switch kind {
+	case "APIService", "ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "GatewayClass", "Namespace", "Node", "PersistentVolume", "PriorityClass", "StorageClass", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration":
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.GroupVersionResource, error) {
-	if gvr, ok := knownGVRs[kind]; ok {
+	// Known kinds cover core resources and common aliases. Do not let a kind
+	// alias override the API group from the manifest: Knative also defines a
+	// Service, but it must resolve to serving.knative.dev/services.
+	if group == "" {
+		if gvr, ok := knownGVRs[kind]; ok {
+			return gvr, nil
+		}
+	} else if gvr, ok := knownGVRs[kind]; ok && gvr.Group == group && gvr.Version == version {
 		return gvr, nil
 	}
 

@@ -85,6 +85,18 @@ that Go bin directory is on `PATH` before invoking `paprika`.
             └────────────┘          └──────────────┘ └──────────┘
 ```
 
+### DeepHost Integration
+
+Paprika can deliver DeepHost as a Git-sourced Helm Application. The Paprika
+Application fetches and renders `charts/deephost`, promotes it through a VKE
+stage, verifies the DeepHost router health endpoint, and rolls back failed
+releases. DeepHost then reconciles its own App, Build, Release, and Domain CRs
+and serves traffic through the shared Envoy Gateway.
+
+See [`docs/guides/deephost.md`](docs/guides/deephost.md) for the ownership
+boundary, RBAC requirements, VKE verification, recovery procedure, and the
+relationship to DeepHost's local E2E suite.
+
 ### CRDs
 
 | Kind | Group | Purpose |

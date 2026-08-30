@@ -491,8 +491,11 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 			desiredStatus.Gates = fresh.Status.Gates
 			app.Status.Gates = fresh.Status.Gates
 		}
+		desiredStatus.ObservedGeneration = fresh.Generation
+		if equality.Semantic.DeepEqual(fresh.Status, *desiredStatus) {
+			return nil
+		}
 		fresh.Status = *desiredStatus
-		fresh.Status.ObservedGeneration = fresh.Generation
 		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating application status: %w", err)
 		}
@@ -532,10 +535,14 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 
 func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 	spec := paprikav1.TemplateSpec{
-		Type:      string(app.Spec.Source.Type),
-		Chart:     app.Spec.Source.Chart,
-		Namespace: app.Namespace,
-		RepoRef:   app.Spec.Source.RepoRef,
+		Type:       string(app.Spec.Source.Type),
+		Chart:      app.Spec.Source.Chart,
+		Namespace:  app.Namespace,
+		ValuesFile: app.Spec.Source.ValuesFile,
+		RepoRef:    app.Spec.Source.RepoRef,
+	}
+	if app.Spec.Source.TargetNamespace != "" {
+		spec.Namespace = app.Spec.Source.TargetNamespace
 	}
 
 	switch app.Spec.Source.Type {
@@ -1505,11 +1512,15 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		return
 	}
 
-	desired := parseDesiredManifests(manifests, app.Namespace)
+	targetNamespace := app.Namespace
+	if app.Spec.Source.TargetNamespace != "" {
+		targetNamespace = app.Spec.Source.TargetNamespace
+	}
+	desired := parseDesiredManifests(manifests, targetNamespace)
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
 	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
-		Namespace:       app.Namespace,
+		Namespace:       targetNamespace,
 		LabelSelector:   labelSelector,
 		ApplicationName: app.Name,
 	})
@@ -1549,7 +1560,7 @@ func parseDesiredManifests(manifests []byte, namespace string) []unstructured.Un
 			continue
 		}
 		u := unstructured.Unstructured{Object: obj}
-		if u.GetNamespace() == "" {
+		if u.GetNamespace() == "" && !isClusterScopedKind(u.GetKind()) {
 			u.SetNamespace(namespace)
 		}
 		desired = append(desired, u)
@@ -1662,7 +1673,22 @@ func convertDiffToResourceSyncs(diffs []engine.ResourceDiff) []paprikav1.Resourc
 			Status:    d.Action,
 		})
 	}
+	sort.Slice(syncs, func(i, j int) bool {
+		return resourceStatusSortKey(syncs[i].Kind, syncs[i].Namespace, syncs[i].Name, syncs[i].Status, "") <
+			resourceStatusSortKey(syncs[j].Kind, syncs[j].Namespace, syncs[j].Name, syncs[j].Status, "")
+	})
 	return syncs
+}
+
+func sortResourceHealth(results []paprikav1.ResourceHealth) {
+	sort.Slice(results, func(i, j int) bool {
+		return resourceStatusSortKey(results[i].Kind, results[i].Namespace, results[i].Name, results[i].Health, results[i].Message) <
+			resourceStatusSortKey(results[j].Kind, results[j].Namespace, results[j].Name, results[j].Health, results[j].Message)
+	})
+}
+
+func resourceStatusSortKey(kind, namespace, name, status, message string) string {
+	return strings.Join([]string{kind, namespace, name, status, message}, "\x00")
 }
 
 func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application) {
@@ -1682,6 +1708,7 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 	}
 
 	app.Status.ResourceHealth = healthResults
+	sortResourceHealth(app.Status.ResourceHealth)
 }
 
 func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *paprikav1.Application) error {

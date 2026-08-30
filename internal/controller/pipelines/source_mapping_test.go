@@ -135,11 +135,13 @@ func TestBuildTemplateSpec(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
 			Spec: paprikav1.ApplicationSpec{
 				Source: paprikav1.ApplicationSource{
-					Type:      paprikav1.SourceTypeGit,
-					RepoURL:   "https://github.com/org/repo",
-					Revision:  "main",
-					Path:      "charts/app",
-					SecretRef: "git-secret",
+					Type:            paprikav1.SourceTypeGit,
+					RepoURL:         "https://github.com/org/repo",
+					Revision:        "main",
+					Path:            "charts/app",
+					SecretRef:       "git-secret",
+					TargetNamespace: "deephost",
+					ValuesFile:      "gateway:\n  provider: envoy\n",
 				},
 			},
 		}
@@ -149,6 +151,8 @@ func TestBuildTemplateSpec(t *testing.T) {
 		assert.Equal(t, paprikav1.SourceTypeGit, spec.Type)
 		require.NotNil(t, spec.Git)
 		assert.Equal(t, "https://github.com/org/repo", spec.Git.RepoURL)
+		assert.Equal(t, "deephost", spec.Namespace)
+		assert.Equal(t, "gateway:\n  provider: envoy\n", spec.ValuesFile)
 		assert.Nil(t, spec.OCI)
 	})
 
@@ -180,4 +184,24 @@ func TestBuildTemplateSpec(t *testing.T) {
 		assert.Equal(t, "oci://registry.example.com/charts", spec.OCI.URL)
 		assert.Equal(t, "1.0.0", spec.OCI.Tag)
 	})
+}
+
+func TestParseDesiredManifestsPreservesClusterScope(t *testing.T) {
+	t.Parallel()
+
+	manifests := []byte(`apiVersion: v1
+kind: Namespace
+metadata:
+  name: deephost
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config
+`)
+	desired := parseDesiredManifests(manifests, "deephost")
+
+	require.Len(t, desired, 2)
+	assert.Empty(t, desired[0].GetNamespace())
+	assert.Equal(t, "deephost", desired[1].GetNamespace())
 }

@@ -158,7 +158,13 @@ func (d *DiffEngine) fetchLiveResources(ctx context.Context, namespace string) (
 				Version:  groupVersion.Version,
 				Resource: r.Name,
 			}
-			list, err := d.DynClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+			resource := d.DynClient.Resource(gvr)
+			var list *unstructured.UnstructuredList
+			if r.Namespaced {
+				list, err = resource.Namespace(namespace).List(ctx, metav1.ListOptions{})
+			} else {
+				list, err = resource.List(ctx, metav1.ListOptions{})
+			}
 			if err != nil {
 				continue
 			}
@@ -296,6 +302,9 @@ func isPaprikaInternalResource(obj *unstructured.Unstructured) bool {
 // least one live element (by name if available, allowing live to carry extra
 // defaulted fields on list items like containers and ports).
 func specContains(desired, live interface{}) bool {
+	if desired == nil {
+		return true
+	}
 	return specContainsAt(nil, desired, live)
 }
 
@@ -365,6 +374,13 @@ func appendPath(path []string, key string) []string {
 }
 
 func isOmittedKubernetesDefault(path []string, desired interface{}) bool {
+	if len(path) > 0 && path[len(path)-1] == "value" && isEmptyString(desired) {
+		for _, part := range path {
+			if part == "env" {
+				return true
+			}
+		}
+	}
 	if len(path) == 0 || path[len(path)-1] != "initialDelaySeconds" || !isZeroNumber(desired) {
 		return false
 	}
@@ -374,6 +390,11 @@ func isOmittedKubernetesDefault(path []string, desired interface{}) bool {
 		}
 	}
 	return false
+}
+
+func isEmptyString(value interface{}) bool {
+	stringValue, ok := value.(string)
+	return ok && stringValue == ""
 }
 
 func isZeroNumber(value interface{}) bool {

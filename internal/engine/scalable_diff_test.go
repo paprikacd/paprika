@@ -185,6 +185,164 @@ func TestComputeDiff_AddsManagedLabels(t *testing.T) {
 	assert.Equal(t, "my-app", desired[0].GetLabels()[ApplicationNameLabelKey])
 }
 
+func TestResourceEqual_TreatsNullAsAbsent(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "worker",
+			"namespace": "deephost",
+			"labels": map[string]interface{}{
+				ManagedByLabelKey:       ManagedByLabelValue,
+				ApplicationNameLabelKey: "deephost",
+			},
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{map[string]interface{}{
+						"name": "worker",
+						"env": []interface{}{
+							map[string]interface{}{
+								"name":  "AWS_ACCESS_KEY_ID",
+								"value": nil,
+								"valueFrom": map[string]interface{}{
+									"secretKeyRef": map[string]interface{}{
+										"name": "deephost-aws",
+										"key":  "accessKeyId",
+									},
+								},
+							},
+							map[string]interface{}{
+								"name":  "AWS_REGION",
+								"value": nil,
+							},
+						},
+					}},
+					"volumes": []interface{}{map[string]interface{}{
+						"name":     "data",
+						"emptyDir": nil,
+						"persistentVolumeClaim": map[string]interface{}{
+							"claimName": "deephost-minio",
+						},
+					}},
+				},
+			},
+		},
+	}
+	desired := unstructured.Unstructured{Object: base}
+
+	// server-side apply drops declared-null keys from the stored object.
+	live := desired.DeepCopy()
+	e := live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
+	env := e["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
+	delete(env[0].(map[string]interface{}), "value")
+	delete(env[1].(map[string]interface{}), "value")
+	vol := e["volumes"].([]interface{})[0].(map[string]interface{})
+	delete(vol, "emptyDir")
+
+	assert.True(t, resourceEqual(desired, *live))
+
+	// A declared null that live still carries as a value must remain drift.
+	stale := desired.DeepCopy()
+	s := stale.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
+	s["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{})["value"] = "AKIA-STALE"
+	assert.False(t, resourceEqual(desired, *stale))
+}
+
+func TestComputeDiff_UsesClusterScopeForClusterResources(t *testing.T) {
+	t.Parallel()
+
+	desired := []unstructured.Unstructured{
+		{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "Namespace",
+			"metadata": map[string]interface{}{
+				"name": "target",
+			},
+		}},
+		{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]interface{}{
+				"name":      "config",
+				"namespace": "target",
+			},
+			"data": map[string]interface{}{"key": "value"},
+		}},
+	}
+
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: "target",
+		Labels: map[string]string{
+			ManagedByLabelKey:       ManagedByLabelValue,
+			ApplicationNameLabelKey: "app",
+		},
+	}}
+	configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Name:      "config",
+		Namespace: "target",
+		Labels: map[string]string{
+			ManagedByLabelKey:       ManagedByLabelValue,
+			ApplicationNameLabelKey: "app",
+		},
+	}, Data: map[string]string{"key": "value"}}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	dynClient := fake.NewSimpleDynamicClient(scheme, namespace, configMap)
+	eng := NewScalableDiffEngine(dynClient)
+	eng.SetLiveCache(nil)
+
+	result, err := eng.ComputeDiff(context.Background(), desired, &DiffOptions{
+		Namespace:       "target",
+		LabelSelector:   ManagedByAppSelector("app").String(),
+		ApplicationName: "app",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Added)
+	assert.Empty(t, result.Deleted)
+	assert.Len(t, result.Unchanged, 2)
+	assert.Empty(t, result.Modified)
+}
+
+func TestResourceEqual_IgnoresKubernetesOmittedDefaults(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "apps/v1",
+		"kind":       "Deployment",
+		"metadata": map[string]interface{}{
+			"name":      "controlplane",
+			"namespace": "deephost",
+			"labels": map[string]interface{}{
+				ManagedByLabelKey:       ManagedByLabelValue,
+				ApplicationNameLabelKey: "deephost",
+			},
+		},
+		"spec": map[string]interface{}{
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{map[string]interface{}{
+						"name": "controlplane",
+						"env": []interface{}{map[string]interface{}{
+							"name":  "DH_BASE_DOMAIN",
+							"value": "",
+						}},
+					}},
+				},
+			},
+		},
+	}}
+	live := desired.DeepCopy()
+	delete(live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{}), "value")
+	live.Object["spec"].(map[string]interface{})["strategy"] = map[string]interface{}{"type": "RollingUpdate"}
+
+	assert.True(t, resourceEqual(desired, *live))
+}
+
 func TestComputeDiff_IgnoresReleaseOwnedInternalConfigMaps(t *testing.T) {
 	t.Parallel()
 
@@ -495,67 +653,6 @@ func TestResourceEqual_IgnoresOmittedProbeInitialDelayDefault(t *testing.T) {
 
 	assert.True(t, resourceEqual(desired, live))
 	assert.False(t, resourceEqual(desiredWithLivenessDelay(int64(5)), live))
-}
-
-func TestResourceEqual_TreatsNullAsAbsent(t *testing.T) {
-	t.Parallel()
-
-	desired := unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": "apps/v1",
-		"kind":       "Deployment",
-		"metadata": map[string]interface{}{
-			"name":      "worker",
-			"namespace": "deephost",
-		},
-		"spec": map[string]interface{}{
-			"template": map[string]interface{}{
-				"spec": map[string]interface{}{
-					"containers": []interface{}{map[string]interface{}{
-						"name": "worker",
-						"env": []interface{}{
-							map[string]interface{}{
-								"name":  "AWS_ACCESS_KEY_ID",
-								"value": nil,
-								"valueFrom": map[string]interface{}{
-									"secretKeyRef": map[string]interface{}{
-										"name": "deephost-aws",
-										"key":  "accessKeyId",
-									},
-								},
-							},
-							map[string]interface{}{
-								"name":  "AWS_REGION",
-								"value": nil,
-							},
-						},
-					}},
-					"volumes": []interface{}{map[string]interface{}{
-						"name":     "data",
-						"emptyDir": nil,
-						"persistentVolumeClaim": map[string]interface{}{
-							"claimName": "deephost-minio",
-						},
-					}},
-				},
-			},
-		},
-	}}
-
-	// server-side apply drops declared-null keys from the stored object.
-	live := desired.DeepCopy()
-	spec := live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
-	env := spec["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
-	delete(env[0].(map[string]interface{}), "value")
-	delete(env[1].(map[string]interface{}), "value")
-	delete(spec["volumes"].([]interface{})[0].(map[string]interface{}), "emptyDir")
-
-	assert.True(t, resourceEqual(desired, *live))
-
-	// A declared null that live still carries as a value must remain drift.
-	stale := desired.DeepCopy()
-	staleSpec := stale.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
-	staleSpec["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{})["value"] = "AKIA-STALE"
-	assert.False(t, resourceEqual(desired, *stale))
 }
 
 func TestComputeDiff_KnativeServiceAndChildServiceDoNotCollide(t *testing.T) {

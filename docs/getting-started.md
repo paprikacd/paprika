@@ -139,6 +139,10 @@ kubectl get application my-app -n paprika-system -o yaml
 
 The `status.phase` field shows the current state: `Pending` → `Promoting` → `Healthy` or `Degraded`.
 
+For the complete Paprika-managed DeepHost example, including Git source
+resolution, chart rendering, cluster-scoped RBAC, health-gated promotion, and
+the DeepHost runtime/request path, see the [DeepHost Integration guide](guides/deephost.md).
+
 ## Understanding the CRDs
 
 ### Application

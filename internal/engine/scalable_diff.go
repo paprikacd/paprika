@@ -86,6 +86,7 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 
 	desiredMap := make(map[string]unstructured.Unstructured)
 	gvrSet := make(map[schema.GroupVersionResource]struct{})
+	gvrNamespaces := make(map[schema.GroupVersionResource]string)
 	for i := range desired {
 		obj := &desired[i]
 		if err := ensureManagedLabels(obj, opts); err != nil {
@@ -95,10 +96,15 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		desiredMap[key] = *obj
 		if gvr, err := gvrForObject(obj); err == nil {
 			gvrSet[gvr] = struct{}{}
+			if isClusterScopedKind(obj.GetKind()) {
+				gvrNamespaces[gvr] = ""
+			} else if _, exists := gvrNamespaces[gvr]; !exists {
+				gvrNamespaces[gvr] = opts.Namespace
+			}
 		}
 	}
 
-	liveMap, err := d.fetchLiveResources(ctx, opts, gvrSet)
+	liveMap, err := d.fetchLiveResources(ctx, opts, gvrSet, gvrNamespaces)
 	if err != nil {
 		return nil, fmt.Errorf("fetch live resources: %w", err)
 	}
@@ -180,7 +186,7 @@ func isGeneratedChildResource(obj *unstructured.Unstructured, desiredKinds map[s
 	return true
 }
 
-func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}) (map[string]unstructured.Unstructured, error) {
+func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}, gvrNamespaces map[schema.GroupVersionResource]string) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
 	selector, err := labels.Parse(opts.LabelSelector)
 	if err != nil {
@@ -188,12 +194,13 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 	}
 
 	for gvr := range gvrSet {
+		namespace := gvrNamespaces[gvr]
 		var list *unstructured.UnstructuredList
 		var err error
 		var cacheErr error
 		if d.liveCache != nil {
 			var items []unstructured.Unstructured
-			items, cacheErr = d.liveCache.Get(ctx, gvr, opts.Namespace, selector)
+			items, cacheErr = d.liveCache.Get(ctx, gvr, namespace, selector)
 			if cacheErr == nil {
 				list = &unstructured.UnstructuredList{Items: items}
 			}
@@ -203,7 +210,12 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 				LabelSelector: opts.LabelSelector,
 				FieldSelector: opts.FieldSelector,
 			}
-			list, err = d.DynClient.Resource(gvr).Namespace(opts.Namespace).List(ctx, listOpts)
+			resource := d.DynClient.Resource(gvr)
+			if namespace == "" {
+				list, err = resource.List(ctx, listOpts)
+			} else {
+				list, err = resource.Namespace(namespace).List(ctx, listOpts)
+			}
 			if err != nil {
 				if cacheErr != nil {
 					log.FromContext(ctx).V(1).Info("Live cache and API both failed for GVR",
@@ -223,6 +235,15 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 	}
 
 	return result, nil
+}
+
+func isClusterScopedKind(kind string) bool {
+	switch kind {
+	case "APIService", "ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "GatewayClass", "Namespace", "Node", "PersistentVolume", "PriorityClass", "StorageClass", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration":
+		return true
+	default:
+		return false
+	}
 }
 
 func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {

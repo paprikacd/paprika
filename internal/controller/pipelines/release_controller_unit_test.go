@@ -586,6 +586,7 @@ func TestReleaseReconciler_applyAllDocuments_AppliesPortableHelmResources(t *tes
 	}
 	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ServiceAccount"})
 	registerUnstructured(schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"})
+	registerUnstructured(schema.GroupVersionKind{Group: "serving.knative.dev", Version: "v1", Kind: "Service"})
 
 	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
 	manifests := []byte(`apiVersion: v1
@@ -606,8 +607,18 @@ spec:
     - origin-vke.telesis.dev
   rules:
     - backendRefs:
-        - name: telesis-api-release
-          port: 9500
+         - name: telesis-api-release
+           port: 9500
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: telesis-api-release
+spec:
+  template:
+    spec:
+      containers:
+        - image: example.com/telesis-api:latest
 `)
 
 	r := &ReleaseReconciler{}
@@ -623,8 +634,8 @@ spec:
 	if err != nil {
 		t.Fatalf("applyAllDocuments returned error: %v", err)
 	}
-	if applied != 2 {
-		t.Fatalf("expected 2 applied resources, got %d", applied)
+	if applied != 3 {
+		t.Fatalf("expected 3 applied resources, got %d", applied)
 	}
 
 	saGVR := schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}
@@ -635,6 +646,11 @@ spec:
 	routeGVR := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}
 	if _, err := dynClient.Resource(routeGVR).Namespace("paprika-e2e").Get(context.Background(), "telesis-api-release", metav1.GetOptions{}); err != nil {
 		t.Fatalf("http route was not applied: %v", err)
+	}
+
+	knativeServiceGVR := schema.GroupVersionResource{Group: "serving.knative.dev", Version: "v1", Resource: "services"}
+	if _, err := dynClient.Resource(knativeServiceGVR).Namespace("paprika-e2e").Get(context.Background(), "telesis-api-release", metav1.GetOptions{}); err != nil {
+		t.Fatalf("Knative service was not applied: %v", err)
 	}
 }
 
@@ -1135,6 +1151,50 @@ func TestReleaseReconciler_applyDocument_PropagatesPersistentApplyError(t *testi
 	}
 }
 
+func TestReleaseReconciler_applyDocument_UsesClusterScopeForClusterResources(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"}, &unstructured.Unstructured{})
+	scheme.AddKnownTypeWithName(schema.GroupVersionKind{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinitionList"}, &unstructured.UnstructuredList{})
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
+	var gotNamespace string
+	dynClient.PrependReactor("patch", "customresourcedefinitions", func(action ktesting.Action) (bool, runtime.Object, error) {
+		gotNamespace = action.(ktesting.PatchAction).GetNamespace()
+		return true, &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "apiextensions.k8s.io/v1",
+			"kind":       "CustomResourceDefinition",
+			"metadata":   map[string]interface{}{"name": "apps.deephost.io"},
+		}}, nil
+	})
+
+	obj := map[string]interface{}{
+		"apiVersion": "apiextensions.k8s.io/v1",
+		"kind":       "CustomResourceDefinition",
+		"metadata":   map[string]interface{}{"name": "apps.deephost.io"},
+	}
+
+	r := &ReleaseReconciler{}
+	ok, err := r.applyDocument(context.Background(), logr.Discard(), dynClient, obj, "paprika-e2e", "demo-app", nil)
+	if err != nil {
+		t.Fatalf("applyDocument returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("applyDocument reported resource as not applied")
+	}
+	if gotNamespace != "" {
+		t.Errorf("cluster-scoped apply namespace = %q, want empty", gotNamespace)
+	}
+	metadata, ok := obj["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatal("manifest metadata was lost")
+	}
+	if _, exists := metadata["namespace"]; exists {
+		t.Errorf("cluster-scoped manifest namespace = %v, want absent", metadata["namespace"])
+	}
+}
+
 func TestReleaseReconciler_pruneStaleResources(t *testing.T) {
 	t.Parallel()
 
@@ -1148,12 +1208,14 @@ func TestReleaseReconciler_pruneStaleResources(t *testing.T) {
 		}, &unstructured.UnstructuredList{})
 	}
 	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	registerUnstructured(schema.GroupVersionKind{Group: "serving.knative.dev", Version: "v1", Kind: "Service"})
 
 	paprikaLabels := map[string]interface{}{
 		"app.paprika.io/managed-by": "paprika",
 		"app.paprika.io/name":       "test-app",
 	}
 
+	// Live resources: one desired, one stale (ownerless), one generated child.
 	desiredCM := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "v1",
 		"kind":       "ConfigMap",
@@ -1193,6 +1255,7 @@ func TestReleaseReconciler_pruneStaleResources(t *testing.T) {
 
 	dynClient := dynamicfake.NewSimpleDynamicClient(scheme, desiredCM, staleCM, childCM)
 
+	// Desired manifests only contain the desired ConfigMap.
 	docs := [][]byte{[]byte(`apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1208,14 +1271,96 @@ data:
 		t.Fatalf("pruneStaleResources returned error: %v", err)
 	}
 
+	// desired-config should still exist.
 	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "desired-config", metav1.GetOptions{}); err != nil {
 		t.Errorf("desired-config should not be pruned: %v", err)
 	}
+	// stale-config should be deleted.
 	_, err = dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "stale-config", metav1.GetOptions{})
 	if err == nil {
 		t.Error("stale-config should have been pruned")
 	}
+	// child-config should still exist (has ownerReferences).
 	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "child-config", metav1.GetOptions{}); err != nil {
 		t.Errorf("child-config should not be pruned (has ownerReferences): %v", err)
+	}
+}
+
+func TestReleaseReconciler_pruneStaleResources_KnativeChildServiceNotPruned(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	registerUnstructured := func(gvk schema.GroupVersionKind) {
+		scheme.AddKnownTypeWithName(gvk, &unstructured.Unstructured{})
+		scheme.AddKnownTypeWithName(schema.GroupVersionKind{
+			Group:   gvk.Group,
+			Version: gvk.Version,
+			Kind:    gvk.Kind + "List",
+		}, &unstructured.UnstructuredList{})
+	}
+	registerUnstructured(schema.GroupVersionKind{Version: "v1", Kind: "Service"})
+	registerUnstructured(schema.GroupVersionKind{Group: "serving.knative.dev", Version: "v1", Kind: "Service"})
+
+	paprikaLabels := map[string]interface{}{
+		"app.paprika.io/managed-by": "paprika",
+		"app.paprika.io/name":       "deephost",
+	}
+
+	// Live Knative Service (desired) and its ExternalName child (generated).
+	ksvc := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "serving.knative.dev/v1",
+		"kind":       "Service",
+		"metadata": map[string]interface{}{
+			"name":      "deephost-hydra",
+			"namespace": "deephost",
+			"labels":    paprikaLabels,
+		},
+		"spec": map[string]interface{}{"template": map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "hydra"}}}}},
+	}}
+	childSvc := &unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Service",
+		"metadata": map[string]interface{}{
+			"name":      "deephost-hydra",
+			"namespace": "deephost",
+			"labels":    paprikaLabels,
+			"ownerReferences": []interface{}{map[string]interface{}{
+				"apiVersion": "serving.knative.dev/v1",
+				"kind":       "Route",
+				"name":       "deephost-hydra",
+				"controller": true,
+			}},
+		},
+		"spec": map[string]interface{}{"type": "ExternalName", "externalName": "kourier-internal.kourier-system.svc.cluster.local"},
+	}}
+
+	dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ksvc, childSvc)
+
+	// Desired manifests only contain the Knative Service.
+	docs := [][]byte{[]byte(`apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: deephost-hydra
+  namespace: deephost
+spec:
+  template:
+    spec:
+      containers:
+        - name: hydra
+`)}
+
+	r := &ReleaseReconciler{}
+	err := r.pruneStaleResources(context.Background(), logr.Discard(), dynClient, docs, "deephost", "deephost", nil)
+	if err != nil {
+		t.Fatalf("pruneStaleResources returned error: %v", err)
+	}
+
+	// Knative Service should still exist (desired).
+	if _, err := dynClient.Resource(schema.GroupVersionResource{Group: "serving.knative.dev", Version: "v1", Resource: "services"}).Namespace("deephost").Get(context.Background(), "deephost-hydra", metav1.GetOptions{}); err != nil {
+		t.Errorf("knative Service should not be pruned: %v", err)
+	}
+	// ExternalName child should still exist (has ownerReferences).
+	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "services"}).Namespace("deephost").Get(context.Background(), "deephost-hydra", metav1.GetOptions{}); err != nil {
+		t.Errorf("ExternalName child should not be pruned (has ownerReferences): %v", err)
 	}
 }

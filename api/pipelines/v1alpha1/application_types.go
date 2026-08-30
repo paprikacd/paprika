@@ -220,6 +220,13 @@ type ApplicationSource struct {
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
 	PollInterval string `json:"pollInterval,omitempty"`
+	// TargetNamespace is the namespace passed to Helm for rendered resources.
+	// Defaults to the Application namespace.
+	// +optional
+	TargetNamespace string `json:"targetNamespace,omitempty"`
+	// ValuesFile contains inline YAML Helm values merged with release parameters.
+	// +optional
+	ValuesFile string `json:"valuesFile,omitempty"`
 	// Inline references a manifest snapshot ConfigMap (for type=inline).
 	// +optional
 	Inline *InlineSourceSpec `json:"inline,omitempty"`
