@@ -739,3 +739,57 @@ func TestComputeDiff_KnativeServiceAndChildServiceDoNotCollide(t *testing.T) {
 	assert.Equal(t, "deephost-hydra", result.Unchanged[0].Name)
 	assert.Zero(t, result.OutOfSyncCount())
 }
+
+func TestComputeDiff_FetchesNamespacedResourcesFromDeclaredNamespaces(t *testing.T) {
+	t.Parallel()
+
+	grant := func() *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "gateway.networking.k8s.io/v1beta1",
+			"kind":       "ReferenceGrant",
+			"metadata": map[string]interface{}{
+				"name":      "allow-grafana",
+				"namespace": "kourier-system",
+			},
+			"spec": map[string]interface{}{
+				"from": []interface{}{map[string]interface{}{
+					"group":     "gateway.networking.k8s.io",
+					"kind":      "HTTPRoute",
+					"namespace": "deephost",
+				}},
+				"to": []interface{}{map[string]interface{}{
+					"group": "",
+					"kind":  "Service",
+				}},
+			},
+		}}
+	}
+
+	desired := []unstructured.Unstructured{*grant()}
+	live := grant()
+	live.SetLabels(map[string]string{
+		ManagedByLabelKey:       ManagedByLabelValue,
+		ApplicationNameLabelKey: "deephost",
+	})
+
+	scheme := runtime.NewScheme()
+	listKinds := map[schema.GroupVersionResource]string{
+		{Group: "gateway.networking.k8s.io", Version: "v1beta1", Resource: "referencegrants"}: "ReferenceGrantList",
+	}
+	dynClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, listKinds, live)
+	eng := NewScalableDiffEngine(dynClient)
+	eng.SetLiveCache(nil)
+
+	result, err := eng.ComputeDiff(context.Background(), desired, &DiffOptions{
+		Namespace:       "deephost",
+		LabelSelector:   ManagedByAppSelector("deephost").String(),
+		ApplicationName: "deephost",
+	})
+	require.NoError(t, err)
+	assert.Empty(t, result.Added)
+	assert.Empty(t, result.Modified)
+	assert.Empty(t, result.Deleted)
+	require.Len(t, result.Unchanged, 1)
+	assert.Equal(t, "kourier-system", result.Unchanged[0].Namespace)
+	assert.Zero(t, result.OutOfSyncCount())
+}

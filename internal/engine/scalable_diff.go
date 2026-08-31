@@ -93,7 +93,7 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 
 	desiredMap := make(map[string]unstructured.Unstructured)
 	gvrSet := make(map[schema.GroupVersionResource]struct{})
-	gvrNamespaces := make(map[schema.GroupVersionResource]string)
+	gvrNamespaces := make(map[schema.GroupVersionResource]map[string]struct{})
 	for i := range desired {
 		obj := &desired[i]
 		if err := ensureManagedLabels(obj, opts); err != nil {
@@ -103,11 +103,16 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		desiredMap[key] = *obj
 		if gvr, err := gvrForObjectWithResolver(ctx, d.Resolver, obj); err == nil {
 			gvrSet[gvr] = struct{}{}
+			namespace := obj.GetNamespace()
 			if isClusterScopedKind(obj.GetKind()) {
-				gvrNamespaces[gvr] = ""
-			} else if _, exists := gvrNamespaces[gvr]; !exists {
-				gvrNamespaces[gvr] = opts.Namespace
+				namespace = ""
+			} else if namespace == "" {
+				namespace = opts.Namespace
 			}
+			if _, exists := gvrNamespaces[gvr]; !exists {
+				gvrNamespaces[gvr] = make(map[string]struct{})
+			}
+			gvrNamespaces[gvr][namespace] = struct{}{}
 		}
 	}
 
@@ -193,7 +198,7 @@ func isGeneratedChildResource(obj *unstructured.Unstructured, desiredKinds map[s
 	return true
 }
 
-func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}, gvrNamespaces map[schema.GroupVersionResource]string) (map[string]unstructured.Unstructured, error) {
+func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}, gvrNamespaces map[schema.GroupVersionResource]map[string]struct{}) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
 	selector, err := labels.Parse(opts.LabelSelector)
 	if err != nil {
@@ -201,43 +206,44 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 	}
 
 	for gvr := range gvrSet {
-		namespace := gvrNamespaces[gvr]
-		var list *unstructured.UnstructuredList
-		var err error
-		var cacheErr error
-		if d.liveCache != nil {
-			var items []unstructured.Unstructured
-			items, cacheErr = d.liveCache.Get(ctx, gvr, namespace, selector)
-			if cacheErr == nil {
-				list = &unstructured.UnstructuredList{Items: items}
-			}
-		}
-		if list == nil {
-			listOpts := metav1.ListOptions{
-				LabelSelector: opts.LabelSelector,
-				FieldSelector: opts.FieldSelector,
-			}
-			resource := d.DynClient.Resource(gvr)
-			if namespace == "" {
-				list, err = resource.List(ctx, listOpts)
-			} else {
-				list, err = resource.Namespace(namespace).List(ctx, listOpts)
-			}
-			if err != nil {
-				if cacheErr != nil {
-					log.FromContext(ctx).V(1).Info("Live cache and API both failed for GVR",
-						"gvr", gvr, "cacheErr", cacheErr, "apiErr", err)
+		for namespace := range gvrNamespaces[gvr] {
+			var list *unstructured.UnstructuredList
+			var err error
+			var cacheErr error
+			if d.liveCache != nil {
+				var items []unstructured.Unstructured
+				items, cacheErr = d.liveCache.Get(ctx, gvr, namespace, selector)
+				if cacheErr == nil {
+					list = &unstructured.UnstructuredList{Items: items}
 				}
-				continue
 			}
-		}
-		for i := range list.Items {
-			item := &list.Items[i]
-			if shouldIgnoreLiveResource(item) {
-				continue
+			if list == nil {
+				listOpts := metav1.ListOptions{
+					LabelSelector: opts.LabelSelector,
+					FieldSelector: opts.FieldSelector,
+				}
+				resource := d.DynClient.Resource(gvr)
+				if namespace == "" {
+					list, err = resource.List(ctx, listOpts)
+				} else {
+					list, err = resource.Namespace(namespace).List(ctx, listOpts)
+				}
+				if err != nil {
+					if cacheErr != nil {
+						log.FromContext(ctx).V(1).Info("Live cache and API both failed for GVR",
+							"gvr", gvr, "namespace", namespace, "cacheErr", cacheErr, "apiErr", err)
+					}
+					continue
+				}
 			}
-			key := resourceKey(item)
-			result[key] = *item
+			for i := range list.Items {
+				item := &list.Items[i]
+				if shouldIgnoreLiveResource(item) {
+					continue
+				}
+				key := resourceKey(item)
+				result[key] = *item
+			}
 		}
 	}
 
