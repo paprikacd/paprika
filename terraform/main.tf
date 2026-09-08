@@ -37,13 +37,13 @@ variable "vke_node_plan" {
 variable "vke_node_count" {
   description = "Baseline node count for the VKE core node pool"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "vke_core_max_nodes" {
   description = "Maximum autoscaled node count for the VKE core node pool"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "vke_search_node_plan" {
@@ -209,9 +209,12 @@ resource "vultr_kubernetes" "omega" {
     node_quantity = var.vke_node_count
     plan          = var.vke_node_plan
     label         = "core"
-    auto_scaler   = true
-    min_nodes     = var.vke_node_count
-    max_nodes     = var.vke_core_max_nodes
+    # Live pool (verified 2026-09-08): 4 nodes, autoscaler on, pinned 4..4. A
+    # read-only plan showed the previous defaults would have SHRUNK it; keep the
+    # count and max in step with what Vultr runs.
+    auto_scaler = true
+    min_nodes   = var.vke_node_count
+    max_nodes   = var.vke_core_max_nodes
   }
 
 }
