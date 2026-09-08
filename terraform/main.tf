@@ -46,6 +46,18 @@ variable "vke_core_max_nodes" {
   default     = 4
 }
 
+variable "vke_core_large_node_plan" {
+  description = "Vultr plan for the core-large pool (heavy tenants such as the Greenveil API)"
+  type        = string
+  default     = "vc2-4c-8gb"
+}
+
+variable "vke_core_large_node_count" {
+  description = "Node count for the core-large pool"
+  type        = number
+  default     = 2
+}
+
 variable "vke_search_node_plan" {
   description = "Vultr plan for the dedicated VKE search node pool"
   type        = string
@@ -217,6 +229,22 @@ resource "vultr_kubernetes" "omega" {
     max_nodes   = var.vke_core_max_nodes
   }
 
+}
+
+# Dedicated pool for the heavy tenants (the Greenveil API runs 1.3-1.7 cores and
+# ~1.6 GiB per pod, steadily). On the 2-core `core` nodes one such pod starved
+# the kubelet into NotReady (2026-09-08); two 4c/8g nodes give each API replica
+# a node with real headroom while the many small tenants keep the core pool.
+# Created out of band via the Vultr API on 2026-09-08 and imported.
+resource "vultr_kubernetes_node_pools" "core_large" {
+  cluster_id    = vultr_kubernetes.omega.id
+  node_quantity = var.vke_core_large_node_count
+  plan          = var.vke_core_large_node_plan
+  label         = "core-large"
+  tag           = "tf-vke-core-large"
+  # Fixed size: pin the autoscaler bounds to the count so all three move together.
+  min_nodes = var.vke_core_large_node_count
+  max_nodes = var.vke_core_large_node_count
 }
 
 resource "vultr_kubernetes_node_pools" "search" {
