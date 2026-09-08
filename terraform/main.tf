@@ -37,13 +37,25 @@ variable "vke_node_plan" {
 variable "vke_node_count" {
   description = "Baseline node count for the VKE core node pool"
   type        = number
-  default     = 3
+  default     = 4
 }
 
 variable "vke_core_max_nodes" {
   description = "Maximum autoscaled node count for the VKE core node pool"
   type        = number
-  default     = 3
+  default     = 4
+}
+
+variable "vke_core_large_node_plan" {
+  description = "Vultr plan for the core-large pool (heavy tenants such as the Greenveil API)"
+  type        = string
+  default     = "vc2-4c-8gb"
+}
+
+variable "vke_core_large_node_count" {
+  description = "Node count for the core-large pool"
+  type        = number
+  default     = 2
 }
 
 variable "vke_search_node_plan" {
@@ -209,11 +221,30 @@ resource "vultr_kubernetes" "omega" {
     node_quantity = var.vke_node_count
     plan          = var.vke_node_plan
     label         = "core"
-    auto_scaler   = true
-    min_nodes     = var.vke_node_count
-    max_nodes     = var.vke_core_max_nodes
+    # Live pool (verified 2026-09-08): 4 nodes, autoscaler on, pinned 4..4. A
+    # read-only plan showed the previous defaults would have SHRUNK it; keep the
+    # count and max in step with what Vultr runs.
+    auto_scaler = true
+    min_nodes   = var.vke_node_count
+    max_nodes   = var.vke_core_max_nodes
   }
 
+}
+
+# Dedicated pool for the heavy tenants (the Greenveil API runs 1.3-1.7 cores and
+# ~1.6 GiB per pod, steadily). On the 2-core `core` nodes one such pod starved
+# the kubelet into NotReady (2026-09-08); two 4c/8g nodes give each API replica
+# a node with real headroom while the many small tenants keep the core pool.
+# Created out of band via the Vultr API on 2026-09-08 and imported.
+resource "vultr_kubernetes_node_pools" "core_large" {
+  cluster_id    = vultr_kubernetes.omega.id
+  node_quantity = var.vke_core_large_node_count
+  plan          = var.vke_core_large_node_plan
+  label         = "core-large"
+  tag           = "tf-vke-core-large"
+  # Fixed size: pin the autoscaler bounds to the count so all three move together.
+  min_nodes = var.vke_core_large_node_count
+  max_nodes = var.vke_core_large_node_count
 }
 
 resource "vultr_kubernetes_node_pools" "search" {
