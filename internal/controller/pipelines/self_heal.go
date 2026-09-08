@@ -95,8 +95,19 @@ func (r *ApplicationReconciler) selfHealOnCooldown(app *paprikav1.Application) b
 	if elapsed >= cooldown {
 		return false
 	}
+	// The message must not carry the remaining time. Reconcile already requeues
+	// every few seconds, so a countdown here differs on every pass; each pass
+	// writes the status, every status write is a watch event, and the event
+	// schedules another reconcile. The controller then spins on its own status
+	// — an Application in cooldown was reconciling about twice a second instead
+	// of once per requeue, and it never settles until the cooldown ends.
+	//
+	// Both values below are fixed for the life of a cooldown window, so the
+	// condition is written once and left alone. The remaining time is still
+	// derivable: status.lastSelfHealTime plus this cooldown.
 	r.setSelfHealCondition(app, metav1.ConditionFalse, "CooldownActive",
-		fmt.Sprintf("Cooldown of %v remaining", cooldown-elapsed))
+		fmt.Sprintf("Self-heal cooldown of %s since %s", cooldown,
+			app.Status.LastSelfHealTime.UTC().Format(time.RFC3339)))
 	return true
 }
 

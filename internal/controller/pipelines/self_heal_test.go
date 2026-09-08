@@ -312,3 +312,47 @@ func TestApplicationReconciler_reconcileSelfHeal(t *testing.T) {
 		})
 	}
 }
+
+// TestSelfHealCooldownConditionIsStableAcrossReconciles pins the property that
+// stopped an Application from settling.
+//
+// The cooldown message used to carry the remaining duration. Reconcile requeues
+// every few seconds, so that string differed on every pass; each pass wrote the
+// status, every status write was a watch event, and the event scheduled another
+// reconcile. An Application in cooldown reconciled about twice a second and
+// never settled until the window closed. The condition must therefore be
+// identical for two reconciles at different instants inside one window.
+func TestSelfHealCooldownConditionIsStableAcrossReconciles(t *testing.T) {
+	release := selfHealRelease("release-1", pipelinesv1alpha1.ReleaseComplete)
+	app := selfHealApp(pipelinesv1alpha1.ApplicationHealthy, pipelinesv1alpha1.HealthHealthy, 1)
+	app.Spec.SelfHeal.Cooldown = "10m"
+	app.Status.LastSelfHealTime = &metav1.Time{Time: selfHealTestNow.Add(-5 * time.Minute)}
+
+	reconciler := selfHealReconciler(newSelfHealTestClient(release, app))
+	if err := reconciler.reconcileSelfHeal(context.Background(), app); err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	first := meta.FindStatusCondition(app.Status.Conditions, selfHealConditionType)
+	if first == nil {
+		t.Fatal("no self-heal condition after the first reconcile")
+	}
+	firstMessage := first.Message
+
+	// Same cooldown window, a later instant. Nothing an operator cares about has
+	// changed, so nothing in the condition may change either.
+	reconciler.now = func() time.Time { return selfHealTestNow.Add(90 * time.Second) }
+	if err := reconciler.reconcileSelfHeal(context.Background(), app); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	second := meta.FindStatusCondition(app.Status.Conditions, selfHealConditionType)
+	if second == nil {
+		t.Fatal("no self-heal condition after the second reconcile")
+	}
+	if second.Reason != "CooldownActive" {
+		t.Errorf("Reason = %q, want CooldownActive", second.Reason)
+	}
+	if second.Message != firstMessage {
+		t.Errorf("cooldown message changed between reconciles:\n  first:  %q\n  second: %q\nA message that moves on every pass makes the controller spin on its own status.",
+			firstMessage, second.Message)
+	}
+}
