@@ -304,11 +304,11 @@ rules:
   - update
   - watch
 - apiGroups:
- - gateway.networking.k8s.io
- resources:
- - httproutes
- - referencegrants
- verbs:
+  - gateway.networking.k8s.io
+  resources:
+  - httproutes
+  - referencegrants
+  verbs:
   - create
   - delete
   - get
