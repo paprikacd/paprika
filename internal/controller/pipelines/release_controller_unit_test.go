@@ -1162,7 +1162,11 @@ func TestReleaseReconciler_applyDocument_UsesClusterScopeForClusterResources(t *
 	dynClient := dynamicfake.NewSimpleDynamicClient(scheme)
 	var gotNamespace string
 	dynClient.PrependReactor("patch", "customresourcedefinitions", func(action ktesting.Action) (bool, runtime.Object, error) {
-		gotNamespace = action.(ktesting.PatchAction).GetNamespace()
+		patch, ok := action.(ktesting.PatchAction)
+		if !ok {
+			t.Fatalf("reactor received %T, want a PatchAction", action)
+		}
+		gotNamespace = patch.GetNamespace()
 		return true, &unstructured.Unstructured{Object: map[string]interface{}{
 			"apiVersion": "apiextensions.k8s.io/v1",
 			"kind":       "CustomResourceDefinition",
@@ -1276,8 +1280,8 @@ data:
 	}
 
 	// desired-config should still exist.
-	if _, err := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "desired-config", metav1.GetOptions{}); err != nil {
-		t.Errorf("desired-config should not be pruned: %v", err)
+	if _, getErr := dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "desired-config", metav1.GetOptions{}); getErr != nil {
+		t.Errorf("desired-config should not be pruned: %v", getErr)
 	}
 	// stale-config should be deleted.
 	_, err = dynClient.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("default").Get(context.Background(), "stale-config", metav1.GetOptions{})

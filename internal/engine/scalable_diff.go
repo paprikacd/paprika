@@ -198,6 +198,10 @@ func isGeneratedChildResource(obj *unstructured.Unstructured, desiredKinds map[s
 	return true
 }
 
+// or not, with partial-discovery failures tolerated. The nesting mirrors the
+// shape of the discovery API.
+//
+//nolint:gocognit,nestif,cyclop // nesting mirrors the discovery API's shape.
 func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffOptions, gvrSet map[schema.GroupVersionResource]struct{}, gvrNamespaces map[schema.GroupVersionResource]map[string]struct{}) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
 	selector, err := labels.Parse(opts.LabelSelector)
@@ -259,10 +263,6 @@ func isClusterScopedKind(kind string) bool {
 	}
 }
 
-func gvrForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
-	return gvrForObjectWithResolver(context.Background(), nil, obj)
-}
-
 // gvrForObjectWithResolver resolves the GVR for an object, preferring the
 // given resolver (discovery API) over static aliases and pluralization.
 func gvrForObjectWithResolver(ctx context.Context, resolver GVRResolver, obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
@@ -271,7 +271,11 @@ func gvrForObjectWithResolver(ctx context.Context, resolver GVRResolver, obj *un
 	group, version := parseAPIVersion(apiVersion)
 
 	if resolver != nil {
-		return resolver.Resolve(ctx, group, version, kind)
+		gvr, err := resolver.Resolve(ctx, group, version, kind)
+		if err != nil {
+			return gvr, fmt.Errorf("resolve %s/%s kind %s: %w", group, version, kind, err)
+		}
+		return gvr, nil
 	}
 
 	// Known kinds cover core resources and common aliases. Do not let a kind

@@ -236,19 +236,40 @@ func TestResourceEqual_TreatsNullAsAbsent(t *testing.T) {
 
 	// server-side apply drops declared-null keys from the stored object.
 	live := desired.DeepCopy()
-	e := live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
-	env := e["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
-	delete(env[0].(map[string]interface{}), "value")
-	delete(env[1].(map[string]interface{}), "value")
-	vol := e["volumes"].([]interface{})[0].(map[string]interface{})
-	delete(vol, "emptyDir")
+	// Checked rather than bare: an unchecked assertion here panics with a message
+	// that says nothing about which step of the walk went wrong, and this fixture
+	// gets edited whenever the manifest shape changes.
+	e := asMap(t, asMap(t, asMap(t, live.Object, "spec"), "template"), "spec")
+	containers := asSlice(t, e, "containers")
+	if len(containers) == 0 {
+		t.Fatal("fixture has no containers")
+	}
+	env := asSlice(t, asValueMap(t, containers[0], "containers[0]"), "env")
+	if len(env) < 2 {
+		t.Fatal("fixture container has fewer than two env entries")
+	}
+	delete(asValueMap(t, env[0], "env[0]"), "value")
+	delete(asValueMap(t, env[1], "env[1]"), "value")
+	volumes := asSlice(t, e, "volumes")
+	if len(volumes) == 0 {
+		t.Fatal("fixture has no volumes")
+	}
+	delete(asValueMap(t, volumes[0], "volumes[0]"), "emptyDir")
 
 	assert.True(t, resourceEqual(desired, *live))
 
 	// A declared null that live still carries as a value must remain drift.
 	stale := desired.DeepCopy()
-	s := stale.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})
-	s["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{})["value"] = "AKIA-STALE"
+	staleSpec := asMap(t, asMap(t, asMap(t, stale.Object, "spec"), "template"), "spec")
+	staleContainers := asSlice(t, staleSpec, "containers")
+	if len(staleContainers) == 0 {
+		t.Fatal("fixture has no containers")
+	}
+	staleEnv := asSlice(t, asValueMap(t, staleContainers[0], "containers[0]"), "env")
+	if len(staleEnv) == 0 {
+		t.Fatal("fixture container has no env entries")
+	}
+	asValueMap(t, staleEnv[0], "env[0]")["value"] = "AKIA-STALE"
 	assert.False(t, resourceEqual(desired, *stale))
 }
 
@@ -337,8 +358,17 @@ func TestResourceEqual_IgnoresKubernetesOmittedDefaults(t *testing.T) {
 		},
 	}}
 	live := desired.DeepCopy()
-	delete(live.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})[0].(map[string]interface{}), "value")
-	live.Object["spec"].(map[string]interface{})["strategy"] = map[string]interface{}{"type": "RollingUpdate"}
+	liveSpec := asMap(t, asMap(t, asMap(t, live.Object, "spec"), "template"), "spec")
+	liveContainers := asSlice(t, liveSpec, "containers")
+	if len(liveContainers) == 0 {
+		t.Fatal("fixture has no containers")
+	}
+	liveEnvs := asSlice(t, asValueMap(t, liveContainers[0], "containers[0]"), "env")
+	if len(liveEnvs) == 0 {
+		t.Fatal("fixture container has no env entries")
+	}
+	delete(asValueMap(t, liveEnvs[0], "env[0]"), "value")
+	asMap(t, live.Object, "spec")["strategy"] = map[string]interface{}{"type": "RollingUpdate"}
 
 	assert.True(t, resourceEqual(desired, *live))
 }
@@ -689,8 +719,16 @@ func TestComputeDiff_KnativeServiceAndChildServiceDoNotCollide(t *testing.T) {
 	// Live Knative Service: server-side apply dropped the declared-null value.
 	liveKsvc := ksvc()
 	liveKsvc.SetLabels(map[string]string{ManagedByLabelKey: ManagedByLabelValue, ApplicationNameLabelKey: "deephost"})
-	liveEnv := liveKsvc.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["containers"].([]interface{})[0].(map[string]interface{})["env"].([]interface{})
-	delete(liveEnv[0].(map[string]interface{}), "value")
+	ksvcSpec := asMap(t, asMap(t, asMap(t, liveKsvc.Object, "spec"), "template"), "spec")
+	ksvcContainers := asSlice(t, ksvcSpec, "containers")
+	if len(ksvcContainers) == 0 {
+		t.Fatal("fixture has no containers")
+	}
+	liveEnv := asSlice(t, asValueMap(t, ksvcContainers[0], "containers[0]"), "env")
+	if len(liveEnv) == 0 {
+		t.Fatal("fixture container has no env entries")
+	}
+	delete(asValueMap(t, liveEnv[0], "env[0]"), "value")
 
 	// Knative Route child: core Service with the same name; controllers copy
 	// the applied resource's labels onto generated children.
@@ -792,4 +830,34 @@ func TestComputeDiff_FetchesNamespacedResourcesFromDeclaredNamespaces(t *testing
 	require.Len(t, result.Unchanged, 1)
 	assert.Equal(t, "kourier-system", result.Unchanged[0].Namespace)
 	assert.Zero(t, result.OutOfSyncCount())
+}
+
+// asMap, asSlice and asValueMap walk an unstructured fixture and name the step
+// that failed, rather than panicking somewhere further down with a message that
+// does not say which key was wrong.
+func asMap(t *testing.T, obj map[string]interface{}, key string) map[string]interface{} {
+	t.Helper()
+	value, ok := obj[key].(map[string]interface{})
+	if !ok {
+		t.Fatalf("fixture key %q is not a map", key)
+	}
+	return value
+}
+
+func asSlice(t *testing.T, obj map[string]interface{}, key string) []interface{} {
+	t.Helper()
+	value, ok := obj[key].([]interface{})
+	if !ok {
+		t.Fatalf("fixture key %q is not a list", key)
+	}
+	return value
+}
+
+func asValueMap(t *testing.T, value interface{}, description string) map[string]interface{} {
+	t.Helper()
+	mapped, ok := value.(map[string]interface{})
+	if !ok {
+		t.Fatalf("fixture %s is not a map", description)
+	}
+	return mapped
 }

@@ -1320,6 +1320,10 @@ func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, b
 // resources are considered, so cluster-scoped resources (Namespaces,
 // ClusterRoles, CRDs) are never touched. Resources annotated with
 // paprika.io/prune: "false" are never pruned regardless of ownership.
+// Every branch below is a reason not to delete something, and keeping them in
+// one place is the property that matters in code that prunes.
+//
+//nolint:gocognit,gocyclo // deletion guards read better together.
 func (r *ReleaseReconciler) pruneStaleResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName string, opts *paprikav1.SyncOptions) (int, error) {
 	if appName == "" {
 		return 0, nil
@@ -1439,13 +1443,15 @@ func gvrResourceKind(gvr schema.GroupVersionResource) string {
 	} else if strings.HasSuffix(r, "s") && len(r) > 1 {
 		r = r[:len(r)-1]
 	}
-	if len(r) == 0 {
+	if r == "" {
 		return ""
 	}
 	return strings.ToUpper(r[:1]) + r[1:]
 }
 
-//nolint:cyclop // apply path branches on sync options.
+// handling, CRD ordering, server-side apply and its conflict retries.
+//
+//nolint:cyclop,gocyclo // apply branches on sync options, CRD ordering and retries.
 func (r *ReleaseReconciler) applyDocument(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (bool, error) {
 	kind, ok := obj["kind"].(string)
 	if !ok || kind == "" {
@@ -1661,9 +1667,21 @@ func isClusterScopedKind(kind string) bool {
 	}
 }
 
+// gvrFromKind resolves a GroupVersionResource for a kind. The resolver call
+// is deliberately not tied to the caller's context: this runs during apply and
+// prune, and a resolution cancelled halfway leaves the reconciler unable to
+// name the resource it was about to act on. Threading a context through the
+// call sites changes cancellation behaviour in the apply path, so it belongs
+// in its own change rather than in a rollout.
+//
+//nolint:contextcheck // deliberate background context; see above.
 func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.GroupVersionResource, error) {
 	if r.Resolver != nil {
-		return r.Resolver.Resolve(context.Background(), group, version, kind)
+		gvr, err := r.Resolver.Resolve(context.Background(), group, version, kind)
+		if err != nil {
+			return gvr, fmt.Errorf("resolve %s/%s kind %s: %w", group, version, kind, err)
+		}
+		return gvr, nil
 	}
 
 	// Known kinds cover core resources and common aliases. Do not let a kind

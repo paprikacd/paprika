@@ -533,6 +533,9 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	return nil, nil
 }
 
+// would scatter the mapping across helpers without removing a decision.
+//
+//nolint:cyclop // one branch per optional Application field.
 func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 	spec := paprikav1.TemplateSpec{
 		Type:       string(app.Spec.Source.Type),
@@ -1252,6 +1255,9 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 	}
 }
 
+// collapsing them would hide which transitions are legal.
+//
+//nolint:cyclop // a phase transition table; the branches are the states.
 func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) bool {
 	if app.Status.Phase == phase {
 		return false

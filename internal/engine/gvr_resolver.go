@@ -39,6 +39,10 @@ func NewCachedGVRResolver(disc discovery.DiscoveryInterface) *CachedGVRResolver 
 // Resolve returns the GVR for the given group, version, and kind.
 // It checks the static fast path first, then the discovery cache, then the
 // discovery API, and finally falls back to pluralization heuristics.
+// static aliases, then pluralisation. Each step needs the one before it to have
+// missed, so the nesting is the order of preference rather than incidental.
+//
+//nolint:cyclop,nestif // fallback chain: cache, discovery, aliases, pluralise.
 func (r *CachedGVRResolver) Resolve(ctx context.Context, group, version, kind string) (schema.GroupVersionResource, error) {
 	// Fast path: static aliases for well-known types.
 	if group == "" {
@@ -70,7 +74,10 @@ func (r *CachedGVRResolver) Resolve(ctx context.Context, group, version, kind st
 		if err == nil {
 			r.mu.Lock()
 			kinds := make(map[string]schema.GroupVersionResource, len(resourceList.APIResources))
-			for _, ar := range resourceList.APIResources {
+			// Indexed rather than ranged by value: APIResource is 176 bytes and
+			// this loop runs over every resource the server knows about.
+			for i := range resourceList.APIResources {
+				ar := &resourceList.APIResources[i]
 				// Skip subresources (e.g. deployments/status).
 				if strings.Contains(ar.Name, "/") {
 					continue

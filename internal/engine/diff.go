@@ -62,6 +62,8 @@ func NewDiffEngine(dynClient *dynamic.DynamicClient, discovery discovery.Discove
 }
 
 // ComputeDiff computes the diff between desired and live resources in the given namespace.
+//
+//nolint:cyclop // added/modified/unchanged/deleted are four inherent outcomes.
 func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Unstructured, opts *DiffOptions) (*DiffResult, error) {
 	result := &DiffResult{}
 
@@ -132,6 +134,7 @@ func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Uns
 	return result, nil
 }
 
+//nolint:cyclop // one branch per discovery edge case; see fetchLiveResources in scalable_diff.go.
 func (d *DiffEngine) fetchLiveResources(ctx context.Context, namespace string) (map[string]unstructured.Unstructured, error) {
 	result := make(map[string]unstructured.Unstructured)
 
@@ -373,6 +376,9 @@ func appendPath(path []string, key string) []string {
 	return next
 }
 
+// It grows by one branch per known default; that is the point of it.
+//
+//nolint:cyclop // one branch per server-side default Kubernetes omits.
 func isOmittedKubernetesDefault(path []string, desired interface{}) bool {
 	if len(path) > 0 && path[len(path)-1] == "value" && isEmptyString(desired) {
 		for _, part := range path {
