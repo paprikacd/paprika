@@ -165,7 +165,7 @@ func (s *PaprikaServer) readCapacity(
 		return uniformCapacityOutcome(dataprovider.StateError, capacityBindingsUnreadableReason)
 	}
 
-	resolved := dataprovider.ResolveAll(scope, capacityBindingsFrom(&bindings))
+	resolved := dataprovider.ResolveAll(scope, capacityBindingsFrom(&bindings, s.controlPlaneNamespace))
 	if len(resolved) == 0 {
 		return notConfiguredCapacityOutcome()
 	}
@@ -238,16 +238,29 @@ func (s *PaprikaServer) readOneCapacityProvider(
 // resolver's own binding form.
 //
 // Bindings are read fleet-wide rather than per namespace on purpose: a
-// Global- or Cluster-scoped binding lives wherever an operator put it, and its
+// Cluster- or Project-scoped binding lives wherever an operator put it, and its
 // scope, not its namespace, decides what it applies to. The provider is keyed
 // by "<namespace>/<name>" because providerRef carries no namespace of its own
 // — a binding always refers to a CapacityProvider beside it — and the key has
 // to survive resolution for the winner to be fetchable afterwards.
-func capacityBindingsFrom(list *providersv1alpha1.DataProviderBindingList) []dataprovider.Binding {
+//
+// Reading fleet-wide is precisely why the Global scope has to be earned:
+// without the ScopeIsPermitted check, any tenant could create a Global binding
+// in its own namespace and repoint the capacity source every other tenant
+// sees. An ineligible binding is skipped rather than reported, because it is
+// not this read's business to explain another namespace's misconfiguration —
+// admission is where an operator is told (the same predicate decides both).
+func capacityBindingsFrom(
+	list *providersv1alpha1.DataProviderBindingList,
+	controlPlaneNamespace string,
+) []dataprovider.Binding {
 	bindings := make([]dataprovider.Binding, 0, len(list.Items))
 	for i := range list.Items {
 		item := &list.Items[i]
 		if item.Spec.ProviderRef.Kind != capacityProviderKind {
+			continue
+		}
+		if !item.ScopeIsPermitted(controlPlaneNamespace) {
 			continue
 		}
 		bindings = append(bindings, dataprovider.Binding{

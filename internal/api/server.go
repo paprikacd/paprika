@@ -93,6 +93,15 @@ func WithCapacityProviders(registry *dataprovider.Registry) ServerOption {
 	return func(s *PaprikaServer) { s.capacityProviders = registry }
 }
 
+// WithControlPlaneNamespace sets the namespace this control plane runs in,
+// which is the only namespace permitted to host a Global-scoped
+// DataProviderBinding. Leave it unset and no Global binding is honoured at
+// all — see DataProviderBinding.ScopeIsPermitted for why that is the safe
+// default rather than an inconvenient one.
+func WithControlPlaneNamespace(namespace string) ServerOption {
+	return func(s *PaprikaServer) { s.controlPlaneNamespace = namespace }
+}
+
 // WithAuditor sets the audit logger used to record mutating API operations.
 // If not set, auditing is disabled (NoopAuditor).
 func WithAuditor(a audit.Auditor) ServerOption {
@@ -113,6 +122,7 @@ type PaprikaServer struct {
 	authorizer                auth.Authorizer
 	fleetIndex                fleet.Reader
 	capacityProviders         *dataprovider.Registry
+	controlPlaneNamespace     string
 	// Auditor records structured audit events for mutating API operations. When
 	// nil, the AuditInterceptor falls back to a NoopAuditor.
 	Auditor audit.Auditor

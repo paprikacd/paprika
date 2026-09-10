@@ -64,6 +64,10 @@ func (s *stubCapacitySource) recorded() []dataprovider.ReadRequest {
 	return append([]dataprovider.ReadRequest(nil), s.requests...)
 }
 
+// capacityControlPlaneNamespace is where the test control plane runs, and so
+// the only namespace whose Global-scoped bindings are honoured.
+const capacityControlPlaneNamespace = "paprika-system"
+
 // capacityObservedAt is the fixed observation time the stub providers report,
 // so a test can assert the meter carries the time it was measured at.
 var capacityObservedAt = time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
@@ -152,6 +156,7 @@ func capacityTestServer(
 	return NewPaprikaServer(cl, nil,
 		WithFleetIndex(&systemStatusReader{snapshot: snapshot}),
 		WithCapacityProviders(registry),
+		WithControlPlaneNamespace(capacityControlPlaneNamespace),
 	)
 }
 
@@ -224,8 +229,8 @@ func TestGetClusterZeroesTheNumberBesideAFailedSample(t *testing.T) {
 		},
 	}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityProvider("tenant", "faulty", "Faulty"),
-		capacityBinding("tenant", "bind-faulty", "faulty", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "faulty", "Faulty"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-faulty", "faulty", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
@@ -243,10 +248,10 @@ func TestGetClusterMergesComplementaryProvidersIntoOneMeter(t *testing.T) {
 	structural := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	usage := &stubCapacitySource{name: "MetricsServer", reading: usageReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{structural, usage},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
-		capacityProvider("tenant", "usage", "MetricsServer"),
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeCluster, "eu-west-1"),
-		capacityBinding("tenant", "bind-usage", "usage", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityProvider(capacityControlPlaneNamespace, "usage", "MetricsServer"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeCluster, "eu-west-1"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-usage", "usage", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	capacity := getTestCluster(t, server).Capacity
@@ -270,10 +275,10 @@ func TestGetClusterKeepsMeasuredFieldsWhenAnotherProviderFails(t *testing.T) {
 	structural := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	usage := &stubCapacitySource{name: "MetricsServer", err: errCapacityStub}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{structural, usage},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
-		capacityProvider("tenant", "usage", "MetricsServer"),
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
-		capacityBinding("tenant", "bind-usage", "usage", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityProvider(capacityControlPlaneNamespace, "usage", "MetricsServer"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
+		capacityBinding(capacityControlPlaneNamespace, "bind-usage", "usage", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	capacity := getTestCluster(t, server).Capacity
@@ -290,8 +295,8 @@ func TestGetClusterCapacityNeverEchoesAProviderError(t *testing.T) {
 
 	source := &stubCapacitySource{name: "Leaky", err: errCapacityLeak}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityProvider("tenant", "leaky", "Leaky"),
-		capacityBinding("tenant", "bind-leaky", "leaky", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "leaky", "Leaky"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-leaky", "leaky", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
@@ -306,8 +311,8 @@ func TestGetClusterAsksTheClusterTheRequestNamed(t *testing.T) {
 
 	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	getTestCluster(t, server)
@@ -328,11 +333,11 @@ func TestGetClusterCapacityPrefersTheMostSpecificBinding(t *testing.T) {
 	specific := &stubCapacitySource{name: "Specific", reading: structuralReading()}
 	broad := &stubCapacitySource{name: "Broad", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{specific, broad},
-		capacityProvider("tenant", "specific", "Specific"),
-		capacityProvider("tenant", "broad", "Broad"),
-		capacityBinding("tenant", "bind-a", "specific", providersv1alpha1.ScopeCluster, "eu-west-1"),
-		capacityBinding("tenant", "bind-b", "specific", providersv1alpha1.ScopeGlobal, ""),
-		capacityBinding("tenant", "bind-c", "broad", providersv1alpha1.ScopeNamespace, "other-tenant"),
+		capacityProvider(capacityControlPlaneNamespace, "specific", "Specific"),
+		capacityProvider(capacityControlPlaneNamespace, "broad", "Broad"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-a", "specific", providersv1alpha1.ScopeCluster, "eu-west-1"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-b", "specific", providersv1alpha1.ScopeGlobal, ""),
+		capacityBinding(capacityControlPlaneNamespace, "bind-c", "broad", providersv1alpha1.ScopeNamespace, "other-tenant"),
 	)
 
 	getTestCluster(t, server)
@@ -345,7 +350,7 @@ func TestGetClusterReportsNotConfiguredWhenNothingIsBound(t *testing.T) {
 
 	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
@@ -364,7 +369,7 @@ func TestGetClusterReportsNotAvailableWhenTheBoundProviderIsGone(t *testing.T) {
 	// same as nothing being configured.
 	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
@@ -376,8 +381,8 @@ func TestGetClusterReportsNotConfiguredWhenTheProviderKeyIsUnknown(t *testing.T)
 	t.Parallel()
 
 	server := capacityTestServer(t, nil,
-		capacityProvider("tenant", "exotic", "CloudBillingCapacity"),
-		capacityBinding("tenant", "bind-exotic", "exotic", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "exotic", "CloudBillingCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-exotic", "exotic", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
@@ -394,13 +399,111 @@ func TestGetClusterCapacityMatchesAProjectScopedBinding(t *testing.T) {
 			Namespace: "tenant", Name: "eu-west-1",
 			Labels: map[string]string{projectLabelKey: "payments"},
 		}},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeProject, "payments"),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeProject, "payments"),
 	)
 
 	cpu := getTestCluster(t, server).Capacity.Cpu
 	require.Equal(t, paprikav1.DataState_DATA_STATE_OK, cpu.AllocatableState,
 		"a cluster's project comes from its own label, so a project-scoped binding reaches it")
+}
+
+func TestGlobalBindingFromAForeignNamespaceIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	// Bindings are read fleet-wide, so without this rule any tenant could
+	// create a Global-scoped binding in its own namespace and repoint the
+	// capacity source every other tenant sees. Nothing crosses the boundary
+	// as data — the reading still lands in the asking tenant's response — but
+	// one namespace could blank or misdirect the whole fleet's meters.
+	intruder := &stubCapacitySource{name: "Intruder", reading: usageReading()}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{intruder},
+		capacityProvider("tenant", "intruder", "Intruder"),
+		capacityBinding("tenant", "bind-intruder", "intruder", providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	cpu := getTestCluster(t, server).Capacity.Cpu
+	require.Equal(t, paprikav1.DataState_DATA_STATE_NOT_CONFIGURED, cpu.UsedState,
+		"the fleet falls back to what it would have resolved without the foreign binding")
+	require.Equal(t, clusterCapacityUnavailableReason, cpu.UnavailableReason)
+	require.Empty(t, intruder.recorded(), "an ineligible binding must not even be read")
+}
+
+func TestGlobalBindingFromAForeignNamespaceCannotDisplaceAPermittedOne(t *testing.T) {
+	t.Parallel()
+
+	// The dangerous shape is not the lone intruder but the one that outranks,
+	// or merges ahead of, a binding an operator actually made.
+	legitimate := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
+	intruder := &stubCapacitySource{name: "Intruder", reading: usageReading()}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{legitimate, intruder},
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+			providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider("tenant", "intruder", "Intruder"),
+		capacityBinding("tenant", "bind-intruder", "intruder", providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	capacity := getTestCluster(t, server).Capacity
+	require.Equal(t, paprikav1.DataState_DATA_STATE_OK, capacity.Cpu.AllocatableState)
+	require.InDelta(t, 6000, capacity.Cpu.Allocatable, 0.001)
+	require.Equal(t, paprikav1.DataState_DATA_STATE_NOT_CONFIGURED, capacity.Cpu.UsedState,
+		"the intruder's usage must not merge into the fleet's meter")
+	require.Empty(t, capacity.UsageProvider)
+	require.Len(t, legitimate.recorded(), 1)
+	require.Empty(t, intruder.recorded())
+}
+
+func TestGlobalBindingInTheControlPlaneNamespaceAppliesFleetWide(t *testing.T) {
+	t.Parallel()
+
+	// The other half of the rule: a Global binding an operator made in the
+	// control plane's own namespace reaches a cluster in a different one.
+	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+			providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	cpu := getTestCluster(t, server).Capacity.Cpu
+	require.Equal(t, paprikav1.DataState_DATA_STATE_OK, cpu.AllocatableState)
+	require.InDelta(t, 6000, cpu.Allocatable, 0.001)
+}
+
+func TestScopedBindingsAreUnaffectedByTheGlobalRule(t *testing.T) {
+	t.Parallel()
+
+	// Namespace, Cluster and Project scopes name what they affect, so a tenant
+	// binding one from its own namespace is exactly what scoping is for and
+	// must keep working wherever the binding lives.
+	tests := map[string]struct {
+		kind      providersv1alpha1.ScopeKind
+		scopeName string
+	}{
+		"namespace": {kind: providersv1alpha1.ScopeNamespace, scopeName: "tenant"},
+		"cluster":   {kind: providersv1alpha1.ScopeCluster, scopeName: "eu-west-1"},
+		"project":   {kind: providersv1alpha1.ScopeProject, scopeName: "payments"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
+			server := capacityTestServer(t, []dataprovider.CapacitySource{source},
+				&clustersv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant", Name: "eu-west-1",
+					Labels: map[string]string{projectLabelKey: "payments"},
+				}},
+				capacityProvider("tenant", "structural", "KubernetesCapacity"),
+				capacityBinding("tenant", "bind-structural", "structural", test.kind, test.scopeName),
+			)
+
+			cpu := getTestCluster(t, server).Capacity.Cpu
+			require.Equal(t, paprikav1.DataState_DATA_STATE_OK, cpu.AllocatableState,
+				"a scoped binding from a tenant namespace still applies")
+			require.InDelta(t, 6000, cpu.Allocatable, 0.001)
+		})
+	}
 }
 
 func TestGetDataSourcesReportsCapacityFromTheResolvedProvider(t *testing.T) {
@@ -431,10 +534,10 @@ func TestGetDataSourcesReportsCapacityFromTheResolvedProvider(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			objs := []client.Object{capacityProvider("tenant", "structural", "KubernetesCapacity")}
+			objs := []client.Object{capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity")}
 			if test.bind {
 				objs = append(objs,
-					capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""))
+					capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""))
 			}
 			server := capacityTestServer(t, []dataprovider.CapacitySource{test.source}, objs...)
 
@@ -462,8 +565,8 @@ func TestGetDataSourcesProbesTheControlPlanesOwnCluster(t *testing.T) {
 
 	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
-		capacityProvider("tenant", "structural", "KubernetesCapacity"),
-		capacityBinding("tenant", "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural", providersv1alpha1.ScopeGlobal, ""),
 	)
 
 	_, err := server.GetDataSources(context.Background(), connect.NewRequest(

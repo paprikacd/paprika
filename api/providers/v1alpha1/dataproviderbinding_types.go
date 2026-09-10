@@ -104,6 +104,37 @@ type DataProviderBinding struct {
 	Status DataProviderBindingStatus `json:"status,omitempty"`
 }
 
+// ScopeIsPermitted reports whether the namespace this binding lives in is
+// allowed to declare the scope the binding declares.
+//
+// Namespace-, Cluster- and Project-scoped bindings are always permitted: they
+// name the thing they affect, and a tenant binding a provider to its own
+// namespace or its own cluster is exactly what scoping is for.
+//
+// A Global-scoped binding is different in kind. It applies to every scope in
+// the fleet, so a binding created in one tenant's namespace would silently
+// repoint the capacity source every other tenant sees — no data crosses the
+// boundary, but one namespace could blank or misdirect the whole fleet's
+// meters. Only the control plane's own namespace, which an operator already
+// controls, may host one.
+//
+// An empty controlPlaneNamespace permits no Global binding at all. A namespaced
+// object always has a namespace, so nothing can match it: a deployment that has
+// not been told where its control plane runs fails closed rather than honouring
+// a Global binding from wherever it happens to find one.
+//
+// This is the single predicate both the admission webhook and the resolver
+// consult, so what admission rejects is exactly what resolution ignores. Two
+// copies of the rule would eventually disagree, and an operator would get a
+// binding that applies but cannot be re-applied, or the reverse.
+func (b *DataProviderBinding) ScopeIsPermitted(controlPlaneNamespace string) bool {
+	if b.Spec.Scope.Kind != ScopeGlobal {
+		return true
+	}
+
+	return controlPlaneNamespace != "" && b.Namespace == controlPlaneNamespace
+}
+
 // +kubebuilder:object:root=true
 
 // DataProviderBindingList contains a list of DataProviderBinding.

@@ -34,9 +34,9 @@ var dataproviderbindinglog = logf.Log.WithName("dataproviderbinding-resource")
 
 // SetupDataProviderBindingWebhookWithManager registers the
 // DataProviderBinding validating webhook.
-func SetupDataProviderBindingWebhookWithManager(mgr ctrl.Manager) error {
+func SetupDataProviderBindingWebhookWithManager(mgr ctrl.Manager, controlPlaneNamespace string) error {
 	if err := ctrl.NewWebhookManagedBy(mgr, &v1alpha1.DataProviderBinding{}).
-		WithValidator(NewBindingValidator(mgr.GetClient())).
+		WithValidator(NewBindingValidator(mgr.GetClient(), controlPlaneNamespace)).
 		Complete(); err != nil {
 		return fmt.Errorf("setting up dataproviderbinding webhook: %w", err)
 	}
@@ -51,14 +51,25 @@ func SetupDataProviderBindingWebhookWithManager(mgr ctrl.Manager) error {
 // equality, so an empty name would over-match a scope that also has no
 // value set at that level), and one that duplicates another binding's
 // (providerRef.kind, scope.kind, scope.name) triple.
+//
+// It also rejects a Global-scoped binding created outside the control plane's
+// namespace, which would otherwise let one tenant repoint what every other
+// tenant sees. The resolver ignores exactly those bindings; admission is what
+// turns a silently inert binding into a clear error an operator can act on.
 type BindingValidator struct {
 	client client.Client
+
+	// controlPlaneNamespace is the one namespace permitted to host a
+	// Global-scoped binding. Empty permits none: see
+	// DataProviderBinding.ScopeIsPermitted.
+	controlPlaneNamespace string
 }
 
 // NewBindingValidator returns a validator that checks new and updated
-// bindings against the bindings already on the cluster via c.
-func NewBindingValidator(c client.Client) *BindingValidator {
-	return &BindingValidator{client: c}
+// bindings against the bindings already on the cluster via c, treating
+// controlPlaneNamespace as the only namespace that may declare Global scope.
+func NewBindingValidator(c client.Client, controlPlaneNamespace string) *BindingValidator {
+	return &BindingValidator{client: c, controlPlaneNamespace: controlPlaneNamespace}
 }
 
 func (v *BindingValidator) ValidateCreate(ctx context.Context, obj *v1alpha1.DataProviderBinding) (admission.Warnings, error) {
@@ -79,6 +90,19 @@ func (v *BindingValidator) ValidateDelete(_ context.Context, obj *v1alpha1.DataP
 func (v *BindingValidator) validate(ctx context.Context, binding *v1alpha1.DataProviderBinding) error {
 	var allErrs field.ErrorList
 	scopePath := field.NewPath("spec").Child("scope")
+
+	if !binding.ScopeIsPermitted(v.controlPlaneNamespace) {
+		allErrs = append(allErrs, field.Forbidden(scopePath.Child("kind"),
+			fmt.Sprintf("Global scope applies to the whole fleet, so a Global-scoped binding "+
+				"may only be created in the control plane namespace %q", v.controlPlaneNamespace)))
+		// Stop here rather than falling through to the duplicate check. That
+		// check lists bindings fleet-wide and names the one it collides with,
+		// so running it for a binding that is already invalid would tell one
+		// tenant what another tenant has bound, for no benefit: the message
+		// names the requirement and the namespace that satisfies it, and
+		// nothing else.
+		return newInvalidErr(kindDataProviderBinding, binding.Name, allErrs)
+	}
 
 	if binding.Spec.Scope.Kind != v1alpha1.ScopeGlobal && binding.Spec.Scope.Name == "" {
 		allErrs = append(allErrs, field.Required(scopePath.Child("name"),

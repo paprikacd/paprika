@@ -667,7 +667,10 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	if err != nil {
 		return nil, nil, err
 	}
-	opts = append(opts, apiserver.WithCapacityProviders(capacityRegistry))
+	opts = append(opts,
+		apiserver.WithCapacityProviders(capacityRegistry),
+		apiserver.WithControlPlaneNamespace(cfg.operatorNamespace),
+	)
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()

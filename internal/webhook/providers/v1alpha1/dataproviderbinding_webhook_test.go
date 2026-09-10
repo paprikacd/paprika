@@ -28,11 +28,16 @@ import (
 	v1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
 )
 
+// testControlPlaneNamespace is where the validator is told this control plane
+// runs, and so the only namespace whose Global-scoped bindings are admitted.
+// The existing fixtures live there, so every pre-existing case is unaffected.
+const testControlPlaneNamespace = "default"
+
 // binding returns a DataProviderBinding named name, bound to the given
 // scope kind and name, pointing at a fixed provider reference.
 func binding(name string, kind v1alpha1.ScopeKind, scopeName string) *v1alpha1.DataProviderBinding {
 	return &v1alpha1.DataProviderBinding{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testControlPlaneNamespace},
 		Spec: v1alpha1.DataProviderBindingSpec{
 			ProviderRef: v1alpha1.ProviderReference{Kind: "CapacityProvider", Name: "some-provider"},
 			Scope:       v1alpha1.BindingScope{Kind: kind, Name: scopeName},
@@ -53,7 +58,7 @@ func fakeClientWith(objs ...client.Object) client.Client {
 func TestDuplicateBindingForOneScopeAndClassIsRejected(t *testing.T) {
 	t.Parallel()
 	existing := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
-	v := NewBindingValidator(fakeClientWith(existing))
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
 	_, err := v.ValidateCreate(t.Context(), binding("b", v1alpha1.ScopeCluster, "prod-eu-1"))
 	require.ErrorContains(t, err, "already bound")
 }
@@ -61,7 +66,7 @@ func TestDuplicateBindingForOneScopeAndClassIsRejected(t *testing.T) {
 func TestDifferentScopeNamesAreNotDuplicates(t *testing.T) {
 	t.Parallel()
 	existing := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
-	v := NewBindingValidator(fakeClientWith(existing))
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
 	_, err := v.ValidateCreate(t.Context(), binding("b", v1alpha1.ScopeCluster, "prod-us-1"))
 	require.NoError(t, err)
 }
@@ -69,7 +74,7 @@ func TestDifferentScopeNamesAreNotDuplicates(t *testing.T) {
 func TestDifferentScopeKindsAreNotDuplicates(t *testing.T) {
 	t.Parallel()
 	existing := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
-	v := NewBindingValidator(fakeClientWith(existing))
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
 	_, err := v.ValidateCreate(t.Context(), binding("b", v1alpha1.ScopeNamespace, "prod-eu-1"))
 	require.NoError(t, err)
 }
@@ -77,7 +82,7 @@ func TestDifferentScopeKindsAreNotDuplicates(t *testing.T) {
 func TestUpdatingABindingDoesNotConflictWithItself(t *testing.T) {
 	t.Parallel()
 	existing := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
-	v := NewBindingValidator(fakeClientWith(existing))
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
 	updated := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
 	updated.Spec.ProviderRef.Name = "different-provider"
 	_, err := v.ValidateUpdate(t.Context(), existing, updated)
@@ -90,7 +95,7 @@ func TestUpdatingABindingDoesNotConflictWithItself(t *testing.T) {
 // scope that also has no cluster set.
 func TestClusterScopedBindingWithEmptyNameIsRejected(t *testing.T) {
 	t.Parallel()
-	v := NewBindingValidator(fakeClientWith())
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
 	_, err := v.ValidateCreate(t.Context(), binding("a", v1alpha1.ScopeCluster, ""))
 	require.ErrorContains(t, err, "scope name is required")
 }
@@ -99,15 +104,97 @@ func TestClusterScopedBindingWithEmptyNameIsRejected(t *testing.T) {
 // legitimately has no name to compare.
 func TestGlobalScopedBindingWithEmptyNameIsAccepted(t *testing.T) {
 	t.Parallel()
-	v := NewBindingValidator(fakeClientWith())
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
 	_, err := v.ValidateCreate(t.Context(), binding("a", v1alpha1.ScopeGlobal, ""))
 	require.NoError(t, err)
 }
 
 func TestValidateDeleteAlwaysAdmitsBinding(t *testing.T) {
 	t.Parallel()
-	v := NewBindingValidator(fakeClientWith())
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
 	warnings, err := v.ValidateDelete(t.Context(), binding("a", v1alpha1.ScopeGlobal, ""))
 	require.NoError(t, err)
 	require.Nil(t, warnings)
+}
+
+// bindingIn returns a binding that lives in namespace rather than in the
+// control plane's namespace.
+func bindingIn(namespace, name string, kind v1alpha1.ScopeKind, scopeName string) *v1alpha1.DataProviderBinding {
+	b := binding(name, kind, scopeName)
+	b.Namespace = namespace
+	return b
+}
+
+// TestGlobalBindingOutsideTheControlPlaneNamespaceIsRejected covers the Task 7
+// review finding: Global scope applies to every tenant, so a tenant-created
+// Global binding would repoint what the whole fleet sees. The resolver already
+// ignores such a binding; admission is what tells an operator why, instead of
+// leaving a binding that exists and does nothing.
+func TestGlobalBindingOutsideTheControlPlaneNamespaceIsRejected(t *testing.T) {
+	t.Parallel()
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), bindingIn("tenant", "a", v1alpha1.ScopeGlobal, ""))
+	require.ErrorContains(t, err, "Global scope applies to the whole fleet")
+	require.ErrorContains(t, err, testControlPlaneNamespace,
+		"the message must name the namespace that would satisfy the rule")
+}
+
+func TestGlobalBindingRejectionNamesOnlyTheNamespaceRequirement(t *testing.T) {
+	t.Parallel()
+	// Another tenant's binding is in the listing the duplicate check walks; the
+	// rejection must not mention it, or one tenant learns another's bindings.
+	existing := bindingIn("other-tenant", "their-binding", v1alpha1.ScopeGlobal, "")
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), bindingIn("tenant", "a", v1alpha1.ScopeGlobal, ""))
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "their-binding")
+	require.NotContains(t, err.Error(), "other-tenant")
+}
+
+func TestGlobalBindingInTheControlPlaneNamespaceIsAdmitted(t *testing.T) {
+	t.Parallel()
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), binding("a", v1alpha1.ScopeGlobal, ""))
+	require.NoError(t, err)
+}
+
+func TestScopedBindingsAreAdmittedFromAnyNamespace(t *testing.T) {
+	t.Parallel()
+	// The rule is about Global scope alone: a tenant binding a provider to its
+	// own namespace, cluster or project is exactly what scoping is for.
+	tests := map[string]struct {
+		kind      v1alpha1.ScopeKind
+		scopeName string
+	}{
+		"namespace": {kind: v1alpha1.ScopeNamespace, scopeName: "tenant"},
+		"cluster":   {kind: v1alpha1.ScopeCluster, scopeName: "prod-eu-1"},
+		"project":   {kind: v1alpha1.ScopeProject, scopeName: "payments"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+			_, err := v.ValidateCreate(t.Context(), bindingIn("tenant", "a", test.kind, test.scopeName))
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestNoNamespaceMayDeclareGlobalScopeWhenNoControlPlaneNamespaceIsSet(t *testing.T) {
+	t.Parallel()
+	// Fail closed: a deployment that has not been told where its control plane
+	// runs must not honour a Global binding from wherever it finds one.
+	v := NewBindingValidator(fakeClientWith(), "")
+	_, err := v.ValidateCreate(t.Context(), binding("a", v1alpha1.ScopeGlobal, ""))
+	require.ErrorContains(t, err, "Global scope applies to the whole fleet")
+}
+
+// TestValidateUpdateAppliesTheGlobalNamespaceRule keeps the rule from being
+// reachable by creating a scoped binding and then widening it.
+func TestValidateUpdateAppliesTheGlobalNamespaceRule(t *testing.T) {
+	t.Parallel()
+	existing := bindingIn("tenant", "a", v1alpha1.ScopeNamespace, "tenant")
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateUpdate(t.Context(), existing, bindingIn("tenant", "a", v1alpha1.ScopeGlobal, ""))
+	require.ErrorContains(t, err, "Global scope applies to the whole fleet")
 }

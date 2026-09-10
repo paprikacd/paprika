@@ -509,7 +509,10 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if err != nil {
 		return nil, err
 	}
-	opts = append(opts, apiserver.WithCapacityProviders(capacityRegistry))
+	opts = append(opts,
+		apiserver.WithCapacityProviders(capacityRegistry),
+		apiserver.WithControlPlaneNamespace(cfg.operatorNamespace),
+	)
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()
