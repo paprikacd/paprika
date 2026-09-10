@@ -19,12 +19,48 @@ supported and is how the meter is completed; see docs/guides/multi-cluster.md.
 
 Set capacity.defaultProvider.enabled=false to manage capacity providers
 yourself. Nothing else in the chart depends on these objects.
+
+These are ordinary CRs (providers.paprika.io), and this chart's providers.*
+CRDs (charts/chart/templates/crd/*.yaml) are plain templates, not `crds/`
+content — so on a fresh install Helm builds/REST-maps this entire manifest,
+CapacityProvider included, before it creates anything. The CRD template lives
+in the same manifest but hasn't been created yet at mapping time, so a fresh
+install against a cluster with no providers.paprika.io CRDs fails outright
+with "resource mapping not found for kind CapacityProvider". Upgrades and
+clusters that already have the CRDs never hit this, since the mapping already
+resolves.
+
+post-install defers this pair's own Build/Create to the post-install hook
+phase, which Helm runs only after the entire main manifest — the CRDs among
+it — has already been created (see helm.sh/helm/v3 pkg/action/install.go:
+execHook(HookPreInstall) -> KubeClient.Create(mainManifest) ->
+execHook(HookPostInstall)). By then providers.paprika.io is registered, so the
+mapping and create both succeed. It also buys the webhook (when
+webhook.enabled and failurePolicy=Fail) the time taken to create every other
+resource in the release before this binding is admitted, which is enough in
+practice even without --wait, though it is not an explicit readiness wait.
+
+post-install only (not post-upgrade) is deliberate: Helm's hook executor
+defaults an unannotated hook to hook-delete-policy=before-hook-creation,
+deleting any existing object of the same name immediately before recreating
+it. Firing on every upgrade would silently reset an operator's edits to these
+two objects on every release. Restricting this to post-install means the
+delete-then-create only ever happens once, when nothing exists yet, so it's a
+no-op. The cost: an existing release upgrading from a chart version where
+this template was a plain resource keeps them as plain, Helm-tracked
+resources (no change for that path); a release that installed with
+capacity.defaultProvider.enabled=false cannot pick these up later via `helm
+upgrade --set capacity.defaultProvider.enabled=true` — install with it enabled,
+or create the two objects by hand, per the comment above.
 */}}
 apiVersion: providers.paprika.io/v1alpha1
 kind: CapacityProvider
 metadata:
   name: {{ $providerName }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install
+    helm.sh/hook-weight: "5"
   labels:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -40,6 +76,11 @@ kind: DataProviderBinding
 metadata:
   name: {{ include "paprika.resourceName" (dict "suffix" "kubernetes-capacity-global" "context" $) }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install
+    # One weight step after the CapacityProvider above, so it is created
+    # after the provider it references by name in providerRef exists.
+    helm.sh/hook-weight: "6"
   labels:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
