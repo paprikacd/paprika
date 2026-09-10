@@ -76,11 +76,11 @@ func TestGitSourceResolve_RepairsLocalUploadPackCorruption(t *testing.T) {
 	}
 	t.Log("native local mirror error reproduced:", err)
 	sibling := filepath.Join(src.WorkDir, "git-mirrors", "sibling-cache", "sentinel")
-	if err := os.MkdirAll(filepath.Dir(sibling), 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(sibling), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
-	if err := os.WriteFile(sibling, []byte("unchanged sibling"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(sibling, []byte("unchanged sibling"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	got, err := src.Resolve(ctx)
 	if err != nil {
@@ -93,6 +93,7 @@ func TestGitSourceResolve_RepairsLocalUploadPackCorruption(t *testing.T) {
 	if err != nil || string(content) != "version: synthetic-recovery\n" {
 		t.Fatalf("recovered content mismatch: %q (%v)", content, err)
 	}
+	//nolint:gosec // Test reads its own sentinel within a t.TempDir fixture.
 	content, err = os.ReadFile(sibling)
 	if err != nil || string(content) != "unchanged sibling" {
 		t.Fatalf("sibling cache was modified: %q (%v)", content, err)
@@ -168,6 +169,7 @@ func TestGitSourceResolve_RemoteAuthAndTimeoutErrorsDoNotReset(t *testing.T) {
 				t.Fatalf("remote error retried %d times", failing.attempts)
 			}
 			for _, dir := range []string{mirror, worktree} {
+				//nolint:gosec // Test reads its own sentinel within a t.TempDir fixture.
 				got, readErr := os.ReadFile(filepath.Join(dir, "sentinel"))
 				if readErr != nil || string(got) != "preserve" {
 					t.Fatalf("cache reset on remote error: %v", readErr)
