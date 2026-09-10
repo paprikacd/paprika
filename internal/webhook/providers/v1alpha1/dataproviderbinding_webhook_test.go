@@ -73,9 +73,110 @@ func TestDifferentScopeNamesAreNotDuplicates(t *testing.T) {
 
 func TestDifferentScopeKindsAreNotDuplicates(t *testing.T) {
 	t.Parallel()
-	existing := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
+	// Both bindings name the same scope name, so only the kind distinguishes
+	// them. The name is the binding's own namespace because a Namespace-scoped
+	// binding may name no other; see ScopeIsPermitted.
+	existing := binding("a", v1alpha1.ScopeCluster, testControlPlaneNamespace)
 	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
-	_, err := v.ValidateCreate(t.Context(), binding("b", v1alpha1.ScopeNamespace, "prod-eu-1"))
+	_, err := v.ValidateCreate(t.Context(), binding("b", v1alpha1.ScopeNamespace, testControlPlaneNamespace))
+	require.NoError(t, err)
+}
+
+// bindingTo returns a binding named name that points at the CapacityProvider
+// called providerName, at the given scope.
+func bindingTo(name, providerName string, kind v1alpha1.ScopeKind, scopeName string) *v1alpha1.DataProviderBinding {
+	b := binding(name, kind, scopeName)
+	b.Spec.ProviderRef.Name = providerName
+	return b
+}
+
+// TestTwoProvidersMayBeBoundToOneScope covers the whole-branch review's
+// critical finding: both shipped implementations are Kind CapacityProvider, so
+// a duplicate rule keyed on the ref kind alone forbade binding
+// KubernetesCapacity and MetricsServer to the same scope — which is precisely
+// the composition ResolveAll and Merge exist to serve. KubernetesCapacity
+// supplies allocatable and requested; MetricsServer completes the meter with
+// used.
+func TestTwoProvidersMayBeBoundToOneScope(t *testing.T) {
+	t.Parallel()
+	existing := bindingTo("bind-structural", "kubernetes-capacity", v1alpha1.ScopeGlobal, "")
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(),
+		bindingTo("bind-usage", "metrics-server", v1alpha1.ScopeGlobal, ""))
+	require.NoError(t, err, "composing two providers at one scope is the point of the model")
+}
+
+// TestTheSameProviderTwiceAtOneScopeIsRejected is the other direction: two
+// bindings for one provider object at one scope say nothing the first does not,
+// and ResolveAll would pick one of them arbitrarily.
+func TestTheSameProviderTwiceAtOneScopeIsRejected(t *testing.T) {
+	t.Parallel()
+	existing := bindingTo("bind-one", "kubernetes-capacity", v1alpha1.ScopeGlobal, "")
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(),
+		bindingTo("bind-two", "kubernetes-capacity", v1alpha1.ScopeGlobal, ""))
+	require.ErrorContains(t, err, "already bound")
+}
+
+// TestSameProviderNameInAnotherNamespaceIsNotADuplicate holds the identity the
+// duplicate key uses to the one ResolveAll groups by: providerRef carries no
+// namespace, so "structural" in two namespaces is two different provider
+// objects, and both may bind one cluster.
+func TestSameProviderNameInAnotherNamespaceIsNotADuplicate(t *testing.T) {
+	t.Parallel()
+	existing := bindingTo("a", "structural", v1alpha1.ScopeCluster, "prod-eu-1")
+	existing.Namespace = "other-tenant"
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), bindingTo("b", "structural", v1alpha1.ScopeCluster, "prod-eu-1"))
+	require.NoError(t, err)
+}
+
+// TestNamespaceScopedBindingNamingAnotherNamespaceIsRejected covers the
+// whole-branch finding that Namespace is the most specific level in the chain,
+// so an unguarded one lets any tenant win the precedence chain inside another
+// tenant's namespace.
+func TestNamespaceScopedBindingNamingAnotherNamespaceIsRejected(t *testing.T) {
+	t.Parallel()
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), bindingIn("tenant", "a", v1alpha1.ScopeNamespace, "victim"))
+	require.ErrorContains(t, err, "may only name the namespace it lives in")
+	require.ErrorContains(t, err, "tenant", "the message must name the namespace that would satisfy the rule")
+}
+
+func TestNamespaceScopedBindingNamingItsOwnNamespaceIsAdmitted(t *testing.T) {
+	t.Parallel()
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), bindingIn("tenant", "a", v1alpha1.ScopeNamespace, "tenant"))
+	require.NoError(t, err)
+}
+
+// TestValidateUpdateAppliesTheNamespaceScopeRule keeps the rule from being
+// reachable by creating a well-scoped binding and then repointing it.
+func TestValidateUpdateAppliesTheNamespaceScopeRule(t *testing.T) {
+	t.Parallel()
+	existing := bindingIn("tenant", "a", v1alpha1.ScopeNamespace, "tenant")
+	v := NewBindingValidator(fakeClientWith(existing), testControlPlaneNamespace)
+	_, err := v.ValidateUpdate(t.Context(), existing, bindingIn("tenant", "a", v1alpha1.ScopeNamespace, "victim"))
+	require.ErrorContains(t, err, "may only name the namespace it lives in")
+}
+
+// TestScopeSelectorIsRejectedUntilSomethingReadsIt covers the minor finding of
+// the same class as validateNoConfig: the CRD serves scope.selector and no
+// resolver consults it, so a selector an operator sets would silently widen the
+// binding to the whole scope.
+func TestScopeSelectorIsRejectedUntilSomethingReadsIt(t *testing.T) {
+	t.Parallel()
+	b := binding("a", v1alpha1.ScopeCluster, "prod-eu-1")
+	b.Spec.Scope.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"tier": "gold"}}
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), b)
+	require.ErrorContains(t, err, "not yet supported")
+}
+
+func TestAnAbsentScopeSelectorIsAdmitted(t *testing.T) {
+	t.Parallel()
+	v := NewBindingValidator(fakeClientWith(), testControlPlaneNamespace)
+	_, err := v.ValidateCreate(t.Context(), binding("a", v1alpha1.ScopeCluster, "prod-eu-1"))
 	require.NoError(t, err)
 }
 

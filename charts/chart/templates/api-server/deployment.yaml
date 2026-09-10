@@ -72,6 +72,9 @@ spec:
       - args:
         - --mode=api
         - --health-probe-bind-address=:8081
+        # See the manager deployment: the release namespace, not the flag's
+        # default, is what bounds Global-scoped DataProviderBindings.
+        - --operator-namespace={{ .Release.Namespace }}
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
         {{- range .Values.apiServer.args }}

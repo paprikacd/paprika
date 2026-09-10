@@ -101,6 +101,13 @@ spec:
         {{- end }}
         - --leader-elect
         - --health-probe-bind-address=:8081
+        # The namespace this release installs into is the control plane's own
+        # namespace, and Global-scoped DataProviderBindings are admitted from
+        # there and nowhere else. Left to the flag's own default the boundary
+        # would key off the literal "paprika-system" wherever the chart is
+        # installed, so a tenant able to create a namespace by that name in an
+        # install that lives elsewhere would inherit fleet-wide Global scope.
+        - --operator-namespace={{ .Release.Namespace }}
         {{- if eq .Values.deploymentMode "split" }}
         - --mode=operator
         {{- else }}

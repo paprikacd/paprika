@@ -26,12 +26,16 @@ func TestScopeIsPermittedGuardsGlobalScopeByNamespace(t *testing.T) {
 	t.Parallel()
 
 	// Global scope applies to every tenant, so only the control plane's own
-	// namespace may declare it. This predicate is consulted by both the
-	// admission webhook and the capacity resolver, so the two cannot drift:
-	// what admission rejects is exactly what resolution ignores.
+	// namespace may declare it. Namespace scope is the most specific level in
+	// the chain, so a binding may name only the namespace it lives in — one
+	// naming somebody else's namespace would win the chain there. This
+	// predicate is consulted by both the admission webhook and the capacity
+	// resolver, so the two cannot drift: what admission rejects is exactly what
+	// resolution ignores.
 	tests := map[string]struct {
 		namespace     string
 		kind          ScopeKind
+		scopeName     string
 		controlPlane  string
 		wantPermitted bool
 	}{
@@ -44,14 +48,36 @@ func TestScopeIsPermittedGuardsGlobalScopeByNamespace(t *testing.T) {
 		"global with no control plane namespace configured": {
 			namespace: "tenant", kind: ScopeGlobal, controlPlane: "", wantPermitted: false,
 		},
-		"namespace scope from a tenant namespace": {
-			namespace: "tenant", kind: ScopeNamespace, controlPlane: "paprika-system", wantPermitted: true,
+		"namespace scope naming its own namespace": {
+			namespace: "tenant", kind: ScopeNamespace, scopeName: "tenant",
+			controlPlane: "paprika-system", wantPermitted: true,
+		},
+		"namespace scope naming another tenant's namespace": {
+			namespace: "tenant", kind: ScopeNamespace, scopeName: "victim",
+			controlPlane: "paprika-system", wantPermitted: false,
+		},
+		"namespace scope from the control plane naming a tenant": {
+			// Not even the control plane's namespace may claim the most
+			// specific level of somebody else's namespace: an operator who
+			// wants to reach every tenant has Global, which is audited as such.
+			namespace: "paprika-system", kind: ScopeNamespace, scopeName: "tenant",
+			controlPlane: "paprika-system", wantPermitted: false,
+		},
+		"namespace scope with no name": {
+			namespace: "tenant", kind: ScopeNamespace, scopeName: "",
+			controlPlane: "paprika-system", wantPermitted: false,
 		},
 		"cluster scope from a tenant namespace": {
-			namespace: "tenant", kind: ScopeCluster, controlPlane: "paprika-system", wantPermitted: true,
+			namespace: "tenant", kind: ScopeCluster, scopeName: "prod-eu-1",
+			controlPlane: "paprika-system", wantPermitted: true,
 		},
 		"project scope from a tenant namespace": {
-			namespace: "tenant", kind: ScopeProject, controlPlane: "paprika-system", wantPermitted: true,
+			namespace: "tenant", kind: ScopeProject, scopeName: "payments",
+			controlPlane: "paprika-system", wantPermitted: true,
+		},
+		"an unknown scope kind fails closed": {
+			namespace: "tenant", kind: ScopeKind("Universe"), scopeName: "everything",
+			controlPlane: "paprika-system", wantPermitted: false,
 		},
 	}
 	for name, test := range tests {
@@ -59,7 +85,7 @@ func TestScopeIsPermittedGuardsGlobalScopeByNamespace(t *testing.T) {
 			t.Parallel()
 			binding := &DataProviderBinding{
 				ObjectMeta: metav1.ObjectMeta{Namespace: test.namespace, Name: "b"},
-				Spec:       DataProviderBindingSpec{Scope: BindingScope{Kind: test.kind, Name: "x"}},
+				Spec:       DataProviderBindingSpec{Scope: BindingScope{Kind: test.kind, Name: test.scopeName}},
 			}
 			require.Equal(t, test.wantPermitted, binding.ScopeIsPermitted(test.controlPlane))
 		})

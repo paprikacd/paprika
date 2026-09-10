@@ -876,6 +876,25 @@ crd:
   # Keep CRDs when uninstalling
   keep: true
 
+## Cluster capacity data providers.
+##
+## Capacity meters are served by a CapacityProvider (which implementation
+## collects the numbers) bound to a scope by a DataProviderBinding (where it
+## applies: Namespace > Cluster > Project > Global, most specific wins).
+##
+capacity:
+  defaultProvider:
+    # Ship a KubernetesCapacity provider bound at Global scope, so the console's
+    # capacity board has real allocatable and requested figures on a default
+    # install. It reads nodes and pods through each cluster's own API and needs
+    # no configuration; `used` reports NOT_CONFIGURED until a usage provider
+    # (MetricsServer or Prometheus) is bound alongside it.
+    #
+    # Requires the providers.paprika.io CRDs, which crd.enable installs. Set
+    # this to false to manage capacity providers yourself; see
+    # docs/guides/multi-cluster.md.
+    enabled: true
+
 ## Controller metrics endpoint.
 ## Enable to expose /metrics endpoint
 ##

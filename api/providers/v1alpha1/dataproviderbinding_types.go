@@ -107,32 +107,51 @@ type DataProviderBinding struct {
 // ScopeIsPermitted reports whether the namespace this binding lives in is
 // allowed to declare the scope the binding declares.
 //
-// Namespace-, Cluster- and Project-scoped bindings are always permitted: they
-// name the thing they affect, and a tenant binding a provider to its own
-// namespace or its own cluster is exactly what scoping is for.
+// Two levels are guarded, and for the same reason: a binding must not be able
+// to speak for a scope its own namespace has no claim on.
 //
-// A Global-scoped binding is different in kind. It applies to every scope in
-// the fleet, so a binding created in one tenant's namespace would silently
-// repoint the capacity source every other tenant sees — no data crosses the
-// boundary, but one namespace could blank or misdirect the whole fleet's
-// meters. Only the control plane's own namespace, which an operator already
-// controls, may host one.
+// A Namespace-scoped binding is the MOST specific level in the chain, so it
+// beats every other binding for the namespace it names. Left unguarded, any
+// tenant could name another tenant's namespace and win there — blanking or
+// misdirecting that tenant's meters from outside it. So scope.name must equal
+// the binding's own metadata.namespace: a tenant may bind its own namespace and
+// nothing else.
+//
+// A Global-scoped binding is the other end of the same problem. It applies to
+// every scope in the fleet, so a binding created in one tenant's namespace
+// would silently repoint the capacity source every other tenant sees — no data
+// crosses the boundary, but one namespace could blank or misdirect the whole
+// fleet's meters. Only the control plane's own namespace, which an operator
+// already controls, may host one.
 //
 // An empty controlPlaneNamespace permits no Global binding at all. A namespaced
 // object always has a namespace, so nothing can match it: a deployment that has
 // not been told where its control plane runs fails closed rather than honouring
 // a Global binding from wherever it happens to find one.
 //
+// Cluster and Project scopes stay unguarded: neither a cluster nor a project is
+// owned by a namespace, so there is no "own" one to compare against. Guarding
+// them is a question for whenever Paprika grows an ownership model for either.
+//
 // This is the single predicate both the admission webhook and the resolver
 // consult, so what admission rejects is exactly what resolution ignores. Two
 // copies of the rule would eventually disagree, and an operator would get a
 // binding that applies but cannot be re-applied, or the reverse.
 func (b *DataProviderBinding) ScopeIsPermitted(controlPlaneNamespace string) bool {
-	if b.Spec.Scope.Kind != ScopeGlobal {
+	switch b.Spec.Scope.Kind {
+	case ScopeNamespace:
+		return b.Spec.Scope.Name == b.Namespace
+	case ScopeGlobal:
+		return controlPlaneNamespace != "" && b.Namespace == controlPlaneNamespace
+	case ScopeCluster, ScopeProject:
 		return true
+	default:
+		// An unknown scope kind cannot be reasoned about, so it is refused
+		// rather than admitted. The CRD enum keeps this unreachable in
+		// practice; it is here so that adding a kind without deciding its rule
+		// fails closed instead of granting the widest reach by default.
+		return false
 	}
-
-	return controlPlaneNamespace != "" && b.Namespace == controlPlaneNamespace
 }
 
 // +kubebuilder:object:root=true

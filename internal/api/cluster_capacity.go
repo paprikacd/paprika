@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
@@ -42,10 +43,14 @@ const (
 		"check the control plane's access to providers.paprika.io"
 	capacityProviderUnreadableReason = "the bound capacity provider could not be read; " +
 		"check that the CapacityProvider it names still exists"
+	capacityProviderForbiddenReason = "the control plane is not permitted to read the bound CapacityProvider; " +
+		"grant it get on capacityproviders in providers.paprika.io"
 	capacityProviderUnregisteredReason = "the bound capacity provider is not registered in this build; " +
 		"bind a provider this control plane implements"
 	capacityReadFailedReason = "reading capacity from the bound provider failed; " +
 		"check the control plane's access to the target cluster"
+	capacityReadForbiddenReason = "the credential for this cluster is not permitted to read its capacity; " +
+		"grant it get, list and watch on nodes and pods (see docs/guides/multi-cluster.md)"
 )
 
 // The console reads the capacity binding chain on behalf of the caller, so the
@@ -196,6 +201,13 @@ func (s *PaprikaServer) readCapacity(
 // Every failure comes back as a reading rather than an error, because one
 // broken provider must not blank the fields another provider read
 // successfully: a uniform non-OK reading merges away under any OK field.
+//
+// An RBAC denial is singled out at both places one can happen — reading the
+// provider object, and reading the cluster through it — because FORBIDDEN is
+// the one thing an operator can act on directly: it means the read reached its
+// target and was refused, not that the target was missing or broken. Both
+// reasons name the permission to grant and nothing about the credential that
+// lacked it.
 func (s *PaprikaServer) readOneCapacityProvider(
 	ctx context.Context,
 	binding dataprovider.Binding,
@@ -209,6 +221,10 @@ func (s *PaprikaServer) readOneCapacityProvider(
 
 	var provider providersv1alpha1.CapacityProvider
 	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &provider); err != nil {
+		if apierrors.IsForbidden(err) {
+			return name, uniformCapacityReading(
+				dataprovider.StateForbidden, capacityProviderForbiddenReason)
+		}
 		return name, uniformCapacityReading(
 			dataprovider.StateNotAvailable, capacityProviderUnreadableReason)
 	}
@@ -227,6 +243,13 @@ func (s *PaprikaServer) readOneCapacityProvider(
 		Config:     provider.Spec.Config.Raw,
 	})
 	if err != nil {
+		// A provider wraps whatever the target cluster returned, and
+		// apierrors.IsForbidden unwraps to find an APIStatus, so a 403 from the
+		// node or pod list is still recognisable here.
+		if apierrors.IsForbidden(err) {
+			return provider.Spec.Provider, uniformCapacityReading(
+				dataprovider.StateForbidden, capacityReadForbiddenReason)
+		}
 		return provider.Spec.Provider, uniformCapacityReading(
 			dataprovider.StateError, capacityReadFailedReason)
 	}

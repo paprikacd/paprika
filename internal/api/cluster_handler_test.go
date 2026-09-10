@@ -4,14 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	providersv1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
@@ -317,10 +323,13 @@ func TestGetClusterCapacityPrefersTheMostSpecificBinding(t *testing.T) {
 	broad := &stubCapacitySource{name: "Broad", reading: structuralReading()}
 	server := capacityTestServer(t, []dataprovider.CapacitySource{specific, broad},
 		capacityProvider(capacityControlPlaneNamespace, "specific", "Specific"),
-		capacityProvider(capacityControlPlaneNamespace, "broad", "Broad"),
+		// A Namespace-scoped binding may only name the namespace it lives in,
+		// so the binding scoped elsewhere lives in that other namespace and
+		// names its own provider there.
+		capacityProvider("other-tenant", "broad", "Broad"),
 		capacityBinding(capacityControlPlaneNamespace, "bind-a", "specific", providersv1alpha1.ScopeCluster, "eu-west-1"),
 		capacityBinding(capacityControlPlaneNamespace, "bind-b", "specific", providersv1alpha1.ScopeGlobal, ""),
-		capacityBinding(capacityControlPlaneNamespace, "bind-c", "broad", providersv1alpha1.ScopeNamespace, "other-tenant"),
+		capacityBinding("other-tenant", "bind-c", "broad", providersv1alpha1.ScopeNamespace, "other-tenant"),
 	)
 
 	getTestCluster(t, server)
@@ -569,3 +578,153 @@ var (
 	errCapacityStub = errors.New("the provider failed")
 	errCapacityLeak = errors.New("get https://api.internal.example/api/v1/nodes: unauthorized")
 )
+
+// errCapacityForbidden is what a real provider brings back when the credential
+// for the target cluster may list neither nodes nor pods: an apierrors Status,
+// wrapped the way KubernetesCapacity wraps it, and carrying the host it was
+// refused by.
+var errCapacityForbidden = fmt.Errorf("summing allocatable capacity: listing nodes: %w",
+	apierrors.NewForbidden(
+		schema.GroupResource{Resource: "nodes"}, "",
+		errors.New("nodes is forbidden: User \"system:serviceaccount:paprika-system:paprika\" "+
+			"cannot list resource \"nodes\" at the cluster scope on https://api.internal.example"),
+	))
+
+// TestGetClusterReportsForbiddenWhenTheClusterCredentialIsDenied holds the
+// guide and the code to the same story: docs/guides/multi-cluster.md tells an
+// operator that a missing RBAC grant shows as DATA_STATE_FORBIDDEN, and this
+// is the path that has to produce it. An RBAC denial is the one capacity
+// failure an operator can fix directly, so collapsing it into ERROR alongside
+// every timeout and parse failure throws away the only actionable part.
+func TestGetClusterReportsForbiddenWhenTheClusterCredentialIsDenied(t *testing.T) {
+	t.Parallel()
+
+	source := &stubCapacitySource{name: "KubernetesCapacity", err: errCapacityForbidden}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+			providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	cpu := getTestCluster(t, server).Capacity.Cpu
+	require.Equal(t, paprikav1.DataState_DATA_STATE_FORBIDDEN, cpu.UsedState)
+	require.Equal(t, paprikav1.DataState_DATA_STATE_FORBIDDEN, cpu.AllocatableState)
+	require.Zero(t, cpu.Allocatable, "forbidden is not stale: nothing was measured, so nothing is reported")
+	require.Equal(t, capacityReadForbiddenReason, cpu.UnavailableReason)
+	require.NotContains(t, cpu.UnavailableReason, "api.internal.example",
+		"a denial names the permission to grant, never the host or the identity refused")
+	require.NotContains(t, cpu.UnavailableReason, "serviceaccount")
+}
+
+// TestGetDataSourcesReportsForbiddenForADeniedCredential is the same denial
+// seen through the probe, which is what decides whether the console draws a
+// capacity board at all.
+func TestGetDataSourcesReportsForbiddenForADeniedCredential(t *testing.T) {
+	t.Parallel()
+
+	source := &stubCapacitySource{name: "KubernetesCapacity", err: errCapacityForbidden}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
+		capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+			providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	status := capacityDataSourceFrom(t, server)
+	require.Equal(t, paprikav1.DataState_DATA_STATE_FORBIDDEN, status.State)
+	require.Equal(t, capacityReadForbiddenReason, status.UnavailableReason)
+}
+
+// TestAbsentProviderObjectIsNotAvailableRatherThanForbidden is one half of the
+// other denial. "It is not there" and "you may not look" are different problems
+// with different fixes, so they must not share a state.
+func TestAbsentProviderObjectIsNotAvailableRatherThanForbidden(t *testing.T) {
+	t.Parallel()
+
+	source := &stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}
+	server := capacityTestServer(t, []dataprovider.CapacitySource{source},
+		// No CapacityProvider object is applied, so the Get comes back NotFound.
+		capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+			providersv1alpha1.ScopeGlobal, ""),
+	)
+
+	cpu := getTestCluster(t, server).Capacity.Cpu
+	require.Equal(t, paprikav1.DataState_DATA_STATE_NOT_AVAILABLE, cpu.AllocatableState,
+		"a provider that is simply absent is NOT_AVAILABLE, not FORBIDDEN")
+	require.Equal(t, capacityProviderUnreadableReason, cpu.UnavailableReason)
+}
+
+// TestForbiddenProviderObjectReportsForbidden is the other half: the object
+// exists and this control plane may not read it, which is an RBAC grant an
+// operator can make.
+func TestForbiddenProviderObjectReportsForbidden(t *testing.T) {
+	t.Parallel()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, providersv1alpha1.AddToScheme(scheme))
+	require.NoError(t, clustersv1alpha1.AddToScheme(scheme))
+	cl := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(
+			capacityProvider(capacityControlPlaneNamespace, "structural", "KubernetesCapacity"),
+			capacityBinding(capacityControlPlaneNamespace, "bind-structural", "structural",
+				providersv1alpha1.ScopeGlobal, ""),
+		).
+		WithInterceptorFuncs(interceptor.Funcs{Get: forbidCapacityProviderGet}).
+		Build()
+
+	registry := dataprovider.NewRegistry()
+	require.NoError(t, registry.RegisterCapacity(
+		&stubCapacitySource{name: "KubernetesCapacity", reading: structuralReading()}))
+	snapshot := buildSystemStatusSnapshot(t, consoleStubGeneration, []fleet.ApplicationSummary{
+		systemStatusApplication("tenant", "checkout", "payments", fleet.HealthHealthy, fleet.SyncStateSynced),
+	})
+	server := NewPaprikaServer(cl, nil,
+		WithFleetIndex(&systemStatusReader{snapshot: snapshot}),
+		WithCapacityProviders(registry),
+		WithControlPlaneNamespace(capacityControlPlaneNamespace),
+	)
+
+	cpu := getTestCluster(t, server).Capacity.Cpu
+	require.Equal(t, paprikav1.DataState_DATA_STATE_FORBIDDEN, cpu.AllocatableState)
+	require.Zero(t, cpu.Allocatable)
+	require.Equal(t, capacityProviderForbiddenReason, cpu.UnavailableReason)
+}
+
+// forbidCapacityProviderGet refuses every CapacityProvider read the way an API
+// server refuses one the caller has no RBAC for, and passes everything else
+// through.
+func forbidCapacityProviderGet(
+	ctx context.Context,
+	c client.WithWatch,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	if _, isProvider := obj.(*providersv1alpha1.CapacityProvider); !isProvider {
+		return c.Get(ctx, key, obj, opts...)
+	}
+
+	return apierrors.NewForbidden(
+		schema.GroupResource{Group: "providers.paprika.io", Resource: "capacityproviders"},
+		key.Name,
+		errors.New("capacityproviders.providers.paprika.io is forbidden"),
+	)
+}
+
+// capacityDataSourceFrom runs the GetDataSources probe and returns the capacity
+// class's row from it.
+func capacityDataSourceFrom(t *testing.T, server *PaprikaServer) *paprikav1.DataSourceStatus {
+	t.Helper()
+
+	response, err := server.GetDataSources(context.Background(), connect.NewRequest(
+		&paprikav1.GetDataSourcesRequest{},
+	))
+	require.NoError(t, err)
+	for _, status := range response.Msg.Sources {
+		if status.DataClass == paprikav1.DataClass_DATA_CLASS_CLUSTER_CAPACITY {
+			return status
+		}
+	}
+	t.Fatal("GetDataSources reported no capacity class")
+
+	return nil
+}

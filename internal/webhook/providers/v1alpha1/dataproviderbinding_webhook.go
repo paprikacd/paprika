@@ -49,13 +49,25 @@ func SetupDataProviderBindingWebhookWithManager(mgr ctrl.Manager, controlPlaneNa
 // resolver unable to tell it apart from another binding: one whose
 // non-Global scope has no name (the resolver compares scope.name by string
 // equality, so an empty name would over-match a scope that also has no
-// value set at that level), and one that duplicates another binding's
-// (providerRef.kind, scope.kind, scope.name) triple.
+// value set at that level), and one that binds the same provider object to
+// the same scope as an existing binding.
 //
-// It also rejects a Global-scoped binding created outside the control plane's
-// namespace, which would otherwise let one tenant repoint what every other
-// tenant sees. The resolver ignores exactly those bindings; admission is what
-// turns a silently inert binding into a clear error an operator can act on.
+// It deliberately does not reject two bindings that name DIFFERENT providers
+// at one scope: that is the composition the whole model exists for —
+// KubernetesCapacity supplies allocatable and requested, MetricsServer
+// completes the same meter with used, and ResolveAll reads both and merges
+// them. See findDuplicate for the identity that distinguishes the two cases.
+//
+// It also rejects a binding whose scope its own namespace has no claim on — a
+// Global binding outside the control plane's namespace, or a Namespace binding
+// naming somebody else's namespace — which would otherwise let one tenant
+// repoint what another tenant sees. The resolver ignores exactly those
+// bindings; admission is what turns a silently inert binding into a clear
+// error an operator can act on.
+//
+// Finally it rejects a scope selector, which the CRD serves but nothing reads
+// yet: an operator who sets one would otherwise get a binding that looks
+// narrowed and is not.
 type BindingValidator struct {
 	client client.Client
 
@@ -93,8 +105,7 @@ func (v *BindingValidator) validate(ctx context.Context, binding *v1alpha1.DataP
 
 	if !binding.ScopeIsPermitted(v.controlPlaneNamespace) {
 		allErrs = append(allErrs, field.Forbidden(scopePath.Child("kind"),
-			fmt.Sprintf("Global scope applies to the whole fleet, so a Global-scoped binding "+
-				"may only be created in the control plane namespace %q", v.controlPlaneNamespace)))
+			v.scopeNotPermittedMessage(binding)))
 		// Stop here rather than falling through to the duplicate check. That
 		// check lists bindings fleet-wide and names the one it collides with,
 		// so running it for a binding that is already invalid would tell one
@@ -109,38 +120,93 @@ func (v *BindingValidator) validate(ctx context.Context, binding *v1alpha1.DataP
 			fmt.Sprintf("scope name is required for %s-scoped bindings; only Global scope may leave it empty", binding.Spec.Scope.Kind)))
 	}
 
+	if binding.Spec.Scope.Selector != nil {
+		allErrs = append(allErrs, field.Forbidden(scopePath.Child("selector"),
+			"scope selectors are not yet supported: nothing reads this field, so a selector set here "+
+				"would silently widen the binding to the whole scope. Name the scope with scope.name instead"))
+	}
+
 	dup, err := v.findDuplicate(ctx, binding)
 	if err != nil {
 		return apierrors.NewInternalError(err)
 	}
 	if dup != "" {
 		allErrs = append(allErrs, field.Forbidden(scopePath,
-			fmt.Sprintf("this scope is already bound by %q", dup)))
+			fmt.Sprintf("this provider is already bound to this scope by %q; bind a different provider "+
+				"to compose readings, or edit the existing binding", dup)))
 	}
 
 	return newInvalidErr(kindDataProviderBinding, binding.Name, allErrs)
 }
 
-// findDuplicate returns the name of another binding that already covers the
-// same (providerRef.kind, scope.kind, scope.name) triple as binding, or ""
-// when none does. binding itself (matched by namespace and name, present in
-// the listing on an update) is never treated as its own duplicate.
+// scopeNotPermittedMessage explains, for the scope kind that was refused, what
+// would have satisfied the rule. It names only the requirement and the
+// namespace that meets it — never another namespace's bindings.
+func (v *BindingValidator) scopeNotPermittedMessage(binding *v1alpha1.DataProviderBinding) string {
+	if binding.Spec.Scope.Kind == v1alpha1.ScopeNamespace {
+		return fmt.Sprintf("Namespace is the most specific scope, so a Namespace-scoped binding "+
+			"may only name the namespace it lives in, %q", binding.Namespace)
+	}
+
+	return fmt.Sprintf("Global scope applies to the whole fleet, so a Global-scoped binding "+
+		"may only be created in the control plane namespace %q", v.controlPlaneNamespace)
+}
+
+// duplicateKey is the identity two bindings must share to be duplicates of one
+// another: the same provider object, bound at the same point in the
+// precedence chain.
+//
+// The provider half is the whole point. providerRef carries no namespace, so a
+// binding always refers to a provider beside it — which makes
+// (binding.Namespace, providerRef.Kind, providerRef.Name) the provider's
+// identity, and it is exactly the key ResolveAll groups by when it picks one
+// winner per provider. Keying on providerRef.Kind alone (as this once did)
+// collapsed every capacity provider into one, because both shipped
+// implementations are Kind CapacityProvider: binding KubernetesCapacity and
+// MetricsServer to one scope — the composition the model is built around —
+// was rejected as a duplicate of itself.
+type duplicateKey struct {
+	providerNamespace string
+	providerKind      string
+	providerName      string
+	scopeKind         v1alpha1.ScopeKind
+	scopeName         string
+}
+
+func keyOf(binding *v1alpha1.DataProviderBinding) duplicateKey {
+	return duplicateKey{
+		providerNamespace: binding.Namespace,
+		providerKind:      binding.Spec.ProviderRef.Kind,
+		providerName:      binding.Spec.ProviderRef.Name,
+		scopeKind:         binding.Spec.Scope.Kind,
+		scopeName:         binding.Spec.Scope.Name,
+	}
+}
+
+// findDuplicate returns the name of another binding that already binds the
+// same provider object to the same scope as binding, or "" when none does.
+// binding itself (matched by namespace and name, present in the listing on an
+// update) is never treated as its own duplicate.
+//
+// Two bindings pointing at DIFFERENT providers for one scope are not
+// duplicates: that is composition, and the resolver reads both and merges the
+// readings into a single meter.
 func (v *BindingValidator) findDuplicate(ctx context.Context, binding *v1alpha1.DataProviderBinding) (string, error) {
 	var existing v1alpha1.DataProviderBindingList
 	if err := v.client.List(ctx, &existing); err != nil {
 		return "", fmt.Errorf("list data provider bindings: %w", err)
 	}
 
+	want := keyOf(binding)
 	for i := range existing.Items {
 		other := &existing.Items[i]
 		if other.Namespace == binding.Namespace && other.Name == binding.Name {
 			continue
 		}
-		if other.Spec.ProviderRef.Kind == binding.Spec.ProviderRef.Kind &&
-			other.Spec.Scope.Kind == binding.Spec.Scope.Kind &&
-			other.Spec.Scope.Name == binding.Spec.Scope.Name {
+		if keyOf(other) == want {
 			return other.Name, nil
 		}
 	}
+
 	return "", nil
 }

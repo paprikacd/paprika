@@ -1,0 +1,61 @@
+{{- if .Values.capacity.defaultProvider.enabled }}
+{{- $providerName := include "paprika.resourceName" (dict "suffix" "kubernetes-capacity" "context" $) }}
+{{/*
+The capacity board is meant to work on a default install. KubernetesCapacity
+reads allocatable from every Node's status.allocatable and requested from every
+scheduled Pod's container requests, both through the cluster's own API, so it
+needs no configuration and no external system — and the chart-managed manager
+role already carries the read-only node and pod grants it uses.
+
+Shipping the two objects here is what turns "no configuration required" into
+"nothing to do": without them an operator has to hand-write a CapacityProvider
+and a DataProviderBinding before a single meter draws, and the console reports
+NOT_CONFIGURED for capacity on a cluster it could measure perfectly well.
+
+`used` is not part of what this supplies — the core API has no notion of actual
+consumption — so it reports NOT_CONFIGURED until a MetricsServer or Prometheus
+provider is bound alongside. Binding a second provider to the same scope is
+supported and is how the meter is completed; see docs/guides/multi-cluster.md.
+
+Set capacity.defaultProvider.enabled=false to manage capacity providers
+yourself. Nothing else in the chart depends on these objects.
+*/}}
+apiVersion: providers.paprika.io/v1alpha1
+kind: CapacityProvider
+metadata:
+  name: {{ $providerName }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "paprika.commonLabels" . | nindent 4 }}
+spec:
+  # KubernetesCapacity accepts no configuration at all, and rejects any at
+  # admission rather than ignoring it, so spec.config is deliberately absent.
+  provider: KubernetesCapacity
+---
+apiVersion: providers.paprika.io/v1alpha1
+kind: DataProviderBinding
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "kubernetes-capacity-global" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "paprika.commonLabels" . | nindent 4 }}
+spec:
+  providerRef:
+    kind: CapacityProvider
+    name: {{ $providerName }}
+  scope:
+    # Global is the least specific level in the chain, so this is a fleet-wide
+    # floor: any Namespace-, Cluster- or Project-scoped binding an operator adds
+    # later wins over it for the scope it names, with no need to remove this one.
+    #
+    # Global-scoped bindings are admitted only from the control plane's own
+    # namespace, which is the namespace this release installs into — the same
+    # namespace the deployments pass as --operator-namespace.
+    kind: Global
+{{- end }}
