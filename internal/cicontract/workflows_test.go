@@ -645,9 +645,10 @@ func testVKEProvenance(t *testing.T) {
 		t.Errorf("deploy-vke.yml checkout ref = %q after normalization, want github.sha", got)
 	}
 	assertImageReferenceEnvironment(t, deploy, "deploy-vke.yml deploy job", "inputs.image_ref")
-	wantGate := "(github.event_name == 'push' || github.event_name == 'repository_dispatch') && github.ref == 'refs/heads/master'"
+	wantGate := "vars.VKE_AUTODEPLOY_ENABLED == 'true' && " +
+		"(github.event_name == 'push' || github.event_name == 'repository_dispatch') && github.ref == 'refs/heads/master'"
 	if condition := normalizeExpression(scalarString(deploy["if"])); condition != wantGate {
-		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want exact trusted event/ref gate %q", condition, wantGate)
+		t.Errorf("deploy-vke.yml deploy.if = %q after normalization, want exact opt-in and trusted event/ref gate %q", condition, wantGate)
 	}
 }
 
