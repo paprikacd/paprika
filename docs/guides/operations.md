@@ -83,6 +83,24 @@ cross-compilation via QEMU.
 
 ## Deploying
 
+### GitHub Actions promotion gate
+
+Merges to `master` continue to run CI and publish the tested image. The reusable
+VKE deployment job runs only when the repository variable
+`VKE_AUTODEPLOY_ENABLED` is set to `true`, in addition to its existing event and
+`master` checks. An unset variable leaves cluster promotion disabled. This gate
+also covers the `deploy-vke` repository-dispatch workflow.
+
+Keep the variable unset or `false` while the installed Helm release contains
+recovery settings that the checked-in chart and `deploy/test-values.yaml` do not
+yet preserve. The deployment workflow upgrades the complete chart, updates all
+four component images, and reapplies its configured OIDC Secret. Enabling the
+gate is approval for that full promotion, not just the Git cache fix. Before
+enabling it, review the rendered resources and hooks against the installed
+release, preserving resource budgets, permissions, and existing configuration.
+Use a separately reviewed rollout based on the installed chart and values when
+only selected component images should change.
+
 ### Iteration (kubectl set image)
 
 For quick controller-manager iteration, update only the controller-manager
