@@ -124,6 +124,67 @@ func TestSecretRefConfigIsAccepted(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestNestedInlineCredentialIsRejected covers a fix-round-1 finding: a
+// credential nested under a grouping key (e.g. "auth.token") is exactly how
+// real provider configs shape inline secrets, and must be caught, not just
+// a bare top-level key.
+func TestNestedInlineCredentialIsRejected(t *testing.T) {
+	t.Parallel()
+	v := NewCapacityProviderValidator(registryWith("KubernetesCapacity"))
+	config := []byte(`{"auth":{"token":"s3cr3t"}}`)
+	_, err := v.ValidateCreate(t.Context(), providerWith("KubernetesCapacity", config))
+	require.ErrorContains(t, err, "auth.token")
+	assert.NotContains(t, err.Error(), "s3cr3t")
+}
+
+// TestCredentialNestedInsideArrayElementIsRejected covers a credential
+// buried inside an array of objects, another realistic config shape the
+// flat top-level-only check would have missed.
+func TestCredentialNestedInsideArrayElementIsRejected(t *testing.T) {
+	t.Parallel()
+	v := NewCapacityProviderValidator(registryWith("KubernetesCapacity"))
+	config := []byte(`{"clusters":[{"name":"a"},{"password":"s3cr3t"}]}`)
+	_, err := v.ValidateCreate(t.Context(), providerWith("KubernetesCapacity", config))
+	require.ErrorContains(t, err, "password")
+	assert.NotContains(t, err.Error(), "s3cr3t")
+}
+
+// TestNestedSecretRefConfigIsAccepted confirms the recursive scan does not
+// over-match: a secretRef nested under a grouping key is still fine.
+func TestNestedSecretRefConfigIsAccepted(t *testing.T) {
+	t.Parallel()
+	v := NewCapacityProviderValidator(registryWith("KubernetesCapacity"))
+	config := []byte(`{"auth":{"secretRef":{"name":"creds"}}}`)
+	_, err := v.ValidateCreate(t.Context(), providerWith("KubernetesCapacity", config))
+	require.NoError(t, err)
+}
+
+// nestedConfig builds a JSON object nesting {leafKey: leafValue} depth
+// levels under a repeated grouping key, for exercising the recursion cap.
+func nestedConfig(depth int, leafKey, leafValue string) []byte {
+	var obj any = map[string]any{leafKey: leafValue}
+	for i := 0; i < depth; i++ {
+		obj = map[string]any{"level": obj}
+	}
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		panic(err)
+	}
+	return raw
+}
+
+// TestDeeplyNestedConfigPastDepthCapIsRejected confirms a config nested
+// well past maxCredentialScanDepth fails with a clear depth error rather
+// than recursing without bound — this is not a credential-shaped config at
+// all, so a stack overflow here would be the real bug.
+func TestDeeplyNestedConfigPastDepthCapIsRejected(t *testing.T) {
+	t.Parallel()
+	v := NewCapacityProviderValidator(registryWith("KubernetesCapacity"))
+	config := nestedConfig(maxCredentialScanDepth+10, "note", "not a credential")
+	_, err := v.ValidateCreate(t.Context(), providerWith("KubernetesCapacity", config))
+	require.ErrorContains(t, err, "exceeds the maximum depth")
+}
+
 func TestValidateUpdateAlsoValidatesConfig(t *testing.T) {
 	t.Parallel()
 	v := NewCapacityProviderValidator(registryWith("Fussy"))

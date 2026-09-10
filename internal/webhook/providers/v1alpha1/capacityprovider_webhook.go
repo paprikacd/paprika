@@ -119,34 +119,89 @@ func (v *CapacityProviderValidator) validate(provider *v1alpha1.CapacityProvider
 	return newInvalidErr(kindCapacityProvider, provider.Name, allErrs)
 }
 
-// rejectInlineCredentials reports an error when raw carries a
+// maxCredentialScanDepth bounds how deep rejectInlineCredentials recurses
+// into a config's object/array structure. A real provider config nests only
+// a handful of levels; anything past this is either a mistake or a hostile
+// payload, and either way should fail with a clear error rather than
+// recursing without bound.
+const maxCredentialScanDepth = 32
+
+// rejectInlineCredentials reports an error when config carries a
 // credential-shaped field (see deniedCredentialKeys) with a non-empty
-// string value. A missing or non-object config, or a config that fails to
-// parse as JSON, is left for ValidateConfig to judge on its own terms.
+// string value, at any depth — credentials are as often nested under a
+// grouping key (e.g. "auth.token") as they are at the top level. A missing
+// config, a config that fails to parse as JSON, or a value that isn't an
+// object or array, is left for ValidateConfig to judge on its own terms.
 func rejectInlineCredentials(raw []byte) error {
 	if len(raw) == 0 {
 		return nil
 	}
 
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
 		return nil
 	}
 
-	for _, key := range deniedCredentialKeys {
-		value, ok := fields[key]
-		if !ok {
-			continue
+	return scanForInlineCredentials(decoded, "", 0)
+}
+
+// scanForInlineCredentials walks a decoded JSON value looking for a denied
+// credential key carrying a non-empty string value. path is the dotted
+// (and indexed, for arrays) location of value within the config, used only
+// to make a rejection actionable — it is never a secret itself.
+func scanForInlineCredentials(value any, path string, depth int) error {
+	if depth > maxCredentialScanDepth {
+		return fmt.Errorf("config nesting at %q exceeds the maximum depth of %d; flatten it or use secretRef", path, maxCredentialScanDepth)
+	}
+
+	switch v := value.(type) {
+	case map[string]any:
+		return scanObjectForInlineCredentials(v, path, depth)
+	case []any:
+		return scanArrayForInlineCredentials(v, path, depth)
+	default:
+		return nil
+	}
+}
+
+func scanObjectForInlineCredentials(obj map[string]any, path string, depth int) error {
+	for key, child := range obj {
+		childPath := joinConfigPath(path, key)
+		if isDeniedCredentialKey(key) {
+			if literal, ok := child.(string); ok && literal != "" {
+				return fmt.Errorf("config field %q must not carry a literal credential; use secretRef instead", childPath)
+			}
 		}
-		var literal string
-		if err := json.Unmarshal(value, &literal); err != nil {
-			continue
-		}
-		if literal != "" {
-			return fmt.Errorf("config field %q must not carry a literal credential; use secretRef instead", key)
+		if err := scanForInlineCredentials(child, childPath, depth+1); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func scanArrayForInlineCredentials(items []any, path string, depth int) error {
+	for i, child := range items {
+		if err := scanForInlineCredentials(child, fmt.Sprintf("%s[%d]", path, i), depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func joinConfigPath(path, key string) string {
+	if path == "" {
+		return key
+	}
+	return path + "." + key
+}
+
+func isDeniedCredentialKey(key string) bool {
+	for _, denied := range deniedCredentialKeys {
+		if key == denied {
+			return true
+		}
+	}
+	return false
 }
 
 // newInvalidErr builds the apierrors.NewInvalid response for the given
