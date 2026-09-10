@@ -247,4 +247,30 @@ resources:
     defaulting: true
     validation: true
     webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: providers
+  kind: CapacityProvider
+  path: github.com/benebsworth/paprika/api/providers/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: paprika.io
+  group: providers
+  kind: DataProviderBinding
+  path: github.com/benebsworth/paprika/api/providers/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
 version: "3"
