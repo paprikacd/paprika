@@ -1,7 +1,7 @@
 # Fast Go-only build for controller iteration. Skips the UI build stage
 # and uses build cache mounts for Go modules and build cache.
 # Usage: docker buildx build -f Dockerfile.fast --platform linux/amd64 -t <tag> --push .
-FROM golang:1.26 AS builder
+FROM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
