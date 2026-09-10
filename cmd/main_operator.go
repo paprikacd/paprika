@@ -61,6 +61,7 @@ import (
 	"github.com/benebsworth/paprika/internal/coordinator"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/ratelimit"
@@ -301,8 +302,6 @@ func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setup
 	return buildOperatorManager(cfg, scheme, &metricsServerOptions, webhookServer)
 }
 
-// negotiateProtobuf is defined in cmd/protobuf.go (shared across modes).
-
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
 		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
@@ -318,8 +317,11 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 	}
 
 	mgrCfg := mgr.GetConfig()
-	negotiateProtobuf(mgrCfg)
-	k8sClient, err := kubernetes.NewForConfig(mgrCfg)
+	// A typed clientset only ever handles built-in kinds, so it can speak
+	// protobuf in both directions. Build from a copy: mgrCfg is the manager's
+	// shared config, and every client derived from it later would inherit a
+	// mutation made here.
+	k8sClient, err := kubernetes.NewForConfig(kube.WithProtobufBothWays(mgrCfg))
 	if err != nil {
 		return operatorGovernance{}, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
@@ -503,6 +505,11 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		opts = append(opts, apiserver.WithDynamicClient(dc))
 	}
 	opts = append(opts, apiserver.WithRESTMapper(mgr.GetRESTMapper()))
+	capacityRegistry, err := buildCapacityRegistry(mgr.GetClient())
+	if err != nil {
+		return nil, err
+	}
+	opts = append(opts, apiserver.WithCapacityProviders(capacityRegistry))
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()

@@ -8,7 +8,6 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
 	"k8s.io/metrics/pkg/client/clientset/versioned"
 
 	"github.com/benebsworth/paprika/internal/kube"
@@ -59,15 +58,26 @@ type MetricsServer struct {
 	// than teaching kube.Clients a second client type for one caller.
 	clients *kube.Clients
 
+	// configs resolves the connection details for the cluster a ReadRequest
+	// names, so usage for a remote fleet cluster comes from that cluster's own
+	// metrics.k8s.io. Nil means the local-only fallback; see
+	// InClusterConfigResolver.
+	configs ClusterConfigResolver
+
 	// client, when set, is used directly instead of resolving one through
 	// clients. Test seam only: see newMetricsServerWithClient.
 	client versioned.Interface
 }
 
 // NewMetricsServer returns a CapacitySource that reads current usage from
-// the metrics.k8s.io API of the cluster named by each ReadRequest.
-func NewMetricsServer(clients *kube.Clients) *MetricsServer {
-	return &MetricsServer{clients: clients}
+// the metrics.k8s.io API of the cluster named by each ReadRequest, using
+// configs to resolve how that cluster is reached.
+//
+// A nil configs resolves only the cluster this control plane runs in; every
+// other cluster key is then refused rather than silently answered with local
+// numbers. See InClusterConfigResolver.
+func NewMetricsServer(clients *kube.Clients, configs ClusterConfigResolver) *MetricsServer {
+	return &MetricsServer{clients: clients, configs: configResolverOrDefault(configs)}
 }
 
 // newMetricsServerWithClient returns a MetricsServer that talks to client
@@ -103,7 +113,7 @@ func (m *MetricsServer) ValidateConfig(config json.RawMessage) error {
 // The returned error is reserved for failing to obtain a client at all, the
 // same class of failure KubernetesCapacity.Read surfaces as an error.
 func (m *MetricsServer) Read(ctx context.Context, req ReadRequest) (CapacityReading, error) {
-	client, err := m.clientFor(req.ClusterKey)
+	client, err := m.clientFor(ctx, req.ClusterKey)
 	if err != nil {
 		return CapacityReading{}, err
 	}
@@ -151,11 +161,10 @@ func usedSampleFor(value int64, sumErr error) Sample {
 // clientFor returns the versioned.Interface to read clusterKey's node
 // metrics through.
 //
-// When a test seam client is set it is always used. Otherwise this resolves
-// the in-cluster config: like KubernetesCapacity, MetricsServer reads the
-// cluster this control plane already runs in, which needs no separate
-// credential to resolve.
-func (m *MetricsServer) clientFor(clusterKey string) (versioned.Interface, error) {
+// When a test seam client is set it is always used. Otherwise the injected
+// ClusterConfigResolver decides how clusterKey is reached, the same seam
+// KubernetesCapacity resolves its own client through.
+func (m *MetricsServer) clientFor(ctx context.Context, clusterKey string) (versioned.Interface, error) {
 	if m.client != nil {
 		return m.client, nil
 	}
@@ -163,9 +172,9 @@ func (m *MetricsServer) clientFor(clusterKey string) (versioned.Interface, error
 		return nil, fmt.Errorf("metrics server: no client available for cluster %q", clusterKey)
 	}
 
-	cfg, err := rest.InClusterConfig()
+	cfg, err := configResolverOrDefault(m.configs).ConfigFor(ctx, clusterKey)
 	if err != nil {
-		return nil, fmt.Errorf("resolving in-cluster config for cluster %q: %w", clusterKey, err)
+		return nil, fmt.Errorf("resolving config for cluster %q: %w", clusterKey, err)
 	}
 
 	metricsClient, err := versioned.NewForConfig(kube.WithProtobufBothWays(cfg))

@@ -424,6 +424,15 @@ rules:
   - patch
   - update
 - apiGroups:
+  - providers.paprika.io
+  resources:
+  - capacityproviders
+  - dataproviderbindings
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - rollouts.paprika.io
   resources:
   - rollouts

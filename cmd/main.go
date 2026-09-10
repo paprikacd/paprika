@@ -60,6 +60,7 @@ import (
 	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	providersv1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
 	rolloutsv1alpha1 "github.com/benebsworth/paprika/api/rollouts/v1alpha1"
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	apiserver "github.com/benebsworth/paprika/internal/api"
@@ -68,8 +69,11 @@ import (
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	"github.com/benebsworth/paprika/internal/clusterconfig"
+	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
 	"github.com/benebsworth/paprika/internal/observability"
@@ -96,6 +100,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(providersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 	return scheme
@@ -658,6 +663,11 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 		return nil, nil, err
 	}
 	opts = append(opts, apiserver.WithFleetIndex(fleetReader))
+	capacityRegistry, err := buildCapacityRegistry(apiClient)
+	if err != nil {
+		return nil, nil, err
+	}
+	opts = append(opts, apiserver.WithCapacityProviders(capacityRegistry))
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
 	otelInterceptor, err := otelconnect.NewInterceptor()
@@ -671,6 +681,32 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 		connect.WithReadMaxBytes(maxMsgBytes),
 	)
 	return paprikaServer, connectHandler, nil
+}
+
+// buildCapacityRegistry registers the capacity providers this build ships.
+//
+// Both read a cluster through the same two seams: one client cache, so a
+// fleet's connection pools stay warm across requests, and one cluster config
+// resolver, so a read scoped to a remote fleet cluster is served from that
+// cluster's own credentials rather than from the control plane's. A provider
+// registered here is still inert until an operator binds it — a CapacityProvider
+// plus a DataProviderBinding — which is what keeps "installed" and "configured"
+// different facts.
+func buildCapacityRegistry(apiClient client.Client) (*dataprovider.Registry, error) {
+	clients := kube.NewClients()
+	configs := clusterconfig.NewResolver(apiClient)
+
+	registry := dataprovider.NewRegistry()
+	for _, source := range []dataprovider.CapacitySource{
+		dataprovider.NewKubernetesCapacity(clients, configs),
+		dataprovider.NewMetricsServer(clients, configs),
+	} {
+		if err := registry.RegisterCapacity(source); err != nil {
+			return nil, fmt.Errorf("registering capacity provider: %w", err)
+		}
+	}
+
+	return registry, nil
 }
 
 func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.ServeMux), error) {
@@ -886,8 +922,7 @@ func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("get in-cluster config (use --k8s-api-server): %w", err)
 		}
-		negotiateProtobuf(config)
-		return config, nil
+		return negotiateProtobuf(config), nil
 	}
 
 	token, err := readBearerToken(k8sTokenFile)
@@ -899,8 +934,7 @@ func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 		BearerToken:     token,
 		TLSClientConfig: rest.TLSClientConfig{Insecure: false},
 	}
-	negotiateProtobuf(cfg)
-	return cfg, nil
+	return negotiateProtobuf(cfg), nil
 }
 
 func readBearerToken(k8sTokenFile string) (string, error) {

@@ -223,7 +223,7 @@ func TestMetricsServerErrorsRatherThanSpinsOnRepeatingContinueToken(t *testing.T
 
 func TestMetricsServerNoClientAvailableIsAnError(t *testing.T) {
 	t.Parallel()
-	src := NewMetricsServer(nil)
+	src := NewMetricsServer(nil, nil)
 	_, err := src.Read(t.Context(), ReadRequest{ClusterKey: "fleet/prod"})
 	require.Error(t, err, "with no client and no kube.Clients, Read cannot even attempt a query")
 }

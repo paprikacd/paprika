@@ -10,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 
 	"github.com/benebsworth/paprika/internal/kube"
 )
@@ -55,6 +54,12 @@ const maxCapacityListPages = 1000
 type KubernetesCapacity struct {
 	clients *kube.Clients
 
+	// configs resolves the connection details for the cluster a ReadRequest
+	// names, so a read scoped to a remote fleet cluster reaches that cluster
+	// rather than the one this control plane happens to run in. Nil means the
+	// local-only fallback; see InClusterConfigResolver.
+	configs ClusterConfigResolver
+
 	// clientset, when set, is used directly instead of resolving a client
 	// through clients. It exists so tests can exercise Read against
 	// k8s.io/client-go/kubernetes/fake without a kube.Clients or a real
@@ -64,9 +69,14 @@ type KubernetesCapacity struct {
 
 // NewKubernetesCapacity returns a CapacitySource that reads allocatable and
 // requested capacity from the Kubernetes API of the cluster named by each
-// ReadRequest, using clients to obtain (and reuse) a client per cluster.
-func NewKubernetesCapacity(clients *kube.Clients) *KubernetesCapacity {
-	return &KubernetesCapacity{clients: clients}
+// ReadRequest, using clients to obtain (and reuse) a client per cluster and
+// configs to resolve how that cluster is reached.
+//
+// A nil configs resolves only the cluster this control plane runs in; every
+// other cluster key is then refused rather than silently answered with local
+// numbers. See InClusterConfigResolver.
+func NewKubernetesCapacity(clients *kube.Clients, configs ClusterConfigResolver) *KubernetesCapacity {
+	return &KubernetesCapacity{clients: clients, configs: configResolverOrDefault(configs)}
 }
 
 // newKubernetesCapacityWithClientset returns a KubernetesCapacity that talks
@@ -97,7 +107,7 @@ func (k *KubernetesCapacity) ValidateConfig(config json.RawMessage) error {
 
 // Read implements CapacitySource.
 func (k *KubernetesCapacity) Read(ctx context.Context, req ReadRequest) (CapacityReading, error) {
-	client, err := k.clientFor(req.ClusterKey)
+	client, err := k.clientFor(ctx, req.ClusterKey)
 	if err != nil {
 		return CapacityReading{}, err
 	}
@@ -133,11 +143,11 @@ func (k *KubernetesCapacity) Read(ctx context.Context, req ReadRequest) (Capacit
 
 // clientFor returns the kubernetes.Interface to read clusterKey through.
 //
-// When a test seam clientset is set it is always used. Otherwise this
-// resolves the in-cluster config: KubernetesCapacity needs no configuration
-// of its own, and reading the cluster this control plane already runs in
-// needs no separate credential to resolve, unlike a remote managed cluster.
-func (k *KubernetesCapacity) clientFor(clusterKey string) (kubernetes.Interface, error) {
+// When a test seam clientset is set it is always used. Otherwise the injected
+// ClusterConfigResolver decides how clusterKey is reached, which is what lets
+// this provider serve a remote fleet cluster and not only the one this
+// control plane runs in.
+func (k *KubernetesCapacity) clientFor(ctx context.Context, clusterKey string) (kubernetes.Interface, error) {
 	if k.clientset != nil {
 		return k.clientset, nil
 	}
@@ -145,9 +155,9 @@ func (k *KubernetesCapacity) clientFor(clusterKey string) (kubernetes.Interface,
 		return nil, fmt.Errorf("kubernetes capacity: no client available for cluster %q", clusterKey)
 	}
 
-	cfg, err := rest.InClusterConfig()
+	cfg, err := configResolverOrDefault(k.configs).ConfigFor(ctx, clusterKey)
 	if err != nil {
-		return nil, fmt.Errorf("resolving in-cluster config for cluster %q: %w", clusterKey, err)
+		return nil, fmt.Errorf("resolving config for cluster %q: %w", clusterKey, err)
 	}
 
 	client, err := k.clients.For(clusterKey, kube.WithProtobufBothWays(cfg))

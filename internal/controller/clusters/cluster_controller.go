@@ -20,22 +20,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+	"github.com/benebsworth/paprika/internal/clusterconfig"
+	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/observability"
 )
 
@@ -44,6 +44,22 @@ type ClusterReconciler struct {
 	client     client.Client
 	Scheme     *runtime.Scheme
 	RESTConfig *rest.Config
+
+	// clients holds one warm Kubernetes client per managed cluster, so a
+	// health check reuses its connection pool instead of rebuilding one every
+	// reconcile. Lazily created so existing construction sites keep working.
+	clients     *kube.Clients
+	clientsOnce sync.Once
+}
+
+// clientCache returns the shared per-cluster client cache, creating it once.
+func (r *ClusterReconciler) clientCache() *kube.Clients {
+	r.clientsOnce.Do(func() {
+		if r.clients == nil {
+			r.clients = kube.NewClients()
+		}
+	})
+	return r.clients
 }
 
 // +kubebuilder:rbac:groups=clusters.paprika.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -63,6 +79,9 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting cluster: %w", k8sErr)
 		}
+		// The Cluster is gone; drop its client so the connections it held do
+		// not outlive the object.
+		r.clientCache().Forget(req.Namespace + "/" + req.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -90,53 +109,14 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 	return r.updatePhase(ctx, &cluster, clustersv1alpha1.ClusterPhaseHealthy, "Ready", "cluster is reachable")
 }
 
+// buildConfig resolves the connection details for cluster. The mode-by-mode
+// rules live in internal/clusterconfig because the console's capacity
+// providers resolve the very same clusters and must not develop a second,
+// slightly different idea of how a fleet cluster is reached.
 func (r *ClusterReconciler) buildConfig(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*rest.Config, error) {
-	switch cluster.Spec.Mode {
-	case clustersv1alpha1.ClusterModeInCluster:
-		cfg, err := rest.InClusterConfig()
-		if err != nil {
-			return nil, fmt.Errorf("in-cluster config: %w", err)
-		}
-		return cfg, nil
-	case clustersv1alpha1.ClusterModeAgent:
-		return nil, nil
-	case clustersv1alpha1.ClusterModeDirect:
-		if cluster.Spec.KubeconfigSecretRef != nil {
-			return r.configFromSecret(ctx, cluster)
-		}
-		if cluster.Spec.Server != "" {
-			return &rest.Config{Host: cluster.Spec.Server}, nil
-		}
-		return nil, errors.New("direct mode requires server or kubeconfigSecretRef")
-	default:
-		return nil, fmt.Errorf("unsupported cluster mode %q", cluster.Spec.Mode)
-	}
-}
-
-func (r *ClusterReconciler) configFromSecret(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*rest.Config, error) {
-	ref := cluster.Spec.KubeconfigSecretRef
-	ns := ref.Namespace
-	if ns == "" {
-		ns = cluster.Namespace
-	}
-
-	var secret corev1.Secret
-	if err := r.client.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: ns}, &secret); err != nil {
-		return nil, fmt.Errorf("getting kubeconfig secret: %w", err)
-	}
-
-	key := ref.Key
-	if key == "" {
-		key = "kubeconfig"
-	}
-	data, ok := secret.Data[key]
-	if !ok {
-		return nil, fmt.Errorf("kubeconfig secret missing key %q", key)
-	}
-
-	cfg, err := clientcmd.RESTConfigFromKubeConfig(data)
+	cfg, err := clusterconfig.ForCluster(ctx, r.client, cluster)
 	if err != nil {
-		return nil, fmt.Errorf("parsing kubeconfig: %w", err)
+		return nil, fmt.Errorf("resolving cluster config: %w", err)
 	}
 	return cfg, nil
 }
@@ -153,10 +133,19 @@ func (r *ClusterReconciler) checkHealth(ctx context.Context, cfg *rest.Config, c
 		}
 	}
 
-	_, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// Discovery's ServerVersion takes no context, so the deadline has to ride
+	// on the config. The previous code derived a timeout context and then
+	// discarded it, which meant the configured health-check timeout did
+	// nothing at all.
+	//
+	// Discovery only ever touches built-in endpoints, so it can send and
+	// receive protobuf; custom resources would need JSON requests.
+	healthCfg := kube.RequestTimeout(kube.WithProtobufBothWays(cfg), timeout)
 
-	cli, err := kubernetes.NewForConfig(cfg)
+	// One client per cluster, reused across reconciles. Building a clientset
+	// per health check discarded the connection pool every time, so each pass
+	// paid a fresh TCP and TLS handshake against every managed cluster.
+	cli, err := r.clientCache().For(clusterCacheKey(cluster), healthCfg)
 	if err != nil {
 		return "", fmt.Errorf("building kubernetes client: %w", err)
 	}
@@ -166,6 +155,13 @@ func (r *ClusterReconciler) checkHealth(ctx context.Context, cfg *rest.Config, c
 		return "", fmt.Errorf("discovering server version: %w", err)
 	}
 	return version.GitVersion, nil
+}
+
+// clusterCacheKey identifies a cluster in the client cache. Namespace and name
+// are stable for the object's lifetime; rotated credentials are handled by the
+// cache's own fingerprinting, not by this key.
+func clusterCacheKey(cluster *clustersv1alpha1.Cluster) string {
+	return cluster.Namespace + "/" + cluster.Name
 }
 
 func (r *ClusterReconciler) updatePhase(ctx context.Context, cluster *clustersv1alpha1.Cluster, phase clustersv1alpha1.ClusterPhase, reason, message string) (ctrl.Result, error) {

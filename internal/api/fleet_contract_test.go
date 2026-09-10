@@ -80,7 +80,8 @@ func TestFleetDescriptor(t *testing.T) {
 		"FleetCapability": {
 			"FLEET_CAPABILITY_UNSPECIFIED": 0, "FLEET_CAPABILITY_APPLICATION_SYNC": 1,
 			"FLEET_CAPABILITY_RELEASE_ROLLBACK": 2, "FLEET_CAPABILITY_GATE_APPROVE": 3,
-			"FLEET_CAPABILITY_PIPELINE_RETRY": 4,
+			"FLEET_CAPABILITY_PIPELINE_RETRY": 4, "FLEET_CAPABILITY_ROLLOUT_HOLD": 5,
+			"FLEET_CAPABILITY_RESOURCE_PATCH": 6, "FLEET_CAPABILITY_DRIFT_IGNORE": 7,
 		},
 		"FleetConnectionState": {
 			"FLEET_CONNECTION_STATE_UNSPECIFIED": 0, "FLEET_CONNECTION_STATE_HEALTHY": 1,
@@ -187,6 +188,11 @@ type fleetFieldDescriptorContract struct {
 	cardinality    protoreflect.Cardinality
 	referencedType protoreflect.FullName
 	oneof          protoreflect.Name
+	// explicitPresence locks the proto3 `optional` keyword. It is what lets a
+	// caller distinguish "no filter" from a filter on the empty string, which
+	// optionalNamespaceScope in console_stub.go relies on, so dropping the
+	// keyword is a silent behaviour change rather than a cosmetic one.
+	explicitPresence bool
 }
 
 var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptorContract{
@@ -310,6 +316,19 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 			number: 22, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
 			referencedType: "paprika.v1.FleetCapability",
 		},
+		"lifecycle": {
+			number: 23, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.LifecycleVector",
+		},
+		"ownership": {
+			number: 24, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.OwnershipSummary",
+		},
+		"commit": {
+			number: 25, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CommitSummary",
+		},
+		"release_id": {number: 26, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	},
 	"FleetFacetBucket": {
 		"dimension": {
@@ -482,7 +501,16 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 func assertFleetMessageDescriptors(t *testing.T, messages protoreflect.MessageDescriptors) {
 	t.Helper()
 	require.Len(t, fleetMessageDescriptorContracts, 15)
-	for messageName, wantFields := range fleetMessageDescriptorContracts {
+	assertMessageDescriptorContracts(t, messages, fleetMessageDescriptorContracts)
+}
+
+func assertMessageDescriptorContracts(
+	t *testing.T,
+	messages protoreflect.MessageDescriptors,
+	contracts map[string]map[string]fleetFieldDescriptorContract,
+) {
+	t.Helper()
+	for messageName, wantFields := range contracts {
 		message := messages.ByName(protoreflect.Name(messageName))
 		require.NotNilf(t, message, "missing message %s", messageName)
 		require.Equalf(t, len(wantFields), message.Fields().Len(), "message %s field count changed", messageName)
@@ -502,11 +530,15 @@ func assertFleetMessageDescriptors(t *testing.T, messages protoreflect.MessageDe
 			}
 			require.Equalf(t, wantField.referencedType, gotReferencedType, "message %s field %s referenced type changed", messageName, fieldName)
 
+			// Synthetic oneofs are the wrapper proto3 generates for an `optional`
+			// field, not a declared union, so they are asserted as presence below.
 			var gotOneof protoreflect.Name
-			if oneof := field.ContainingOneof(); oneof != nil {
+			if oneof := field.ContainingOneof(); oneof != nil && !oneof.IsSynthetic() {
 				gotOneof = oneof.Name()
 			}
 			require.Equalf(t, wantField.oneof, gotOneof, "message %s field %s oneof changed", messageName, fieldName)
+			require.Equalf(t, wantField.explicitPresence, field.HasOptionalKeyword(),
+				"message %s field %s explicit presence changed", messageName, fieldName)
 		}
 	}
 }
@@ -725,4 +757,1148 @@ var legacyFleetMessageDescriptorHashes = map[string]string{
 	"ListInvestigatorPluginsResponse": "8e5dcaaa105879f6eb15b64de764c50553bd271dbc736f94d601313eaed1463c",
 	"StreamResourceLogsRequest":       "e166fc1554198131ee84cd53968910b332ea494fe1cea7d6f412f99ac60fe088",
 	"LogChunk":                        "4386e5fbd814ac6e54e5e7037ad1c2a1b2a46ab078d4f2b70d65e8968abf1279",
+}
+
+// TestConsoleDescriptor is TestFleetDescriptor for the console redesign surface
+// added in Phase 0 (design docs/superpowers/specs/console-redesign/01-backend-design.md
+// section 2): the 19 enums, the 70 messages and the 19 RPCs the console is
+// being written against. It is a guardrail of the same kind — the tables below
+// are the contract, so a field number reused, a kind widened, an enum member
+// renumbered or an RPC reordered fails here rather than at a client that
+// silently decodes the wrong field.
+func TestConsoleDescriptor(t *testing.T) {
+	file := paprikav1.File_paprika_v1_api_proto
+
+	require.Len(t, consoleEnumValues, 19, "snapshot must cover every console enum")
+	for enumName, wantValues := range consoleEnumValues {
+		enum := file.Enums().ByName(protoreflect.Name(enumName))
+		require.NotNilf(t, enum, "missing enum %s", enumName)
+		require.Equalf(t, wantValues, enumValueNumbers(enum), "enum %s changed", enumName)
+	}
+
+	require.Len(t, consoleMessageDescriptorContracts, 70, "snapshot must cover every console message")
+	assertMessageDescriptorContracts(t, file.Messages(), consoleMessageDescriptorContracts)
+
+	service := file.Services().ByName("PaprikaService")
+	require.NotNil(t, service)
+	require.Len(t, consoleServiceMethods, 19, "snapshot must cover every console RPC")
+
+	// The console RPCs are appended after GetSystemStatus, which is itself
+	// appended after the fleet query RPCs. Asserting by index, and asserting the
+	// total, is what makes an inserted or reordered RPC — a wire-breaking change
+	// for every generated client — fail here instead of in the field.
+	const systemStatusMethodCount = 1
+	firstConsoleMethod := len(legacyFleetServiceMethods) + len(fleetQueryServiceMethods) + systemStatusMethodCount
+	require.Equal(t, firstConsoleMethod+len(consoleServiceMethods), service.Methods().Len(),
+		"console RPCs must be appended, never inserted")
+	for i, wantMethod := range consoleServiceMethods {
+		method := service.Methods().Get(firstConsoleMethod + i)
+		require.NotNilf(t, method, "missing RPC %s", wantMethod.name)
+		assertFleetMethodDescriptor(t, method, wantMethod)
+	}
+}
+
+func enumValueNumbers(enum protoreflect.EnumDescriptor) map[string]int32 {
+	values := make(map[string]int32, enum.Values().Len())
+	for i := 0; i < enum.Values().Len(); i++ {
+		value := enum.Values().Get(i)
+		values[string(value.Name())] = int32(value.Number())
+	}
+	return values
+}
+
+var consoleServiceMethods = []fleetMethodDescriptorContract{
+	{name: "GetDataSources", input: "paprika.v1.GetDataSourcesRequest", output: "paprika.v1.GetDataSourcesResponse"},
+	{name: "ListClusters", input: "paprika.v1.ListClustersRequest", output: "paprika.v1.ListClustersResponse"},
+	{name: "GetCluster", input: "paprika.v1.GetClusterRequest", output: "paprika.v1.GetClusterResponse"},
+	{name: "QueryApplicationSignals", input: "paprika.v1.QueryApplicationSignalsRequest", output: "paprika.v1.QueryApplicationSignalsResponse"},
+	{name: "QueryCost", input: "paprika.v1.QueryCostRequest", output: "paprika.v1.QueryCostResponse"},
+	{name: "ListSourceEvents", input: "paprika.v1.ListSourceEventsRequest", output: "paprika.v1.ListSourceEventsResponse"},
+	{name: "ListRolloutHistory", input: "paprika.v1.ListRolloutHistoryRequest", output: "paprika.v1.ListRolloutHistoryResponse"},
+	{name: "ListPipelineRuns", input: "paprika.v1.ListPipelineRunsRequest", output: "paprika.v1.ListPipelineRunsResponse"},
+	{name: "GetPipelineRun", input: "paprika.v1.GetPipelineRunRequest", output: "paprika.v1.GetPipelineRunResponse"},
+	{name: "GetRevisionInfo", input: "paprika.v1.GetRevisionInfoRequest", output: "paprika.v1.GetRevisionInfoResponse"},
+	{name: "GetApplicationOwnership", input: "paprika.v1.GetApplicationOwnershipRequest", output: "paprika.v1.GetApplicationOwnershipResponse"},
+	{name: "ListDriftDetails", input: "paprika.v1.ListDriftDetailsRequest", output: "paprika.v1.ListDriftDetailsResponse"},
+	{name: "GetApplicationLifecycle", input: "paprika.v1.GetApplicationLifecycleRequest", output: "paprika.v1.GetApplicationLifecycleResponse"},
+	{name: "GetRolloutHold", input: "paprika.v1.GetRolloutHoldRequest", output: "paprika.v1.GetRolloutHoldResponse"},
+	{name: "HoldRollout", input: "paprika.v1.HoldRolloutRequest", output: "paprika.v1.HoldRolloutResponse"},
+	{name: "ResumeRollout", input: "paprika.v1.ResumeRolloutRequest", output: "paprika.v1.ResumeRolloutResponse"},
+	{name: "IgnoreDriftedField", input: "paprika.v1.IgnoreDriftedFieldRequest", output: "paprika.v1.IgnoreDriftedFieldResponse"},
+	{name: "ApplyResourcePatch", input: "paprika.v1.ApplyResourcePatchRequest", output: "paprika.v1.ApplyResourcePatchResponse"},
+	{name: "SyncResources", input: "paprika.v1.SyncResourcesRequest", output: "paprika.v1.SyncResourcesResponse"},
+}
+
+var consoleEnumValues = map[string]map[string]int32{
+	"DataState": {
+		"DATA_STATE_UNSPECIFIED":    0,
+		"DATA_STATE_OK":             1,
+		"DATA_STATE_NOT_CONFIGURED": 2,
+		"DATA_STATE_NOT_AVAILABLE":  3,
+		"DATA_STATE_STALE":          4,
+		"DATA_STATE_ERROR":          5,
+		"DATA_STATE_FORBIDDEN":      6,
+	},
+	"DataClass": {
+		"DATA_CLASS_UNSPECIFIED":         0,
+		"DATA_CLASS_CLUSTER_INVENTORY":   1,
+		"DATA_CLASS_CLUSTER_CAPACITY":    2,
+		"DATA_CLASS_APPLICATION_SIGNALS": 3,
+		"DATA_CLASS_COST":                4,
+		"DATA_CLASS_SOURCE_EVENTS":       5,
+		"DATA_CLASS_ROLLOUT_HISTORY":     6,
+		"DATA_CLASS_PIPELINE_RUNS":       7,
+		"DATA_CLASS_COMMIT_METADATA":     8,
+		"DATA_CLASS_OWNERSHIP":           9,
+		"DATA_CLASS_DRIFT_DETAIL":        10,
+		"DATA_CLASS_LIFECYCLE":           11,
+	},
+	"ResourceUnit": {
+		"RESOURCE_UNIT_UNSPECIFIED": 0,
+		"RESOURCE_UNIT_MILLICORES":  1,
+		"RESOURCE_UNIT_BYTES":       2,
+	},
+	"ClusterMode": {
+		"CLUSTER_MODE_UNSPECIFIED": 0,
+		"CLUSTER_MODE_IN_CLUSTER":  1,
+		"CLUSTER_MODE_DIRECT":      2,
+		"CLUSTER_MODE_AGENT":       3,
+	},
+	"ClusterPhase": {
+		"CLUSTER_PHASE_UNSPECIFIED": 0,
+		"CLUSTER_PHASE_PENDING":     1,
+		"CLUSTER_PHASE_HEALTHY":     2,
+		"CLUSTER_PHASE_UNHEALTHY":   3,
+		"CLUSTER_PHASE_DISABLED":    4,
+	},
+	"SignalKind": {
+		"SIGNAL_KIND_UNSPECIFIED":  0,
+		"SIGNAL_KIND_REQUEST_RATE": 1,
+		"SIGNAL_KIND_ERROR_RATE":   2,
+		"SIGNAL_KIND_LATENCY":      3,
+		"SIGNAL_KIND_SATURATION":   4,
+	},
+	"SignalUnit": {
+		"SIGNAL_UNIT_UNSPECIFIED":         0,
+		"SIGNAL_UNIT_REQUESTS_PER_SECOND": 1,
+		"SIGNAL_UNIT_RATIO":               2,
+		"SIGNAL_UNIT_MILLISECONDS":        3,
+		"SIGNAL_UNIT_PERCENT":             4,
+	},
+	"CostBasis": {
+		"COST_BASIS_UNSPECIFIED":           0,
+		"COST_BASIS_RATE_CARD_REQUESTED":   1,
+		"COST_BASIS_RATE_CARD_ALLOCATABLE": 2,
+		"COST_BASIS_BILLING":               3,
+	},
+	"SourceEventKind": {
+		"SOURCE_EVENT_KIND_UNSPECIFIED":   0,
+		"SOURCE_EVENT_KIND_GIT_PUSH":      1,
+		"SOURCE_EVENT_KIND_GIT_TAG":       2,
+		"SOURCE_EVENT_KIND_OCI_PUSH":      3,
+		"SOURCE_EVENT_KIND_S3_OBJECT":     4,
+		"SOURCE_EVENT_KIND_POLL_DETECTED": 5,
+		"SOURCE_EVENT_KIND_MANUAL_SYNC":   6,
+	},
+	"SourceEventOutcome": {
+		"SOURCE_EVENT_OUTCOME_UNSPECIFIED": 0,
+		"SOURCE_EVENT_OUTCOME_ACCEPTED":    1,
+		"SOURCE_EVENT_OUTCOME_NO_MATCH":    2,
+		"SOURCE_EVENT_OUTCOME_REJECTED":    3,
+		"SOURCE_EVENT_OUTCOME_FAILED":      4,
+	},
+	"RolloutOutcome": {
+		"ROLLOUT_OUTCOME_UNSPECIFIED": 0,
+		"ROLLOUT_OUTCOME_SUCCEEDED":   1,
+		"ROLLOUT_OUTCOME_ABORTED":     2,
+		"ROLLOUT_OUTCOME_FAILED":      3,
+		"ROLLOUT_OUTCOME_ROLLED_BACK": 4,
+		"ROLLOUT_OUTCOME_SUPERSEDED":  5,
+	},
+	"PipelineRunOutcome": {
+		"PIPELINE_RUN_OUTCOME_UNSPECIFIED": 0,
+		"PIPELINE_RUN_OUTCOME_SUCCEEDED":   1,
+		"PIPELINE_RUN_OUTCOME_FAILED":      2,
+		"PIPELINE_RUN_OUTCOME_CANCELLED":   3,
+	},
+	"ComputeBasis": {
+		"COMPUTE_BASIS_UNSPECIFIED": 0,
+		"COMPUTE_BASIS_REQUESTED":   1,
+		"COMPUTE_BASIS_MEASURED":    2,
+	},
+	"OwnershipTier": {
+		"OWNERSHIP_TIER_UNSPECIFIED": 0,
+		"OWNERSHIP_TIER_1":           1,
+		"OWNERSHIP_TIER_2":           2,
+		"OWNERSHIP_TIER_3":           3,
+		"OWNERSHIP_TIER_4":           4,
+	},
+	"DrilldownKind": {
+		"DRILLDOWN_KIND_UNSPECIFIED": 0,
+		"DRILLDOWN_KIND_DASHBOARD":   1,
+		"DRILLDOWN_KIND_LOGS":        2,
+		"DRILLDOWN_KIND_TRACES":      3,
+		"DRILLDOWN_KIND_RUNBOOK":     4,
+		"DRILLDOWN_KIND_COST":        5,
+		"DRILLDOWN_KIND_REPOSITORY":  6,
+		"DRILLDOWN_KIND_CUSTOM":      7,
+	},
+	"DriftReason": {
+		"DRIFT_REASON_UNSPECIFIED":        0,
+		"DRIFT_REASON_FIELD_CHANGED":      1,
+		"DRIFT_REASON_RESOURCE_MISSING":   2,
+		"DRIFT_REASON_RESOURCE_UNMANAGED": 3,
+		"DRIFT_REASON_PRUNE_PENDING":      4,
+		"DRIFT_REASON_IGNORED":            5,
+	},
+	"LifecyclePhase": {
+		"LIFECYCLE_PHASE_UNSPECIFIED": 0,
+		"LIFECYCLE_PHASE_SOURCE":      1,
+		"LIFECYCLE_PHASE_BUILD":       2,
+		"LIFECYCLE_PHASE_TEST":        3,
+		"LIFECYCLE_PHASE_RENDER":      4,
+		"LIFECYCLE_PHASE_DEPLOY":      5,
+		"LIFECYCLE_PHASE_VERIFY":      6,
+	},
+	"LifecyclePhaseState": {
+		"LIFECYCLE_PHASE_STATE_UNSPECIFIED":    0,
+		"LIFECYCLE_PHASE_STATE_NOT_APPLICABLE": 1,
+		"LIFECYCLE_PHASE_STATE_PENDING":        2,
+		"LIFECYCLE_PHASE_STATE_RUNNING":        3,
+		"LIFECYCLE_PHASE_STATE_BLOCKED":        4,
+		"LIFECYCLE_PHASE_STATE_SUCCEEDED":      5,
+		"LIFECYCLE_PHASE_STATE_FAILED":         6,
+		"LIFECYCLE_PHASE_STATE_UNKNOWN":        7,
+	},
+	"PatchType": {
+		"PATCH_TYPE_UNSPECIFIED":     0,
+		"PATCH_TYPE_JSON_PATCH":      1,
+		"PATCH_TYPE_MERGE_PATCH":     2,
+		"PATCH_TYPE_STRATEGIC_MERGE": 3,
+	},
+}
+
+var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptorContract{
+	"DataSourceStatus": {
+		"data_class": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataClass",
+		},
+		"observed_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"provider":            {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"retention_limit":     {number: 7, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"retention_window_ms": {number: 8, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"staleness_budget_ms": {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetDataSourcesRequest": {
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+	},
+	"GetDataSourcesResponse": {
+		"index_generation": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"sources": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.DataSourceStatus",
+		},
+	},
+	"ResourceMeter": {
+		"allocatable": {number: 7, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"allocatable_state": {
+			number: 6, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"capacity":            {number: 8, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"observed_at_unix_ms": {number: 9, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"requested":           {number: 5, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"requested_state": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 10, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"unit": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ResourceUnit",
+		},
+		"used": {number: 3, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"used_state": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"ClusterInventory": {
+		"kubelet_versions":    {number: 9, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"namespace_count":     {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"node_count":          {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"observed_at_unix_ms": {number: 10, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"pod_count":           {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"ready_node_count":    {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"regions":             {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"running_pod_count":   {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 11, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"zones":              {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+	},
+	"ClusterCapacity": {
+		"cpu": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ResourceMeter",
+		},
+		"memory": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ResourceMeter",
+		},
+		"usage_provider": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ClusterAgentInfo": {
+		"address":           {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"connected":         {number: 5, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"last_seen_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"version": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"Cluster": {
+		"agent": {
+			number: 20, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ClusterAgentInfo",
+		},
+		"application_count": {number: 15, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"capacity": {
+			number: 18, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ClusterCapacity",
+		},
+		"conditions": {
+			number: 14, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.Condition",
+		},
+		"connection": {
+			number: 9, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetConnectionState",
+		},
+		"cost": {
+			number: 19, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CostSummary",
+		},
+		"created_at_unix_ms":    {number: 12, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"disabled":              {number: 7, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"display_name":          {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"health_check_interval": {number: 21, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"health_check_timeout":  {number: 22, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"identity": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"inventory": {
+			number: 17, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ClusterInventory",
+		},
+		"kubernetes_version": {number: 10, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"labels": {
+			number: 6, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.Cluster.LabelsEntry",
+		},
+		"last_health_check_unix_ms": {number: 11, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"mode": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ClusterMode",
+		},
+		"observed_generation": {number: 13, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"phase": {
+			number: 8, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ClusterPhase",
+		},
+		"server":          {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"service_account": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"target_count":    {number: 16, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"ListClustersRequest": {
+		"cursor":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"include_capacity":     {number: 4, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"include_unreferenced": {number: 5, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+		"page_size": {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"ListClustersResponse": {
+		"clusters": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.Cluster",
+		},
+		"index_generation": {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"next_cursor":      {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"total":            {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"GetClusterRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetClusterResponse": {
+		"cluster": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.Cluster",
+		},
+		"index_generation": {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"SignalValue": {
+		"kind": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.SignalKind",
+		},
+		"observed_at_unix_ms": {number: 6, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"quantile":            {number: 5, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"unit": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.SignalUnit",
+		},
+		"value":          {number: 3, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"window_seconds": {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"ApplicationSignals": {
+		"application": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cluster": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"signals": {
+			number: 6, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.SignalValue",
+		},
+		"source": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"stage": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 4, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"QueryApplicationSignalsRequest": {
+		"applications": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"signals": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.SignalKind",
+		},
+		"stage":          {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"window_seconds": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"QueryApplicationSignalsResponse": {
+		"applications": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ApplicationSignals",
+		},
+		"index_generation": {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"CostSummary": {
+		"basis": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CostBasis",
+		},
+		"currency":            {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"monthly_amount":      {number: 3, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"observed_at_unix_ms": {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"provider":            {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"unavailable_reason": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ApplicationCost": {
+		"application": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cost": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CostSummary",
+		},
+	},
+	"ClusterCost": {
+		"cluster": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cost": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CostSummary",
+		},
+	},
+	"QueryCostRequest": {
+		"applications": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"clusters": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cursor": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"filter": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetFilter",
+		},
+		"page_size": {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"QueryCostResponse": {
+		"applications": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ApplicationCost",
+		},
+		"clusters": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ClusterCost",
+		},
+		"index_generation": {number: 6, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"next_cursor":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"total": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CostSummary",
+		},
+	},
+	"CommitInfo": {
+		"author_email":         {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"author_name":          {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"committed_at_unix_ms": {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"message":              {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"revision":             {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"short_revision":       {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"url": {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetRevisionInfoRequest": {
+		"application": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":   {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"revision":    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetRevisionInfoResponse": {
+		"commit": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CommitInfo",
+		},
+		"repository": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"repository_url": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"run_number":     {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"run_number_state": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"SourceEvent": {
+		"commit": {
+			number: 7, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CommitInfo",
+		},
+		"delivery_id": {number: 9, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"identity": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"kind": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.SourceEventKind",
+		},
+		"message": {number: 15, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"outcome": {
+			number: 11, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.SourceEventOutcome",
+		},
+		"provider":            {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"received_at_unix_ms": {number: 10, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"reference":           {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"repository": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"repository_url": {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"source_type": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSourceType",
+		},
+		"triggered_application_count": {number: 13, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"triggered_applications": {
+			number: 12, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"triggered_applications_truncated": {number: 14, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+	},
+	"ListSourceEventsRequest": {
+		"applications": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cursor": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"kinds": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.SourceEventKind",
+		},
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+		"page_size":     {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"since_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"ListSourceEventsResponse": {
+		"events": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.SourceEvent",
+		},
+		"next_cursor":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"retention_horizon_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"retention_limit":           {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"RolloutHistoryEntry": {
+		"application": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cluster": {
+			number: 6, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"commit": {
+			number: 16, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CommitInfo",
+		},
+		"duration_ms":         {number: 11, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"final_weight":        {number: 14, kind: protoreflect.Int32Kind, cardinality: protoreflect.Optional},
+		"finished_at_unix_ms": {number: 10, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"identity": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"message": {number: 18, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"outcome": {
+			number: 8, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.RolloutOutcome",
+		},
+		"reason": {number: 17, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"release": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"revision": {number: 15, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"rollout": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"stage":              {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"started_at_unix_ms": {number: 9, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"steps_completed":    {number: 12, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"steps_total":        {number: 13, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"strategy":           {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"triggered_by":       {number: 19, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"RolloutHistoryStats": {
+		"aborted":            {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"failed":             {number: 5, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"median_duration_ms": {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"p90_duration_ms":    {number: 8, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"rolled_back":        {number: 6, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"sample_size":        {number: 9, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"succeeded":            {number: 3, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"total":                {number: 2, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"window_start_unix_ms": {number: 10, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"ListRolloutHistoryRequest": {
+		"applications": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"clusters": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cursor": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+		"page_size":     {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"since_unix_ms": {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"stages":        {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+	},
+	"ListRolloutHistoryResponse": {
+		"entries": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.RolloutHistoryEntry",
+		},
+		"next_cursor":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"retention_horizon_unix_ms": {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"retention_limit":           {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"stats": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.RolloutHistoryStats",
+		},
+	},
+	"StepResources": {
+		"cpu_limit_millicores":   {number: 4, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"cpu_request_millicores": {number: 2, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"memory_limit_bytes":     {number: 5, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"memory_request_bytes":   {number: 3, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"PipelineRunStep": {
+		"attempts":            {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"duration_ms":         {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"finished_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"image":               {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"message":             {number: 9, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":                {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"phase":               {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"resources": {
+			number: 7, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.StepResources",
+		},
+		"started_at_unix_ms": {number: 3, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"PipelineTestSummary": {
+		"failed":        {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"flaked":        {number: 6, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"passed":        {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"report_format": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"skipped":       {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"total": {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"PipelineCacheSummary": {
+		"hit_ratio": {number: 4, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"hits":      {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"misses":    {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"scope":     {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"PipelineRunSummary": {
+		"application": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"artifacts": {
+			number: 19, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ArtifactRef",
+		},
+		"cache": {
+			number: 15, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.PipelineCacheSummary",
+		},
+		"commit": {
+			number: 12, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.CommitInfo",
+		},
+		"compute_state": {
+			number: 16, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"cpu_minutes": {number: 17, kind: protoreflect.DoubleKind, cardinality: protoreflect.Optional},
+		"cpu_minutes_basis": {
+			number: 18, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ComputeBasis",
+		},
+		"duration_ms":         {number: 8, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"finished_at_unix_ms": {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"identity": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"outcome": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.PipelineRunOutcome",
+		},
+		"pipeline": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"run_number":         {number: 4, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+		"started_at_unix_ms": {number: 6, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"steps": {
+			number: 11, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.PipelineRunStep",
+		},
+		"steps_succeeded": {number: 10, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"steps_total":     {number: 9, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"tests": {
+			number: 14, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.PipelineTestSummary",
+		},
+		"triggered_by": {number: 13, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ListPipelineRunsRequest": {
+		"application": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"cursor": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {
+			number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+		},
+		"page_size": {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"pipeline": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"since_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+	},
+	"ListPipelineRunsResponse": {
+		"next_cursor":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"retention_horizon_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"retention_limit":           {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"runs": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.PipelineRunSummary",
+		},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"GetPipelineRunRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetPipelineRunResponse": {
+		"run": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.PipelineRunSummary",
+		},
+	},
+	"DrilldownLink": {
+		"kind": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DrilldownKind",
+		},
+		"label": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"url":   {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"Ownership": {
+		"escalation_url": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"links": {
+			number: 7, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.DrilldownLink",
+		},
+		"on_call":     {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"owner":       {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"owner_label": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"source":      {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"tier": {
+			number: 5, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.OwnershipTier",
+		},
+	},
+	"GetApplicationOwnershipRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetApplicationOwnershipResponse": {
+		"ownership": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.Ownership",
+		},
+	},
+	"DriftedField": {
+		"desired": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"ignored": {number: 4, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"live":    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"path":    {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ResourceDriftDetail": {
+		"changed_field_count": {number: 8, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"detail_state": {
+			number: 12, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"drift_detected_at_unix_ms": {number: 11, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"fields": {
+			number: 9, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.DriftedField",
+		},
+		"fields_truncated":        {number: 10, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"group":                   {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"kind":                    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"last_applied_at_unix_ms": {number: 14, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"last_applied_by":         {number: 13, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":                    {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":               {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason": {
+			number: 7, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DriftReason",
+		},
+		"sync": {
+			number: 6, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetSyncState",
+		},
+		"version": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ListDriftDetailsRequest": {
+		"application":    {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"cursor":         {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"include_fields": {number: 5, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"namespace":      {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"page_size":      {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"ListDriftDetailsResponse": {
+		"drifted_count":        {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"evaluated_at_unix_ms": {number: 7, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"missing_count":        {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"next_cursor":          {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"pruned_count":         {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"resources": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ResourceDriftDetail",
+		},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+	},
+	"LifecycleVector": {
+		"observed_at_unix_ms": {number: 2, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"states": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.LifecyclePhaseState",
+		},
+	},
+	"LifecyclePhaseStatus": {
+		"detail":              {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"duration_ms":         {number: 5, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"finished_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"phase": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.LifecyclePhase",
+		},
+		"reference": {
+			number: 7, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"reference_kind":     {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"started_at_unix_ms": {number: 3, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 2, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.LifecyclePhaseState",
+		},
+	},
+	"ApplicationLifecycle": {
+		"application": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.FleetObjectKey",
+		},
+		"observed_at_unix_ms": {number: 3, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"phases": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.LifecyclePhaseStatus",
+		},
+	},
+	"GetApplicationLifecycleRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetApplicationLifecycleResponse": {
+		"lifecycle": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.ApplicationLifecycle",
+		},
+	},
+	"RolloutHold": {
+		"expires_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"frozen_weight":      {number: 6, kind: protoreflect.Int32Kind, cardinality: protoreflect.Optional},
+		"held":               {number: 1, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"held_at_unix_ms":    {number: 3, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"held_by":            {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":             {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetRolloutHoldRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"GetRolloutHoldResponse": {
+		"hold": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.RolloutHold",
+		},
+	},
+	"HoldRolloutRequest": {
+		"expires_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"name":               {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":          {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":             {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"HoldRolloutResponse": {
+		"hold": {
+			number: 2, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.RolloutHold",
+		},
+		"rollout": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.Rollout",
+		},
+	},
+	"ResumeRolloutRequest": {
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ResumeRolloutResponse": {
+		"rollout": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.Rollout",
+		},
+	},
+	"IgnoredFieldRule": {
+		"created_at_unix_ms": {number: 8, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"created_by":         {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"group":              {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"json_pointers":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"kind":               {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":          {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":             {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"IgnoreDriftedFieldRequest": {
+		"group":              {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"json_pointers":      {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Repeated},
+		"kind":               {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":               {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace":          {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"reason":             {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"remove":             {number: 9, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"resource_name":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"resource_namespace": {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"IgnoreDriftedFieldResponse": {
+		"rules": {
+			number: 1, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.IgnoredFieldRule",
+		},
+	},
+	"ApplyResourcePatchRequest": {
+		"confirm":   {number: 10, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"group":     {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"kind":      {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"patch":     {number: 9, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"patch_type": {
+			number: 8, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.PatchType",
+		},
+		"reason":             {number: 11, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"resource_name":      {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"resource_namespace": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"version":            {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ApplyResourcePatchResponse": {
+		"applied":            {number: 1, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"applied_at_unix_ms": {number: 6, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"diff":               {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"dry_run":            {number: 2, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"result_manifest":    {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"warning":            {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"ResourceSelector": {
+		"group":     {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"kind":      {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"name":      {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"version":   {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
+	"SyncResourcesRequest": {
+		"confirm":   {number: 5, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"name":      {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"namespace": {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"prune":     {number: 4, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"reason":    {number: 6, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"resources": {
+			number: 3, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ResourceSelector",
+		},
+	},
+	"SyncResourcesResponse": {
+		"accepted":       {number: 1, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"dry_run":        {number: 2, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"selected_count": {number: 3, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"sync_token":     {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"unmatched": {
+			number: 4, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ResourceSelector",
+		},
+	},
+	"OwnershipSummary": {
+		"on_call": {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"owner":   {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"tier": {
+			number: 3, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.OwnershipTier",
+		},
+	},
+	"CommitSummary": {
+		"author_name":          {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"committed_at_unix_ms": {number: 4, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"message":              {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"short_revision":       {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+	},
 }

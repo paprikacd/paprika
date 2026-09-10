@@ -154,6 +154,63 @@ const (
 	// PaprikaServiceGetSystemStatusProcedure is the fully-qualified name of the PaprikaService's
 	// GetSystemStatus RPC.
 	PaprikaServiceGetSystemStatusProcedure = "/paprika.v1.PaprikaService/GetSystemStatus"
+	// PaprikaServiceGetDataSourcesProcedure is the fully-qualified name of the PaprikaService's
+	// GetDataSources RPC.
+	PaprikaServiceGetDataSourcesProcedure = "/paprika.v1.PaprikaService/GetDataSources"
+	// PaprikaServiceListClustersProcedure is the fully-qualified name of the PaprikaService's
+	// ListClusters RPC.
+	PaprikaServiceListClustersProcedure = "/paprika.v1.PaprikaService/ListClusters"
+	// PaprikaServiceGetClusterProcedure is the fully-qualified name of the PaprikaService's GetCluster
+	// RPC.
+	PaprikaServiceGetClusterProcedure = "/paprika.v1.PaprikaService/GetCluster"
+	// PaprikaServiceQueryApplicationSignalsProcedure is the fully-qualified name of the
+	// PaprikaService's QueryApplicationSignals RPC.
+	PaprikaServiceQueryApplicationSignalsProcedure = "/paprika.v1.PaprikaService/QueryApplicationSignals"
+	// PaprikaServiceQueryCostProcedure is the fully-qualified name of the PaprikaService's QueryCost
+	// RPC.
+	PaprikaServiceQueryCostProcedure = "/paprika.v1.PaprikaService/QueryCost"
+	// PaprikaServiceListSourceEventsProcedure is the fully-qualified name of the PaprikaService's
+	// ListSourceEvents RPC.
+	PaprikaServiceListSourceEventsProcedure = "/paprika.v1.PaprikaService/ListSourceEvents"
+	// PaprikaServiceListRolloutHistoryProcedure is the fully-qualified name of the PaprikaService's
+	// ListRolloutHistory RPC.
+	PaprikaServiceListRolloutHistoryProcedure = "/paprika.v1.PaprikaService/ListRolloutHistory"
+	// PaprikaServiceListPipelineRunsProcedure is the fully-qualified name of the PaprikaService's
+	// ListPipelineRuns RPC.
+	PaprikaServiceListPipelineRunsProcedure = "/paprika.v1.PaprikaService/ListPipelineRuns"
+	// PaprikaServiceGetPipelineRunProcedure is the fully-qualified name of the PaprikaService's
+	// GetPipelineRun RPC.
+	PaprikaServiceGetPipelineRunProcedure = "/paprika.v1.PaprikaService/GetPipelineRun"
+	// PaprikaServiceGetRevisionInfoProcedure is the fully-qualified name of the PaprikaService's
+	// GetRevisionInfo RPC.
+	PaprikaServiceGetRevisionInfoProcedure = "/paprika.v1.PaprikaService/GetRevisionInfo"
+	// PaprikaServiceGetApplicationOwnershipProcedure is the fully-qualified name of the
+	// PaprikaService's GetApplicationOwnership RPC.
+	PaprikaServiceGetApplicationOwnershipProcedure = "/paprika.v1.PaprikaService/GetApplicationOwnership"
+	// PaprikaServiceListDriftDetailsProcedure is the fully-qualified name of the PaprikaService's
+	// ListDriftDetails RPC.
+	PaprikaServiceListDriftDetailsProcedure = "/paprika.v1.PaprikaService/ListDriftDetails"
+	// PaprikaServiceGetApplicationLifecycleProcedure is the fully-qualified name of the
+	// PaprikaService's GetApplicationLifecycle RPC.
+	PaprikaServiceGetApplicationLifecycleProcedure = "/paprika.v1.PaprikaService/GetApplicationLifecycle"
+	// PaprikaServiceGetRolloutHoldProcedure is the fully-qualified name of the PaprikaService's
+	// GetRolloutHold RPC.
+	PaprikaServiceGetRolloutHoldProcedure = "/paprika.v1.PaprikaService/GetRolloutHold"
+	// PaprikaServiceHoldRolloutProcedure is the fully-qualified name of the PaprikaService's
+	// HoldRollout RPC.
+	PaprikaServiceHoldRolloutProcedure = "/paprika.v1.PaprikaService/HoldRollout"
+	// PaprikaServiceResumeRolloutProcedure is the fully-qualified name of the PaprikaService's
+	// ResumeRollout RPC.
+	PaprikaServiceResumeRolloutProcedure = "/paprika.v1.PaprikaService/ResumeRollout"
+	// PaprikaServiceIgnoreDriftedFieldProcedure is the fully-qualified name of the PaprikaService's
+	// IgnoreDriftedField RPC.
+	PaprikaServiceIgnoreDriftedFieldProcedure = "/paprika.v1.PaprikaService/IgnoreDriftedField"
+	// PaprikaServiceApplyResourcePatchProcedure is the fully-qualified name of the PaprikaService's
+	// ApplyResourcePatch RPC.
+	PaprikaServiceApplyResourcePatchProcedure = "/paprika.v1.PaprikaService/ApplyResourcePatch"
+	// PaprikaServiceSyncResourcesProcedure is the fully-qualified name of the PaprikaService's
+	// SyncResources RPC.
+	PaprikaServiceSyncResourcesProcedure = "/paprika.v1.PaprikaService/SyncResources"
 )
 
 // PaprikaServiceClient is a client for the paprika.v1.PaprikaService service.
@@ -199,6 +256,25 @@ type PaprikaServiceClient interface {
 	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
 	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
 	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
+	GetDataSources(context.Context, *connect.Request[v1.GetDataSourcesRequest]) (*connect.Response[v1.GetDataSourcesResponse], error)
+	ListClusters(context.Context, *connect.Request[v1.ListClustersRequest]) (*connect.Response[v1.ListClustersResponse], error)
+	GetCluster(context.Context, *connect.Request[v1.GetClusterRequest]) (*connect.Response[v1.GetClusterResponse], error)
+	QueryApplicationSignals(context.Context, *connect.Request[v1.QueryApplicationSignalsRequest]) (*connect.Response[v1.QueryApplicationSignalsResponse], error)
+	QueryCost(context.Context, *connect.Request[v1.QueryCostRequest]) (*connect.Response[v1.QueryCostResponse], error)
+	ListSourceEvents(context.Context, *connect.Request[v1.ListSourceEventsRequest]) (*connect.Response[v1.ListSourceEventsResponse], error)
+	ListRolloutHistory(context.Context, *connect.Request[v1.ListRolloutHistoryRequest]) (*connect.Response[v1.ListRolloutHistoryResponse], error)
+	ListPipelineRuns(context.Context, *connect.Request[v1.ListPipelineRunsRequest]) (*connect.Response[v1.ListPipelineRunsResponse], error)
+	GetPipelineRun(context.Context, *connect.Request[v1.GetPipelineRunRequest]) (*connect.Response[v1.GetPipelineRunResponse], error)
+	GetRevisionInfo(context.Context, *connect.Request[v1.GetRevisionInfoRequest]) (*connect.Response[v1.GetRevisionInfoResponse], error)
+	GetApplicationOwnership(context.Context, *connect.Request[v1.GetApplicationOwnershipRequest]) (*connect.Response[v1.GetApplicationOwnershipResponse], error)
+	ListDriftDetails(context.Context, *connect.Request[v1.ListDriftDetailsRequest]) (*connect.Response[v1.ListDriftDetailsResponse], error)
+	GetApplicationLifecycle(context.Context, *connect.Request[v1.GetApplicationLifecycleRequest]) (*connect.Response[v1.GetApplicationLifecycleResponse], error)
+	GetRolloutHold(context.Context, *connect.Request[v1.GetRolloutHoldRequest]) (*connect.Response[v1.GetRolloutHoldResponse], error)
+	HoldRollout(context.Context, *connect.Request[v1.HoldRolloutRequest]) (*connect.Response[v1.HoldRolloutResponse], error)
+	ResumeRollout(context.Context, *connect.Request[v1.ResumeRolloutRequest]) (*connect.Response[v1.ResumeRolloutResponse], error)
+	IgnoreDriftedField(context.Context, *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error)
+	ApplyResourcePatch(context.Context, *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error)
+	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
 }
 
 // NewPaprikaServiceClient constructs a client for the paprika.v1.PaprikaService service. By
@@ -458,6 +534,120 @@ func NewPaprikaServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(paprikaServiceMethods.ByName("GetSystemStatus")),
 			connect.WithClientOptions(opts...),
 		),
+		getDataSources: connect.NewClient[v1.GetDataSourcesRequest, v1.GetDataSourcesResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetDataSourcesProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetDataSources")),
+			connect.WithClientOptions(opts...),
+		),
+		listClusters: connect.NewClient[v1.ListClustersRequest, v1.ListClustersResponse](
+			httpClient,
+			baseURL+PaprikaServiceListClustersProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListClusters")),
+			connect.WithClientOptions(opts...),
+		),
+		getCluster: connect.NewClient[v1.GetClusterRequest, v1.GetClusterResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetClusterProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetCluster")),
+			connect.WithClientOptions(opts...),
+		),
+		queryApplicationSignals: connect.NewClient[v1.QueryApplicationSignalsRequest, v1.QueryApplicationSignalsResponse](
+			httpClient,
+			baseURL+PaprikaServiceQueryApplicationSignalsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("QueryApplicationSignals")),
+			connect.WithClientOptions(opts...),
+		),
+		queryCost: connect.NewClient[v1.QueryCostRequest, v1.QueryCostResponse](
+			httpClient,
+			baseURL+PaprikaServiceQueryCostProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("QueryCost")),
+			connect.WithClientOptions(opts...),
+		),
+		listSourceEvents: connect.NewClient[v1.ListSourceEventsRequest, v1.ListSourceEventsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListSourceEventsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListSourceEvents")),
+			connect.WithClientOptions(opts...),
+		),
+		listRolloutHistory: connect.NewClient[v1.ListRolloutHistoryRequest, v1.ListRolloutHistoryResponse](
+			httpClient,
+			baseURL+PaprikaServiceListRolloutHistoryProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListRolloutHistory")),
+			connect.WithClientOptions(opts...),
+		),
+		listPipelineRuns: connect.NewClient[v1.ListPipelineRunsRequest, v1.ListPipelineRunsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListPipelineRunsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListPipelineRuns")),
+			connect.WithClientOptions(opts...),
+		),
+		getPipelineRun: connect.NewClient[v1.GetPipelineRunRequest, v1.GetPipelineRunResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetPipelineRunProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetPipelineRun")),
+			connect.WithClientOptions(opts...),
+		),
+		getRevisionInfo: connect.NewClient[v1.GetRevisionInfoRequest, v1.GetRevisionInfoResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetRevisionInfoProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetRevisionInfo")),
+			connect.WithClientOptions(opts...),
+		),
+		getApplicationOwnership: connect.NewClient[v1.GetApplicationOwnershipRequest, v1.GetApplicationOwnershipResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetApplicationOwnershipProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationOwnership")),
+			connect.WithClientOptions(opts...),
+		),
+		listDriftDetails: connect.NewClient[v1.ListDriftDetailsRequest, v1.ListDriftDetailsResponse](
+			httpClient,
+			baseURL+PaprikaServiceListDriftDetailsProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ListDriftDetails")),
+			connect.WithClientOptions(opts...),
+		),
+		getApplicationLifecycle: connect.NewClient[v1.GetApplicationLifecycleRequest, v1.GetApplicationLifecycleResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetApplicationLifecycleProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationLifecycle")),
+			connect.WithClientOptions(opts...),
+		),
+		getRolloutHold: connect.NewClient[v1.GetRolloutHoldRequest, v1.GetRolloutHoldResponse](
+			httpClient,
+			baseURL+PaprikaServiceGetRolloutHoldProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("GetRolloutHold")),
+			connect.WithClientOptions(opts...),
+		),
+		holdRollout: connect.NewClient[v1.HoldRolloutRequest, v1.HoldRolloutResponse](
+			httpClient,
+			baseURL+PaprikaServiceHoldRolloutProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("HoldRollout")),
+			connect.WithClientOptions(opts...),
+		),
+		resumeRollout: connect.NewClient[v1.ResumeRolloutRequest, v1.ResumeRolloutResponse](
+			httpClient,
+			baseURL+PaprikaServiceResumeRolloutProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ResumeRollout")),
+			connect.WithClientOptions(opts...),
+		),
+		ignoreDriftedField: connect.NewClient[v1.IgnoreDriftedFieldRequest, v1.IgnoreDriftedFieldResponse](
+			httpClient,
+			baseURL+PaprikaServiceIgnoreDriftedFieldProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("IgnoreDriftedField")),
+			connect.WithClientOptions(opts...),
+		),
+		applyResourcePatch: connect.NewClient[v1.ApplyResourcePatchRequest, v1.ApplyResourcePatchResponse](
+			httpClient,
+			baseURL+PaprikaServiceApplyResourcePatchProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("ApplyResourcePatch")),
+			connect.WithClientOptions(opts...),
+		),
+		syncResources: connect.NewClient[v1.SyncResourcesRequest, v1.SyncResourcesResponse](
+			httpClient,
+			baseURL+PaprikaServiceSyncResourcesProcedure,
+			connect.WithSchema(paprikaServiceMethods.ByName("SyncResources")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -504,6 +694,25 @@ type paprikaServiceClient struct {
 	queryFleetMap           *connect.Client[v1.QueryFleetMapRequest, v1.QueryFleetMapResponse]
 	queryFleetMatrix        *connect.Client[v1.QueryFleetMatrixRequest, v1.QueryFleetMatrixResponse]
 	getSystemStatus         *connect.Client[v1.GetSystemStatusRequest, v1.GetSystemStatusResponse]
+	getDataSources          *connect.Client[v1.GetDataSourcesRequest, v1.GetDataSourcesResponse]
+	listClusters            *connect.Client[v1.ListClustersRequest, v1.ListClustersResponse]
+	getCluster              *connect.Client[v1.GetClusterRequest, v1.GetClusterResponse]
+	queryApplicationSignals *connect.Client[v1.QueryApplicationSignalsRequest, v1.QueryApplicationSignalsResponse]
+	queryCost               *connect.Client[v1.QueryCostRequest, v1.QueryCostResponse]
+	listSourceEvents        *connect.Client[v1.ListSourceEventsRequest, v1.ListSourceEventsResponse]
+	listRolloutHistory      *connect.Client[v1.ListRolloutHistoryRequest, v1.ListRolloutHistoryResponse]
+	listPipelineRuns        *connect.Client[v1.ListPipelineRunsRequest, v1.ListPipelineRunsResponse]
+	getPipelineRun          *connect.Client[v1.GetPipelineRunRequest, v1.GetPipelineRunResponse]
+	getRevisionInfo         *connect.Client[v1.GetRevisionInfoRequest, v1.GetRevisionInfoResponse]
+	getApplicationOwnership *connect.Client[v1.GetApplicationOwnershipRequest, v1.GetApplicationOwnershipResponse]
+	listDriftDetails        *connect.Client[v1.ListDriftDetailsRequest, v1.ListDriftDetailsResponse]
+	getApplicationLifecycle *connect.Client[v1.GetApplicationLifecycleRequest, v1.GetApplicationLifecycleResponse]
+	getRolloutHold          *connect.Client[v1.GetRolloutHoldRequest, v1.GetRolloutHoldResponse]
+	holdRollout             *connect.Client[v1.HoldRolloutRequest, v1.HoldRolloutResponse]
+	resumeRollout           *connect.Client[v1.ResumeRolloutRequest, v1.ResumeRolloutResponse]
+	ignoreDriftedField      *connect.Client[v1.IgnoreDriftedFieldRequest, v1.IgnoreDriftedFieldResponse]
+	applyResourcePatch      *connect.Client[v1.ApplyResourcePatchRequest, v1.ApplyResourcePatchResponse]
+	syncResources           *connect.Client[v1.SyncResourcesRequest, v1.SyncResourcesResponse]
 }
 
 // ListPipelines calls paprika.v1.PaprikaService.ListPipelines.
@@ -711,6 +920,101 @@ func (c *paprikaServiceClient) GetSystemStatus(ctx context.Context, req *connect
 	return c.getSystemStatus.CallUnary(ctx, req)
 }
 
+// GetDataSources calls paprika.v1.PaprikaService.GetDataSources.
+func (c *paprikaServiceClient) GetDataSources(ctx context.Context, req *connect.Request[v1.GetDataSourcesRequest]) (*connect.Response[v1.GetDataSourcesResponse], error) {
+	return c.getDataSources.CallUnary(ctx, req)
+}
+
+// ListClusters calls paprika.v1.PaprikaService.ListClusters.
+func (c *paprikaServiceClient) ListClusters(ctx context.Context, req *connect.Request[v1.ListClustersRequest]) (*connect.Response[v1.ListClustersResponse], error) {
+	return c.listClusters.CallUnary(ctx, req)
+}
+
+// GetCluster calls paprika.v1.PaprikaService.GetCluster.
+func (c *paprikaServiceClient) GetCluster(ctx context.Context, req *connect.Request[v1.GetClusterRequest]) (*connect.Response[v1.GetClusterResponse], error) {
+	return c.getCluster.CallUnary(ctx, req)
+}
+
+// QueryApplicationSignals calls paprika.v1.PaprikaService.QueryApplicationSignals.
+func (c *paprikaServiceClient) QueryApplicationSignals(ctx context.Context, req *connect.Request[v1.QueryApplicationSignalsRequest]) (*connect.Response[v1.QueryApplicationSignalsResponse], error) {
+	return c.queryApplicationSignals.CallUnary(ctx, req)
+}
+
+// QueryCost calls paprika.v1.PaprikaService.QueryCost.
+func (c *paprikaServiceClient) QueryCost(ctx context.Context, req *connect.Request[v1.QueryCostRequest]) (*connect.Response[v1.QueryCostResponse], error) {
+	return c.queryCost.CallUnary(ctx, req)
+}
+
+// ListSourceEvents calls paprika.v1.PaprikaService.ListSourceEvents.
+func (c *paprikaServiceClient) ListSourceEvents(ctx context.Context, req *connect.Request[v1.ListSourceEventsRequest]) (*connect.Response[v1.ListSourceEventsResponse], error) {
+	return c.listSourceEvents.CallUnary(ctx, req)
+}
+
+// ListRolloutHistory calls paprika.v1.PaprikaService.ListRolloutHistory.
+func (c *paprikaServiceClient) ListRolloutHistory(ctx context.Context, req *connect.Request[v1.ListRolloutHistoryRequest]) (*connect.Response[v1.ListRolloutHistoryResponse], error) {
+	return c.listRolloutHistory.CallUnary(ctx, req)
+}
+
+// ListPipelineRuns calls paprika.v1.PaprikaService.ListPipelineRuns.
+func (c *paprikaServiceClient) ListPipelineRuns(ctx context.Context, req *connect.Request[v1.ListPipelineRunsRequest]) (*connect.Response[v1.ListPipelineRunsResponse], error) {
+	return c.listPipelineRuns.CallUnary(ctx, req)
+}
+
+// GetPipelineRun calls paprika.v1.PaprikaService.GetPipelineRun.
+func (c *paprikaServiceClient) GetPipelineRun(ctx context.Context, req *connect.Request[v1.GetPipelineRunRequest]) (*connect.Response[v1.GetPipelineRunResponse], error) {
+	return c.getPipelineRun.CallUnary(ctx, req)
+}
+
+// GetRevisionInfo calls paprika.v1.PaprikaService.GetRevisionInfo.
+func (c *paprikaServiceClient) GetRevisionInfo(ctx context.Context, req *connect.Request[v1.GetRevisionInfoRequest]) (*connect.Response[v1.GetRevisionInfoResponse], error) {
+	return c.getRevisionInfo.CallUnary(ctx, req)
+}
+
+// GetApplicationOwnership calls paprika.v1.PaprikaService.GetApplicationOwnership.
+func (c *paprikaServiceClient) GetApplicationOwnership(ctx context.Context, req *connect.Request[v1.GetApplicationOwnershipRequest]) (*connect.Response[v1.GetApplicationOwnershipResponse], error) {
+	return c.getApplicationOwnership.CallUnary(ctx, req)
+}
+
+// ListDriftDetails calls paprika.v1.PaprikaService.ListDriftDetails.
+func (c *paprikaServiceClient) ListDriftDetails(ctx context.Context, req *connect.Request[v1.ListDriftDetailsRequest]) (*connect.Response[v1.ListDriftDetailsResponse], error) {
+	return c.listDriftDetails.CallUnary(ctx, req)
+}
+
+// GetApplicationLifecycle calls paprika.v1.PaprikaService.GetApplicationLifecycle.
+func (c *paprikaServiceClient) GetApplicationLifecycle(ctx context.Context, req *connect.Request[v1.GetApplicationLifecycleRequest]) (*connect.Response[v1.GetApplicationLifecycleResponse], error) {
+	return c.getApplicationLifecycle.CallUnary(ctx, req)
+}
+
+// GetRolloutHold calls paprika.v1.PaprikaService.GetRolloutHold.
+func (c *paprikaServiceClient) GetRolloutHold(ctx context.Context, req *connect.Request[v1.GetRolloutHoldRequest]) (*connect.Response[v1.GetRolloutHoldResponse], error) {
+	return c.getRolloutHold.CallUnary(ctx, req)
+}
+
+// HoldRollout calls paprika.v1.PaprikaService.HoldRollout.
+func (c *paprikaServiceClient) HoldRollout(ctx context.Context, req *connect.Request[v1.HoldRolloutRequest]) (*connect.Response[v1.HoldRolloutResponse], error) {
+	return c.holdRollout.CallUnary(ctx, req)
+}
+
+// ResumeRollout calls paprika.v1.PaprikaService.ResumeRollout.
+func (c *paprikaServiceClient) ResumeRollout(ctx context.Context, req *connect.Request[v1.ResumeRolloutRequest]) (*connect.Response[v1.ResumeRolloutResponse], error) {
+	return c.resumeRollout.CallUnary(ctx, req)
+}
+
+// IgnoreDriftedField calls paprika.v1.PaprikaService.IgnoreDriftedField.
+func (c *paprikaServiceClient) IgnoreDriftedField(ctx context.Context, req *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error) {
+	return c.ignoreDriftedField.CallUnary(ctx, req)
+}
+
+// ApplyResourcePatch calls paprika.v1.PaprikaService.ApplyResourcePatch.
+func (c *paprikaServiceClient) ApplyResourcePatch(ctx context.Context, req *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error) {
+	return c.applyResourcePatch.CallUnary(ctx, req)
+}
+
+// SyncResources calls paprika.v1.PaprikaService.SyncResources.
+func (c *paprikaServiceClient) SyncResources(ctx context.Context, req *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error) {
+	return c.syncResources.CallUnary(ctx, req)
+}
+
 // PaprikaServiceHandler is an implementation of the paprika.v1.PaprikaService service.
 type PaprikaServiceHandler interface {
 	ListPipelines(context.Context, *connect.Request[v1.ListPipelinesRequest]) (*connect.Response[v1.ListPipelinesResponse], error)
@@ -754,6 +1058,25 @@ type PaprikaServiceHandler interface {
 	QueryFleetMap(context.Context, *connect.Request[v1.QueryFleetMapRequest]) (*connect.Response[v1.QueryFleetMapResponse], error)
 	QueryFleetMatrix(context.Context, *connect.Request[v1.QueryFleetMatrixRequest]) (*connect.Response[v1.QueryFleetMatrixResponse], error)
 	GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error)
+	GetDataSources(context.Context, *connect.Request[v1.GetDataSourcesRequest]) (*connect.Response[v1.GetDataSourcesResponse], error)
+	ListClusters(context.Context, *connect.Request[v1.ListClustersRequest]) (*connect.Response[v1.ListClustersResponse], error)
+	GetCluster(context.Context, *connect.Request[v1.GetClusterRequest]) (*connect.Response[v1.GetClusterResponse], error)
+	QueryApplicationSignals(context.Context, *connect.Request[v1.QueryApplicationSignalsRequest]) (*connect.Response[v1.QueryApplicationSignalsResponse], error)
+	QueryCost(context.Context, *connect.Request[v1.QueryCostRequest]) (*connect.Response[v1.QueryCostResponse], error)
+	ListSourceEvents(context.Context, *connect.Request[v1.ListSourceEventsRequest]) (*connect.Response[v1.ListSourceEventsResponse], error)
+	ListRolloutHistory(context.Context, *connect.Request[v1.ListRolloutHistoryRequest]) (*connect.Response[v1.ListRolloutHistoryResponse], error)
+	ListPipelineRuns(context.Context, *connect.Request[v1.ListPipelineRunsRequest]) (*connect.Response[v1.ListPipelineRunsResponse], error)
+	GetPipelineRun(context.Context, *connect.Request[v1.GetPipelineRunRequest]) (*connect.Response[v1.GetPipelineRunResponse], error)
+	GetRevisionInfo(context.Context, *connect.Request[v1.GetRevisionInfoRequest]) (*connect.Response[v1.GetRevisionInfoResponse], error)
+	GetApplicationOwnership(context.Context, *connect.Request[v1.GetApplicationOwnershipRequest]) (*connect.Response[v1.GetApplicationOwnershipResponse], error)
+	ListDriftDetails(context.Context, *connect.Request[v1.ListDriftDetailsRequest]) (*connect.Response[v1.ListDriftDetailsResponse], error)
+	GetApplicationLifecycle(context.Context, *connect.Request[v1.GetApplicationLifecycleRequest]) (*connect.Response[v1.GetApplicationLifecycleResponse], error)
+	GetRolloutHold(context.Context, *connect.Request[v1.GetRolloutHoldRequest]) (*connect.Response[v1.GetRolloutHoldResponse], error)
+	HoldRollout(context.Context, *connect.Request[v1.HoldRolloutRequest]) (*connect.Response[v1.HoldRolloutResponse], error)
+	ResumeRollout(context.Context, *connect.Request[v1.ResumeRolloutRequest]) (*connect.Response[v1.ResumeRolloutResponse], error)
+	IgnoreDriftedField(context.Context, *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error)
+	ApplyResourcePatch(context.Context, *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error)
+	SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error)
 }
 
 // NewPaprikaServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1009,6 +1332,120 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 		connect.WithSchema(paprikaServiceMethods.ByName("GetSystemStatus")),
 		connect.WithHandlerOptions(opts...),
 	)
+	paprikaServiceGetDataSourcesHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetDataSourcesProcedure,
+		svc.GetDataSources,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetDataSources")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListClustersHandler := connect.NewUnaryHandler(
+		PaprikaServiceListClustersProcedure,
+		svc.ListClusters,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListClusters")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetClusterHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetClusterProcedure,
+		svc.GetCluster,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetCluster")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceQueryApplicationSignalsHandler := connect.NewUnaryHandler(
+		PaprikaServiceQueryApplicationSignalsProcedure,
+		svc.QueryApplicationSignals,
+		connect.WithSchema(paprikaServiceMethods.ByName("QueryApplicationSignals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceQueryCostHandler := connect.NewUnaryHandler(
+		PaprikaServiceQueryCostProcedure,
+		svc.QueryCost,
+		connect.WithSchema(paprikaServiceMethods.ByName("QueryCost")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListSourceEventsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListSourceEventsProcedure,
+		svc.ListSourceEvents,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListSourceEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListRolloutHistoryHandler := connect.NewUnaryHandler(
+		PaprikaServiceListRolloutHistoryProcedure,
+		svc.ListRolloutHistory,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListRolloutHistory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListPipelineRunsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListPipelineRunsProcedure,
+		svc.ListPipelineRuns,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListPipelineRuns")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetPipelineRunHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetPipelineRunProcedure,
+		svc.GetPipelineRun,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetPipelineRun")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetRevisionInfoHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetRevisionInfoProcedure,
+		svc.GetRevisionInfo,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetRevisionInfo")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetApplicationOwnershipHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetApplicationOwnershipProcedure,
+		svc.GetApplicationOwnership,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationOwnership")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceListDriftDetailsHandler := connect.NewUnaryHandler(
+		PaprikaServiceListDriftDetailsProcedure,
+		svc.ListDriftDetails,
+		connect.WithSchema(paprikaServiceMethods.ByName("ListDriftDetails")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetApplicationLifecycleHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetApplicationLifecycleProcedure,
+		svc.GetApplicationLifecycle,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetApplicationLifecycle")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceGetRolloutHoldHandler := connect.NewUnaryHandler(
+		PaprikaServiceGetRolloutHoldProcedure,
+		svc.GetRolloutHold,
+		connect.WithSchema(paprikaServiceMethods.ByName("GetRolloutHold")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceHoldRolloutHandler := connect.NewUnaryHandler(
+		PaprikaServiceHoldRolloutProcedure,
+		svc.HoldRollout,
+		connect.WithSchema(paprikaServiceMethods.ByName("HoldRollout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceResumeRolloutHandler := connect.NewUnaryHandler(
+		PaprikaServiceResumeRolloutProcedure,
+		svc.ResumeRollout,
+		connect.WithSchema(paprikaServiceMethods.ByName("ResumeRollout")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceIgnoreDriftedFieldHandler := connect.NewUnaryHandler(
+		PaprikaServiceIgnoreDriftedFieldProcedure,
+		svc.IgnoreDriftedField,
+		connect.WithSchema(paprikaServiceMethods.ByName("IgnoreDriftedField")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceApplyResourcePatchHandler := connect.NewUnaryHandler(
+		PaprikaServiceApplyResourcePatchProcedure,
+		svc.ApplyResourcePatch,
+		connect.WithSchema(paprikaServiceMethods.ByName("ApplyResourcePatch")),
+		connect.WithHandlerOptions(opts...),
+	)
+	paprikaServiceSyncResourcesHandler := connect.NewUnaryHandler(
+		PaprikaServiceSyncResourcesProcedure,
+		svc.SyncResources,
+		connect.WithSchema(paprikaServiceMethods.ByName("SyncResources")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/paprika.v1.PaprikaService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PaprikaServiceListPipelinesProcedure:
@@ -1093,6 +1530,44 @@ func NewPaprikaServiceHandler(svc PaprikaServiceHandler, opts ...connect.Handler
 			paprikaServiceQueryFleetMatrixHandler.ServeHTTP(w, r)
 		case PaprikaServiceGetSystemStatusProcedure:
 			paprikaServiceGetSystemStatusHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetDataSourcesProcedure:
+			paprikaServiceGetDataSourcesHandler.ServeHTTP(w, r)
+		case PaprikaServiceListClustersProcedure:
+			paprikaServiceListClustersHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetClusterProcedure:
+			paprikaServiceGetClusterHandler.ServeHTTP(w, r)
+		case PaprikaServiceQueryApplicationSignalsProcedure:
+			paprikaServiceQueryApplicationSignalsHandler.ServeHTTP(w, r)
+		case PaprikaServiceQueryCostProcedure:
+			paprikaServiceQueryCostHandler.ServeHTTP(w, r)
+		case PaprikaServiceListSourceEventsProcedure:
+			paprikaServiceListSourceEventsHandler.ServeHTTP(w, r)
+		case PaprikaServiceListRolloutHistoryProcedure:
+			paprikaServiceListRolloutHistoryHandler.ServeHTTP(w, r)
+		case PaprikaServiceListPipelineRunsProcedure:
+			paprikaServiceListPipelineRunsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetPipelineRunProcedure:
+			paprikaServiceGetPipelineRunHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetRevisionInfoProcedure:
+			paprikaServiceGetRevisionInfoHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetApplicationOwnershipProcedure:
+			paprikaServiceGetApplicationOwnershipHandler.ServeHTTP(w, r)
+		case PaprikaServiceListDriftDetailsProcedure:
+			paprikaServiceListDriftDetailsHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetApplicationLifecycleProcedure:
+			paprikaServiceGetApplicationLifecycleHandler.ServeHTTP(w, r)
+		case PaprikaServiceGetRolloutHoldProcedure:
+			paprikaServiceGetRolloutHoldHandler.ServeHTTP(w, r)
+		case PaprikaServiceHoldRolloutProcedure:
+			paprikaServiceHoldRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServiceResumeRolloutProcedure:
+			paprikaServiceResumeRolloutHandler.ServeHTTP(w, r)
+		case PaprikaServiceIgnoreDriftedFieldProcedure:
+			paprikaServiceIgnoreDriftedFieldHandler.ServeHTTP(w, r)
+		case PaprikaServiceApplyResourcePatchProcedure:
+			paprikaServiceApplyResourcePatchHandler.ServeHTTP(w, r)
+		case PaprikaServiceSyncResourcesProcedure:
+			paprikaServiceSyncResourcesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1264,4 +1739,80 @@ func (UnimplementedPaprikaServiceHandler) QueryFleetMatrix(context.Context, *con
 
 func (UnimplementedPaprikaServiceHandler) GetSystemStatus(context.Context, *connect.Request[v1.GetSystemStatusRequest]) (*connect.Response[v1.GetSystemStatusResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetSystemStatus is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetDataSources(context.Context, *connect.Request[v1.GetDataSourcesRequest]) (*connect.Response[v1.GetDataSourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetDataSources is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListClusters(context.Context, *connect.Request[v1.ListClustersRequest]) (*connect.Response[v1.ListClustersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListClusters is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetCluster(context.Context, *connect.Request[v1.GetClusterRequest]) (*connect.Response[v1.GetClusterResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetCluster is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) QueryApplicationSignals(context.Context, *connect.Request[v1.QueryApplicationSignalsRequest]) (*connect.Response[v1.QueryApplicationSignalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryApplicationSignals is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) QueryCost(context.Context, *connect.Request[v1.QueryCostRequest]) (*connect.Response[v1.QueryCostResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.QueryCost is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListSourceEvents(context.Context, *connect.Request[v1.ListSourceEventsRequest]) (*connect.Response[v1.ListSourceEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListSourceEvents is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListRolloutHistory(context.Context, *connect.Request[v1.ListRolloutHistoryRequest]) (*connect.Response[v1.ListRolloutHistoryResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListRolloutHistory is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListPipelineRuns(context.Context, *connect.Request[v1.ListPipelineRunsRequest]) (*connect.Response[v1.ListPipelineRunsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListPipelineRuns is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetPipelineRun(context.Context, *connect.Request[v1.GetPipelineRunRequest]) (*connect.Response[v1.GetPipelineRunResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetPipelineRun is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetRevisionInfo(context.Context, *connect.Request[v1.GetRevisionInfoRequest]) (*connect.Response[v1.GetRevisionInfoResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetRevisionInfo is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetApplicationOwnership(context.Context, *connect.Request[v1.GetApplicationOwnershipRequest]) (*connect.Response[v1.GetApplicationOwnershipResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplicationOwnership is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ListDriftDetails(context.Context, *connect.Request[v1.ListDriftDetailsRequest]) (*connect.Response[v1.ListDriftDetailsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ListDriftDetails is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetApplicationLifecycle(context.Context, *connect.Request[v1.GetApplicationLifecycleRequest]) (*connect.Response[v1.GetApplicationLifecycleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetApplicationLifecycle is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) GetRolloutHold(context.Context, *connect.Request[v1.GetRolloutHoldRequest]) (*connect.Response[v1.GetRolloutHoldResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.GetRolloutHold is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) HoldRollout(context.Context, *connect.Request[v1.HoldRolloutRequest]) (*connect.Response[v1.HoldRolloutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.HoldRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ResumeRollout(context.Context, *connect.Request[v1.ResumeRolloutRequest]) (*connect.Response[v1.ResumeRolloutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ResumeRollout is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) IgnoreDriftedField(context.Context, *connect.Request[v1.IgnoreDriftedFieldRequest]) (*connect.Response[v1.IgnoreDriftedFieldResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.IgnoreDriftedField is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) ApplyResourcePatch(context.Context, *connect.Request[v1.ApplyResourcePatchRequest]) (*connect.Response[v1.ApplyResourcePatchResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.ApplyResourcePatch is not implemented"))
+}
+
+func (UnimplementedPaprikaServiceHandler) SyncResources(context.Context, *connect.Request[v1.SyncResourcesRequest]) (*connect.Response[v1.SyncResourcesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("paprika.v1.PaprikaService.SyncResources is not implemented"))
 }
