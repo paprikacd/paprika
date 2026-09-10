@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -92,32 +90,9 @@ func (k *KubernetesCapacity) Descriptor() Descriptor {
 // configuration — it always reads nodes and pods directly — so an
 // empty/absent config is valid. A non-empty config is rejected rather than
 // silently ignored: silently ignoring it would let a typo'd or stale config
-// pass admission unnoticed.
-//
-// The rejection names only the unexpected key(s), never their values. This
-// error can surface through an admission rejection and reach API server
-// logs, and a future config shape could carry a credential.
+// pass admission unnoticed. See validateNoConfig.
 func (k *KubernetesCapacity) ValidateConfig(config json.RawMessage) error {
-	trimmed := strings.TrimSpace(string(config))
-	if trimmed == "" || trimmed == "null" {
-		return nil
-	}
-
-	var asObject map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(trimmed), &asObject); err != nil {
-		return fmt.Errorf("%s accepts no configuration", kubernetesCapacityName)
-	}
-	if len(asObject) == 0 {
-		return nil
-	}
-
-	keys := make([]string, 0, len(asObject))
-	for key := range asObject {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	return fmt.Errorf("%s accepts no configuration, but found key(s): %s", kubernetesCapacityName, strings.Join(keys, ", "))
+	return validateNoConfig(kubernetesCapacityName, config)
 }
 
 // Read implements CapacitySource.
