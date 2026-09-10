@@ -41,6 +41,16 @@ const capacityListPageSize = 500
 // the console is built to show honestly.
 const maxCapacityListPages = 1000
 
+// These are read on the cluster a capacity read is scoped to, which for an
+// in-cluster install is the cluster this control plane runs in and is
+// therefore the manager role's business. For a remote cluster it is the
+// credential in that Cluster's kubeconfig Secret that must carry them; see
+// docs/guides/multi-cluster.md. Read-only in both cases: nothing on this path
+// writes a Node or a Pod, and neither the eviction subresource nor the node
+// proxy is asked for.
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+
 // KubernetesCapacity reads Allocatable and Requested straight from a
 // cluster's own Kubernetes API: Allocatable by summing every Node's
 // status.allocatable, Requested by summing every consuming Pod's container

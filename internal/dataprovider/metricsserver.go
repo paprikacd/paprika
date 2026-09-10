@@ -47,15 +47,13 @@ const metricsErrorReason = "querying metrics.k8s.io failed"
 // treats that absence as a reportable state (StateNotAvailable) rather than
 // an error — see Read and metricsNotAvailableReason.
 type MetricsServer struct {
-	// clients resolves the in-cluster config used to build a metrics client
-	// when client is unset. It is not used to cache the resulting client the
-	// way KubernetesCapacity caches its Kubernetes clientset: kube.Clients
-	// only knows how to build and cache a kubernetes.Interface, and
-	// metrics.k8s.io needs a different generated client
-	// (k8s.io/metrics/pkg/client/clientset/versioned). Node-metrics reads are
-	// far less frequent than the pod listing KubernetesCapacity does, so
-	// building an uncached client per Read is an acceptable trade-off rather
-	// than teaching kube.Clients a second client type for one caller.
+	// clients hands out the cached metrics.k8s.io client for a cluster, the
+	// same cache and the same entry KubernetesCapacity draws its core client
+	// from: both providers read the same API server for the same cluster, so
+	// they share one connection pool. Building a metrics client per Read —
+	// which this did before kube.Clients learned the second client type —
+	// meant a TLS handshake per capacity read per cluster, which is the cost
+	// that cache exists to avoid.
 	clients *kube.Clients
 
 	// configs resolves the connection details for the cluster a ReadRequest
@@ -177,7 +175,7 @@ func (m *MetricsServer) clientFor(ctx context.Context, clusterKey string) (versi
 		return nil, fmt.Errorf("resolving config for cluster %q: %w", clusterKey, err)
 	}
 
-	metricsClient, err := versioned.NewForConfig(kube.WithProtobufBothWays(cfg))
+	metricsClient, err := m.clients.MetricsFor(clusterKey, kube.WithProtobufBothWays(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("building metrics client for cluster %q: %w", clusterKey, err)
 	}

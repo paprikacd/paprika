@@ -74,25 +74,42 @@ func (s *PaprikaServer) authorizeFleetSnapshotScope(
 	ctx context.Context,
 	namespaces []string,
 ) (uint64, error) {
-	reader, err := s.requireFleetIndex()
+	snapshot, _, err := s.authorizedFleetSnapshot(ctx, namespaces)
 	if err != nil {
 		return 0, err
 	}
+	return snapshot.Generation, nil
+}
+
+// authorizedFleetSnapshot is authorizeFleetSnapshotScope for a handler that
+// serves real records rather than an empty shape: it hands back the snapshot it
+// authorized against and the scope that authorization produced, so the records
+// it emits can be filtered by the very same decision. A handler that discards
+// the scope and lists from elsewhere would authorize one thing and answer with
+// another.
+func (s *PaprikaServer) authorizedFleetSnapshot(
+	ctx context.Context,
+	namespaces []string,
+) (*fleet.Snapshot, fleet.QueryScope, error) {
+	reader, err := s.requireFleetIndex()
+	if err != nil {
+		return nil, fleet.QueryScope{}, err
+	}
 	snapshot, err := reader.LoadSnapshot()
 	if err != nil {
-		return 0, mapFleetError(err)
+		return nil, fleet.QueryScope{}, mapFleetError(err)
 	}
 	if snapshot == nil {
-		return 0, mapFleetError(&fleet.ErrUnavailable{Reason: "fleet snapshot is unavailable"})
+		return nil, fleet.QueryScope{}, mapFleetError(&fleet.ErrUnavailable{Reason: "fleet snapshot is unavailable"})
 	}
 
-	_, err = buildFleetQueryScopeFromProjects(
+	scope, err := buildFleetQueryScopeFromProjects(
 		ctx, s.authorizer, auth.PrincipalFromContext(ctx), snapshot.ProjectKeys(namespaces),
 	)
 	if err != nil {
-		return 0, mapFleetError(err)
+		return nil, fleet.QueryScope{}, mapFleetError(err)
 	}
-	return snapshot.Generation, nil
+	return snapshot, scope, nil
 }
 
 // authorizeOptionalNamespaceScope authorizes a read whose namespace filter is

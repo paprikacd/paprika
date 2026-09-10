@@ -153,9 +153,14 @@ rules:
   - patch
   - update
   - watch
+# nodes is what KubernetesCapacity sums status.allocatable across, and pods
+# what it sums container requests across, on the cluster a capacity read is
+# scoped to. Read-only, and only the objects themselves: nothing on this path
+# writes a Node or a Pod, evicts from one, or reads the node proxy.
 - apiGroups:
   - ""
   resources:
+  - nodes
   - pods
   - secrets
   verbs:

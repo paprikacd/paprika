@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -45,6 +46,7 @@ import (
 	progress "github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
 	rolloutscontroller "github.com/benebsworth/paprika/internal/controller/rollouts"
+	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
@@ -59,6 +61,7 @@ import (
 	webhookfeatureflagsv1alpha1 "github.com/benebsworth/paprika/internal/webhook/featureflags/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
+	webhookprovidersv1alpha1 "github.com/benebsworth/paprika/internal/webhook/providers/v1alpha1"
 	webhookrollouts "github.com/benebsworth/paprika/internal/webhook/rollouts/v1alpha1"
 )
 
@@ -93,7 +96,7 @@ type manifestCache interface {
 	cache.Setter
 }
 
-func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, enableWebhooks bool) error {
+func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, enableWebhooks bool, capacityRegistry *dataprovider.Registry) error {
 	if err := registerProjectLabelIndexers(ctx, mgr); err != nil {
 		return fmt.Errorf("register project label indexers: %w", err)
 	}
@@ -106,7 +109,7 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		return fmt.Errorf("setup notification controller: %w", err)
 	}
 
-	if err := setupWebhooks(mgr, enableWebhooks); err != nil {
+	if err := setupWebhooks(mgr, enableWebhooks, operatorNamespace, capacityRegistry); err != nil {
 		return fmt.Errorf("setup webhooks: %w", err)
 	}
 
@@ -403,9 +406,23 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	return nil
 }
 
-func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool) error {
+// setupWebhooks mounts every admission handler this build ships.
+//
+// The manifest and the handler have to land together: config/webhook publishes
+// these with failurePolicy=fail, so a ValidatingWebhookConfiguration whose
+// handler is not mounted here does not merely lose its validation — it fails
+// every create and update of that resource cluster-wide. controlPlaneNamespace
+// and capacityRegistry are the two facts the provider validators cannot derive
+// from the manager: which namespace may declare a Global-scoped binding, and
+// which provider implementations this build actually has.
+func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace string, capacityRegistry *dataprovider.Registry) error {
 	if !enableWebhooks {
 		return nil
+	}
+	if capacityRegistry == nil {
+		// Refuse at startup rather than mounting a validator that would panic
+		// on the first CapacityProvider it is asked to admit.
+		return errors.New("capacity provider registry is required to mount the provider webhooks")
 	}
 	// +kubebuilder:scaffold:webhook
 	webhooks := []struct {
@@ -430,6 +447,12 @@ func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool) error {
 		{"FeatureFlag", webhookfeatureflagsv1alpha1.SetupFeatureFlagWebhookWithManager},
 		{"FeatureFlagBinding", webhookfeatureflagsv1alpha1.SetupFeatureFlagBindingWebhookWithManager},
 		{"Cluster", webhookclustersv1alpha1.SetupClusterWebhookWithManager},
+		{"CapacityProvider", func(m ctrl.Manager) error {
+			return webhookprovidersv1alpha1.SetupCapacityProviderWebhookWithManager(m, capacityRegistry)
+		}},
+		{"DataProviderBinding", func(m ctrl.Manager) error {
+			return webhookprovidersv1alpha1.SetupDataProviderBindingWebhookWithManager(m, controlPlaneNamespace)
+		}},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {

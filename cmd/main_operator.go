@@ -59,6 +59,7 @@ import (
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/bootstrap"
 	"github.com/benebsworth/paprika/internal/coordinator"
+	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/kube"
@@ -164,6 +165,11 @@ type operatorGovernance struct {
 	projectValidator *governance.ProjectValidator
 	policyEvaluator  *governance.PolicyEvaluator
 	rateLimiter      *ratelimit.ControllerRateLimit
+	// capacityProviders is one registry for the whole process: the admission
+	// webhook resolves a CapacityProvider's spec.provider against the same set
+	// of implementations the API server later reads through, so a provider
+	// admission accepts is one this build can actually serve.
+	capacityProviders *dataprovider.Registry
 }
 
 func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
@@ -195,11 +201,11 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator governance: %w", err)
 	}
 
-	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.enableWebhooks); err != nil {
+	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.enableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.auditLogEnabled, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.auditLogEnabled, gov.capacityProviders, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
@@ -329,13 +335,19 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 	rateLimiter := ratelimit.NewControllerRateLimit()
 	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
 
+	capacityProviders, err := buildCapacityRegistry(mgr.GetClient())
+	if err != nil {
+		return operatorGovernance{}, fmt.Errorf("build capacity provider registry: %w", err)
+	}
+
 	return operatorGovernance{
-		authCfg:          authCfg,
-		authz:            authz,
-		k8sClient:        k8sClient,
-		projectValidator: projectValidator,
-		policyEvaluator:  policyEvaluator,
-		rateLimiter:      rateLimiter,
+		authCfg:           authCfg,
+		authz:             authz,
+		k8sClient:         k8sClient,
+		projectValidator:  projectValidator,
+		policyEvaluator:   policyEvaluator,
+		rateLimiter:       rateLimiter,
+		capacityProviders: capacityProviders,
 	}, nil
 }
 
@@ -449,8 +461,8 @@ func ensureProjectWithRetry(ctx context.Context, c client.Client, ns string, log
 	return nil
 }
 
-func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) error {
-	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, setupLog)
+func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, setupLog logr.Logger) error {
+	uiServer, err := buildOperatorUI(ctx, mgr, cfg, k8sClient, authCfg, projectValidator, policyEvaluator, authz, broker, fleetReader, auditEnabled, capacityRegistry, setupLog)
 	if err != nil {
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
@@ -483,7 +495,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 	}
 }
 
-func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, setupLog logr.Logger) (*http.Server, error) {
+func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, setupLog logr.Logger) (*http.Server, error) {
 	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
@@ -504,12 +516,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	if dc, dErr := dynamic.NewForConfig(mgr.GetConfig()); dErr == nil {
 		opts = append(opts, apiserver.WithDynamicClient(dc))
 	}
-	opts = append(opts, apiserver.WithRESTMapper(mgr.GetRESTMapper()))
-	capacityRegistry, err := buildCapacityRegistry(mgr.GetClient())
-	if err != nil {
-		return nil, err
-	}
 	opts = append(opts,
+		apiserver.WithRESTMapper(mgr.GetRESTMapper()),
 		apiserver.WithCapacityProviders(capacityRegistry),
 		apiserver.WithControlPlaneNamespace(cfg.operatorNamespace),
 	)

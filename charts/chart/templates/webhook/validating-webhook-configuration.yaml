@@ -58,6 +58,48 @@ webhooks:
     service:
       name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
+      path: /validate-providers-paprika-io-v1alpha1-capacityprovider
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
+  name: vcapacityprovider-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - providers.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - capacityproviders
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /validate-providers-paprika-io-v1alpha1-dataproviderbinding
+  failurePolicy: {{ $failurePolicy }}
+  timeoutSeconds: {{ $timeoutSeconds }}
+  name: vdataproviderbinding-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - providers.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - dataproviderbindings
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "paprika.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
       path: /validate-pipelines-paprika-io-v1alpha1-pipeline
   failurePolicy: {{ $failurePolicy }}
   timeoutSeconds: {{ $timeoutSeconds }}

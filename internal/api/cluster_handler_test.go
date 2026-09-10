@@ -11,9 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	providersv1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
@@ -140,24 +138,9 @@ func capacityTestServer(
 ) *PaprikaServer {
 	t.Helper()
 
-	scheme := runtime.NewScheme()
-	require.NoError(t, providersv1alpha1.AddToScheme(scheme))
-	require.NoError(t, clustersv1alpha1.AddToScheme(scheme))
-	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
-
-	registry := dataprovider.NewRegistry()
-	for _, source := range sources {
-		require.NoError(t, registry.RegisterCapacity(source))
-	}
-
-	snapshot := buildSystemStatusSnapshot(t, consoleStubGeneration, []fleet.ApplicationSummary{
+	return clusterTestServer(t, []fleet.ApplicationSummary{
 		systemStatusApplication("tenant", "checkout", "payments", fleet.HealthHealthy, fleet.SyncStateSynced),
-	})
-	return NewPaprikaServer(cl, nil,
-		WithFleetIndex(&systemStatusReader{snapshot: snapshot}),
-		WithCapacityProviders(registry),
-		WithControlPlaneNamespace(capacityControlPlaneNamespace),
-	)
+	}, sources, objs...)
 }
 
 func getTestCluster(t *testing.T, server *PaprikaServer) *paprikav1.Cluster {

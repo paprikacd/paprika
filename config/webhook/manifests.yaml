@@ -496,6 +496,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-providers-paprika-io-v1alpha1-capacityprovider
+  failurePolicy: Fail
+  name: vcapacityprovider-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - providers.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - capacityproviders
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-clusters-paprika-io-v1alpha1-cluster
   failurePolicy: Fail
   name: vcluster-v1alpha1.kb.io
@@ -529,6 +549,26 @@ webhooks:
     - UPDATE
     resources:
     - conftestpolicies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-providers-paprika-io-v1alpha1-dataproviderbinding
+  failurePolicy: Fail
+  name: vdataproviderbinding-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - providers.paprika.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - dataproviderbindings
   sideEffects: None
 - admissionReviewVersions:
   - v1

@@ -82,6 +82,36 @@ stringData:
     current-context: prod
 ```
 
+## Permissions the Remote Credential Needs
+
+The user in that kubeconfig is the identity Paprika acts as on the target
+cluster, so it needs the permissions for what Paprika does there. Beyond the
+access your applications' own manifests require, capacity meters read two more
+kinds, both read-only:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: paprika-capacity-reader
+rules:
+  # KubernetesCapacity sums status.allocatable across nodes and container
+  # requests across pods. It never writes either, and never reads the node
+  # proxy or the eviction subresource.
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+```
+
+Bind it to the remote credential's subject with a ClusterRoleBinding. Without
+it, a capacity read reports `DATA_STATE_FORBIDDEN` for that cluster rather than
+failing the request — the meter goes dark, nothing else does. Grant exactly
+these verbs on exactly these resources; `cluster-admin` is never the fix for a
+capacity permission error.
+
+For an in-cluster (`mode: in-cluster`) target the chart-managed manager role
+already carries them, so nothing extra is needed.
+
 ## Referencing a Cluster from a Stage
 
 A `Stage` can reference the `Cluster` by name:

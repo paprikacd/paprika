@@ -227,3 +227,57 @@ func TestRequestTimeoutIsCopiedNotMutated(t *testing.T) {
 	require.Zero(t, base.Timeout, "the caller's config must not be mutated")
 	require.Same(t, base, RequestTimeout(base, 0), "a non-positive timeout is a no-op")
 }
+
+func TestMetricsClientSharesTheClusterEntry(t *testing.T) {
+	t.Parallel()
+
+	// The metrics client is why this cache grew a second client type: a
+	// capacity read asks nodes and pods of the core API and node metrics of
+	// metrics.k8s.io, and building the second one per read would pay a fresh
+	// TLS handshake per cluster per read.
+	builder := &countingBuilder{}
+	clients := NewClientsWithBuilder(builder.build)
+	cfg := config("https://a.test", "token-1")
+
+	first, err := clients.MetricsFor("fleet/a", cfg)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	second, err := clients.MetricsFor("fleet/a", cfg)
+	require.NoError(t, err)
+	require.Same(t, first, second, "a cached metrics client must not be rebuilt per call")
+
+	core, err := clients.For("fleet/a", cfg)
+	require.NoError(t, err)
+	require.NotNil(t, core)
+
+	require.Equal(t, int64(1), builder.calls.Load(),
+		"the core and metrics clients share one build")
+	require.Equal(t, 1, clients.Len(), "both clients live in one cache entry")
+}
+
+func TestMetricsClientIsRebuiltWhenCredentialsRotate(t *testing.T) {
+	t.Parallel()
+
+	builder := &countingBuilder{}
+	clients := NewClientsWithBuilder(builder.build)
+
+	before, err := clients.MetricsFor("fleet/a", config("https://a.test", "token-1"))
+	require.NoError(t, err)
+
+	// The same eviction rule the core client follows: a rotated kubeconfig
+	// must not keep authenticating with the old token.
+	after, err := clients.MetricsFor("fleet/a", config("https://a.test", "token-2"))
+	require.NoError(t, err)
+	require.NotSame(t, before, after)
+	require.Equal(t, int64(2), builder.calls.Load())
+	require.Equal(t, 1, clients.Len(), "the stale entry must be replaced, not accumulated")
+}
+
+func TestMetricsClientRejectsANilConfig(t *testing.T) {
+	t.Parallel()
+
+	clients := NewClientsWithBuilder((&countingBuilder{}).build)
+	_, err := clients.MetricsFor("fleet/a", nil)
+	require.Error(t, err)
+}

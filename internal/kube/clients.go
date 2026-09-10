@@ -11,11 +11,19 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 // ClientBuilder constructs a clientset and the HTTP client backing it. It is a
 // seam so tests can exercise the cache without a real API server.
 type ClientBuilder func(*rest.Config) (kubernetes.Interface, *http.Client, error)
+
+// MetricsBuilder constructs the metrics.k8s.io clientset for a cluster over an
+// HTTP client that has already been built for it, so the aggregated API shares
+// the connection pool the core API is already using. It is a separate seam from
+// ClientBuilder because a cache built with a hand-written ClientBuilder (as the
+// tests do) still gets a real, cheap-to-construct metrics client.
+type MetricsBuilder func(*rest.Config, *http.Client) (versioned.Interface, error)
 
 // Clients hands out one long-lived Kubernetes client per remote cluster.
 //
@@ -24,13 +32,22 @@ type ClientBuilder func(*rest.Config) (kubernetes.Interface, *http.Client, error
 // handshake and TLS negotiation against every managed cluster. Holding one
 // client per cluster keeps those connections warm.
 //
+// It caches two clients per cluster, not one: the core kubernetes.Interface and
+// the metrics.k8s.io versioned.Interface, built over the same *http.Client.
+// They are cached together because they are the same connection to the same API
+// server under two generated clients — a capacity read touches both (nodes and
+// pods through one, node metrics through the other), and building the metrics
+// client per read would pay a TLS handshake per cluster per read for exactly
+// the reason this cache exists.
+//
 // The entry map is a sync.Map rather than a mutex-guarded map because the
 // access pattern is the one sync.Map is built for: a key set bounded by the
 // number of registered clusters, written once when a cluster appears, and read
 // on every reconcile thereafter. An RWMutex would put every reconcile across
 // every cluster behind one lock for a value that almost never changes.
 type Clients struct {
-	build ClientBuilder
+	build        ClientBuilder
+	buildMetrics MetricsBuilder
 
 	// clusterKey -> *entry. Never deleted except by Close or a credential
 	// change, so the map stays the size of the fleet.
@@ -46,16 +63,22 @@ type entry struct {
 	client      kubernetes.Interface
 	http        *http.Client
 	err         error
+
+	// metrics and metricsErr are kept apart from client and err on purpose: a
+	// cluster with no metrics.k8s.io client must still serve core reads. See
+	// MetricsFor.
+	metrics    versioned.Interface
+	metricsErr error
 }
 
 // NewClients returns a cache that builds real clientsets.
 func NewClients() *Clients {
-	return &Clients{build: defaultBuilder}
+	return &Clients{build: defaultBuilder, buildMetrics: defaultMetricsBuilder}
 }
 
 // NewClientsWithBuilder returns a cache that builds clients through fn.
 func NewClientsWithBuilder(fn ClientBuilder) *Clients {
-	return &Clients{build: fn}
+	return &Clients{build: fn, buildMetrics: defaultMetricsBuilder}
 }
 
 func defaultBuilder(cfg *rest.Config) (kubernetes.Interface, *http.Client, error) {
@@ -70,6 +93,16 @@ func defaultBuilder(cfg *rest.Config) (kubernetes.Interface, *http.Client, error
 	return clientset, httpClient, nil
 }
 
+// defaultMetricsBuilder builds the metrics.k8s.io clientset over httpClient, so
+// it reuses the connection pool the core clientset already holds for cfg.
+func defaultMetricsBuilder(cfg *rest.Config, httpClient *http.Client) (versioned.Interface, error) {
+	metricsClient, err := versioned.NewForConfigAndClient(cfg, httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("building metrics clientset: %w", err)
+	}
+	return metricsClient, nil
+}
+
 // For returns the client for clusterKey, building it on first use.
 //
 // cfg is expected to carry a per-request timeout already; the returned client
@@ -79,6 +112,43 @@ func defaultBuilder(cfg *rest.Config) (kubernetes.Interface, *http.Client, error
 // — a rotated kubeconfig, a new CA — the old client is discarded and its idle
 // connections closed before a replacement is built.
 func (c *Clients) For(clusterKey string, cfg *rest.Config) (kubernetes.Interface, error) {
+	current, err := c.entryFor(clusterKey, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return current.client, nil
+}
+
+// MetricsFor returns the metrics.k8s.io client for clusterKey, building it on
+// first use alongside the core client and sharing that client's connections.
+//
+// cfg must be the same config For is called with for this cluster: the two
+// clients live in one cache entry, keyed by the same credential fingerprint and
+// evicted together when those credentials rotate.
+//
+// A metrics client that could not be built is reported here and only here — the
+// core client is still served, because metrics.k8s.io is an optional add-on and
+// its absence must not take capacity's structural half down with it. That
+// failure is not evicted on a read: unlike an unreachable API server, a config
+// the generated client refuses is deterministic, so retrying it per read would
+// rebuild the same error.
+func (c *Clients) MetricsFor(clusterKey string, cfg *rest.Config) (versioned.Interface, error) {
+	current, err := c.entryFor(clusterKey, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if current.metricsErr != nil {
+		return nil, current.metricsErr
+	}
+	if current.metrics == nil {
+		return nil, fmt.Errorf("no metrics client is configured for cluster %q", clusterKey)
+	}
+	return current.metrics, nil
+}
+
+// entryFor returns the built cache entry for clusterKey, which holds every
+// client this cache hands out for that cluster.
+func (c *Clients) entryFor(clusterKey string, cfg *rest.Config) (*entry, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("no rest config for cluster %q", clusterKey)
 	}
@@ -103,6 +173,10 @@ func (c *Clients) For(clusterKey string, cfg *rest.Config) (kubernetes.Interface
 
 		current.once.Do(func() {
 			current.client, current.http, current.err = c.build(cfg)
+			if current.err != nil || c.buildMetrics == nil {
+				return
+			}
+			current.metrics, current.metricsErr = c.buildMetrics(cfg, current.http)
 		})
 		if current.err != nil {
 			// A failed build must not be cached forever, or a cluster that was
@@ -110,7 +184,7 @@ func (c *Clients) For(clusterKey string, cfg *rest.Config) (kubernetes.Interface
 			c.entries.CompareAndDelete(clusterKey, loaded)
 			return nil, current.err
 		}
-		return current.client, nil
+		return current, nil
 	}
 }
 
