@@ -31,6 +31,19 @@ const usedNotConfiguredReason = "no usage source is bound; bind a MetricsServer 
 // this provider makes, so it is paged rather than fetched in one response.
 const capacityListPageSize = 500
 
+// maxCapacityListPages bounds how many pages a single Read will follow for
+// one List (nodes or pods) before giving up. At capacityListPageSize this
+// caps one Read at 500,000 objects — far beyond any real fleet cluster — so
+// it only ever bites a misbehaving API server: one that keeps returning a
+// non-empty Continue token forever. Without a bound, that server would make
+// this loop spin forever, re-summing on every pass and inflating the total
+// without limit; a caller-supplied context deadline is the only thing that
+// would eventually stop it, and only after cpu/memory sums had already grown
+// unboundedly large. An inflated Requested is worse than an error: it
+// renders as a confident, wrong capacity meter instead of the non-OK state
+// the console is built to show honestly.
+const maxCapacityListPages = 1000
+
 // KubernetesCapacity reads Allocatable and Requested straight from a
 // cluster's own Kubernetes API: Allocatable by summing every Node's
 // status.allocatable, Requested by summing every consuming Pod's container
@@ -170,16 +183,46 @@ func (k *KubernetesCapacity) clientFor(clusterKey string) (kubernetes.Interface,
 	return client, nil
 }
 
+// pageThroughList drives a paginated List: it calls fetchPage once per page,
+// passing the Continue token to send on that call, and expects back the
+// Continue token the server returned (fetchPage is responsible for issuing
+// its own List call and folding that page's items into the caller's running
+// sum). pageThroughList stops when a page's Continue token comes back empty.
+//
+// It refuses to loop forever against a server that never empties that
+// token: exceeding maxCapacityListPages, or the token failing to advance
+// (the server handing back the exact token it was just given), both end the
+// read with an error instead of continuing to accumulate a sum that would
+// otherwise grow without bound. See maxCapacityListPages for why an error
+// here is the honest outcome, not a truncated-but-silent sum.
+func pageThroughList(fetchPage func(continueToken string) (nextContinue string, err error)) error {
+	continueToken := ""
+	for page := 0; page < maxCapacityListPages; page++ {
+		next, err := fetchPage(continueToken)
+		if err != nil {
+			return err
+		}
+		if next == "" {
+			return nil
+		}
+		if next == continueToken {
+			return fmt.Errorf("list did not advance past its continue token after %d page(s)", page+1)
+		}
+		continueToken = next
+	}
+
+	return fmt.Errorf("list did not complete within %d pages", maxCapacityListPages)
+}
+
 // sumAllocatable sums status.allocatable cpu and memory across every Node.
 func sumAllocatable(ctx context.Context, client kubernetes.Interface) (cpuMillis, memoryBytes int64, err error) {
-	continueToken := ""
-	for {
+	err = pageThroughList(func(continueToken string) (string, error) {
 		list, listErr := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{
 			Limit:    capacityListPageSize,
 			Continue: continueToken,
 		})
 		if listErr != nil {
-			return 0, 0, fmt.Errorf("listing nodes: %w", listErr)
+			return "", fmt.Errorf("listing nodes: %w", listErr)
 		}
 
 		for i := range list.Items {
@@ -188,11 +231,13 @@ func sumAllocatable(ctx context.Context, client kubernetes.Interface) (cpuMillis
 			memoryBytes += allocatable.Memory().Value()
 		}
 
-		continueToken = list.Continue
-		if continueToken == "" {
-			return cpuMillis, memoryBytes, nil
-		}
+		return list.Continue, nil
+	})
+	if err != nil {
+		return 0, 0, err
 	}
+
+	return cpuMillis, memoryBytes, nil
 }
 
 // sumRequested sums container cpu and memory requests across every Pod in
@@ -209,15 +254,14 @@ func sumRequested(ctx context.Context, client kubernetes.Interface, namespace st
 	// podConsumesCapacity re-checks NodeName and phase on every item.
 	selector := fields.OneTermNotEqualSelector("spec.nodeName", "").String()
 
-	continueToken := ""
-	for {
+	err = pageThroughList(func(continueToken string) (string, error) {
 		list, listErr := client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			Limit:         capacityListPageSize,
 			Continue:      continueToken,
 			FieldSelector: selector,
 		})
 		if listErr != nil {
-			return 0, 0, fmt.Errorf("listing pods: %w", listErr)
+			return "", fmt.Errorf("listing pods: %w", listErr)
 		}
 
 		for i := range list.Items {
@@ -232,11 +276,13 @@ func sumRequested(ctx context.Context, client kubernetes.Interface, namespace st
 			}
 		}
 
-		continueToken = list.Continue
-		if continueToken == "" {
-			return cpuMillis, memoryBytes, nil
-		}
+		return list.Continue, nil
+	})
+	if err != nil {
+		return 0, 0, err
 	}
+
+	return cpuMillis, memoryBytes, nil
 }
 
 // podConsumesCapacity reports whether pod currently occupies node capacity:
