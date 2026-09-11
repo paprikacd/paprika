@@ -1463,7 +1463,7 @@ var optedOutRPCs = map[string]string{
 	"GetResourceTreeDetailed": "reachable via get_resource_tree detailed=true",
 	"GetResourceLogs":         "reachable via get_logs kind=resource",
 	"GetStepLogs":             "reachable via get_logs kind=step",
-	"QueryApplications":       "reachable via list_applications",
+	"ListApplications":        "no pagination on ListApplicationsRequest; list_applications is backed by QueryApplications instead",
 	// ... remaining read exclusions, each with a reason
 }
 
