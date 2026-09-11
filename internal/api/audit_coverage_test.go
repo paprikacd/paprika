@@ -13,17 +13,21 @@ import (
 // Adding an RPC to api.proto without adding it here (or giving it a
 // mutating verb prefix) fails this test on purpose.
 var knownReadOnlyRPCs = map[string]bool{
-	"GetAnalysisRun": true, "GetApplication": true, "GetApplicationSet": true,
-	"GetArtifact": true, "GetPipeline": true, "GetResource": true,
-	"GetResourceLogs": true, "GetResourceTree": true, "GetResourceTreeDetailed": true,
-	"GetRollout": true, "GetStepLogs": true, "GetSystemStatus": true,
-	"Investigate": true, "ListAnalysisRuns": true, "ListApplications": true,
-	"ListApplicationSets": true, "ListArtifacts": true, "ListGateStatus": true,
+	"GetAnalysisRun": true, "GetApplication": true, "GetApplicationLifecycle": true,
+	"GetApplicationOwnership": true, "GetApplicationSet": true, "GetArtifact": true,
+	"GetCluster": true, "GetDataSources": true, "GetPipeline": true,
+	"GetPipelineRun": true, "GetResource": true, "GetResourceLogs": true,
+	"GetResourceTree": true, "GetResourceTreeDetailed": true, "GetRevisionInfo": true,
+	"GetRollout": true, "GetRolloutHold": true, "GetStepLogs": true,
+	"GetSystemStatus": true, "Investigate": true, "ListAnalysisRuns": true,
+	"ListApplications": true, "ListApplicationSets": true, "ListArtifacts": true,
+	"ListClusters": true, "ListDriftDetails": true, "ListGateStatus": true,
 	"ListInvestigatorPlugins": true, "ListNotificationConfigs": true, "ListPipelines": true,
-	"ListPolicies": true, "ListReleases": true, "ListRollouts": true,
-	"ListStages": true, "QueryApplications": true, "QueryFleetMap": true,
-	"QueryFleetMatrix": true, "Render": true, "ResolveSource": true,
-	"StreamResourceLogs": true,
+	"ListPipelineRuns": true, "ListPolicies": true, "ListReleases": true,
+	"ListRollouts": true, "ListRolloutHistory": true, "ListSourceEvents": true,
+	"ListStages": true, "QueryApplications": true, "QueryApplicationSignals": true,
+	"QueryCost": true, "QueryFleetMap": true, "QueryFleetMatrix": true,
+	"Render": true, "ResolveSource": true, "StreamResourceLogs": true,
 }
 
 func TestEveryProtoRPCIsClassified(t *testing.T) {
