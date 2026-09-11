@@ -42,3 +42,14 @@ func TestHasScopeEmptyGrantsNothing(t *testing.T) {
 	assert.False(t, HasScope(nil, ScopeRead))
 	assert.False(t, HasScope(nil, ScopeWrite))
 }
+
+func TestHasScopeWriteGrantsWrite(t *testing.T) {
+	granted := []Scope{ScopeWrite}
+	assert.True(t, HasScope(granted, ScopeWrite))
+}
+
+func TestHasScopeBothGrantsBoth(t *testing.T) {
+	granted := []Scope{ScopeRead, ScopeWrite}
+	assert.True(t, HasScope(granted, ScopeRead))
+	assert.True(t, HasScope(granted, ScopeWrite))
+}
