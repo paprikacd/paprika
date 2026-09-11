@@ -51,6 +51,15 @@ func TestConfirmRejectsDifferentArguments(t *testing.T) {
 		json.RawMessage(`{"name":"prod"}`))
 	assert.ErrorIs(t, err, ErrConfirmMismatch,
 		"confirmation for one target must not authorise another")
+
+	// A mismatched attempt must burn the token, not just fail: otherwise a
+	// caller could keep guessing arguments against a still-live
+	// confirmation. A correct follow-up must now find it already used, not
+	// succeed and not report the vaguer "invalid".
+	err = c.Consume(context.Background(), token, "user-1", "rollback_release",
+		json.RawMessage(`{"name":"staging"}`))
+	assert.ErrorIs(t, err, ErrConfirmUsed,
+		"a mismatched attempt must burn the token so it cannot be probed again")
 }
 
 func TestConfirmRejectsDifferentPrincipal(t *testing.T) {
@@ -61,6 +70,12 @@ func TestConfirmRejectsDifferentPrincipal(t *testing.T) {
 
 	err = c.Consume(context.Background(), token, "user-2", "rollback_release", args)
 	assert.ErrorIs(t, err, ErrConfirmMismatch)
+
+	// The wrong-principal attempt must have burned the token: the rightful
+	// principal must not be able to consume it afterwards either.
+	err = c.Consume(context.Background(), token, "user-1", "rollback_release", args)
+	assert.ErrorIs(t, err, ErrConfirmUsed,
+		"a mismatched attempt must burn the token so it cannot be probed again")
 }
 
 func TestConfirmRejectsDifferentTool(t *testing.T) {
@@ -71,6 +86,12 @@ func TestConfirmRejectsDifferentTool(t *testing.T) {
 
 	err = c.Consume(context.Background(), token, "user-1", "abort_rollout", args)
 	assert.ErrorIs(t, err, ErrConfirmMismatch)
+
+	// The wrong-tool attempt must have burned the token: it must not still
+	// be consumable against the tool it was actually issued for.
+	err = c.Consume(context.Background(), token, "user-1", "rollback_release", args)
+	assert.ErrorIs(t, err, ErrConfirmUsed,
+		"a mismatched attempt must burn the token so it cannot be probed again")
 }
 
 func TestConfirmUnknownTokenIsInvalid(t *testing.T) {
