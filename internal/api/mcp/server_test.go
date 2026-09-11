@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,6 +75,7 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 			Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
 			Cache:         store,
 			Secret:        testSecret,
+			PublicURL:     "https://paprika.example",
 		}
 	}
 
@@ -98,6 +100,18 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 	t.Run("missing secret", func(t *testing.T) {
 		cfg := valid()
 		cfg.Secret = nil
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+	})
+	t.Run("empty public URL", func(t *testing.T) {
+		cfg := valid()
+		cfg.PublicURL = ""
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+	})
+	t.Run("relative public URL", func(t *testing.T) {
+		cfg := valid()
+		cfg.PublicURL = "/paprika"
 		_, err := NewServer(cfg)
 		require.Error(t, err)
 	})
@@ -173,7 +187,7 @@ func TestToolCallAuthenticatesThroughInProcessTransport(t *testing.T) {
 
 	t.Run("valid token in context -> succeeds", func(t *testing.T) {
 		token := bearerFor(t, ScopeRead)
-		ctx := WithBearerToken(context.Background(), token)
+		ctx := withBearerToken(context.Background(), token)
 		result, err := inv.Call(ctx, principal, "fleet_status", json.RawMessage(`{}`))
 		require.NoError(t, err)
 		resp, ok := result.(*v1.GetSystemStatusResponse)
@@ -187,7 +201,7 @@ func TestToolCallAuthenticatesThroughInProcessTransport(t *testing.T) {
 // through the real auth interceptor, a tools/call arriving over HTTP with a
 // valid Authorization header succeeds, which is only possible if Handler's
 // serveHTTP put that same token into the context it hands to Invoker.Call
-// (via WithBearerToken) rather than the token evaporating once the MCP
+// (via withBearerToken) rather than the token evaporating once the MCP
 // layer's own authentication step consumes it.
 func TestServerAttachesBearerTokenFromRequest(t *testing.T) {
 	r := NewRegistry()
@@ -241,6 +255,109 @@ func TestServerAttachesBearerTokenFromRequest(t *testing.T) {
 	assert.NotContains(t, string(body), token)
 }
 
+// TestBearerSchemeIsCaseInsensitive is fix round 1's required regression
+// test: a client sending a legal-per-RFC-6750-section-2.1 lowercase
+// "bearer" scheme authenticates at the MCP front door exactly like
+// "Bearer" does (SelfSignedAuthenticator.Authenticate compares the scheme
+// with strings.EqualFold), so bearerToken extracting it must agree — a
+// case-sensitive match here re-opens the blocker this task exists to
+// close: authentication succeeds, no token is forwarded to the in-process
+// Connect request, and the tool call fails deep in the chain instead of
+// succeeding. Confirmed to fail against the pre-fix code (worktree at
+// commit 8d7865f): the wire response came back as
+// {"error":{"code":0,"message":"fleet_status: unauthenticated: unauthenticated\nunauthenticated"}} —
+// see "Fix round 1" in task-13-report.md for the full transcript.
+func TestBearerSchemeIsCaseInsensitive(t *testing.T) {
+	r := NewRegistry()
+	require.NoError(t, RegisterReadTools(r))
+	aud := &recordingAuditor{}
+	client := authEnabledConnectClient(t, aud)
+	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	srv, err := NewServer(ServerConfig{
+		Registry:      r,
+		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
+		Confirmer:     NewConfirmer(store, time.Minute),
+		Auditor:       aud,
+		Cache:         store,
+		Secret:        testSecret,
+		PublicURL:     "https://paprika.example",
+		Client:        client,
+	})
+	require.NoError(t, err)
+
+	token := bearerFor(t, ScopeRead)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet_status","arguments":{}}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "bearer "+token) // lowercase scheme
+	srv.Handler().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var out struct {
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	require.Nil(t, out.Error, "body: %s", rec.Body.String())
+	assert.False(t, out.Result.IsError,
+		"lowercase 'bearer' scheme must authenticate the tool call the same as 'Bearer' — body: %s", rec.Body.String())
+}
+
+// alwaysAuthenticates is an auth.Authenticator that always succeeds
+// regardless of the request's headers — standing in for a hypothetical
+// non-bearer Authenticator (e.g. an mTLS or API-key scheme Task 15 might
+// configure) so TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly
+// can put serveHTTP into the "authenticated, but nothing to forward" state
+// that SelfSignedAuthenticator can never reach on its own (it requires the
+// same Bearer scheme bearerToken now also recognises, so with it the two
+// always agree).
+type alwaysAuthenticates struct{}
+
+func (alwaysAuthenticates) Authenticate(context.Context) (*auth.Principal, error) {
+	return &auth.Principal{Subject: "u1", Scopes: []string{string(ScopeRead)}}, nil
+}
+
+// TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly proves
+// serveHTTP does not silently proceed to tool dispatch when authentication
+// succeeds but no bearer token could be extracted from the request. Left
+// unchecked, the request would reach the in-process Connect call with
+// nothing for RoundTrip to forward, and die deep in the chain with a
+// misleading CodeUnauthenticated that looks like a client-side auth
+// failure rather than the real, server-side cause: this front door had no
+// credential to hand downstream.
+func TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly(t *testing.T) {
+	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+	srv, err := NewServer(ServerConfig{
+		Registry:      NewRegistry(),
+		Authenticator: alwaysAuthenticates{},
+		Cache:         store,
+		Secret:        testSecret,
+		PublicURL:     "https://paprika.example",
+	})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz") // no bearer token to extract
+	srv.Handler().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, "body: %s", rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "bearer",
+		"the response must name the real, server-side cause rather than looking like a client auth failure")
+}
+
 // --- The token must never leak into logs or error messages ---
 //
 // transport.go's RoundTrip only ever uses the token to set a header on a
@@ -260,7 +377,7 @@ func TestBearerTokenDoesNotLeakIntoErrorsOrResponses(t *testing.T) {
 		})
 		rt := NewInProcessTransport(blocking)
 
-		ctx, cancel := context.WithCancel(WithBearerToken(context.Background(), canary))
+		ctx, cancel := context.WithCancel(withBearerToken(context.Background(), canary))
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://in-process/x", nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer "+canary)
@@ -286,7 +403,7 @@ func TestBearerTokenDoesNotLeakIntoErrorsOrResponses(t *testing.T) {
 		// A malformed / garbage token: still forwarded as a header by
 		// RoundTrip, still rejected by the real auth interceptor, and its
 		// value must not surface in the resulting error.
-		ctx := WithBearerToken(context.Background(), canary)
+		ctx := withBearerToken(context.Background(), canary)
 		_, callErr := inv.Call(ctx, principal, "fleet_status", json.RawMessage(`{}`))
 		require.Error(t, callErr)
 		assert.NotContains(t, callErr.Error(), canary)
@@ -316,7 +433,7 @@ func TestMapInvokeErrorTranslatesEachInvokerError(t *testing.T) {
 	srv := newTestServer(t)
 
 	t.Run("ErrScopeDenied names the missing scope", func(t *testing.T) {
-		result, err := srv.mapInvokeError("fleet_status", ErrScopeDenied)
+		result, err := srv.mapInvokeError(context.Background(), "fleet_status", ErrScopeDenied)
 		require.Nil(t, result)
 		require.Error(t, err)
 		var wireErr *sdkjsonrpc.Error
@@ -327,7 +444,7 @@ func TestMapInvokeErrorTranslatesEachInvokerError(t *testing.T) {
 	})
 
 	t.Run("ErrToolNotFound becomes method-not-found", func(t *testing.T) {
-		result, err := srv.mapInvokeError("no_such_tool", ErrToolNotFound)
+		result, err := srv.mapInvokeError(context.Background(), "no_such_tool", ErrToolNotFound)
 		require.Nil(t, result)
 		require.Error(t, err)
 		var wireErr *sdkjsonrpc.Error
@@ -339,7 +456,7 @@ func TestMapInvokeErrorTranslatesEachInvokerError(t *testing.T) {
 		confirmErr := &ConfirmationRequiredError{
 			Tool: "rollback_release", Token: "tok-123", Preview: "About to roll back",
 		}
-		result, err := srv.mapInvokeError("rollback_release", confirmErr)
+		result, err := srv.mapInvokeError(context.Background(), "rollback_release", confirmErr)
 		require.NoError(t, err, "a confirmation prompt is a successful result, not a protocol error")
 		require.NotNil(t, result)
 		require.False(t, result.IsError)
@@ -349,10 +466,16 @@ func TestMapInvokeErrorTranslatesEachInvokerError(t *testing.T) {
 		assert.Contains(t, string(data), "tok-123")
 	})
 
-	t.Run("unknown error passes through unchanged", func(t *testing.T) {
-		sentinel := assert.AnError
-		_, err := srv.mapInvokeError("fleet_status", sentinel)
-		assert.Same(t, sentinel, err)
+	t.Run("unknown error becomes a generic internal error, not the raw upstream text", func(t *testing.T) {
+		sentinel := errors.New("connect: resource default/super-secret-namespace not found")
+		result, err := srv.mapInvokeError(context.Background(), "fleet_status", sentinel)
+		require.Nil(t, result)
+		require.Error(t, err)
+		var wireErr *sdkjsonrpc.Error
+		require.ErrorAs(t, err, &wireErr)
+		assert.EqualValues(t, sdkjsonrpc.CodeInternalError, wireErr.Code)
+		assert.NotContains(t, wireErr.Message, "super-secret-namespace",
+			"the caller must not see upstream error text describing resources it cannot see")
 	})
 }
 

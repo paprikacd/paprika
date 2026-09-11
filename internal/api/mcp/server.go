@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -21,9 +23,11 @@ import (
 )
 
 // codeScopeDenied is the JSON-RPC application error code returned for
-// ErrScopeDenied. It is outside the reserved -32768..-32000 range JSON-RPC
-// sets aside for the spec's own codes, so it cannot collide with one added
-// later.
+// ErrScopeDenied. -32000..-32099 is the range the JSON-RPC spec reserves for
+// implementation-defined server errors (distinct from -32700..-32600, which
+// it reserves for its own predefined errors), so this is a legitimate,
+// intentional use of that range rather than a code that risks colliding
+// with a spec-defined one.
 const codeScopeDenied int64 = -32001
 
 // implementationName and implementationVersion identify this server during
@@ -92,6 +96,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if len(cfg.Secret) == 0 {
 		return nil, errors.New("mcp: ServerConfig.Secret is required")
 	}
+	if err := validatePublicURL(cfg.PublicURL); err != nil {
+		return nil, err
+	}
 
 	s := &Server{
 		registry:      cfg.Registry,
@@ -106,6 +113,22 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 	s.streamable = newStreamableHandler(s, cfg.Registry)
 	return s, nil
+}
+
+// validatePublicURL requires publicURL to be an absolute URL. It is embedded
+// verbatim into the WWW-Authenticate challenge's resource_metadata parameter
+// (writeUnauthenticated); RFC 9728 section 3.2 requires that to be an
+// absolute URL, and an empty or relative PublicURL would silently produce a
+// challenge no client can resolve.
+func validatePublicURL(publicURL string) error {
+	u, err := url.Parse(publicURL)
+	if err != nil {
+		return fmt.Errorf("mcp: ServerConfig.PublicURL: %w", err)
+	}
+	if !u.IsAbs() {
+		return fmt.Errorf("mcp: ServerConfig.PublicURL must be an absolute URL, got %q", publicURL)
+	}
+	return nil
 }
 
 // newStreamableHandler builds the SDK's Streamable HTTP handler around a
@@ -184,11 +207,23 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx = auth.WithPrincipal(ctx, principal)
-	if token, ok := bearerToken(r); ok {
-		ctx = WithBearerToken(ctx, token)
+	token, ok := bearerToken(r)
+	if !ok {
+		// Authentication succeeded but no bearer token could be extracted —
+		// e.g. a non-bearer Authenticator Task 15 might configure, or a
+		// scheme this function fails to recognise. Proceeding here would
+		// let the request continue with nothing for RoundTrip to forward,
+		// and every tool call would then die deep in the chain with a
+		// misleading CodeUnauthenticated that looks like a client auth
+		// failure rather than the real, server-side problem: this front
+		// door has no credential to hand downstream. Fail loudly here
+		// instead, naming the real cause.
+		http.Error(w, "mcp: authenticated request carries no forwardable bearer token", http.StatusInternalServerError)
+		return
 	}
+	ctx = withBearerToken(ctx, token)
 	r = r.WithContext(ctx)
-	ensureStreamableAccept(r)
+	r = ensureStreamableAccept(r)
 	s.streamable.ServeHTTP(w, r)
 }
 
@@ -201,13 +236,61 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 // shouldn't have to know that SSE is part of the wire contract just to ask
 // for JSON. A client that already sent a satisfying Accept header is left
 // untouched.
-func ensureStreamableAccept(r *http.Request) {
-	const jsonType, eventStreamType = "application/json", "text/event-stream"
-	accept := r.Header.Get("Accept")
-	if strings.Contains(accept, jsonType) && strings.Contains(accept, eventStreamType) {
-		return
+//
+// When widening is needed, this returns a CLONE of r rather than mutating
+// r.Header in place: r's Header map is shared with the *http.Request the
+// caller (net/http) owns — r.WithContext does not copy it — so mutating it
+// directly would be visible outside this handler and violate the
+// http.Handler contract that a handler must not modify the request it was
+// given.
+func ensureStreamableAccept(r *http.Request) *http.Request {
+	jsonOK, streamOK := acceptsStreamable(r.Header.Values("Accept"))
+	if jsonOK && streamOK {
+		return r
 	}
-	r.Header.Set("Accept", jsonType+", "+eventStreamType)
+	clone := r.Clone(r.Context())
+	clone.Header.Set("Accept", "application/json, text/event-stream")
+	return clone
+}
+
+// acceptsStreamable reports whether values already indicates the caller
+// accepts "application/json" and/or "text/event-stream", mirroring the
+// SDK's own streamableAccepts parsing (mcp/streamable.go) — comma-separated
+// values, base media type only, "*/*" and the relevant "type/*" wildcards
+// counting for both — but additionally honouring an explicit q=0, which
+// RFC 9110 section 12.5.1 defines as the client explicitly refusing that
+// media type. A naive substring match would treat
+// "application/json;q=0" as acceptance; it is the opposite.
+func acceptsStreamable(values []string) (jsonOK, streamOK bool) {
+	for _, value := range values {
+		for _, raw := range strings.Split(value, ",") {
+			base, params, _ := strings.Cut(strings.TrimSpace(raw), ";")
+			if isZeroQuality(params) {
+				continue
+			}
+			switch strings.ToLower(strings.TrimSpace(base)) {
+			case "application/json", "application/*":
+				jsonOK = true
+			case "text/event-stream", "text/*":
+				streamOK = true
+			case "*/*":
+				jsonOK, streamOK = true, true
+			}
+		}
+	}
+	return jsonOK, streamOK
+}
+
+// isZeroQuality reports whether params (the ";"-separated parameters
+// following a media type in an Accept header) contains an explicit "q=0".
+func isZeroQuality(params string) bool {
+	for _, p := range strings.Split(params, ";") {
+		name, value, ok := strings.Cut(strings.TrimSpace(p), "=")
+		if ok && strings.EqualFold(strings.TrimSpace(name), "q") && strings.TrimSpace(value) == "0" {
+			return true
+		}
+	}
+	return false
 }
 
 // writeUnauthenticated writes the 401 response an MCP client needs to
@@ -221,15 +304,23 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 }
 
 // bearerToken extracts the raw bearer token from r's Authorization header,
-// if present, for serveHTTP to hand to WithBearerToken. It never appears in
+// if present, for serveHTTP to hand to withBearerToken. It never appears in
 // a log line or error message anywhere in this package.
 func bearerToken(r *http.Request) (string, bool) {
-	const prefix = "Bearer "
 	v := r.Header.Get("Authorization")
-	if !strings.HasPrefix(v, prefix) {
+	// Matches SelfSignedAuthenticator.Authenticate's own parsing
+	// (self_signed_token.go): scheme compared case-insensitively per
+	// RFC 6750 section 2.1, which permits "bearer", "Bearer", or any
+	// other casing. Diverging from that here would re-open the blocker
+	// this task exists to close for any request whose scheme the
+	// authenticator accepts but this function's old case-sensitive match
+	// did not — the request would authenticate at the front door and
+	// then forward no token at all.
+	parts := strings.SplitN(v, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return "", false
 	}
-	token := strings.TrimPrefix(v, prefix)
+	token := parts[1]
 	if token == "" {
 		return "", false
 	}
@@ -244,7 +335,7 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 	name := req.Params.Name
 	result, err := s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
 	if err != nil {
-		return s.mapInvokeError(name, err)
+		return s.mapInvokeError(ctx, name, err)
 	}
 	return toolResult(result)
 }
@@ -276,9 +367,12 @@ func (s *Server) invoke(ctx context.Context, p *auth.Principal, name string, arg
 //     tool the registry has), so this arm is defence in depth rather than a
 //     path normal traffic reaches — see mapInvokeError's test for direct
 //     coverage of it.
-//   - Anything else is returned unchanged; the SDK reports it as an internal
-//     JSON-RPC error.
-func (s *Server) mapInvokeError(name string, err error) (*sdkmcp.CallToolResult, error) {
+//   - Anything else becomes a JSON-RPC CodeInternalError with a fixed,
+//     generic message — never the upstream error's own text, which can
+//     name resources or details the caller has no business seeing (e.g. a
+//     Connect error naming a namespace or resource the caller cannot list).
+//     The real error is logged server-side instead of discarded.
+func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*sdkmcp.CallToolResult, error) {
 	var confirmErr *ConfirmationRequiredError
 	if errors.As(err, &confirmErr) {
 		return confirmationResult(confirmErr)
@@ -289,7 +383,8 @@ func (s *Server) mapInvokeError(name string, err error) (*sdkmcp.CallToolResult,
 	case errors.Is(err, ErrToolNotFound):
 		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeMethodNotFound, Message: err.Error()}
 	default:
-		return nil, err
+		log.FromContext(ctx).Error(err, "mcp: tool call failed", "tool", name)
+		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
 	}
 }
 

@@ -16,16 +16,16 @@ import (
 // CodeUnauthenticated.
 type bearerTokenKey struct{}
 
-// WithBearerToken returns a context carrying token for RoundTrip to attach
+// withBearerToken returns a context carrying token for RoundTrip to attach
 // to the outgoing in-process request as an Authorization header. Callers
 // must pass a token already validated by the MCP server's own
 // authentication step — RoundTrip performs no validation of its own, it
 // only forwards what it is given.
-func WithBearerToken(ctx context.Context, token string) context.Context {
+func withBearerToken(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, bearerTokenKey{}, token)
 }
 
-// bearerTokenFromContext returns the token stashed by WithBearerToken, if
+// bearerTokenFromContext returns the token stashed by withBearerToken, if
 // any.
 func bearerTokenFromContext(ctx context.Context) (string, bool) {
 	token, ok := ctx.Value(bearerTokenKey{}).(string)
