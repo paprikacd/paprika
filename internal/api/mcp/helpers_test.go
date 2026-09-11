@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -183,4 +184,36 @@ func newTestServerWithRedirects(t *testing.T, redirects []string) *Server {
 	srv.clientID = "test"
 	srv.redirectURIs = redirects
 	return srv
+}
+
+// postForm posts an application/x-www-form-urlencoded body to path on h and
+// returns the recorded response, for driving /mcp/token in tests.
+func postForm(t *testing.T, h http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// seedRefreshToken writes a refresh record directly to store so tests do not
+// need to drive the full browser authorization-code flow to exercise
+// refresh-token rotation.
+func seedRefreshToken(t *testing.T, store *cache.Cache, subject, scope string) string {
+	t.Helper()
+	token := "refresh-" + subject
+	payload, err := json.Marshal(map[string]string{"sub": subject, "scope": scope})
+	require.NoError(t, err)
+	require.NoError(t, store.Set(context.Background(), "mcp:refresh:"+token, payload, time.Hour))
+	return token
+}
+
+// ctxWithBearer builds a context carrying an HTTP request with token as its
+// Bearer credential, suitable for calling an auth.Authenticator directly in
+// a test without going through a Server's mux.
+func ctxWithBearer(token string) context.Context {
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	return auth.WithRequest(context.Background(), req)
 }

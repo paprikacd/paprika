@@ -75,6 +75,9 @@ type Server struct {
 	publicURL     string
 	clientID      string
 	redirectURIs  []string
+	secret        []byte
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
 	streamable    http.Handler
 }
 
@@ -107,6 +110,9 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		publicURL:     cfg.PublicURL,
 		clientID:      cfg.ClientID,
 		redirectURIs:  cfg.RedirectURIs,
+		secret:        cfg.Secret,
+		accessTTL:     defaultDuration(cfg.AccessTTL, defaultAccessTTL),
+		refreshTTL:    defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
 	}
 	if cfg.Client != nil {
 		s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
@@ -169,17 +175,6 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(s.serveHTTP)
 }
-
-// RegisterOAuthRoutes wires the MCP OAuth 2.1 authorization surface
-// (authorization endpoint, token endpoint, dynamic client registration,
-// protected-resource and authorization-server metadata) onto mux.
-//
-// Implemented in Task 14. It is a deliberate no-op here so that NewServer's
-// signature — and ServerConfig's Secret/ClientID/RedirectURIs/AccessTTL/
-// RefreshTTL fields, which only that OAuth surface consumes — already match
-// what Task 15's buildMCPHandlers requires, without this task reaching into
-// OAuth flow logic that is out of its scope.
-func (s *Server) RegisterOAuthRoutes(_ *http.ServeMux) {}
 
 // serveHTTP authenticates r, attaches the resulting Principal and the raw
 // bearer token to its context, and delegates to the Streamable HTTP handler.
