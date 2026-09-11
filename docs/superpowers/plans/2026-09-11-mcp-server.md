@@ -1206,6 +1206,7 @@ Import note: `internal/api/mcp` importing `internal/api` is not a cycle — `int
 
 Design note for the implementer: audit for *successful* invocations comes from the Connect interceptor chain, not from `Invoker`. `Invoker` emits an audit event only for requests it rejects before the Connect call (scope denial, failed confirmation), because those never reach the chain. Do not emit audit events in `Invoker` for calls that do reach Connect — that would double-record every write.
 
+```go
 // newTestInvoker builds the three-tool registry used by the invoker tests.
 func newTestInvoker(t *testing.T) (*Invoker, *recordingAuditor) {
 	t.Helper()
