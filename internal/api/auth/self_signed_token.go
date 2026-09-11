@@ -34,6 +34,7 @@ type selfSignedClaims struct {
 type SelfSignedAuthenticator struct {
 	secret   []byte
 	audience string // when non-empty, aud must match exactly
+	issuer   string // when non-empty, iss must match exactly
 }
 
 // NewSelfSignedAuthenticator creates an authenticator for self-signed tokens.
@@ -43,9 +44,15 @@ func NewSelfSignedAuthenticator(secret []byte) *SelfSignedAuthenticator {
 
 // NewSelfSignedAuthenticatorForAudience requires an exact aud match. An empty
 // aud (a legacy token) is rejected, which is what stops console tokens being
-// replayed against MCP during the 24h migration window.
-func NewSelfSignedAuthenticatorForAudience(secret []byte, audience string) *SelfSignedAuthenticator {
-	return &SelfSignedAuthenticator{secret: secret, audience: audience}
+// replayed against MCP during the 24h migration window. audience is
+// mandatory: an empty value would silently disable the check, so
+// construction fails loudly instead. issuer is optional — pass "" to skip
+// the iss check.
+func NewSelfSignedAuthenticatorForAudience(secret []byte, audience, issuer string) (*SelfSignedAuthenticator, error) {
+	if audience == "" {
+		return nil, errors.New("self-signed authenticator: audience is required")
+	}
+	return &SelfSignedAuthenticator{secret: secret, audience: audience, issuer: issuer}, nil
 }
 
 // Authenticate validates a Bearer token signed with the server's secret.
@@ -73,6 +80,10 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 
 	if s.audience != "" && claims.Audience != s.audience {
 		return nil, fmt.Errorf("%w: audience mismatch", ErrUnauthenticated)
+	}
+
+	if s.issuer != "" && claims.Issuer != s.issuer {
+		return nil, fmt.Errorf("%w: issuer mismatch", ErrUnauthenticated)
 	}
 
 	return &Principal{
@@ -106,6 +117,7 @@ func IssueToken(subject, email, name string, secret []byte) (string, error) {
 type TokenOptions struct {
 	Subject, Email, Name string
 	Audience             string
+	Issuer               string
 	Scope                string
 	TTL                  time.Duration
 	Secret               []byte
@@ -122,6 +134,7 @@ func IssueTokenWithOptions(opts TokenOptions) (string, error) { //nolint:gocriti
 		Subject:  opts.Subject,
 		Email:    opts.Email,
 		Name:     opts.Name,
+		Issuer:   opts.Issuer,
 		Audience: opts.Audience,
 		Scope:    opts.Scope,
 		IAT:      now.Unix(),
