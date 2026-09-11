@@ -1853,7 +1853,7 @@ func newTestServer(t *testing.T) *Server {
 
 	srv, err := NewServer(ServerConfig{
 		Registry:      r,
-		Authenticator: auth.NewSelfSignedAuthenticatorForAudience(testSecret, "paprika-mcp"),
+		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
 		Confirmer:     NewConfirmer(store, time.Minute),
 		Auditor:       &recordingAuditor{},
 		Cache:         store,
@@ -2068,13 +2068,13 @@ func TestIssuedAccessTokenCarriesMCPAudience(t *testing.T) {
 	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &body))
 
 	// The MCP authenticator must accept it, and the console one must not.
-	mcpAuth := auth.NewSelfSignedAuthenticatorForAudience(testSecret, "paprika-mcp")
+	mcpAuth := mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer)
 	p, err := mcpAuth.Authenticate(ctxWithBearer(body.AccessToken))
 	require.NoError(t, err)
 	assert.Equal(t, "user-1", p.Subject)
 	assert.Equal(t, []string{"paprika:read"}, p.Scopes)
 
-	apiAuth := auth.NewSelfSignedAuthenticatorForAudience(testSecret, "paprika-api")
+	apiAuth := mustAudienceAuthenticator(t, testSecret, "paprika-api", testIssuer)
 	_, err = apiAuth.Authenticate(ctxWithBearer(body.AccessToken))
 	assert.Error(t, err, "an MCP token must not be replayable against the console API")
 }
@@ -2097,7 +2097,29 @@ func TestTokenEndpointRejectsUnsupportedGrant(t *testing.T) {
 Helpers used above:
 
 ```go
-var testSecret = []byte("test-secret-value-at-least-32-bytes!!")
+var (
+	testSecret = []byte("test-secret-value-at-least-32-bytes!!")
+	testIssuer = "https://paprika.example"
+)
+
+// mustAudienceAuthenticator wraps the constructor, which returns an error.
+//
+// NOTE: Task 6 shipped this signature, which differs from what Task 6's own
+// brief sketched:
+//
+//	NewSelfSignedAuthenticatorForAudience(secret []byte, audience, issuer string)
+//	    (*SelfSignedAuthenticator, error)
+//
+// It takes an issuer as well as an audience, and it returns an error rather
+// than a bare pointer — it rejects an empty audience at construction, so a
+// misconfigured empty value cannot silently disable audience binding. Use this
+// signature, not the one in Task 6's brief text.
+func mustAudienceAuthenticator(t *testing.T, secret []byte, audience, issuer string) *auth.SelfSignedAuthenticator {
+	t.Helper()
+	a, err := auth.NewSelfSignedAuthenticatorForAudience(secret, audience, issuer)
+	require.NoError(t, err)
+	return a
+}
 
 func postForm(t *testing.T, h http.Handler, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
