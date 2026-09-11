@@ -370,17 +370,22 @@ func applyShardConfig(cfg *cliConfig, getenv func(string) string) {
 // mcpPublicURL is deliberately not a --mcp-* flag: the design spec's
 // configuration table lists exactly six, none of them a public/external base
 // URL. It is still required (NewServer validates it as an absolute URL,
-// embedded verbatim in RFC 9728/8414 discovery metadata), so it is sourced
-// the same way authOIDCRedirectURL is when no dedicated flag exists for a
-// value that varies by deployment — via an env var, with a loopback default
-// usable for local/dev runs. Set PAPRIKA_MCP_PUBLIC_URL to the real
-// externally-reachable URL (behind TLS/ingress) in production.
+// embedded verbatim in RFC 9728/8414 discovery metadata, and used as the
+// minted token's "iss" claim), so it is sourced the same way
+// authOIDCRedirectURL is when no dedicated flag exists for a value that
+// varies by deployment — via an env var. Unlike authOIDCRedirectURL, it has
+// deliberately been given NO default: a loopback fallback here would let a
+// misconfigured production deployment silently advertise
+// "http://localhost:..." as its authorization server to every MCP client
+// and mint tokens claiming to be issued by it, which is exactly the kind of
+// fail-open behavior the rest of this MCP config (--mcp-enabled without
+// auth, empty TokenSecret, empty ClientID) refuses to allow. Callers MUST
+// set PAPRIKA_MCP_PUBLIC_URL to the real externally-reachable URL (behind
+// TLS/ingress); validateMCPConfig rejects --mcp-enabled=true when it is
+// unset.
 func applyMCPPostParseConfig(cfg *cliConfig, getenv func(string) string) {
 	cfg.mcpOAuthRedirectURIs = commaSeparatedValues(cfg.mcpOAuthRedirectURIsRaw)
 	cfg.mcpPublicURL = getenv("PAPRIKA_MCP_PUBLIC_URL")
-	if cfg.mcpPublicURL == "" {
-		cfg.mcpPublicURL = "http://localhost" + cfg.mcpBindAddress
-	}
 }
 
 func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) *cliConfig {
@@ -592,7 +597,8 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return err
 	}
 
-	extraMuxHandlers, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog)
+	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog)
+	defer closeMCPCacheIfPresent(mcpCache, setupLog)
 	if err != nil {
 		return err
 	}
@@ -633,20 +639,25 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 // API mux alongside the Connect handler — auth, the GitHub Actions token
 // exchange, and (when enabled) MCP — split out of runAPIMode to keep that
 // function under the repo's cyclop budget.
+//
+// It also returns the MCP cache it creates (nil when MCP is disabled) so
+// the caller can close it on shutdown — this function only builds the
+// handlers that reference the cache, it does not own the server's
+// lifetime, so it must not close the cache itself.
 func buildAPIExtraMuxHandlers(
 	apiCtx context.Context,
 	cfg *cliConfig,
 	connectHandler http.Handler,
 	clients *apiClients,
 	setupLog logr.Logger,
-) ([]func(*http.ServeMux), error) {
+) ([]func(*http.ServeMux), *cache.Cache, error) {
 	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(apiCtx, cfg, clients.k8sClient)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
@@ -654,14 +665,29 @@ func buildAPIExtraMuxHandlers(
 	if cfg.mcpEnabled {
 		mcpCache, err = newCacheFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
 		if err != nil {
-			return nil, fmt.Errorf("create MCP cache: %w", err)
+			return nil, nil, fmt.Errorf("create MCP cache: %w", err)
 		}
 	}
 	mcpHandlers, err := buildMCPHandlers(apiCtx, cfg, connectHandler, clients.authCfg, mcpCache)
 	if err != nil {
-		return nil, err
+		return nil, mcpCache, err
 	}
-	return append(extraMuxHandlers, mcpHandlers...), nil
+	return append(extraMuxHandlers, mcpHandlers...), mcpCache, nil
+}
+
+// closeMCPCacheIfPresent closes the MCP cache built by
+// buildAPIExtraMuxHandlers, if any (mcpCache is nil whenever MCP is
+// disabled, or when buildAPIExtraMuxHandlers failed before creating one).
+// Split out of runAPIMode, and always deferred unconditionally, so the
+// nil check does not add a branch to runAPIMode itself and push it over
+// the repo's cyclop budget.
+func closeMCPCacheIfPresent(mcpCache *cache.Cache, setupLog logr.Logger) {
+	if mcpCache == nil {
+		return
+	}
+	if closeErr := mcpCache.Close(); closeErr != nil {
+		setupLog.Error(closeErr, "Failed to close MCP cache")
+	}
 }
 
 func prepareStandaloneFleetRuntime(
@@ -908,6 +934,12 @@ func validateMCPConfig(cfg *cliConfig, authCfg auth.Config, mcpCache *cache.Cach
 	}
 	if len(cfg.mcpOAuthRedirectURIs) == 0 {
 		return errors.New("mcp: --mcp-oauth-redirect-uris is required when --mcp-enabled=true")
+	}
+	if cfg.mcpPublicURL == "" {
+		return errors.New("mcp: PAPRIKA_MCP_PUBLIC_URL is required when --mcp-enabled=true; " +
+			"it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's " +
+			"issuer, so it must be set explicitly to the real externally-reachable URL rather than " +
+			"silently defaulting to a loopback address")
 	}
 	if mcpCache == nil {
 		return errors.New("mcp: no cache configured; the MCP server requires one for " +

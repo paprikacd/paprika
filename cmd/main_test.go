@@ -612,6 +612,53 @@ func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
 		"MCP must refuse to start when auth is enabled but no token secret is configured")
 }
 
+// TestApplyMCPPostParseConfigDoesNotDefaultPublicURL guards Fix round 1,
+// Finding 2 (task-15-report.md): mcpPublicURL used to default to
+// "http://localhost"+bindAddress when PAPRIKA_MCP_PUBLIC_URL was unset, so
+// a misconfigured production deployment would silently advertise a
+// localhost authorization server in RFC 9728/8414 discovery metadata and
+// mint tokens claiming to be issued by it. There must be no default now —
+// an unset env var must leave mcpPublicURL empty, so validateMCPConfig can
+// fail closed instead.
+func TestApplyMCPPostParseConfigDoesNotDefaultPublicURL(t *testing.T) {
+	cfg := &cliConfig{mcpBindAddress: ":8090"}
+	applyMCPPostParseConfig(cfg, func(string) string { return "" })
+	assert.Empty(t, cfg.mcpPublicURL, "mcpPublicURL must not default to a loopback address")
+}
+
+func TestApplyMCPPostParseConfigUsesConfiguredPublicURL(t *testing.T) {
+	cfg := &cliConfig{mcpBindAddress: ":8090"}
+	applyMCPPostParseConfig(cfg, func(key string) string {
+		if key == "PAPRIKA_MCP_PUBLIC_URL" {
+			return "https://paprika.example"
+		}
+		return ""
+	})
+	assert.Equal(t, "https://paprika.example", cfg.mcpPublicURL)
+}
+
+// TestBuildMCPHandlersRequiresPublicURL guards Fix round 1, Finding 2
+// (task-15-report.md): --mcp-enabled=true must fail at startup when
+// PAPRIKA_MCP_PUBLIC_URL was never set, rather than silently running with a
+// localhost authorization server identity — every other MCP precondition
+// (auth enabled, token secret, client ID) already fails closed this way.
+func TestBuildMCPHandlersRequiresPublicURL(t *testing.T) {
+	secret := []byte("test-token-secret-test-token-sec")
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			mcpPublicURL:         "",
+		},
+		http.NewServeMux(),
+		auth.Config{Enabled: true, TokenSecret: secret},
+		&cache.Cache{},
+	)
+	require.Error(t, err,
+		"MCP must refuse to start without an explicitly configured public URL")
+}
+
 // TestBuildMCPHandlersWiresRealClient guards CF1 (progress.md, Task 13's
 // review): mcp.ServerConfig.Client is deliberately not part of
 // mcp.NewServer's own required-field validation, so a production server

@@ -144,36 +144,23 @@ type authCodeRecord struct {
 }
 
 // handleAuthorize implements the authorization_code + PKCE authorization
-// endpoint. client_id and redirect_uri are checked against the exact-match
-// allowlist BEFORE anything else — including before authentication — so
-// that an attacker supplying an unregistered redirect_uri never reaches a
-// code path that could send them anywhere, and never learns anything from a
-// differently shaped failure (see TestAuthorizeRejectsUnregisteredRedirectURI).
+// endpoint. Authentication runs FIRST, before any request validation
+// (response_type, client_id, redirect_uri, PKCE): every unauthenticated
+// caller gets an identical 401 regardless of what else is wrong or right
+// about the request, so an unauthenticated probe can never distinguish a
+// registered redirect_uri from an unregistered one, or a valid client_id
+// from an invalid one, by status code, body, or headers (see
+// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable). No Location
+// header is ever set before authentication succeeds.
 //
-// validateAuthorizeRequest reports client_id and redirect_uri failures as
-// one identical "invalid_request" response (see its doc comment) so an
-// unauthenticated caller cannot use the error code to tell a bad client_id
-// apart from a bad redirect_uri. What it cannot close, without changing the
-// status code this package's own locked tests pin, is the coarser split
-// between that generic 400 and the 401 an unauthenticated caller gets for an
-// otherwise-well-formed request: TestAuthorizeRejectsUnregisteredRedirectURI
-// requires exactly 400 for an unregistered redirect_uri, and
-// TestAuthorizeAcceptsExactRegisteredRedirectURI requires the registered
-// case to be anything BUT 400 (currently 401, from writeUnauthenticated)
-// with no bearer token supplied. Those two assertions are jointly
-// incompatible with making "registered, unauthenticated" and "unregistered"
-// return the same status code — see task-15-report.md's CF5 section for the
-// full analysis and why this is flagged rather than silently left half-done
-// or fixed by editing the locked test file.
+// Only once a caller is authenticated does validateAuthorizeRequest run,
+// and only then can a 400 distinguish an unregistered redirect_uri, a bad
+// response_type, or missing PKCE parameters from one another — see its doc
+// comment for why client_id and redirect_uri are still collapsed into one
+// response at that stage.
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	q := r.URL.Query()
-	redirectURI, codeChallenge, ok := s.validateAuthorizeRequest(w, q)
-	if !ok {
 		return
 	}
 
@@ -181,6 +168,12 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	principal, err := s.authenticator.Authenticate(ctx)
 	if err != nil {
 		s.writeUnauthenticated(w)
+		return
+	}
+
+	q := r.URL.Query()
+	redirectURI, codeChallenge, ok := s.validateAuthorizeRequest(w, q)
+	if !ok {
 		return
 	}
 
@@ -224,25 +217,26 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest.String(), http.StatusFound)
 }
 
-// validateAuthorizeRequest checks the fixed, pre-authentication preconditions
-// of an authorize request — response_type, client_id, redirect_uri, and PKCE
-// parameters — writing the appropriate OAuth error itself and returning
-// ok=false on the first failure. Splitting this out of handleAuthorize keeps
-// each function's branching independently readable and testable.
+// validateAuthorizeRequest checks the request's remaining preconditions —
+// response_type, client_id, redirect_uri, and PKCE parameters — once
+// handleAuthorize has already confirmed the caller is authenticated. It
+// writes the appropriate OAuth error itself and returns ok=false on the
+// first failure. Splitting this out of handleAuthorize keeps each
+// function's branching independently readable and testable.
 //
-// client_id and redirect_uri are validated here, before authentication
-// runs, so that an attacker supplying an unregistered redirect_uri never
-// reaches a code path that could send them anywhere.
-//
-// CF5 (task-15-report.md): the two checks are deliberately collapsed into
-// ONE generic "invalid_request" response, rather than client_id getting its
-// own "unauthorized_client" error as earlier revisions did. Reporting them
-// separately let an unauthenticated caller distinguish "this client_id is
-// wrong" from "this client_id is right but the redirect_uri is wrong" —
-// itself an enumeration oracle over registered client IDs, on top of the
-// redirect_uri oracle CF5 also names. Neither error ever echoes the
-// caller-supplied client_id or redirect_uri back into the response body or
-// a header, and a Location header is never set on this path at all.
+// CF5 (task-15-report.md): client_id and redirect_uri are deliberately
+// collapsed into ONE generic "invalid_request" response, rather than
+// client_id getting its own "unauthorized_client" error as earlier
+// revisions did. Reporting them separately would let a caller distinguish
+// "this client_id is wrong" from "this client_id is right but the
+// redirect_uri is wrong" — an enumeration oracle over registered client
+// IDs, on top of the redirect_uri oracle. This distinction is only ever
+// reachable by an authenticated caller now that handleAuthorize
+// authenticates first, but the collapsed response is kept regardless: it
+// costs nothing and removes any temptation to split it again later.
+// Neither error ever echoes the caller-supplied client_id or redirect_uri
+// back into the response body or a header, and a Location header is never
+// set on this path at all.
 func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
 	if q.Get("response_type") != "code" {
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")

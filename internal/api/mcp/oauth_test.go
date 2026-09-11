@@ -71,6 +71,8 @@ func TestAuthorizeRejectsUnregisteredRedirectURI(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
+	bearer := bearerFor(t, ScopeRead)
+
 	for _, redirect := range []string{
 		"https://evil.example/callback",
 		"https://claude.ai/api/mcp/auth_callback/../../evil",
@@ -83,6 +85,7 @@ func TestAuthorizeRejectsUnregisteredRedirectURI(t *testing.T) {
 				"/mcp/authorize?client_id=test&response_type=code"+
 					"&code_challenge=abc&code_challenge_method=S256"+
 					"&redirect_uri="+url.QueryEscape(redirect), nil)
+			req.Header.Set("Authorization", "Bearer "+bearer)
 			mux.ServeHTTP(rec, req)
 
 			assert.Equal(t, http.StatusBadRequest, rec.Code,
@@ -107,6 +110,38 @@ func TestAuthorizeAcceptsExactRegisteredRedirectURI(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	assert.NotEqual(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable is the CF5 oracle
+// test (task-15-report.md): handleAuthorize now authenticates before it
+// validates anything else, so an unauthenticated caller gets an identical
+// 401 response regardless of whether the redirect_uri it supplied is
+// registered, unregistered, or missing entirely — closing the enumeration
+// oracle a differently-shaped failure would otherwise provide.
+func TestAuthorizeUnauthenticatedRequestsAreIndistinguishable(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	registered := httptest.NewRecorder()
+	mux.ServeHTTP(registered, httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize?client_id=test&response_type=code"+
+			"&code_challenge=abc&code_challenge_method=S256"+
+			"&redirect_uri="+url.QueryEscape(redirect), nil))
+
+	unregistered := httptest.NewRecorder()
+	mux.ServeHTTP(unregistered, httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize?client_id=test&response_type=code"+
+			"&code_challenge=abc&code_challenge_method=S256"+
+			"&redirect_uri="+url.QueryEscape("https://evil.example/callback"), nil))
+
+	require.Equal(t, http.StatusUnauthorized, registered.Code)
+	require.Equal(t, http.StatusUnauthorized, unregistered.Code)
+	assert.Equal(t, registered.Code, unregistered.Code)
+	assert.Equal(t, registered.Body.String(), unregistered.Body.String(),
+		"an unauthenticated caller must not be able to tell a registered redirect_uri from an unregistered one")
+	assert.Equal(t, registered.Header().Get("WWW-Authenticate"), unregistered.Header().Get("WWW-Authenticate"))
 }
 
 // TestAuthorizeCompletesWithAValidBearerToken drives the authorization
@@ -172,6 +207,7 @@ func TestAuthorizeRejectsWrongResponseType(t *testing.T) {
 		"/mcp/authorize?client_id=test&response_type=token"+
 			"&code_challenge=abc&code_challenge_method=S256"+
 			"&redirect_uri="+url.QueryEscape(redirect), nil)
+	req.Header.Set("Authorization", "Bearer "+bearerFor(t, ScopeRead))
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -187,6 +223,7 @@ func TestAuthorizeRejectsMissingPKCE(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
 		"/mcp/authorize?client_id=test&response_type=code"+
 			"&redirect_uri="+url.QueryEscape(redirect), nil)
+	req.Header.Set("Authorization", "Bearer "+bearerFor(t, ScopeRead))
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -501,6 +538,25 @@ func TestConcurrentAuthCodeRedemptionOnlyOneSucceeds(t *testing.T) {
 
 	assert.EqualValues(t, 1, successes,
 		"exactly one of %d concurrent redemptions of the same authorization code must succeed", n)
+}
+
+// TestNegotiateScopeNilPrincipalDoesNotPanic guards negotiateScope's nil
+// guard: handleAuthorize never calls it with a nil principal now that
+// authentication runs first, but negotiateScope is called directly here
+// rather than through the HTTP handler, so this pins the defensive check
+// itself in case that invariant is ever violated by a future caller.
+func TestNegotiateScopeNilPrincipalDoesNotPanic(t *testing.T) {
+	assert.NotPanics(t, func() {
+		scope, ok := negotiateScope(nil, "")
+		assert.False(t, ok)
+		assert.Empty(t, scope)
+	})
+
+	assert.NotPanics(t, func() {
+		scope, ok := negotiateScope(nil, "paprika:read")
+		assert.False(t, ok)
+		assert.Empty(t, scope)
+	})
 }
 
 // --- Fix round 1, Finding 1: scope self-escalation at /mcp/authorize ---
