@@ -190,6 +190,9 @@ export const FleetCapability = /*@__PURE__*/ proto3.makeEnum(
     {no: 2, name: "FLEET_CAPABILITY_RELEASE_ROLLBACK", localName: "RELEASE_ROLLBACK"},
     {no: 3, name: "FLEET_CAPABILITY_GATE_APPROVE", localName: "GATE_APPROVE"},
     {no: 4, name: "FLEET_CAPABILITY_PIPELINE_RETRY", localName: "PIPELINE_RETRY"},
+    {no: 5, name: "FLEET_CAPABILITY_ROLLOUT_HOLD", localName: "ROLLOUT_HOLD"},
+    {no: 6, name: "FLEET_CAPABILITY_RESOURCE_PATCH", localName: "RESOURCE_PATCH"},
+    {no: 7, name: "FLEET_CAPABILITY_DRIFT_IGNORE", localName: "DRIFT_IGNORE"},
   ],
 );
 
@@ -216,6 +219,285 @@ export const FleetMapNodeKind = /*@__PURE__*/ proto3.makeEnum(
     {no: 0, name: "FLEET_MAP_NODE_KIND_UNSPECIFIED", localName: "UNSPECIFIED"},
     {no: 1, name: "FLEET_MAP_NODE_KIND_GROUP", localName: "GROUP"},
     {no: 2, name: "FLEET_MAP_NODE_KIND_APPLICATION", localName: "APPLICATION"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.DataState
+ */
+export const DataState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.DataState",
+  [
+    {no: 0, name: "DATA_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "DATA_STATE_OK", localName: "OK"},
+    {no: 2, name: "DATA_STATE_NOT_CONFIGURED", localName: "NOT_CONFIGURED"},
+    {no: 3, name: "DATA_STATE_NOT_AVAILABLE", localName: "NOT_AVAILABLE"},
+    {no: 4, name: "DATA_STATE_STALE", localName: "STALE"},
+    {no: 5, name: "DATA_STATE_ERROR", localName: "ERROR"},
+    {no: 6, name: "DATA_STATE_FORBIDDEN", localName: "FORBIDDEN"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.DataClass
+ */
+export const DataClass = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.DataClass",
+  [
+    {no: 0, name: "DATA_CLASS_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "DATA_CLASS_CLUSTER_INVENTORY", localName: "CLUSTER_INVENTORY"},
+    {no: 2, name: "DATA_CLASS_CLUSTER_CAPACITY", localName: "CLUSTER_CAPACITY"},
+    {no: 3, name: "DATA_CLASS_APPLICATION_SIGNALS", localName: "APPLICATION_SIGNALS"},
+    {no: 4, name: "DATA_CLASS_COST", localName: "COST"},
+    {no: 5, name: "DATA_CLASS_SOURCE_EVENTS", localName: "SOURCE_EVENTS"},
+    {no: 6, name: "DATA_CLASS_ROLLOUT_HISTORY", localName: "ROLLOUT_HISTORY"},
+    {no: 7, name: "DATA_CLASS_PIPELINE_RUNS", localName: "PIPELINE_RUNS"},
+    {no: 8, name: "DATA_CLASS_COMMIT_METADATA", localName: "COMMIT_METADATA"},
+    {no: 9, name: "DATA_CLASS_OWNERSHIP", localName: "OWNERSHIP"},
+    {no: 10, name: "DATA_CLASS_DRIFT_DETAIL", localName: "DRIFT_DETAIL"},
+    {no: 11, name: "DATA_CLASS_LIFECYCLE", localName: "LIFECYCLE"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.ResourceUnit
+ */
+export const ResourceUnit = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.ResourceUnit",
+  [
+    {no: 0, name: "RESOURCE_UNIT_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "RESOURCE_UNIT_MILLICORES", localName: "MILLICORES"},
+    {no: 2, name: "RESOURCE_UNIT_BYTES", localName: "BYTES"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.ClusterMode
+ */
+export const ClusterMode = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.ClusterMode",
+  [
+    {no: 0, name: "CLUSTER_MODE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "CLUSTER_MODE_IN_CLUSTER", localName: "IN_CLUSTER"},
+    {no: 2, name: "CLUSTER_MODE_DIRECT", localName: "DIRECT"},
+    {no: 3, name: "CLUSTER_MODE_AGENT", localName: "AGENT"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.ClusterPhase
+ */
+export const ClusterPhase = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.ClusterPhase",
+  [
+    {no: 0, name: "CLUSTER_PHASE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "CLUSTER_PHASE_PENDING", localName: "PENDING"},
+    {no: 2, name: "CLUSTER_PHASE_HEALTHY", localName: "HEALTHY"},
+    {no: 3, name: "CLUSTER_PHASE_UNHEALTHY", localName: "UNHEALTHY"},
+    {no: 4, name: "CLUSTER_PHASE_DISABLED", localName: "DISABLED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.SignalKind
+ */
+export const SignalKind = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.SignalKind",
+  [
+    {no: 0, name: "SIGNAL_KIND_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "SIGNAL_KIND_REQUEST_RATE", localName: "REQUEST_RATE"},
+    {no: 2, name: "SIGNAL_KIND_ERROR_RATE", localName: "ERROR_RATE"},
+    {no: 3, name: "SIGNAL_KIND_LATENCY", localName: "LATENCY"},
+    {no: 4, name: "SIGNAL_KIND_SATURATION", localName: "SATURATION"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.SignalUnit
+ */
+export const SignalUnit = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.SignalUnit",
+  [
+    {no: 0, name: "SIGNAL_UNIT_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "SIGNAL_UNIT_REQUESTS_PER_SECOND", localName: "REQUESTS_PER_SECOND"},
+    {no: 2, name: "SIGNAL_UNIT_RATIO", localName: "RATIO"},
+    {no: 3, name: "SIGNAL_UNIT_MILLISECONDS", localName: "MILLISECONDS"},
+    {no: 4, name: "SIGNAL_UNIT_PERCENT", localName: "PERCENT"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.CostBasis
+ */
+export const CostBasis = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.CostBasis",
+  [
+    {no: 0, name: "COST_BASIS_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "COST_BASIS_RATE_CARD_REQUESTED", localName: "RATE_CARD_REQUESTED"},
+    {no: 2, name: "COST_BASIS_RATE_CARD_ALLOCATABLE", localName: "RATE_CARD_ALLOCATABLE"},
+    {no: 3, name: "COST_BASIS_BILLING", localName: "BILLING"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.SourceEventKind
+ */
+export const SourceEventKind = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.SourceEventKind",
+  [
+    {no: 0, name: "SOURCE_EVENT_KIND_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "SOURCE_EVENT_KIND_GIT_PUSH", localName: "GIT_PUSH"},
+    {no: 2, name: "SOURCE_EVENT_KIND_GIT_TAG", localName: "GIT_TAG"},
+    {no: 3, name: "SOURCE_EVENT_KIND_OCI_PUSH", localName: "OCI_PUSH"},
+    {no: 4, name: "SOURCE_EVENT_KIND_S3_OBJECT", localName: "S3_OBJECT"},
+    {no: 5, name: "SOURCE_EVENT_KIND_POLL_DETECTED", localName: "POLL_DETECTED"},
+    {no: 6, name: "SOURCE_EVENT_KIND_MANUAL_SYNC", localName: "MANUAL_SYNC"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.SourceEventOutcome
+ */
+export const SourceEventOutcome = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.SourceEventOutcome",
+  [
+    {no: 0, name: "SOURCE_EVENT_OUTCOME_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "SOURCE_EVENT_OUTCOME_ACCEPTED", localName: "ACCEPTED"},
+    {no: 2, name: "SOURCE_EVENT_OUTCOME_NO_MATCH", localName: "NO_MATCH"},
+    {no: 3, name: "SOURCE_EVENT_OUTCOME_REJECTED", localName: "REJECTED"},
+    {no: 4, name: "SOURCE_EVENT_OUTCOME_FAILED", localName: "FAILED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.RolloutOutcome
+ */
+export const RolloutOutcome = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.RolloutOutcome",
+  [
+    {no: 0, name: "ROLLOUT_OUTCOME_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "ROLLOUT_OUTCOME_SUCCEEDED", localName: "SUCCEEDED"},
+    {no: 2, name: "ROLLOUT_OUTCOME_ABORTED", localName: "ABORTED"},
+    {no: 3, name: "ROLLOUT_OUTCOME_FAILED", localName: "FAILED"},
+    {no: 4, name: "ROLLOUT_OUTCOME_ROLLED_BACK", localName: "ROLLED_BACK"},
+    {no: 5, name: "ROLLOUT_OUTCOME_SUPERSEDED", localName: "SUPERSEDED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.PipelineRunOutcome
+ */
+export const PipelineRunOutcome = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.PipelineRunOutcome",
+  [
+    {no: 0, name: "PIPELINE_RUN_OUTCOME_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "PIPELINE_RUN_OUTCOME_SUCCEEDED", localName: "SUCCEEDED"},
+    {no: 2, name: "PIPELINE_RUN_OUTCOME_FAILED", localName: "FAILED"},
+    {no: 3, name: "PIPELINE_RUN_OUTCOME_CANCELLED", localName: "CANCELLED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.ComputeBasis
+ */
+export const ComputeBasis = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.ComputeBasis",
+  [
+    {no: 0, name: "COMPUTE_BASIS_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "COMPUTE_BASIS_REQUESTED", localName: "REQUESTED"},
+    {no: 2, name: "COMPUTE_BASIS_MEASURED", localName: "MEASURED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.OwnershipTier
+ */
+export const OwnershipTier = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.OwnershipTier",
+  [
+    {no: 0, name: "OWNERSHIP_TIER_UNSPECIFIED"},
+    {no: 1, name: "OWNERSHIP_TIER_1"},
+    {no: 2, name: "OWNERSHIP_TIER_2"},
+    {no: 3, name: "OWNERSHIP_TIER_3"},
+    {no: 4, name: "OWNERSHIP_TIER_4"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.DrilldownKind
+ */
+export const DrilldownKind = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.DrilldownKind",
+  [
+    {no: 0, name: "DRILLDOWN_KIND_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "DRILLDOWN_KIND_DASHBOARD", localName: "DASHBOARD"},
+    {no: 2, name: "DRILLDOWN_KIND_LOGS", localName: "LOGS"},
+    {no: 3, name: "DRILLDOWN_KIND_TRACES", localName: "TRACES"},
+    {no: 4, name: "DRILLDOWN_KIND_RUNBOOK", localName: "RUNBOOK"},
+    {no: 5, name: "DRILLDOWN_KIND_COST", localName: "COST"},
+    {no: 6, name: "DRILLDOWN_KIND_REPOSITORY", localName: "REPOSITORY"},
+    {no: 7, name: "DRILLDOWN_KIND_CUSTOM", localName: "CUSTOM"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.DriftReason
+ */
+export const DriftReason = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.DriftReason",
+  [
+    {no: 0, name: "DRIFT_REASON_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "DRIFT_REASON_FIELD_CHANGED", localName: "FIELD_CHANGED"},
+    {no: 2, name: "DRIFT_REASON_RESOURCE_MISSING", localName: "RESOURCE_MISSING"},
+    {no: 3, name: "DRIFT_REASON_RESOURCE_UNMANAGED", localName: "RESOURCE_UNMANAGED"},
+    {no: 4, name: "DRIFT_REASON_PRUNE_PENDING", localName: "PRUNE_PENDING"},
+    {no: 5, name: "DRIFT_REASON_IGNORED", localName: "IGNORED"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.LifecyclePhase
+ */
+export const LifecyclePhase = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.LifecyclePhase",
+  [
+    {no: 0, name: "LIFECYCLE_PHASE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "LIFECYCLE_PHASE_SOURCE", localName: "SOURCE"},
+    {no: 2, name: "LIFECYCLE_PHASE_BUILD", localName: "BUILD"},
+    {no: 3, name: "LIFECYCLE_PHASE_TEST", localName: "TEST"},
+    {no: 4, name: "LIFECYCLE_PHASE_RENDER", localName: "RENDER"},
+    {no: 5, name: "LIFECYCLE_PHASE_DEPLOY", localName: "DEPLOY"},
+    {no: 6, name: "LIFECYCLE_PHASE_VERIFY", localName: "VERIFY"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.LifecyclePhaseState
+ */
+export const LifecyclePhaseState = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.LifecyclePhaseState",
+  [
+    {no: 0, name: "LIFECYCLE_PHASE_STATE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "LIFECYCLE_PHASE_STATE_NOT_APPLICABLE", localName: "NOT_APPLICABLE"},
+    {no: 2, name: "LIFECYCLE_PHASE_STATE_PENDING", localName: "PENDING"},
+    {no: 3, name: "LIFECYCLE_PHASE_STATE_RUNNING", localName: "RUNNING"},
+    {no: 4, name: "LIFECYCLE_PHASE_STATE_BLOCKED", localName: "BLOCKED"},
+    {no: 5, name: "LIFECYCLE_PHASE_STATE_SUCCEEDED", localName: "SUCCEEDED"},
+    {no: 6, name: "LIFECYCLE_PHASE_STATE_FAILED", localName: "FAILED"},
+    {no: 7, name: "LIFECYCLE_PHASE_STATE_UNKNOWN", localName: "UNKNOWN"},
+  ],
+);
+
+/**
+ * @generated from enum paprika.v1.PatchType
+ */
+export const PatchType = /*@__PURE__*/ proto3.makeEnum(
+  "paprika.v1.PatchType",
+  [
+    {no: 0, name: "PATCH_TYPE_UNSPECIFIED", localName: "UNSPECIFIED"},
+    {no: 1, name: "PATCH_TYPE_JSON_PATCH", localName: "JSON_PATCH"},
+    {no: 2, name: "PATCH_TYPE_MERGE_PATCH", localName: "MERGE_PATCH"},
+    {no: 3, name: "PATCH_TYPE_STRATEGIC_MERGE", localName: "STRATEGIC_MERGE"},
   ],
 );
 
@@ -1855,6 +2137,10 @@ export const ApplicationSummary = /*@__PURE__*/ proto3.makeMessageType(
     { no: 20, name: "blocked_gate_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 21, name: "last_transition_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
     { no: 22, name: "capabilities", kind: "enum", T: proto3.getEnumType(FleetCapability), repeated: true },
+    { no: 23, name: "lifecycle", kind: "message", T: LifecycleVector },
+    { no: 24, name: "ownership", kind: "message", T: OwnershipSummary },
+    { no: 25, name: "commit", kind: "message", T: CommitSummary },
+    { no: 26, name: "release_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 
@@ -2055,6 +2341,1036 @@ export const QueryFleetMatrixResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 5, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 6, name: "facets", kind: "message", T: FleetFacetBucket, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.DataSourceStatus
+ */
+export const DataSourceStatus = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.DataSourceStatus",
+  () => [
+    { no: 1, name: "data_class", kind: "enum", T: proto3.getEnumType(DataClass) },
+    { no: 2, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 3, name: "provider", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "staleness_budget_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "retention_limit", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 8, name: "retention_window_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetDataSourcesRequest
+ */
+export const GetDataSourcesRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetDataSourcesRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetDataSourcesResponse
+ */
+export const GetDataSourcesResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetDataSourcesResponse",
+  () => [
+    { no: 1, name: "sources", kind: "message", T: DataSourceStatus, repeated: true },
+    { no: 2, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResourceMeter
+ */
+export const ResourceMeter = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResourceMeter",
+  () => [
+    { no: 1, name: "unit", kind: "enum", T: proto3.getEnumType(ResourceUnit) },
+    { no: 2, name: "used_state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 3, name: "used", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 4, name: "requested_state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 5, name: "requested", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "allocatable_state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 7, name: "allocatable", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 8, name: "capacity", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 9, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 10, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterInventory
+ */
+export const ClusterInventory = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterInventory",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "node_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "ready_node_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "pod_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "running_pod_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "namespace_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "regions", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 8, name: "zones", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 9, name: "kubelet_versions", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 10, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 11, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterCapacity
+ */
+export const ClusterCapacity = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterCapacity",
+  () => [
+    { no: 1, name: "cpu", kind: "message", T: ResourceMeter },
+    { no: 2, name: "memory", kind: "message", T: ResourceMeter },
+    { no: 3, name: "usage_provider", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterAgentInfo
+ */
+export const ClusterAgentInfo = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterAgentInfo",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "last_seen_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "connected", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.Cluster
+ */
+export const Cluster = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Cluster",
+  () => [
+    { no: 1, name: "identity", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "display_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "mode", kind: "enum", T: proto3.getEnumType(ClusterMode) },
+    { no: 4, name: "server", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "service_account", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "labels", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
+    { no: 7, name: "disabled", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 8, name: "phase", kind: "enum", T: proto3.getEnumType(ClusterPhase) },
+    { no: 9, name: "connection", kind: "enum", T: proto3.getEnumType(FleetConnectionState) },
+    { no: 10, name: "kubernetes_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 11, name: "last_health_check_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 12, name: "created_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 13, name: "observed_generation", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 14, name: "conditions", kind: "message", T: Condition, repeated: true },
+    { no: 15, name: "application_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 16, name: "target_count", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 17, name: "inventory", kind: "message", T: ClusterInventory },
+    { no: 18, name: "capacity", kind: "message", T: ClusterCapacity },
+    { no: 19, name: "cost", kind: "message", T: CostSummary },
+    { no: 20, name: "agent", kind: "message", T: ClusterAgentInfo },
+    { no: 21, name: "health_check_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 22, name: "health_check_timeout", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListClustersRequest
+ */
+export const ListClustersRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListClustersRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "include_capacity", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "include_unreferenced", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListClustersResponse
+ */
+export const ListClustersResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListClustersResponse",
+  () => [
+    { no: 1, name: "clusters", kind: "message", T: Cluster, repeated: true },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetClusterRequest
+ */
+export const GetClusterRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetClusterRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetClusterResponse
+ */
+export const GetClusterResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetClusterResponse",
+  () => [
+    { no: 1, name: "cluster", kind: "message", T: Cluster },
+    { no: 2, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SignalValue
+ */
+export const SignalValue = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SignalValue",
+  () => [
+    { no: 1, name: "kind", kind: "enum", T: proto3.getEnumType(SignalKind) },
+    { no: 2, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 3, name: "value", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 4, name: "unit", kind: "enum", T: proto3.getEnumType(SignalUnit) },
+    { no: 5, name: "quantile", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 7, name: "window_seconds", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplicationSignals
+ */
+export const ApplicationSignals = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationSignals",
+  () => [
+    { no: 1, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "cluster", kind: "message", T: FleetObjectKey },
+    { no: 4, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 5, name: "source", kind: "message", T: FleetObjectKey },
+    { no: 6, name: "signals", kind: "message", T: SignalValue, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryApplicationSignalsRequest
+ */
+export const QueryApplicationSignalsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryApplicationSignalsRequest",
+  () => [
+    { no: 1, name: "applications", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 2, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "signals", kind: "enum", T: proto3.getEnumType(SignalKind), repeated: true },
+    { no: 4, name: "window_seconds", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryApplicationSignalsResponse
+ */
+export const QueryApplicationSignalsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryApplicationSignalsResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "applications", kind: "message", T: ApplicationSignals, repeated: true },
+    { no: 3, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CostSummary
+ */
+export const CostSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CostSummary",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "basis", kind: "enum", T: proto3.getEnumType(CostBasis) },
+    { no: 3, name: "monthly_amount", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 4, name: "currency", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "provider", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplicationCost
+ */
+export const ApplicationCost = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationCost",
+  () => [
+    { no: 1, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "cost", kind: "message", T: CostSummary },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterCost
+ */
+export const ClusterCost = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterCost",
+  () => [
+    { no: 1, name: "cluster", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "cost", kind: "message", T: CostSummary },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryCostRequest
+ */
+export const QueryCostRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryCostRequest",
+  () => [
+    { no: 1, name: "filter", kind: "message", T: FleetFilter },
+    { no: 2, name: "applications", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 3, name: "clusters", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 4, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.QueryCostResponse
+ */
+export const QueryCostResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.QueryCostResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "applications", kind: "message", T: ApplicationCost, repeated: true },
+    { no: 3, name: "clusters", kind: "message", T: ClusterCost, repeated: true },
+    { no: 4, name: "total", kind: "message", T: CostSummary },
+    { no: 5, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "index_generation", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CommitInfo
+ */
+export const CommitInfo = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CommitInfo",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "short_revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "author_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "author_email", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "committed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRevisionInfoRequest
+ */
+export const GetRevisionInfoRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRevisionInfoRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRevisionInfoResponse
+ */
+export const GetRevisionInfoResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRevisionInfoResponse",
+  () => [
+    { no: 1, name: "commit", kind: "message", T: CommitInfo },
+    { no: 2, name: "repository", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "repository_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "run_number", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "run_number_state", kind: "enum", T: proto3.getEnumType(DataState) },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SourceEvent
+ */
+export const SourceEvent = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SourceEvent",
+  () => [
+    { no: 1, name: "identity", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "kind", kind: "enum", T: proto3.getEnumType(SourceEventKind) },
+    { no: 3, name: "source_type", kind: "enum", T: proto3.getEnumType(FleetSourceType) },
+    { no: 4, name: "repository_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "repository", kind: "message", T: FleetObjectKey },
+    { no: 6, name: "reference", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "commit", kind: "message", T: CommitInfo },
+    { no: 8, name: "provider", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "delivery_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "received_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 11, name: "outcome", kind: "enum", T: proto3.getEnumType(SourceEventOutcome) },
+    { no: 12, name: "triggered_applications", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 13, name: "triggered_application_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 14, name: "triggered_applications_truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 15, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListSourceEventsRequest
+ */
+export const ListSourceEventsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListSourceEventsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "applications", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 3, name: "kinds", kind: "enum", T: proto3.getEnumType(SourceEventKind), repeated: true },
+    { no: 4, name: "since_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListSourceEventsResponse
+ */
+export const ListSourceEventsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListSourceEventsResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "events", kind: "message", T: SourceEvent, repeated: true },
+    { no: 3, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "retention_horizon_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "retention_limit", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutHistoryEntry
+ */
+export const RolloutHistoryEntry = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutHistoryEntry",
+  () => [
+    { no: 1, name: "identity", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "rollout", kind: "message", T: FleetObjectKey },
+    { no: 4, name: "release", kind: "message", T: FleetObjectKey },
+    { no: 5, name: "stage", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "cluster", kind: "message", T: FleetObjectKey },
+    { no: 7, name: "strategy", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "outcome", kind: "enum", T: proto3.getEnumType(RolloutOutcome) },
+    { no: 9, name: "started_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 10, name: "finished_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 11, name: "duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 12, name: "steps_completed", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 13, name: "steps_total", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 14, name: "final_weight", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 15, name: "revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 16, name: "commit", kind: "message", T: CommitInfo },
+    { no: 17, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 18, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 19, name: "triggered_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutHistoryStats
+ */
+export const RolloutHistoryStats = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutHistoryStats",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 3, name: "succeeded", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 4, name: "aborted", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "failed", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 6, name: "rolled_back", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 7, name: "median_duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "p90_duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 9, name: "sample_size", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 10, name: "window_start_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListRolloutHistoryRequest
+ */
+export const ListRolloutHistoryRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListRolloutHistoryRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "applications", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 3, name: "clusters", kind: "message", T: FleetObjectKey, repeated: true },
+    { no: 4, name: "stages", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 5, name: "since_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListRolloutHistoryResponse
+ */
+export const ListRolloutHistoryResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListRolloutHistoryResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "entries", kind: "message", T: RolloutHistoryEntry, repeated: true },
+    { no: 3, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "stats", kind: "message", T: RolloutHistoryStats },
+    { no: 5, name: "retention_horizon_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "retention_limit", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.StepResources
+ */
+export const StepResources = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.StepResources",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "cpu_request_millicores", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 3, name: "memory_request_bytes", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 4, name: "cpu_limit_millicores", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 5, name: "memory_limit_bytes", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PipelineRunStep
+ */
+export const PipelineRunStep = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PipelineRunStep",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "phase", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "started_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "finished_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "attempts", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "resources", kind: "message", T: StepResources },
+    { no: 8, name: "image", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PipelineTestSummary
+ */
+export const PipelineTestSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PipelineTestSummary",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "total", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "passed", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "failed", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "skipped", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "flaked", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 7, name: "report_format", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PipelineCacheSummary
+ */
+export const PipelineCacheSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PipelineCacheSummary",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "hits", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "misses", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "hit_ratio", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 5, name: "scope", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.PipelineRunSummary
+ */
+export const PipelineRunSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.PipelineRunSummary",
+  () => [
+    { no: 1, name: "identity", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "pipeline", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 4, name: "run_number", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
+    { no: 5, name: "outcome", kind: "enum", T: proto3.getEnumType(PipelineRunOutcome) },
+    { no: 6, name: "started_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 7, name: "finished_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 9, name: "steps_total", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 10, name: "steps_succeeded", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 11, name: "steps", kind: "message", T: PipelineRunStep, repeated: true },
+    { no: 12, name: "commit", kind: "message", T: CommitInfo },
+    { no: 13, name: "triggered_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 14, name: "tests", kind: "message", T: PipelineTestSummary },
+    { no: 15, name: "cache", kind: "message", T: PipelineCacheSummary },
+    { no: 16, name: "compute_state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 17, name: "cpu_minutes", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 18, name: "cpu_minutes_basis", kind: "enum", T: proto3.getEnumType(ComputeBasis) },
+    { no: 19, name: "artifacts", kind: "message", T: ArtifactRef, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListPipelineRunsRequest
+ */
+export const ListPipelineRunsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListPipelineRunsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 2, name: "pipeline", kind: "message", T: FleetObjectKey },
+    { no: 3, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 4, name: "since_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListPipelineRunsResponse
+ */
+export const ListPipelineRunsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListPipelineRunsResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "runs", kind: "message", T: PipelineRunSummary, repeated: true },
+    { no: 3, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "retention_horizon_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "retention_limit", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetPipelineRunRequest
+ */
+export const GetPipelineRunRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetPipelineRunRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetPipelineRunResponse
+ */
+export const GetPipelineRunResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetPipelineRunResponse",
+  () => [
+    { no: 1, name: "run", kind: "message", T: PipelineRunSummary },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.DrilldownLink
+ */
+export const DrilldownLink = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.DrilldownLink",
+  () => [
+    { no: 1, name: "kind", kind: "enum", T: proto3.getEnumType(DrilldownKind) },
+    { no: 2, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.Ownership
+ */
+export const Ownership = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.Ownership",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "owner", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "owner_label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "on_call", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "tier", kind: "enum", T: proto3.getEnumType(OwnershipTier) },
+    { no: 6, name: "escalation_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "links", kind: "message", T: DrilldownLink, repeated: true },
+    { no: 8, name: "source", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationOwnershipRequest
+ */
+export const GetApplicationOwnershipRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationOwnershipRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationOwnershipResponse
+ */
+export const GetApplicationOwnershipResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationOwnershipResponse",
+  () => [
+    { no: 1, name: "ownership", kind: "message", T: Ownership },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.DriftedField
+ */
+export const DriftedField = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.DriftedField",
+  () => [
+    { no: 1, name: "path", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "desired", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "live", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "ignored", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResourceDriftDetail
+ */
+export const ResourceDriftDetail = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResourceDriftDetail",
+  () => [
+    { no: 1, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "sync", kind: "enum", T: proto3.getEnumType(FleetSyncState) },
+    { no: 7, name: "reason", kind: "enum", T: proto3.getEnumType(DriftReason) },
+    { no: 8, name: "changed_field_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 9, name: "fields", kind: "message", T: DriftedField, repeated: true },
+    { no: 10, name: "fields_truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 11, name: "drift_detected_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 12, name: "detail_state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 13, name: "last_applied_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 14, name: "last_applied_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListDriftDetailsRequest
+ */
+export const ListDriftDetailsRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListDriftDetailsRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "application", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "page_size", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "include_fields", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ListDriftDetailsResponse
+ */
+export const ListDriftDetailsResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ListDriftDetailsResponse",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "resources", kind: "message", T: ResourceDriftDetail, repeated: true },
+    { no: 3, name: "drifted_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "missing_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "pruned_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "next_cursor", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "evaluated_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * Compact per-row form carried on ApplicationSummary.
+ *
+ * @generated from message paprika.v1.LifecycleVector
+ */
+export const LifecycleVector = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.LifecycleVector",
+  () => [
+    { no: 1, name: "states", kind: "enum", T: proto3.getEnumType(LifecyclePhaseState), repeated: true },
+    { no: 2, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.LifecyclePhaseStatus
+ */
+export const LifecyclePhaseStatus = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.LifecyclePhaseStatus",
+  () => [
+    { no: 1, name: "phase", kind: "enum", T: proto3.getEnumType(LifecyclePhase) },
+    { no: 2, name: "state", kind: "enum", T: proto3.getEnumType(LifecyclePhaseState) },
+    { no: 3, name: "started_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "finished_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "duration_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 6, name: "detail", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "reference", kind: "message", T: FleetObjectKey },
+    { no: 8, name: "reference_kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplicationLifecycle
+ */
+export const ApplicationLifecycle = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplicationLifecycle",
+  () => [
+    { no: 1, name: "application", kind: "message", T: FleetObjectKey },
+    { no: 2, name: "phases", kind: "message", T: LifecyclePhaseStatus, repeated: true },
+    { no: 3, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationLifecycleRequest
+ */
+export const GetApplicationLifecycleRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationLifecycleRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetApplicationLifecycleResponse
+ */
+export const GetApplicationLifecycleResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetApplicationLifecycleResponse",
+  () => [
+    { no: 1, name: "lifecycle", kind: "message", T: ApplicationLifecycle },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.RolloutHold
+ */
+export const RolloutHold = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.RolloutHold",
+  () => [
+    { no: 1, name: "held", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "held_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "held_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "expires_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "frozen_weight", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRolloutHoldRequest
+ */
+export const GetRolloutHoldRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRolloutHoldRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.GetRolloutHoldResponse
+ */
+export const GetRolloutHoldResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.GetRolloutHoldResponse",
+  () => [
+    { no: 1, name: "hold", kind: "message", T: RolloutHold },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.HoldRolloutRequest
+ */
+export const HoldRolloutRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.HoldRolloutRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "expires_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.HoldRolloutResponse
+ */
+export const HoldRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.HoldRolloutResponse",
+  () => [
+    { no: 1, name: "rollout", kind: "message", T: Rollout },
+    { no: 2, name: "hold", kind: "message", T: RolloutHold },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResumeRolloutRequest
+ */
+export const ResumeRolloutRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResumeRolloutRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResumeRolloutResponse
+ */
+export const ResumeRolloutResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResumeRolloutResponse",
+  () => [
+    { no: 1, name: "rollout", kind: "message", T: Rollout },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.IgnoredFieldRule
+ */
+export const IgnoredFieldRule = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.IgnoredFieldRule",
+  () => [
+    { no: 1, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "json_pointers", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 6, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "created_by", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "created_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.IgnoreDriftedFieldRequest
+ */
+export const IgnoreDriftedFieldRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.IgnoreDriftedFieldRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "json_pointers", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 8, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "remove", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.IgnoreDriftedFieldResponse
+ */
+export const IgnoreDriftedFieldResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.IgnoreDriftedFieldResponse",
+  () => [
+    { no: 1, name: "rules", kind: "message", T: IgnoredFieldRule, repeated: true },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplyResourcePatchRequest
+ */
+export const ApplyResourcePatchRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplyResourcePatchRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "resource_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "resource_namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "patch_type", kind: "enum", T: proto3.getEnumType(PatchType) },
+    { no: 9, name: "patch", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "confirm", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 11, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ApplyResourcePatchResponse
+ */
+export const ApplyResourcePatchResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ApplyResourcePatchResponse",
+  () => [
+    { no: 1, name: "applied", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "dry_run", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 3, name: "result_manifest", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "diff", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "warning", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 6, name: "applied_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ResourceSelector
+ */
+export const ResourceSelector = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ResourceSelector",
+  () => [
+    { no: 1, name: "group", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "kind", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SyncResourcesRequest
+ */
+export const SyncResourcesRequest = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SyncResourcesRequest",
+  () => [
+    { no: 1, name: "namespace", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "resources", kind: "message", T: ResourceSelector, repeated: true },
+    { no: 4, name: "prune", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 5, name: "confirm", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 6, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SyncResourcesResponse
+ */
+export const SyncResourcesResponse = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SyncResourcesResponse",
+  () => [
+    { no: 1, name: "accepted", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "dry_run", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 3, name: "selected_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 4, name: "unmatched", kind: "message", T: ResourceSelector, repeated: true },
+    { no: 5, name: "sync_token", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.OwnershipSummary
+ */
+export const OwnershipSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.OwnershipSummary",
+  () => [
+    { no: 1, name: "owner", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "on_call", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "tier", kind: "enum", T: proto3.getEnumType(OwnershipTier) },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.CommitSummary
+ */
+export const CommitSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.CommitSummary",
+  () => [
+    { no: 1, name: "short_revision", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "author_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "committed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
   ],
 );
 
