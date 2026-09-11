@@ -184,7 +184,7 @@ func TestFixtureServerServesCompiledUIAndRealFleetConnectQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed fixture: %v", err)
 	}
-	handler, err := newFixtureHandler(fixture, assets)
+	handler, err := newFixtureHandler(t.Context(), fixture, assets, dataSourcesRealistic)
 	if err != nil {
 		t.Fatalf("newFixtureHandler: %v", err)
 	}
