@@ -137,6 +137,8 @@ func newTestServer(t *testing.T) *Server {
 		Cache:         store,
 		Secret:        testSecret,
 		PublicURL:     "https://paprika.example",
+		ClientID:      "test",
+		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
 	})
 	require.NoError(t, err)
 	return srv

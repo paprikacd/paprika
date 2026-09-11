@@ -76,6 +76,8 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 			Cache:         store,
 			Secret:        testSecret,
 			PublicURL:     "https://paprika.example",
+			ClientID:      "test",
+			RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
 		}
 	}
 
@@ -112,6 +114,21 @@ func TestNewServerRequiresRegistryAuthenticatorCacheAndSecret(t *testing.T) {
 	t.Run("relative public URL", func(t *testing.T) {
 		cfg := valid()
 		cfg.PublicURL = "/paprika"
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+	})
+	// Fix round 1, Finding 3: an unconfigured ClientID must fail
+	// construction loudly (fail closed) rather than let clientIDAllowed
+	// accept every client_id.
+	t.Run("missing client id", func(t *testing.T) {
+		cfg := valid()
+		cfg.ClientID = ""
+		_, err := NewServer(cfg)
+		require.Error(t, err)
+	})
+	t.Run("missing redirect uris", func(t *testing.T) {
+		cfg := valid()
+		cfg.RedirectURIs = nil
 		_, err := NewServer(cfg)
 		require.Error(t, err)
 	})
@@ -219,6 +236,8 @@ func TestServerAttachesBearerTokenFromRequest(t *testing.T) {
 		Cache:         store,
 		Secret:        testSecret,
 		PublicURL:     "https://paprika.example",
+		ClientID:      "test",
+		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
 		Client:        client,
 	})
 	require.NoError(t, err)
@@ -283,6 +302,8 @@ func TestBearerSchemeIsCaseInsensitive(t *testing.T) {
 		Cache:         store,
 		Secret:        testSecret,
 		PublicURL:     "https://paprika.example",
+		ClientID:      "test",
+		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
 		Client:        client,
 	})
 	require.NoError(t, err)
@@ -343,6 +364,8 @@ func TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly(t *testing.T)
 		Cache:         store,
 		Secret:        testSecret,
 		PublicURL:     "https://paprika.example",
+		ClientID:      "test",
+		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
 	})
 	require.NoError(t, err)
 

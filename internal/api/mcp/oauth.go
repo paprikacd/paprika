@@ -27,6 +27,11 @@ const (
 	// authCodeTTL is deliberately short: an authorization code is meant to
 	// be exchanged within the same browser round trip, not held onto.
 	authCodeTTL = 5 * time.Minute
+
+	// minCodeVerifierLength and maxCodeVerifierLength are RFC 7636 section
+	// 4.1's fixed bounds on a PKCE code_verifier's length.
+	minCodeVerifierLength = 43
+	maxCodeVerifierLength = 128
 )
 
 // defaultDuration returns d if it is non-zero, else fallback. It centralises
@@ -160,7 +165,12 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope := strings.Join(scopesToStrings(negotiateScopes(q.Get("scope"))), " ")
+	scope, ok := negotiateScope(principal, q.Get("scope"))
+	if !ok {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_scope",
+			"requested scope exceeds the scope granted to this principal")
+		return
+	}
 	code, err := s.issueAuthCode(ctx, &authCodeRecord{
 		Subject:       principal.Subject,
 		Email:         principal.Email,
@@ -234,16 +244,11 @@ func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (
 }
 
 // clientIDAllowed reports whether clientID may use this authorization
-// server. An unconfigured s.clientID (the zero value) means no static
-// client has been registered, in which case the check is skipped rather
-// than rejecting every request — matching how s.redirectURIs behaves when
-// empty, and how the test fixtures that do not configure a client (e.g.
-// newTestServer) still exercise the token endpoint.
+// server. NewServer requires ServerConfig.ClientID to be non-empty, so
+// s.clientID is always configured here — an empty or mismatched clientID
+// is always rejected; there is no "unconfigured, skip the check" case.
 func (s *Server) clientIDAllowed(clientID string) bool {
-	if s.clientID == "" {
-		return true
-	}
-	return clientID == s.clientID
+	return clientID != "" && clientID == s.clientID
 }
 
 // isRegisteredRedirect reports whether candidate is EXACTLY one of the
@@ -267,23 +272,45 @@ func (s *Server) isRegisteredRedirect(candidate string) bool {
 	return false
 }
 
-// negotiateScopes parses a requested scope string and falls back to every
-// scope this server supports when the client did not request one — RFC 6749
-// section 3.3 leaves the default up to the authorization server when scope
-// is omitted.
-func negotiateScopes(requested string) []Scope {
-	if scopes := ParseScopes(requested); len(scopes) > 0 {
-		return scopes
+// negotiateScope computes the scope an authorization code — and the access
+// token it is eventually exchanged for — is granted, from what the client
+// requested and what principal is actually entitled to. The granted scope
+// is NEVER a superset of principal.Scopes:
+//
+//   - requested is empty: RFC 6749 section 3.3 leaves the default up to the
+//     authorization server when scope is omitted; this server defaults to
+//     exactly principal's own scopes, never to every scope it supports. A
+//     principal carrying no scopes at all is granted none.
+//   - requested names a scope principal does not hold: the WHOLE request is
+//     rejected (ok=false), not silently downgraded to the scopes principal
+//     does hold — see RFC 6749 section 5.2's invalid_scope condition
+//     ("requested scope ... exceeds the scope granted by the resource
+//     owner") and task-14-report.md's "Fix round 1" section for why this
+//     policy was chosen over a silent intersection.
+//   - requested names only scopes principal holds: exactly those are
+//     granted, narrowed from whatever principal could have asked for.
+func negotiateScope(principal *auth.Principal, requested string) (string, bool) {
+	granted := ParseScopes(strings.Join(principal.Scopes, " "))
+
+	if strings.TrimSpace(requested) == "" {
+		return scopesToString(granted), true
 	}
-	return []Scope{ScopeRead, ScopeWrite}
+
+	requestedScopes := ParseScopes(requested)
+	for _, rs := range requestedScopes {
+		if !HasScope(granted, rs) {
+			return "", false
+		}
+	}
+	return scopesToString(requestedScopes), true
 }
 
-func scopesToStrings(scopes []Scope) []string {
+func scopesToString(scopes []Scope) string {
 	out := make([]string, len(scopes))
 	for i, sc := range scopes {
 		out[i] = string(sc)
 	}
-	return out
+	return strings.Join(out, " ")
 }
 
 // issueAuthCode mints a random authorization code and stores rec against it
@@ -346,6 +373,12 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// RFC 6749 section 5.1 MUST: every token endpoint response — success or
+	// error — must tell caches never to store it, since it carries or
+	// relates to credentials.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+
 	if !s.clientIDAllowed(r.PostFormValue("client_id")) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_client", "unknown client_id")
 		return
@@ -375,6 +408,13 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code and code_verifier are required")
 		return
 	}
+	// RFC 7636 section 4.1: code_verifier is a 43-128 character string.
+	// Rejecting anything outside that range here, before it is ever hashed
+	// and compared, keeps pkceMatches operating only on well-formed input.
+	if len(verifier) < minCodeVerifierLength || len(verifier) > maxCodeVerifierLength {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code_verifier must be 43-128 characters")
+		return
+	}
 
 	rec, err := s.consumeAuthCode(r.Context(), code)
 	if err != nil {
@@ -382,6 +422,14 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// RFC 6749 section 4.1.3 requires the token endpoint to verify the code
+	// was issued to the client presenting it here — PKCE and exact
+	// redirect_uri matching mitigate but do not replace this binding (a
+	// code issued to one client_id must not redeem as a different one).
+	if r.PostFormValue("client_id") != rec.ClientID {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "code was not issued to this client")
+		return
+	}
 	if r.PostFormValue("redirect_uri") != rec.RedirectURI {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_grant", "redirect_uri does not match the authorization request")
 		return
@@ -394,19 +442,19 @@ func (s *Server) handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Req
 	s.issueTokenPair(r.Context(), w, rec.Subject, rec.Email, rec.Name, rec.Scope)
 }
 
-// consumeAuthCode looks up code and deletes it, so it cannot be exchanged
-// twice regardless of what the caller does with the returned record.
+// consumeAuthCode atomically looks up and deletes code in a single cache
+// operation (GetDel), so of any two callers racing the same code — a
+// genuine concurrent replay attempt, not merely "delete happens after
+// lookup" — exactly one observes it present; every other caller, concurrent
+// or later, sees it already gone. See TestConcurrentAuthCodeRedemptionOnlyOneSucceeds.
 func (s *Server) consumeAuthCode(ctx context.Context, code string) (authCodeRecord, error) {
 	var rec authCodeRecord
-	payload, err := s.cache.Get(ctx, authCodeKey(code))
+	payload, err := s.cache.GetDel(ctx, authCodeKey(code))
 	if err != nil {
-		return rec, fmt.Errorf("mcp: look up auth code: %w", err)
+		return rec, fmt.Errorf("mcp: consume auth code: %w", err)
 	}
 	if len(payload) == 0 {
 		return rec, errors.New("mcp: unknown or expired auth code")
-	}
-	if err := s.cache.Delete(ctx, authCodeKey(code)); err != nil {
-		return rec, fmt.Errorf("mcp: retire auth code: %w", err)
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return rec, fmt.Errorf("mcp: unmarshal auth code record: %w", err)
@@ -443,20 +491,30 @@ func (s *Server) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request)
 	s.issueTokenPair(r.Context(), w, rec.Subject, "", "", rec.Scope)
 }
 
-// consumeRefreshToken looks up token and deletes it — the rotation and
-// predecessor-revocation this file's contract requires — before returning
-// the record it held.
+// consumeRefreshToken atomically looks up and deletes token in a single
+// cache operation (GetDel) — the rotation and predecessor-revocation this
+// file's contract requires, made race-free: of any two callers racing the
+// same refresh token, exactly one observes it present and gets a live
+// successor chain; the other sees it already gone. A Get-then-Delete here
+// previously let concurrent callers both read the value before either
+// deleted it, so both could mint a live successor from the same
+// predecessor — see TestConcurrentRefreshTokenRedemptionOnlyOneSucceeds.
+//
+// Stranding risk: if issueTokenPair fails AFTER this call deletes token
+// (e.g. the subsequent cache.Set for the new refresh record fails), the
+// caller is left with no valid refresh token and must fully re-authorize.
+// This is accepted, not mitigated: deferring the delete until the new
+// token is safely stored would reopen the exact non-atomic race this
+// function exists to close, and re-authorization is a bounded, visible
+// failure mode rather than a silent double-spend.
 func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refreshRecord, error) {
 	var rec refreshRecord
-	payload, err := s.cache.Get(ctx, refreshKey(token))
+	payload, err := s.cache.GetDel(ctx, refreshKey(token))
 	if err != nil {
-		return rec, fmt.Errorf("mcp: look up refresh token: %w", err)
+		return rec, fmt.Errorf("mcp: consume refresh token: %w", err)
 	}
 	if len(payload) == 0 {
 		return rec, errors.New("mcp: unknown or expired refresh token")
-	}
-	if err := s.cache.Delete(ctx, refreshKey(token)); err != nil {
-		return rec, fmt.Errorf("mcp: revoke refresh token: %w", err)
 	}
 	if err := json.Unmarshal(payload, &rec); err != nil {
 		return rec, fmt.Errorf("mcp: unmarshal refresh record: %w", err)

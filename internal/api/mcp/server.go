@@ -102,6 +102,17 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if err := validatePublicURL(cfg.PublicURL); err != nil {
 		return nil, err
 	}
+	// Static client registration is mandatory in the OAuth 2.1 spec this
+	// package implements. An unconfigured ClientID must fail construction
+	// loudly rather than let clientIDAllowed fail OPEN and accept every
+	// client_id — the same failure mode NewSelfSignedAuthenticatorForAudience
+	// already closes for an empty audience.
+	if cfg.ClientID == "" {
+		return nil, errors.New("mcp: ServerConfig.ClientID is required")
+	}
+	if len(cfg.RedirectURIs) == 0 {
+		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
+	}
 
 	s := &Server{
 		registry:      cfg.Registry,

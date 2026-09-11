@@ -21,6 +21,16 @@ type Deleter interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// GetDeleter atomically retrieves and removes a value in one operation, so
+// two concurrent callers racing the same single-use key (an OAuth
+// authorization code or refresh token) can never both observe it present:
+// exactly one GetDel call gets the value and deletes it, every other
+// concurrent or subsequent call sees it already gone. Like Getter.Get, a
+// miss (key absent or expired) is reported as (nil, nil), not an error.
+type GetDeleter interface {
+	GetDel(ctx context.Context, key string) ([]byte, error)
+}
+
 // Pinger checks connectivity to the cache backend.
 type Pinger interface {
 	Ping(ctx context.Context) error
@@ -43,6 +53,7 @@ type cacheImpl interface {
 	Getter
 	Setter
 	Deleter
+	GetDeleter
 	Pinger
 	Closer
 	PrefixDeleter
@@ -56,7 +67,7 @@ type Cache struct {
 	cacheImpl
 }
 
-//go:generate mockgen -destination=mocks/cache.go -package=mocks -typed . Getter,Setter,Deleter,Pinger,Closer,PrefixDeleter
+//go:generate mockgen -destination=mocks/cache.go -package=mocks -typed . Getter,Setter,Deleter,GetDeleter,Pinger,Closer,PrefixDeleter
 
 // Key helpers for Paprika cache namespaces.
 const (
