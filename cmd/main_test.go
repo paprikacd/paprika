@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -722,4 +723,63 @@ func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
 	respBody := rec.Body.String()
 	assert.NotContains(t, respBody, "no Connect client configured",
 		"buildMCPHandlers must always wire a real Client (CF1); this error string indicates a nil one")
+}
+
+// TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken proves the real fix, at
+// the actual production wiring level: GET /mcp/authorize must authenticate
+// as a console user, not require a pre-existing MCP-audience token (the
+// circular requirement this whole change exists to break). A plain console
+// token — no "aud" claim, exactly what /auth/token issues once a human has
+// completed Google OIDC login — must be accepted here, never rejected with
+// the 401 an MCP-audience-only authenticator would produce.
+func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
+	ctx := context.Background()
+
+	_, handler := v1connect.NewPaprikaServiceHandler(v1connect.UnimplementedPaprikaServiceHandler{})
+
+	secret := []byte("test-token-secret-test-token-sec")
+	store, err := cache.New(ctx, cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	handlers, err := buildMCPHandlers(ctx,
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{redirect},
+			mcpPublicURL:         "https://paprika.example",
+			mcpAccessTokenTTL:    time.Hour,
+			mcpRefreshTokenTTL:   24 * time.Hour,
+		},
+		handler,
+		auth.Config{Enabled: true, TokenSecret: secret},
+		store,
+	)
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	for _, h := range handlers {
+		h(mux)
+	}
+
+	// A console token: no audience, no scope claim — exactly what
+	// /auth/token issues, never an MCP access token.
+	consoleToken, err := auth.IssueToken("console-user", "console-user@example.com", "Console User", secret)
+	require.NoError(t, err)
+
+	query := url.Values{
+		"client_id":             {"test-client"},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirect},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/mcp/authorize?"+query.Encode(), nil)
+	req.Header.Set("Authorization", "Bearer "+consoleToken)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.NotEqual(t, http.StatusUnauthorized, rec.Code,
+		"a console token must authenticate GET /mcp/authorize; requiring an MCP-audience token here is exactly the circular flow this fix closes")
+	assert.Equal(t, http.StatusFound, rec.Code)
 }

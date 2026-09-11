@@ -949,7 +949,7 @@ func validateMCPConfig(cfg *cliConfig, authCfg auth.Config, mcpCache *cache.Cach
 }
 
 func buildMCPHandlers(
-	_ context.Context,
+	ctx context.Context,
 	cfg *cliConfig,
 	connectHandler http.Handler,
 	authCfg auth.Config,
@@ -965,6 +965,20 @@ func buildMCPHandlers(
 	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, "")
 	if err != nil {
 		return nil, fmt.Errorf("mcp: build authenticator: %w", err)
+	}
+
+	// consoleAuthenticator authenticates the OAuth authorize/consent surface
+	// (GET /mcp/authorize, POST /mcp/authorize/consent) as a console user —
+	// the same Google OIDC + Paprika self-signed stack the console API
+	// itself uses (auth.BuildAuthenticator), never the MCP-audience-only
+	// authenticator above. Using that one here would be circular: the only
+	// thing that ever mints an MCP-audience token is /mcp/token, which
+	// itself requires a code /mcp/authorize issues — no client could ever
+	// complete the flow. See mcp.ServerConfig.ConsoleAuthenticator's doc
+	// comment for the full rationale.
+	consoleAuthenticator, err := auth.BuildAuthenticator(ctx, authCfg)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: build console authenticator: %w", err)
 	}
 
 	registry := mcp.NewRegistry()
@@ -990,18 +1004,19 @@ func buildMCPHandlers(
 	}
 
 	srv, err := mcp.NewServer(mcp.ServerConfig{
-		Registry:      registry,
-		Authenticator: authenticator,
-		Confirmer:     mcp.NewConfirmer(mcpCache, mcpConfirmationTTL),
-		Auditor:       auditor,
-		Cache:         mcpCache,
-		Secret:        authCfg.TokenSecret,
-		PublicURL:     cfg.mcpPublicURL,
-		ClientID:      cfg.mcpOAuthClientID,
-		RedirectURIs:  cfg.mcpOAuthRedirectURIs,
-		AccessTTL:     cfg.mcpAccessTokenTTL,
-		RefreshTTL:    cfg.mcpRefreshTokenTTL,
-		Client:        mcpClient,
+		Registry:             registry,
+		Authenticator:        authenticator,
+		ConsoleAuthenticator: consoleAuthenticator,
+		Confirmer:            mcp.NewConfirmer(mcpCache, mcpConfirmationTTL),
+		Auditor:              auditor,
+		Cache:                mcpCache,
+		Secret:               authCfg.TokenSecret,
+		PublicURL:            cfg.mcpPublicURL,
+		ClientID:             cfg.mcpOAuthClientID,
+		RedirectURIs:         cfg.mcpOAuthRedirectURIs,
+		AccessTTL:            cfg.mcpAccessTokenTTL,
+		RefreshTTL:           cfg.mcpRefreshTokenTTL,
+		Client:               mcpClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mcp: build server: %w", err)

@@ -90,12 +90,40 @@ func defersProjectSetAuthorization(procedure string) bool {
 }
 
 func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Authenticator, Authorizer, error) {
+	authn, err := BuildAuthenticator(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	authz, err := BuildAuthorizer(cfg, reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return authn, authz, nil
+}
+
+// BuildAuthenticator builds the same authenticator stack Interceptor uses to
+// authenticate console API calls — Basic auth, OIDC (Google ID tokens), and
+// Paprika self-signed tokens, tried in that order — without also building an
+// Authorizer or wrapping the result in a connect.UnaryInterceptorFunc.
+//
+// It is exported so a caller that needs to authenticate a plain
+// *http.Request as a console user, outside of a Connect RPC, can reuse this
+// package's own authenticator-construction logic rather than duplicating it.
+// The MCP OAuth authorize/consent surface
+// (internal/api/mcp/oauth.go's handleAuthorize and handleAuthorizeConsent)
+// is the first such caller: it must authenticate the human in the browser as
+// a console user — accepting the same Google OIDC and self-signed
+// credentials the console itself does — rather than requiring an MCP-scoped
+// access token, which nothing but this same authorize flow could ever mint.
+func BuildAuthenticator(ctx context.Context, cfg Config) (Authenticator, error) {
 	authenticators := []Authenticator{}
 
 	if cfg.BasicAuth != nil {
 		basic, err := NewBasicAuthenticator(*cfg.BasicAuth)
 		if err != nil {
-			return nil, nil, fmt.Errorf("basic auth: %w", err)
+			return nil, fmt.Errorf("basic auth: %w", err)
 		}
 		authenticators = append(authenticators, basic)
 	}
@@ -103,7 +131,7 @@ func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Aut
 	if cfg.OIDC != nil {
 		oidcAuth, err := NewOIDCAuthenticator(ctx, cfg.OIDC)
 		if err != nil {
-			return nil, nil, fmt.Errorf("oidc auth: %w", err)
+			return nil, fmt.Errorf("oidc auth: %w", err)
 		}
 		authenticators = append(authenticators, oidcAuth)
 	}
@@ -113,15 +141,10 @@ func buildAuthnAuthz(ctx context.Context, cfg Config, reader client.Reader) (Aut
 	}
 
 	if len(authenticators) == 0 {
-		return nil, nil, errors.New("auth enabled but no authenticators configured")
+		return nil, errors.New("auth enabled but no authenticators configured")
 	}
 
-	authz, err := BuildAuthorizer(cfg, reader)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return NewMultiAuthenticator(authenticators...), authz, nil
+	return NewMultiAuthenticator(authenticators...), nil
 }
 
 // BuildAuthorizer creates the composed authorizer from config and a Kubernetes reader.

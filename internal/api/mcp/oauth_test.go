@@ -753,6 +753,290 @@ func TestAuthorizeRejectsWrongCaseScopeValue(t *testing.T) {
 	}
 }
 
+// --- Consent flow: /mcp/authorize now authenticates as a CONSOLE user
+// rather than requiring a pre-existing MCP token, and the scope granted
+// comes from explicit consent (POST /mcp/authorize/consent) rather than a
+// token claim a Google ID token could never carry. ---
+
+// TestAuthorizeJSONGETUnauthenticatedStillReturns401 pins the non-browser
+// half of the new behaviour: a JSON caller with no console credential gets
+// exactly the same 401 it always did, never the new browser-only redirect to
+// /mcp/consent.
+func TestAuthorizeJSONGETUnauthenticatedStillReturns401(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize?client_id=test&response_type=code"+
+			"&code_challenge=abc&code_challenge_method=S256"+
+			"&redirect_uri="+url.QueryEscape(redirect), nil)
+	req.Header.Set("Accept", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"))
+	assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata")
+}
+
+// TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent is the required
+// browser-redirect test: an Accept: text/html GET with no console credential
+// gets a 302 to /mcp/consent with the original query string preserved,
+// verbatim, rather than the 401 a JSON caller gets. Critically, this is
+// asserted for BOTH a registered and an unregistered redirect_uri, and the
+// two responses must be identical in shape (same status, same Location
+// prefix) — the redirect to /mcp/consent must never depend on whether
+// redirect_uri validates, or a browser could use it as exactly the oracle
+// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable already closes
+// for JSON callers.
+func TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	registeredQuery := "client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape(redirect)
+	unregisteredQuery := "client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape("https://evil.example/callback")
+
+	get := func(query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/mcp/authorize?"+query, nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	registeredRec := get(registeredQuery)
+	unregisteredRec := get(unregisteredQuery)
+
+	require.Equal(t, http.StatusFound, registeredRec.Code)
+	require.Equal(t, http.StatusFound, unregisteredRec.Code,
+		"a browser probing an unregistered redirect_uri must be treated identically to a registered one")
+	assert.Equal(t, "/mcp/consent?"+registeredQuery, registeredRec.Header().Get("Location"))
+	assert.Equal(t, "/mcp/consent?"+unregisteredQuery, unregisteredRec.Header().Get("Location"))
+}
+
+// TestConsentRequiresAuthentication proves POST /mcp/authorize/consent
+// rejects a caller with no console credential.
+func TestConsentRequiresAuthentication(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	rec := postJSON(t, mux, "/mcp/authorize/consent", "", consentRequest{
+		ClientID: "test", RedirectURI: redirect,
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+		Scopes: []string{"paprika:read"},
+	})
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// TestConsentRejectsUnregisteredRedirectURI proves the consent endpoint
+// re-runs the exact-match redirect_uri check, and never sets a Location
+// header on failure — the same fail-closed shape validateAuthorizeRequest
+// already guarantees for GET.
+func TestConsentRejectsUnregisteredRedirectURI(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: "https://evil.example/callback",
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+		Scopes: []string{"paprika:read"},
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Empty(t, rec.Header().Get("Location"), "must never redirect to an unregistered URI")
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_request", oerr.Error)
+}
+
+// TestConsentGrantsOnlyTickedScopes is the central non-vacuous consent test:
+// ticking only paprika:read must yield an access token carrying only
+// paprika:read, never paprika:write. It is proven non-vacuous by also
+// granting both scopes through the identical path and confirming THAT
+// yields both — so the read-only result isn't just an authorize path that
+// always returns an empty or fixed grant.
+func TestConsentGrantsOnlyTickedScopes(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+
+	grant := func(t *testing.T, scopes []string) string {
+		t.Helper()
+		srv := newTestServerWithRedirects(t, []string{redirect})
+		mux := http.NewServeMux()
+		srv.RegisterOAuthRoutes(mux)
+
+		bearer := consoleBearerFor(t, "console-user")
+		rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+			ClientID: "test", RedirectURI: redirect,
+			CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+			Scopes: scopes,
+		})
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+		var body consentResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		dest, err := url.Parse(body.RedirectTo)
+		require.NoError(t, err)
+		code := dest.Query().Get("code")
+		require.NotEmpty(t, code)
+
+		tokenResp := postForm(t, mux, "/mcp/token", url.Values{
+			"grant_type":    {"authorization_code"},
+			"code":          {code},
+			"redirect_uri":  {redirect},
+			"code_verifier": {pkceVerifierForFix1},
+			"client_id":     {"test"},
+		})
+		require.Equal(t, http.StatusOK, tokenResp.Code, tokenResp.Body.String())
+
+		//nolint:tagliatelle // matches the snake_case wire format oauth.go emits.
+		var tokenBody struct {
+			AccessToken string `json:"access_token"`
+		}
+		require.NoError(t, json.Unmarshal(tokenResp.Body.Bytes(), &tokenBody))
+		return tokenBody.AccessToken
+	}
+
+	readOnlyToken := grant(t, []string{"paprika:read"})
+	bothToken := grant(t, []string{"paprika:read", "paprika:write"})
+
+	mcpAuth := mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer)
+
+	readOnlyPrincipal, err := mcpAuth.Authenticate(ctxWithBearer(readOnlyToken))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"paprika:read"}, readOnlyPrincipal.Scopes,
+		"ticking only read must not yield write")
+
+	bothPrincipal, err := mcpAuth.Authenticate(ctxWithBearer(bothToken))
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"paprika:read", "paprika:write"}, bothPrincipal.Scopes,
+		"ticking both scopes must yield both — proves the read-only grant above wasn't just a fixed/empty result")
+}
+
+// TestConsentRejectsUnrecognisedScope proves the consent endpoint rejects a
+// ticked scope it does not recognise, the same fail-closed rule
+// negotiateScope already enforces for the query-string authorize path.
+func TestConsentRejectsUnrecognisedScope(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: redirect,
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+		Scopes: []string{"admin"},
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_scope", oerr.Error)
+}
+
+// TestConsentRejectsEmptyScopes proves ticking nothing is rejected rather
+// than silently minting a token that can call nothing with no explanation.
+func TestConsentRejectsEmptyScopes(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: redirect,
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+		Scopes: []string{},
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_scope", oerr.Error)
+}
+
+// TestAuthorizeConsentTokenRoundTrip drives the FULL flow the design
+// prescribes end to end: an unauthenticated browser GET to /mcp/authorize
+// redirects to /mcp/consent preserving the query, the consent SPA (carrying
+// the user's console session) POSTs the ticked scopes to
+// /mcp/authorize/consent, and the resulting code exchanges at /mcp/token for
+// an access token carrying the MCP audience and exactly the consented
+// scope — never one derived from a token claim, since a console credential
+// here carries no scope claim at all (consoleBearerFor mints one exactly
+// like /auth/token does).
+func TestAuthorizeConsentTokenRoundTrip(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	authorizeQuery := "client_id=test&response_type=code" +
+		"&code_challenge=" + pkceChallengeForFix1 + "&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape(redirect) + "&state=xyz&scope=paprika:read"
+
+	getRec := httptest.NewRecorder()
+	getReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/mcp/authorize?"+authorizeQuery, nil)
+	getReq.Header.Set("Accept", "text/html")
+	mux.ServeHTTP(getRec, getReq)
+	require.Equal(t, http.StatusFound, getRec.Code)
+
+	loc, err := url.Parse(getRec.Header().Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, "/mcp/consent", loc.Path)
+
+	bearer := consoleBearerFor(t, "console-user")
+	consentRec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID:            loc.Query().Get("client_id"),
+		RedirectURI:         loc.Query().Get("redirect_uri"),
+		CodeChallenge:       loc.Query().Get("code_challenge"),
+		CodeChallengeMethod: loc.Query().Get("code_challenge_method"),
+		State:               loc.Query().Get("state"),
+		Scopes:              []string{"paprika:read"},
+	})
+	require.Equal(t, http.StatusOK, consentRec.Code, consentRec.Body.String())
+
+	var consentBody consentResponse
+	require.NoError(t, json.Unmarshal(consentRec.Body.Bytes(), &consentBody))
+	dest, err := url.Parse(consentBody.RedirectTo)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(dest.String(), redirect))
+	assert.Equal(t, "xyz", dest.Query().Get("state"))
+	code := dest.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	tokenResp := postForm(t, mux, "/mcp/token", url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {pkceVerifierForFix1},
+		"client_id":     {"test"},
+	})
+	require.Equal(t, http.StatusOK, tokenResp.Code, tokenResp.Body.String())
+
+	//nolint:tagliatelle // matches the snake_case wire format oauth.go emits.
+	var tokenBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	require.NoError(t, json.Unmarshal(tokenResp.Body.Bytes(), &tokenBody))
+
+	mcpAuth := mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer)
+	p, err := mcpAuth.Authenticate(ctxWithBearer(tokenBody.AccessToken))
+	require.NoError(t, err)
+	assert.Equal(t, "console-user", p.Subject)
+	assert.Equal(t, []string{"paprika:read"}, p.Scopes)
+}
+
 func TestAuthorizeRejectsPartiallyUnrecognisedScopeMix(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	srv := newTestServerWithRedirects(t, []string{redirect})

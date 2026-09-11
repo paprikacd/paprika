@@ -74,8 +74,15 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
 	mux.HandleFunc("/mcp/authorize", s.handleAuthorize)
+	mux.HandleFunc("/mcp/authorize/consent", s.handleAuthorizeConsent)
 	mux.HandleFunc("/mcp/token", s.handleToken)
 }
+
+// consentPath is where a browser lacking a console credential is redirected
+// from GET /mcp/authorize, and where the design's SPA (not this package's
+// responsibility) collects explicit user consent before POSTing to
+// /mcp/authorize/consent.
+const consentPath = "/mcp/consent"
 
 // protectedResourceMetadata is the RFC 9728 document a client fetches after
 // receiving this server's 401 WWW-Authenticate challenge (writeUnauthenticated).
@@ -146,12 +153,29 @@ type authCodeRecord struct {
 // handleAuthorize implements the authorization_code + PKCE authorization
 // endpoint. Authentication runs FIRST, before any request validation
 // (response_type, client_id, redirect_uri, PKCE): every unauthenticated
-// caller gets an identical 401 regardless of what else is wrong or right
+// caller gets an identical failure regardless of what else is wrong or right
 // about the request, so an unauthenticated probe can never distinguish a
 // registered redirect_uri from an unregistered one, or a valid client_id
 // from an invalid one, by status code, body, or headers (see
 // TestAuthorizeUnauthenticatedRequestsAreIndistinguishable). No Location
-// header is ever set before authentication succeeds.
+// header pointing at redirect_uri is ever set before authentication
+// succeeds.
+//
+// Authentication here uses s.authorizeAuthenticator — the CONSOLE user
+// authenticator stack (Google OIDC + Paprika self-signed tokens), not
+// s.authenticator (the MCP-audience-only authenticator /mcp itself uses).
+// Requiring an MCP access token here would be circular: the only thing that
+// mints one is /mcp/token, which itself needs a code from this endpoint.
+//
+// On authentication failure, a caller that looks like a browser (an Accept
+// header containing "text/html") is redirected to consentPath instead of
+// getting a 401, so a human with no console session yet can complete login
+// and consent there. This redirect performs NO validation of its own and
+// unconditionally forwards the raw query string — see redirectToConsent —
+// so it reveals nothing about whether client_id or redirect_uri is
+// registered, keeping the same oracle-closed property the JSON 401 path
+// already has. A non-browser (JSON/API) caller keeps getting exactly the
+// pre-existing 401.
 //
 // Only once a caller is authenticated does validateAuthorizeRequest run,
 // and only then can a 400 distinguish an unregistered redirect_uri, a bad
@@ -165,8 +189,12 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := auth.WithRequest(r.Context(), r)
-	principal, err := s.authenticator.Authenticate(ctx)
+	principal, err := s.authorizeAuthenticator.Authenticate(ctx)
 	if err != nil {
+		if looksLikeBrowser(r) {
+			redirectToConsent(w, r)
+			return
+		}
 		s.writeUnauthenticated(w)
 		return
 	}
@@ -197,24 +225,69 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// redirectURI has already been validated as an exact match against the
-	// registered allowlist, so it is safe to redirect to; url.Parse on an
-	// already-registered value is not attacker-controlled parsing.
-	dest, err := url.Parse(redirectURI)
+	dest, err := buildRedirectWithCode(redirectURI, code, q.Get("state"))
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	values := dest.Query()
-	values.Set("code", code)
-	if state := q.Get("state"); state != "" {
-		values.Set("state", state)
-	}
-	dest.RawQuery = values.Encode()
 	//nolint:gosec // dest was built from redirectURI, which validateAuthorizeRequest already
 	// checked for exact byte-equality against the registered allowlist above; it is never
 	// attacker-controlled at this point.
-	http.Redirect(w, r, dest.String(), http.StatusFound)
+	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// buildRedirectWithCode appends code and, if non-empty, state to
+// redirectURI's query string, returning the resulting URL as a string.
+// Shared by handleAuthorize and handleAuthorizeConsent — both mint a code
+// against an already-validated, exact-match-registered redirectURI and need
+// to build the identical final redirect target from it.
+func buildRedirectWithCode(redirectURI, code, state string) (string, error) {
+	dest, err := url.Parse(redirectURI)
+	if err != nil {
+		return "", fmt.Errorf("mcp: parse redirect_uri: %w", err)
+	}
+	values := dest.Query()
+	values.Set("code", code)
+	if state != "" {
+		values.Set("state", state)
+	}
+	dest.RawQuery = values.Encode()
+	return dest.String(), nil
+}
+
+// looksLikeBrowser reports whether r's Accept header indicates an
+// interactive browser navigation rather than a JSON/API caller — the same
+// signal a normal top-level GET navigation sends by default. It is
+// deliberately a narrow, explicit check (Accept containing "text/html")
+// rather than "absence of a bearer token" or similar: a JSON caller with no
+// credential must keep getting exactly the pre-existing 401 (see
+// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable and
+// TestAuthorizeJSONGETUnauthenticatedStillReturns401), and only a caller
+// that positively looks like a browser is redirected instead.
+func looksLikeBrowser(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}
+
+// redirectToConsent sends a browser-like, unauthenticated GET
+// /mcp/authorize to consentPath, preserving the original request's raw
+// query string byte-for-byte. It deliberately performs NO validation of
+// client_id, redirect_uri, or PKCE before redirecting — every such request
+// gets this exact same 302 to this exact same fixed path, regardless of
+// whether any of those parameters would ultimately validate. That is what
+// keeps this closed as an oracle: a browser probing an unregistered
+// redirect_uri this way learns nothing a JSON caller could not, since real
+// validation happens only later, in handleAuthorizeConsent, once the caller
+// is authenticated and any error response cannot be observed by a
+// third-party site driving the browser's navigation.
+func redirectToConsent(w http.ResponseWriter, r *http.Request) {
+	dest := consentPath
+	if r.URL.RawQuery != "" {
+		dest += "?" + r.URL.RawQuery
+	}
+	//nolint:gosec // dest always starts with the fixed constant consentPath; only the query
+	// string (never the scheme or host) comes from the request, so this can never redirect
+	// off-site regardless of what the caller supplies.
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // validateAuthorizeRequest checks the request's remaining preconditions —
@@ -244,18 +317,177 @@ func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (
 	}
 
 	redirectURI = q.Get("redirect_uri")
-	if !s.clientIDAllowed(q.Get("client_id")) || !s.isRegisteredRedirect(redirectURI) {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id or redirect_uri is not registered")
+	if !s.validateClientAndRedirect(w, q.Get("client_id"), redirectURI) {
 		return "", "", false
 	}
 
 	codeChallenge = q.Get("code_challenge")
-	if codeChallenge == "" || q.Get("code_challenge_method") != "S256" {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code_challenge with method S256 is required")
+	if !validatePKCE(w, codeChallenge, q.Get("code_challenge_method")) {
 		return "", "", false
 	}
 
 	return redirectURI, codeChallenge, true
+}
+
+// validateClientAndRedirect is the shared client_id/redirect_uri check both
+// validateAuthorizeRequest (GET /mcp/authorize) and handleAuthorizeConsent
+// (POST /mcp/authorize/consent) use. See validateAuthorizeRequest's doc
+// comment (CF5) for why client_id and redirect_uri are deliberately
+// collapsed into one generic "invalid_request" response rather than two
+// distinguishable ones.
+func (s *Server) validateClientAndRedirect(w http.ResponseWriter, clientID, redirectURI string) bool {
+	if !s.clientIDAllowed(clientID) || !s.isRegisteredRedirect(redirectURI) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id or redirect_uri is not registered")
+		return false
+	}
+	return true
+}
+
+// validatePKCE is the shared PKCE precondition check both
+// validateAuthorizeRequest and handleAuthorizeConsent use: a non-empty
+// challenge, using S256 specifically — RFC 7636 section 4.3's "plain"
+// method is never accepted, since it offers no protection against a
+// network observer who captures the authorization code.
+func validatePKCE(w http.ResponseWriter, codeChallenge, codeChallengeMethod string) bool {
+	if codeChallenge == "" || codeChallengeMethod != "S256" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "code_challenge with method S256 is required")
+		return false
+	}
+	return true
+}
+
+// consentRequest is the JSON body POST /mcp/authorize/consent accepts. It
+// mirrors the query parameters GET /mcp/authorize takes, plus Scopes: the
+// explicit list of scopes the user ticked in the consent UI. This is
+// deliberately NOT derived from any token claim — a Google ID token (and
+// the plain console self-signed token /auth/token issues) carries no
+// paprika:* scope claim at all, so consent is the only source of truth for
+// what is granted on this path.
+//
+//nolint:tagliatelle // matches the snake_case field names GET /mcp/authorize's query parameters use.
+type consentRequest struct {
+	ClientID            string   `json:"client_id"`
+	RedirectURI         string   `json:"redirect_uri"`
+	CodeChallenge       string   `json:"code_challenge"`
+	CodeChallengeMethod string   `json:"code_challenge_method"`
+	State               string   `json:"state"`
+	Scopes              []string `json:"scopes"`
+}
+
+// consentResponse is what a successful POST /mcp/authorize/consent returns:
+// the exact URL — the client's own redirect_uri with code and state
+// appended — the consent UI should navigate the browser to next, finishing
+// the authorization_code hand-off back to the MCP client.
+type consentResponse struct {
+	RedirectTo string `json:"redirectTo"`
+}
+
+// handleAuthorizeConsent implements POST /mcp/authorize/consent: the
+// endpoint the consent UI (consentPath) calls once an authenticated console
+// user has ticked which scopes to grant. It authenticates with the SAME
+// console authenticator stack GET /mcp/authorize uses (never the
+// MCP-audience one), re-validates client_id/redirect_uri/PKCE exactly as
+// the GET path does (the request could reach here directly, not only via
+// the browser redirect), validates the ticked scopes via consentedScope,
+// and mints an authorization code bound to both the authenticated principal
+// and exactly the consented scope.
+//
+// CSRF: this endpoint is state-changing (POST) but is not vulnerable to a
+// classic cross-site CSRF, because it authenticates via an Authorization
+// bearer header, never a cookie. A cross-site HTML form cannot set a custom
+// request header, and a cross-site script attempting to via fetch/XHR would
+// trigger a CORS preflight this server never answers permissively for this
+// path (no Access-Control-Allow-Origin is set anywhere for /mcp/authorize/
+// consent) — so a third-party page can neither submit a same-shape request
+// carrying the victim's credential nor read the response. No separate CSRF
+// token is added for this reason.
+func (s *Server) handleAuthorizeConsent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := auth.WithRequest(r.Context(), r)
+	principal, err := s.authorizeAuthenticator.Authenticate(ctx)
+	if err != nil {
+		s.writeUnauthenticated(w)
+		return
+	}
+
+	var req consentRequest
+	if decodeErr := json.NewDecoder(r.Body).Decode(&req); decodeErr != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "malformed JSON body")
+		return
+	}
+
+	if !s.validateClientAndRedirect(w, req.ClientID, req.RedirectURI) {
+		return
+	}
+	if !validatePKCE(w, req.CodeChallenge, req.CodeChallengeMethod) {
+		return
+	}
+
+	scope, ok := consentedScope(req.Scopes)
+	if !ok {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_scope", "no valid scope was consented to")
+		return
+	}
+
+	code, err := s.issueAuthCode(ctx, &authCodeRecord{
+		Subject:       principal.Subject,
+		Email:         principal.Email,
+		Name:          principal.Name,
+		Scope:         scope,
+		RedirectURI:   req.RedirectURI,
+		CodeChallenge: req.CodeChallenge,
+		ClientID:      req.ClientID,
+	})
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	dest, err := buildRedirectWithCode(req.RedirectURI, code, req.State)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, consentResponse{RedirectTo: dest})
+}
+
+// consentedScope validates and normalises the scopes a user ticked in the
+// consent UI, returning them joined into a single scope string exactly as
+// negotiateScope's grants are represented. Unlike negotiateScope, this
+// deliberately does NOT consult principal.Scopes — a console credential
+// (Google ID token, or a plain self-signed console token) carries no
+// paprika:* scope claim at all, so explicit consent is the only source of
+// truth for what is granted here.
+//
+// requested must be non-empty and every entry must be exactly ScopeRead or
+// ScopeWrite — an empty list or any unrecognised token is rejected outright
+// (ok=false), the same fail-closed rule negotiateScope applies to an
+// unrecognised or unheld scope: silently dropping an unrecognised value
+// here could otherwise hand back a token granting less than the user
+// thought they consented to, with no error to explain why. Duplicate
+// entries are deduplicated.
+func consentedScope(requested []string) (string, bool) {
+	if len(requested) == 0 {
+		return "", false
+	}
+	seen := make(map[Scope]struct{}, len(requested))
+	granted := make([]Scope, 0, len(requested))
+	for _, r := range requested {
+		sc := Scope(r)
+		if sc != ScopeRead && sc != ScopeWrite {
+			return "", false
+		}
+		if _, dup := seen[sc]; dup {
+			continue
+		}
+		seen[sc] = struct{}{}
+		granted = append(granted, sc)
+	}
+	return scopesToString(granted), true
 }
 
 // clientIDAllowed reports whether clientID may use this authorization

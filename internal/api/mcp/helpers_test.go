@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -132,13 +133,23 @@ func newTestServer(t *testing.T) *Server {
 	srv, err := NewServer(ServerConfig{
 		Registry:      r,
 		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
-		Confirmer:     NewConfirmer(store, time.Minute),
-		Auditor:       &recordingAuditor{},
-		Cache:         store,
-		Secret:        testSecret,
-		PublicURL:     "https://paprika.example",
-		ClientID:      "test",
-		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
+		// ConsoleAuthenticator stands in for the real console authenticator
+		// stack (auth.BuildAuthenticator: OIDC + self-signed, no audience
+		// restriction) that cmd/main.go wires in production. A plain
+		// self-signed authenticator with no audience check is enough here:
+		// it accepts both a genuine console token (consoleBearerFor) and,
+		// since it never checks "aud" at all, the MCP-audience tokens
+		// bearerFor mints too — so the pre-existing tests that authenticate
+		// straight to GET /mcp/authorize with an MCP access token keep
+		// working unchanged.
+		ConsoleAuthenticator: auth.NewSelfSignedAuthenticator(testSecret),
+		Confirmer:            NewConfirmer(store, time.Minute),
+		Auditor:              &recordingAuditor{},
+		Cache:                store,
+		Secret:               testSecret,
+		PublicURL:            "https://paprika.example",
+		ClientID:             "test",
+		RedirectURIs:         []string{"https://claude.ai/api/mcp/auth_callback"},
 	})
 	require.NoError(t, err)
 	return srv
@@ -158,6 +169,37 @@ func bearerFor(t *testing.T, scopes ...Scope) string {
 	})
 	require.NoError(t, err)
 	return token
+}
+
+// consoleBearerFor mints a plain console-style self-signed token: no
+// audience claim and no scope claim, matching exactly what /auth/token
+// issues once a human has completed the existing Google OIDC login. This is
+// deliberately different from bearerFor, which always stamps
+// aud=paprika-mcp and an explicit scope — modelling an MCP access token, not
+// the console credential /mcp/authorize/consent must accept.
+func consoleBearerFor(t *testing.T, subject string) string {
+	t.Helper()
+	token, err := auth.IssueToken(subject, subject+"@example.com", "Test User", testSecret)
+	require.NoError(t, err)
+	return token
+}
+
+// postJSON posts body, marshalled as JSON, to path on h — optionally with an
+// Authorization bearer header, which is omitted entirely when bearer is "" —
+// and returns the recorded response. The POST /mcp/authorize/consent
+// equivalent of postForm.
+func postJSON(t *testing.T, h http.Handler, path, bearer string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	h.ServeHTTP(rec, req)
+	return rec
 }
 
 // doJSONRPC posts a JSON-RPC envelope to /mcp and returns the response body.

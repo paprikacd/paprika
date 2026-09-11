@@ -53,6 +53,23 @@ type ServerConfig struct {
 	AccessTTL     time.Duration
 	RefreshTTL    time.Duration
 
+	// ConsoleAuthenticator authenticates the OAuth authorize/consent surface
+	// (GET /mcp/authorize, POST /mcp/authorize/consent) as a console user —
+	// the same Google OIDC + Paprika self-signed authenticator stack the
+	// console API itself uses (auth.BuildAuthenticator), not an MCP-audience
+	// access token. An MCP access token is only ever minted by /mcp/token,
+	// which itself needs an authorization code from /mcp/authorize — using
+	// the MCP-audience Authenticator here would make the flow circular and
+	// impossible for any client to complete.
+	//
+	// When left nil, it defaults to Authenticator, purely for test
+	// convenience (many existing tests construct a ServerConfig that never
+	// exercises the authorize/consent surface at all). Production callers
+	// (cmd/main.go's buildMCPHandlers) must always set this explicitly to
+	// the real console authenticator stack, or the circular MCP-audience
+	// requirement this field exists to break returns.
+	ConsoleAuthenticator auth.Authenticator
+
 	// Client is the Connect client tools/call dispatches through. Task 15's
 	// buildMCPHandlers constructs it over NewInProcessTransport(connectHandler),
 	// so a tool call re-enters the SAME otel -> auth -> audit -> service chain
@@ -79,6 +96,13 @@ type Server struct {
 	accessTTL     time.Duration
 	refreshTTL    time.Duration
 	streamable    http.Handler
+
+	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
+	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
+	// /mcp protocol endpoint (serveHTTP) always uses authenticator, never
+	// this field: they are deliberately two distinct authenticators for two
+	// distinct surfaces.
+	authorizeAuthenticator auth.Authenticator
 }
 
 // NewServer validates cfg and builds a Server. Registry, Authenticator,
@@ -114,16 +138,22 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
 	}
 
+	consoleAuthenticator := cfg.ConsoleAuthenticator
+	if consoleAuthenticator == nil {
+		consoleAuthenticator = cfg.Authenticator
+	}
+
 	s := &Server{
-		registry:      cfg.Registry,
-		authenticator: cfg.Authenticator,
-		cache:         cfg.Cache,
-		publicURL:     cfg.PublicURL,
-		clientID:      cfg.ClientID,
-		redirectURIs:  cfg.RedirectURIs,
-		secret:        cfg.Secret,
-		accessTTL:     defaultDuration(cfg.AccessTTL, defaultAccessTTL),
-		refreshTTL:    defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
+		registry:               cfg.Registry,
+		authenticator:          cfg.Authenticator,
+		authorizeAuthenticator: consoleAuthenticator,
+		cache:                  cfg.Cache,
+		publicURL:              cfg.PublicURL,
+		clientID:               cfg.ClientID,
+		redirectURIs:           cfg.RedirectURIs,
+		secret:                 cfg.Secret,
+		accessTTL:              defaultDuration(cfg.AccessTTL, defaultAccessTTL),
+		refreshTTL:             defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
 	}
 	if cfg.Client != nil {
 		s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
