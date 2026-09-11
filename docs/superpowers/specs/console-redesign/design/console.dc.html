@@ -1,0 +1,2006 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/industry-f4e0e93d-8f3e-491c-a7fc-fb900a914973/styles.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#f2f2f3; color:#1d1f20; font-family:"Barlow", system-ui, sans-serif; font-size:13px; -webkit-font-smoothing:antialiased; }
+  a { color:#416180; text-decoration:none; }
+  a:hover { color:#2c455d; text-decoration:underline; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .cond { font-family:"Barlow Condensed", system-ui, sans-serif; }
+  ::selection { background:#d6ebff; }
+  *::-webkit-scrollbar { width:9px; height:9px; }
+  *::-webkit-scrollbar-thumb { background:#c4c4c8; }
+  *::-webkit-scrollbar-track { background:#e9e9ea; }
+  @keyframes blip { 0%,100% { opacity:1 } 50% { opacity:.25 } }
+</style>
+</helmet>
+
+<div style="display:flex; min-height:100vh; background:#f2f2f3;">
+
+  <nav style="width:206px; flex:none; display:flex; flex-direction:column; background:#1d2d3d; color:#f2f2f3;">
+    <div style="padding:14px 16px 13px; border-bottom:1px solid rgba(242,242,243,0.16);">
+      <div class="cond" style="font-size:19px; font-weight:700; letter-spacing:0.14em; line-height:1;">PAPRIKA</div>
+      <div class="mono" style="margin-top:5px; font-size:9px; letter-spacing:0.12em; color:#94bce3;">CONTROL PLANE · v2.4.1</div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:12px 0;">
+      <sc-for list="{{ navSections }}" as="sec" hint-placeholder-count="3">
+        <div style="margin-bottom:14px;">
+          <div class="mono" style="padding:0 16px 6px; font-size:9px; letter-spacing:0.18em; color:rgba(242,242,243,0.42);">{{ sec.label }}</div>
+          <sc-for list="{{ sec.items }}" as="item" hint-placeholder-count="3">
+            <button type="button" onClick="{{ item.go }}" style="{{ item.style }}">
+              <span style="width:14px; flex:none; display:flex; opacity:.85;">{{ item.glyph }}</span>
+              <span style="flex:1; text-align:left;">{{ item.label }}</span>
+              <span class="mono" style="font-size:9px; opacity:.55;">{{ item.badge }}</span>
+            </button>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="border-top:1px solid rgba(242,242,243,0.16); padding:10px 16px;">
+      <div class="cond" style="font-size:13px; letter-spacing:0.04em;">sre@paprika.io</div>
+      <div class="mono" style="margin-top:2px; font-size:9px; letter-spacing:0.1em; color:rgba(242,242,243,0.5);">PLATFORM · ON-CALL</div>
+    </div>
+  </nav>
+
+  <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+
+    <header style="display:flex; align-items:stretch; height:42px; border-bottom:1px solid rgba(29,31,32,0.16); background:#fff;">
+      <div style="display:flex; align-items:center; gap:0; flex:1; min-width:0;">
+        <sc-for list="{{ scopes }}" as="sc" hint-placeholder-count="3">
+          <div style="position:relative; height:100%; display:flex;">
+            <button type="button" onClick="{{ sc.toggle }}" style="{{ sc.btnStyle }}">
+              <span class="mono" style="font-size:9px; letter-spacing:0.12em; color:#7a7a7d;">{{ sc.label }}</span>
+              <span class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.02em; white-space:nowrap;">{{ sc.value }}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7a7a7d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <sc-if value="{{ sc.isOpen }}">
+              <div style="position:absolute; top:100%; left:0; z-index:80; min-width:220px; border:1px solid rgba(29,31,32,0.28); background:#fff; box-shadow:0 3px 10px rgba(43,43,45,0.16);">
+                <sc-for list="{{ sc.options }}" as="o" hint-placeholder-count="4">
+                  <button type="button" onClick="{{ o.select }}" style="{{ o.style }}"><span>{{ o.label }}</span><span class="mono" style="font-size:10px; color:#7a7a7d;">{{ o.count }}</span></button>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+        <sc-if value="{{ scopeActive }}">
+          <button type="button" onClick="{{ clearScope }}" style="display:flex; align-items:center; gap:6px; height:100%; border:0; border-right:1px solid rgba(29,31,32,0.16); background:none; padding:0 12px; font:inherit; font-size:11px; color:#416180; cursor:pointer; white-space:nowrap;">{{ scopeSummary }} · clear</button>
+        </sc-if>
+        <div style="flex:1; min-width:0; display:flex; align-items:center; gap:8px; padding:0 14px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a7a7d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" placeholder="Search apps, resources, revisions, runs…   ⌘K" style="flex:1; min-width:0; border:0; background:none; font:inherit; font-size:13px; color:#1d1f20; outline:none;">
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px; border-left:1px solid rgba(29,31,32,0.16); padding:0 14px;">
+        <span style="display:inline-flex; align-items:center; gap:6px;">
+          <span style="width:6px; height:6px; background:#5980a6; animation:blip 2.4s ease-in-out infinite;"></span>
+          <span class="mono" style="font-size:10px; color:#5d5d60;">live · 12s</span>
+        </span>
+        <span class="mono" style="font-size:10px; color:#7a7a7d;">gen 4412</span>
+      </div>
+    </header>
+
+    <main style="flex:1; min-width:0;">
+
+      <!-- ══════════════ OVERVIEW ══════════════ -->
+      <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:20px 22px 32px; display:flex; flex-direction:column; gap:20px;">
+
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px;">
+          <div>
+            <div class="mono" style="font-size:9px; letter-spacing:0.2em; color:#597ea3;">FLEET · ALL PROJECTS</div>
+            <h1 class="cond" style="margin:4px 0 0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">Operations overview</h1>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-secondary" onClick="{{ toggleCustomise }}" style="{{ customiseBtnStyle }}">{{ customiseLabel }}</button>
+            <button type="button" class="btn btn-primary" onClick="{{ goApplications }}" style="height:32px;">Open inventory</button>
+          </div>
+        </div>
+
+        <sc-if value="{{ customising }}">
+          <div style="border:1px dashed #5980a6; background:#e7f0f8; padding:10px 14px; display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px;">
+            <span class="mono" style="font-size:9px; letter-spacing:0.16em; color:#2c455d;">BOARDS</span>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+              <sc-for list="{{ boardChips }}" as="b" hint-placeholder-count="6">
+                <button type="button" onClick="{{ b.toggle }}" style="{{ b.style }}"><span class="mono" style="font-size:9px; opacity:.7;">{{ b.n }}</span>{{ b.label }}</button>
+              </sc-for>
+            </div>
+            <span style="flex:1;"></span>
+            <span style="font-size:11px; color:#2c455d;">Click a board to show or hide it. Hidden boards keep their settings. Layout is saved per user.</span>
+            <button type="button" onClick="{{ resetBoards }}" style="border:1px solid #5980a6; background:#fff; border-radius:2px; padding:3px 9px; font:inherit; font-size:11px; color:#2c455d; cursor:pointer;">Reset to default</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ boards.lifecycle.on }}" hint-placeholder-val="{{ true }}">
+        <section class="blueprint" style="background:#fff;">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">01</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Application lifecycle — one control plane</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px; margin-left:auto;"><span class="mono" style="font-size:10px; color:#5d5d60; white-space:nowrap;">57 applications · 3 clusters · 12 changes today</span><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.lifecycle.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.lifecycle.toggle }}" style="{{ sec.lifecycle.btnStyle }}">{{ sec.lifecycle.chevron }}</button></span>
+          </div>
+          <sc-if value="{{ sec.lifecycle.open }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:1px; background:rgba(29,31,32,0.16);">
+            <sc-for list="{{ lifecycle }}" as="ls" hint-placeholder-count="6">
+              <div style="{{ ls.cellStyle }}">
+                <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                  <span style="{{ ls.idxStyle }}">{{ ls.idx }}</span>
+                  <span style="font-size:11px; color:#a0a0a4;">{{ ls.arrow }}</span>
+                </div>
+                <div class="cond" style="margin-top:6px; font-size:15px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;">{{ ls.label }}</div>
+                <div class="cond" style="{{ ls.numStyle }}">{{ ls.value }}</div>
+                <div style="margin-top:6px; font-size:11px; line-height:1.45; color:#5d5d60;">{{ ls.sub }}</div>
+                <div style="margin-top:8px; display:flex; gap:3px;">
+                  <sc-for list="{{ ls.bars }}" as="b" hint-placeholder-count="4"><span style="{{ b }}"></span></sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="border-top:1px solid rgba(29,31,32,0.16); padding:7px 14px; font-size:11px; color:#5d5d60;">CI, CD, traffic and verification are one reconciliation loop — not four operators stitched together. Every stage below links to the same Application record.</div>
+          </sc-if>
+        </section>
+        </sc-if>
+
+        <sc-if value="{{ row2on }}" hint-placeholder-val="{{ true }}">
+        <div style="{{ row2Style }}">
+
+          <sc-if value="{{ boards.posture.on }}" hint-placeholder-val="{{ true }}">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">02</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Health posture</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px;"><div class="seg" style="height:22px;"><sc-for list="{{ postureFormats }}" as="f" hint-placeholder-count="2"><button type="button" onClick="{{ f.select }}" style="{{ f.style }}">{{ f.label }}</button></sc-for></div><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.posture.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.posture.toggle }}" style="{{ sec.posture.btnStyle }}">{{ sec.posture.chevron }}</button></span>
+          </div>
+            <sc-if value="{{ sec.posture.open }}" hint-placeholder-val="{{ true }}">
+              <sc-if value="{{ postureIsBars }}" hint-placeholder-val="{{ true }}">
+              <div>
+                <sc-for list="{{ posture }}" as="p" hint-placeholder-count="6">
+                  <button type="button" onClick="{{ goApplications }}" style="display:grid; width:100%; grid-template-columns:20px 96px 44px minmax(0,1fr); align-items:center; gap:10px; border:0; border-bottom:1px solid rgba(29,31,32,0.10); background:none; padding:0 14px; height:38px; font:inherit; cursor:pointer; text-align:left; color:#1d1f20;">
+                    <span style="{{ p.glyphStyle }}">{{ p.glyph }}</span>
+                    <span class="cond" style="font-size:14px; font-weight:500; letter-spacing:0.05em; text-transform:uppercase;">{{ p.label }}</span>
+                    <span class="cond" style="font-size:19px; font-weight:600; text-align:right; font-variant-numeric:tabular-nums;">{{ p.count }}</span>
+                    <span style="height:7px; background:#e7e7ea; position:relative;"><span style="{{ p.barStyle }}"></span></span>
+                  </button>
+                </sc-for>
+              </div>
+              </sc-if>
+              <sc-if value="{{ postureIsHeatmap }}">
+              <div style="position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(29,31,32,0.10); padding:5px 10px 5px 14px;">
+                <span class="mono" style="font-size:10px; color:#5d5d60; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ heatSummary }}</span>
+                <button type="button" onClick="{{ toggleHeatSettings }}" title="Heatmap settings" style="{{ cogStyle }}">{{ cog }}</button>
+                <sc-if value="{{ heatSettingsOpen }}">
+                  <div onClick="{{ closeHeatSettings }}" style="position:fixed; inset:0; z-index:75;"></div>
+                  <div style="position:absolute; top:calc(100% + 4px); right:10px; z-index:76; width:250px; background:#fff; border:1px solid rgba(29,31,32,0.28); box-shadow:0 8px 22px rgba(29,45,61,0.18);">
+                    <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:7px 12px;">
+                      <span class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Heatmap settings</span>
+                      <button type="button" onClick="{{ closeHeatSettings }}" style="border:0; background:none; padding:0; font:inherit; font-size:12px; color:#7a7a7d; cursor:pointer;">✕</button>
+                    </div>
+                    <div style="padding:10px 12px; display:flex; flex-direction:column; gap:12px;">
+                      <div>
+                        <div class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d; margin-bottom:5px;">GROUP BY</div>
+                        <div class="seg" style="height:24px; display:inline-flex;">
+                          <sc-for list="{{ heatGroupChips }}" as="g" hint-placeholder-count="4"><button type="button" onClick="{{ g.select }}" style="{{ g.style }}">{{ g.label }}</button></sc-for>
+                        </div>
+                      </div>
+                      <div>
+                        <div class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d; margin-bottom:5px;">TILE DETAIL</div>
+                        <div class="seg" style="height:24px; display:inline-flex;">
+                          <sc-for list="{{ heatDetailChips }}" as="g" hint-placeholder-count="3"><button type="button" onClick="{{ g.select }}" style="{{ g.style }}">{{ g.label }}</button></sc-for>
+                        </div>
+                        <div style="margin-top:5px; font-size:10.5px; line-height:1.45; color:#5d5d60;">Compact hides names and shows solid colour squares; hover any tile for full detail.</div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="padding:12px 14px; display:flex; flex-direction:column; gap:14px;">
+                <sc-for list="{{ heatRows }}" as="hr" hint-placeholder-count="3">
+                  <div>
+                    <sc-if value="{{ hr.isGroup }}" hint-placeholder-val="{{ true }}">
+                      <div style="{{ hr.headStyle }}">
+                        <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">{{ hr.kicker }}</span>
+                        <span class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.03em; white-space:nowrap;">{{ hr.label }}</span>
+                        <span style="font-size:11px; color:#5d5d60; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ hr.meta }}</span>
+                        <span style="margin-left:auto; display:flex; width:60px; flex:none; height:6px; gap:1px;">
+                          <sc-for list="{{ hr.mix }}" as="m" hint-placeholder-count="2"><span style="{{ m }}"></span></sc-for>
+                        </span>
+                      </div>
+                    </sc-if>
+                    <div style="display:flex; flex-wrap:wrap; gap:5px; padding-top:8px;">
+                      <sc-for list="{{ hr.tiles }}" as="t" hint-placeholder-count="6">
+                        <span style="position:relative; display:inline-flex;">
+                          <span onMouseEnter="{{ t.enter }}" onMouseLeave="{{ t.leave }}" onClick="{{ t.open }}" style="{{ t.style }}">
+                            <sc-if value="{{ t.isCompact }}"><span style="font-size:11px; font-weight:700; line-height:1;">{{ t.glyph }}</span></sc-if>
+                            <sc-if value="{{ t.showName }}" hint-placeholder-val="{{ true }}">
+                            <span style="display:flex; align-items:center; justify-content:space-between; gap:4px;">
+                              <span class="cond" style="font-size:13px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.label }}</span>
+                              <span style="font-size:11px; font-weight:700; flex:none;">{{ t.glyph }}</span>
+                            </span>
+                            </sc-if>
+                            <sc-if value="{{ t.showSub }}" hint-placeholder-val="{{ true }}">
+                            <span class="mono" style="font-size:9px; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.sub }}</span>
+                            </sc-if>
+                          </span>
+                          <sc-if value="{{ t.hovered }}">
+                            <div style="{{ t.tipStyle }}">
+                              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid rgba(242,242,243,0.16); padding:8px 10px;">
+                                <span class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.02em;">{{ t.name }}</span>
+                                <span style="{{ t.pillStyle }}">{{ t.health }}</span>
+                              </div>
+                              <div style="padding:7px 10px; display:grid; grid-template-columns:auto 1fr; gap:3px 12px; font-size:11px;">
+                                <span style="color:#94bce3;">target</span><span class="mono">{{ t.target }}</span>
+                                <span style="color:#94bce3;">project</span><span class="mono">{{ t.project }}</span>
+                                <span style="color:#94bce3;">sync</span><span class="mono">{{ t.sync }}</span>
+                                <span style="color:#94bce3;">release</span><span class="mono">{{ t.release }}</span>
+                                <span style="color:#94bce3;">resources</span><span class="mono">{{ t.res }} managed · {{ t.cost }}/mo</span>
+                              </div>
+                              <div style="border-top:1px solid rgba(242,242,243,0.16); padding:6px 10px; font-size:11px; color:#dfe6ee;">{{ t.note }}</div>
+                            </div>
+                          </sc-if>
+                        </span>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; border-top:1px solid rgba(29,31,32,0.10); padding-top:8px;">
+                  <sc-for list="{{ graphLegend }}" as="l" hint-placeholder-count="4">
+                    <span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#5d5d60;"><span style="{{ l.glyphStyle }}">{{ l.glyph }}</span>{{ l.label }}</span>
+                  </sc-for>
+                  <span class="mono" style="font-size:9px; color:#8e8e92; margin-left:auto; white-space:nowrap; flex:none;">one tile per target · hover for detail</span>
+                </div>
+              </div>
+              </sc-if>
+            </sc-if>
+          </section>
+          </sc-if>
+
+          <sc-if value="{{ boards.attention.on }}" hint-placeholder-val="{{ true }}">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">03</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Needs attention</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px; margin-left:auto;"><span class="mono" style="font-size:10px; color:#5d5d60; white-space:nowrap;">ranked by blast radius</span><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.attention.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.attention.toggle }}" style="{{ sec.attention.btnStyle }}">{{ sec.attention.chevron }}</button></span>
+          </div>
+            <sc-if value="{{ sec.attention.open }}" hint-placeholder-val="{{ true }}">
+            <div>
+              <sc-for list="{{ attention }}" as="a" hint-placeholder-count="6">
+                <div onClick="{{ a.open }}" style="{{ a.rowStyle }}">
+                  <span class="mono" style="font-size:10px; color:#8e8e92;">{{ a.rank }}</span>
+                  <span style="{{ a.glyphStyle }}">{{ a.glyph }}</span>
+                  <span style="min-width:0;">
+                    <span style="display:flex; align-items:baseline; gap:7px;">
+                      <span class="cond" style="font-size:16px; font-weight:600; letter-spacing:0.02em; white-space:nowrap;">{{ a.name }}</span>
+                      <span class="mono" style="font-size:10px; color:#8e8e92; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ a.ns }}</span>
+                    </span>
+                    <span style="display:block; margin-top:1px; font-size:11.5px; color:#5d5d60; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ a.reason }}</span>
+                  </span>
+                  <span class="mono" style="font-size:10px; color:#7a7a7d; text-align:right;">{{ a.age }}</span>
+                  <span style="text-align:right;"><span style="{{ a.actionStyle }}">{{ a.action }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+            </sc-if>
+          </section>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ row3on }}" hint-placeholder-val="{{ true }}">
+        <div style="{{ row3Style }}">
+
+          <sc-if value="{{ boards.inflight.on }}" hint-placeholder-val="{{ true }}">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">04</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Rollouts</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px;"><div class="seg" style="height:22px;"><sc-for list="{{ rolloutTabs }}" as="f" hint-placeholder-count="2"><button type="button" onClick="{{ f.select }}" style="{{ f.style }}">{{ f.label }}</button></sc-for></div><button type="button" onClick="{{ goRollout }}" style="border:0; background:none; padding:0; font:inherit; font-size:11px; color:#416180; cursor:pointer; white-space:nowrap;">All →</button><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.inflight.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.inflight.toggle }}" style="{{ sec.inflight.btnStyle }}">{{ sec.inflight.chevron }}</button></span>
+          </div>
+            <sc-if value="{{ sec.inflight.open }}" hint-placeholder-val="{{ true }}">
+              <sc-if value="{{ rolloutIsInflight }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ inflight }}" as="r" hint-placeholder-count="3">
+                <div onClick="{{ goRollout }}" style="display:grid; grid-template-columns:minmax(0,0.9fr) minmax(0,1.3fr) auto; align-items:center; gap:14px; border-bottom:1px solid rgba(29,31,32,0.10); padding:11px 14px; cursor:pointer;">
+                  <div style="min-width:0;">
+                    <div class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.name }}</div>
+                    <div class="mono" style="margin-top:1px; font-size:10px; color:#7a7a7d;">{{ r.meta }}</div>
+                  </div>
+                  <div style="min-width:0;">
+                    <div style="display:flex; gap:2px; align-items:flex-end; height:22px;">
+                      <sc-for list="{{ r.steps }}" as="st" hint-placeholder-count="5"><span style="{{ st.style }}" title="{{ st.title }}"></span></sc-for>
+                    </div>
+                    <div style="margin-top:5px; display:flex; justify-content:space-between; gap:10px; font-size:10px; color:#5d5d60;">
+                      <span class="mono" style="white-space:nowrap;">{{ r.stepLabel }}</span>
+                      <span class="mono" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.analysis }}</span>
+                    </div>
+                  </div>
+                  <div style="text-align:right;">
+                    <div class="cond" style="font-size:24px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums;">{{ r.weight }}</div>
+                    <div class="mono" style="font-size:9px; letter-spacing:0.1em; color:#7a7a7d;">CANARY WEIGHT</div>
+                  </div>
+                </div>
+              </sc-for>
+              </sc-if>
+              <sc-if value="{{ rolloutIsRecent }}">
+              <div style="overflow-x:auto;"><div style="min-width:520px;">
+              <div style="display:grid; grid-template-columns:minmax(150px,1fr) 88px 84px 44px 44px; align-items:center; gap:8px; border-bottom:1px solid rgba(29,31,32,0.28); background:#e9e9ea; padding:0 14px; height:26px;">
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">ROLLOUT</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">OUTCOME</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">STEPS</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">TOOK</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">WHEN</span>
+              </div>
+              <sc-for list="{{ recentRollouts }}" as="r" hint-placeholder-count="5">
+                <div onClick="{{ goRollout }}" style="{{ r.rowStyle }}">
+                  <div style="min-width:0;">
+                    <div class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.name }} <span class="mono" style="font-size:10px; font-weight:400; color:#7a7a7d;">{{ r.release }}</span></div>
+                    <div style="margin-top:1px; font-size:11px; color:#5d5d60; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.note }}</div>
+                  </div>
+                  <span><span style="{{ r.pillStyle }}">{{ r.outcome }}</span></span>
+                  <span style="display:flex; gap:2px; align-items:flex-end; height:14px;">
+                    <sc-for list="{{ r.steps }}" as="st" hint-placeholder-count="6"><span style="{{ st }}"></span></sc-for>
+                  </span>
+                  <span class="mono" style="font-size:11px; text-align:right; font-variant-numeric:tabular-nums;">{{ r.took }}</span>
+                  <span class="mono" style="font-size:10px; color:#7a7a7d; text-align:right;">{{ r.when }}</span>
+                </div>
+              </sc-for>
+              </div></div>
+              <div style="display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 14px; font-size:11px; color:#5d5d60; border-top:1px solid rgba(29,31,32,0.10);">
+                <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ recentStats.total }}</span> rollouts / 7d</span>
+                <span><span class="cond" style="font-size:15px; font-weight:600; color:#3f6b48;">{{ recentStats.ok }}</span> completed</span>
+                <span><span class="cond" style="font-size:15px; font-weight:600; color:#9c3f39;">{{ recentStats.aborted }}</span> auto-aborted</span>
+                <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ recentStats.median }}</span> median</span>
+              </div>
+              </sc-if>
+            </sc-if>
+          </section>
+          </sc-if>
+
+          <sc-if value="{{ boards.triggers.on }}" hint-placeholder-val="{{ true }}">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">05</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Source triggers</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px;"><span class="mono" style="font-size:10px; color:#5d5d60;">last 2h</span><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.triggers.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.triggers.toggle }}" style="{{ sec.triggers.btnStyle }}">{{ sec.triggers.chevron }}</button></span>
+          </div>
+            <sc-if value="{{ sec.triggers.open }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ triggers }}" as="t" hint-placeholder-count="5">
+              <div style="display:grid; grid-template-columns:48px minmax(0,1fr) 46px; align-items:center; gap:10px; border-bottom:1px solid rgba(29,31,32,0.10); padding:9px 14px;">
+                <span style="{{ t.tagStyle }}">{{ t.kind }}</span>
+                <span style="min-width:0;">
+                  <span class="mono" style="display:block; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.ref }}</span>
+                  <span style="display:block; margin-top:1px; font-size:11px; color:#5d5d60; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.effect }}</span>
+                </span>
+                <span class="mono" style="font-size:10px; color:#7a7a7d; text-align:right;">{{ t.age }}</span>
+              </div>
+            </sc-for>
+            </sc-if>
+          </section>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ boards.clusters.on }}" hint-placeholder-val="{{ true }}">
+        <section class="blueprint" style="background:#fff;">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+            <div style="display:flex; align-items:baseline; gap:10px; min-width:0;">
+              <span class="mono" style="font-size:10px; letter-spacing:0.14em; color:#597ea3;">06</span>
+              <h2 class="cond" style="margin:0; font-size:17px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap;">Clusters · capacity</h2>
+            </div>
+            <span style="display:flex; align-items:center; gap:10px;"><span class="mono" style="font-size:10px; color:#5d5d60; white-space:nowrap;">ksm · node-exporter · 15s ago</span><button type="button" onClick="{{ goMap }}" style="border:0; background:none; padding:0; font:inherit; font-size:11px; color:#416180; cursor:pointer; white-space:nowrap;">Fleet map →</button><sc-if value="{{ customising }}"><button type="button" onClick="{{ boards.clusters.hide }}" title="Hide board" style="display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid #dd9490; background:#fbe9e8; border-radius:2px; padding:0; cursor:pointer; color:#9c3f39;">{{ eyeOff }}</button></sc-if><button type="button" onClick="{{ sec.clusters.toggle }}" style="{{ sec.clusters.btnStyle }}">{{ sec.clusters.chevron }}</button></span>
+          </div>
+          <sc-if value="{{ sec.clusters.open }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:rgba(29,31,32,0.16);">
+            <sc-for list="{{ clusters }}" as="c" hint-placeholder-count="3">
+              <div style="background:#fff; padding:12px 14px;">
+                <div onClick="{{ goMap }}" style="display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer;">
+                  <span class="cond" style="font-size:16px; font-weight:600; letter-spacing:0.03em;">{{ c.name }}</span>
+                  <span style="{{ c.connStyle }}">{{ c.conn }}</span>
+                </div>
+                <div class="mono" style="margin-top:3px; font-size:10px; color:#7a7a7d;">{{ c.meta }}</div>
+                <div style="margin-top:10px; display:flex; height:8px; gap:1px;">
+                  <sc-for list="{{ c.mix }}" as="m" hint-placeholder-count="3"><span style="{{ m }}"></span></sc-for>
+                </div>
+                <div style="margin-top:6px; display:flex; gap:14px; font-size:11px; color:#5d5d60;">
+                  <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ c.apps }}</span> apps</span>
+                  <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ c.nodes }}</span> nodes</span>
+                  <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ c.pods }}</span> pods</span>
+                  <span><span class="cond" style="font-size:15px; font-weight:600; color:#1d1f20;">{{ c.cost }}</span> /mo</span>
+                </div>
+                <div style="margin-top:12px; display:flex; flex-direction:column; gap:9px; border-top:1px solid rgba(29,31,32,0.10); padding-top:10px;">
+                  <sc-for list="{{ c.usage }}" as="u" hint-placeholder-count="2">
+                    <div>
+                      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">
+                        <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">{{ u.label }}</span>
+                        <span class="mono" style="font-size:10px; color:#424244; text-align:right;">{{ u.text }}</span>
+                      </div>
+                      <div style="{{ u.trackStyle }}">
+                        <span style="{{ u.usedStyle }}"></span>
+                        <span style="{{ u.reqStyle }}" title="requested"></span>
+                      </div>
+                      <div style="display:flex; justify-content:space-between; margin-top:3px;">
+                        <span class="mono" style="font-size:9px; color:#8e8e92;">used {{ u.usedPct }}</span>
+                        <span style="{{ u.reqPctStyle }}">requested {{ u.reqPct }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; border-top:1px solid rgba(29,31,32,0.16); padding:7px 14px; font-size:10px; color:#5d5d60;">
+            <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:14px; height:7px; background:#5980a6;"></span>used (node-exporter)</span>
+            <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:2px; height:11px; background:#1d1f20;"></span>requested (kube-state-metrics)</span>
+            <span style="display:inline-flex; align-items:center; gap:5px;"><span style="width:14px; height:7px; background:#e7e7ea; border:1px solid rgba(29,31,32,0.16);"></span>allocatable</span>
+            <span style="flex:1;"></span>
+            <span class="mono" style="font-size:9px; color:#8e8e92;">requests &gt; 85% of allocatable are flagged</span>
+          </div>
+          </sc-if>
+        </section>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ APPLICATIONS ══════════════ -->
+      <sc-if value="{{ isApplications }}">
+      <div>
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px; padding:18px 22px 14px;">
+          <div>
+            <div class="mono" style="font-size:9px; letter-spacing:0.2em; color:#597ea3;">FLEET INVENTORY</div>
+            <h1 class="cond" style="margin:4px 0 0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">Applications</h1>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:flex-end;">
+            <span style="display:flex; align-items:center; gap:8px;">
+              <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d; white-space:nowrap;">GROUP BY</span>
+              <div class="seg" style="height:30px;">
+                <sc-for list="{{ groupChips }}" as="g" hint-placeholder-count="4">
+                  <button type="button" onClick="{{ g.select }}" style="{{ g.style }}">{{ g.label }}</button>
+                </sc-for>
+              </div>
+            </span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">VIEW</span>
+              <div class="seg" style="height:30px;">
+                <sc-for list="{{ presentations }}" as="p" hint-placeholder-count="4">
+                  <button type="button" onClick="{{ p.select }}" style="{{ p.style }}">{{ p.label }}</button>
+                </sc-for>
+              </div>
+            </span>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; border-top:1px solid rgba(29,31,32,0.16); border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:0 22px; height:40px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7a7a7d" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" placeholder="name, project, cluster, revision…" style="width:280px; border:0; background:none; font:inherit; font-size:13px; outline:none;">
+          <span style="width:1px; height:20px; background:rgba(29,31,32,0.16);"></span>
+          <sc-for list="{{ facetChips }}" as="f" hint-placeholder-count="6">
+            <button type="button" style="{{ f.style }}">{{ f.label }} <span class="mono" style="opacity:.6; font-size:10px;">{{ f.count }}</span></button>
+          </sc-for>
+          <span style="flex:1;"></span>
+          <span class="mono" style="font-size:10px; color:#5d5d60;">{{ scopedCount }}</span>
+        </div>
+
+        <sc-if value="{{ isTable }}" hint-placeholder-val="{{ true }}">
+        <div style="overflow-x:auto;">
+        <div style="min-width:1220px;">
+        <div style="display:grid; grid-template-columns:minmax(190px,1.3fr) 120px minmax(120px,1fr) 92px 88px 150px 74px 78px 118px; align-items:center; gap:12px; border-bottom:1px solid rgba(29,31,32,0.28); background:#e9e9ea; padding:0 22px; height:30px;">
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">APPLICATION</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">PROJECT</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">TARGET</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">HEALTH</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">SYNC</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">LIFECYCLE</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">RES</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">COST/MO</span>
+          <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">ACTIONS</span>
+        </div>
+
+        <sc-for list="{{ inventoryGroups }}" as="grp" hint-placeholder-count="3">
+        <div>
+        <sc-if value="{{ grp.isGroup }}">
+          <div onClick="{{ grp.toggle }}" style="{{ grp.headStyle }}">
+            <button type="button" style="{{ grp.chevStyle }}">{{ grp.chev }}</button>
+            <span style="{{ grp.glyphStyle }}">{{ grp.glyph }}</span>
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">{{ grp.kicker }}</span>
+            <span class="cond" style="font-size:17px; font-weight:600; letter-spacing:0.03em;">{{ grp.label }}</span>
+            <span style="font-size:11px; color:#5d5d60;">{{ grp.meta }}</span>
+            <span style="flex:1;"></span>
+            <span style="display:flex; width:160px; height:8px; gap:1px;">
+              <sc-for list="{{ grp.mix }}" as="m" hint-placeholder-count="2"><span style="{{ m }}"></span></sc-for>
+            </span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ grp.open }}" hint-placeholder-val="{{ true }}">
+        <sc-for list="{{ grp.rows }}" as="row" hint-placeholder-count="4">
+          <div onClick="{{ row.open }}" style="{{ row.rowStyle }}">
+            <span style="min-width:0;">
+              <span style="display:flex; align-items:center; gap:7px;">
+                <span style="{{ row.glyphStyle }}">{{ row.glyph }}</span>
+                <span class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ row.name }}</span>
+              </span>
+              <span class="mono" style="display:block; padding-left:19px; font-size:10px; color:#7a7a7d;">{{ row.id }}</span>
+            </span>
+            <span class="mono" style="font-size:11px; color:#5d5d60; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ row.project }}</span>
+            <span style="min-width:0;">
+              <span class="cond" style="display:block; font-size:14px; font-weight:500; letter-spacing:0.02em;">{{ row.cluster }}</span>
+              <span class="mono" style="display:block; font-size:10px; color:#7a7a7d;">{{ row.stage }}</span>
+            </span>
+            <span><span style="{{ row.healthStyle }}">{{ row.health }}</span></span>
+            <span><span style="{{ row.syncStyle }}">{{ row.sync }}</span></span>
+            <span style="display:flex; gap:2px;">
+              <sc-for list="{{ row.strip }}" as="c" hint-placeholder-count="6">
+                <span style="{{ c.style }}" title="{{ c.title }}"></span>
+              </sc-for>
+            </span>
+            <span class="mono" style="font-size:11px; text-align:right; font-variant-numeric:tabular-nums;">{{ row.resources }}</span>
+            <span class="mono" style="font-size:11px; text-align:right; color:#5d5d60; font-variant-numeric:tabular-nums;">{{ row.cost }}</span>
+            <span style="display:flex; gap:5px;">
+              <sc-for list="{{ row.actions }}" as="a" hint-placeholder-count="2">
+                <span style="display:inline-flex; align-items:center; height:21px; border:1px solid rgba(29,31,32,0.16); border-radius:2px; padding:0 7px; font-size:10px; color:#424244; background:#fff;">{{ a }}</span>
+              </sc-for>
+            </span>
+          </div>
+        </sc-for>
+        </sc-if>
+        </div>
+        </sc-for>
+        </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isTreemap }}">
+          <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+            <sc-for list="{{ tmGroups }}" as="g" hint-placeholder-count="3">
+              <section class="blueprint" style="background:#fff;">
+                <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+                <div style="display:flex; align-items:baseline; gap:10px; border-bottom:1px solid rgba(29,31,32,0.16); padding:7px 12px;">
+                  <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#597ea3;">{{ g.kicker }}</span>
+                  <span class="cond" style="font-size:16px; font-weight:600; letter-spacing:0.03em;">{{ g.label }}</span>
+                  <span style="font-size:11px; color:#5d5d60;">{{ g.meta }}</span>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px; padding:8px;">
+                  <sc-for list="{{ g.tiles }}" as="t" hint-placeholder-count="6">
+                    <div onClick="{{ t.open }}" style="{{ t.style }}">
+                      <div class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.glyph }} {{ t.name }}</div>
+                      <div style="margin-top:4px; display:flex; justify-content:space-between; gap:8px;">
+                        <span class="mono" style="font-size:10px; opacity:.8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.sub }}</span>
+                        <span class="mono" style="font-size:9px; opacity:.75; white-space:nowrap;">{{ t.res }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </sc-for>
+            <p style="margin:0; font-size:11px; color:#5d5d60;">Tiles are sized by managed resource count; the fill is the target's health. Switch <em>Group by</em> to re-partition by project, cluster or stage.</p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isMatrix }}">
+          <div style="padding:16px 22px;">
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="{{ matrix.colStyle }}">
+                <div style="background:#e9e9ea; display:flex; align-items:center; padding:0 12px;"><span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">{{ matrix.rowLabel }} ↓ · CLUSTER →</span></div>
+                <sc-for list="{{ matrix.cols }}" as="c" hint-placeholder-count="3">
+                  <div style="background:#e9e9ea; padding:8px 12px;"><span class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.04em;">{{ c.label }}</span></div>
+                </sc-for>
+                <sc-for list="{{ matrix.rows }}" as="r" hint-placeholder-count="4">
+                  <div style="background:#e9e9ea; display:flex; align-items:center; padding:0 12px;"><span class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.03em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.label }}</span></div>
+                  <sc-for list="{{ r.cells }}" as="cell" hint-placeholder-count="3">
+                    <div style="{{ cell.style }}">
+                      <div style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="cond" style="font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">{{ cell.count }}</span>
+                        <span class="mono" style="font-size:10px; color:#7a7a7d;">{{ cell.apps }}</span>
+                      </div>
+                      <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;">
+                        <sc-for list="{{ cell.pills }}" as="p" hint-placeholder-count="2"><span style="{{ p.style }}">{{ p.label }}</span></sc-for>
+                      </div>
+                    </div>
+                  </sc-for>
+                </sc-for>
+              </div>
+            </section>
+            <p style="margin:12px 0 0; font-size:11px; color:#5d5d60;">Rows follow <em>Group by</em> (project, or stage when grouping by cluster/stage); columns are always clusters. Empty intersections are shaded.</p>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isQueue }}">
+          <div style="display:grid; grid-template-columns:28px 16px minmax(0,1.2fr) minmax(0,1fr) 140px minmax(0,1fr); align-items:center; gap:12px; border-bottom:1px solid rgba(29,31,32,0.28); background:#e9e9ea; padding:0 22px 0 19px; height:30px;">
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">#</span><span></span>
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">APPLICATION</span>
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">TARGET</span>
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">PROJECT</span>
+            <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">WHY</span>
+          </div>
+          <sc-for list="{{ queueRows }}" as="q" hint-placeholder-count="6">
+            <div onClick="{{ q.open }}" style="{{ q.style }}">
+              <span class="mono" style="font-size:10px; color:#8e8e92;">{{ q.rank }}</span>
+              <span style="{{ q.glyphStyle }}">{{ q.glyph }}</span>
+              <span style="min-width:0;"><span class="cond" style="display:block; font-size:15px; font-weight:600; letter-spacing:0.02em;">{{ q.name }}</span><span class="mono" style="display:block; font-size:10px; color:#7a7a7d;">{{ q.id }}</span></span>
+              <span class="mono" style="font-size:11px; color:#424244;">{{ q.target }}</span>
+              <span class="mono" style="font-size:11px; color:#5d5d60;">{{ q.project }}</span>
+              <span style="font-size:11.5px; color:#5d5d60;">{{ q.reason }}</span>
+            </div>
+          </sc-for>
+        </sc-if>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; border-top:1px solid rgba(29,31,32,0.16); background:#e9e9ea; padding:10px 22px;">
+          <span class="mono" style="font-size:10px; color:#5d5d60;">{{ scopedCount }} · facets are self-excluding</span>
+          <button type="button" class="btn btn-secondary" style="height:28px; background:#fff;">Load next 100</button>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ APPLICATION DETAIL ══════════════ -->
+      <sc-if value="{{ isAppDetail }}">
+      <div>
+        <div style="border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:16px 22px 0;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:20px;">
+            <div style="min-width:0;">
+              <div class="mono" style="font-size:10px; color:#7a7a7d;"><span style="color:#416180; cursor:pointer;" onClick="{{ goApplications }}">Applications</span> / payments / checkout-api</div>
+              <div style="display:flex; align-items:center; gap:12px; margin-top:5px;">
+                <h1 class="cond" style="margin:0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">checkout-api</h1>
+                <span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #b07a2c; background:rgba(176,122,44,0.10); border-radius:2px; padding:2px 8px; font-size:11px; font-weight:600; color:#8a5f22;">! DEGRADED</span>
+                <span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #b07a2c; background:rgba(176,122,44,0.10); border-radius:2px; padding:2px 8px; font-size:11px; font-weight:600; color:#8a5f22;">3 OUT OF SYNC</span>
+              </div>
+              <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:9px;">
+                <sc-for list="{{ appTags }}" as="t" hint-placeholder-count="5">
+                  <span class="tag tag-neutral" style="border-radius:2px;">{{ t }}</span>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex; gap:7px; flex:none;">
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff;">Rollback</button>
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff;" onClick="{{ goDiff }}">Diff</button>
+              <button type="button" class="btn btn-primary" style="height:30px;">Sync now</button>
+            </div>
+          </div>
+          <div style="display:flex; gap:0; margin-top:14px;">
+            <sc-if value="{{ true }}" hint-placeholder-val="{{ true }}">
+              <span style="border-bottom:2px solid #5980a6; padding:0 12px 8px; font-size:12px; font-weight:600; color:#1d1f20;">Overview</span>
+            </sc-if>
+            <span style="padding:0 12px 8px; font-size:12px; color:#5d5d60;">Resources</span>
+            <span style="padding:0 12px 8px; font-size:12px; color:#5d5d60;">Releases</span>
+            <span style="padding:0 12px 8px; font-size:12px; color:#5d5d60;">Pipelines</span>
+            <span style="padding:0 12px 8px; font-size:12px; color:#5d5d60;">Policy</span>
+            <span style="padding:0 12px 8px; font-size:12px; color:#5d5d60;">Manifest</span>
+          </div>
+        </div>
+
+        <div style="padding:18px 22px 32px; display:flex; flex-direction:column; gap:16px;">
+
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 14px;">
+              <h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Delivery timeline · release r241</h2>
+              <span style="display:flex; align-items:center; gap:10px;"><span class="mono" style="font-size:10px; color:#5d5d60;">triggered by push to main · 9f3a1c2 · 34m ago</span><button type="button" onClick="{{ sec.timeline.toggle }}" style="{{ sec.timeline.btnStyle }}">{{ sec.timeline.chevron }}</button></span>
+            </div>
+            <sc-if value="{{ sec.timeline.open }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:1px; background:rgba(29,31,32,0.16);">
+              <sc-for list="{{ timeline }}" as="t" hint-placeholder-count="6">
+                <div onClick="{{ t.go }}" style="{{ t.cellStyle }}">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="{{ t.glyphStyle }}">{{ t.glyph }}</span>
+                    <span class="mono" style="font-size:9px; color:#7a7a7d;">{{ t.dur }}</span>
+                  </div>
+                  <div class="cond" style="margin-top:7px; font-size:14px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase;">{{ t.label }}</div>
+                  <div style="margin-top:3px; font-size:11px; line-height:1.4; color:#5d5d60;">{{ t.detail }}</div>
+                  <div class="mono" style="margin-top:7px; font-size:10px; color:#416180;">{{ t.link }}</div>
+                </div>
+              </sc-for>
+            </div>
+            </sc-if>
+          </section>
+
+          <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:16px; align-items:start;">
+
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;">
+                <h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; white-space:nowrap;">Resource graph</h2>
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-left:auto;">
+                  <span class="mono" style="font-size:10px; color:#5d5d60;">14 managed · 3 drifted</span>
+                  <sc-if value="{{ isTreeView }}">
+                    <span style="display:flex; gap:4px;">
+                      <button type="button" onClick="{{ expandAll }}" style="border:1px solid rgba(29,31,32,0.16); background:#fff; border-radius:2px; padding:2px 7px; font:inherit; font-size:10px; color:#5d5d60; cursor:pointer; white-space:nowrap;">Expand all</button>
+                      <button type="button" onClick="{{ collapseAll }}" style="border:1px solid rgba(29,31,32,0.16); background:#fff; border-radius:2px; padding:2px 7px; font:inherit; font-size:10px; color:#5d5d60; cursor:pointer; white-space:nowrap;">Collapse all</button>
+                    </span>
+                  </sc-if>
+                  <div class="seg" style="height:24px;">
+                    <button type="button" onClick="{{ setGraph }}" style="{{ graphSegStyle }}">Graph</button>
+                    <button type="button" onClick="{{ setTree }}" style="{{ treeSegStyle }}">Tree</button>
+                  </div>
+                  <button type="button" onClick="{{ sec.graph.toggle }}" style="{{ sec.graph.btnStyle }}">{{ sec.graph.chevron }}</button>
+                </div>
+              </div>
+              <sc-if value="{{ isTreeView }}">
+                <div style="overflow-x:auto;"><div style="min-width:720px;">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 92px 84px; align-items:center; gap:12px; border-bottom:1px solid rgba(29,31,32,0.28); background:#e9e9ea; padding:0 14px; height:28px;">
+                  <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">RESOURCE</span>
+                  <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">HEALTH</span>
+                  <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">SYNC</span>
+                </div>
+                <sc-for list="{{ treeRows }}" as="r" hint-placeholder-count="10">
+                  <div onClick="{{ r.open }}" style="{{ r.rowStyle }}">
+                    <span style="display:flex; align-items:center; gap:8px; min-width:0;">
+                      <span style="{{ r.indentStyle }}"></span>
+                      <button type="button" onClick="{{ r.toggle }}" style="{{ r.expStyle }}">{{ r.expIcon }}</button>
+                      <span style="{{ r.glyphStyle }}">{{ r.glyph }}</span>
+                      <span class="mono" style="font-size:9px; letter-spacing:0.08em; color:#7a7a7d; width:82px; flex:none;">{{ r.kind }}</span>
+                      <span class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.02em; white-space:nowrap;">{{ r.name }}</span>
+                      <span style="font-size:11px; color:#5d5d60; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.meta }}</span>
+                      <span class="mono" style="font-size:9px; color:#98989b; margin-left:auto; padding-left:8px;">{{ r.countLabel }}</span>
+                    </span>
+                    <span><span style="{{ r.healthStyle }}">{{ r.health }}</span></span>
+                    <span><span style="{{ r.syncStyle }}">{{ r.sync }}</span></span>
+                  </div>
+                </sc-for>
+                </div></div>
+              </sc-if>
+              <sc-if value="{{ isGraphView }}" hint-placeholder-val="{{ true }}">
+              <div style="overflow-x:auto;">
+              <div style="position:relative; height:372px; min-width:840px; background-image:linear-gradient(rgba(29,31,32,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(29,31,32,0.055) 1px, transparent 1px); background-size:22px 22px;">
+                <svg viewBox="0 0 840 372" width="840" height="372" style="position:absolute; inset:0;">
+                  <path d="M186,190 C216,190 216,60 246,60" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M186,190 C216,190 216,170 246,170" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M186,190 C216,190 216,240 246,240" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M186,190 C216,190 216,300 246,300" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M416,60 C446,60 446,60 476,60" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M416,170 C446,170 446,170 476,170" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M646,60 C676,60 676,32 706,32" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M646,60 C676,60 676,92 706,92" fill="none" stroke="rgba(29,31,32,0.32)" stroke-width="1"/>
+                  <path d="M646,60 C676,60 676,152 706,152" fill="none" stroke="#a8443b" stroke-width="1.4" stroke-dasharray="3 2"/>
+                </svg>
+                <sc-for list="{{ graphNodes }}" as="n" hint-placeholder-count="10">
+                  <div onClick="{{ n.open }}" style="{{ n.style }}">
+                    <span style="{{ n.glyphStyle }}">{{ n.glyph }}</span>
+                    <span style="min-width:0; flex:1;">
+                      <span class="mono" style="display:block; font-size:10px; letter-spacing:0.08em; color:#7a7a7d;">{{ n.kind }}</span>
+                      <span class="cond" style="display:block; font-size:13px; font-weight:600; letter-spacing:0.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ n.name }}</span>
+                    </span>
+                    <span style="{{ n.badgeStyle }}">{{ n.badge }}</span>
+                  </div>
+                </sc-for>
+                <div style="position:absolute; left:12px; bottom:12px; display:flex; gap:10px; background:rgba(242,242,243,0.9); border:1px solid rgba(29,31,32,0.16); padding:4px 9px;">
+                  <sc-for list="{{ graphLegend }}" as="l" hint-placeholder-count="4">
+                    <span style="display:inline-flex; align-items:center; gap:4px; font-size:10px; color:#5d5d60;"><span style="{{ l.glyphStyle }}">{{ l.glyph }}</span>{{ l.label }}</span>
+                  </sc-for>
+                </div>
+              </div>
+              </div>
+              </sc-if>
+            </section>
+
+            <div style="display:flex; flex-direction:column; gap:14px;">
+              <section class="blueprint" style="background:#fff;">
+                <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+                <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 8px 6px 12px;"><h3 class="cond" style="margin:0; font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Drilldowns</h3><button type="button" onClick="{{ sec.drill.toggle }}" style="{{ sec.drill.btnStyle }}">{{ sec.drill.chevron }}</button></div>
+                <sc-if value="{{ sec.drill.open }}" hint-placeholder-val="{{ true }}">
+                <div>
+                  <sc-for list="{{ drilldowns }}" as="d" hint-placeholder-count="6">
+                    <a href="#" style="display:flex; align-items:center; gap:9px; border-bottom:1px solid rgba(29,31,32,0.10); padding:0 12px; height:33px; font-size:12px; color:#1d1f20; text-decoration:none;">
+                      <span style="width:14px; display:flex;">{{ d.glyph }}</span>
+                      <span style="flex:1;">{{ d.label }}</span>
+                      <span class="mono" style="font-size:10px; color:#7a7a7d;">{{ d.meta }}</span>
+                      <span style="font-size:10px; color:#7a7a7d;">↗</span>
+                    </a>
+                  </sc-for>
+                </div>
+                <div style="padding:8px 12px;"><button type="button" class="btn btn-secondary" style="height:26px; width:100%; font-size:11px;">+ Configure links</button></div>
+                </sc-if>
+              </section>
+
+              <section class="blueprint" style="background:#fff;">
+                <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+                <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 8px 6px 12px;"><h3 class="cond" style="margin:0; font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Gates & analysis</h3><button type="button" onClick="{{ sec.gates.toggle }}" style="{{ sec.gates.btnStyle }}">{{ sec.gates.chevron }}</button></div>
+                <sc-if value="{{ sec.gates.open }}" hint-placeholder-val="{{ true }}">
+                <sc-for list="{{ gates }}" as="g" hint-placeholder-count="4">
+                  <div style="display:flex; align-items:center; gap:9px; border-bottom:1px solid rgba(29,31,32,0.10); padding:8px 12px;">
+                    <span style="{{ g.glyphStyle }}">{{ g.glyph }}</span>
+                    <span style="flex:1; min-width:0;">
+                      <span style="display:block; font-size:12px; font-weight:600;">{{ g.name }}</span>
+                      <span style="display:block; font-size:11px; color:#5d5d60;">{{ g.detail }}</span>
+                    </span>
+                    <span style="{{ g.actionStyle }}">{{ g.action }}</span>
+                  </div>
+                </sc-for>
+                </sc-if>
+              </section>
+
+              <section class="blueprint" style="background:#fff;">
+                <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+                <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 8px 6px 12px;"><h3 class="cond" style="margin:0; font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Source</h3><button type="button" onClick="{{ sec.source.toggle }}" style="{{ sec.source.btnStyle }}">{{ sec.source.chevron }}</button></div>
+                <sc-if value="{{ sec.source.open }}" hint-placeholder-val="{{ true }}">
+                <div style="padding:4px 12px 10px;">
+                  <sc-for list="{{ sourceRows }}" as="s" hint-placeholder-count="5">
+                    <div style="display:flex; justify-content:space-between; gap:10px; padding:5px 0; border-bottom:1px solid rgba(29,31,32,0.08); font-size:11px;">
+                      <span style="color:#5d5d60;">{{ s.k }}</span>
+                      <span class="mono" style="text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ s.v }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                </sc-if>
+              </section>
+            </div>
+          </div>
+
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px 6px 14px;"><h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Promotion stages</h2><button type="button" onClick="{{ sec.promotion.toggle }}" style="{{ sec.promotion.btnStyle }}">{{ sec.promotion.chevron }}</button></div>
+            <sc-if value="{{ sec.promotion.open }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; background:rgba(29,31,32,0.16);">
+              <sc-for list="{{ promotion }}" as="p" hint-placeholder-count="4">
+                <div style="{{ p.cellStyle }}">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">RING {{ p.ring }}</span>
+                    <span style="{{ p.glyphStyle }}">{{ p.glyph }}</span>
+                  </div>
+                  <div class="cond" style="margin-top:6px; font-size:18px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase;">{{ p.name }}</div>
+                  <div class="mono" style="margin-top:3px; font-size:10px; color:#7a7a7d;">{{ p.cluster }}</div>
+                  <div style="margin-top:8px; font-size:11px; color:#5d5d60;">{{ p.state }}</div>
+                </div>
+              </sc-for>
+            </div>
+            </sc-if>
+          </section>
+        </div>
+
+        <sc-if value="{{ panelOpen }}">
+          <div onClick="{{ closePanel }}" style="position:fixed; inset:0; z-index:60; background:rgba(29,31,32,0.32);"></div>
+          <aside style="position:fixed; top:0; right:0; bottom:0; z-index:61; width:560px; display:flex; flex-direction:column; background:#f2f2f3; border-left:1px solid rgba(29,31,32,0.28); box-shadow:0 12px 32px rgba(43,43,45,0.22);">
+            <div style="border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:12px 16px;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+                <div style="min-width:0;">
+                  <div class="mono" style="font-size:10px; letter-spacing:0.12em; color:#7a7a7d;">{{ panelKind }}</div>
+                  <div class="cond" style="margin-top:2px; font-size:22px; font-weight:600; letter-spacing:0.02em;">{{ panelName }}</div>
+                  <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:5px;">
+                    <sc-for list="{{ panelTags }}" as="pt" hint-placeholder-count="4">
+                      <span class="mono" style="border:1px solid rgba(29,31,32,0.16); border-radius:2px; padding:1px 6px; font-size:10px; color:#5d5d60; background:#f5f5f8;">{{ pt }}</span>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="display:flex; gap:6px; flex:none;">
+                  <button type="button" class="btn btn-secondary" style="height:26px; font-size:11px; background:#fff;">Investigate</button>
+                  <button type="button" onClick="{{ closePanel }}" class="btn btn-secondary" style="height:26px; width:26px; padding:0; background:#fff;">✕</button>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:0 16px;">
+              <sc-for list="{{ panelTabs }}" as="pt" hint-placeholder-count="5">
+                <button type="button" onClick="{{ pt.select }}" style="{{ pt.style }}">{{ pt.label }}</button>
+              </sc-for>
+            </div>
+            <div style="flex:1; overflow:auto; padding:14px 16px;">
+              <sc-if value="{{ panelIsDiff }}" hint-placeholder-val="{{ true }}">
+                <div style="border:1px solid rgba(29,31,32,0.16); background:#fff;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 10px;">
+                    <span class="mono" style="font-size:10px; color:#5d5d60;">desired ↔ live · 4 changed fields</span>
+                    <span class="mono" style="font-size:10px; color:#a8443b;">drift detected 12m ago</span>
+                  </div>
+                  <div class="mono" style="font-size:11px; line-height:1.75;">
+                    <sc-for list="{{ diffLines }}" as="d" hint-placeholder-count="14">
+                      <div style="{{ d.style }}"><span style="display:inline-block; width:26px; color:#98989b; text-align:right; margin-right:10px;">{{ d.n }}</span>{{ d.text }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ panelIsEvents }}">
+                <sc-for list="{{ panelEvents }}" as="e" hint-placeholder-count="4">
+                  <div style="display:flex; gap:10px; border:1px solid rgba(29,31,32,0.16); background:#fff; padding:9px 11px; margin-bottom:8px;">
+                    <span style="{{ e.glyphStyle }}">{{ e.glyph }}</span>
+                    <span style="flex:1; min-width:0;">
+                      <span style="display:block; font-size:12px; font-weight:600;">{{ e.reason }}</span>
+                      <span style="display:block; margin-top:2px; font-size:11px; color:#5d5d60;">{{ e.message }}</span>
+                      <span class="mono" style="display:block; margin-top:3px; font-size:10px; color:#7a7a7d;">{{ e.at }}</span>
+                    </span>
+                  </div>
+                </sc-for>
+              </sc-if>
+              <sc-if value="{{ panelIsLogs }}">
+                <div style="border:1px solid rgba(29,31,32,0.16); background:#1d2d3d;">
+                  <div style="display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(242,242,243,0.16); padding:6px 10px;">
+                    <span style="width:6px; height:6px; background:#94bce3; animation:blip 1.6s infinite;"></span>
+                    <span class="mono" style="font-size:10px; color:#94bce3;">live · pod/checkout-api-7d4f-m4p1 · 842 lines</span>
+                    <span style="flex:1;"></span>
+                    <span class="mono" style="font-size:10px; color:rgba(242,242,243,0.6);">pause</span>
+                  </div>
+                  <pre class="mono" style="margin:0; padding:11px; font-size:11px; line-height:1.7; color:#dfe6ee; white-space:pre-wrap;">{{ panelLogs }}</pre>
+                </div>
+              </sc-if>
+              <sc-if value="{{ panelIsManifest }}">
+                <pre class="mono" style="margin:0; border:1px solid rgba(29,31,32,0.16); background:#fff; padding:12px; font-size:11px; line-height:1.7; white-space:pre-wrap;">{{ panelManifest }}</pre>
+              </sc-if>
+            </div>
+          </aside>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ PIPELINE ══════════════ -->
+      <sc-if value="{{ isPipeline }}">
+      <div>
+        <div style="border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:16px 22px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:20px;">
+            <div>
+              <div class="mono" style="font-size:10px; color:#7a7a7d;">Pipelines / payments / checkout-api-build</div>
+              <div style="display:flex; align-items:center; gap:12px; margin-top:5px;">
+                <h1 class="cond" style="margin:0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">checkout-api-build</h1>
+                <span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #5980a6; background:#eef6ff; border-radius:2px; padding:2px 8px; font-size:11px; font-weight:600; color:#2c455d;">↻ RUNNING</span>
+              </div>
+              <div class="mono" style="margin-top:7px; font-size:11px; color:#5d5d60;">run #418 · push to main by @rmoreau · 9f3a1c2 “fix idempotent capture” · started 2m 14s ago</div>
+            </div>
+            <div style="display:flex; gap:7px; flex:none;">
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff; white-space:nowrap;">Re-run</button>
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff; white-space:nowrap; color:#9c3f39; border-color:#dd9490;">Cancel run</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:minmax(0,1fr) 380px; align-items:start; gap:16px; padding:18px 22px 32px;">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 14px;">
+              <h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Step graph</h2>
+              <span class="mono" style="font-size:10px; color:#5d5d60;">in-cluster · runner pool ci-amd64 · cache hit 74%</span>
+            </div>
+            <div style="overflow-x:auto;">
+            <div style="position:relative; height:460px; min-width:640px; background-image:linear-gradient(rgba(29,31,32,0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(29,31,32,0.055) 1px, transparent 1px); background-size:22px 22px;">
+              <svg viewBox="0 0 640 460" width="640" height="460" style="position:absolute; inset:0;">
+                <path d="M115,64 L115,112" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M115,156 L115,208" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M115,156 C115,184 315,180 315,208" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M115,156 C115,184 515,180 515,208" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M115,252 C115,278 315,274 315,300" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M315,252 L315,300" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M515,252 C515,278 315,274 315,300" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+                <path d="M315,344 L315,392" stroke="rgba(29,31,32,0.3)" stroke-width="1" fill="none"/>
+              </svg>
+              <sc-for list="{{ dagNodes }}" as="d" hint-placeholder-count="7">
+                <div onClick="{{ d.select }}" style="{{ d.style }}">
+                  <span style="{{ d.glyphStyle }}">{{ d.glyph }}</span>
+                  <span style="flex:1; min-width:0;">
+                    <span class="cond" style="display:block; font-size:14px; font-weight:600; letter-spacing:0.03em;">{{ d.name }}</span>
+                    <span class="mono" style="display:block; font-size:10px; color:#7a7a7d;">{{ d.meta }}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; border-top:1px solid rgba(29,31,32,0.16); background:rgba(29,31,32,0.16);">
+              <sc-for list="{{ pipelineStats }}" as="s" hint-placeholder-count="4">
+                <div style="background:#fff; padding:9px 14px;">
+                  <div class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">{{ s.label }}</div>
+                  <div class="cond" style="margin-top:2px; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">{{ s.value }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="border-bottom:1px solid rgba(29,31,32,0.16); padding:9px 12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <h3 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.04em;">unit-test</h3>
+                  <span style="display:inline-flex; align-items:center; gap:5px; border:1px solid #5980a6; background:#eef6ff; border-radius:2px; padding:1px 7px; font-size:10px; font-weight:600; color:#2c455d;">↻ RUNNING</span>
+                </div>
+                <div class="mono" style="margin-top:3px; font-size:10px; color:#7a7a7d;">ghcr.io/acme/test-runner:3.2 · 4 CPU / 8 GiB · 1m 06s</div>
+              </div>
+              <div style="border-bottom:1px solid rgba(29,31,32,0.16); background:#1d2d3d;">
+                <pre class="mono" style="margin:0; max-height:280px; overflow:auto; padding:11px; font-size:11px; line-height:1.7; color:#dfe6ee; white-space:pre-wrap;">{{ pipelineLogs }}</pre>
+              </div>
+              <div style="display:flex; gap:6px; padding:9px 12px;">
+                <button type="button" class="btn btn-secondary" style="height:26px; font-size:11px; background:#fff;">Retry step</button>
+                <button type="button" class="btn btn-secondary" style="height:26px; font-size:11px; background:#fff;">Skip</button>
+                <button type="button" class="btn btn-ghost" style="height:26px; font-size:11px;">Full logs ↗</button>
+              </div>
+            </section>
+
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 12px;"><h3 class="cond" style="margin:0; font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Artifacts</h3></div>
+              <sc-for list="{{ artifacts }}" as="a" hint-placeholder-count="3">
+                <div style="display:flex; align-items:center; gap:9px; border-bottom:1px solid rgba(29,31,32,0.10); padding:8px 12px;">
+                  <span style="width:14px; display:flex;">{{ a.glyph }}</span>
+                  <span style="flex:1; min-width:0;">
+                    <span class="mono" style="display:block; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ a.name }}</span>
+                    <span style="display:block; font-size:10px; color:#7a7a7d;">{{ a.meta }}</span>
+                  </span>
+                  <span style="{{ a.badgeStyle }}">{{ a.badge }}</span>
+                </div>
+              </sc-for>
+            </section>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ ROLLOUT ══════════════ -->
+      <sc-if value="{{ isRollout }}">
+      <div>
+        <div style="border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:16px 22px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:20px;">
+            <div>
+              <div class="mono" style="font-size:10px; color:#7a7a7d;">Rollouts / payments / checkout-api</div>
+              <div style="display:flex; align-items:center; gap:12px; margin-top:5px;">
+                <h1 class="cond" style="margin:0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">checkout-api</h1>
+                <span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #b07a2c; background:rgba(176,122,44,0.10); border-radius:2px; padding:2px 8px; font-size:11px; font-weight:600; color:#8a5f22;">‖ PAUSED AT STEP 3</span>
+              </div>
+              <div class="mono" style="margin-top:7px; font-size:11px; color:#5d5d60;">canary · Deployment/checkout-api · prod-eu-1 · held 6m 12s pending analysis</div>
+            </div>
+            <div style="display:flex; gap:7px; flex:none;">
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff; white-space:nowrap; color:#9c3f39; border-color:#dd9490;">Abort &amp; roll back</button>
+              <button type="button" class="btn btn-secondary" style="height:30px; background:#fff; white-space:nowrap;">Hold</button>
+              <button type="button" class="btn btn-primary" style="height:30px; white-space:nowrap;">Promote to 50%</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:18px 22px 32px; display:flex; flex-direction:column; gap:16px;">
+          <section class="blueprint" style="background:#fff;">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <div style="display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 14px;">
+              <h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Traffic ladder</h2>
+              <span class="mono" style="font-size:10px; color:#5d5d60;">istio VirtualService · checkout-api.payments.svc</span>
+            </div>
+            <div style="padding:18px 14px 14px;">
+              <div style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px;">
+                <sc-for list="{{ ladder }}" as="s" hint-placeholder-count="6">
+                  <div>
+                    <div style="height:104px; display:flex; align-items:flex-end;"><div style="{{ s.barStyle }}"></div></div>
+                    <div style="margin-top:9px; display:flex; align-items:center; justify-content:space-between; gap:6px;">
+                      <span class="cond" style="{{ s.weightStyle }}">{{ s.weight }}</span>
+                      <span style="{{ s.glyphStyle }}">{{ s.glyph }}</span>
+                    </div>
+                    <div class="mono" style="margin-top:3px; font-size:10px; letter-spacing:0.1em; color:#8e8e92;">STEP {{ s.n }}</div>
+                    <div style="margin-top:2px; font-size:11px; color:#5d5d60;">{{ s.note }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="border-top:1px solid rgba(29,31,32,0.16); padding:12px 14px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span class="mono" style="font-size:10px; letter-spacing:0.12em; color:#7a7a7d; width:56px;">TRAFFIC</span>
+                <div style="flex:1; display:flex; height:26px; border:1px solid rgba(29,31,32,0.28);">
+                  <div style="width:75%; background:#e7e7ea; display:flex; align-items:center; padding-left:9px;"><span class="cond" style="font-size:13px; font-weight:600; letter-spacing:0.05em;">STABLE 75% · checkout-api-6b9c · 6 pods</span></div>
+                  <div style="width:25%; background:#5980a6; display:flex; align-items:center; padding-left:9px;"><span class="cond" style="font-size:13px; font-weight:600; letter-spacing:0.05em; color:#f2f2f3;">CANARY 25%</span></div>
+                </div>
+              </div>
+              <div style="margin-top:6px; padding-left:68px;" class="mono"><span style="font-size:10px; color:#7a7a7d;">canary · checkout-api-7d4f · 2 pods · image ghcr.io/acme/checkout-api:9f3a1c2</span></div>
+            </div>
+          </section>
+
+          <div style="display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:16px;">
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="display:flex; align-items:baseline; justify-content:space-between; border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 14px;">
+                <h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Analysis — why it paused</h2>
+                <span class="mono" style="font-size:10px; color:#a8443b;">1 of 4 metrics failing</span>
+              </div>
+              <div style="overflow-x:auto;"><div style="min-width:560px;">
+              <div style="display:grid; grid-template-columns:minmax(0,1.2fr) 78px 78px 84px 70px; align-items:center; gap:10px; border-bottom:1px solid rgba(29,31,32,0.28); background:#e9e9ea; padding:0 14px; height:28px;">
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60;">METRIC</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">BASELINE</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">CANARY</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">THRESHOLD</span>
+                <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#5d5d60; text-align:right;">RESULT</span>
+              </div>
+              <sc-for list="{{ analysis }}" as="m" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:minmax(0,1.2fr) 78px 78px 84px 70px; align-items:center; gap:10px; border-bottom:1px solid rgba(29,31,32,0.10); padding:9px 14px;">
+                  <span style="min-width:0;">
+                    <span class="cond" style="display:block; font-size:14px; font-weight:600; letter-spacing:0.02em;">{{ m.name }}</span>
+                    <span class="mono" style="display:block; font-size:10px; color:#7a7a7d; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ m.query }}</span>
+                  </span>
+                  <span class="mono" style="font-size:12px; text-align:right; font-variant-numeric:tabular-nums;">{{ m.baseline }}</span>
+                  <span style="{{ m.canaryStyle }}">{{ m.canary }}</span>
+                  <span class="mono" style="font-size:12px; text-align:right; color:#5d5d60; font-variant-numeric:tabular-nums;">{{ m.threshold }}</span>
+                  <span style="text-align:right;"><span style="{{ m.resultStyle }}">{{ m.result }}</span></span>
+                </div>
+              </sc-for>
+              </div></div>
+              <div style="padding:11px 14px; background:#fdf2df; border-top:1px solid rgba(29,31,32,0.10);">
+                <div style="display:flex; gap:9px;">
+                  <span style="color:#8a5f22; font-weight:700;">!</span>
+                  <span style="font-size:12px; line-height:1.55; color:#424244;">Paprika held the rollout automatically. <strong>p99 latency</strong> on the canary is 41% above baseline and breached its threshold for 3 consecutive intervals. Promotion is blocked until the metric recovers or an operator overrides.</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="blueprint" style="background:#fff;">
+              <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+              <div style="border-bottom:1px solid rgba(29,31,32,0.16); padding:8px 14px;"><h2 class="cond" style="margin:0; font-size:16px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase;">Rollout log</h2></div>
+              <sc-for list="{{ rolloutLog }}" as="l" hint-placeholder-count="7">
+                <div style="display:grid; grid-template-columns:58px 14px minmax(0,1fr); align-items:baseline; gap:9px; border-bottom:1px solid rgba(29,31,32,0.08); padding:7px 14px;">
+                  <span class="mono" style="font-size:10px; color:#7a7a7d;">{{ l.at }}</span>
+                  <span style="{{ l.glyphStyle }}">{{ l.glyph }}</span>
+                  <span style="font-size:11px; line-height:1.5; color:#424244;">{{ l.text }}</span>
+                </div>
+              </sc-for>
+            </section>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ SYNC & DIFF ══════════════ -->
+      <sc-if value="{{ isDiff }}">
+      <div>
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px; border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:16px 22px;">
+          <div>
+            <div class="mono" style="font-size:9px; letter-spacing:0.2em; color:#597ea3;">DRIFT CONTROL</div>
+            <h1 class="cond" style="margin:4px 0 0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1;">Sync &amp; diff workbench</h1>
+          </div>
+          <div style="display:flex; gap:7px;">
+            <button type="button" class="btn btn-secondary" style="height:30px; background:#fff;">Ignore field</button>
+            <button type="button" class="btn btn-secondary" style="height:30px; background:#fff;">Dry run</button>
+            <button type="button" class="btn btn-primary" style="height:30px;">Sync 3 selected</button>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:352px minmax(0,1fr); align-items:stretch; min-height:calc(100vh - 130px);">
+          <div style="border-right:1px solid rgba(29,31,32,0.16); background:#fff;">
+            <div style="display:flex; gap:5px; border-bottom:1px solid rgba(29,31,32,0.16); padding:9px 14px;">
+              <sc-for list="{{ diffFilters }}" as="f" hint-placeholder-count="5">
+                <span style="{{ f.style }}">{{ f.label }} <span class="mono" style="font-size:9px; opacity:.65;">{{ f.count }}</span></span>
+              </sc-for>
+            </div>
+            <sc-for list="{{ driftQueue }}" as="q" hint-placeholder-count="8">
+              <div onClick="{{ q.select }}" style="{{ q.style }}">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="{{ q.glyphStyle }}">{{ q.glyph }}</span>
+                  <span class="mono" style="font-size:10px; letter-spacing:0.06em; color:#7a7a7d;">{{ q.kind }}</span>
+                  <span style="flex:1;"></span>
+                  <span class="mono" style="font-size:10px; color:#7a7a7d;">{{ q.fields }}</span>
+                </div>
+                <div class="cond" style="margin-top:2px; font-size:14px; font-weight:600; letter-spacing:0.02em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ q.name }}</div>
+                <div style="margin-top:1px; font-size:11px; color:#5d5d60; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ q.reason }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex; flex-direction:column; background:#f2f2f3;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; border-bottom:1px solid rgba(29,31,32,0.16); background:#fff; padding:10px 18px;">
+              <div>
+                <div class="mono" style="font-size:10px; letter-spacing:0.1em; color:#7a7a7d;">DEPLOYMENT · payments</div>
+                <div class="cond" style="margin-top:1px; font-size:20px; font-weight:600; letter-spacing:0.02em;">checkout-api</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:16px;">
+                <span class="mono" style="font-size:10px; color:#5d5d60;">4 changed fields · 2 additions · 2 removals</span>
+                <div class="seg" style="height:26px;">
+                  <span style="display:inline-flex; align-items:center; padding:0 10px; font-size:11px; background:#5980a6; color:#f2f2f3;">Unified</span>
+                  <span style="display:inline-flex; align-items:center; padding:0 10px; font-size:11px; border-left:1px solid rgba(29,31,32,0.16);">Split</span>
+                  <span style="display:inline-flex; align-items:center; padding:0 10px; font-size:11px; border-left:1px solid rgba(29,31,32,0.16);">JSON patch</span>
+                </div>
+              </div>
+            </div>
+            <div style="flex:1; overflow:auto; padding:16px 18px 28px;">
+              <div style="border:1px solid rgba(29,31,32,0.16); background:#fff;">
+                <div class="mono" style="border-bottom:1px solid rgba(29,31,32,0.16); padding:6px 12px; font-size:10px; color:#5d5d60;">apps/v1 Deployment · payments/checkout-api</div>
+                <div class="mono" style="font-size:11.5px; line-height:1.85;">
+                  <sc-for list="{{ diffLines }}" as="d" hint-placeholder-count="16">
+                    <div style="{{ d.style }}"><span style="display:inline-block; width:30px; color:#98989b; text-align:right; margin-right:12px;">{{ d.n }}</span>{{ d.text }}</div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="margin-top:14px; border:1px solid rgba(29,31,32,0.16); background:#fff; padding:12px 14px;">
+                <div class="cond" style="font-size:14px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;">Why this drifted</div>
+                <p style="margin:6px 0 0; font-size:12px; line-height:1.6; color:#424244;">The live object was last written by <span class="mono">kubectl-client-side-apply</span> 12 minutes ago, outside Paprika. The rendered manifest from <span class="mono">deploy/chart@9f3a1c2</span> still declares 3 replicas and the previous image tag. Syncing restores the declared state; ignoring the field records an exception on the Application.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ══════════════ FLEET MAP ══════════════ -->
+      <sc-if value="{{ isMap }}">
+      <div style="padding:18px 22px 32px;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:16px;">
+          <div>
+            <div class="mono" style="font-size:9px; letter-spacing:0.2em; color:#597ea3;">TOPOLOGY</div>
+            <h1 class="cond" style="margin:4px 0 0; font-size:30px; font-weight:600; letter-spacing:0.01em; line-height:1; white-space:nowrap;">Cluster &amp; fleet map</h1>
+          </div>
+          <div style="display:flex; align-items:center; gap:18px; flex-wrap:wrap; justify-content:flex-end;">
+            <span style="display:flex; align-items:center; gap:10px;">
+              <sc-for list="{{ graphLegend }}" as="l" hint-placeholder-count="4">
+                <span style="display:inline-flex; align-items:center; gap:5px; font-size:11px; color:#5d5d60;"><span style="{{ l.glyphStyle }}">{{ l.glyph }}</span>{{ l.label }}</span>
+              </sc-for>
+            </span>
+            <span style="display:flex; align-items:center; gap:8px;">
+              <span class="mono" style="font-size:9px; letter-spacing:0.14em; color:#7a7a7d;">ROWS</span>
+              <div class="seg" style="height:30px;">
+                <sc-for list="{{ mapRowChips }}" as="g" hint-placeholder-count="2">
+                  <button type="button" onClick="{{ g.select }}" style="{{ g.style }}">{{ g.label }}</button>
+                </sc-for>
+              </div>
+            </span>
+          </div>
+        </div>
+
+        <section class="blueprint" style="background:#fff;">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:grid; grid-template-columns:124px repeat(3,minmax(0,1fr)); gap:1px; background:rgba(29,31,32,0.16);">
+            <div style="background:#e9e9ea;"></div>
+            <sc-for list="{{ mapClusters }}" as="c" hint-placeholder-count="3">
+              <div style="background:#e9e9ea; padding:9px 12px;">
+                <div class="cond" style="font-size:16px; font-weight:600; letter-spacing:0.04em;">{{ c.name }}</div>
+                <div class="mono" style="margin-top:1px; font-size:10px; color:#5d5d60;">{{ c.meta }}</div>
+              </div>
+            </sc-for>
+            <sc-for list="{{ mapRows }}" as="r" hint-placeholder-count="3">
+              <div style="background:#e9e9ea; display:flex; align-items:center; padding:0 12px; min-width:0;">
+                <span class="cond" style="font-size:15px; font-weight:600; letter-spacing:0.04em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.stage }}</span>
+              </div>
+              <sc-for list="{{ r.cells }}" as="cell" hint-placeholder-count="3">
+                <div style="background:#fff; padding:10px 12px; min-height:106px;">
+                  <div style="display:flex; flex-wrap:wrap; gap:3px;">
+                    <sc-for list="{{ cell.apps }}" as="ap" hint-placeholder-count="8">
+                      <span onClick="{{ ap.open }}" style="{{ ap.style }}" title="{{ ap.title }}">{{ ap.glyph }}</span>
+                    </sc-for>
+                  </div>
+                  <div class="mono" style="margin-top:9px; font-size:10px; color:#7a7a7d;">{{ cell.summary }}</div>
+                </div>
+              </sc-for>
+            </sc-for>
+          </div>
+        </section>
+
+        <p style="margin:12px 0 0; font-size:11px; color:#5d5d60;">Each square is one application at one target. Size is fixed here; the treemap presentation sizes by managed resource count or request rate. Click a square to open its Application record.</p>
+      </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000},&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;compact&quot;,&quot;comfortable&quot;],&quot;default&quot;:&quot;compact&quot;,&quot;tsType&quot;:&quot;\&quot;compact\&quot; | \&quot;comfortable\&quot;&quot;,&quot;section&quot;:&quot;Table&quot;},&quot;showLifecycleStrip&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Table&quot;},&quot;statusPalette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;colour&quot;,&quot;quiet&quot;],&quot;default&quot;:&quot;colour&quot;,&quot;tsType&quot;:&quot;\&quot;colour\&quot; | \&quot;quiet\&quot;&quot;,&quot;section&quot;:&quot;Status&quot;}}">
+const PAPER = "#f2f2f3", INK = "#1d1f20", MUTED = "#5d5d60", FAINT = "#7a7a7d";
+const DIV = "rgba(29,31,32,0.16)", DIV2 = "rgba(29,31,32,0.10)";
+const STEEL = "#5980a6", STEEL_D = "#416180", STEEL_9 = "#1d2d3d";
+const OCHRE = "#b07a2c", OCHRE_T = "#8a5f22", OXIDE = "#a8443b", OXIDE_T = "#8e372f";
+const GREEN = "#7fae86", GREEN_T = "#3f6b48";
+
+function tones(palette) {
+  const ok = palette === "quiet"
+    ? { c: "#4a4a4c", line: "#a8a8ab", fill: "#f0f0f2" }
+    : { c: GREEN_T, line: GREEN, fill: "#e6f2e8" };
+  return {
+    healthy: { glyph: "\u2713", label: "Healthy", ...ok },
+    progressing: { glyph: "\u21bb", label: "Progressing", c: "#2c455d", line: "#8bb0d0", fill: "#e7f0f8" },
+    degraded: { glyph: "!", label: "Degraded", c: "#8a5f22", line: "#e0ad66", fill: "#fdf2df" },
+    failed: { glyph: "\u00d7", label: "Failed", c: "#9c3f39", line: "#dd9490", fill: "#fbe9e8" },
+    missing: { glyph: "\u2205", label: "Missing", c: "#5b5468", line: "#aea8bd", fill: "#efedf4" },
+    unknown: { glyph: "?", label: "Unknown", c: "#5d5d60", line: "#c2c2c6", fill: "#f4f4f6" },
+    pending: { glyph: "\u00b7", label: "Pending", c: "#8e8e92", line: "#d4d4d7", fill: "transparent" },
+  };
+}
+
+function chip(t) {
+  return `display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; flex:none; border:1px solid ${t.line}; background:${t.fill}; color:${t.c}; font-size:10px; font-weight:700; line-height:1;`;
+}
+function pill(t, label) {
+  return `display:inline-flex; align-items:center; gap:5px; border:1px solid ${t.line}; background:${t.fill}; border-radius:2px; padding:1px 7px; font-size:10px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:${t.c};`;
+}
+
+const OK6 = ["ok","ok","ok","ok","ok","ok"];
+const APPS = [
+  { name: "checkout-api", ns: "payments", project: "payments/core", health: "degraded", sync: "out of sync", cluster: "prod-eu-1", env: "prod", ring: 2, res: 14, cost: "$4.1k", actions: ["Sync", "Roll back"], strip: ["ok","ok","fail","ok","ok","degraded"] },
+  { name: "checkout-api", ns: "payments", project: "payments/core", health: "healthy", sync: "synced", cluster: "staging-1", env: "staging", ring: 1, res: 14, cost: "$0.6k", actions: ["Promote"], strip: OK6 },
+  { name: "payments-gateway", ns: "payments", project: "payments/core", health: "healthy", sync: "synced", cluster: "prod-eu-1", env: "prod", ring: 2, res: 22, cost: "$6.8k", actions: ["Sync"], strip: OK6 },
+  { name: "payments-gateway", ns: "payments", project: "payments/core", health: "healthy", sync: "synced", cluster: "prod-us-1", env: "prod", ring: 3, res: 22, cost: "$6.4k", actions: ["Sync"], strip: OK6 },
+  { name: "ledger-worker", ns: "payments", project: "payments/core", health: "progressing", sync: "synced", cluster: "staging-1", env: "staging", ring: 1, res: 9, cost: "$0.9k", actions: ["Approve"], strip: ["ok","ok","ok","ok","run","pend"] },
+  { name: "fraud-scorer", ns: "payments", project: "payments/risk", health: "healthy", sync: "synced", cluster: "prod-us-1", env: "prod", ring: 3, res: 16, cost: "$5.3k", actions: ["Sync"], strip: OK6 },
+  { name: "fraud-scorer", ns: "payments", project: "payments/risk", health: "healthy", sync: "synced", cluster: "staging-1", env: "dev", ring: 0, res: 16, cost: "$0.4k", actions: ["Promote"], strip: OK6 },
+  { name: "notifications", ns: "platform", project: "platform/shared", health: "degraded", sync: "out of sync", cluster: "prod-us-1", env: "prod", ring: 3, res: 11, cost: "$1.7k", actions: ["Sync", "Retry"], strip: ["ok","ok","ok","ok","degraded","pend"] },
+  { name: "auth-service", ns: "platform", project: "platform/shared", health: "healthy", sync: "synced", cluster: "prod-us-1", env: "prod", ring: 3, res: 17, cost: "$3.2k", actions: ["Sync"], strip: OK6 },
+  { name: "auth-service", ns: "platform", project: "platform/shared", health: "healthy", sync: "synced", cluster: "prod-eu-1", env: "prod", ring: 2, res: 17, cost: "$3.0k", actions: ["Sync"], strip: OK6 },
+  { name: "search-indexer", ns: "search", project: "platform/shared", health: "healthy", sync: "synced", cluster: "prod-eu-1", env: "prod", ring: 2, res: 8, cost: "$1.1k", actions: ["Sync"], strip: OK6 },
+  { name: "web-frontend", ns: "web", project: "web/storefront", health: "healthy", sync: "synced", cluster: "prod-eu-1", env: "prod", ring: 2, res: 12, cost: "$2.0k", actions: ["Sync", "Roll back"], strip: OK6 },
+  { name: "web-frontend", ns: "web", project: "web/storefront", health: "progressing", sync: "synced", cluster: "staging-1", env: "staging", ring: 1, res: 12, cost: "$0.3k", actions: ["Promote"], strip: ["ok","ok","ok","ok","run","pend"] },
+  { name: "cms-preview", ns: "web", project: "web/storefront", health: "healthy", sync: "synced", cluster: "staging-1", env: "dev", ring: 0, res: 5, cost: "$0.2k", actions: ["Sync"], strip: OK6 },
+  { name: "reporting-etl", ns: "data", project: "data/analytics", health: "missing", sync: "out of sync", cluster: "prod-us-1", env: "staging", ring: 1, res: 6, cost: "$2.4k", actions: ["Sync"], strip: ["fail","pend","pend","pend","pend","pend"] },
+  { name: "warehouse-sync", ns: "data", project: "data/analytics", health: "healthy", sync: "synced", cluster: "prod-us-1", env: "prod", ring: 3, res: 9, cost: "$3.9k", actions: ["Sync"], strip: OK6 },
+].map((a) => ({ ...a, stage: `${a.env} · ring ${a.ring}` }));
+const HEALTH_RANK = { failed: 0, missing: 1, degraded: 2, progressing: 3, unknown: 4, healthy: 5 };
+
+const GRAPH = [
+  { kind: "APPLICATION", name: "checkout-api", x: 16, y: 170, w: 170, badge: "r241", state: "degraded" },
+  { kind: "DEPLOYMENT", name: "checkout-api", x: 246, y: 40, w: 170, badge: "1/3", state: "degraded" },
+  { kind: "SERVICE", name: "checkout-api", x: 246, y: 150, w: 170, badge: "", state: "healthy" },
+  { kind: "CONFIGMAP", name: "checkout-api-env", x: 246, y: 220, w: 170, badge: "drift", state: "degraded" },
+  { kind: "SECRET", name: "checkout-api-tls", x: 246, y: 280, w: 170, badge: "", state: "healthy" },
+  { kind: "REPLICASET", name: "checkout-api-7d4f", x: 476, y: 40, w: 170, badge: "", state: "progressing" },
+  { kind: "INGRESS", name: "checkout-api", x: 476, y: 150, w: 170, badge: "", state: "healthy" },
+  { kind: "POD", name: "…7d4f-x9k2", x: 706, y: 12, w: 118, badge: "", state: "healthy" },
+  { kind: "POD", name: "…7d4f-p2vn", x: 706, y: 72, w: 118, badge: "", state: "healthy" },
+  { kind: "POD", name: "…7d4f-m4p1", x: 706, y: 132, w: 118, badge: "CLB", state: "failed" },
+];
+
+const TREE = [
+  { id: "app", kind: "Application", name: "checkout-api", st: "degraded", sync: "OutOfSync", meta: "release r241 · 14 managed", children: [
+    { id: "dep", kind: "Deployment", name: "checkout-api", st: "degraded", sync: "OutOfSync", meta: "1/3 ready · 4 fields drifted", children: [
+      { id: "rs", kind: "ReplicaSet", name: "checkout-api-7d4f", st: "progressing", sync: "Synced", meta: "2/3 available", children: [
+        { id: "p1", kind: "Pod", name: "checkout-api-7d4f-x9k2", st: "healthy", sync: "Synced", meta: "Running · ip-10-2-31-4" },
+        { id: "p2", kind: "Pod", name: "checkout-api-7d4f-p2vn", st: "healthy", sync: "Synced", meta: "Running · ip-10-2-31-6" },
+        { id: "p3", kind: "Pod", name: "checkout-api-7d4f-m4p1", st: "failed", sync: "Synced", meta: "CrashLoopBackOff · 12 restarts" },
+      ]},
+    ]},
+    { id: "svc", kind: "Service", name: "checkout-api", st: "healthy", sync: "Synced", meta: "ClusterIP · 3 endpoints", children: [
+      { id: "ing", kind: "Ingress", name: "checkout-api", st: "healthy", sync: "Synced", meta: "checkout.acme.io · TLS" },
+    ]},
+    { id: "cm", kind: "ConfigMap", name: "checkout-api-env", st: "degraded", sync: "OutOfSync", meta: "2 keys changed outside Paprika" },
+    { id: "sec", kind: "Secret", name: "checkout-api-tls", st: "healthy", sync: "Synced", meta: "kubernetes.io/tls · protected" },
+  ]},
+];
+
+const DAG = [
+  { name: "checkout", meta: "git · 4s", x: 30, y: 20, state: "healthy" },
+  { name: "build", meta: "kaniko · 48s", x: 30, y: 112, state: "healthy" },
+  { name: "unit-test", meta: "running · 1m06s", x: 30, y: 208, state: "progressing", sel: true },
+  { name: "lint", meta: "golangci · 12s", x: 230, y: 208, state: "healthy" },
+  { name: "sbom-scan", meta: "trivy · 19s", x: 430, y: 208, state: "healthy" },
+  { name: "package", meta: "queued", x: 230, y: 300, state: "pending" },
+  { name: "deploy dev", meta: "queued", x: 230, y: 392, state: "pending" },
+];
+
+const LUCIDE = {
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  boxes: '<path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/><path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/>',
+  map: '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+  workflow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91 0z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  diff: '<path d="M12 3v14"/><path d="M5 10h14"/><path d="M5 21h14"/>',
+  git: '<circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/>',
+  layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  logs: '<path d="M13 12h8"/><path d="M13 18h8"/><path d="M13 6h8"/><path d="M3 12h1"/><path d="M3 18h1"/><path d="M3 6h1"/><path d="M8 12h1"/><path d="M8 18h1"/><path d="M8 6h1"/>',
+  traces: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 16h8"/><path d="M7 11h12"/><path d="M7 6h3"/>',
+  book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
+  pkg: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  eyeOff: '<path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/>',
+  cog: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  sliders: '<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+  flask: '<path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>',
+};
+function icon(name, size, color) {
+  return React.createElement("svg", { width: size || 14, height: size || 14, viewBox: "0 0 24 24", fill: "none", stroke: color || "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round", style: { display: "block", flex: "none" }, dangerouslySetInnerHTML: { __html: LUCIDE[name] } });
+}
+
+class Component extends DCLogic {
+  state = { screen: "overview", view: "Table", panel: null, panelTab: "Diff", resourceView: "graph", collapsed: {}, treeClosed: {},
+    groupBy: "project", groupClosed: {}, scope: { project: "All", cluster: "All", stage: "All" }, openScope: null, mapRowsBy: "stage",
+    customising: false, hiddenBoards: {}, postureFormat: "heatmap", rolloutTab: "inflight", hoverTile: null, heatGroup: "project", heatDetail: "full", heatSettingsOpen: false };
+  go(s) { return () => this.setState({ screen: s, panel: null, openScope: null }); }
+  section(id) {
+    const open = !this.state.collapsed[id];
+    return {
+      open,
+      toggle: () => this.setState((st) => ({ collapsed: { ...st.collapsed, [id]: !st.collapsed[id] } })),
+      btnStyle: `display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid ${DIV}; background:#fff; border-radius:2px; padding:0; cursor:pointer; color:#5d5d60; transform:rotate(${open ? 0 : -90}deg); transition:transform .15s;`,
+      chevron: icon("chevron", 12),
+    };
+  }
+
+  renderVals() {
+    const T = tones(this.props.statusPalette ?? "colour");
+    const dense = (this.props.density ?? "compact") === "compact";
+    const rowH = dense ? 42 : 52;
+    const showStrip = this.props.showLifecycleStrip ?? true;
+    const s = this.state.screen;
+    const openApp = () => this.setState({ screen: "appDetail", panel: null });
+
+    const navDef = [
+      { label: "FLEET", items: [
+        { label: "Overview", glyph: "grid", key: "overview", id: "overview", badge: "" },
+        { label: "Applications", glyph: "boxes", key: "applications", id: "applications", badge: String(APPS.length) },
+        { label: "Fleet map", glyph: "map", key: "map", id: "map", badge: "" },
+      ]},
+      { label: "DELIVERY", items: [
+        { label: "Pipelines", glyph: "workflow", key: "pipeline", id: "pipeline", badge: "3" },
+        { label: "Rollouts", glyph: "rocket", key: "rollout", id: "rollout", badge: "3" },
+        { label: "Sync & diff", glyph: "diff", key: "diff", id: "diff", badge: "8" },
+      ]},
+      { label: "SOURCES", items: [
+        { label: "Repositories", glyph: "git", key: "overview", id: "repos", badge: "41" },
+        { label: "Templates", glyph: "layers", key: "overview", id: "templates", badge: "4" },
+        { label: "Clusters", glyph: "server", key: "map", id: "clusters", badge: "3" },
+      ]},
+    ];
+    const navBase = "display:flex; align-items:center; gap:9px; width:100%; height:29px; border:0; padding:0 16px; font-family:'Barlow Condensed',sans-serif; font-size:14px; font-weight:500; letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; text-align:left;";
+    const activeKey = s === "appDetail" ? "applications" : s;
+    const navSections = navDef.map((sec) => ({
+      label: sec.label,
+      items: sec.items.map((it) => ({
+        label: it.label, glyph: icon(it.glyph, 14), badge: it.badge, go: this.go(it.key),
+        style: navBase + (it.id === activeKey
+          ? `background:${STEEL}; color:${PAPER};`
+          : `background:none; color:rgba(242,242,243,0.74);`),
+      })),
+    }));
+
+    const scopeVals = {
+      project: ["All", ...new Set(APPS.map((a) => a.project))],
+      cluster: ["All", ...new Set(APPS.map((a) => a.cluster))],
+      stage: ["All", "prod", "staging", "dev"],
+    };
+    const scopes = ["project", "cluster", "stage"].map((k) => ({
+      label: k.toUpperCase(), value: this.state.scope[k], key: k,
+      isOpen: this.state.openScope === k,
+      toggle: () => this.setState((st) => ({ openScope: st.openScope === k ? null : k })),
+      btnStyle: `display:flex; align-items:center; gap:7px; height:100%; border:0; border-right:1px solid ${DIV}; background:${this.state.scope[k] !== "All" ? "#e7f0f8" : this.state.openScope === k ? "#f5f5f8" : "none"}; padding:0 14px; font:inherit; cursor:pointer; color:#1d1f20; position:relative;`,
+      options: scopeVals[k].map((v) => ({
+        label: v, count: v === "All" ? APPS.length : APPS.filter((a) => (k === "stage" ? a.env : a[k]) === v).length,
+        select: () => this.setState((st) => ({ scope: { ...st.scope, [k]: v }, openScope: null })),
+        style: `display:flex; align-items:center; justify-content:space-between; gap:14px; width:100%; border:0; border-bottom:1px solid ${DIV2}; background:${this.state.scope[k] === v ? "#e7f0f8" : "#fff"}; padding:0 12px; height:30px; font:inherit; font-size:12px; text-align:left; cursor:pointer; color:#1d1f20; white-space:nowrap;`,
+      })),
+    }));
+    const scopedApps = APPS.filter((a) =>
+      (this.state.scope.project === "All" || a.project === this.state.scope.project) &&
+      (this.state.scope.cluster === "All" || a.cluster === this.state.scope.cluster) &&
+      (this.state.scope.stage === "All" || a.env === this.state.scope.stage));
+    const scopeSummary = `${scopedApps.length} of ${APPS.length} targets in scope`;
+    const clearScope = () => this.setState({ scope: { project: "All", cluster: "All", stage: "All" }, openScope: null });
+    const scopeActive = Object.values(this.state.scope).some((v) => v !== "All");
+
+    const bar = (tone) => `flex:1; height:5px; background:${tone};`;
+    const lifecycle = [
+      { idx: "01", arrow: "\u203a", label: "Source", value: "12", st: "healthy", sub: "GitHub 41 · S3 9 · OCI 7 repos", mix: ["healthy","healthy","healthy","unknown"] },
+      { idx: "02", arrow: "\u203a", label: "Build", value: "3", st: "progressing", sub: "in-cluster · 41 runs today", mix: ["progressing","healthy","healthy","unknown"] },
+      { idx: "03", arrow: "\u203a", label: "Test", value: "2", st: "degraded", sub: "1 failing · 213/214 passed", mix: ["degraded","progressing","healthy","unknown"] },
+      { idx: "04", arrow: "\u203a", label: "Render", value: "4", st: "healthy", sub: "Helm 33 · Kustomize 14 · Jsonnet 6", mix: ["healthy","healthy","healthy","healthy"] },
+      { idx: "05", arrow: "\u203a", label: "Deploy", value: "7", st: "progressing", sub: "releases active · 2 gates blocked", mix: ["progressing","degraded","healthy","unknown"] },
+      { idx: "06", arrow: "", label: "Verify", value: "3", st: "failed", sub: "canaries under analysis · 1 held", mix: ["failed","progressing","healthy","unknown"] },
+    ].map((l) => {
+      const t = T[l.st];
+      return { idx: l.idx, arrow: l.arrow, label: l.label, value: l.value, sub: l.sub,
+        cellStyle: `background:${t.fill}; padding:12px 14px 13px; min-width:0;`,
+        idxStyle: `font-family:ui-monospace,monospace; font-size:9px; letter-spacing:0.16em; color:${t.c};`,
+        numStyle: `margin-top:6px; font-size:34px; font-weight:600; line-height:1; font-variant-numeric:tabular-nums; color:${t.c};`,
+        bars: l.mix.map((k) => bar(T[k].line)) };
+    });
+
+    const postureData = [["healthy",41],["progressing",6],["degraded",4],["failed",2],["missing",1],["unknown",3]];
+    const posture = postureData.map(([k, n]) => {
+      const t = T[k];
+      return { label: t.label, count: n, glyph: t.glyph, glyphStyle: chip(t),
+        barStyle: `position:absolute; left:0; top:0; bottom:0; width:${Math.round((n / 57) * 100)}%; background:${t.line};` };
+    });
+
+    const attentionData = [
+      ["01","checkout-api","payments/checkout-api","p99 latency 41% over baseline — canary held at 25%","failed","6m","Review"],
+      ["02","notifications","platform/notifications","Deployment 1/3 replicas ready · CrashLoopBackOff","degraded","23m","Investigate"],
+      ["03","reporting-etl","data/reporting-etl","s3://acme-manifests unreachable — 403 on HeadObject","missing","41m","Fix source"],
+      ["04","ledger-worker","payments/ledger-worker","Approval gate blocked · awaiting release manager","progressing","1h 12m","Approve"],
+      ["05","web-frontend","web/web-frontend","3 fields drifted from rendered manifest","degraded","2h","Diff"],
+      ["06","auth-service","platform/auth-service","Policy signed-images-only warned on 1 image","unknown","3h","View"],
+    ];
+    const attention = attentionData.map(([rank, name, id, reason, st, age, action], i) => {
+      const t = T[st];
+      return { rank, name, ns: id.split("/")[0], reason, age, action, glyph: t.glyph, glyphStyle: chip(t), open: openApp,
+        rowStyle: `display:grid; grid-template-columns:20px 16px minmax(0,1fr) 46px 82px; align-items:center; gap:9px; border-bottom:1px solid ${DIV2}; border-left:3px solid ${t.line}; background:${i < 3 ? t.fill : "#fff"}; padding:0 14px 0 11px; height:46px; cursor:pointer;`,
+        actionStyle: `display:inline-flex; align-items:center; justify-content:center; width:100%; height:23px; border:1px solid ${t.line}; background:#fff; border-radius:2px; font-size:10.5px; font-weight:600; letter-spacing:0.02em; color:${t.c};` };
+    });
+
+    const ladderStep = (w, state, h) => {
+      const t = T[state];
+      return `flex:1; height:${h}px; border:1px solid ${t.line}; background:${state === "pending" ? "transparent" : t.fill};`;
+    };
+    const inflight = [
+      { name: "checkout-api", meta: "prod-eu-1 · canary", weight: "25%", stepLabel: "STEP 3 / 6 · HELD", analysis: "1 metric failing", steps: [["5","healthy",8],["10","healthy",11],["25","degraded",14],["50","pending",17],["75","pending",20],["100","pending",22]] },
+      { name: "web-frontend", meta: "prod-eu-1 · canary", weight: "75%", stepLabel: "STEP 5 / 6 · RUNNING", analysis: "4/4 passing", steps: [["5","healthy",8],["10","healthy",11],["25","healthy",14],["50","healthy",17],["75","progressing",20],["100","pending",22]] },
+      { name: "ledger-worker", meta: "staging-1 · blue/green", weight: "0%", stepLabel: "STEP 1 / 3 · GATE", analysis: "awaiting approval", steps: [["0","progressing",10],["50","pending",16],["100","pending",22]] },
+    ].map((r) => ({ ...r, steps: r.steps.map(([w, st, h]) => ({ style: ladderStep(w, st, h), title: w + "% · " + st })) }));
+
+    const trigTag = (c) => `display:inline-flex; align-items:center; justify-content:center; height:17px; border:1px solid ${DIV}; background:#f5f5f8; border-radius:2px; font-family:ui-monospace,monospace; font-size:9px; letter-spacing:0.06em; color:${c};`;
+    const triggers = [
+      { kind: "GIT", ref: "acme/checkout-api@9f3a1c2 → main", effect: "run #418 · build, test, deploy dev", age: "34m", tagStyle: trigTag(STEEL_D) },
+      { kind: "S3", ref: "s3://acme-manifests/web/prod.tar.gz", effect: "re-rendered web-frontend · 2 fields changed", age: "51m", tagStyle: trigTag(STEEL_D) },
+      { kind: "GIT", ref: "acme/platform-charts@4c81de0 → main", effect: "ApplicationSet fan-out · 6 applications", age: "1h 08m", tagStyle: trigTag(STEEL_D) },
+      { kind: "S3", ref: "s3://acme-manifests/etl/", effect: "403 HeadObject · reporting-etl source failed", age: "1h 41m", tagStyle: trigTag(OXIDE_T) },
+      { kind: "OCI", ref: "ghcr.io/acme/auth-service:1.19.2", effect: "digest changed · auth-service resynced", age: "2h 15m", tagStyle: trigTag(STEEL_D) },
+    ];
+
+    const mixSeg = (frac, tone) => `flex:${frac}; background:${tone};`;
+    const mixBar = (list) => ["failed","missing","degraded","progressing","unknown","healthy"].map((k) => {
+      const n = list.filter((a) => a.health === k).length;
+      return n ? `flex:${n}; background:${T[k].line};` : "display:none;";
+    }).filter((s) => s !== "display:none;");
+    const usage = (label, used, req, alloc, unit) => {
+      const up = used / alloc, rp = req / alloc, hot = rp > 0.85;
+      return { label, usedPct: Math.round(up * 100) + "%", reqPct: Math.round(rp * 100) + "%",
+        text: `${used} / ${req} / ${alloc} ${unit}`,
+        trackStyle: `position:relative; height:9px; margin-top:4px; background:#e7e7ea; border:1px solid ${DIV};`,
+        usedStyle: `position:absolute; left:0; top:0; bottom:0; width:${(up * 100).toFixed(1)}%; background:${hot ? "#e0ad66" : STEEL};`,
+        reqStyle: `position:absolute; top:-3px; bottom:-3px; left:${(rp * 100).toFixed(1)}%; width:2px; background:${hot ? "#9c3f39" : INK};`,
+        reqPctStyle: `font-family:ui-monospace,monospace; font-size:9px; color:${hot ? "#9c3f39" : "#8e8e92"}; font-weight:${hot ? 700 : 400};` };
+    };
+    const clusters = [
+      { name: "prod-eu-1", meta: "vke · eu-west · v1.31.4", conn: "CONNECTED", apps: 24, nodes: 18, pods: 412, cost: "$14.2k", mix: [mixSeg(20, T.healthy.line), mixSeg(3, T.degraded.line), mixSeg(1, T.failed.line)],
+        usage: [usage("CPU", 34.6, 61.2, 72, "cores"), usage("MEMORY", 171, 198, 288, "GiB")] },
+      { name: "prod-us-1", meta: "eks · us-east-2 · v1.31.2", conn: "CONNECTED", apps: 22, nodes: 22, pods: 488, cost: "$18.6k", mix: [mixSeg(18, T.healthy.line), mixSeg(2, T.degraded.line), mixSeg(2, T.missing.line)],
+        usage: [usage("CPU", 41.9, 78.1, 88, "cores"), usage("MEMORY", 206, 251, 352, "GiB")] },
+      { name: "staging-1", meta: "kind · shared · v1.32.0", conn: "DEGRADED", apps: 11, nodes: 4, pods: 96, cost: "$0.8k", mix: [mixSeg(9, T.healthy.line), mixSeg(2, T.progressing.line)],
+        usage: [usage("CPU", 5.8, 9.1, 16, "cores"), usage("MEMORY", 29, 41, 64, "GiB")] },
+    ].map((c) => ({ ...c, connStyle: pill(c.conn === "CONNECTED" ? T.healthy : T.degraded) }));
+
+    const boardDefs = [["lifecycle","01","Lifecycle"],["posture","02","Health posture"],["attention","03","Needs attention"],["inflight","04","Rollouts"],["triggers","05","Source triggers"],["clusters","06","Clusters · capacity"]];
+    const hidden = this.state.hiddenBoards;
+    const boards = {};
+    boardDefs.forEach(([id]) => { boards[id] = { on: !hidden[id], hide: () => this.setState((st) => ({ hiddenBoards: { ...st.hiddenBoards, [id]: true } })) }; });
+    const boardChips = boardDefs.map(([id, n, label]) => ({ n, label,
+      toggle: () => this.setState((st) => ({ hiddenBoards: { ...st.hiddenBoards, [id]: !st.hiddenBoards[id] } })),
+      style: `display:inline-flex; align-items:center; gap:6px; border:1px solid ${hidden[id] ? DIV : STEEL}; background:${hidden[id] ? "#fff" : STEEL}; color:${hidden[id] ? MUTED : PAPER}; border-radius:2px; padding:3px 9px; font:inherit; font-size:11px; font-weight:600; cursor:pointer; text-decoration:${hidden[id] ? "line-through" : "none"};` }));
+    const row2on = boards.posture.on || boards.attention.on;
+    const row3on = boards.inflight.on || boards.triggers.on;
+    const row2Style = `display:grid; grid-template-columns:${boards.posture.on && boards.attention.on ? "minmax(0,1.05fr) minmax(0,1.25fr)" : "minmax(0,1fr)"}; gap:16px;`;
+    const row3Style = `display:grid; grid-template-columns:${boards.inflight.on && boards.triggers.on ? "minmax(0,1.3fr) minmax(0,1fr)" : "minmax(0,1fr)"}; gap:16px;`;
+    const customising = this.state.customising;
+
+    const miniSeg = (on, first) => `display:inline-flex; align-items:center; border:0; ${first ? "" : "border-left:1px solid " + DIV + ";"} padding:0 9px; height:100%; font:inherit; font-size:10.5px; font-weight:600; cursor:pointer; background:${on ? STEEL : "transparent"}; color:${on ? PAPER : MUTED}; white-space:nowrap;`;
+    const postureFormats = [["bars","Bars"],["heatmap","Heatmap"]].map(([k, label], i) => ({ label, select: () => this.setState({ postureFormat: k }), style: miniSeg(this.state.postureFormat === k, i === 0) }));
+    const rolloutTabs = [["inflight","In flight · 3"],["recent","Recent · 7d"]].map(([k, label], i) => ({ label, select: () => this.setState({ rolloutTab: k }), style: miniSeg(this.state.rolloutTab === k, i === 0) }));
+
+    const RELEASE = { "checkout-api": "r241", "payments-gateway": "r188", "ledger-worker": "r77", "fraud-scorer": "r132", "notifications": "r142", "auth-service": "r97", "search-indexer": "r61", "web-frontend": "r310", "cms-preview": "r19", "reporting-etl": "r54", "warehouse-sync": "r88" };
+    const NOTE = { degraded: "Health check failing; see attention queue for the reason.", failed: "Workload failing — pods restarting.", missing: "Source unreachable; last good sync retained.", progressing: "Rollout in progress; analysis running.", healthy: "All health checks passing.", unknown: "Health not yet reported." };
+    const hg = this.state.heatGroup;
+    const heatGroupChips = [["none","All"],["project","Project"],["cluster","Cluster"],["stage","Stage"]].map(([k, label], i) => ({ label, select: () => this.setState({ heatGroup: k }), style: miniSeg(hg === k, i === 0) }));
+    const hd = this.state.heatDetail;
+    const heatDetailChips = [["full","Name + target"],["name","Name"],["compact","Compact"]].map(([k, label], i) => ({ label, select: () => this.setState({ heatDetail: k }), style: miniSeg(hd === k, i === 0) }));
+    const heatKeyOf = (a) => hg === "project" ? a.project : hg === "cluster" ? a.cluster : hg === "stage" ? a.env : "all";
+    const heatKeys = hg === "none" ? ["all"] : hg === "stage" ? ["prod","staging","dev"] : [...new Set(APPS.map(heatKeyOf))].sort();
+    const heatRows = heatKeys.map((key) => {
+      const list = APPS.filter((a) => heatKeyOf(a) === key).sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || a.name.localeCompare(b.name));
+      const bad = list.filter((a) => HEALTH_RANK[a.health] < 3).length;
+      const worst = list.reduce((w, a) => HEALTH_RANK[a.health] < HEALTH_RANK[w] ? a.health : w, "healthy");
+      return { label: key, isGroup: hg !== "none", kicker: hg.toUpperCase(),
+        meta: `${list.length} target${list.length === 1 ? "" : "s"} · ${new Set(list.map((a) => a.name)).size} apps${bad ? " · " + bad + " unhealthy" : " · all healthy"}`,
+        headStyle: `display:flex; align-items:baseline; gap:8px; min-width:0; padding:0 0 6px; border-bottom:1px solid ${T[worst].line};`,
+        mix: mixBar(list),
+        tiles: list.map((a, i) => {
+          const t = T[a.health]; const id = key + ":" + a.name + ":" + a.cluster; const hov = this.state.hoverTile === id;
+          const bigTile = hg === "none" || list.length <= 6;
+          const dims = hd === "compact" ? "width:22px; height:22px; padding:0; align-items:center; justify-content:center;"
+            : hd === "name" ? `width:${bigTile ? 96 : 84}px; height:30px; padding:0 7px; justify-content:center;`
+            : `width:${bigTile ? 108 : 92}px; height:${bigTile ? 58 : 50}px; padding:5px 7px; justify-content:space-between;`;
+          return { glyph: t.glyph, hovered: hov, name: a.name, health: t.label, pillStyle: pill(t) + " background:#fff;",
+            showName: hd !== "compact", showSub: hd === "full", isCompact: hd === "compact",
+            label: a.name, sub: hg === "cluster" ? a.env : a.cluster.replace("-1", ""),
+            target: `${a.cluster} · ${a.stage}`, project: a.project, sync: a.sync === "synced" ? "Synced" : "Drifted · " + a.sync, release: RELEASE[a.name] || "—", res: a.res, cost: a.cost, note: NOTE[a.health],
+            enter: (e) => {
+              let side = "left", shift = 0, maxW = 270;
+              try {
+                const el = e.currentTarget, sec = el.closest("section"); const r = el.getBoundingClientRect(), s = sec.getBoundingClientRect();
+                maxW = Math.max(180, Math.min(270, s.width - 28));
+                const centre = (r.left + r.right) / 2;
+                side = centre > (s.left + s.right) / 2 ? "right" : "left";
+                // shift so the tooltip stays inside the section with 14px margin
+                if (side === "left") { const over = (r.left + maxW) - (s.right - 14); if (over > 0) shift = -over; }
+                else { const over = (s.left + 14) - (r.right - maxW); if (over > 0) shift = over; }
+              } catch (_) {}
+              this.setState({ hoverTile: id, hoverSide: side, hoverShift: shift, hoverMaxW: maxW });
+            },
+            leave: () => this.setState({ hoverTile: null }), open: openApp,
+            style: `display:flex; flex-direction:column; ${dims} box-sizing:border-box; border:1px solid ${t.line}; background:${hd === "compact" ? t.line : t.fill}; color:${hd === "compact" ? "#fff" : t.c}; cursor:pointer; ${hov ? "outline:2px solid " + t.line + "; outline-offset:1px; box-shadow:0 4px 12px rgba(29,45,61,0.16);" : ""}`,
+            tipStyle: `position:absolute; z-index:70; top:calc(100% + 6px); ${this.state.hoverSide === "right" ? "right:0;" : "left:0;"} transform:translateX(${this.state.hoverShift || 0}px); width:${this.state.hoverMaxW || 270}px; background:${STEEL_9}; color:${PAPER}; border:1px solid rgba(242,242,243,0.16); box-shadow:0 8px 22px rgba(29,45,61,0.28); pointer-events:none;` };
+        }) };
+    });
+
+    const recentRaw = [
+      { name: "payments-gateway", release: "r188", target: "prod-us-1 · ring 3", outcome: "healthy", label: "COMPLETED", note: "6 steps · 4/4 metrics passed at every step", steps: [1,1,1,1,1,1], took: "24m", when: "2h" },
+      { name: "auth-service", release: "r97", target: "prod-eu-1 · ring 2", outcome: "healthy", label: "COMPLETED", note: "3 steps · blue/green · switched at 09:12", steps: [1,1,1], took: "18m", when: "3h" },
+      { name: "notifications", release: "r142", target: "prod-us-1 · ring 3", outcome: "failed", label: "ABORTED", note: "error rate 2.1% > 1% at 10% · auto rolled back to r141", steps: [1,2,0,0,0,0], took: "7m", when: "5h" },
+      { name: "search-indexer", release: "r61", target: "prod-eu-1 · ring 2", outcome: "healthy", label: "COMPLETED", note: "6 steps · one manual approval at 50%", steps: [1,1,1,1,1,1], took: "41m", when: "1d" },
+      { name: "web-frontend", release: "r309", target: "prod-eu-1 · ring 2", outcome: "healthy", label: "COMPLETED", note: "6 steps · p99 within 6% of baseline", steps: [1,1,1,1,1,1], took: "31m", when: "1d" },
+      { name: "fraud-scorer", release: "r131", target: "prod-us-1 · ring 3", outcome: "degraded", label: "ROLLED BACK", note: "operator abort at 25% · saturation alert · rolled back to r130", steps: [1,1,2,0,0,0], took: "12m", when: "2d" },
+    ];
+    const recentRollouts = recentRaw.map((r, i) => ({ name: r.name, release: r.release, note: r.note, took: r.took, when: r.when, outcome: r.label, pillStyle: pill(T[r.outcome]),
+      steps: r.steps.map((s, j) => { const t = s === 1 ? T.healthy : s === 2 ? T.failed : T.pending; return `flex:1; width:10px; height:${6 + j * 1.6}px; border:1px solid ${t.line}; background:${s === 0 ? "transparent" : t.fill};`; }),
+      rowStyle: `display:grid; grid-template-columns:minmax(150px,1fr) 88px 84px 44px 44px; align-items:center; gap:8px; border-bottom:1px solid ${DIV2}; border-left:3px solid ${T[r.outcome].line}; background:${r.outcome === "healthy" ? "#fff" : T[r.outcome].fill}; padding:9px 14px 9px 11px; cursor:pointer;` }));
+    const recentStats = { total: 11, ok: 9, aborted: 2, median: "22m" };
+
+    const presentations = ["Treemap", "Matrix", "Table", "Queue"].map((label) => {
+      const on = this.state.view === label;
+      return { label, select: () => this.setState({ view: label }),
+        style: `display:inline-flex; align-items:center; border:0; ${label === "Treemap" ? "" : "border-left:1px solid " + DIV + ";"} padding:0 14px; font:inherit; font-family:'Barlow',sans-serif; font-size:12px; font-weight:600; cursor:pointer; background:${on ? STEEL : "transparent"}; color:${on ? PAPER : MUTED};` };
+    });
+
+    const facetChip = (on) => `border:1px solid ${on ? STEEL : DIV}; background:${on ? "#eef6ff" : "#fff"}; border-radius:2px; padding:3px 9px; font:inherit; font-size:11px; color:${on ? "#2c455d" : MUTED}; cursor:pointer;`;
+    const facetChips = [
+      { label: "Degraded", count: 4, style: facetChip(true) },
+      { label: "Out of sync", count: 8, style: facetChip(true) },
+      { label: "Failed", count: 2, style: facetChip(false) },
+      { label: "prod", count: 25, style: facetChip(false) },
+      { label: "Helm", count: 33, style: facetChip(false) },
+      { label: "Blocked gate", count: 2, style: facetChip(false) },
+    ];
+
+    const stripTone = { ok: T.healthy, fail: T.failed, degraded: T.degraded, run: T.progressing, pend: T.pending };
+    const stripNames = ["source","build","test","render","deploy","verify"];
+    const gb = this.state.groupBy;
+    const groupKeyOf = (a) => gb === "project" ? a.project : gb === "cluster" ? a.cluster : gb === "stage" ? a.env : "all";
+    const groupChips = [["none","None"],["project","Project"],["cluster","Cluster"],["stage","Stage"]].map(([k, label]) => ({
+      label, select: () => this.setState({ groupBy: k }),
+      style: `display:inline-flex; align-items:center; border:0; ${k === "none" ? "" : "border-left:1px solid " + DIV + ";"} padding:0 11px; height:100%; font:inherit; font-size:11px; font-weight:600; cursor:pointer; background:${gb === k ? STEEL : "transparent"}; color:${gb === k ? PAPER : MUTED}; white-space:nowrap;`,
+    }));
+    const sortedScoped = [...scopedApps].sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || a.name.localeCompare(b.name));
+    const groupMeta = (list) => {
+      const drift = list.filter((a) => a.sync !== "synced").length;
+      const bad = list.filter((a) => HEALTH_RANK[a.health] < 3).length;
+      const parts = [`${list.length} target${list.length === 1 ? "" : "s"}`, `${new Set(list.map((a) => a.name)).size} apps`];
+      if (bad) parts.push(`${bad} unhealthy`);
+      if (drift) parts.push(`${drift} drifted`);
+      return parts.join(" · ");
+    };
+    const groupOrder = gb === "stage" ? ["prod","staging","dev"] : [...new Set(sortedScoped.map(groupKeyOf))].sort();
+    const groups = (gb === "none" ? ["all"] : groupOrder).map((key) => {
+      const list = sortedScoped.filter((a) => groupKeyOf(a) === key);
+      if (!list.length) return null;
+      const closed = Boolean(this.state.groupClosed[key]);
+      const worst = list.reduce((w, a) => HEALTH_RANK[a.health] < HEALTH_RANK[w] ? a.health : w, "healthy");
+      return {
+        key, label: gb === "none" ? "All applications" : key, isGroup: gb !== "none", open: !closed,
+        kicker: gb === "project" ? "PROJECT" : gb === "cluster" ? "CLUSTER" : gb === "stage" ? "STAGE" : "",
+        meta: groupMeta(list), mix: mixBar(list), glyph: T[worst].glyph, glyphStyle: chip(T[worst]),
+        toggle: () => this.setState((st) => ({ groupClosed: { ...st.groupClosed, [key]: !st.groupClosed[key] } })),
+        chevStyle: `display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border:1px solid ${DIV}; background:#fff; border-radius:2px; padding:0; cursor:pointer; color:#5d5d60; transform:rotate(${closed ? -90 : 0}deg); transition:transform .15s;`,
+        chev: icon("chevron", 11),
+        headStyle: `display:flex; align-items:center; gap:12px; border-bottom:1px solid ${DIV}; border-top:1px solid ${DIV}; background:${T[worst].fill}; padding:0 22px; height:40px; cursor:pointer;`,
+        rows: list,
+      };
+    }).filter(Boolean);
+    const inventoryGroups = groups.map((g) => ({ ...g, rows: g.rows.map((a, i) => {
+      const ht = T[a.health];
+      const syncOk = a.sync === "synced";
+      return {
+        name: a.name, id: a.ns + "/" + a.name, project: a.project, cluster: a.cluster, stage: a.stage,
+        health: ht.label, healthStyle: pill(ht), sync: syncOk ? "Synced" : "Drifted", syncStyle: pill(syncOk ? T.healthy : T.degraded),
+        glyph: ht.glyph, glyphStyle: chip(ht), resources: a.res, cost: a.cost, actions: a.actions, open: openApp,
+        rowStyle: `display:grid; grid-template-columns:minmax(190px,1.3fr) 120px minmax(120px,1fr) 92px 88px 150px 74px 78px 118px; align-items:center; gap:12px; border-bottom:1px solid ${DIV2}; background:${i % 2 ? "#fbfbfc" : "#fff"}; padding:0 22px; height:${rowH}px; cursor:pointer;`,
+        strip: showStrip ? a.strip.map((k, j) => {
+          const t = stripTone[k];
+          return { title: stripNames[j] + " · " + t.label, style: `width:20px; height:16px; border:1px solid ${t.line}; background:${k === "pend" ? "transparent" : t.fill};` };
+        }) : [],
+      };
+    }) }));
+
+    const tmGroups = groups.map((g) => ({
+      label: g.label, meta: g.meta, isGroup: g.isGroup, kicker: g.kicker,
+      tiles: g.rows.map((a) => {
+        const t = T[a.health];
+        const w = Math.max(150, Math.round(a.res * 9));
+        return { name: a.name, sub: `${a.cluster} · ${a.stage}`, glyph: t.glyph, res: `${a.res} res`, open: openApp,
+          style: `flex:${a.res} 1 ${w}px; min-width:${w}px; min-height:66px; box-sizing:border-box; border:1px solid ${t.line}; background:${t.fill}; padding:7px 9px; cursor:pointer; color:${t.c};` };
+      }),
+    }));
+
+    const mxCols = [...new Set(scopedApps.map((a) => a.cluster))].sort();
+    const mxRows = gb === "stage" ? ["prod","staging","dev"] : [...new Set(scopedApps.map((a) => gb === "cluster" ? a.env : a.project))].sort();
+    const mxRowKey = (a) => gb === "cluster" ? a.env : gb === "stage" ? a.env : a.project;
+    const matrix = {
+      rowLabel: gb === "cluster" || gb === "stage" ? "STAGE" : "PROJECT",
+      cols: mxCols.map((c) => ({ label: c })),
+      colStyle: `display:grid; grid-template-columns:150px repeat(${mxCols.length},minmax(0,1fr)); gap:1px; background:${DIV};`,
+      rows: mxRows.map((r) => ({
+        label: r,
+        cells: mxCols.map((c) => {
+          const list = scopedApps.filter((a) => mxRowKey(a) === r && a.cluster === c);
+          const buckets = ["failed","missing","degraded","progressing","healthy"].map((k) => ({ n: list.filter((a) => a.health === k).length, k })).filter((b) => b.n);
+          return { empty: list.length === 0, count: list.length ? `${list.length}` : "—", apps: `${new Set(list.map((a) => a.name)).size} apps`,
+            pills: buckets.map((b) => ({ label: `${T[b.k].glyph} ${b.n}`, style: pill(T[b.k]) })),
+            style: `background:${list.length ? "#fff" : "#f5f5f8"}; padding:10px 12px; min-height:64px;` };
+        }),
+      })),
+    };
+
+    const queueRows = sortedScoped.filter((a) => a.health !== "healthy" || a.sync !== "synced").map((a, i) => {
+      const t = T[a.health];
+      const reason = a.health === "failed" ? "workload failing" : a.health === "missing" ? "source unreachable" : a.health === "degraded" ? (a.sync !== "synced" ? "degraded · drifted" : "degraded") : a.health === "progressing" ? "rollout in progress" : "drifted";
+      return { rank: String(i + 1).padStart(2, "0"), name: a.name, id: `${a.ns}/${a.name}`, target: `${a.cluster} · ${a.stage}`, project: a.project, reason, glyph: t.glyph, glyphStyle: chip(t), open: openApp,
+        style: `display:grid; grid-template-columns:28px 16px minmax(0,1.2fr) minmax(0,1fr) 140px minmax(0,1fr); align-items:center; gap:12px; border-bottom:1px solid ${DIV2}; border-left:3px solid ${t.line}; background:${i < 3 ? t.fill : "#fff"}; padding:0 22px 0 19px; height:${rowH}px; cursor:pointer;` };
+    });
+
+    const mapRowsBy = this.state.mapRowsBy;
+    const mapRowChips = [["stage","Stage"],["project","Project"]].map(([k, label]) => ({
+      label, select: () => this.setState({ mapRowsBy: k }),
+      style: `display:inline-flex; align-items:center; border:0; ${k === "stage" ? "" : "border-left:1px solid " + DIV + ";"} padding:0 11px; height:100%; font:inherit; font-size:11px; font-weight:600; cursor:pointer; background:${mapRowsBy === k ? STEEL : "transparent"}; color:${mapRowsBy === k ? PAPER : MUTED};`,
+    }));
+
+    const appTags = ["owner: payments-core", "on-call: @rmoreau", "tier: 1", "helm · deploy/chart", "prod-eu-1"];
+
+    const tlData = [
+      ["Source", "healthy", "4s", "push to main · 9f3a1c2", "View commit \u2197"],
+      ["Build", "healthy", "48s", "kaniko · image pushed to ghcr", "ghcr.io/acme/checkout-api"],
+      ["Test", "degraded", "1m 06s", "213 passed · 1 failed (retried, green)", "Open run #418"],
+      ["Render", "healthy", "2s", "Helm · deploy/chart · 14 objects", "View manifest"],
+      ["Deploy", "healthy", "31s", "applied to prod-eu-1 · ring 2", "3 fields drifted since"],
+      ["Verify", "failed", "6m 12s", "canary held · p99 latency breach", "Open rollout"],
+    ];
+    const timeline = tlData.map(([label, st, dur, detail, link], i) => {
+      const t = T[st];
+      return { label, dur, detail, link, glyph: t.glyph, glyphStyle: chip(t),
+        cellStyle: `background:${st === "healthy" ? "#fff" : t.fill}; padding:11px 13px 13px; cursor:pointer;`,
+        go: i === 5 ? this.go("rollout") : i === 2 ? this.go("pipeline") : this.go("appDetail") };
+    });
+
+    const graphNodes = GRAPH.map((n) => {
+      const t = T[n.state];
+      const sel = n.name === "…7d4f-m4p1";
+      return { kind: n.kind, name: n.name, badge: n.badge, glyph: t.glyph, glyphStyle: chip(t),
+        badgeStyle: n.badge ? `flex:none; border:1px solid ${t.line}; background:${t.fill}; border-radius:2px; padding:1px 5px; font-family:ui-monospace,monospace; font-size:9px; color:${t.c};` : "display:none;",
+        style: `position:absolute; left:${n.x}px; top:${n.y}px; width:${n.w}px; box-sizing:border-box; display:flex; align-items:center; gap:8px; border:1px solid ${sel ? OXIDE : "rgba(29,31,32,0.28)"}; outline:${sel ? "2px solid rgba(168,68,59,0.25)" : "none"}; background:#fff; padding:6px 8px; cursor:pointer;`,
+        open: () => this.setState({ panel: n.kind + " " + n.name, panelTab: "Diff" }) };
+    });
+    const treeRows = [];
+    const walk = (nodes, depth) => nodes.forEach((n) => {
+      const t = T[n.st];
+      const kids = n.children || [];
+      const closed = Boolean(this.state.treeClosed[n.id]);
+      treeRows.push({
+        kind: n.kind.toUpperCase(), name: n.name, meta: n.meta, glyph: t.glyph, glyphStyle: chip(t),
+        health: t.label, healthStyle: pill(t), sync: n.sync === "Synced" ? "Synced" : "Drifted", syncStyle: pill(n.sync === "Synced" ? T.healthy : T.degraded),
+        indentStyle: `width:${depth * 22}px; flex:none;`,
+        hasKids: kids.length > 0,
+        expStyle: `display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; flex:none; border:1px solid ${kids.length ? DIV : "transparent"}; background:${kids.length ? "#fff" : "transparent"}; border-radius:2px; padding:0; cursor:${kids.length ? "pointer" : "default"}; color:#5d5d60; transform:rotate(${closed ? -90 : 0}deg); transition:transform .15s;`,
+        expIcon: kids.length ? icon("chevron", 11) : null,
+        toggle: (e) => { e && e.stopPropagation && e.stopPropagation(); this.setState((st) => ({ treeClosed: { ...st.treeClosed, [n.id]: !st.treeClosed[n.id] } })); },
+        open: () => this.setState({ panel: n.kind.toUpperCase() + " " + n.name, panelTab: "Diff" }),
+        rowStyle: `display:grid; grid-template-columns:minmax(0,1fr) 92px 84px; align-items:center; gap:12px; border-bottom:1px solid ${DIV2}; background:${n.st === "failed" ? t.fill : "#fff"}; padding:0 14px; height:38px; cursor:pointer;`,
+        countLabel: kids.length ? `${kids.length}` : "",
+      });
+      if (!closed) walk(kids, depth + 1);
+    });
+    walk(TREE, 0);
+    const rv = this.state.resourceView;
+    const segOpt = (on, first) => `display:inline-flex; align-items:center; border:0; ${first ? "" : "border-left:1px solid " + DIV + ";"} padding:0 9px; height:100%; font:inherit; font-size:11px; cursor:pointer; background:${on ? STEEL : "transparent"}; color:${on ? PAPER : MUTED};`;
+    const graphSegStyle = segOpt(rv === "graph", true), treeSegStyle = segOpt(rv === "tree", false);
+    const setGraph = () => this.setState({ resourceView: "graph" }), setTree = () => this.setState({ resourceView: "tree" });
+    const expandAll = () => this.setState({ treeClosed: {} });
+    const collapseAll = () => this.setState({ treeClosed: { app: false, dep: true, svc: true, rs: true } });
+    const secIds = ["lifecycle","posture","attention","inflight","triggers","clusters","timeline","graph","drill","gates","source","promotion"];
+    const sec = {}; secIds.forEach((id) => { sec[id] = this.section(id); });
+
+    const graphLegend = ["healthy","progressing","degraded","failed"].map((k) => ({ label: T[k].label, glyph: T[k].glyph, glyphStyle: chip(T[k]) }));
+
+    const drilldowns = [
+      { glyph: icon("gauge", 14, STEEL_D), label: "Grafana — service overview", meta: "golden signals" },
+      { glyph: icon("logs", 14, STEEL_D), label: "Logs — Loki", meta: "app=checkout-api" },
+      { glyph: icon("traces", 14, STEEL_D), label: "Traces — Tempo", meta: "p99 3.4s" },
+      { glyph: icon("book", 14, STEEL_D), label: "Runbook — payment capture", meta: "confluence" },
+      { glyph: icon("users", 14, STEEL_D), label: "Owning team — payments-core", meta: "@rmoreau" },
+      { glyph: icon("coins", 14, STEEL_D), label: "Cost — 30 day", meta: "$4,120" },
+    ];
+
+    const gates = [
+      { name: "manual-approval", detail: "ring 2 · release manager", st: "degraded", action: "Approve" },
+      { name: "conftest: resource-limits", detail: "4 rules · all passed", st: "healthy", action: "" },
+      { name: "analysis: golden-signals", detail: "3 of 4 metrics passing", st: "failed", action: "View" },
+      { name: "sync window", detail: "open until 18:00 UTC", st: "healthy", action: "" },
+    ].map((g) => ({ name: g.name, detail: g.detail, action: g.action, glyph: T[g.st].glyph, glyphStyle: chip(T[g.st]),
+      actionStyle: g.action ? `display:inline-flex; align-items:center; height:21px; border:1px solid ${DIV}; background:#fff; border-radius:2px; padding:0 8px; font-size:10px; font-weight:600; color:${STEEL_D}; cursor:pointer;` : "display:none;" }));
+
+    const sourceRows = [
+      { k: "Repository", v: "github.com/acme/checkout-api" },
+      { k: "Path", v: "deploy/chart" },
+      { k: "Engine", v: "Helm 3.16" },
+      { k: "Revision", v: "9f3a1c2" },
+      { k: "Sync policy", v: "auto · self-heal" },
+      { k: "Strategy", v: "canary 5/10/25/50/75/100" },
+    ];
+
+    const promotion = [
+      { ring: 0, name: "dev", cluster: "staging-1", state: "r241 · synced 41m ago", st: "healthy" },
+      { ring: 1, name: "staging", cluster: "staging-1", state: "r241 · synced 38m ago", st: "healthy" },
+      { ring: 2, name: "prod-eu", cluster: "prod-eu-1", state: "r241 · canary held at 25%", st: "degraded" },
+      { ring: 3, name: "prod-us", cluster: "prod-us-1", state: "r240 · awaiting ring 2", st: "pending" },
+    ].map((p) => ({ ...p, glyph: T[p.st].glyph, glyphStyle: chip(T[p.st]),
+      cellStyle: `background:${p.st === "healthy" ? "#fff" : T[p.st].fill}; padding:11px 13px 13px;` }));
+
+    const dl = (kind, n, text) => {
+      const map = { add: [`background:rgba(74,124,82,0.10); color:#2f5237;`, "+"], del: [`background:rgba(168,68,59,0.10); color:#7d3129;`, "-"], ctx: [`color:${MUTED};`, " "] };
+      const [st] = map[kind];
+      return { n, text, style: `${st} padding:0 10px; white-space:pre;` };
+    };
+    const diffLines = [
+      dl("ctx", 18, "  spec:"),
+      dl("ctx", 19, "    replicas: 3"),
+      dl("del", 20, "-   replicas: 1"),
+      dl("add", 21, "+   replicas: 3"),
+      dl("ctx", 22, "    template:"),
+      dl("ctx", 23, "      spec:"),
+      dl("ctx", 24, "        containers:"),
+      dl("ctx", 25, "        - name: app"),
+      dl("del", 26, "-         image: ghcr.io/acme/checkout-api:8c22b90"),
+      dl("add", 27, "+         image: ghcr.io/acme/checkout-api:9f3a1c2"),
+      dl("ctx", 28, "          resources:"),
+      dl("ctx", 29, "            limits:"),
+      dl("del", 30, "-             memory: 512Mi"),
+      dl("add", 31, "+             memory: 1Gi"),
+      dl("ctx", 32, "              cpu: \"1\""),
+      dl("ctx", 33, "          readinessProbe:"),
+      dl("del", 34, "-           timeoutSeconds: 1"),
+      dl("add", 35, "+           timeoutSeconds: 3"),
+    ];
+
+    const panelTabs = ["Diff", "Live", "Desired", "Events", "Logs"].map((label) => ({
+      label, select: () => this.setState({ panelTab: label }),
+      style: `border:0; background:none; padding:9px 12px; font:inherit; font-size:12px; cursor:pointer; ${this.state.panelTab === label ? `border-bottom:2px solid ${STEEL}; font-weight:600; color:${INK};` : `color:${MUTED};`}`,
+    }));
+    const panelEvents = [
+      { reason: "BackOff", message: "Back-off restarting failed container app in pod checkout-api-7d4f-m4p1", at: "12 × · last 41s ago", st: "failed" },
+      { reason: "Unhealthy", message: "Readiness probe failed: HTTP probe failed with statuscode: 503", at: "31 × · last 1m 12s ago", st: "degraded" },
+      { reason: "Pulled", message: "Successfully pulled image ghcr.io/acme/checkout-api:9f3a1c2 in 2.1s", at: "1 × · 6m ago", st: "healthy" },
+      { reason: "Scheduled", message: "Successfully assigned payments/checkout-api-7d4f-m4p1 to ip-10-2-31-8", at: "1 × · 6m ago", st: "healthy" },
+    ].map((e) => ({ ...e, glyph: T[e.st].glyph, glyphStyle: chip(T[e.st]) }));
+
+    const diffFilters = [["All", 14], ["Drifted", 3], ["Missing", 1], ["Degraded", 2], ["Pruned", 0]].map(([label, count], i) => ({
+      label, count, style: `display:inline-flex; align-items:center; gap:5px; border:1px solid ${i === 1 ? STEEL : DIV}; background:${i === 1 ? "#eef6ff" : "#fff"}; border-radius:2px; padding:3px 8px; font-size:11px; color:${i === 1 ? "#2c455d" : MUTED}; cursor:pointer;` }));
+
+    const driftQueue = [
+      { kind: "DEPLOYMENT", name: "checkout-api", reason: "replicas, image, memory, probe", fields: "4", st: "degraded", sel: true },
+      { kind: "CONFIGMAP", name: "checkout-api-env", reason: "2 keys changed outside Paprika", fields: "2", st: "degraded" },
+      { kind: "SERVICE", name: "notifications", reason: "annotation removed by controller", fields: "1", st: "degraded" },
+      { kind: "CRONJOB", name: "reporting-etl-nightly", reason: "object missing in cluster", fields: "\u2205", st: "missing" },
+      { kind: "HPA", name: "web-frontend", reason: "maxReplicas drifted 12 → 20", fields: "1", st: "degraded" },
+      { kind: "INGRESS", name: "auth-service", reason: "TLS secret rotated in place", fields: "1", st: "unknown" },
+      { kind: "SECRET", name: "payments-gateway-key", reason: "protected · excluded from prune", fields: "0", st: "healthy" },
+      { kind: "POD", name: "checkout-api-7d4f-m4p1", reason: "CrashLoopBackOff · 12 restarts", fields: "\u2013", st: "failed" },
+    ].map((q, i) => ({ ...q, glyph: T[q.st].glyph, glyphStyle: chip(T[q.st]),
+      select: () => {}, style: `border-bottom:1px solid ${DIV2}; border-left:3px solid ${q.sel ? STEEL : "transparent"}; background:${q.sel ? "#eef6ff" : "#fff"}; padding:9px 13px; cursor:pointer;` }));
+
+    const dagNodes = DAG.map((d) => {
+      const t = T[d.state];
+      return { name: d.name, meta: d.meta, glyph: t.glyph, glyphStyle: chip(t), select: () => {},
+        style: `position:absolute; left:${d.x}px; top:${d.y}px; width:170px; box-sizing:border-box; display:flex; align-items:center; gap:8px; border:1px solid ${d.sel ? STEEL : "rgba(29,31,32,0.28)"}; border-left:3px solid ${t.line}; outline:${d.sel ? "2px solid rgba(89,128,166,0.25)" : "none"}; background:#fff; padding:7px 9px; cursor:pointer;` };
+    });
+    const pipelineStats = [
+      { label: "ELAPSED", value: "2m 14s" }, { label: "CACHE HIT", value: "74%" },
+      { label: "STEPS", value: "3/7" }, { label: "CPU-MIN", value: "9.4" },
+    ];
+    const artifacts = [
+      { glyph: icon("pkg", 14, STEEL_D), name: "ghcr.io/acme/checkout-api:9f3a1c2", meta: "oci image · 84 MB · sha256:4a1f…", badge: "SIGNED", st: "healthy" },
+      { glyph: icon("file", 14, STEEL_D), name: "sbom.cyclonedx.json", meta: "412 components · 0 critical", badge: "CLEAN", st: "healthy" },
+      { glyph: icon("flask", 14, STEEL_D), name: "junit-report.xml", meta: "214 tests · 1 flake retried", badge: "1 FLAKE", st: "degraded" },
+    ].map((a) => ({ ...a, badgeStyle: pill(T[a.st]) }));
+
+    const ladder = [
+      { n: 1, weight: "5%", note: "passed 4/4", st: "healthy", h: 26 },
+      { n: 2, weight: "10%", note: "passed 4/4", st: "healthy", h: 38 },
+      { n: 3, weight: "25%", note: "held · latency", st: "degraded", h: 52 },
+      { n: 4, weight: "50%", note: "queued", st: "pending", h: 68 },
+      { n: 5, weight: "75%", note: "queued", st: "pending", h: 84 },
+      { n: 6, weight: "100%", note: "queued", st: "pending", h: 100 },
+    ].map((x) => ({ ...x, glyph: T[x.st].glyph, glyphStyle: chip(T[x.st]),
+      weightStyle: `font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; color:${x.st === "pending" ? "#8e8e92" : T[x.st].c};`,
+      barStyle: `width:100%; height:${x.h}px; border:1px solid ${T[x.st].line}; ${x.st === "pending" ? "border-style:dashed; background:transparent;" : "background:" + T[x.st].fill + ";"}` }));
+
+    const analysis = [
+      { name: "success rate", query: "sum(rate(http_requests_total{code!~\"5..\"}[2m]))", baseline: "99.94%", canary: "99.91%", threshold: "≥ 99.5%", st: "healthy" },
+      { name: "p99 latency", query: "histogram_quantile(0.99, …)", baseline: "412 ms", canary: "581 ms", threshold: "≤ 500 ms", st: "failed" },
+      { name: "error budget burn", query: "burn_rate_1h / 14.4", baseline: "0.3×", canary: "0.9×", threshold: "≤ 2×", st: "healthy" },
+      { name: "pod restarts", query: "increase(kube_pod_container_status_restarts[5m])", baseline: "0", canary: "0", threshold: "= 0", st: "healthy" },
+    ].map((m) => ({ ...m, result: m.st === "failed" ? "FAIL" : "PASS", resultStyle: pill(T[m.st]),
+      canaryStyle: `font-family:ui-monospace,monospace; font-size:12px; text-align:right; font-variant-numeric:tabular-nums; color:${m.st === "failed" ? OXIDE_T : INK}; font-weight:${m.st === "failed" ? 700 : 400};` }));
+
+    const rolloutLog = [
+      ["09:41", "failed", "Analysis run golden-signals failed · p99 581 ms > 500 ms threshold (3 consecutive intervals)"],
+      ["09:38", "degraded", "Rollout paused automatically at step 3. Traffic frozen at 25%."],
+      ["09:35", "progressing", "Weight advanced 10% → 25% · VirtualService updated"],
+      ["09:33", "healthy", "Analysis run golden-signals passed at 10% · 4/4 metrics"],
+      ["09:30", "progressing", "Weight advanced 5% → 10%"],
+      ["09:28", "healthy", "Canary ReplicaSet checkout-api-7d4f scaled to 2 · pods ready"],
+      ["09:27", "progressing", "Rollout started from release r241 · image 9f3a1c2"],
+    ].map(([at, st, text]) => ({ at, text, glyph: T[st].glyph, glyphStyle: chip(T[st]) }));
+
+    const mapClusters = [
+      { name: "prod-eu-1", meta: "18 nodes · eu-west" },
+      { name: "prod-us-1", meta: "22 nodes · us-east-2" },
+      { name: "staging-1", meta: "4 nodes · shared" },
+    ];
+    const sq = (st) => `display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border:1px solid ${T[st].line}; background:${T[st].fill}; color:${T[st].c}; font-size:10px; font-weight:700; cursor:pointer;`;
+    const cell = (list, summary) => ({ apps: list.map((st, i) => ({ style: sq(st), glyph: T[st].glyph, title: T[st].label, open: openApp })), summary });
+    const mapRowKeys = mapRowsBy === "stage" ? ["prod","staging","dev"] : [...new Set(APPS.map((a) => a.project))].sort();
+    const mapRowsLive = mapRowKeys.map((rk) => ({
+      stage: rk,
+      cells: mapClusters.map((c) => {
+        const list = APPS.filter((a) => (mapRowsBy === "stage" ? a.env : a.project) === rk && a.cluster === c.name)
+          .sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health]);
+        const bad = list.filter((a) => HEALTH_RANK[a.health] < 3).length;
+        return { apps: list.map((a) => ({ style: sq(a.health), glyph: T[a.health].glyph, title: `${a.name} · ${T[a.health].label}`, open: openApp })),
+          summary: list.length ? `${list.length} target${list.length === 1 ? "" : "s"}${bad ? ` · ${bad} unhealthy` : " · all healthy"}` : "no targets" };
+      }),
+    }));
+    const mapRows = [
+      { stage: "prod", cells: [
+        cell(["healthy","healthy","healthy","degraded","healthy","healthy","healthy","failed","healthy","healthy","healthy","healthy"], "12 apps · 1 degraded · 1 failed"),
+        cell(["healthy","healthy","degraded","healthy","healthy","healthy","healthy","healthy","missing","healthy"], "10 apps · 1 degraded · 1 missing"),
+        cell([], "no prod targets"),
+      ]},
+      { stage: "staging", cells: [
+        cell(["healthy","healthy","healthy","healthy","healthy","progressing"], "6 apps · 1 progressing"),
+        cell(["healthy","healthy","healthy","healthy","healthy","healthy","healthy"], "7 apps · all healthy"),
+        cell(["healthy","progressing","healthy","healthy","progressing","healthy","healthy"], "7 apps · 2 progressing"),
+      ]},
+      { stage: "dev", cells: [
+        cell(["healthy","healthy","healthy","healthy","healthy","healthy"], "6 apps · all healthy"),
+        cell(["healthy","healthy","healthy","healthy","healthy"], "5 apps · all healthy"),
+        cell(["healthy","healthy","healthy","healthy"], "4 apps · all healthy"),
+      ]},
+    ];
+
+    return {
+      navSections, scopes,
+      isOverview: s === "overview", isApplications: s === "applications", isAppDetail: s === "appDetail",
+      isPipeline: s === "pipeline", isRollout: s === "rollout", isDiff: s === "diff", isMap: s === "map",
+      goApplications: this.go("applications"), goRollout: this.go("rollout"), goMap: this.go("map"), goDiff: this.go("diff"),
+      lifecycle, posture, attention, inflight, triggers, clusters,
+      boards, boardChips, row2on, row3on, row2Style, row3Style, customising, eyeOff: icon("eyeOff", 12),
+      toggleCustomise: () => this.setState((st) => ({ customising: !st.customising })),
+      customiseLabel: customising ? "Done" : "Customise",
+      customiseBtnStyle: `height:32px; ${customising ? "background:" + STEEL + "; color:" + PAPER + "; border-color:" + STEEL + ";" : ""}`,
+      resetBoards: () => this.setState({ hiddenBoards: {}, postureFormat: "heatmap", rolloutTab: "inflight" }),
+      postureFormats, postureIsBars: this.state.postureFormat === "bars", postureIsHeatmap: this.state.postureFormat === "heatmap", heatRows, heatGroupChips, heatDetailChips,
+      heatSettingsOpen: this.state.heatSettingsOpen, cog: icon("cog", 12),
+      toggleHeatSettings: () => this.setState((st) => ({ heatSettingsOpen: !st.heatSettingsOpen })),
+      closeHeatSettings: () => this.setState({ heatSettingsOpen: false }),
+      cogStyle: `display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid ${this.state.heatSettingsOpen ? STEEL : DIV}; background:${this.state.heatSettingsOpen ? "#e7f0f8" : "#fff"}; border-radius:2px; padding:0; cursor:pointer; color:${this.state.heatSettingsOpen ? "#2c455d" : "#5d5d60"};`,
+      heatSummary: `${hg === "none" ? "ungrouped" : "by " + hg} · ${hd === "full" ? "name + target" : hd === "name" ? "name" : "compact"}`,
+      rolloutTabs, rolloutIsInflight: this.state.rolloutTab === "inflight", rolloutIsRecent: this.state.rolloutTab === "recent", recentRollouts, recentStats,
+      presentations, facetChips,
+      appTags, timeline, graphNodes, graphLegend, drilldowns, gates, sourceRows, promotion,
+      treeRows, isGraphView: rv === "graph" && sec.graph.open, isTreeView: rv === "tree" && sec.graph.open, graphSegStyle, treeSegStyle, setGraph, setTree, expandAll, collapseAll, sec,
+      panelOpen: Boolean(this.state.panel), closePanel: () => this.setState({ panel: null }),
+      panelKind: this.state.panel ? String(this.state.panel).split(" ")[0] : "",
+      panelName: this.state.panel ? String(this.state.panel).split(" ").slice(1).join(" ") : "",
+      panelTags: ["payments", "sync: OutOfSync", "health: Degraded", "restarts: 12"],
+      panelTabs, panelIsDiff: this.state.panelTab === "Diff", panelIsEvents: this.state.panelTab === "Events",
+      panelIsLogs: this.state.panelTab === "Logs",
+      panelIsManifest: this.state.panelTab === "Live" || this.state.panelTab === "Desired",
+      panelEvents, diffLines,
+      panelLogs: "09:41:02.118  ERRO  capture: duplicate charge detected, refusing write\n09:41:02.119  INFO  capture: rolling back tx 0x8812fa\n09:41:03.402  WARN  readyz: dependency ledger-grpc unavailable (3 of 3 attempts)\n09:41:04.771  ERRO  readyz: returning 503\n09:41:06.010  INFO  shutting down: received SIGTERM\n09:41:06.221  INFO  drained 41 in-flight requests in 208ms\n09:41:07.004  INFO  starting checkout-api 9f3a1c2 (go1.25.1)\n09:41:07.910  WARN  ledger-grpc: dial tcp 10.2.44.9:9090: i/o timeout",
+      panelManifest: "apiVersion: v1\nkind: Pod\nmetadata:\n  name: checkout-api-7d4f-m4p1\n  namespace: payments\n  labels:\n    app.kubernetes.io/name: checkout-api\n    paprika.io/release: r241\nspec:\n  containers:\n  - name: app\n    image: ghcr.io/acme/checkout-api:9f3a1c2\n    resources:\n      limits:\n        cpu: \"1\"\n        memory: 1Gi\nstatus:\n  phase: Running\n  containerStatuses:\n  - restartCount: 12\n    state:\n      waiting:\n        reason: CrashLoopBackOff",
+      diffFilters, driftQueue,
+      dagNodes, pipelineStats, artifacts,
+      pipelineLogs: "09:39:41  ==> go test ./... -count=1 -race\n09:39:44  ok      checkout/cart        0.42s\n09:39:47  ok      checkout/pricing     1.10s\n09:39:52  ok      checkout/tax         0.88s\n09:40:01  --- FAIL: TestIdempotentCapture (0.31s)\n09:40:01      capture_test.go:118: want 1 charge, got 2\n09:40:02  ==> retrying 1 failed test (flake policy: 1 retry)\n09:40:04  ok      checkout/capture     0.29s\n09:40:09  ok      checkout/webhooks    2.31s\n09:40:14  ==> 214 passed, 0 failed, 1 retried",
+      ladder, analysis, rolloutLog, mapClusters, mapRows: mapRowsLive, mapRowChips,
+      scopeSummary, clearScope, scopeActive, closeScope: () => this.setState({ openScope: null }),
+      groupChips, inventoryGroups, tmGroups, matrix, queueRows,
+      isTable: this.state.view === "Table", isTreemap: this.state.view === "Treemap", isMatrix: this.state.view === "Matrix", isQueue: this.state.view === "Queue",
+      scopedCount: `${scopedApps.length} targets · ${new Set(scopedApps.map((a) => a.name)).size} apps in scope`,
+    };
+  }
+}
+
+</script>
+</body>
+</html>
