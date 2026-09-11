@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -206,6 +207,61 @@ func TestFleetMapUnderTheCapIsNotMarkedTruncated(t *testing.T) {
 	data, ok := result["data"].(*v1.QueryFleetMapResponse)
 	require.True(t, ok)
 	assert.Len(t, data.Roots, 1)
+}
+
+// TestFleetMapBoundsTotalNodesNotJustRoots is the regression test for fix
+// round 2: the server defaults an omitted/UNSPECIFIED group to "by project"
+// (normalizeGroupDimension in internal/fleet/map.go), not "ungrouped", so a
+// bare fleet_map{} call is always grouped and Roots is realistically a
+// handful of nodes — one per project — each with many application leaves in
+// Children. A root-only cap never engages against this shape: 3 roots sail
+// straight under any roots-based limit while the true payload, the 450
+// application leaves nested in Children, remains completely unbounded. This
+// shapes the fixture the way the real default response looks: few roots,
+// many children each.
+func TestFleetMapBoundsTotalNodesNotJustRoots(t *testing.T) {
+	const rootCount, childrenPerRoot = 3, 150 // 3 + 3*150 = 453 total nodes
+	roots := make([]*v1.FleetMapNode, rootCount)
+	for i := range roots {
+		children := make([]*v1.FleetMapNode, childrenPerRoot)
+		for j := range children {
+			children[j] = &v1.FleetMapNode{StableId: fmt.Sprintf("root-%d/app-%d", i, j)}
+		}
+		roots[i] = &v1.FleetMapNode{StableId: fmt.Sprintf("root-%d", i), Children: children}
+	}
+	totalNodes := rootCount + rootCount*childrenPerRoot
+
+	svc := &recordingFleetMapService{roots: roots}
+	client := newTestClient(t, svc)
+	r := NewRegistry()
+	require.NoError(t, RegisterReadTools(r))
+	tool, ok := r.Lookup("fleet_map")
+	require.True(t, ok)
+
+	out, err := tool.Invoke(context.Background(), client, json.RawMessage(`{}`))
+	require.NoError(t, err)
+
+	result, ok := out.(map[string]any)
+	require.True(t, ok, "fleet_map result must be the truncation-marker shape")
+	assert.Equal(t, true, result["truncated"],
+		"453 total nodes (3 roots, 150 children each) must be truncated even though root count (3) is far under the cap")
+	note, ok := result["note"].(string)
+	require.True(t, ok, "note must be a string")
+	assert.Contains(t, note, strconv.Itoa(maxFleetMapNodes), "note must report how many nodes were shown")
+	assert.Contains(t, note, strconv.Itoa(totalNodes), "note must report the true total so the partial view is unmistakable")
+
+	data, ok := result["data"].(*v1.QueryFleetMapResponse)
+	require.True(t, ok)
+	var countNodes func(nodes []*v1.FleetMapNode) int
+	countNodes = func(nodes []*v1.FleetMapNode) int {
+		n := len(nodes)
+		for _, node := range nodes {
+			n += countNodes(node.Children)
+		}
+		return n
+	}
+	shown := countNodes(data.Roots)
+	assert.Equal(t, maxFleetMapNodes, shown, "total emitted nodes (roots + children) must exactly hit the cap")
 }
 
 // TestFleetMapRejectsUnrecognisedGroup is a regression test for group/

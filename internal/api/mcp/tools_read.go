@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
@@ -261,37 +262,95 @@ func truncatedBySize[T any](items []T, pageSize uint32) map[string]any {
 	return out
 }
 
-// maxFleetMapNodes bounds the number of top-level nodes fleet_map returns.
-// QueryFleetMap has no server-side pagination of its own — with no group set
-// it returns the whole authorized fleet's map tree in one response, the
-// largest payload in the read surface. Rather than invent a bespoke cap,
-// this reuses maxPageSize (200), the same bound already applied to every
-// other list tool, so an unbounded tree gets the same treatment an
-// unbounded list would.
+// maxFleetMapNodes bounds the TOTAL number of nodes (every root plus every
+// descendant reachable through Children, recursively) that fleet_map returns
+// in one response. QueryFleetMap has no server-side pagination of its own,
+// and — critically — the server defaults an omitted/UNSPECIFIED group to "by
+// project" rather than "ungrouped" (normalizeGroupDimension in
+// internal/fleet/map.go), so a bare fleet_map{} call is ALWAYS grouped:
+// Roots is one node per project/cluster/stage/health bucket, which in a
+// realistic fleet is a small number, nowhere near a 200-node cap. The actual
+// bulk of the payload is every application as a leaf in each root's
+// Children, which a roots-only cap does not bound at all. This constant is
+// therefore applied against the total node count across the whole tree, not
+// len(Roots) — reusing maxPageSize (200), the same bound already applied to
+// every other list tool, since nothing about fleet_map's payload risk
+// differs enough from theirs to justify a different number.
 const maxFleetMapNodes = maxPageSize
 
-// truncatedFleetMap caps a QueryFleetMap response's root nodes to
-// maxFleetMapNodes and marks the response when the full tree exceeded that
-// cap, so the model is told it is seeing a partial map rather than silently
-// reasoning over an incomplete fleet.
+// truncatedFleetMap caps a QueryFleetMap response to at most
+// maxFleetMapNodes total nodes — roots and every descendant in Children,
+// recursively, combined — and marks the response when the full tree
+// exceeded that cap. Nodes are kept in the server's own order (roots first,
+// then each root's own children in order) and dropped once the budget is
+// exhausted, so a truncated response is always a deterministic prefix of
+// the full tree, never an arbitrary subset, and children are trimmed
+// in place rather than silently omitted with no signal.
 func truncatedFleetMap(msg *v1.QueryFleetMapResponse) map[string]any {
-	total := len(msg.Roots)
+	total := countFleetMapNodes(msg.Roots)
 	if total <= maxFleetMapNodes {
 		return map[string]any{"data": msg}
 	}
+	budget := maxFleetMapNodes
 	capped := &v1.QueryFleetMapResponse{
-		Roots:           msg.Roots[:maxFleetMapNodes],
+		Roots:           capFleetMapNodes(msg.Roots, &budget),
 		Total:           msg.Total,
 		IndexGeneration: msg.IndexGeneration,
 		Facets:          msg.Facets,
 	}
+	shown := maxFleetMapNodes - budget
 	return map[string]any{
 		"data":      capped,
 		"truncated": true,
 		"note": fmt.Sprintf(
-			"Showing %d of %d top-level fleet map nodes. Narrow with group, search, or a namespace/project filter to see the rest.",
-			maxFleetMapNodes, total),
+			"Showing %d of %d fleet map nodes (roots and children combined; children were trimmed, not just top-level groups). "+
+				"Narrow with group, search, or a namespace/project filter to see the rest.",
+			shown, total),
 	}
+}
+
+// countFleetMapNodes counts every node in a tree: each element of nodes,
+// plus every descendant reachable through its Children, recursively.
+func countFleetMapNodes(nodes []*v1.FleetMapNode) int {
+	count := len(nodes)
+	for _, n := range nodes {
+		count += countFleetMapNodes(n.Children)
+	}
+	return count
+}
+
+// capFleetMapNodes returns a prefix of nodes — and, within each kept node, a
+// prefix of its own children — that fits within *budget total nodes,
+// decrementing budget by one for every node emitted (root or descendant).
+// Once budget reaches zero, no further nodes are emitted at any level, so a
+// node's children are never included without the node itself, and a later
+// sibling is never included ahead of an earlier one.
+func capFleetMapNodes(nodes []*v1.FleetMapNode, budget *int) []*v1.FleetMapNode {
+	if *budget <= 0 || len(nodes) == 0 {
+		return nil
+	}
+	kept := make([]*v1.FleetMapNode, 0, len(nodes))
+	for _, n := range nodes {
+		if *budget <= 0 {
+			break
+		}
+		*budget--
+		// proto.Clone rather than a plain struct copy (copyNode := *n):
+		// FleetMapNode embeds a protoimpl.MessageState containing a
+		// sync.Mutex, which govet's copylocks check correctly refuses to let
+		// a raw value copy duplicate.
+		cloned := proto.Clone(n)
+		copyNode, ok := cloned.(*v1.FleetMapNode)
+		if !ok {
+			// proto.Clone always returns the same concrete type it was
+			// given; unreachable in practice, but keeps the type assertion
+			// checked rather than blindly discarded.
+			copyNode = n
+		}
+		copyNode.Children = capFleetMapNodes(n.Children, budget)
+		kept = append(kept, copyNode)
+	}
+	return kept
 }
 
 func readFleetStatusTool() Tool {
