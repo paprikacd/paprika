@@ -68,6 +68,29 @@ spec:
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if .Values.mcp.enabled }}
+      {{- if not .Values.auth.enabled }}
+      {{- fail "mcp.enabled requires auth.enabled: refusing to expose fleet mutation unauthenticated" }}
+      {{- end }}
+      {{- $mcpHasTokenSecret := false }}
+      {{- range .Values.apiServer.extraEnv }}
+      {{- if eq .name "PAPRIKA_AUTH_TOKEN_SECRET" }}
+      {{- $mcpHasTokenSecret = true }}
+      {{- end }}
+      {{- end }}
+      {{- if and (not $mcpHasTokenSecret) (eq (len .Values.apiServer.extraEnvFrom) 0) }}
+      {{- fail "mcp.enabled requires a non-empty auth token secret: set PAPRIKA_AUTH_TOKEN_SECRET via apiServer.extraEnv or apiServer.extraEnvFrom (the MCP server signs and verifies tokens with the same secret the API server's self-signed authenticator uses)" }}
+      {{- end }}
+      {{- if not .Values.mcp.oauth.clientId }}
+      {{- fail "mcp.oauth.clientId is required when mcp.enabled=true" }}
+      {{- end }}
+      {{- if eq (len .Values.mcp.oauth.redirectUris) 0 }}
+      {{- fail "mcp.oauth.redirectUris is required when mcp.enabled=true" }}
+      {{- end }}
+      {{- if not .Values.mcp.publicURL }}
+      {{- fail "mcp.publicURL is required when mcp.enabled=true: it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's issuer, so it must be set explicitly rather than defaulting to a loopback address" }}
+      {{- end }}
+      {{- end }}
       containers:
       - args:
         - --mode=api
@@ -77,6 +100,14 @@ spec:
         - --operator-namespace={{ .Release.Namespace }}
         - --metrics-bind-address={{ .Values.metrics.bindAddress }}
         {{- include "paprika.authArgs" . | nindent 8 }}
+        {{- if .Values.mcp.enabled }}
+        - --mcp-enabled=true
+        - --mcp-bind-address={{ .Values.mcp.bindAddress }}
+        - --mcp-access-token-ttl={{ .Values.mcp.accessTokenTTL }}
+        - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
+        - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
+        - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        {{- end }}
         {{- range .Values.apiServer.args }}
         - {{ . }}
         {{- end }}
@@ -159,6 +190,10 @@ spec:
           value: /etc/paprika/tls/tls.crt
         - name: PAPRIKA_TLS_KEY
           value: /etc/paprika/tls/tls.key
+        {{- end }}
+        {{- if .Values.mcp.enabled }}
+        - name: PAPRIKA_MCP_PUBLIC_URL
+          value: {{ .Values.mcp.publicURL | quote }}
         {{- end }}
         {{- include "paprika.otelEnv" . | nindent 8 }}
         {{- include "paprika.downwardEnv" . | nindent 8 }}
