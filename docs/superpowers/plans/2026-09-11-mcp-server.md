@@ -1171,14 +1171,40 @@ func stubTool(name string, scope Scope, destructive bool) Tool {
 	}
 }
 
+// echoService answers every RPC. UnimplementedPaprikaServiceHandler returns
+// CodeUnimplemented, which is fine for gating tests but not for audit tests —
+// the audit interceptor records the attempt either way, which is exactly the
+// behaviour under test.
+type echoService struct{ v1connect.UnimplementedPaprikaServiceHandler }
+
+// stubConnectClient returns a client wired through the REAL audit interceptor,
+// so audit assertions exercise the production audit path rather than a
+// reimplementation of it.
+//
+// The client must not be nil: the real write tools registered by
+// RegisterWriteTools dereference it inside Invoke, so nil panics rather than
+// failing cleanly. This is why newInvokerForRegistry cannot pass nil.
+func stubConnectClient(t *testing.T, aud audit.Auditor) v1connect.PaprikaServiceClient {
+	t.Helper()
+	_, handler := v1connect.NewPaprikaServiceHandler(&echoService{},
+		connect.WithInterceptors(api.NewAuditInterceptor(aud, nil)))
+	return v1connect.NewPaprikaServiceClient(
+		&http.Client{Transport: NewInProcessTransport(handler)}, "http://in-process")
+}
+
 // newInvokerForRegistry wires an invoker around an existing registry.
 func newInvokerForRegistry(t *testing.T, r *Registry) (*Invoker, *recordingAuditor) {
 	t.Helper()
 	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
 	require.NoError(t, err)
 	aud := &recordingAuditor{}
-	return NewInvoker(r, nil, NewConfirmer(store, time.Minute), aud), aud
+	return NewInvoker(r, stubConnectClient(t, aud), NewConfirmer(store, time.Minute), aud), aud
 }
+```
+
+Import note: `internal/api/mcp` importing `internal/api` is not a cycle — `internal/api` does not import `mcp`; `cmd/main.go` wires the two together.
+
+Design note for the implementer: audit for *successful* invocations comes from the Connect interceptor chain, not from `Invoker`. `Invoker` emits an audit event only for requests it rejects before the Connect call (scope denial, failed confirmation), because those never reach the chain. Do not emit audit events in `Invoker` for calls that do reach Connect — that would double-record every write.
 
 // newTestInvoker builds the three-tool registry used by the invoker tests.
 func newTestInvoker(t *testing.T) (*Invoker, *recordingAuditor) {
@@ -1474,7 +1500,41 @@ func TestEveryProtoRPCIsExposedOrOptedOut(t *testing.T) {
 }
 ```
 
-This requires a `toolRPCs map[string][]string` declared alongside the tool definitions, mapping each tool to the RPCs it covers. Add it in `tools_read.go` and `tools_write.go`.
+This requires each tool file to declare which RPCs its tools cover. Declare **two** maps, not one — a single package-level `toolRPCs` cannot be declared in two files, which would be a compile error:
+
+```go
+// in tools_read.go
+var readToolRPCs = map[string][]string{
+	"fleet_status": {"GetSystemStatus"},
+	"list_clusters": {"ListClusters"},
+	"get_resource_tree": {"GetResourceTree", "GetResourceTreeDetailed"},
+	"get_logs": {"GetResourceLogs", "GetStepLogs"},
+	// ... one entry per read tool
+}
+
+// in tools_write.go
+var writeToolRPCs = map[string][]string{
+	"rollback_release": {"RollbackRelease"},
+	// ... one entry per write tool
+}
+```
+
+The test merges them:
+
+```go
+func toolRPCs() map[string][]string {
+	merged := make(map[string][]string, len(readToolRPCs)+len(writeToolRPCs))
+	for name, rpcs := range readToolRPCs {
+		merged[name] = rpcs
+	}
+	for name, rpcs := range writeToolRPCs {
+		merged[name] = rpcs
+	}
+	return merged
+}
+```
+
+and Task 10's coverage loop uses `toolRPCs()[tool.Name]` rather than `toolRPCs[tool.Name]`.
 
 - [ ] **Step 2: Run the test**
 
@@ -2094,12 +2154,24 @@ git commit -m "feat(mcp): add OAuth 2.1 discovery, token, and rotating refresh"
 - [ ] **Step 1: Write failing test**
 
 ```go
+// NOTE: registerFlags in cmd/main.go:241 has the signature
+//   registerFlags(args []string, getenv func(string) string, stderr io.Writer) (*cliConfig, error)
+// It parses and returns the config; it does not take a FlagSet or a config
+// pointer. Use the real signature.
 func TestMCPDisabledByDefault(t *testing.T) {
-	cfg := &cliConfig{}
-	fs := flag.NewFlagSet("test", flag.ContinueOnError)
-	registerFlags(fs, cfg)
-	require.NoError(t, fs.Parse(nil))
+	cfg, err := registerFlags(nil, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
 	assert.False(t, cfg.mcpEnabled, "MCP must be opt-in")
+}
+
+func TestMCPFlagsParse(t *testing.T) {
+	cfg, err := registerFlags(
+		[]string{"--mcp-enabled", "--mcp-bind-address=:9999", "--mcp-access-token-ttl=1h"},
+		func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.True(t, cfg.mcpEnabled)
+	assert.Equal(t, ":9999", cfg.mcpBindAddress)
+	assert.Equal(t, time.Hour, cfg.mcpAccessTokenTTL)
 }
 
 func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
