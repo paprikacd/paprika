@@ -54,7 +54,9 @@ function CallbackHandler() {
         const returnTo = consumeReturnTo()
         let dest = "/dashboard/"
         if (returnTo && !returnTo.startsWith("/login")) {
-          dest = returnTo.endsWith("/") ? returnTo : returnTo + "/"
+          const [path, search = ""] = returnTo.split("?")
+          const normalizedPath = path.endsWith("/") ? path : path + "/"
+          dest = search ? `${normalizedPath}?${search}` : normalizedPath
         }
         window.location.href = dest
       })
