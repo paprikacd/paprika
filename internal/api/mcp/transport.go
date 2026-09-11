@@ -2,10 +2,38 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 )
+
+// bearerTokenKey is the context key carrying the caller's raw bearer token
+// from the MCP server's authentication step through to the in-process
+// Connect request. See RoundTrip's doc comment for why this exists: without
+// it, the in-process transport has no credential to attach, and the auth
+// interceptor in the real Connect chain rejects every MCP tool call with
+// CodeUnauthenticated.
+type bearerTokenKey struct{}
+
+// WithBearerToken returns a context carrying token for RoundTrip to attach
+// to the outgoing in-process request as an Authorization header. Callers
+// must pass a token already validated by the MCP server's own
+// authentication step — RoundTrip performs no validation of its own, it
+// only forwards what it is given.
+func WithBearerToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, bearerTokenKey{}, token)
+}
+
+// bearerTokenFromContext returns the token stashed by WithBearerToken, if
+// any.
+func bearerTokenFromContext(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(bearerTokenKey{}).(string)
+	if !ok || token == "" {
+		return "", false
+	}
+	return token, true
+}
 
 // inProcessTransport dispatches requests directly into an http.Handler with no
 // socket. Connect's HTTP semantics — status codes and headers — are
@@ -44,6 +72,11 @@ func NewInProcessTransport(h http.Handler) http.RoundTripper {
 // RoundTrip has already returned to its caller. RoundTrip does not, and
 // cannot, cancel the handler's work; it can only stop waiting for it.
 func (t *inProcessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if token, ok := bearerTokenFromContext(req.Context()); ok {
+		req = req.Clone(req.Context())
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
 	respCh := make(chan *http.Response, 1)
 	go func() {
 		rec := httptest.NewRecorder()

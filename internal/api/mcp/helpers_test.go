@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,10 +13,34 @@ import (
 	"github.com/stretchr/testify/require"
 
 	api "github.com/benebsworth/paprika/internal/api"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 )
+
+// testSecret and testIssuer parameterize every self-signed token minted or
+// verified across this package's tests, so a token issued by one helper is
+// always accepted by an authenticator built by another.
+var testSecret = []byte("mcp-test-secret-mcp-test-secret")
+
+// testIssuer is deliberately empty: bearerFor (below) mints tokens with no
+// "iss" claim, matching NewSelfSignedAuthenticatorForAudience's rule that an
+// empty issuer skips the issuer check entirely (only audience is mandatory).
+// A non-empty testIssuer here would make every token bearerFor mints fail
+// issuer verification, since it never sets one.
+const testIssuer = ""
+
+// mustAudienceAuthenticator builds a self-signed authenticator that only
+// accepts tokens minted for audience, failing the test immediately if the
+// audience is empty (NewSelfSignedAuthenticatorForAudience rejects that at
+// construction).
+func mustAudienceAuthenticator(t *testing.T, secret []byte, audience, issuer string) auth.Authenticator {
+	t.Helper()
+	a, err := auth.NewSelfSignedAuthenticatorForAudience(secret, audience, issuer)
+	require.NoError(t, err)
+	return a
+}
 
 // recordingAuditor is an audit.Auditor that keeps every event it is given,
 // so tests can assert on what was recorded rather than just that something
@@ -91,4 +117,70 @@ func withConfirmation(args json.RawMessage, token string) (json.RawMessage, erro
 	}
 	obj["confirmation_token"] = token
 	return json.Marshal(obj)
+}
+
+// newTestServer builds a server over the full tool registry with auth enabled.
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	r := NewRegistry()
+	require.NoError(t, RegisterReadTools(r))
+	require.NoError(t, RegisterWriteTools(r))
+	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	srv, err := NewServer(ServerConfig{
+		Registry:      r,
+		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
+		Confirmer:     NewConfirmer(store, time.Minute),
+		Auditor:       &recordingAuditor{},
+		Cache:         store,
+		Secret:        testSecret,
+		PublicURL:     "https://paprika.example",
+	})
+	require.NoError(t, err)
+	return srv
+}
+
+// bearerFor mints a valid MCP access token carrying the given scopes.
+func bearerFor(t *testing.T, scopes ...Scope) string {
+	t.Helper()
+	raw := make([]string, len(scopes))
+	for i, s := range scopes {
+		raw[i] = string(s)
+	}
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject: "test-user", Email: "test@example.com", Name: "Test",
+		Audience: "paprika-mcp", Scope: strings.Join(raw, " "),
+		TTL: time.Hour, Secret: testSecret,
+	})
+	require.NoError(t, err)
+	return token
+}
+
+// doJSONRPC posts a JSON-RPC envelope to /mcp and returns the response body.
+func doJSONRPC(t *testing.T, srv *Server, body, token string) []byte {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	srv.Handler().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+	return rec.Body.Bytes()
+}
+
+// newTestServerWithCache exposes the backing store for refresh-token seeding.
+func newTestServerWithCache(t *testing.T) (*Server, *cache.Cache) {
+	t.Helper()
+	srv := newTestServer(t)
+	return srv, srv.cache
+}
+
+// newTestServerWithRedirects configures the exact-match redirect allowlist.
+func newTestServerWithRedirects(t *testing.T, redirects []string) *Server {
+	t.Helper()
+	srv := newTestServer(t)
+	srv.clientID = "test"
+	srv.redirectURIs = redirects
+	return srv
 }
