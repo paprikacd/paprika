@@ -23,6 +23,12 @@ var auditVerbs = map[string]string{
 	"Rollback": "update",
 	"Promote":  "promote",
 	"Abort":    "update",
+	"Cancel":   "cancel",
+	"Hold":     "hold",
+	"Ignore":   "ignore",
+	"Resume":   "resume",
+	"Retry":    "retry",
+	"Skip":     "skip",
 }
 
 // NewAuditInterceptor returns a connect unary interceptor that records an audit
