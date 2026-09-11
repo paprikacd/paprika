@@ -46,10 +46,13 @@ var readToolRPCs = map[string][]string{
 }
 
 // fleetGroupDimensions and fleetSizeMetrics translate the string enums used
-// in tool schemas into the proto enums QueryFleetMap expects. A map miss
-// (including the empty string) returns the zero value, which is each enum's
-// UNSPECIFIED member, so an unrecognised value degrades to "no grouping"
-// rather than erroring.
+// in tool schemas into the proto enums QueryFleetMap expects. The empty
+// string is a valid input meaning "no grouping" / "default metric" and maps
+// to each enum's UNSPECIFIED member; any other unrecognised value is
+// rejected by lookupFleetGroupDimension/lookupFleetSizeMetric below rather
+// than silently degrading to UNSPECIFIED, since a caller who asked to group
+// and mistyped the dimension should see an error, not a differently-shaped
+// result with no signal that anything went wrong.
 var fleetGroupDimensions = map[string]v1.FleetGroupDimension{
 	"project": v1.FleetGroupDimension_FLEET_GROUP_DIMENSION_PROJECT,
 	"cluster": v1.FleetGroupDimension_FLEET_GROUP_DIMENSION_CLUSTER,
@@ -60,6 +63,35 @@ var fleetGroupDimensions = map[string]v1.FleetGroupDimension{
 var fleetSizeMetrics = map[string]v1.FleetSizeMetric{
 	"resource_count": v1.FleetSizeMetric_FLEET_SIZE_METRIC_RESOURCE_COUNT,
 	"request_rate":   v1.FleetSizeMetric_FLEET_SIZE_METRIC_REQUEST_RATE,
+}
+
+// lookupFleetGroupDimension validates the group argument against
+// fleetGroupDimensions. Empty means "no grouping"; anything else not in the
+// map is an error naming the invalid value and the accepted ones, matching
+// how get_logs handles an unrecognised kind.
+func lookupFleetGroupDimension(s string) (v1.FleetGroupDimension, error) {
+	if s == "" {
+		return v1.FleetGroupDimension_FLEET_GROUP_DIMENSION_UNSPECIFIED, nil
+	}
+	v, ok := fleetGroupDimensions[s]
+	if !ok {
+		return 0, fmt.Errorf("fleet_map: group must be one of %q, got %q",
+			[]string{"project", "cluster", "stage", "health"}, s)
+	}
+	return v, nil
+}
+
+// lookupFleetSizeMetric is lookupFleetGroupDimension for size_metric.
+func lookupFleetSizeMetric(s string) (v1.FleetSizeMetric, error) {
+	if s == "" {
+		return v1.FleetSizeMetric_FLEET_SIZE_METRIC_UNSPECIFIED, nil
+	}
+	v, ok := fleetSizeMetrics[s]
+	if !ok {
+		return 0, fmt.Errorf("fleet_map: size_metric must be one of %q, got %q",
+			[]string{"resource_count", "request_rate"}, s)
+	}
+	return v, nil
 }
 
 // RegisterReadTools registers the read-only tool surface. Each tool maps to
@@ -175,6 +207,21 @@ func clampTailLines(n int32) int32 {
 	return n
 }
 
+// optionalString returns nil for an empty string and a pointer to s
+// otherwise. Several request messages use an optional *string namespace
+// field where nil means "no filter" and a non-nil pointer to "" is treated
+// as an explicit, invalid namespace (see optionalNamespaceScope in
+// console_stub.go, which rejects &"" via IsDNS1123Label). Every tool that
+// forwards an optional namespace argument onto such a field must go through
+// this helper rather than taking &namespace directly, or an omitted
+// argument turns into a rejected request.
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 // truncated marks a cursor-paginated response so the model knows it is not
 // seeing the whole fleet. Silent truncation would let it reason confidently
 // over partial data.
@@ -214,6 +261,39 @@ func truncatedBySize[T any](items []T, pageSize uint32) map[string]any {
 	return out
 }
 
+// maxFleetMapNodes bounds the number of top-level nodes fleet_map returns.
+// QueryFleetMap has no server-side pagination of its own — with no group set
+// it returns the whole authorized fleet's map tree in one response, the
+// largest payload in the read surface. Rather than invent a bespoke cap,
+// this reuses maxPageSize (200), the same bound already applied to every
+// other list tool, so an unbounded tree gets the same treatment an
+// unbounded list would.
+const maxFleetMapNodes = maxPageSize
+
+// truncatedFleetMap caps a QueryFleetMap response's root nodes to
+// maxFleetMapNodes and marks the response when the full tree exceeded that
+// cap, so the model is told it is seeing a partial map rather than silently
+// reasoning over an incomplete fleet.
+func truncatedFleetMap(msg *v1.QueryFleetMapResponse) map[string]any {
+	total := len(msg.Roots)
+	if total <= maxFleetMapNodes {
+		return map[string]any{"data": msg}
+	}
+	capped := &v1.QueryFleetMapResponse{
+		Roots:           msg.Roots[:maxFleetMapNodes],
+		Total:           msg.Total,
+		IndexGeneration: msg.IndexGeneration,
+		Facets:          msg.Facets,
+	}
+	return map[string]any{
+		"data":      capped,
+		"truncated": true,
+		"note": fmt.Sprintf(
+			"Showing %d of %d top-level fleet map nodes. Narrow with group, search, or a namespace/project filter to see the rest.",
+			maxFleetMapNodes, total),
+	}
+}
+
 func readFleetStatusTool() Tool {
 	return Tool{
 		Name:        "fleet_status",
@@ -250,10 +330,9 @@ func readListClustersTool() Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
-			namespace := in.string("namespace")
 			pageSize := clampPageSize(in.uint32("page_size"))
 			resp, err := c.ListClusters(ctx, connect.NewRequest(&v1.ListClustersRequest{
-				Namespace:       &namespace,
+				Namespace:       optionalString(in.string("namespace")),
 				IncludeCapacity: in.bool("include_capacity"),
 				PageSize:        pageSize,
 				Cursor:          in.string("cursor"),
@@ -285,15 +364,23 @@ func readFleetMapTool() Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
+			group, err := lookupFleetGroupDimension(in.string("group"))
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			sizeMetric, err := lookupFleetSizeMetric(in.string("size_metric"))
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
 			resp, err := c.QueryFleetMap(ctx, connect.NewRequest(&v1.QueryFleetMapRequest{
 				Search:     in.string("search"),
-				Group:      fleetGroupDimensions[in.string("group")],
-				SizeMetric: fleetSizeMetrics[in.string("size_metric")],
+				Group:      group,
+				SizeMetric: sizeMetric,
 			}))
 			if err != nil {
 				return nil, fmt.Errorf("fleet_map: %w", err)
 			}
-			return resp.Msg, nil
+			return truncatedFleetMap(resp.Msg), nil
 		},
 	}
 }
@@ -543,10 +630,9 @@ func readListPipelinesTool() Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
-			namespace := in.string("namespace")
 			pageSize := clampPageSize(in.uint32("page_size"))
 			resp, err := c.ListPipelines(ctx, connect.NewRequest(&v1.ListPipelinesRequest{
-				Namespace: &namespace,
+				Namespace: optionalString(in.string("namespace")),
 				Project:   in.string("project"),
 			}))
 			if err != nil {
@@ -613,7 +699,6 @@ func readListReleasesInvoke(ctx context.Context, c v1connect.PaprikaServiceClien
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	namespace := in.string("namespace")
 	pageSize := clampPageSizeInt32(in.int32("page_size"))
 	pageOffset := in.int32("page_offset")
 	if pageOffset < 0 {
@@ -621,7 +706,7 @@ func readListReleasesInvoke(ctx context.Context, c v1connect.PaprikaServiceClien
 	}
 
 	resp, err := c.ListReleases(ctx, connect.NewRequest(&v1.ListReleasesRequest{
-		Namespace:       &namespace,
+		Namespace:       optionalString(in.string("namespace")),
 		Project:         in.string("project"),
 		ApplicationName: in.string("application_name"),
 		PageSize:        pageSize,
@@ -656,10 +741,9 @@ func readListRolloutsTool() Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
-			namespace := in.string("namespace")
 			pageSize := clampPageSize(in.uint32("page_size"))
 			resp, err := c.ListRollouts(ctx, connect.NewRequest(&v1.ListRolloutsRequest{
-				Namespace: &namespace,
+				Namespace: optionalString(in.string("namespace")),
 				Project:   in.string("project"),
 			}))
 			if err != nil {
