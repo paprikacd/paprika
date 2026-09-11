@@ -33,7 +33,7 @@ describe("StepDetailPanel", () => {
         onSkip={vi.fn()}
       />
     )
-    expect(screen.getByText("Retry")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Retry step" })).toBeEnabled()
     expect(screen.getByText("error: build failed")).toBeInTheDocument()
   })
 
@@ -49,7 +49,7 @@ describe("StepDetailPanel", () => {
         onSkip={vi.fn()}
       />
     )
-    expect(screen.getByText("Skip")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Skip" })).toBeEnabled()
   })
 
   it("calls onRetry when Retry is clicked", async () => {
@@ -65,7 +65,7 @@ describe("StepDetailPanel", () => {
         onSkip={vi.fn()}
       />
     )
-    await userEvent.click(screen.getByText("Retry"))
+    await userEvent.click(screen.getByRole("button", { name: "Retry step" }))
     expect(onRetry).toHaveBeenCalled()
   })
 })

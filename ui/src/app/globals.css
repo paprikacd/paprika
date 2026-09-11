@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @plugin "@tailwindcss/typography";
 
+/* The console is a light-only surface. The variant is kept so `dark:`
+   utilities still compile while they are being removed file by file. */
 @custom-variant dark (&:is(.dark *));
 
 /* ── Easing tokens ─────────────────────────────────────────────────── */
@@ -16,6 +18,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
+  --font-cond: var(--font-cond);
   --font-mono: var(--font-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -57,90 +60,193 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ── Hairline ladder ─────────────────────────────────────────────
+     Four weights with distinct jobs. Collapsing them onto --border
+     flattens the whole drawing. */
+  --color-rule-strong: var(--rule-strong);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-rule-faint: var(--rule-faint);
+
+  /* ── Tonal ramps ─────────────────────────────────────────────────── */
+  --color-neutral-100: #f5f5f8;
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-600: #7a7a7d;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-800: #424244;
+  --color-neutral-900: #2b2b2d;
+
+  --color-steel-100: #eef6ff;
+  --color-steel-200: #d6ebff;
+  --color-steel-300: #b5d9fd;
+  --color-steel-400: #94bce3;
+  --color-steel-500: #749dc4;
+  --color-steel-600: #597ea3;
+  --color-steel-700: #416180;
+  --color-steel-800: #2c455d;
+  --color-steel-900: #1d2d3d;
+
+  /* ── Semantic surfaces ───────────────────────────────────────────── */
+  --color-zebra: #fbfbfc;
+  --color-inset: #f5f5f8;
+  --color-scope-active: #e7f0f8;
+  --color-selected: #eef6ff;
+
+  /* ── Inverted surface family ─────────────────────────────────────
+     The navy sidebar, the heat tooltip and the log panes are one
+     system; they share this vocabulary. */
+  --color-ink-surface: #1d2d3d;
+  --color-ink-on: #f2f2f3;
+  --color-ink-rule: rgba(242, 242, 243, 0.16);
+  --color-ink-muted: rgba(242, 242, 243, 0.74);
+  --color-ink-faint: rgba(242, 242, 243, 0.5);
+  --color-ink-kicker: rgba(242, 242, 243, 0.42);
+  --color-ink-accent: #94bce3;
+  --color-log-text: #dfe6ee;
+
+  /* ── Status tones — 7 statuses x 3 roles ─────────────────────────
+     text / line / fill. These carry the console's meaning; every
+     health, sync and step state resolves to one of these. */
+  --color-status-healthy-text: var(--status-healthy-text);
+  --color-status-healthy-line: var(--status-healthy-line);
+  --color-status-healthy-fill: var(--status-healthy-fill);
+  --color-status-progressing-text: #2c455d;
+  --color-status-progressing-line: #8bb0d0;
+  --color-status-progressing-fill: #e7f0f8;
+  --color-status-degraded-text: #8a5f22;
+  --color-status-degraded-line: #e0ad66;
+  --color-status-degraded-fill: #fdf2df;
+  --color-status-failed-text: #9c3f39;
+  --color-status-failed-line: #dd9490;
+  --color-status-failed-fill: #fbe9e8;
+  --color-status-missing-text: #5b5468;
+  --color-status-missing-line: #aea8bd;
+  --color-status-missing-fill: #efedf4;
+  --color-status-unknown-text: #5d5d60;
+  --color-status-unknown-line: #c2c2c6;
+  --color-status-unknown-fill: #f4f4f6;
+  --color-status-pending-text: #8e8e92;
+  --color-status-pending-line: #d4d4d7;
+  --color-status-pending-fill: transparent;
+
+  /* ── Diff colours — deliberately NOT the status tones ────────────── */
+  --color-diff-add-bg: rgba(74, 124, 82, 0.1);
+  --color-diff-add-text: #2f5237;
+  --color-diff-del-bg: rgba(168, 68, 59, 0.1);
+  --color-diff-del-text: #7d3129;
+  --color-diff-ctx-text: #5d5d60;
+  --color-diff-gutter: #98989b;
+
+  /* ── Elevation — overlays only. In-page surfaces are flat. ───────── */
+  --shadow-dropdown: 0 3px 10px rgba(43, 43, 45, 0.16);
+  --shadow-popover: 0 8px 22px rgba(29, 45, 61, 0.18);
+  --shadow-tooltip: 0 8px 22px rgba(29, 45, 61, 0.28);
+  --shadow-tile-hover: 0 4px 12px rgba(29, 45, 61, 0.16);
+  --shadow-drawer: 0 12px 32px rgba(43, 43, 45, 0.22);
+
+  /* ── Type scale ──────────────────────────────────────────────────
+     The console runs denser than Tailwind's default ramp reaches, and
+     half these sizes are sub-12px. Named rather than arbitrary so the
+     intent survives. Tailwind's own text-xs/sm/base are left alone. */
+  --text-kicker: 9px;
+  --text-meta: 10px;
+  --text-micro: 10.5px;
+  --text-note: 11px;
+  --text-reason: 11.5px;
+  --text-chip: 12px;
+  --text-console: 13px;
+  --text-label: 14px;
+  --text-name: 15px;
+  --text-card: 16px;
+  --text-board: 17px;
+  --text-count: 19px;
+  --text-stat: 20px;
+  --text-weight: 22px;
+  --text-canary: 24px;
+  --text-title: 30px;
+  --text-hero: 34px;
+
+  /* ── Console geometry ────────────────────────────────────────────── */
+  --spacing-nav: 206px;
+  --spacing-header: 42px;
+  --spacing-row: 42px;
+  --spacing-row-comfortable: 52px;
+
+  --animate-blip: blip 2.4s ease-in-out infinite;
 }
 
-/* ── Dark color palette ────────────────────────────────────────────── */
-/* Warm-tinted neutrals (hue 50 = warm amber/orange cast)               */
-/* Primary: paprika orange oklch(0.63 0.19 35)                         */
-/* Surface hierarchy: darker bg → lighter elevated surfaces             */
+/* ── Palette ───────────────────────────────────────────────────────── */
+/* Industry: steel blue on a light technical ground. Square corners,   */
+/* hairline frames, no surface fill on cards — they are line drawings. */
 /* ──────────────────────────────────────────────────────────────────── */
-:root.dark {
-  --background: oklch(0.115 0.01 50);
-  --foreground: oklch(0.93 0.012 50);
-  --card: oklch(0.155 0.014 50);
-  --card-foreground: oklch(0.93 0.012 50);
-  --popover: oklch(0.155 0.014 50);
-  --popover-foreground: oklch(0.93 0.012 50);
-  --primary: oklch(0.63 0.19 35);
-  --primary-foreground: oklch(0.98 0.005 50);
-  --secondary: oklch(0.21 0.012 50);
-  --secondary-foreground: oklch(0.93 0.012 50);
-  --muted: oklch(0.19 0.01 50);
-  --muted-foreground: oklch(0.62 0.015 50);
-  --accent: oklch(0.68 0.14 75);
-  --accent-foreground: oklch(0.98 0.005 50);
-  --destructive: oklch(0.56 0.18 25);
-  --success: oklch(0.53 0.12 145);
-  --success-foreground: oklch(0.98 0.005 50);
-  --warning: oklch(0.68 0.14 75);
-  --warning-foreground: oklch(0.13 0.012 50);
-  --border: oklch(0.24 0.012 50);
-  --input: oklch(0.24 0.012 50);
-  --ring: oklch(0.63 0.19 35 / 0.4);
-  --radius: 0.75rem;
-  --chart-1: oklch(0.63 0.19 35);
-  --chart-2: oklch(0.53 0.12 145);
-  --chart-3: oklch(0.68 0.14 75);
-  --chart-4: oklch(0.53 0.14 280);
-  --chart-5: oklch(0.63 0.14 200);
-  --sidebar: oklch(0.115 0.01 50);
-  --sidebar-foreground: oklch(0.93 0.012 50);
-  --sidebar-primary: oklch(0.63 0.19 35);
-  --sidebar-primary-foreground: oklch(0.98 0.005 50);
-  --sidebar-accent: oklch(0.21 0.012 50);
-  --sidebar-accent-foreground: oklch(0.93 0.012 50);
-  --sidebar-border: oklch(0.24 0.012 50);
-  --sidebar-ring: oklch(0.63 0.19 35 / 0.4);
+:root {
+  /* Barlow and Barlow Condensed arrive as next/font variables on <html>.
+     Mono is a system stack — the console uses it for identifiers and
+     figures, which do not warrant a webfont download. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --background: #f2f2f3;
+  --foreground: #1d1f20;
+  --card: #ffffff;
+  --card-foreground: #1d1f20;
+  --popover: #ffffff;
+  --popover-foreground: #1d1f20;
+  --primary: #5980a6;
+  --primary-foreground: #f2f2f3;
+  --secondary: #f5f5f8;
+  --secondary-foreground: #1d1f20;
+  --muted: #e9e9ea;
+  --muted-foreground: #5d5d60;
+  --accent: #416180;
+  --accent-foreground: #f2f2f3;
+  --destructive: #9c3f39;
+  --success: #3f6b48;
+  --success-foreground: #f2f2f3;
+  --warning: #8a5f22;
+  --warning-foreground: #f2f2f3;
+  --border: rgba(29, 31, 32, 0.16);
+  --input: rgba(29, 31, 32, 0.16);
+  --ring: #5980a6;
+
+  /* Square by system decree — see the blueprint frame rules below. */
+  --radius: 0px;
+
+  --rule-strong: rgba(29, 31, 32, 0.28);
+  --rule: rgba(29, 31, 32, 0.16);
+  --rule-soft: rgba(29, 31, 32, 0.1);
+  --rule-faint: rgba(29, 31, 32, 0.08);
+
+  --status-healthy-text: #3f6b48;
+  --status-healthy-line: #7fae86;
+  --status-healthy-fill: #e6f2e8;
+
+  --chart-1: #5980a6;
+  --chart-2: #7fae86;
+  --chart-3: #e0ad66;
+  --chart-4: #aea8bd;
+  --chart-5: #94bce3;
+
+  --sidebar: #1d2d3d;
+  --sidebar-foreground: #f2f2f3;
+  --sidebar-primary: #5980a6;
+  --sidebar-primary-foreground: #f2f2f3;
+  --sidebar-accent: #2c455d;
+  --sidebar-accent-foreground: #f2f2f3;
+  --sidebar-border: rgba(242, 242, 243, 0.16);
+  --sidebar-ring: #94bce3;
 }
 
-/* ── Light palette (prepared but unused for now) ───────────────────── */
-:root {
-  --background: oklch(0.98 0.005 50);
-  --foreground: oklch(0.13 0.012 50);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.13 0.012 50);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.13 0.012 50);
-  --primary: oklch(0.55 0.18 35);
-  --primary-foreground: oklch(0.98 0.005 50);
-  --secondary: oklch(0.92 0.008 50);
-  --secondary-foreground: oklch(0.13 0.012 50);
-  --muted: oklch(0.92 0.008 50);
-  --muted-foreground: oklch(0.52 0.015 50);
-  --accent: oklch(0.65 0.14 75);
-  --accent-foreground: oklch(0.13 0.012 50);
-  --destructive: oklch(0.55 0.18 25);
-  --success: oklch(0.5 0.12 145);
-  --success-foreground: oklch(0.98 0.005 50);
-  --warning: oklch(0.65 0.14 75);
-  --warning-foreground: oklch(0.13 0.012 50);
-  --border: oklch(0.87 0.008 50);
-  --input: oklch(0.87 0.008 50);
-  --ring: oklch(0.55 0.18 35 / 0.4);
-  --radius: 0.75rem;
-  --chart-1: oklch(0.55 0.18 35);
-  --chart-2: oklch(0.5 0.12 145);
-  --chart-3: oklch(0.65 0.14 75);
-  --chart-4: oklch(0.55 0.14 280);
-  --chart-5: oklch(0.63 0.14 200);
-  --sidebar: oklch(0.98 0.005 50);
-  --sidebar-foreground: oklch(0.13 0.012 50);
-  --sidebar-primary: oklch(0.55 0.18 35);
-  --sidebar-primary-foreground: oklch(0.98 0.005 50);
-  --sidebar-accent: oklch(0.92 0.008 50);
-  --sidebar-accent-foreground: oklch(0.13 0.012 50);
-  --sidebar-border: oklch(0.87 0.008 50);
-  --sidebar-ring: oklch(0.55 0.18 35 / 0.4);
+/* The `quiet` status palette drains the green out of Healthy so that only
+   the states needing attention carry colour. It rewrites three tokens —
+   it is not a second palette. */
+[data-status-palette="quiet"] {
+  --status-healthy-text: #4a4a4c;
+  --status-healthy-line: #a8a8ab;
+  --status-healthy-fill: #f0f0f2;
 }
 
 /* ── Base layer ────────────────────────────────────────────────────── */
@@ -150,6 +256,8 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 13px;
+    line-height: 1.45;
   }
   html {
     @apply font-sans antialiased;
@@ -158,41 +266,96 @@
     text-rendering: optimizeLegibility;
   }
   h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-cond);
     text-wrap: balance;
   }
   p, li, figcaption {
     text-wrap: pretty;
   }
+  a {
+    color: var(--color-steel-700);
+  }
+  a:hover {
+    color: var(--color-steel-800);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
   img {
     outline: 1px solid rgba(0, 0, 0, 0.1);
     outline-offset: -1px;
   }
-  :where(.dark) img {
-    outline: 1px solid rgba(255, 255, 255, 0.06);
-    outline-offset: -1px;
-  }
 
-  /* Subtle focus ring for keyboard nav */
+  /* Keyboard focus stays visible. The source design zeroes :focus
+     outright, which leaves the header search with no focus state at
+     all; that is a bug to leave behind, not a style to port. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
 
-  /* Scrollbar styling for dark mode */
-  .dark ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+  ::selection {
+    background: var(--color-steel-200);
   }
-  .dark ::-webkit-scrollbar-track {
-    background: transparent;
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
   }
-  .dark ::-webkit-scrollbar-thumb {
-    background: oklch(0.3 0.01 50);
-    border-radius: 4px;
+  ::-webkit-scrollbar-track {
+    background: #e9e9ea;
   }
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.4 0.01 50);
+  ::-webkit-scrollbar-thumb {
+    background: #c4c4c8;
   }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-neutral-500);
+  }
+}
+
+/* ── Blueprint frame ───────────────────────────────────────────────
+   Boards, figures and the primary button are wireframe objects: square,
+   hairline-bordered, with `+` registration marks at the corners. The
+   marks need pseudo-elements, so they cannot be tokens.
+   ────────────────────────────────────────────────────────────────── */
+@layer components {
+  .blueprint {
+    position: relative;
+    border: 1px solid var(--rule);
+    border-radius: 0;
+  }
+  .blueprint > .corner {
+    position: absolute;
+    width: 11px;
+    height: 11px;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  }
+  .blueprint > .corner::before,
+  .blueprint > .corner::after {
+    content: "";
+    position: absolute;
+    background: currentColor;
+  }
+  .blueprint > .corner::before {
+    left: 5px;
+    top: 0;
+    width: 1px;
+    height: 100%;
+  }
+  .blueprint > .corner::after {
+    top: 5px;
+    left: 0;
+    width: 100%;
+    height: 1px;
+  }
+  .blueprint > .corner.tl { top: -6px; left: -6px; }
+  .blueprint > .corner.tr { top: -6px; right: -6px; }
+  .blueprint > .corner.bl { bottom: -6px; left: -6px; }
+  .blueprint > .corner.br { bottom: -6px; right: -6px; }
+}
+
+@keyframes blip {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 
 /* ── Reduced motion ────────────────────────────────────────────────── */

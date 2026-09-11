@@ -250,6 +250,57 @@ export function serializeFleetQuery(input: FleetQueryState): URLSearchParams {
   return parameters
 }
 
+/**
+ * Every query parameter the fleet serializer owns. Anything outside this list
+ * belongs to a route, not to the fleet scope.
+ */
+export const FLEET_QUERY_PARAM_KEYS = [
+  "project",
+  "cluster",
+  "stage",
+  "namespace",
+  "health",
+  "sync",
+  "release",
+  "rollout",
+  "source",
+  "q",
+  "sort",
+  "direction",
+  "view",
+  "group",
+  "rows",
+  "columns",
+  "size",
+  "zoom",
+  "selected",
+  "range",
+] as const
+
+/**
+ * Serializes the fleet scope *over* the URL the operator is already on,
+ * keeping parameters the fleet layer knows nothing about.
+ *
+ * The shell header is mounted on every route, including detail routes keyed
+ * by `?namespace=&name=`. Rebuilding the query string from fleet state alone
+ * drops `name`, so changing scope from a detail page used to navigate that
+ * page to nothing at all.
+ */
+export function serializeFleetQueryPreserving(
+  state: FleetQueryState,
+  current: string | URLSearchParams,
+): URLSearchParams {
+  const existing =
+    typeof current === "string" ? new URLSearchParams(current) : current
+  const next = serializeFleetQuery(state)
+  const owned = new Set<string>(FLEET_QUERY_PARAM_KEYS)
+  for (const [key, value] of existing.entries()) {
+    if (owned.has(key)) continue
+    next.append(key, value)
+  }
+  return next
+}
+
 export function mergeFleetQuery(current: FleetQueryState, patch: FleetQueryPatch): FleetQueryState {
   return canonicalizeFleetQuery({ ...current, ...patch })
 }

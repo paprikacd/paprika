@@ -4,31 +4,50 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 import { useCallback, useRef } from "react"
 
 import {
-  ApplicationCapabilityActions,
-  FleetLoadMore,
   applicationKey,
   identityKey,
   observeMeasuredElementRect,
   releaseFocusOwnership,
-  type ApplicationCollectionProps,
   useApplicationFocusAdapter,
-} from "@/components/fleet/application-table"
+  type ApplicationCollectionProps,
+} from "@/components/fleet/application-collection"
+import {
+  attentionReasonOf,
+  healthLabelOf,
+  healthToneOf,
+  projectLabelOf,
+  targetLabelOf,
+} from "@/components/fleet/fleet-rows"
+import { StatusGlyph } from "@/components/ui/status-chip"
+import { STATUS_TONES } from "@/lib/status-tone"
+import { cn } from "@/lib/utils"
 
+const ROW_HEIGHT = 42
+/** The first few entries carry the tone's tint; below that it is noise. */
+const TINTED_ROWS = 3
+const GRID = "28px 16px minmax(0,1.2fr) minmax(0,1fr) 140px minmax(0,1fr)"
+
+/**
+ * The queue is the flat, worst-first reading of the same rows. The order is
+ * the server's — `sort=impact` — so paging never re-ranks under the operator,
+ * and the rank number is the position in that authoritative order.
+ */
 export function AttentionQueue(props: ApplicationCollectionProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const itemTargets = useRef(new Map<string, HTMLElement>())
+  const rowTargets = useRef(new Map<string, HTMLElement>())
   const virtualizer = useVirtualizer({
     count: props.applications.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 116,
-    overscan: 6,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 8,
     getItemKey: (index) => applicationKey(props.applications[index], index),
     initialRect: { width: 1120, height: 560 },
     observeElementRect: observeMeasuredElementRect,
-    measureElement: (element) => element.getBoundingClientRect().height || 116,
+    measureElement: (element) => element.getBoundingClientRect().height || ROW_HEIGHT,
   })
+
   const getTarget = useCallback(
-    (key: string) => itemTargets.current.get(key) ?? null,
+    (key: string) => rowTargets.current.get(key) ?? null,
     [],
   )
   const scrollToIndex = useCallback(
@@ -47,45 +66,68 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
 
   return (
     <section aria-label="Attention queue" className="min-w-0">
-      <div className="border-b border-border bg-card px-4 py-3 sm:px-6">
-        <p className="font-mono text-[0.625rem] font-semibold uppercase tracking-[0.16em] text-primary">
-          Server-ranked impact
-        </p>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          The fleet service orders this queue. Every page remains in authoritative server order.
-        </p>
-      </div>
       <div
         ref={scrollRef}
-        className="h-[min(62vh,42rem)] min-h-80 overflow-auto border-b border-border bg-background"
+        role="table"
+        aria-label="Attention queue"
+        aria-rowcount={Number(props.total) + 1}
+        aria-colcount={6}
+        className="h-[min(62vh,42rem)] min-h-80 overflow-auto bg-background"
       >
-        <ol
-          aria-label="Applications requiring attention"
-          className="relative min-w-[42rem]"
+        <div
+          role="rowgroup"
+          className="sticky top-0 z-10 min-w-[52rem] border-b border-rule-strong bg-muted"
+        >
+          <div
+            role="row"
+            aria-rowindex={1}
+            className="grid h-7.5 items-center gap-3 px-5.5 font-mono text-kicker tracking-[0.14em] text-muted-foreground"
+            style={{ gridTemplateColumns: GRID }}
+          >
+            <span role="columnheader" aria-colindex={1}>#</span>
+            <span role="columnheader" aria-colindex={2}>
+              <span className="sr-only">Health</span>
+            </span>
+            <span role="columnheader" aria-colindex={3}>APPLICATION</span>
+            <span role="columnheader" aria-colindex={4}>TARGET</span>
+            <span role="columnheader" aria-colindex={5}>PROJECT</span>
+            <span role="columnheader" aria-colindex={6}>WHY</span>
+          </div>
+        </div>
+
+        <div
+          role="rowgroup"
+          className="relative min-w-[52rem]"
           style={{ height: `${virtualizer.getTotalSize()}px` }}
         >
           {virtualizer.getVirtualItems().map((virtualItem) => {
             const application = props.applications[virtualItem.index]
+            if (!application) return null
             const identity = application.identity
             const key = applicationKey(application, virtualItem.index)
+            const tone = healthToneOf(application.health)
+            const spec = STATUS_TONES[tone]
+            const rank = String(virtualItem.index + 1).padStart(2, "0")
+
             return (
-              <li
+              <div
                 key={key}
                 ref={(node) => {
                   if (node) {
-                    itemTargets.current.set(key, node)
+                    rowTargets.current.set(key, node)
                     virtualizer.measureElement(node)
                   } else {
-                    itemTargets.current.delete(key)
+                    rowTargets.current.delete(key)
                   }
                 }}
                 data-index={virtualItem.index}
                 data-row-key={key}
-                data-virtual-start={virtualItem.start}
+                role="row"
+                aria-rowindex={virtualItem.index + 2}
+                aria-label={
+                  identity ? identityKey(identity) : `Queue row ${virtualItem.index + 1}`
+                }
                 tabIndex={identity ? 0 : -1}
-                aria-label={identity ? `${identity.namespace}/${identity.name}` : `Queue item ${virtualItem.index + 1}`}
-                aria-posinset={virtualItem.index + 1}
-                aria-setsize={Number(props.total)}
                 onFocus={() => identity && props.onFocusedApplication(identity)}
                 onBlur={(event) =>
                   releaseFocusOwnership(
@@ -100,57 +142,61 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
                   event.preventDefault()
                   props.onSelectApplication(identity)
                 }}
-                className="absolute left-0 top-0 grid w-full grid-cols-[3rem_minmax(16rem,1fr)_minmax(12rem,0.8fr)_minmax(10rem,1fr)] items-center gap-4 border-b border-border/70 px-4 py-4 transition-colors hover:bg-muted/50 focus-visible:bg-muted sm:px-6"
-                style={{ transform: `translateY(${virtualItem.start}px)` }}
+                className={cn(
+                  "absolute top-0 left-0 grid h-row w-full cursor-pointer items-center gap-3 border-b border-rule-soft px-5.5",
+                  virtualItem.index < TINTED_ROWS ? spec.fill : "bg-card",
+                  "hover:bg-inset focus-visible:bg-inset",
+                )}
+                style={{ gridTemplateColumns: GRID, transform: `translateY(${virtualItem.start}px)` }}
               >
                 <span
-                  aria-hidden="true"
-                  className="font-mono text-lg font-semibold tabular-nums text-primary"
+                  aria-hidden
+                  className={cn("absolute inset-y-0 left-0 w-1", spec.bar)}
+                />
+                <span
+                  role="cell"
+                  aria-colindex={1}
+                  className="font-mono text-meta tabular-nums text-status-pending-text"
                 >
-                  {String(virtualItem.index + 1).padStart(2, "0")}
+                  {rank}
                 </span>
-                <span className="min-w-0">
-                  <strong className="block truncate text-sm font-semibold text-foreground">
+                <span role="cell" aria-colindex={2}>
+                  <StatusGlyph tone={tone} label={healthLabelOf(application.health)} />
+                </span>
+                <span role="cell" aria-colindex={3} className="min-w-0">
+                  <span className="block truncate font-cond text-name font-semibold tracking-[0.02em]">
                     {identity?.name || "Unnamed application"}
-                  </strong>
-                  <span className="mt-1 block truncate font-mono text-[0.6875rem] text-muted-foreground">
+                  </span>
+                  <span className="block truncate font-mono text-meta text-neutral-600">
                     {identity ? identityKey(identity) : "Identity unavailable"}
                   </span>
                 </span>
-                <span className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                  <span className="text-muted-foreground">Health</span>
-                  <strong className="text-right font-mono font-medium text-foreground">
-                    {application.health.replaceAll("_", " ")}
-                  </strong>
-                  <span className="text-muted-foreground">Drift</span>
-                  <strong className="text-right font-mono font-medium tabular-nums text-foreground">
-                    {application.driftCount}
-                  </strong>
-                  <span className="text-muted-foreground">Blocked</span>
-                  <strong className="text-right font-mono font-medium tabular-nums text-foreground">
-                    {application.blockedGateCount}
-                  </strong>
+                <span
+                  role="cell"
+                  aria-colindex={4}
+                  className="truncate font-mono text-note text-neutral-800"
+                >
+                  {targetLabelOf(application) || "No target"}
                 </span>
-                <span onClick={(event) => event.stopPropagation()}>
-                  {identity ? (
-                    <ApplicationCapabilityActions
-                      identity={identity}
-                      capabilities={application.capabilities}
-                    />
-                  ) : null}
+                <span
+                  role="cell"
+                  aria-colindex={5}
+                  className="truncate font-mono text-note text-muted-foreground"
+                >
+                  {projectLabelOf(application) || "—"}
                 </span>
-              </li>
+                <span
+                  role="cell"
+                  aria-colindex={6}
+                  className="truncate text-reason text-muted-foreground"
+                >
+                  {attentionReasonOf(application)}
+                </span>
+              </div>
             )
           })}
-        </ol>
+        </div>
       </div>
-      <FleetLoadMore
-        loaded={props.applications.length}
-        total={props.total}
-        hasMore={props.hasMore}
-        isLoadingMore={props.isLoadingMore}
-        onLoadMore={props.onLoadMore}
-      />
     </section>
   )
 }

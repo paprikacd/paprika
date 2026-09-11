@@ -1,12 +1,51 @@
 "use client"
 
-import { useMemo } from "react"
-import { ReactFlow, type Edge, type Node, type NodeTypes, Handle, Position, Background, Controls } from "@xyflow/react"
 import { graphlib, layout } from "@dagrejs/dagre"
+import {
+  Background,
+  BackgroundVariant,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeTypes,
+} from "@xyflow/react"
+import { useMemo } from "react"
 import "@xyflow/react/dist/style.css"
 
-const NODE_WIDTH = 180
-const NODE_HEIGHT = 56
+import {
+  resourceHealthTone,
+  resourceSyncTone,
+  resourceSyncLabel,
+  resourceKey,
+} from "@/components/dashboard/resource-list-table"
+import { StatusGlyph } from "@/components/ui/status-chip"
+import {
+  CANVAS_COLORS,
+  STATUS_TONES,
+  STATUS_TONE_HEX,
+  type StatusTone,
+} from "@/lib/status-tone"
+import { cn } from "@/lib/utils"
+
+const NODE_WIDTH = 176
+const NODE_HEIGHT = 40
+
+/**
+ * The graph draws one box per resource, so it is only safe while the resource
+ * count is an application's, not a fleet's. Past this the tree — which is
+ * virtualisable and bounded — is the honest view, and the graph says so.
+ */
+export const MAX_GRAPH_NODES = 300
+
+const LEGEND_TONES: readonly StatusTone[] = [
+  "healthy",
+  "progressing",
+  "degraded",
+  "failed",
+]
 
 export interface ResourceGraphNode {
   kind: string
@@ -19,146 +58,199 @@ export interface ResourceGraphNode {
   parentName: string
   uid: string
   managed: boolean
+  /** From GetResourceTreeDetailed. Absent means the server did not report it. */
+  ready?: number
+  total?: number
 }
 
 interface ResourceGraphProps {
   nodes: ResourceGraphNode[]
   onSelectNode: (node: ResourceGraphNode) => void
+  selectedId?: string | null
 }
 
-const syncColors: Record<string, string> = {
-  Synced: "border-emerald-500/40 bg-emerald-500/5",
-  OutOfSync: "border-amber-500/40 bg-amber-500/5",
-  Missing: "border-destructive/40 bg-destructive/5",
-  Pruned: "border-muted-foreground/30 bg-muted/5",
+interface ResourceNodeData extends Record<string, unknown> {
+  kind: string
+  name: string
+  tone: StatusTone
+  syncTone: StatusTone
+  syncLabel: string
+  badge: string
+  selected: boolean
+  node: ResourceGraphNode
+  onSelect: (node: ResourceGraphNode) => void
 }
 
-const healthDot: Record<string, string> = {
-  Healthy: "bg-emerald-500",
-  Degraded: "bg-destructive",
-  Progressing: "bg-amber-500",
-  Unknown: "bg-muted-foreground",
-  Missing: "bg-destructive",
+/** Only a reading the server actually sent becomes a badge. */
+function nodeBadge(n: ResourceGraphNode): string {
+  if (typeof n.total === "number" && n.total > 0) return `${n.ready ?? 0}/${n.total}`
+  if (resourceSyncTone(n.syncStatus) === "degraded") return "drift"
+  return ""
 }
 
-const kindIcons: Record<string, string> = {
-  Deployment: "\u{1F4E6}",
-  StatefulSet: "\u{1F4E6}",
-  DaemonSet: "\u{1F4E6}",
-  ReplicaSet: "\u{1F504}",
-  Pod: "\u{25C9}",
-  Service: "\u{1F310}",
-  ConfigMap: "\u{1F4DD}",
-  Secret: "\u{1F510}",
-  Ingress: "\u{1F517}",
-  Job: "\u{26A1}",
-  CronJob: "\u{23F0}",
-  Namespace: "\u{1F3E2}",
-}
-
-function ResourceFlowNode({ data }: { data: Record<string, unknown> }) {
-  const kind = data.kind as string
-  const name = data.name as string
-  const sync = data.syncStatus as string
-  const health = data.health as string
-  const managed = data.managed as boolean
-
-  const syncClass = syncColors[sync] ?? syncColors.Pruned
-  const dotClass = healthDot[health] ?? healthDot.Unknown
-  const icon = kindIcons[kind] ?? "\u25A1"
-
+function ResourceFlowNode({ data }: { data: ResourceNodeData }) {
+  const spec = STATUS_TONES[data.tone]
   return (
     <div
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ring-1 ring-foreground/5 ${syncClass}`}
-      style={{ width: NODE_WIDTH }}
-      onClick={() => (data.onSelect as (n: unknown) => void)?.(data.node)}
       role="button"
       tabIndex={0}
+      aria-label={`${data.kind} ${data.name}, ${spec.label}, ${data.syncLabel}`}
+      aria-pressed={data.selected}
+      onClick={() => data.onSelect(data.node)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        data.onSelect(data.node)
+      }}
+      style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
+      className={cn(
+        "flex items-center gap-2 border bg-card px-2 py-1.5",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        data.selected
+          ? "border-status-failed-text outline-2 outline-status-failed-line"
+          : "border-rule-strong"
+      )}
     >
-      <Handle type="target" position={Position.Top} className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0" />
-      <span className="shrink-0 text-sm" aria-hidden="true">{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-mono text-[11px] font-medium">{name}</p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className={`size-1.5 rounded-full ${dotClass}`} />
-          <span className="text-[9px] text-muted-foreground">{kind}</span>
-          {managed && <span className="text-[9px] text-primary">managed</span>}
-        </div>
-      </div>
-      <Handle type="source" position={Position.Bottom} className="!bg-muted-foreground/30 !w-1.5 !h-1.5 !border-0" />
+      <Handle
+        type="target"
+        position={Position.Left}
+        isConnectable={false}
+        className="!size-1 !border-0 !bg-rule-strong"
+      />
+      <StatusGlyph tone={data.tone} label={`${spec.label} health`} />
+      <span className="min-w-0 flex-1">
+        <span className="block font-mono text-meta tracking-[0.08em] text-neutral-600">
+          {data.kind}
+        </span>
+        <span className="block truncate font-cond text-console font-semibold tracking-[0.02em]">
+          {data.name}
+        </span>
+      </span>
+      {data.badge ? (
+        <span
+          className={cn(
+            "flex-none rounded-[2px] border px-[5px] py-px font-mono text-kicker",
+            spec.line,
+            spec.fill,
+            spec.text
+          )}
+        >
+          {data.badge}
+        </span>
+      ) : null}
+      <Handle
+        type="source"
+        position={Position.Right}
+        isConnectable={false}
+        className="!size-1 !border-0 !bg-rule-strong"
+      />
     </div>
   )
 }
 
-export function ResourceGraph({ nodes, onSelectNode }: ResourceGraphProps) {
-  const { rfNodes, rfEdges } = useMemo(() => {
-    if (nodes.length === 0) return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
+const nodeTypes: NodeTypes = { resourceNode: ResourceFlowNode }
 
-    const nodeIds = new Set(nodes.map((n) => nodeId(n)))
-    const nodeList: Node[] = nodes.map((n) => ({
-      id: nodeId(n),
-      type: "resourceNode",
-      position: { x: 0, y: 0 },
-      data: {
-        kind: n.kind,
-        name: n.name,
-        syncStatus: n.syncStatus,
-        health: n.health,
-        managed: n.managed,
-        node: n,
-        onSelect: onSelectNode,
-      },
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-    }))
+export function ResourceGraph({
+  nodes,
+  onSelectNode,
+  selectedId,
+}: ResourceGraphProps) {
+  const overBudget = nodes.length > MAX_GRAPH_NODES
+
+  const { rfNodes, rfEdges } = useMemo(() => {
+    if (nodes.length === 0 || overBudget) {
+      return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
+    }
+
+    const ids = new Set(nodes.map((n) => resourceKey(n)))
+    const toneById = new Map(
+      nodes.map((n) => [resourceKey(n), resourceHealthTone(n.health)] as const)
+    )
+
+    const nodeList: Node[] = nodes.map((n) => {
+      const id = resourceKey(n)
+      const tone = resourceHealthTone(n.health)
+      return {
+        id,
+        type: "resourceNode",
+        position: { x: 0, y: 0 },
+        data: {
+          kind: n.kind.toUpperCase(),
+          name: n.name,
+          tone,
+          syncTone: resourceSyncTone(n.syncStatus),
+          syncLabel: resourceSyncLabel(n.syncStatus),
+          badge: nodeBadge(n),
+          selected: selectedId === id,
+          node: n,
+          onSelect: onSelectNode,
+        } satisfies ResourceNodeData,
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+        draggable: false,
+      }
+    })
 
     const edgeList: Edge[] = []
     for (const n of nodes) {
-      if (n.parentKind && n.parentName) {
-        const parentId = nodeId({ kind: n.parentKind, name: n.parentName } as ResourceGraphNode)
-        if (nodeIds.has(parentId)) {
-          edgeList.push({
-            id: `${parentId}->${nodeId(n)}`,
-            source: parentId,
-            target: nodeId(n),
-            type: "smoothstep",
-          })
-        }
-      }
+      if (!n.parentKind || !n.parentName) continue
+      const parentId = `${n.parentKind}/${n.parentName}`
+      if (!ids.has(parentId)) continue
+      const childId = resourceKey(n)
+      // An edge landing on a failed object is the one line a reader should
+      // follow first, so it alone carries weight and a dash.
+      const failed = toneById.get(childId) === "failed"
+      edgeList.push({
+        id: `${parentId}->${childId}`,
+        source: parentId,
+        target: childId,
+        type: "smoothstep",
+        style: failed
+          ? {
+              stroke: STATUS_TONE_HEX.failed.text,
+              strokeWidth: 1.4,
+              strokeDasharray: "3 2",
+            }
+          : { stroke: CANVAS_COLORS.rule, strokeWidth: 1 },
+      })
     }
 
-    // dagre layout
     const g = new graphlib.Graph()
     g.setDefaultEdgeLabel(() => ({}))
-    g.setGraph({ rankdir: "TB", nodesep: 30, ranksep: 50 })
-    for (const n of nodeList) {
-      g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
-    }
-    for (const e of edgeList) {
-      g.setEdge(e.source, e.target)
-    }
+    g.setGraph({ rankdir: "LR", nodesep: 22, ranksep: 60, marginx: 16, marginy: 16 })
+    for (const n of nodeList) g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
+    for (const e of edgeList) g.setEdge(e.source, e.target)
     layout(g)
-
     for (const n of nodeList) {
       const pos = g.node(n.id)
       n.position = { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 }
     }
 
     return { rfNodes: nodeList, rfEdges: edgeList }
-  }, [nodes, onSelectNode])
+  }, [nodes, onSelectNode, overBudget, selectedId])
 
-  const nodeTypes: NodeTypes = useMemo(() => ({ resourceNode: ResourceFlowNode }), [])
+  if (overBudget) {
+    return (
+      <p
+        role="status"
+        className="px-3.5 py-8 text-center text-chip text-muted-foreground"
+      >
+        {nodes.length} resources is past the {MAX_GRAPH_NODES} the graph can draw
+        without flooding the page. Switch to Tree.
+      </p>
+    )
+  }
 
   if (nodes.length === 0) {
     return (
-      <div className="flex h-64 items-center justify-center rounded-xl ring-1 ring-foreground/10">
-        <p className="text-sm text-muted-foreground">No resources to display.</p>
-      </div>
+      <p className="px-3.5 py-8 text-center text-chip text-muted-foreground">
+        No managed resources reported for this application.
+      </p>
     )
   }
 
   return (
-    <div className="h-[500px] w-full rounded-xl ring-1 ring-foreground/10" data-testid="resource-graph">
+    <div className="relative h-[372px] w-full" data-testid="resource-graph">
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -166,15 +258,27 @@ export function ResourceGraph({ nodes, onSelectNode }: ResourceGraphProps) {
         fitView
         nodesDraggable={false}
         nodesConnectable={false}
+        zoomOnScroll={false}
+        panOnScroll
+        aria-label="Resource graph"
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="var(--muted)" gap={16} />
-        <Controls showInteractive={false} />
+        <Background
+          variant={BackgroundVariant.Lines}
+          gap={22}
+          lineWidth={1}
+          color={CANVAS_COLORS.rule}
+        />
+        <Controls showInteractive={false} position="top-right" />
       </ReactFlow>
+      <ul className="absolute bottom-3 left-3 z-10 flex list-none gap-2.5 border border-rule bg-background/90 px-2.5 py-1">
+        {LEGEND_TONES.map((tone) => (
+          <li key={tone} className="inline-flex items-center gap-1 text-meta text-muted-foreground">
+            <StatusGlyph tone={tone} label="" aria-hidden />
+            {STATUS_TONES[tone].label}
+          </li>
+        ))}
+      </ul>
     </div>
   )
-}
-
-function nodeId(n: { kind: string; name: string }): string {
-  return `${n.kind}/${n.name}`
 }

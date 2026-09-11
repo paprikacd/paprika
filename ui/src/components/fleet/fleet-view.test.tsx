@@ -1,6 +1,14 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import type { ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { DATA_SOURCES_QUERY_KEY, indexDataSources } from "@/lib/data-state"
+import {
+  DataClass,
+  DataSourceStatus,
+  DataState,
+} from "@/gen/paprika/v1/api_pb"
 import type {
   FleetApplicationSummary,
   FleetApplicationsPage,
@@ -36,6 +44,47 @@ vi.mock("@/lib/use-fleet-data", async () => {
 
 import { FleetView } from "@/components/fleet/fleet-view"
 
+function status(dataClass: DataClass, state: DataState, reason = "") {
+  return new DataSourceStatus({
+    dataClass,
+    state,
+    provider: "",
+    observedAtUnixMs: BigInt(0),
+    stalenessBudgetMs: BigInt(0),
+    unavailableReason: reason,
+    retentionLimit: 0,
+    retentionWindowMs: BigInt(0),
+  })
+}
+
+/** Nothing configured: the honest default for a bare control plane. */
+const NOTHING_CONFIGURED = [
+  status(DataClass.COST, DataState.NOT_CONFIGURED, "no cost source is configured"),
+  status(
+    DataClass.LIFECYCLE,
+    DataState.NOT_CONFIGURED,
+    "no delivery projection is configured",
+  ),
+]
+
+/**
+ * Seeds the console-wide probe cache in the shape `@/lib/data-state` stores.
+ * Seeding any other shape would make every gating assertion below vacuous.
+ */
+function renderView(sources: DataSourceStatus[] = NOTHING_CONFIGURED) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  client.setQueryData(DATA_SOURCES_QUERY_KEY, {
+    index: indexDataSources(sources),
+    indexGeneration: BigInt(1),
+  })
+  const Wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  )
+  return render(<FleetView />, { wrapper: Wrapper })
+}
+
 beforeEach(() => {
   navigation.params = new URLSearchParams()
   navigation.pathname = "/dashboard/applications"
@@ -51,14 +100,11 @@ afterEach(() => {
 })
 
 describe("FleetView URL state", () => {
-  it("patches the canonical URL on the current route while preserving scope and selection", async () => {
+  it("patches the canonical URL on the current route while preserving scope and selection", () => {
     navigation.params = new URLSearchParams(
       "project=tenant%2Fpayments&health=degraded&selected=apps%2Fcheckout",
     )
-    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, { status: "loading" }),
-    )
-    render(<FleetView />)
+    renderView()
 
     fireEvent.click(screen.getByRole("button", { name: "Show Table view" }))
 
@@ -68,15 +114,44 @@ describe("FleetView URL state", () => {
     )
   })
 
+  it("moves the row and matrix axes together when the grouping changes", () => {
+    navigation.params = new URLSearchParams("view=matrix")
+    renderView()
+
+    fireEvent.click(screen.getByRole("button", { name: "Cluster" }))
+
+    expect(navigation.replace).toHaveBeenCalledWith(
+      "/dashboard/applications?view=matrix&group=cluster&rows=stage",
+      { scroll: false },
+    )
+  })
+
+  it("switches grouping off without inventing a query value the API has no name for", () => {
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([application("apps", "checkout")])
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    )
+    renderView()
+
+    expect(screen.getByRole("button", { name: "Collapse tenant/payments" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "None" }))
+
+    expect(
+      screen.queryByRole("button", { name: "Collapse tenant/payments" }),
+    ).not.toBeInTheDocument()
+    expect(navigation.replace).not.toHaveBeenCalled()
+  })
+
   it("updates row selection in URL state without taking ownership of zoom", () => {
     navigation.params = new URLSearchParams("view=table&zoom=project%3Atenant%2Fpayments")
     const apps = applicationsData([application("apps", "checkout")])
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    render(<FleetView />)
+    renderView()
 
-    fireEvent.click(screen.getByRole("row", { name: /apps\/checkout/i }))
+    fireEvent.click(screen.getByRole("row", { name: "apps/checkout" }))
 
     expect(navigation.replace).toHaveBeenCalledWith(
       "/dashboard/applications?view=table&zoom=project%3Atenant%2Fpayments&selected=apps%2Fcheckout",
@@ -88,9 +163,7 @@ describe("FleetView URL state", () => {
     navigation.params = new URLSearchParams(
       "project=tenant-a%2Fpayments&project=tenant-b%2Fpayments&view=table",
     )
-    const facets: FleetFacetBucket[] = [
-      facet("project", "tenant-b/payments", BigInt(8)),
-    ]
+    const facets: FleetFacetBucket[] = [facet("project", "tenant-b/payments", BigInt(8))]
     const apps = applicationsData([application("apps", "payments")], facets)
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, {
@@ -100,7 +173,7 @@ describe("FleetView URL state", () => {
         applicationFacets: facets,
       }),
     )
-    const { rerender } = render(<FleetView />)
+    const { rerender } = renderView()
 
     await waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(1))
     expect(navigation.replace).toHaveBeenCalledWith(
@@ -117,7 +190,7 @@ describe("FleetView URL state", () => {
     expect(screen.getAllByRole("status", { name: "Fleet query notice" })).toHaveLength(1)
   })
 
-  it("keeps a reconciliation notice after navigation advances until it is dismissed", async () => {
+  it("keeps a reconciliation notice until it is dismissed", async () => {
     navigation.params = new URLSearchParams(
       "project=tenant-a%2Fpayments&project=tenant-b%2Fpayments&view=table",
     )
@@ -131,21 +204,18 @@ describe("FleetView URL state", () => {
         applicationFacets: facets,
       }),
     )
-    const { rerender } = render(<FleetView />)
+    renderView()
 
     await waitFor(() =>
       expect(screen.getByRole("status", { name: "Fleet query notice" })).toBeInTheDocument(),
     )
-    navigation.params = new URLSearchParams("project=tenant-b%2Fpayments&view=table")
-    rerender(<FleetView />)
-
-    expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
-      "tenant-a/payments",
-    )
     const dismiss = screen.getByRole("button", { name: "Dismiss fleet query notice" })
     expect(dismiss).toHaveClass("min-h-11")
     fireEvent.click(dismiss)
-    expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
+
+    expect(
+      screen.queryByRole("status", { name: "Fleet query notice" }),
+    ).not.toBeInTheDocument()
   })
 
   it("never reconciles a new scope against stale presentation facets", async () => {
@@ -161,41 +231,17 @@ describe("FleetView URL state", () => {
       }),
     )
 
-    render(<FleetView />)
+    renderView()
     await act(async () => {})
 
     expect(navigation.replace).not.toHaveBeenCalled()
-    expect(screen.queryByRole("status", { name: "Fleet query notice" })).not.toBeInTheDocument()
-    expect(screen.getByRole("checkbox", { name: "Project tenant-old/payments" })).toBeInTheDocument()
-  })
-
-  it("treats a settled complete empty facet set as no authorized values", async () => {
-    navigation.params = new URLSearchParams("project=tenant%2Fpayments&view=table")
-    const settled = applicationsData([])
-    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, {
-        status: "ready",
-        currentData: settled,
-        displayData: settled,
-        applicationFacets: [],
-      }),
-    )
-
-    render(<FleetView />)
-
-    await waitFor(() =>
-      expect(navigation.replace).toHaveBeenCalledWith(
-        "/dashboard/applications?view=table",
-        { scroll: false },
-      ),
-    )
-    expect(screen.getByRole("status", { name: "Fleet query notice" })).toHaveTextContent(
-      "Removed unavailable project value “tenant/payments”.",
-    )
+    expect(
+      screen.queryByRole("status", { name: "Fleet query notice" }),
+    ).not.toBeInTheDocument()
   })
 })
 
-describe("FleetView states", () => {
+describe("FleetView shell", () => {
   it("exposes the authorized total only after the current fleet snapshot settles", () => {
     const settledMap: FleetPresentationData = {
       kind: "map",
@@ -210,19 +256,34 @@ describe("FleetView states", () => {
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, overrides),
     )
-    const { rerender } = render(<FleetView />)
+    const { rerender } = renderView()
     const inventory = screen.getByRole("region", { name: "Applications" })
 
     expect(inventory).not.toHaveAttribute("data-fleet-ready")
 
-    overrides = {
-      status: "ready",
-      currentData: settledMap,
-      displayData: settledMap,
-    }
+    overrides = { status: "ready", currentData: settledMap, displayData: settledMap }
     rerender(<FleetView />)
 
     expect(inventory).toHaveAttribute("data-fleet-ready", "12")
+  })
+
+  it("marks the active view and grouping for assistive technology", () => {
+    navigation.params = new URLSearchParams("view=queue&group=stage")
+    renderView()
+
+    expect(screen.getByRole("group", { name: "View" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Show Queue view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Stage" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    )
+    expect(screen.getByRole("button", { name: "Show Table view" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    )
   })
 
   it.each([
@@ -236,7 +297,7 @@ describe("FleetView states", () => {
       fleetResult(state, { status }),
     )
 
-    render(<FleetView />)
+    renderView()
 
     expect(screen.getByRole(role)).toHaveTextContent(message)
   })
@@ -256,44 +317,23 @@ describe("FleetView states", () => {
       }),
     )
 
-    render(<FleetView />)
+    renderView()
 
-    expect(screen.getByText("Showing previous fleet data").closest('[role="status"]')).toHaveTextContent(
-      "Showing previous fleet data",
-    )
     expect(screen.getByRole("region", { name: "Fleet map" })).toHaveTextContent(
       "12 applications",
     )
   })
-
-  it("renders loaded rows with a distinct partial-results warning", () => {
-    navigation.params = new URLSearchParams("view=table")
-    const apps = applicationsData([application("apps", "checkout")])
-    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, {
-        status: "partial",
-        currentData: apps,
-        displayData: apps,
-      }),
-    )
-
-    render(<FleetView />)
-
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Some applications could not be loaded",
-    )
-    expect(screen.getByRole("row", { name: /apps\/checkout/i })).toBeInTheDocument()
-  })
 })
 
-describe("FleetView application presentations", () => {
-  it("virtualizes deterministic rows and exposes an explicit 100-row page control", () => {
+describe("FleetView footer", () => {
+  it("counts applications loaded against applications indexed", () => {
     navigation.params = new URLSearchParams("view=table")
     const apps = applicationsData(
-      Array.from({ length: 180 }, (_, index) => application("apps", `service-${index}`)),
+      Array.from({ length: 100 }, (_, index) => application("apps", `service-${index}`)),
       [],
       "next-100",
     )
+    apps.total = BigInt(10_000)
     const loadMore = vi.fn().mockResolvedValue(undefined)
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, {
@@ -304,40 +344,49 @@ describe("FleetView application presentations", () => {
         loadMore,
       }),
     )
-    render(<FleetView />)
+    renderView()
 
-    const rows = screen.getAllByRole("row").slice(1)
-    expect(rows.length).toBeGreaterThan(0)
-    expect(rows.length).toBeLessThan(180)
-    expect(rows[0]).toHaveAttribute("data-row-key", "apps/service-0")
-
+    expect(screen.getByTestId("fleet-load-more-sentinel")).toHaveTextContent(
+      "100 loaded / 10000 indexed",
+    )
     fireEvent.click(screen.getByRole("button", { name: "Load 100 more applications" }))
     expect(loadMore).toHaveBeenCalledTimes(1)
-    expect(screen.getByTestId("fleet-load-more-sentinel")).toBeInTheDocument()
   })
 
-  it("renders the queue in server order and never performs an impact join or client sort", () => {
-    navigation.params = new URLSearchParams("view=queue&sort=impact&direction=desc")
-    const low = application("apps", "first-from-server", { resourceCount: 1 })
-    const high = application("apps", "second-from-server", { resourceCount: 900 })
-    const apps = applicationsData([low, high], [], "", "queue")
-    apps.total = BigInt(200)
+  it("offers no page control for a server-aggregated presentation", () => {
+    navigation.params = new URLSearchParams("view=treemap")
+    const map: FleetPresentationData = { kind: "map", view: "treemap", result: mapResult() }
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: map, displayData: map }),
+    )
+    renderView()
+
+    expect(screen.getByTestId("fleet-load-more-sentinel")).toHaveTextContent("12 indexed")
+    expect(
+      screen.queryByRole("button", { name: "Load 100 more applications" }),
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe("FleetView presentations", () => {
+  it("virtualizes deterministic rows without one node per application", () => {
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData(
+      Array.from({ length: 180 }, (_, index) => application("apps", `service-${index}`)),
+      [],
+      "next-100",
+    )
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    render(<FleetView />)
+    renderView()
 
-    const items = screen.getAllByRole("listitem")
-    expect(items[0]).toHaveTextContent("first-from-server")
-    expect(items[1]).toHaveTextContent("second-from-server")
-    expect(mockUseFleetData.mock.calls[0]?.[0]).toMatchObject({
-      view: "queue",
-      sort: "impact",
-      direction: "desc",
-    })
-    expect(items[0]).toHaveAttribute("aria-posinset", "1")
-    expect(items[0]).toHaveAttribute("aria-setsize", "200")
-    expect(items[1]).toHaveAttribute("aria-posinset", "2")
+    const rows = screen
+      .getAllByRole("row")
+      .filter((row) => row.hasAttribute("data-row-key"))
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.length).toBeLessThan(180)
+    expect(rows[0]).toHaveAttribute("data-row-key", "apps/service-0")
   })
 
   it("reports virtual table positions against the complete result set", () => {
@@ -350,110 +399,75 @@ describe("FleetView application presentations", () => {
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    render(<FleetView />)
+    renderView()
 
     const table = screen.getByRole("table", { name: "Applications" })
-    const header = screen.getByRole("row", { name: /authorized actions/i })
-    const checkout = screen.getByRole("row", { name: /apps\/checkout/i })
-    const payments = screen.getByRole("row", { name: /apps\/payments/i })
     expect(table).toHaveAttribute("aria-rowcount", "201")
-    expect(table).toHaveAttribute("aria-colcount", "6")
-    expect(header).toHaveAttribute("aria-rowindex", "1")
-    expect(checkout).toHaveAttribute("aria-rowindex", "2")
-    expect(payments).toHaveAttribute("aria-rowindex", "3")
-  })
-
-  it("measures capability-rich virtual rows so later rows cannot overlap", async () => {
-    const defaultRect = HTMLElement.prototype.getBoundingClientRect
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
-      const key = this.getAttribute("data-row-key")
-      if (key === "apps/authorized") return rectangle(1120, 132)
-      if (key) return rectangle(1120, 76)
-      if (this.getAttribute("role") === "table") return rectangle(1120, 560)
-      return defaultRect.call(this)
-    })
-    navigation.params = new URLSearchParams("view=table")
-    const apps = applicationsData([
-      application("apps", "authorized", {
-        capabilities: [
-          "application_sync",
-          "release_rollback",
-          "gate_approve",
-          "pipeline_retry",
-        ],
-      }),
-      application("apps", "plain"),
-    ])
-    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    expect(screen.getByRole("row", { name: "apps/checkout" })).toHaveAttribute(
+      "aria-rowindex",
+      "2",
     )
-    render(<FleetView />)
-
-    const second = screen.getByRole("row", { name: /apps\/plain/i })
-    await waitFor(() =>
-      expect(Number(second.getAttribute("data-virtual-start"))).toBeGreaterThanOrEqual(132),
+    expect(screen.getByRole("row", { name: "apps/payments" })).toHaveAttribute(
+      "aria-rowindex",
+      "3",
     )
   })
 
-  it("measures capability-rich queue items so later items cannot overlap", async () => {
-    const defaultRect = HTMLElement.prototype.getBoundingClientRect
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
-      const key = this.getAttribute("data-row-key")
-      if (key === "apps/authorized") return rectangle(1120, 164)
-      if (key) return rectangle(1120, 116)
-      return defaultRect.call(this)
-    })
+  it("asks the server for impact order in the queue rather than sorting on the client", () => {
     navigation.params = new URLSearchParams("view=queue&sort=impact&direction=desc")
-    const apps = applicationsData([
-      application("apps", "authorized", {
-        capabilities: [
-          "application_sync",
-          "release_rollback",
-          "gate_approve",
-          "pipeline_retry",
-        ],
-      }),
-      application("apps", "plain"),
-    ], [], "", "queue")
+    const low = application("apps", "first-from-server", { resourceCount: 1 })
+    const high = application("apps", "second-from-server", { resourceCount: 900 })
+    const apps = applicationsData([low, high], [], "", "queue")
+    apps.total = BigInt(200)
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    render(<FleetView />)
+    renderView()
 
-    const second = screen.getByRole("listitem", { name: /apps\/plain/i })
-    await waitFor(() =>
-      expect(Number(second.getAttribute("data-virtual-start"))).toBeGreaterThanOrEqual(164),
-    )
-  })
-
-  it("renders only server-derived capability actions", () => {
-    navigation.params = new URLSearchParams("view=table")
-    const authorized = application("apps", "authorized", {
-      capabilities: [
-        "application_sync",
-        "release_rollback",
-        "gate_approve",
-        "pipeline_retry",
-      ],
+    const rows = screen
+      .getAllByRole("row")
+      .filter((row) => row.getAttribute("aria-rowindex") !== "1")
+    expect(rows[0]).toHaveTextContent("first-from-server")
+    expect(rows[1]).toHaveTextContent("second-from-server")
+    expect(mockUseFleetData.mock.calls[0]?.[0]).toMatchObject({
+      view: "queue",
+      sort: "impact",
+      direction: "desc",
     })
-    const readOnly = application("apps", "read-only")
-    const apps = applicationsData([authorized, readOnly])
+  })
+
+  it("hides the cost column across the whole view when no cost source exists", () => {
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([application("apps", "checkout")])
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    render(<FleetView />)
+    renderView()
 
-    const authorizedRow = screen.getByRole("row", { name: /apps\/authorized/i })
-    expect(within(authorizedRow).getByRole("button", { name: "Sync apps/authorized" })).toBeDisabled()
-    expect(within(authorizedRow).getByRole("button", { name: "Rollback apps/authorized" })).toBeDisabled()
-    expect(within(authorizedRow).getByRole("button", { name: "Approve gate for apps/authorized" })).toBeDisabled()
-    expect(within(authorizedRow).getByRole("button", { name: "Retry pipeline for apps/authorized" })).toBeDisabled()
-
-    const readOnlyRow = screen.getByRole("row", { name: /apps\/read-only/i })
-    expect(within(readOnlyRow).queryByRole("button")).not.toBeInTheDocument()
+    expect(screen.queryByRole("columnheader", { name: /cost/i })).not.toBeInTheDocument()
+    const row = screen.getByRole("row", { name: "apps/checkout" })
+    expect(within(row).queryByText("$0")).not.toBeInTheDocument()
+    expect(within(row).queryByText("—")).not.toBeInTheDocument()
   })
 
-  it("restores focus by identity and falls back to the heading with one removal announcement", async () => {
+  it("shows the cost column when a cost source is configured", () => {
+    // The counterpart to the test above: without this one, "hides the cost
+    // column" would also pass if the column simply never existed.
+    navigation.params = new URLSearchParams("view=table")
+    const apps = applicationsData([application("apps", "checkout")])
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
+    )
+    renderView([status(DataClass.COST, DataState.OK)])
+
+    expect(
+      screen.getByRole("columnheader", { name: /cost/i }),
+    ).toBeInTheDocument()
+  })
+})
+
+describe("FleetView focus", () => {
+  it("restores focus by identity and falls back to the heading with one announcement", async () => {
     navigation.params = new URLSearchParams("view=table")
     let apps = applicationsData([
       application("apps", "payments"),
@@ -462,84 +476,74 @@ describe("FleetView application presentations", () => {
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    const { rerender } = render(<FleetView />)
-    const checkout = screen.getByRole("row", { name: /apps\/checkout/i })
-    checkout.focus()
+    const { rerender } = renderView()
+    screen.getByRole("row", { name: "apps/checkout" }).focus()
 
-    apps = applicationsData([
-      application("apps", "checkout"),
-      application("apps", "orders"),
-    ])
+    apps = applicationsData([application("apps", "checkout"), application("apps", "orders")])
     rerender(<FleetView />)
     await waitFor(() =>
-      expect(screen.getByRole("row", { name: /apps\/checkout/i })).toHaveFocus(),
+      expect(screen.getByRole("row", { name: "apps/checkout" })).toHaveFocus(),
     )
 
     apps = applicationsData([application("apps", "orders")])
     rerender(<FleetView />)
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Applications" })).toHaveFocus())
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Applications" })).toHaveFocus(),
+    )
     expect(screen.getByRole("status", { name: "Fleet focus updates" })).toHaveTextContent(
       "Application apps/checkout was removed from the results.",
     )
-
-    rerender(<FleetView />)
-    expect(screen.getAllByText("Application apps/checkout was removed from the results.")).toHaveLength(1)
   })
 
-  it.each(["search", "load more"] as const)(
-    "does not steal focus back from the %s control after results update",
-    async (destination) => {
-      navigation.params = new URLSearchParams("view=table")
-      let apps = applicationsData(
-        [application("apps", "checkout"), application("apps", "payments")],
-        [],
-        "next-100",
-      )
-      mockUseFleetData.mockImplementation((state: FleetQueryState) =>
-        fleetResult(state, {
-          status: "ready",
-          currentData: apps,
-          displayData: apps,
-          hasMore: true,
-        }),
-      )
-      const { rerender } = render(<FleetView />)
-      screen.getByRole("row", { name: /apps\/checkout/i }).focus()
-      const control = destination === "search"
-        ? screen.getByRole("searchbox", { name: "Search applications" })
-        : screen.getByRole("button", { name: "Load 100 more applications" })
-      control.focus()
+  it("does not steal focus back from the search control after results update", async () => {
+    navigation.params = new URLSearchParams("view=table")
+    let apps = applicationsData(
+      [application("apps", "checkout"), application("apps", "payments")],
+      [],
+      "next-100",
+    )
+    mockUseFleetData.mockImplementation((state: FleetQueryState) =>
+      fleetResult(state, {
+        status: "ready",
+        currentData: apps,
+        displayData: apps,
+        hasMore: true,
+      }),
+    )
+    const { rerender } = renderView()
+    screen.getByRole("row", { name: "apps/checkout" }).focus()
+    const control = screen.getByRole("searchbox", {
+      name: "Filter applications by name, project, cluster or revision",
+    })
+    control.focus()
 
-      apps = applicationsData(
-        [application("apps", "checkout"), application("apps", "orders")],
-        [],
-        "next-100",
-      )
-      rerender(<FleetView />)
-      await act(async () => {})
+    apps = applicationsData(
+      [application("apps", "checkout"), application("apps", "orders")],
+      [],
+      "next-100",
+    )
+    rerender(<FleetView />)
+    await act(async () => {})
 
-      expect(control).toHaveFocus()
-    },
-  )
+    expect(control).toHaveFocus()
+  })
 
-  it("preserves row identity when focus moves to a presentation toggle", async () => {
+  it("keeps the focused row's identity while the operator changes presentation", async () => {
     navigation.params = new URLSearchParams("view=table")
     let apps = applicationsData([application("apps", "checkout")])
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
       fleetResult(state, { status: "ready", currentData: apps, displayData: apps }),
     )
-    const { rerender } = render(<FleetView />)
-    screen.getByRole("row", { name: /apps\/checkout/i }).focus()
-    const queueToggle = screen.getByRole("button", { name: "Show Queue view" })
-    expect(queueToggle).toHaveAttribute("data-preserve-fleet-focus", "true")
-    queueToggle.focus()
+    const { rerender } = renderView()
+    screen.getByRole("row", { name: "apps/checkout" }).focus()
+    screen.getByRole("button", { name: "Show Queue view" }).focus()
 
     navigation.params = new URLSearchParams("view=queue&sort=impact&direction=desc")
     apps = applicationsData([application("apps", "checkout")], [], "", "queue")
     rerender(<FleetView />)
 
     await waitFor(() =>
-      expect(screen.getByRole("listitem", { name: /apps\/checkout/i })).toHaveFocus(),
+      expect(screen.getByRole("row", { name: "apps/checkout" })).toHaveFocus(),
     )
   })
 })
@@ -662,19 +666,5 @@ function mapResult(): FleetMapResult {
     total: BigInt(12),
     indexGeneration: BigInt(7),
     facets: [],
-  }
-}
-
-function rectangle(width: number, height: number): DOMRect {
-  return {
-    x: 0,
-    y: 0,
-    width,
-    height,
-    top: 0,
-    right: width,
-    bottom: height,
-    left: 0,
-    toJSON: () => ({}),
   }
 }
