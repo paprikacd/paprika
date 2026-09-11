@@ -826,6 +826,11 @@ auth:
 ## docs/superpowers/specs/2026-09-11-mcp-server-design.md for the full
 ## design.
 ##
+## deploymentMode: split ONLY. MCP is wired solely into the split-mode
+## api-server Deployment; deploymentMode: monolith has no MCP support yet
+## and enabling mcp.enabled there fails the `helm template` render rather
+## than silently doing nothing.
+##
 ## WARNING: even with mcp.enabled=true and every precondition satisfied,
 ## the MCP server is currently NON-FUNCTIONAL end to end. /mcp/authorize
 ## cannot be completed by any client: it requires a token with
