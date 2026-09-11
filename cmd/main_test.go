@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,7 +27,10 @@ import (
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
@@ -539,4 +544,135 @@ func waitForHTTPStatus(ctx context.Context, addr, path string, wantStatus int) (
 		case <-ticker.C:
 		}
 	}
+}
+
+// --- Task 15: MCP wiring -----------------------------------------------
+//
+// These tests cover the base task (the four given in task-15-brief.md) plus
+// carry-forwards CF1 and CF2 from Task 13's review (progress.md). CF3, CF4,
+// and CF5 are addressed elsewhere:
+//   - CF3 (nil-principal guard in negotiateScope) has its own white-box test
+//     in internal/api/mcp/task15_carryforward_test.go, since negotiateScope
+//     is unexported.
+//   - CF4 (the /mcp/authorize browser dead-end) and CF5 (the redirect/
+//     client_id enumeration oracle) are documented in task-15-report.md;
+//     CF5's client_id/redirect_uri half has its own test alongside CF3's,
+//     in the same file.
+
+func TestMCPDisabledByDefault(t *testing.T) {
+	cfg, err := registerFlags(nil, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.False(t, cfg.mcpEnabled, "MCP must be opt-in")
+}
+
+func TestMCPFlagsParse(t *testing.T) {
+	cfg, err := registerFlags(
+		[]string{"--mcp-enabled", "--mcp-bind-address=:9999", "--mcp-access-token-ttl=1h"},
+		func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.True(t, cfg.mcpEnabled)
+	assert.Equal(t, ":9999", cfg.mcpBindAddress)
+	assert.Equal(t, time.Hour, cfg.mcpAccessTokenTTL)
+}
+
+func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
+	handlers, err := buildMCPHandlers(context.Background(),
+		&cliConfig{mcpEnabled: false}, nil, auth.Config{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, handlers)
+}
+
+func TestBuildMCPHandlersRequiresAuthEnabled(t *testing.T) {
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{mcpEnabled: true}, http.NewServeMux(),
+		auth.Config{Enabled: false}, nil)
+	require.Error(t, err,
+		"MCP must refuse to start without authentication")
+}
+
+// TestBuildMCPHandlersRequiresTokenSecret guards CF2 (progress.md, Task 13's
+// review): nothing enforces that mcp.ServerConfig.Secret is the same secret
+// auth.Config.TokenSecret uses. If MCP is enabled with auth enabled via
+// OIDC/basic auth alone and no token secret configured, buildAuthnAuthz
+// never builds a self-signed authenticator, and every MCP token would be
+// unverifiable. buildMCPHandlers must refuse to start in that shape too, not
+// just when auth is fully disabled.
+func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+		},
+		http.NewServeMux(),
+		auth.Config{Enabled: true, TokenSecret: nil},
+		nil,
+	)
+	require.Error(t, err,
+		"MCP must refuse to start when auth is enabled but no token secret is configured")
+}
+
+// TestBuildMCPHandlersWiresRealClient guards CF1 (progress.md, Task 13's
+// review): mcp.ServerConfig.Client is deliberately not part of
+// mcp.NewServer's own required-field validation, so a production server
+// built without one would start cleanly and fail every tools/call with an
+// internal error. This proves buildMCPHandlers always constructs a real
+// Client wired over connectHandler: a tools/call for fleet_status (which
+// needs no request fields) reaches the stub PaprikaService handler and
+// receives its CodeUnimplemented response, rather than the
+// "no Connect client configured" error a nil Client would produce.
+func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
+	ctx := context.Background()
+
+	// A stub PaprikaService that only needs to prove requests actually
+	// reach it — it doesn't need to implement anything for real, since
+	// CF1 only tests that Server.Client is wired, not the full request
+	// pipeline (that's covered by Task 13's own tests).
+	_, handler := v1connect.NewPaprikaServiceHandler(v1connect.UnimplementedPaprikaServiceHandler{})
+
+	secret := []byte("test-token-secret-test-token-sec")
+	store, err := cache.New(ctx, cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	handlers, err := buildMCPHandlers(ctx,
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			mcpPublicURL:         "https://paprika.example",
+			mcpAccessTokenTTL:    time.Hour,
+			mcpRefreshTokenTTL:   24 * time.Hour,
+		},
+		handler,
+		auth.Config{Enabled: true, TokenSecret: secret},
+		store,
+	)
+	require.NoError(t, err)
+	require.Len(t, handlers, 2, "buildMCPHandlers must register /mcp plus the OAuth routes")
+
+	mux := http.NewServeMux()
+	for _, h := range handlers {
+		h(mux)
+	}
+
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject:  "task15-test",
+		Audience: mcp.MCPTokenAudience,
+		Scope:    string(mcp.ScopeRead),
+		TTL:      time.Hour,
+		Secret:   secret,
+	})
+	require.NoError(t, err)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet_status","arguments":{}}}`
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "the JSON-RPC envelope itself is 200 even when the tool call errors")
+	respBody := rec.Body.String()
+	assert.NotContains(t, respBody, "no Connect client configured",
+		"buildMCPHandlers must always wire a real Client (CF1); this error string indicates a nil one")
 }

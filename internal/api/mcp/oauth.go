@@ -44,11 +44,14 @@ func defaultDuration(d, fallback time.Duration) time.Duration {
 	return d
 }
 
-// mcpTokenAudience is the audience every token this file mints carries. It
+// MCPTokenAudience is the audience every token this file mints carries. It
 // is what stops an MCP access token being replayed against the console API
 // (which requires a distinct audience) and vice versa — see
-// TestIssuedAccessTokenCarriesMCPAudience.
-const mcpTokenAudience = "paprika-mcp"
+// TestIssuedAccessTokenCarriesMCPAudience. Exported so Task 15's
+// buildMCPHandlers (cmd/main.go) can build the MCP server's Authenticator
+// against the exact same audience this package mints tokens for, without
+// duplicating the literal string across packages.
+const MCPTokenAudience = "paprika-mcp"
 
 // oauthScopesSupported is the fixed set of scopes this authorization server
 // grants. It is deliberately the same two values Scope declares — nothing
@@ -141,11 +144,27 @@ type authCodeRecord struct {
 }
 
 // handleAuthorize implements the authorization_code + PKCE authorization
-// endpoint. redirect_uri is checked against the exact-match allowlist BEFORE
-// anything else — including before authentication — so that an attacker
-// supplying an unregistered redirect_uri never reaches a code path that
-// could send them anywhere, and never learns anything from a differently
-// shaped failure (see TestAuthorizeRejectsUnregisteredRedirectURI).
+// endpoint. client_id and redirect_uri are checked against the exact-match
+// allowlist BEFORE anything else — including before authentication — so
+// that an attacker supplying an unregistered redirect_uri never reaches a
+// code path that could send them anywhere, and never learns anything from a
+// differently shaped failure (see TestAuthorizeRejectsUnregisteredRedirectURI).
+//
+// validateAuthorizeRequest reports client_id and redirect_uri failures as
+// one identical "invalid_request" response (see its doc comment) so an
+// unauthenticated caller cannot use the error code to tell a bad client_id
+// apart from a bad redirect_uri. What it cannot close, without changing the
+// status code this package's own locked tests pin, is the coarser split
+// between that generic 400 and the 401 an unauthenticated caller gets for an
+// otherwise-well-formed request: TestAuthorizeRejectsUnregisteredRedirectURI
+// requires exactly 400 for an unregistered redirect_uri, and
+// TestAuthorizeAcceptsExactRegisteredRedirectURI requires the registered
+// case to be anything BUT 400 (currently 401, from writeUnauthenticated)
+// with no bearer token supplied. Those two assertions are jointly
+// incompatible with making "registered, unauthenticated" and "unregistered"
+// return the same status code — see task-15-report.md's CF5 section for the
+// full analysis and why this is flagged rather than silently left half-done
+// or fixed by editing the locked test file.
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -211,26 +230,28 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 // ok=false on the first failure. Splitting this out of handleAuthorize keeps
 // each function's branching independently readable and testable.
 //
-// redirect_uri is validated here, before authentication runs, so that an
-// attacker supplying an unregistered redirect_uri never reaches a code path
-// that could send them anywhere, and never learns anything from a
-// differently shaped failure (see TestAuthorizeRejectsUnregisteredRedirectURI).
+// client_id and redirect_uri are validated here, before authentication
+// runs, so that an attacker supplying an unregistered redirect_uri never
+// reaches a code path that could send them anywhere.
+//
+// CF5 (task-15-report.md): the two checks are deliberately collapsed into
+// ONE generic "invalid_request" response, rather than client_id getting its
+// own "unauthorized_client" error as earlier revisions did. Reporting them
+// separately let an unauthenticated caller distinguish "this client_id is
+// wrong" from "this client_id is right but the redirect_uri is wrong" —
+// itself an enumeration oracle over registered client IDs, on top of the
+// redirect_uri oracle CF5 also names. Neither error ever echoes the
+// caller-supplied client_id or redirect_uri back into the response body or
+// a header, and a Location header is never set on this path at all.
 func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (redirectURI, codeChallenge string, ok bool) {
 	if q.Get("response_type") != "code" {
 		writeOAuthError(w, http.StatusBadRequest, "unsupported_response_type", "only response_type=code is supported")
 		return "", "", false
 	}
-	if !s.clientIDAllowed(q.Get("client_id")) {
-		writeOAuthError(w, http.StatusBadRequest, "unauthorized_client", "unknown client_id")
-		return "", "", false
-	}
 
 	redirectURI = q.Get("redirect_uri")
-	if !s.isRegisteredRedirect(redirectURI) {
-		// Deliberately generic: never echo the caller-supplied redirect_uri
-		// back into the response body or a header. A Location header is
-		// never set on this path at all.
-		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "redirect_uri is not registered for this client")
+	if !s.clientIDAllowed(q.Get("client_id")) || !s.isRegisteredRedirect(redirectURI) {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id or redirect_uri is not registered")
 		return "", "", false
 	}
 
@@ -301,6 +322,16 @@ func (s *Server) isRegisteredRedirect(candidate string) bool {
 //     could call nothing, with no error to explain why. See Fix round 2,
 //     Fold-in 3.
 func negotiateScope(principal *auth.Principal, requested string) (string, bool) {
+	// A nil principal can never be granted any scope. handleAuthorize never
+	// calls negotiateScope without first authenticating successfully, so
+	// this should be unreachable in production — but negotiateScope is
+	// unexported, callable directly, and one of only two places
+	// (issueTokenPair being the other) where a scope claim originates, so it
+	// must not blindly dereference a caller-supplied nil and panic. Fail
+	// closed instead, exactly like every other rejection path here.
+	if principal == nil {
+		return "", false
+	}
 	granted := ParseScopes(strings.Join(principal.Scopes, " "))
 
 	if strings.TrimSpace(requested) == "" {
@@ -538,7 +569,7 @@ func (s *Server) consumeRefreshToken(ctx context.Context, token string) (refresh
 	return rec, nil
 }
 
-// issueTokenPair mints an access token bound to mcpTokenAudience plus a
+// issueTokenPair mints an access token bound to MCPTokenAudience plus a
 // fresh rotating refresh token, stores the refresh record, and writes the
 // RFC 6749 section 5.1 JSON response. It is the single place both grant
 // types converge, so every successful /mcp/token response is built the same
@@ -548,7 +579,7 @@ func (s *Server) issueTokenPair(ctx context.Context, w http.ResponseWriter, subj
 		Subject:  subject,
 		Email:    email,
 		Name:     name,
-		Audience: mcpTokenAudience,
+		Audience: MCPTokenAudience,
 		Issuer:   s.publicURL,
 		Scope:    scope,
 		TTL:      s.accessTTL,
