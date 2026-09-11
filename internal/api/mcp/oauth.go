@@ -289,6 +289,17 @@ func (s *Server) isRegisteredRedirect(candidate string) bool {
 //     policy was chosen over a silent intersection.
 //   - requested names only scopes principal holds: exactly those are
 //     granted, narrowed from whatever principal could have asked for.
+//   - requested contains any token that is not a recognised scope value at
+//     all (e.g. "admin", or "PAPRIKA:WRITE" with the wrong case): the WHOLE
+//     request is rejected (ok=false), same as an unheld-but-recognised
+//     scope. ParseScopes silently drops unrecognised tokens by design (so
+//     they can never widen access), which means it alone cannot be used
+//     here to detect them — a raw field count comparison below is used
+//     instead. Without this, a typo'd or garbage scope value used to
+//     silently fall through to a zero-scope token: the whole authorize
+//     request would succeed, but the client would receive a token that
+//     could call nothing, with no error to explain why. See Fix round 2,
+//     Fold-in 3.
 func negotiateScope(principal *auth.Principal, requested string) (string, bool) {
 	granted := ParseScopes(strings.Join(principal.Scopes, " "))
 
@@ -297,6 +308,11 @@ func negotiateScope(principal *auth.Principal, requested string) (string, bool) 
 	}
 
 	requestedScopes := ParseScopes(requested)
+	if len(requestedScopes) != len(strings.Fields(requested)) {
+		// At least one requested token was dropped by ParseScopes because it
+		// is not a recognised scope value.
+		return "", false
+	}
 	for _, rs := range requestedScopes {
 		if !HasScope(granted, rs) {
 			return "", false

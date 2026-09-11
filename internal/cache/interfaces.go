@@ -1,4 +1,8 @@
 // Package cache provides caching abstractions for Paprika.
+//
+// GetDeleter.GetDel requires Redis >= 6.2 when backed by RedisCache: it is
+// implemented via the native GETDEL command, which does not exist on older
+// Redis servers.
 package cache
 
 import (

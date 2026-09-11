@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/benebsworth/paprika/internal/clock"
@@ -53,6 +54,128 @@ func TestMemoryCache_TTL(t *testing.T) {
 	val, err = c.Get(ctx, "key")
 	require.NoError(t, err)
 	require.Nil(t, val)
+}
+
+// TestMemoryCache_GetDel covers the present/absent/expired cases required
+// for GetDeleter (Fix round 2, Fold-in 2): a present key is returned AND
+// removed, an absent key reports (nil, nil) rather than an error, and an
+// expired-but-still-present key behaves exactly like an absent one.
+func TestMemoryCache_GetDel(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("present key is returned and removed", func(t *testing.T) {
+		t.Parallel()
+		c := NewMemoryCache()
+		defer func() { _ = c.Close() }()
+
+		require.NoError(t, c.Set(ctx, "key", []byte("value"), 0))
+
+		val, err := c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Equal(t, []byte("value"), val)
+
+		// A subsequent Get must see it gone.
+		got, err := c.Get(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, got)
+
+		// As must a subsequent GetDel.
+		got, err = c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, got)
+	})
+
+	t.Run("absent key returns nil, nil", func(t *testing.T) {
+		t.Parallel()
+		c := NewMemoryCache()
+		defer func() { _ = c.Close() }()
+
+		val, err := c.GetDel(ctx, "never-set")
+		require.NoError(t, err)
+		require.Nil(t, val)
+	})
+
+	t.Run("expired key behaves as absent", func(t *testing.T) {
+		t.Parallel()
+		fake := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+		c := NewMemoryCacheWithClock(fake)
+		defer func() { _ = c.Close() }()
+
+		require.NoError(t, c.Set(ctx, "key", []byte("value"), 50*time.Millisecond))
+		fake.Add(100 * time.Millisecond)
+
+		val, err := c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, val)
+	})
+}
+
+// newTestRedisCache starts an in-process miniredis instance and a RedisCache
+// wired to it, so RedisCache's behavior can be tested without a real Redis
+// server. miniredis is already a project dependency (used by
+// internal/coordinator's integration tests) but had not previously been
+// used to exercise internal/cache directly.
+func newTestRedisCache(t *testing.T) (*RedisCache, *miniredis.Miniredis) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	require.NoError(t, err)
+	t.Cleanup(mr.Close)
+
+	c, err := NewRedisCache(mr.Addr(), "", 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close() })
+	return c, mr
+}
+
+// TestRedisCache_GetDel is the Redis-backed counterpart to
+// TestMemoryCache_GetDel (Fix round 2, Fold-in 2): the Redis path had no
+// test coverage at all despite miniredis already being available.
+func TestRedisCache_GetDel(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("present key is returned and removed", func(t *testing.T) {
+		t.Parallel()
+		c, _ := newTestRedisCache(t)
+
+		require.NoError(t, c.Set(ctx, "key", []byte("value"), 0))
+
+		val, err := c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Equal(t, []byte("value"), val)
+
+		got, err := c.Get(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, got)
+
+		got, err = c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, got)
+	})
+
+	t.Run("absent key returns nil, nil", func(t *testing.T) {
+		t.Parallel()
+		c, _ := newTestRedisCache(t)
+
+		val, err := c.GetDel(ctx, "never-set")
+		require.NoError(t, err)
+		require.Nil(t, val)
+	})
+
+	t.Run("expired key behaves as absent", func(t *testing.T) {
+		t.Parallel()
+		c, mr := newTestRedisCache(t)
+
+		require.NoError(t, c.Set(ctx, "key", []byte("value"), 50*time.Millisecond))
+		mr.FastForward(100 * time.Millisecond)
+
+		val, err := c.GetDel(ctx, "key")
+		require.NoError(t, err)
+		require.Nil(t, val)
+	})
 }
 
 func TestManifestKey(t *testing.T) {

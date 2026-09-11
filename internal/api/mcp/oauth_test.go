@@ -268,6 +268,7 @@ func TestTokenEndpointRejectsUnsupportedGrant(t *testing.T) {
 		"grant_type": {"password"},
 		"username":   {"admin"},
 		"password":   {"hunter2"},
+		"client_id":  {"test"},
 	})
 	assert.Equal(t, http.StatusBadRequest, resp.Code,
 		"only authorization_code and refresh_token are supported")
@@ -281,6 +282,7 @@ func TestTokenEndpointRejectsUnknownRefreshToken(t *testing.T) {
 	resp := postForm(t, mux, "/mcp/token", url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {"never-issued"},
+		"client_id":     {"test"},
 	})
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
@@ -403,12 +405,26 @@ func TestConcurrentRefreshTokenRedemptionOnlyOneSucceeds(t *testing.T) {
 	const n = 200
 	token := seedRefreshToken(t, store, "user-1", "paprika:read")
 
+	// A start barrier: every goroutine signals ready, then blocks on start.
+	// Only once all n goroutines have signalled ready (i.e. are actually
+	// parked on the channel receive, not merely spawned-but-not-yet-
+	// scheduled) does the main goroutine close(start), releasing them all
+	// in the same instant. The ready rendezvous matters: without it,
+	// close(start) can run before most goroutines have even been scheduled
+	// for the first time, so they simply see an already-closed channel and
+	// never actually contend — which is why an earlier, ready-less version
+	// of this barrier barely improved on the original 1-3/30 failure rate.
+	// See Fix round 2 Fold-in 1.
+	start := make(chan struct{})
+	ready := make(chan struct{}, n)
 	var wg sync.WaitGroup
 	var successes int64
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
+			ready <- struct{}{}
+			<-start
 			resp := postForm(t, mux, "/mcp/token", url.Values{
 				"grant_type":    {"refresh_token"},
 				"refresh_token": {token},
@@ -419,6 +435,10 @@ func TestConcurrentRefreshTokenRedemptionOnlyOneSucceeds(t *testing.T) {
 			}
 		}()
 	}
+	for i := 0; i < n; i++ {
+		<-ready
+	}
+	close(start)
 	wg.Wait()
 
 	assert.EqualValues(t, 1, successes,
@@ -446,12 +466,21 @@ func TestConcurrentAuthCodeRedemptionOnlyOneSucceeds(t *testing.T) {
 		ClientID:      "test",
 	})
 
+	// Start barrier with a ready rendezvous — see the comment in
+	// TestConcurrentRefreshTokenRedemptionOnlyOneSucceeds for why the ready
+	// channel matters: it forces maximal contention instead of letting
+	// goroutines mostly run one after another or trickle past an
+	// already-closed channel.
+	start := make(chan struct{})
+	ready := make(chan struct{}, n)
 	var wg sync.WaitGroup
 	var successes int64
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
+			ready <- struct{}{}
+			<-start
 			resp := postForm(t, mux, "/mcp/token", url.Values{
 				"grant_type":    {"authorization_code"},
 				"code":          {code},
@@ -464,6 +493,10 @@ func TestConcurrentAuthCodeRedemptionOnlyOneSucceeds(t *testing.T) {
 			}
 		}()
 	}
+	for i := 0; i < n; i++ {
+		<-ready
+	}
+	close(start)
 	wg.Wait()
 
 	assert.EqualValues(t, 1, successes,
@@ -615,4 +648,72 @@ func TestAuthorizeScopelessPrincipalNeverReceivesADefaultGrant(t *testing.T) {
 
 	assert.Empty(t, scopes,
 		"a scope-less principal must never receive a default grant of every supported scope")
+}
+
+// --- Fix round 2, Fold-in 3: unrecognised scope must be rejected, not
+// silently dropped into an empty grant ---
+//
+// Before this fix, ParseScopes silently dropped any scope token it did not
+// recognise, so a request for scope=admin (or a wrong-case
+// scope=PAPRIKA:WRITE) sailed through /mcp/authorize with a 302 redirect and
+// a "successful" code exchange, but the resulting access token carried an
+// empty scope and could call nothing — a fail-safe but confusing outcome
+// with no error to explain it. These requests must now be rejected outright
+// with invalid_scope, the same way an unheld-but-recognised scope is.
+
+func TestAuthorizeRejectsUnrecognisedScopeValue(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	rec := authorizeForFix1(t, mux, redirect, bearer, "admin")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code,
+		"an unrecognised scope value must be rejected outright, not silently dropped into an empty grant")
+	var oerr oauthError
+	if rec.Code == http.StatusBadRequest {
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+		assert.Equal(t, "invalid_scope", oerr.Error)
+	}
+}
+
+func TestAuthorizeRejectsWrongCaseScopeValue(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	rec := authorizeForFix1(t, mux, redirect, bearer, "PAPRIKA:WRITE")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code,
+		"scope matching must be exact; a wrong-case value must be rejected, not silently dropped")
+	var oerr oauthError
+	if rec.Code == http.StatusBadRequest {
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+		assert.Equal(t, "invalid_scope", oerr.Error)
+	}
+}
+
+func TestAuthorizeRejectsPartiallyUnrecognisedScopeMix(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	// One recognised, held scope mixed with one bogus token: the whole
+	// request must still be rejected rather than silently narrowed to just
+	// the recognised one.
+	rec := authorizeForFix1(t, mux, redirect, bearer, "paprika:read bogus")
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code,
+		"a mix of a valid and an unrecognised scope token must be rejected in full")
+	var oerr oauthError
+	if rec.Code == http.StatusBadRequest {
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+		assert.Equal(t, "invalid_scope", oerr.Error)
+	}
 }
