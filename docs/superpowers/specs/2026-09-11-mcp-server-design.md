@@ -1,5 +1,14 @@
 # Paprika MCP Server Design
 
+## Status
+
+**Ships disabled and is not functional end to end.** `--mcp-enabled` defaults
+to `false`. Even when explicitly enabled, `/mcp/authorize` is presently a
+dead end — see Follow-up work required before enabling — so no MCP client
+can complete authentication against this branch today. Nothing described
+here is reachable in production until that work lands. This section exists
+so the design cannot be misread as describing a working feature.
+
 ## Goal
 
 Expose Paprika's fleet API to MCP clients so an agent can answer operational
@@ -161,14 +170,36 @@ recorded separately (see Error Handling).
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--mcp-enabled` | `false` | Master switch. Off by default. |
-| `--mcp-bind-address` | `:8090` | Separate listener, independently firewallable. |
+| `--mcp-bind-address` | `:8090` | **As built, this is not a separate listener.** See the deviation note immediately below. |
 | `--mcp-access-token-ttl` | `24h` | Access token lifetime. |
 | `--mcp-refresh-token-ttl` | `720h` | Refresh token lifetime. |
 | `--mcp-oauth-client-id` | none | Statically registered client. |
 | `--mcp-oauth-redirect-uris` | none | Exact-match allowlist. |
 
+Not shown in the table: `PAPRIKA_MCP_PUBLIC_URL` is a required environment
+variable, not a `--mcp-*` flag (`cmd/main.go:388`, deliberately kept off the
+flag surface to hold the flag count at six). It has no default and
+`validateMCPConfig` refuses to start with `--mcp-enabled=true` when it is
+unset. It is embedded verbatim in the RFC 9728/8414 discovery metadata and
+used as the minted token's `iss` claim, so it is as security-relevant as any
+flag in the table above.
+
 Disabled by default is deliberate: this is the first surface that lets a
 language model mutate fleet state.
+
+**Deviation from this table, recorded here rather than left implicit:**
+`--mcp-bind-address` exists and is documented as "a separate listener,
+independently firewallable," but the flag is parsed and stored
+(`cmd/main.go:410`) and never read again. MCP does not listen on it. MCP
+routes are mounted on the same shared API mux that serves the console and
+CLI (`cmd/main.go:1012`, `mux.Handle("/mcp", srv.Handler())`), behind
+whatever address `--addr` already binds. An operator who firewalls `:8090`
+believing that contains MCP traffic is wrong; MCP is reachable on the same
+port and address as the rest of the API. This is disclosed in the flag's own
+help text and in `values.yaml`, but this spec previously asserted the
+opposite in Security Properties below, which is corrected there. The flag is
+kept for the deployment-facing address it documents, not because it
+functions as a bind address.
 
 ## Tool Registry
 
@@ -287,6 +318,31 @@ within a day, so no dual-read window needs maintaining.
   `aud == "paprika-api"`. This closes the reverse direction: an MCP token
   replayed against the console API.
 
+**This second step cannot be done as written, and has not been done.** The
+in-process transport that lets MCP tool calls re-enter the Connect chain
+(the whole point of the chosen "embedded in `--mode=api`" topology — see
+Process topology above) works by forwarding the caller's own MCP-audience
+bearer token into that same chain: `internal/api/mcp/transport.go:77` sets
+`req.Header.Set("Authorization", "Bearer "+token)` on the in-process request
+using the token `withBearerToken` stashed from the *MCP* request, i.e. a
+token with `aud=paprika-mcp`. If the console/CLI authenticator were tightened
+to require `aud == "paprika-api"`, every legitimate MCP tool call would be
+rejected by its own downstream Connect chain — the fix for the Security
+Properties gap above would break the feature outright, because both the
+console leg and the in-process MCP leg currently share one authenticator and
+one audience space.
+
+Closing the gap therefore needs something this spec does not currently
+describe: either a distinct internal credential for the in-process leg (so
+the console-facing chain can require `aud=paprika-api` while a separate,
+narrower check admits the internal MCP-forwarded call), or scope enforcement
+added inside the Connect chain itself (so a `scope=paprika:read` token is
+rejected for a mutating RPC regardless of which front door it entered
+through, making the audience question moot for this particular attack).
+Neither is designed here. This is tracked as follow-up work required before
+`--mcp-enabled=true` is safe to turn on — see Follow-up work required before
+enabling — not solved by this spec.
+
 ### Two independent gates
 
 Both must pass. They answer different questions and must not be collapsed:
@@ -390,18 +446,49 @@ visible in the audit trail.
 
 ## Security Properties
 
-- MCP tokens are audience-bound and cannot be replayed against the console API,
-  nor console tokens against MCP.
-- Authorization is enforced once, in the existing interceptor chain; the MCP
-  layer cannot bypass it because it re-enters that chain.
+- **Console tokens cannot be replayed against MCP.** The MCP authenticator is
+  built with `NewSelfSignedAuthenticatorForAudience(secret, "paprika-mcp",
+  "")` (`cmd/main.go:965`), which strictly requires `aud == "paprika-mcp"`.
+  A console/CLI token (no `aud`, or the wrong one) is rejected at the MCP
+  front door.
+- **The reverse does NOT hold, and this spec previously claimed it did — that
+  claim was false and is corrected here.** The console/CLI Connect chain is
+  built with `NewSelfSignedAuthenticator(cfg.TokenSecret)`
+  (`internal/api/auth/middleware.go:112`), the plain constructor with no
+  audience argument, so it performs no audience check at all. That chain
+  also never reads the `scope` claim — `principalHasScope`/`HasScope` exist
+  only in `internal/api/mcp/invoke.go` and are never called from
+  `internal/api/auth`. A token minted with `aud=paprika-mcp,
+  scope=paprika:read` therefore authenticates successfully against the
+  console Connect chain and yields a full `Principal`, gated only by that
+  principal's project `Authorizer` rights — exactly the same gate a normal
+  console token faces. Such a credential can call
+  `/paprika.v1.PaprikaService/RollbackRelease` directly over the console
+  API, bypassing the MCP tool registry's scope gate, the destructive-tool
+  gate, and two-phase confirmation entirely, none of which exist outside the
+  MCP layer. This was verified empirically. See Migration below for why the
+  spec's original remedy for this does not fit the chosen topology, and
+  Follow-up work required before enabling for tracking.
+- Authorization (project rights, via the `Authorizer`) is enforced once, in
+  the existing interceptor chain; the MCP layer cannot bypass *that* check
+  because it re-enters the same chain. This is a narrower guarantee than
+  "cannot be misused" — it says nothing about the scope bypass above, which
+  lives one layer up, in which chain a token is allowed to enter at all.
 - Scope gating is declared per tool and verified by a test that iterates the
-  registry, so it cannot drift as tools are added.
+  registry, so it cannot drift as tools are added — but this guarantee holds
+  only for calls that go through the MCP tool registry. A caller that
+  presents an MCP-audience token directly to the console API skips the
+  registry, and with it this gate (see above).
 - Destructive operations require human-visible confirmation bound to exact
-  arguments.
+  arguments — again, only for calls made through the MCP layer; the console
+  API has no two-phase confirmation.
 - Every mutation is audited with the acting principal, including the six RPCs
   that are unaudited today.
-- The surface is disabled by default and listens on a separately firewallable
-  address.
+- **The surface is disabled by default. It does NOT listen on a separately
+  firewallable address** — this spec previously claimed it did; that claim
+  was false and is corrected in Configuration above. MCP is mounted on the
+  same shared API mux as the console and CLI and is reachable wherever that
+  is reachable.
 
 ## Testing and Validation
 
@@ -452,3 +539,45 @@ security properties.
 - Exposing MCP from `operator`, `webhook`, `repo-server`, or `agent` modes.
 - Ginkgo e2e covering the full OAuth round trip against a deployed instance;
   a follow-on, not part of this spec.
+
+## Follow-up work required before enabling
+
+The three items below are known gaps in the code as merged. None block
+merging this branch, because `--mcp-enabled` defaults to `false` and nothing
+here is reachable with the flag off. All three block turning it on.
+
+1. **The `/mcp/authorize` circularity.** `/mcp/authorize` authenticates the
+   caller with the MCP-audience authenticator, which requires a token whose
+   `aud=paprika-mcp` — and the only thing that mints such a token is
+   `/mcp/token`, which requires an authorization code that only a completed
+   `/mcp/authorize` can issue. There is no way into the loop. Paprika's OIDC
+   login (`/auth/login`, `/auth/token`) is client-side: it returns JSON to a
+   SPA that holds state in `sessionStorage`/`localStorage`, there is no
+   server-side session or cookie to piggyback on, and there is no MCP page in
+   `ui/` today. Closing this needs either an MCP-specific page in `ui/` that
+   drives the existing client-side OIDC flow to establish identity and then
+   exchanges it for an MCP-audience token, or a second IdP client
+   registration paired with a server-side session. Until one of these lands,
+   `--mcp-enabled=true` produces an OAuth surface that advertises itself via
+   discovery metadata but that no MCP client — browser-based or otherwise —
+   can actually authenticate against.
+2. **Monolith topology support.** The Helm chart wires MCP into the
+   `deploymentMode: split` API-server Deployment only. `deploymentMode:
+   monolith` (the chart default) has no MCP wiring at all; the template
+   fails the `helm template` render loudly when `mcp.enabled=true` is
+   combined with monolith rather than silently producing a deployment with
+   MCP quietly absent. Supporting the monolith topology needs the
+   equivalent wiring added to `manager/manager.yaml`. Out of scope for this
+   spec; tracked here so it isn't forgotten.
+3. **The console-chain scope/audience bypass** described in Security
+   Properties and Migration above: an MCP-audience, read-scoped token
+   authenticates successfully against the console Connect chain (which
+   checks neither audience nor scope) and, subject only to the caller's
+   existing project rights, can call any RPC including destructive ones —
+   bypassing the MCP registry's scope gate and two-phase confirmation
+   entirely. The spec's original migration remedy (tighten the console
+   authenticator to `aud == "paprika-api"`) is incompatible with the
+   in-process topology this design chose, because the MCP leg forwards an
+   `aud=paprika-mcp` token into that same chain. A real fix needs a distinct
+   internal credential for the in-process leg, or scope enforcement inside
+   the Connect chain itself; neither is designed yet.
