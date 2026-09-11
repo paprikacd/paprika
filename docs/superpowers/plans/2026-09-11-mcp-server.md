@@ -1770,6 +1770,28 @@ git commit -m "feat(mcp): add the eleven write tools with destructive flags"
 - Consumes: `Registry`, `Invoker`, `Confirmer`, `auth.Authenticator`, `audit.Auditor`, `*cache.Cache`.
 - Produces:
 
+> **BLOCKER found during Task 11's review — read before implementing.**
+>
+> Nothing currently attaches credentials to the in-process Connect request. `stubConnectClient` uses a bare `&http.Client{}`, and `Invoker` holds a single client with no per-request identity.
+>
+> In production, Task 15 *mandates* that `buildMCPHandlers` error when `mcpEnabled && !authCfg.Enabled`, so the auth interceptor is always in the chain. The auth interceptor reads credentials from the request headers and returns `CodeUnauthenticated` at `auth/middleware.go:53` when they are absent — **before** the audit interceptor runs.
+>
+> Consequence as things stand: **every MCP tool call would fail `CodeUnauthenticated`**. The feature would be entirely non-functional in production while every unit test passes, because the test chain omits auth.
+>
+> This is the genuine implicit contract between the MCP layer and the Connect chain, and Task 13 must close it.
+>
+> **Required approach — do not change `invoke.go`.** `Invoker` is complete and reviewed; do not give it a per-request client or a new parameter. Instead make the transport credential-aware:
+>
+> 1. Add a context key in `internal/api/mcp` carrying the caller's raw bearer token.
+> 2. The MCP server, having authenticated the request, puts that token into the context it passes to `Invoker.Call`.
+> 3. `NewInProcessTransport`'s `RoundTrip` reads the token from `req.Context()` and sets `Authorization: Bearer <token>` on the outgoing in-process request when present.
+>
+> The auth interceptor then validates it exactly as it would a console request, derives the `Principal`, and the existing `Authorizer` enforces per-user project scoping — which is precisely the architecture the spec argues for. Authorization is enforced once, in one chain, with no second implementation to drift.
+>
+> Note this also means the token must still be valid at tool-call time, and that `RoundTrip` must not leak the token into logs or error messages.
+>
+> **Required test:** an integration test running a tool call through a handler chain that HAS the auth interceptor enabled, asserting the call succeeds with a valid token and returns `CodeUnauthenticated` without one. A test against an auth-less chain cannot catch this class of bug — that is exactly how it reached Task 13 unnoticed.
+
 ```go
 type ServerConfig struct {
 	Registry      *Registry
