@@ -20,21 +20,32 @@ var jwtHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ
 
 // selfSignedClaims are the claims embedded in a self-signed token.
 type selfSignedClaims struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
-	Name    string `json:"name"`
-	IAT     int64  `json:"iat"`
-	Exp     int64  `json:"exp"`
+	Subject  string `json:"sub"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Issuer   string `json:"iss,omitempty"`
+	Audience string `json:"aud,omitempty"`
+	Scope    string `json:"scope,omitempty"`
+	IAT      int64  `json:"iat"`
+	Exp      int64  `json:"exp"`
 }
 
 // SelfSignedAuthenticator validates self-signed HMAC-SHA256 tokens.
 type SelfSignedAuthenticator struct {
-	secret []byte
+	secret   []byte
+	audience string // when non-empty, aud must match exactly
 }
 
 // NewSelfSignedAuthenticator creates an authenticator for self-signed tokens.
 func NewSelfSignedAuthenticator(secret []byte) *SelfSignedAuthenticator {
 	return &SelfSignedAuthenticator{secret: secret}
+}
+
+// NewSelfSignedAuthenticatorForAudience requires an exact aud match. An empty
+// aud (a legacy token) is rejected, which is what stops console tokens being
+// replayed against MCP during the 24h migration window.
+func NewSelfSignedAuthenticatorForAudience(secret []byte, audience string) *SelfSignedAuthenticator {
+	return &SelfSignedAuthenticator{secret: secret, audience: audience}
 }
 
 // Authenticate validates a Bearer token signed with the server's secret.
@@ -60,11 +71,16 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 		return nil, errors.Join(err, ErrUnauthenticated)
 	}
 
+	if s.audience != "" && claims.Audience != s.audience {
+		return nil, fmt.Errorf("%w: audience mismatch", ErrUnauthenticated)
+	}
+
 	return &Principal{
 		Subject: claims.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
 		Groups:  []string{"users"},
+		Scopes:  strings.Fields(claims.Scope),
 		Claims: map[string]interface{}{
 			"sub":    claims.Subject,
 			"email":  claims.Email,
@@ -77,14 +93,45 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 // IssueToken creates a self-signed JWT for the given user.
 func IssueToken(subject, email, name string, secret []byte) (string, error) {
 	now := time.Now()
-	claims := selfSignedClaims{
+	return encodeClaims(selfSignedClaims{
 		Subject: subject,
 		Email:   email,
 		Name:    name,
 		IAT:     now.Unix(),
 		Exp:     now.Add(tokenExpiry).Unix(),
-	}
+	}, secret)
+}
 
+// TokenOptions configures a self-signed token minted via IssueTokenWithOptions.
+type TokenOptions struct {
+	Subject, Email, Name string
+	Audience             string
+	Scope                string
+	TTL                  time.Duration
+	Secret               []byte
+}
+
+// IssueTokenWithOptions mints an audience-bound, scoped token.
+func IssueTokenWithOptions(opts TokenOptions) (string, error) { //nolint:gocritic // TokenOptions is passed by value to keep the call site simple.
+	ttl := opts.TTL
+	if ttl == 0 {
+		ttl = tokenExpiry
+	}
+	now := time.Now()
+	return encodeClaims(selfSignedClaims{
+		Subject:  opts.Subject,
+		Email:    opts.Email,
+		Name:     opts.Name,
+		Audience: opts.Audience,
+		Scope:    opts.Scope,
+		IAT:      now.Unix(),
+		Exp:      now.Add(ttl).Unix(),
+	}, opts.Secret)
+}
+
+// encodeClaims serializes claims and signs them, producing the single
+// signing path shared by IssueToken and IssueTokenWithOptions.
+func encodeClaims(claims selfSignedClaims, secret []byte) (string, error) { //nolint:gocritic // claims is a small internal struct passed by value for clarity.
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return "", fmt.Errorf("marshal claims: %w", err)
