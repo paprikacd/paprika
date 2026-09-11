@@ -22,18 +22,26 @@ type GVRResolver interface {
 // next cache miss.
 type CachedGVRResolver struct {
 	discovery discovery.DiscoveryInterface
-	mu        sync.RWMutex
-	cache     map[string]map[string]schema.GroupVersionResource // groupVersion -> kind -> gvr
+
+	// groupVersion -> map[kind]GroupVersionResource.
+	//
+	// A sync.Map rather than a guarded map because this is the access pattern
+	// it exists for: one entry per GroupVersion — a set bounded by the API
+	// surface of the cluster — written once on the first miss and then read on
+	// every resource resolution thereafter. An RWMutex put every apply and
+	// every diff across every reconcile behind one shared lock to read a value
+	// that never changes again.
+	//
+	// The inner map is fully built before it is published and never mutated
+	// afterwards, so readers need no lock of their own.
+	cache sync.Map
 }
 
 // NewCachedGVRResolver creates a resolver backed by the given discovery client.
 // The discovery client may be nil; in that case the resolver falls back to
 // pluralization heuristics for unknown kinds.
 func NewCachedGVRResolver(disc discovery.DiscoveryInterface) *CachedGVRResolver {
-	return &CachedGVRResolver{
-		discovery: disc,
-		cache:     make(map[string]map[string]schema.GroupVersionResource),
-	}
+	return &CachedGVRResolver{discovery: disc}
 }
 
 // Resolve returns the GVR for the given group, version, and kind.
@@ -59,20 +67,18 @@ func (r *CachedGVRResolver) Resolve(ctx context.Context, group, version, kind st
 
 	// Check the discovery cache.
 	gvKey := group + "/" + version
-	r.mu.RLock()
-	if kinds, ok := r.cache[gvKey]; ok {
-		if gvr, ok := kinds[kind]; ok {
-			r.mu.RUnlock()
-			return gvr, nil
+	if cached, ok := r.cache.Load(gvKey); ok {
+		if kinds, isMap := cached.(map[string]schema.GroupVersionResource); isMap {
+			if gvr, found := kinds[kind]; found {
+				return gvr, nil
+			}
 		}
 	}
-	r.mu.RUnlock()
 
 	// Query the discovery API.
 	if r.discovery != nil {
 		resourceList, err := r.discovery.ServerResourcesForGroupVersion(gvKey)
 		if err == nil {
-			r.mu.Lock()
 			kinds := make(map[string]schema.GroupVersionResource, len(resourceList.APIResources))
 			// Indexed rather than ranged by value: APIResource is 176 bytes and
 			// this loop runs over every resource the server knows about.
@@ -88,8 +94,9 @@ func (r *CachedGVRResolver) Resolve(ctx context.Context, group, version, kind st
 					Resource: ar.Name,
 				}
 			}
-			r.cache[gvKey] = kinds
-			r.mu.Unlock()
+			// Two goroutines racing the same first miss both do the discovery
+			// call and produce equivalent maps, so either may win.
+			r.cache.Store(gvKey, kinds)
 			if gvr, ok := kinds[kind]; ok {
 				return gvr, nil
 			}
