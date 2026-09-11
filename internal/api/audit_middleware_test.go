@@ -3,9 +3,10 @@ package apiserver
 import (
 	"testing"
 
-	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/benebsworth/paprika/internal/api/auth"
 )
 
 func TestClassifyAudit(t *testing.T) {
