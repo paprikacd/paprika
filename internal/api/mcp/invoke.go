@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -174,11 +175,36 @@ func principalHasScope(p *auth.Principal, required Scope) bool {
 // in Call through this single function guarantees they hash identical
 // bytes: unmarshal-then-remarshal is only safe to use as a normalization
 // because it is applied identically on both paths.
+//
+// Decoding uses json.Decoder.UseNumber so every JSON number is preserved as
+// a json.Number (the original literal, string-backed) rather than coerced
+// to float64. A plain map[string]any decode loses precision above 2^53:
+// distinct integer literals such as 10000000000000000 and 10000000000000001
+// can round to the identical float64 and therefore normalize to
+// byte-identical JSON, hashing identically. Combined with Call invoking the
+// tool with the ORIGINAL (unstripped) arguments rather than this normalized
+// form, that collision would let a caller confirm a destructive call against
+// one numeric value and execute it against a different one — exactly the
+// guarantee this mechanism exists to provide. UseNumber closes that: it
+// keeps distinct literals distinct, at the cost that two calls which send
+// the SAME numeric value spelled differently (100 vs 1e2) will now mismatch
+// rather than match. That is the correct direction to fail — a spurious
+// rejection is safe, a spurious match is not — so this is not "fixed" by
+// canonicalizing numbers, which would reintroduce the collision.
+//
+// A literal JSON null decodes into a nil map with no error; it is reset to
+// an empty map so null and absent arguments normalize identically instead of
+// null surviving as the literal "null".
 func stripConfirmationToken(args json.RawMessage) (bare json.RawMessage, token string, err error) {
 	obj := map[string]any{}
 	if len(args) > 0 {
-		if err = json.Unmarshal(args, &obj); err != nil {
+		dec := json.NewDecoder(bytes.NewReader(args))
+		dec.UseNumber()
+		if err = dec.Decode(&obj); err != nil {
 			return nil, "", fmt.Errorf("mcp: unmarshal arguments: %w", err)
+		}
+		if obj == nil {
+			obj = map[string]any{}
 		}
 	}
 
