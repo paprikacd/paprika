@@ -215,7 +215,9 @@ the transcript and the audit record.
 
 ### Exclusions
 
-Exposure is opt-in: 25 of 60 RPCs are registered. The remaining 35 sit on the
+Exposure is opt-in: the 25 tools cover 27 of the 60 RPCs (two tools each wrap a
+pair: `get_resource_tree` covers GetResourceTree + GetResourceTreeDetailed, and
+`get_logs` covers GetResourceLogs + GetStepLogs). The remaining 33 sit on the
 opt-out list described under Registry Completeness, each with a recorded
 reason. Read RPCs are generally excluded for redundancy — they are reachable
 through a merged tool (`GetResourceTreeDetailed` via `get_resource_tree`'s
