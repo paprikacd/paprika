@@ -15,8 +15,6 @@ import (
 // 10's completeness guard consumes this to verify every proto RPC is either
 // exposed as a tool or explicitly opted out. Every write tool below dispatch
 // to exactly one RPC, unlike a couple of the read tools.
-//
-//nolint:unused // consumed by Task 10's coverage_test.go, added in a later task.
 var writeToolRPCs = map[string][]string{
 	"sync_application": {"SyncApplication"},
 	"approve_gate":     {"ApproveGate"},

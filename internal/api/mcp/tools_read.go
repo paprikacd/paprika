@@ -27,8 +27,6 @@ const (
 // completeness guard consumes this to verify every proto RPC is either
 // exposed as a tool or explicitly opted out. get_resource_tree and get_logs
 // each dispatch to two RPCs behind a parameter, so both must be listed.
-//
-//nolint:unused // consumed by Task 10's coverage_test.go, added in a later task.
 var readToolRPCs = map[string][]string{
 	"fleet_status":      {"GetSystemStatus"},
 	"list_clusters":     {"ListClusters"},
