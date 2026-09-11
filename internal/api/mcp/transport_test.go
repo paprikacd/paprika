@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/assert"
@@ -87,4 +88,53 @@ func TestInProcessTransportPropagatesHeaders(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Bearer token-abc", got,
 		"Authorization must reach the interceptor chain")
+}
+
+// TestInProcessTransportReturnsPromptlyOnContextCancellation proves RoundTrip
+// races the handler against req.Context() rather than blocking until the
+// handler returns. The handler used here blocks forever on an unbuffered
+// channel that only the test's cleanup ever closes, simulating a
+// long-running RPC (e.g. a resource-tree walk) whose caller disconnects or
+// hits its deadline. RoundTrip must return promptly with the context's
+// error; it is not expected to, and cannot, stop the handler goroutine
+// itself.
+func TestInProcessTransportReturnsPromptlyOnContextCancellation(t *testing.T) {
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		<-block
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://in-process/", nil)
+	require.NoError(t, err)
+
+	transport := NewInProcessTransport(handler)
+
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, rtErr := transport.RoundTrip(req)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		done <- result{resp: resp, err: rtErr}
+	}()
+
+	cancel()
+
+	select {
+	case r := <-done:
+		require.Error(t, r.err)
+		assert.ErrorIs(t, r.err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RoundTrip did not return promptly after context cancellation; " +
+			"it appears to block until the handler returns")
+	}
 }
