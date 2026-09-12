@@ -35,7 +35,6 @@ terraform/terraform.tfvars
 terraform/.kube-cache/
 
 # Generated UI static assets (populated by build-ui target)
-internal/api/uistatic/*
 
 # Test output
 test-results/
