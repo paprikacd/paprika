@@ -3,6 +3,9 @@ package apiserver
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/benebsworth/paprika/internal/api/auth"
 )
 
@@ -42,6 +45,36 @@ func TestClassifyAuditHandlesBareProcedure(t *testing.T) {
 	if !mutating || action != "update" || resource != "Application" {
 		t.Errorf("classifyAudit(\"SyncApplication\") = (%q, %q, %v), want (update, Application, true)",
 			action, resource, mutating)
+	}
+}
+
+func TestClassifyAuditCoversAllMutatingVerbs(t *testing.T) {
+	cases := map[string]string{
+		"/paprika.v1.PaprikaService/CancelPipeline":     "cancel",
+		"/paprika.v1.PaprikaService/HoldRollout":        "hold",
+		"/paprika.v1.PaprikaService/IgnoreDriftedField": "ignore",
+		"/paprika.v1.PaprikaService/ResumeRollout":      "resume",
+		"/paprika.v1.PaprikaService/RetryStep":          "retry",
+		"/paprika.v1.PaprikaService/SkipStep":           "skip",
+	}
+	for procedure, wantAction := range cases {
+		t.Run(procedure, func(t *testing.T) {
+			action, resource, mutating := classifyAudit(procedure)
+			require.True(t, mutating, "must be classified as mutating")
+			assert.Equal(t, wantAction, action)
+			assert.NotEmpty(t, resource)
+		})
+	}
+}
+
+func TestClassifyAuditLeavesReadsAlone(t *testing.T) {
+	for _, procedure := range []string{
+		"/paprika.v1.PaprikaService/ListClusters",
+		"/paprika.v1.PaprikaService/GetSystemStatus",
+		"/paprika.v1.PaprikaService/QueryFleetMap",
+	} {
+		_, _, mutating := classifyAudit(procedure)
+		assert.False(t, mutating, procedure)
 	}
 }
 
