@@ -71,7 +71,7 @@ func TestAuthorizeRejectsUnregisteredRedirectURI(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead)
 
 	for _, redirect := range []string{
 		"https://evil.example/callback",
@@ -333,7 +333,7 @@ func TestAuthorizeCompletesWithAValidBearerToken(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
@@ -384,7 +384,7 @@ func TestAuthorizeRejectsWrongResponseType(t *testing.T) {
 		"/mcp/authorize?client_id=test&response_type=token"+
 			"&code_challenge=abc&code_challenge_method=S256"+
 			"&redirect_uri="+url.QueryEscape(redirect), nil)
-	req.Header.Set("Authorization", "Bearer "+bearerFor(t, ScopeRead))
+	req.Header.Set("Authorization", "Bearer "+consoleBearerWithScopeFor(t, "test-user", ScopeRead))
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -400,7 +400,7 @@ func TestAuthorizeRejectsMissingPKCE(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
 		"/mcp/authorize?client_id=test&response_type=code"+
 			"&redirect_uri="+url.QueryEscape(redirect), nil)
-	req.Header.Set("Authorization", "Bearer "+bearerFor(t, ScopeRead))
+	req.Header.Set("Authorization", "Bearer "+consoleBearerWithScopeFor(t, "test-user", ScopeRead))
 	mux.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -817,7 +817,7 @@ func TestAuthorizeReadOnlyPrincipalCannotEscalateToWrite(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead)
 	rec := authorizeForFix1(t, mux, redirect, bearer, string(ScopeWrite))
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code,
@@ -838,7 +838,7 @@ func TestAuthorizeReadOnlyPrincipalOmittingScopeGetsReadOnly(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead)
 	rec := authorizeForFix1(t, mux, redirect, bearer, "")
 	scopes := exchangeForFix1(t, mux, redirect, rec)
 
@@ -855,7 +855,7 @@ func TestAuthorizeBothScopedPrincipalRequestingOneGetsOnlyThatOne(t *testing.T) 
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead, ScopeWrite)
 	rec := authorizeForFix1(t, mux, redirect, bearer, string(ScopeRead))
 	scopes := exchangeForFix1(t, mux, redirect, rec)
 
@@ -875,7 +875,7 @@ func TestAuthorizeScopelessPrincipalNeverReceivesADefaultGrant(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t) // no scopes at all
+	bearer := consoleBearerWithScopeFor(t, "test-user") // no scopes at all
 	rec := authorizeForFix1(t, mux, redirect, bearer, "")
 	scopes := exchangeForFix1(t, mux, redirect, rec)
 
@@ -900,7 +900,7 @@ func TestAuthorizeRejectsUnrecognisedScopeValue(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead, ScopeWrite)
 	rec := authorizeForFix1(t, mux, redirect, bearer, "admin")
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code,
@@ -918,7 +918,7 @@ func TestAuthorizeRejectsWrongCaseScopeValue(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead, ScopeWrite)
 	rec := authorizeForFix1(t, mux, redirect, bearer, "PAPRIKA:WRITE")
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code,
@@ -1078,19 +1078,20 @@ func TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI(t *test
 // TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent is Fix round 1,
 // Finding 2's regression test: an already-authenticated browser caller must
 // still go through the consent screen, never straight to a minted code —
-// closing the consent-free grant path the finding identified. It uses an
-// MCP-audience bearer (bearerFor) as the authenticated principal, standing
-// in for any caller that manages to authenticate via
-// authorizeAuthenticator, precisely because that authenticator accepts one
-// in this test setup (see newTestServer's ConsoleAuthenticator comment) —
-// the fix must not depend on which kind of credential authenticated.
+// closing the consent-free grant path the finding identified. It
+// authenticates with a genuine console-audience credential
+// (consoleBearerWithScopeFor): the console-audience bypass fix (a later
+// round) made authorizeAuthenticator require aud=auth.ConsoleAPIAudience
+// strictly, so an MCP-audience bearer no longer authenticates here at all
+// — this test previously used one only because the authenticator didn't
+// check audience yet.
 func TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	srv := newTestServerWithRedirects(t, []string{redirect})
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead, ScopeWrite)
 	query := "client_id=test&response_type=code&code_challenge=" + pkceChallengeForFix1 +
 		"&code_challenge_method=S256&redirect_uri=" + url.QueryEscape(redirect) + "&state=xyz"
 
@@ -1171,6 +1172,41 @@ func TestConsentRequiresAuthentication(t *testing.T) {
 		Scopes: []string{"paprika:read"},
 	})
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// TestConsentRejectsMCPAudienceToken is the regression test for the second,
+// silent self-escalation route Fix round 1's review found: pre-fix,
+// s.authorizeAuthenticator (built from auth.NewSelfSignedAuthenticator, no
+// audience check) accepted a caller's own aud=paprika-mcp access token —
+// including a read-scoped one — straight at POST /mcp/authorize/consent.
+// consentedScope (unlike negotiateScope) never consults principal.Scopes at
+// all, so a caller holding only paprika:read could tick paprika:write in
+// the request body and mint itself a write-scoped MCP token, without ever
+// touching the console API RollbackRelease-style bypass the first fix
+// closed. Requiring aud=auth.ConsoleAPIAudience on s.authorizeAuthenticator
+// (the same fix that closed the console-API bypass, since cmd/main.go wires
+// both from the identical auth.BuildAuthenticator) closes this route too.
+//
+// This must be verified to FAIL against the pre-fix middleware.go — an
+// unaudienced NewSelfSignedAuthenticator authenticates any self-signed
+// token regardless of aud, so this test alone proves the route is closed,
+// not merely that today's code happens to reject it.
+func TestConsentRejectsMCPAudienceToken(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	mcpToken := bearerFor(t, ScopeRead)
+	rec := postJSON(t, mux, "/mcp/authorize/consent", mcpToken, consentRequest{
+		ClientID: "test", RedirectURI: redirect,
+		CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+		Scopes: []string{"paprika:read", "paprika:write"},
+	})
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code,
+		"an aud=paprika-mcp token, even read-scoped, must never authenticate the consent endpoint — "+
+			"consentedScope trusts whatever is ticked here, independent of the caller's actual scopes")
 }
 
 // TestConsentRejectsUnregisteredRedirectURI proves the consent endpoint
@@ -1454,7 +1490,7 @@ func TestAuthorizeRejectsPartiallyUnrecognisedScopeMix(t *testing.T) {
 	mux := http.NewServeMux()
 	srv.RegisterOAuthRoutes(mux)
 
-	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	bearer := consoleBearerWithScopeFor(t, "test-user", ScopeRead, ScopeWrite)
 	// One recognised, held scope mixed with one bogus token: the whole
 	// request must still be rejected rather than silently narrowed to just
 	// the recognised one.

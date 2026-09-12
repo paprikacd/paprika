@@ -54,7 +54,7 @@ func TestAudienceMismatchIsRejected(t *testing.T) {
 
 func TestLegacyAudlessTokenRejectedByAudienceAuthenticator(t *testing.T) {
 	secret := []byte("test-secret-value")
-	legacy, err := IssueToken("user-1", "a@b.c", "A", secret) // no aud
+	legacy, err := issueLegacyAudlessToken("user-1", "a@b.c", "A", secret) // no aud
 	require.NoError(t, err)
 
 	auth, err := NewSelfSignedAuthenticatorForAudience(secret, "paprika-mcp", "")
@@ -65,7 +65,7 @@ func TestLegacyAudlessTokenRejectedByAudienceAuthenticator(t *testing.T) {
 
 func TestLegacyAudlessTokenStillAcceptedByExistingAuthenticator(t *testing.T) {
 	secret := []byte("test-secret-value")
-	legacy, err := IssueToken("user-1", "a@b.c", "A", secret)
+	legacy, err := issueLegacyAudlessToken("user-1", "a@b.c", "A", secret)
 	require.NoError(t, err)
 
 	p, err := NewSelfSignedAuthenticator(secret).Authenticate(ctxWithBearer(legacy))
@@ -118,7 +118,7 @@ func TestAbsentIssuerRejectedWhenIssuerRequired(t *testing.T) {
 
 func TestLegacyTokenStillAcceptedByPlainAuthenticatorWhenIssuerConfiguredElsewhere(t *testing.T) {
 	secret := []byte("test-secret-value")
-	legacy, err := IssueToken("user-1", "a@b.c", "A", secret) // no aud, no iss
+	legacy, err := issueLegacyAudlessToken("user-1", "a@b.c", "A", secret) // no aud, no iss
 
 	require.NoError(t, err)
 

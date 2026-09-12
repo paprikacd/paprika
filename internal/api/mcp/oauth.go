@@ -248,6 +248,19 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// negotiateScope derives from principal.Scopes, which is always empty
+	// for every console credential accepted here (a Google ID token or an
+	// aud=paprika-api Paprika self-signed token — neither ever carries a
+	// paprika:* scope claim). So on this non-browser path, this call always
+	// either rejects outright (any scope requested) or grants a zero-scope
+	// code (scope omitted): it can never widen access. That is fail-closed
+	// and deliberate, not a bug — but it does mean this branch is
+	// effectively dead in practice, since a real MCP client is always a
+	// browser and takes the redirectToConsent path above, where
+	// consentedScope (not principal.Scopes) is the source of truth for what
+	// is granted. Kept rather than removed: a non-browser caller hitting
+	// this endpoint directly still gets a well-defined, safe response
+	// instead of a special-cased error.
 	scope, ok := negotiateScope(principal, q.Get("scope"))
 	if !ok {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_scope",
@@ -650,10 +663,11 @@ const (
 // consentRequest is the JSON body POST /mcp/authorize/consent accepts. It
 // mirrors the query parameters GET /mcp/authorize takes, plus Scopes: the
 // explicit list of scopes the user ticked in the consent UI. This is
-// deliberately NOT derived from any token claim — a Google ID token (and
-// the plain console self-signed token /auth/token issues) carries no
-// paprika:* scope claim at all, so consent is the only source of truth for
-// what is granted on this path.
+// deliberately NOT derived from any token claim — the console credentials
+// this endpoint accepts (a raw Google ID token from /auth/token, or an
+// aud=paprika-api Paprika self-signed token) carry no paprika:* scope claim
+// at all, so consent is the only source of truth for what is granted on
+// this path.
 //
 // Decision (Fix round 1, Finding 1a) is "approve" or "deny" — an empty
 // value defaults to "approve". Routing Deny through this endpoint, rather

@@ -113,8 +113,20 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 	}, nil
 }
 
-// IssueToken creates a self-signed JWT for the given user.
-func IssueToken(subject, email, name string, secret []byte) (string, error) {
+// issueLegacyAudlessToken mints a self-signed token with no "aud" claim —
+// the exact shape every production minter used before the console-audience
+// bypass fix (see ConsoleAPIAudience), and the shape NO authenticator in
+// this codebase accepts anymore except the unaudienced NewSelfSignedAuthenticator.
+// It is kept, unexported and test-only, purely to prove that migration
+// boundary: TestLegacyAudlessTokenRejectedByAudienceAuthenticator and
+// TestLegacyAudlessTokenStillAcceptedByExistingAuthenticator both depend on
+// minting exactly this shape. It was previously exported as IssueToken and
+// used in production by basic_login_handler.go and by mcp test helpers;
+// both were migrated to IssueTokenWithOptions with an explicit Audience, so
+// this is no longer reachable from any non-test code path. Do not reuse it
+// for anything that authenticates against a real authenticator — mint via
+// IssueTokenWithOptions instead.
+func issueLegacyAudlessToken(subject, email, name string, secret []byte) (string, error) {
 	now := time.Now()
 	return encodeClaims(selfSignedClaims{
 		Subject: subject,

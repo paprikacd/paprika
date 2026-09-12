@@ -130,19 +130,31 @@ func newTestServer(t *testing.T) *Server {
 	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
 	require.NoError(t, err)
 
+	// ConsoleAuthenticator is built via the actual production function,
+	// auth.BuildAuthenticator — the same call cmd/main.go's buildMCPHandlers
+	// makes for its consoleAuthenticator — rather than constructing an
+	// equivalent-shaped authenticator by hand. This is deliberate: Fix round
+	// 1's review found that BuildAuthenticator's self-signed authenticator
+	// performed no audience check at all, so a read-scoped MCP token could
+	// authenticate straight through to POST /mcp/authorize/consent and tick
+	// paprika:write — a second, silent self-escalation route alongside the
+	// original console-API bypass, both closed by the same fix
+	// (BuildAuthenticator now requires aud=auth.ConsoleAPIAudience
+	// strictly). Routing through the real function, not a hand-built
+	// equivalent, is what lets TestConsentRejectsMCPAudienceToken actually
+	// regress-test that fix: reverting BuildAuthenticator to its pre-fix
+	// form must make that test fail, which a directly-constructed
+	// authenticator here would not detect.
+	consoleAuthenticator, err := auth.BuildAuthenticator(context.Background(), auth.Config{
+		Enabled:     true,
+		TokenSecret: testSecret,
+	})
+	require.NoError(t, err)
+
 	srv, err := NewServer(ServerConfig{
-		Registry:      r,
-		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
-		// ConsoleAuthenticator stands in for the real console authenticator
-		// stack (auth.BuildAuthenticator: OIDC + self-signed, no audience
-		// restriction) that cmd/main.go wires in production. A plain
-		// self-signed authenticator with no audience check is enough here:
-		// it accepts both a genuine console token (consoleBearerFor) and,
-		// since it never checks "aud" at all, the MCP-audience tokens
-		// bearerFor mints too — so the pre-existing tests that authenticate
-		// straight to GET /mcp/authorize with an MCP access token keep
-		// working unchanged.
-		ConsoleAuthenticator: auth.NewSelfSignedAuthenticator(testSecret),
+		Registry:             r,
+		Authenticator:        mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
+		ConsoleAuthenticator: consoleAuthenticator,
 		Confirmer:            NewConfirmer(store, time.Minute),
 		Auditor:              &recordingAuditor{},
 		Cache:                store,
@@ -190,15 +202,59 @@ func internalCredentialFor(t *testing.T, subject string) string {
 	return token
 }
 
-// consoleBearerFor mints a plain console-style self-signed token: no
-// audience claim and no scope claim, matching exactly what /auth/token
-// issues once a human has completed the existing Google OIDC login. This is
-// deliberately different from bearerFor, which always stamps
-// aud=paprika-mcp and an explicit scope — modelling an MCP access token, not
-// the console credential /mcp/authorize/consent must accept.
+// consoleBearerFor mints a console-style self-signed token: aud=paprika-api,
+// no scope claim, matching what a real console self-signed token carries
+// (see auth.ConsoleAPIAudience and BuildAuthenticator). It does NOT model
+// what /auth/token itself returns — that endpoint hands back Google's raw
+// ID token directly and never mints a Paprika self-signed token at all —
+// but it is exactly the shape the console/CLI Connect chain and
+// s.authorizeAuthenticator require post-fix, which is what matters for
+// exercising this endpoint. This is deliberately different from bearerFor,
+// which always stamps aud=paprika-mcp and an explicit scope — modelling an
+// MCP access token, not the console credential /mcp/authorize/consent must
+// accept.
 func consoleBearerFor(t *testing.T, subject string) string {
 	t.Helper()
-	token, err := auth.IssueToken(subject, subject+"@example.com", "Test User", testSecret)
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject: subject, Email: subject + "@example.com", Name: "Test User",
+		Audience: auth.ConsoleAPIAudience, TTL: time.Hour, Secret: testSecret,
+	})
+	require.NoError(t, err)
+	return token
+}
+
+// consoleBearerWithScopeFor mints an aud=paprika-api console-shaped token
+// carrying an explicit scope claim, for the pre-existing "Fix round 1,
+// Finding 1" / "Fix round 2, Fold-in 3" tests that drive GET /mcp/authorize
+// directly to pin negotiateScope's narrowing/rejection behaviour. Before
+// the console-audience bypass fix, those tests used bearerFor's
+// aud=paprika-mcp token as a stand-in scoped principal, because
+// s.authorizeAuthenticator did not check audience and so accepted it. Now
+// that it strictly requires auth.ConsoleAPIAudience (the same fix that
+// closed the write-escalation route at POST /mcp/authorize/consent — see
+// TestConsentRejectsMCPAudienceToken), an MCP-audience token no longer
+// authenticates there at all, so those tests need a token that both
+// authenticates as a console principal AND carries a scope claim.
+//
+// No real production console credential (a Google ID token, or the plain
+// aud=paprika-api token /auth/basic-login mints) ever carries a scope claim
+// — see oauth.go's negotiateScope call-site comment on why that makes the
+// non-browser /mcp/authorize path's scope negotiation effectively dead in
+// practice today. This helper exists purely so negotiateScope's own
+// narrowing/rejection logic — real production code, reachable the moment
+// anything ever does attach a scope claim to a console principal — stays
+// pinned by a regression test.
+func consoleBearerWithScopeFor(t *testing.T, subject string, scopes ...Scope) string {
+	t.Helper()
+	raw := make([]string, len(scopes))
+	for i, s := range scopes {
+		raw[i] = string(s)
+	}
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject: subject, Email: subject + "@example.com", Name: "Test",
+		Audience: auth.ConsoleAPIAudience, Scope: strings.Join(raw, " "),
+		TTL: time.Hour, Secret: testSecret,
+	})
 	require.NoError(t, err)
 	return token
 }
