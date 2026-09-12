@@ -2,12 +2,23 @@
 
 ## Status
 
-**Ships disabled and is not functional end to end.** `--mcp-enabled` defaults
-to `false`. Even when explicitly enabled, `/mcp/authorize` is presently a
-dead end — see Follow-up work required before enabling — so no MCP client
-can complete authentication against this branch today. Nothing described
-here is reachable in production until that work lands. This section exists
-so the design cannot be misread as describing a working feature.
+**Ships disabled by default. The authorization flow now works end to end,
+but a real, verified security gap remains — do not enable this in an
+environment that matters until it is closed.** `--mcp-enabled` defaults to
+`false`. As of this revision, an MCP client can complete the full OAuth 2.1
+authorization-code + PKCE flow: `/mcp/authorize` authenticates the human as a
+console user and redirects to a consent page at `/mcp/consent`, which grants
+scope from explicit user consent rather than from any token claim; approval
+mints a code that exchanges for a working access token at `/mcp/token`. This
+closes the circularity this section previously described.
+**What is not fixed is follow-up #2 below: the console Connect chain checks
+neither audience nor scope, so an MCP-audience, read-scoped token
+authenticates successfully against the console API and can call any RPC —
+including destructive ones — bypassing the MCP registry's scope gate and
+two-phase confirmation entirely.** This was verified empirically (see
+Security Properties) and must be closed before `--mcp-enabled=true` is safe
+to turn on anywhere it matters. This section exists so the design cannot be
+misread as describing a feature that is safe to enable today.
 
 ## Goal
 
@@ -37,7 +48,7 @@ new one. The protocol dependency is real and is accepted.
 Current `master` already provides:
 
 - A Connect service, `PaprikaService`, with 60 RPCs: 45 read, 15 mutating.
-- An interceptor chain assembled at `cmd/main.go:682`:
+- An interceptor chain assembled at `cmd/main.go:813`:
   `connect.WithInterceptors(otelInterceptor, authInterceptor, AuditInterceptor())`.
 - Project-scoped authorization via `apiserver.WithAuthorizer`
   (`internal/api/auth/project_authorizer.go`), enforced inside that chain.
@@ -177,7 +188,7 @@ recorded separately (see Error Handling).
 | `--mcp-oauth-redirect-uris` | none | Exact-match allowlist. |
 
 Not shown in the table: `PAPRIKA_MCP_PUBLIC_URL` is a required environment
-variable, not a `--mcp-*` flag (`cmd/main.go:388`, deliberately kept off the
+variable, not a `--mcp-*` flag (`cmd/main.go:401`, deliberately kept off the
 flag surface to hold the flag count at six). It has no default and
 `validateMCPConfig` refuses to start with `--mcp-enabled=true` when it is
 unset. It is embedded verbatim in the RFC 9728/8414 discovery metadata and
@@ -190,9 +201,9 @@ language model mutate fleet state.
 **Deviation from this table, recorded here rather than left implicit:**
 `--mcp-bind-address` exists and is documented as "a separate listener,
 independently firewallable," but the flag is parsed and stored
-(`cmd/main.go:410`) and never read again. MCP does not listen on it. MCP
+(`cmd/main.go:423`) and never read again. MCP does not listen on it. MCP
 routes are mounted on the same shared API mux that serves the console and
-CLI (`cmd/main.go:1012`, `mux.Handle("/mcp", srv.Handler())`), behind
+CLI (`cmd/main.go:1040`, `mux.Handle("/mcp", srv.Handler())`), behind
 whatever address `--addr` already binds. An operator who firewalls `:8090`
 believing that contains MCP traffic is wrong; MCP is reachable on the same
 port and address as the rest of the API. This is disclosed in the flag's own
@@ -200,6 +211,19 @@ help text and in `values.yaml`, but this spec previously asserted the
 opposite in Security Properties below, which is corrected there. The flag is
 kept for the deployment-facing address it documents, not because it
 functions as a bind address.
+
+**Request-size hardening (not a flag).** Two related caps were added while
+closing the `/mcp/authorize` circularity (see Authorization endpoint and
+consent above), listed here because they bound what an unauthenticated
+caller can do rather than because either is exposed as a `--mcp-*` flag.
+`MaxHeaderBytes` is set to 64KB (`apiServerMaxHeaderBytes`, `cmd/main.go`) on
+the API server's `http.Server`, bounding total request-line-plus-header size
+for every request the server accepts, `/mcp/authorize` included.
+Independently, `redirectToConsent` caps `state`/`scope` at 512 bytes each and
+`code_challenge`/`code_challenge_method` at 128/32 bytes before stashing any
+of them in the shared cache, since that cache also holds live authorization
+codes and refresh tokens and was previously writable by an unauthenticated
+caller with no size limit at all.
 
 ## Tool Registry
 
@@ -305,6 +329,56 @@ type selfSignedClaims struct {
     Exp     int64  `json:"exp"`
 }
 ```
+
+### Authorization endpoint and consent
+
+`GET /mcp/authorize` authenticates the caller with `s.authorizeAuthenticator`
+— the console-user authenticator stack built by `auth.BuildAuthenticator`
+(Google ID tokens via OIDC, or a Paprika self-signed console token) — never
+the MCP-audience-only authenticator `/mcp` itself uses. Requiring an
+`aud=paprika-mcp` token here would be circular: the only thing that mints one
+is `/mcp/token`, which itself needs a code from this endpoint. Because a
+Google ID token (and the plain self-signed console token) carries no
+`paprika:*` scope claim at all, the scope eventually granted cannot come from
+a token claim on this path — it comes from explicit user consent, collected
+by a new SPA page at `/mcp/consent` (`ui/src/app/mcp/consent/page.tsx`).
+
+A browser-looking `GET /mcp/authorize` request is always redirected to
+`/mcp/consent?rid=<opaque id>` — a fresh, random `rid`, identically shaped
+whether the request is authenticated or not, and whether `client_id` /
+`redirect_uri` are registered or not (`redirectToConsent`,
+`internal/api/mcp/oauth.go`). An earlier revision distinguished a
+valid request from an invalid one by response shape, which let an
+unauthenticated caller enumerate registered `client_id`s and `redirect_uri`s
+with nothing but curl; the `rid` itself is principal-agnostic and carries no
+validity signal. The consent page resolves it via an authenticated
+`GET /mcp/authorize/pending`, which authenticates before the `rid` is ever
+looked up, so only a signed-in console user can learn whether a given
+request was valid and what it contained.
+
+The consent page always shows `paprika:read` as already granted
+(non-optional) and, only when the client requested it, an explicit opt-in
+checkbox for `paprika:write` — off by default — with a warning naming all
+eleven write tools' effects (sync, approve or reject a gate, promote, roll
+back, abort, cancel, hold, resume, retry, or skip) before it can be ticked.
+
+`POST /mcp/authorize/consent` accepts `{client_id, redirect_uri,
+code_challenge, code_challenge_method, state, scopes, decision}`. Both
+`decision=approve` and `decision=deny` validate `client_id`/`redirect_uri`
+with the same exact-match `validateClientAndRedirect` before branching, and
+every response is a server-built `redirectTo` — the consent page never
+constructs a navigation target itself from the raw, caller-supplied
+`redirect_uri`; it only ever assigns `location.href` to what the server
+returns. `state`, `scope`, `code_challenge`, and `code_challenge_method` are
+length-capped (512/512/128/32 bytes respectively) before anything is stashed
+in the shared cache, closing an unauthenticated-caller cache-exhaustion path
+an earlier revision left open.
+
+This closes the circularity this spec previously listed as a blocking
+follow-up: `/mcp/authorize` no longer needs an MCP-audience token to
+authenticate the caller, so the loop that required `/mcp/token` before
+`/mcp/authorize` could complete is gone. See Security Properties below for
+what this flow does and does not protect against.
 
 ### Migration
 
@@ -448,13 +522,43 @@ visible in the audit trail.
 
 - **Console tokens cannot be replayed against MCP.** The MCP authenticator is
   built with `NewSelfSignedAuthenticatorForAudience(secret, "paprika-mcp",
-  "")` (`cmd/main.go:965`), which strictly requires `aud == "paprika-mcp"`.
+  "")` (`cmd/main.go:978`), which strictly requires `aud == "paprika-mcp"`.
   A console/CLI token (no `aud`, or the wrong one) is rejected at the MCP
   front door.
-- **The reverse does NOT hold, and this spec previously claimed it did — that
-  claim was false and is corrected here.** The console/CLI Connect chain is
-  built with `NewSelfSignedAuthenticator(cfg.TokenSecret)`
-  (`internal/api/auth/middleware.go:112`), the plain constructor with no
+- **PKCE does not prevent session fixation on `/mcp/authorize`; allowlist
+  discipline on `redirect_uri` does.** A reviewer demonstrated this end to
+  end: an attacker crafts their own authorization request — their own PKCE
+  `code_verifier`/`code_challenge`, a real registered `client_id` and
+  `redirect_uri` — and lures a victim into completing consent for it (e.g. by
+  sending them the resulting `/mcp/consent?rid=...` link). The code minted on
+  approval is bound to the victim's principal, but that changes nothing about
+  who can redeem it: redemption only checks the `code_verifier`, which the
+  attacker already holds because they generated it. The exchange succeeds and
+  returns an access token stamped `sub=victim`. What actually stops this
+  attack is that the code is delivered only by redirecting the victim's
+  browser to the single, exact, operator-registered `redirect_uri` — never
+  anywhere the attacker chose. For a normal registered client (e.g.
+  `claude.ai`'s callback) the attacker does not control that destination and
+  gains nothing from luring the victim. **Consequence: if a loopback
+  `redirect_uri` (`http://localhost:...`, `http://127.0.0.1:...`) is ever
+  registered, any other process on the victim's own machine that can bind or
+  observe that port receives the code too** — the bar drops from "control the
+  legitimate client's infrastructure" to "run a process on the victim's
+  laptop." Anyone proposing to register a loopback `redirect_uri` must weigh
+  this before doing so. See `redirectToConsent`'s doc comment in
+  `internal/api/mcp/oauth.go` for the fuller walkthrough.
+- A consent screen can still be attacker-*initiated* for a legitimate,
+  already-registered client — classic consent phishing, sending the victim a
+  link to approve a request the attacker started. This is bounded, not a
+  regression introduced by this design: the legitimate client never receives
+  the attacker's verifier, so the resulting grant is useless to the attacker
+  via that path, and the same risk exists for any authorization-code consent
+  screen.
+- **The reverse of the first bullet does NOT hold, and this spec previously
+  claimed it did — that claim was false and is corrected here.** The
+  console/CLI Connect chain is built with
+  `NewSelfSignedAuthenticator(cfg.TokenSecret)`
+  (`internal/api/auth/middleware.go:140`), the plain constructor with no
   audience argument, so it performs no audience check at all. That chain
   also never reads the `scope` claim — `principalHasScope`/`HasScope` exist
   only in `internal/api/mcp/invoke.go` and are never called from
@@ -542,26 +646,11 @@ security properties.
 
 ## Follow-up work required before enabling
 
-The three items below are known gaps in the code as merged. None block
+The two items below are known gaps in the code as merged. Neither blocks
 merging this branch, because `--mcp-enabled` defaults to `false` and nothing
-here is reachable with the flag off. All three block turning it on.
+here is reachable with the flag off. Both block turning it on.
 
-1. **The `/mcp/authorize` circularity.** `/mcp/authorize` authenticates the
-   caller with the MCP-audience authenticator, which requires a token whose
-   `aud=paprika-mcp` — and the only thing that mints such a token is
-   `/mcp/token`, which requires an authorization code that only a completed
-   `/mcp/authorize` can issue. There is no way into the loop. Paprika's OIDC
-   login (`/auth/login`, `/auth/token`) is client-side: it returns JSON to a
-   SPA that holds state in `sessionStorage`/`localStorage`, there is no
-   server-side session or cookie to piggyback on, and there is no MCP page in
-   `ui/` today. Closing this needs either an MCP-specific page in `ui/` that
-   drives the existing client-side OIDC flow to establish identity and then
-   exchanges it for an MCP-audience token, or a second IdP client
-   registration paired with a server-side session. Until one of these lands,
-   `--mcp-enabled=true` produces an OAuth surface that advertises itself via
-   discovery metadata but that no MCP client — browser-based or otherwise —
-   can actually authenticate against.
-2. **Monolith topology support.** The Helm chart wires MCP into the
+1. **Monolith topology support.** The Helm chart wires MCP into the
    `deploymentMode: split` API-server Deployment only. `deploymentMode:
    monolith` (the chart default) has no MCP wiring at all; the template
    fails the `helm template` render loudly when `mcp.enabled=true` is
@@ -569,7 +658,7 @@ here is reachable with the flag off. All three block turning it on.
    MCP quietly absent. Supporting the monolith topology needs the
    equivalent wiring added to `manager/manager.yaml`. Out of scope for this
    spec; tracked here so it isn't forgotten.
-3. **The console-chain scope/audience bypass** described in Security
+2. **The console-chain scope/audience bypass** described in Security
    Properties and Migration above: an MCP-audience, read-scoped token
    authenticates successfully against the console Connect chain (which
    checks neither audience nor scope) and, subject only to the caller's
@@ -580,4 +669,6 @@ here is reachable with the flag off. All three block turning it on.
    in-process topology this design chose, because the MCP leg forwards an
    `aud=paprika-mcp` token into that same chain. A real fix needs a distinct
    internal credential for the in-process leg, or scope enforcement inside
-   the Connect chain itself; neither is designed yet.
+   the Connect chain itself; neither is designed yet. This is the gap
+   flagged in Status above as unresolved: it must be closed before
+   `--mcp-enabled=true` is safe to turn on anywhere it matters.
