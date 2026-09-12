@@ -115,11 +115,13 @@ describe("MCP consent page", () => {
 
     render(<ConsentPage />)
 
-    const readCheckbox = await screen.findByRole("checkbox", {
-      name: /read fleet data/i,
-    })
-    expect(readCheckbox).toBeChecked()
-    expect(readCheckbox).toHaveAttribute("aria-disabled", "true")
+    await screen.findByText(/read fleet data/i)
+    // Defect 2: the read grant must not be communicated via a disabled
+    // checkbox — it should read as something granted, not as inert chrome.
+    expect(
+      screen.queryByRole("checkbox", { name: /read fleet data/i })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/granted/i)).toBeInTheDocument()
 
     const writeCheckbox = screen.getByRole("checkbox", {
       name: /make changes to the fleet/i,
@@ -133,6 +135,87 @@ describe("MCP consent page", () => {
     const body = JSON.parse(init.body as string)
     expect(body.scopes).toEqual(["paprika:read"])
     expect(init.headers.Authorization).toBe("Bearer console-token")
+  })
+
+  // Defect 1: real clients have been observed sending no `scope` param at
+  // all on the authorize URL. Before the fix, requestedScopes came back `[]`
+  // in that case, `writeRequested` was `false`, and the write control never
+  // rendered — making all 11 write tools permanently unreachable through
+  // this flow. Absent a request there is no ceiling, so the full supported
+  // set (write included, off by default) must be offered.
+  it("no scope requested: write control IS offered, unticked; approving without ticking sends only paprika:read", async () => {
+    const fetchMock = installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: undefined },
+    })
+    stubLocation()
+
+    render(<ConsentPage />)
+
+    const writeCheckbox = await screen.findByRole("checkbox", {
+      name: /make changes to the fleet/i,
+    })
+    expect(writeCheckbox).not.toBeChecked()
+
+    await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
+
+    await waitFor(() => consentCall(fetchMock))
+    const body = JSON.parse(consentCall(fetchMock)[1].body as string)
+    expect(body.scopes).toEqual(["paprika:read"])
+  })
+
+  it("no scope requested, write ticked: submits both scopes", async () => {
+    const fetchMock = installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: undefined },
+    })
+    stubLocation()
+
+    render(<ConsentPage />)
+
+    const writeCheckbox = await screen.findByRole("checkbox", {
+      name: /make changes to the fleet/i,
+    })
+    await userEvent.click(writeCheckbox)
+    expect(writeCheckbox).toBeChecked()
+
+    await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
+
+    await waitFor(() => consentCall(fetchMock))
+    const body = JSON.parse(consentCall(fetchMock)[1].body as string)
+    expect(body.scopes).toEqual(["paprika:read", "paprika:write"])
+  })
+
+  it("scope=paprika:read only: the requested scope is a ceiling, so write is NOT offered and only read is submitted", async () => {
+    const fetchMock = installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: "paprika:read" },
+    })
+    stubLocation()
+
+    render(<ConsentPage />)
+
+    await screen.findByText(/read fleet data/i)
+    expect(
+      screen.queryByRole("checkbox", { name: /make changes to the fleet/i })
+    ).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
+
+    await waitFor(() => consentCall(fetchMock))
+    const body = JSON.parse(consentCall(fetchMock)[1].body as string)
+    expect(body.scopes).toEqual(["paprika:read"])
+  })
+
+  it("scope=paprika:read paprika:write: write is offered, unticked by default", async () => {
+    installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: "paprika:read paprika:write" },
+    })
+    stubLocation()
+
+    render(<ConsentPage />)
+
+    const writeCheckbox = await screen.findByRole("checkbox", {
+      name: /make changes to the fleet/i,
+    })
+    expect(writeCheckbox).not.toBeChecked()
   })
 
   it("ticking write includes it in the request and shows a warning; unticking removes both", async () => {

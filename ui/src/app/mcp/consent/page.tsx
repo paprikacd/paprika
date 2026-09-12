@@ -1,5 +1,6 @@
 "use client"
 
+import { Check } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useRef, useState } from "react"
 
@@ -160,7 +161,15 @@ function ConsentHandler() {
     state,
     requestedScopes,
   } = pending.value
-  const writeRequested = requestedScopes.includes(SCOPE_WRITE)
+  // requestedScopes is a ceiling, never a floor. `null` means the client
+  // sent no `scope` param at all — real clients have been observed doing
+  // this — so there is no ceiling to respect and we offer the server's full
+  // supported set, write included as an opt-in default-off tick. When a
+  // scope WAS requested, we never offer more than it named: e.g.
+  // `scope=paprika:read` must suppress the write control entirely, even
+  // though the client could ask for write next time.
+  const writeOffered =
+    requestedScopes === null || requestedScopes.includes(SCOPE_WRITE)
 
   // submitConsent is shared by Allow and Deny: both are server round trips
   // that end with the browser navigating to whatever `redirectTo` the
@@ -260,17 +269,28 @@ function ConsentHandler() {
             Permissions
           </p>
 
-          <div className="flex items-start gap-2.5 rounded-lg border border-border/60 p-3">
-            <Checkbox
-              checked
-              disabled
-              aria-label="Read fleet data — always granted"
-              className="mt-0.5"
+          {/*
+            Defect 2 fix: this used to be a checked, disabled Checkbox. A
+            disabled control reads as inert chrome, not as a permission being
+            granted — with the write row absent (defect 1, now fixed
+            separately) that left a single greyed-out checkbox as the entire
+            "Permissions" section, and a real user reported the page as not
+            offering any scope choices at all. This is granted outright, not
+            a choice, so it's rendered as a plain grant — a check glyph plus
+            a "Granted" label — with nothing that looks clickable.
+          */}
+          <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/30 p-3">
+            <Check
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-primary"
             />
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <p className="text-sm font-medium">Read fleet data</p>
                 <Badge variant="outline">paprika:read</Badge>
+                <span className="text-xs font-medium text-primary">
+                  Granted
+                </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 View applications, clusters, pipelines, rollouts and
@@ -279,7 +299,7 @@ function ConsentHandler() {
             </div>
           </div>
 
-          {writeRequested && (
+          {writeOffered && (
             <div className="space-y-2 rounded-lg border border-border/60 p-3">
               <label className="flex items-start gap-2.5">
                 <Checkbox
@@ -303,10 +323,10 @@ function ConsentHandler() {
               {grantWrite && (
                 <p className="rounded-md bg-warning/10 px-2.5 py-2 text-xs text-warning">
                   This lets {clientId} sync applications, approve or reject
-                  deployment gates, promote and deploy releases, and control
-                  pipelines and rollouts — rolling back, aborting,
-                  cancelling, holding, resuming, retrying or skipping steps
-                  — on your behalf.
+                  deployment gates, roll back releases, and control
+                  pipelines and rollouts — promoting, aborting, cancelling,
+                  holding, resuming, retrying or skipping steps — on your
+                  behalf.
                 </p>
               )}
             </div>
