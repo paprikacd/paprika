@@ -12,11 +12,19 @@ export interface ConsentRequest {
   codeChallengeMethod: string
   state: string
   /**
-   * Scopes the client asked for, from the `scope` query param. Never used to
-   * pre-select anything write-capable — it only drives what we *show* the
-   * human was asked for. Defaults to read-only when the param is absent.
+   * The scope *ceiling* the client asked for, from the `scope` param — never
+   * a floor, and never used to pre-select anything write-capable.
+   *
+   * `null` means the client sent no `scope` param at all. Per RFC 6749 §3.3,
+   * an absent `scope` means the server may apply its own default rather than
+   * treating the request as read-only — Paprika's default is to offer the
+   * human its full supported set (read granted, write an explicit opt-in),
+   * since there is no ceiling to respect. This is deliberately distinct from
+   * an explicit `["paprika:read"]`, which IS a ceiling and must suppress the
+   * write control entirely — real clients have been observed sending both
+   * shapes, so the two must not collapse into one behaviour.
    */
-  requestedScopes: string[]
+  requestedScopes: string[] | null
 }
 
 export type ConsentRequestResult =
@@ -26,12 +34,19 @@ export type ConsentRequestResult =
 export const SCOPE_READ = "paprika:read"
 export const SCOPE_WRITE = "paprika:write"
 
-function scopesFromParam(scopeParam: string): string[] {
+/**
+ * Parses the `scope` param into a ceiling. Returns `null` — no ceiling —
+ * when the param is absent or blank, rather than defaulting to
+ * `[SCOPE_READ]`: an omitted `scope` is not the same request as an explicit
+ * `scope=paprika:read`, and the two must be distinguishable so the UI can
+ * still offer write as an opt-in when nothing was requested.
+ */
+function scopesFromParam(scopeParam: string): string[] | null {
   const requested = scopeParam
     .split(/\s+/)
     .map((s) => s.trim())
     .filter(Boolean)
-  return requested.length > 0 ? requested : [SCOPE_READ]
+  return requested.length > 0 ? requested : null
 }
 
 /**
