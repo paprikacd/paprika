@@ -810,6 +810,56 @@ auth:
   #   resources: ["applications"]
   #   namespaces: ["default"]
 
+## MCP (Model Context Protocol) server: serves Paprika's fleet API to MCP
+## clients (e.g. an LLM agent) over OAuth 2.1.
+##
+## Disabled by default. This is the only surface that lets a language model
+## mutate fleet state, and the binary refuses to start it unless
+## auth.enabled=true, a non-empty auth token secret, an OAuth client ID,
+## at least one OAuth redirect URI, and mcp.publicURL are all set — the
+## chart mirrors every one of those checks as a `helm template`-time `fail`
+## so a broken configuration is caught before a CrashLoopBackOff, not after.
+##
+## Once those preconditions are met, writes are additionally gated by the
+## paprika:write OAuth scope, and destructive operations require a
+## two-phase confirmation bound to the exact tool arguments. See
+## docs/superpowers/specs/2026-09-11-mcp-server-design.md for the full
+## design.
+##
+## deploymentMode: split ONLY. MCP is wired solely into the split-mode
+## api-server Deployment; deploymentMode: monolith has no MCP support yet
+## and enabling mcp.enabled there fails the `helm template` render rather
+## than silently doing nothing.
+##
+## WARNING: even with mcp.enabled=true and every precondition satisfied,
+## the MCP server is currently NON-FUNCTIONAL end to end. /mcp/authorize
+## cannot be completed by any client: it requires a token with
+## aud=paprika-mcp, which only /mcp/token can mint, and /mcp/token in turn
+## needs an authorization code that only a completed /mcp/authorize can
+## issue. Enabling this today does not give you a working MCP server; it
+## is chart/config plumbing landed ahead of the fix, which is tracked as a
+## follow-up task.
+mcp:
+  enabled: false
+  # -- Address advertised for the MCP server. Routes are mounted on the same
+  # shared API mux as the rest of the API server, not a separate listener.
+  bindAddress: ":8090"
+  accessTokenTTL: "24h"
+  refreshTokenTTL: "720h"
+  oauth:
+    # -- Statically registered OAuth client ID accepted by the MCP
+    # authorization server. Required when mcp.enabled=true.
+    clientId: ""
+    # -- Exact-match allowlist of OAuth redirect URIs accepted by the MCP
+    # authorization server. Required (non-empty) when mcp.enabled=true.
+    redirectUris: []
+  # -- Externally-reachable base URL of this API server, e.g.
+  # "https://paprika.example.com". Embedded in RFC 9728/8414 discovery
+  # metadata and used as the issuer of minted tokens, so it must be set
+  # explicitly rather than silently defaulting to a loopback address.
+  # Required (PAPRIKA_MCP_PUBLIC_URL) when mcp.enabled=true.
+  publicURL: ""
+
 ## GitHub Actions OIDC token exchange for CI cluster access.
 ## When enabled, the API server exposes /auth/github-actions/token. The endpoint
 ## verifies GitHub's OIDC token claims before minting a short-lived Kubernetes

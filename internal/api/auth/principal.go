@@ -12,6 +12,7 @@ type Principal struct {
 	Email   string
 	Name    string
 	Groups  []string
+	Scopes  []string
 	Claims  map[string]interface{}
 }
 

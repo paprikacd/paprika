@@ -52,6 +52,20 @@ func (c *RedisCache) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// GetDel atomically retrieves and removes a value from Redis via the native
+// GETDEL command (Redis >= 6.2), so a value that concurrent callers race for
+// is returned to, and deleted for, exactly one of them.
+func (c *RedisCache) GetDel(ctx context.Context, key string) ([]byte, error) {
+	val, err := c.client.GetDel(ctx, key).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("redis getdel: %w", err)
+	}
+	return val, nil
+}
+
 // Ping checks connectivity to Redis.
 func (c *RedisCache) Ping(ctx context.Context) error {
 	if err := c.client.Ping(ctx).Err(); err != nil {
@@ -87,6 +101,7 @@ var (
 	_ Getter        = (*RedisCache)(nil)
 	_ Setter        = (*RedisCache)(nil)
 	_ Deleter       = (*RedisCache)(nil)
+	_ GetDeleter    = (*RedisCache)(nil)
 	_ Pinger        = (*RedisCache)(nil)
 	_ Closer        = (*RedisCache)(nil)
 	_ PrefixDeleter = (*RedisCache)(nil)

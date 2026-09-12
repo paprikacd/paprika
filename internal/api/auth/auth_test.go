@@ -946,3 +946,123 @@ func TestStringSlice(t *testing.T) {
 	assert.Equal(t, []string{"x"}, stringSlice("x"))
 	assert.Equal(t, []string{"a", "b"}, stringSlice([]string{"a", "b"}))
 }
+
+// --- Bypass fix: an aud=paprika-mcp token must never authenticate the
+// console/CLI Connect chain ---
+//
+// Before BuildAuthenticator required aud=ConsoleAPIAudience strictly,
+// NewSelfSignedAuthenticator performed no audience check at all: a token
+// minted for the MCP server's own audience ("paprika-mcp") — even one
+// carrying only a read scope, since "scope" is a claim this chain never
+// reads — authenticated here as a full principal, exactly like any console
+// token. That let a caller mint a read-scoped MCP token and POST it
+// straight to a write RPC (e.g. RollbackRelease), skipping the MCP layer's
+// Invoker scope gate and two-phase confirmation entirely. The two tests
+// below are the required proof that both routes into that bypass are now
+// closed.
+
+// bypassTestSecret is used only by the two tests below, kept distinct from
+// other test secrets in this file so a copy/paste mistake can't accidentally
+// make one token verify against the wrong authenticator.
+var bypassTestSecret = []byte("bypass-test-secret-bypass-test-s")
+
+// TestInterceptor_RejectsMCPAudienceToken is the core bypass-closed proof
+// the task brief requires: a token minted for aud="paprika-mcp" must be
+// rejected by the console/CLI Connect chain's auth.Interceptor, never
+// authenticated as a principal. RBAC is deliberately wide open
+// (Subjects/Actions/Resources/Namespaces all "*") so that if this test ever
+// fails, the only possible cause is the audience check — not an unrelated
+// authorization denial masquerading as the fix working.
+//
+// This must fail (i.e. the token authenticates and next runs) against the
+// pre-fix middleware.go, which built the self-signed authenticator via the
+// audience-less NewSelfSignedAuthenticator. See bypass-fix-report.md for the
+// verification transcript.
+func TestInterceptor_RejectsMCPAudienceToken(t *testing.T) {
+	t.Parallel()
+	interceptor, err := Interceptor(context.Background(), Config{
+		Enabled:     true,
+		TokenSecret: bypassTestSecret,
+		RBACRules: []RBACRule{
+			{Subjects: []string{"*"}, Actions: []string{"*"}, Resources: []string{"*"}, Namespaces: []string{"*"}},
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	next := func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) {
+		t.Fatal("must not reach next: an aud=paprika-mcp token must never authenticate the console chain")
+		return nil, nil
+	}
+	wrapped := interceptor(next)
+
+	mcpToken, err := IssueTokenWithOptions(TokenOptions{
+		Subject: "mcp-user", Email: "mcp-user@example.com", Name: "MCP User",
+		Audience: "paprika-mcp", Scope: "paprika:read", Secret: bypassTestSecret,
+	})
+	require.NoError(t, err)
+
+	req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
+	require.NoError(t, reqErr)
+	req.Header.Set("Authorization", "Bearer "+mcpToken)
+	ctx := WithRequest(context.Background(), req)
+
+	ns := testNS
+	_, err = wrapped(ctx, connect.NewRequest(&paprikav1.ListApplicationsRequest{Namespace: &ns}))
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err),
+		"an aud=paprika-mcp token must be rejected by the console chain, not authenticated")
+}
+
+// bypassRollbackService implements only RollbackRelease — the exact RPC the
+// task brief's bypass description names — so
+// TestInterceptor_ReadScopedMCPTokenCannotReachWriteRPCDirectly can assert
+// the destructive handler never executes.
+type bypassRollbackService struct {
+	v1connect.UnimplementedPaprikaServiceHandler
+	called int
+}
+
+func (s *bypassRollbackService) RollbackRelease(
+	context.Context, *connect.Request[paprikav1.RollbackReleaseRequest],
+) (*connect.Response[paprikav1.RollbackReleaseResponse], error) {
+	s.called++
+	return connect.NewResponse(&paprikav1.RollbackReleaseResponse{}), nil
+}
+
+// TestInterceptor_ReadScopedMCPTokenCannotReachWriteRPCDirectly is the
+// literal reproduction of the bypass described in the task brief: a token
+// with aud="paprika-mcp" and scope="paprika:read", POSTed straight at
+// /paprika.v1.PaprikaService/RollbackRelease over a real Connect client and
+// HTTP server — no MCP server, no Invoker, no scope gate in front of it at
+// all. It must be rejected before RollbackRelease ever runs.
+func TestInterceptor_ReadScopedMCPTokenCannotReachWriteRPCDirectly(t *testing.T) {
+	interceptor, err := Interceptor(context.Background(), Config{
+		Enabled:     true,
+		TokenSecret: bypassTestSecret,
+		RBACRules: []RBACRule{
+			{Subjects: []string{"*"}, Actions: []string{"*"}, Resources: []string{"*"}, Namespaces: []string{"*"}},
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	service := &bypassRollbackService{}
+	_, handler := v1connect.NewPaprikaServiceHandler(service, connect.WithInterceptors(interceptor))
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := v1connect.NewPaprikaServiceClient(server.Client(), server.URL)
+
+	mcpToken, err := IssueTokenWithOptions(TokenOptions{
+		Subject: "mcp-user", Email: "mcp-user@example.com", Name: "MCP User",
+		Audience: "paprika-mcp", Scope: "paprika:read", Secret: bypassTestSecret,
+	})
+	require.NoError(t, err)
+
+	req := connect.NewRequest(&paprikav1.RollbackReleaseRequest{Namespace: "prod", Name: "checkout"})
+	req.Header().Set("Authorization", "Bearer "+mcpToken)
+	_, err = client.RollbackRelease(context.Background(), req)
+
+	require.Error(t, err)
+	assert.Equal(t, connect.CodeUnauthenticated, connect.CodeOf(err),
+		"a read-scoped MCP token must not reach RollbackRelease via the console API directly")
+	assert.Zero(t, service.called, "the destructive handler must never execute")
+}

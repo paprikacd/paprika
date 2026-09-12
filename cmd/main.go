@@ -66,6 +66,7 @@ import (
 	apiserver "github.com/benebsworth/paprika/internal/api"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/api/mcp"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
@@ -89,6 +90,19 @@ const (
 	defaultRedisAddr         = "localhost:6379"
 	defaultCacheSyncTimeout  = 2 * time.Minute
 	apiCacheDisabledReason   = "fleet queries are unavailable because --api-cache-enabled=false"
+
+	// apiServerMaxHeaderBytes bounds the request line + header bytes the API
+	// server (startAPIServer) will read, including the query string —
+	// net/http otherwise defaults this to 1MB. Fix round 3, Finding 1: an
+	// unauthenticated GET /mcp/authorize with a huge `state` or `scope`
+	// query param used to be bounded only by that 1MB default before ever
+	// reaching mcp.redirectToConsent's own (much smaller) length checks;
+	// this cuts the window an attacker has to push bytes at the server in
+	// the first place. 64KB comfortably covers any legitimate request this
+	// server handles (large bearer tokens, cookies, long query strings)
+	// while being far below the point where it threatens memory or the
+	// shared cache.
+	apiServerMaxHeaderBytes = 64 * 1024
 )
 
 func newScheme() *runtime.Scheme {
@@ -140,6 +154,13 @@ type cliConfig struct {
 	githubActionsTokenExchangeTTL                                 time.Duration
 	coordinatorMode                                               bool
 	coordinatorHeartbeat, coordinatorTTL                          time.Duration
+	mcpEnabled                                                    bool
+	mcpBindAddress                                                string
+	mcpAccessTokenTTL, mcpRefreshTokenTTL                         time.Duration
+	mcpOAuthClientID                                              string
+	mcpOAuthRedirectURIsRaw                                       string
+	mcpOAuthRedirectURIs                                          []string
+	mcpPublicURL                                                  string
 	zapOptions                                                    zap.Options
 }
 
@@ -305,6 +326,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.authTokenSecret, "auth-token-secret", "",
 		"Secret key for signing self-issued auth tokens. Required for basic auth login flow. "+
 			"Prefer setting via PAPRIKA_AUTH_TOKEN_SECRET env var.")
+	registerMCPFlags(fs, &cfg)
 
 	cfg.webhookSecret = getenv("PAPRIKA_WEBHOOK_SECRET")
 	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
@@ -321,6 +343,22 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		}
 	}
 
+	applyShardConfig(&cfg, getenv)
+
+	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
+
+	cfg.zapOptions = zap.Options{Development: false}
+	cfg.zapOptions.BindFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return nil, fmt.Errorf("parse flags: %w", err)
+	}
+	applyMCPPostParseConfig(&cfg, getenv)
+	return setOIDCClientSecretEnvFallback(fs, &cfg, getenv), nil
+}
+
+// applyShardConfig reads the sharding env vars, split out of registerFlags
+// to keep that function under the repo's funlen budget.
+func applyShardConfig(cfg *cliConfig, getenv func(string) string) {
 	cfg.shardIDSource = getenv("PAPRIKA_SHARD_ID")
 	if cfg.shardIDSource == "" {
 		cfg.shardIDSource = getenv("POD_NAME")
@@ -335,15 +373,32 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 			cfg.shardID = id
 		}
 	}
+}
 
-	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
-
-	cfg.zapOptions = zap.Options{Development: false}
-	cfg.zapOptions.BindFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return nil, fmt.Errorf("parse flags: %w", err)
-	}
-	return setOIDCClientSecretEnvFallback(fs, &cfg, getenv), nil
+// applyMCPPostParseConfig finishes MCP config that depends on flags having
+// already been parsed (the redirect URI list) or that has no dedicated flag
+// at all. Split out of registerFlags to keep that function under the repo's
+// funlen budget.
+//
+// mcpPublicURL is deliberately not a --mcp-* flag: the design spec's
+// configuration table lists exactly six, none of them a public/external base
+// URL. It is still required (NewServer validates it as an absolute URL,
+// embedded verbatim in RFC 9728/8414 discovery metadata, and used as the
+// minted token's "iss" claim), so it is sourced the same way
+// authOIDCRedirectURL is when no dedicated flag exists for a value that
+// varies by deployment — via an env var. Unlike authOIDCRedirectURL, it has
+// deliberately been given NO default: a loopback fallback here would let a
+// misconfigured production deployment silently advertise
+// "http://localhost:..." as its authorization server to every MCP client
+// and mint tokens claiming to be issued by it, which is exactly the kind of
+// fail-open behavior the rest of this MCP config (--mcp-enabled without
+// auth, empty TokenSecret, empty ClientID) refuses to allow. Callers MUST
+// set PAPRIKA_MCP_PUBLIC_URL to the real externally-reachable URL (behind
+// TLS/ingress); validateMCPConfig rejects --mcp-enabled=true when it is
+// unset.
+func applyMCPPostParseConfig(cfg *cliConfig, getenv func(string) string) {
+	cfg.mcpOAuthRedirectURIs = commaSeparatedValues(cfg.mcpOAuthRedirectURIsRaw)
+	cfg.mcpPublicURL = getenv("PAPRIKA_MCP_PUBLIC_URL")
 }
 
 func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) *cliConfig {
@@ -355,6 +410,30 @@ func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv fun
 		cfg.authOIDCClientSecret = getenv("PAPRIKA_OIDC_CLIENT_SECRET")
 	}
 	return cfg
+}
+
+// registerMCPFlags registers the six --mcp-* flags, split out of
+// registerFlags to keep that function under the repo's funlen budget
+// (mirroring registerCoordinatorFlags/registerRepoServerFlags below).
+func registerMCPFlags(fs *flag.FlagSet, cfg *cliConfig) {
+	fs.BoolVar(&cfg.mcpEnabled, "mcp-enabled", false,
+		"Enable the MCP (Model Context Protocol) server, exposing fleet tools to MCP clients. "+
+			"Off by default: this is the first surface that lets a language model mutate fleet state, "+
+			"and it refuses to start unless --auth-enabled=true.")
+	fs.StringVar(&cfg.mcpBindAddress, "mcp-bind-address", ":8090",
+		"Address advertised for the MCP server. Routes are mounted on the same shared API mux as "+
+			"the rest of the API server, not a separate listener; this flag is retained for the "+
+			"deployment-facing address it documents.")
+	fs.DurationVar(&cfg.mcpAccessTokenTTL, "mcp-access-token-ttl", 24*time.Hour,
+		"MCP OAuth access token lifetime.")
+	fs.DurationVar(&cfg.mcpRefreshTokenTTL, "mcp-refresh-token-ttl", 720*time.Hour,
+		"MCP OAuth refresh token lifetime.")
+	fs.StringVar(&cfg.mcpOAuthClientID, "mcp-oauth-client-id", "",
+		"Statically registered OAuth client ID accepted by the MCP authorization server. Required "+
+			"when --mcp-enabled=true.")
+	fs.StringVar(&cfg.mcpOAuthRedirectURIsRaw, "mcp-oauth-redirect-uris", "",
+		"Comma-separated exact-match allowlist of OAuth redirect URIs accepted by the MCP "+
+			"authorization server. Required when --mcp-enabled=true.")
 }
 
 func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {
@@ -531,15 +610,11 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		return err
 	}
 
-	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
+	extraMuxHandlers, mcpCache, err := buildAPIExtraMuxHandlers(apiCtx, cfg, connectHandler, clients, setupLog)
+	defer closeMCPCacheIfPresent(mcpCache, setupLog)
 	if err != nil {
 		return err
 	}
-	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(apiCtx, cfg, clients.k8sClient)
-	if err != nil {
-		return err
-	}
-	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
 	ready := fleetReadyChecker(clients.fleetReader)
 	mux, muxErr := buildAPIMux(connectHandler, paprikaServer.Broker(), setupLog, ready, extraMuxHandlers...)
@@ -571,6 +646,61 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, setupLog)
 		},
 	)
+}
+
+// buildAPIExtraMuxHandlers assembles the registrars mounted onto the shared
+// API mux alongside the Connect handler — auth, the GitHub Actions token
+// exchange, and (when enabled) MCP — split out of runAPIMode to keep that
+// function under the repo's cyclop budget.
+//
+// It also returns the MCP cache it creates (nil when MCP is disabled) so
+// the caller can close it on shutdown — this function only builds the
+// handlers that reference the cache, it does not own the server's
+// lifetime, so it must not close the cache itself.
+func buildAPIExtraMuxHandlers(
+	apiCtx context.Context,
+	cfg *cliConfig,
+	connectHandler http.Handler,
+	clients *apiClients,
+	setupLog logr.Logger,
+) ([]func(*http.ServeMux), *cache.Cache, error) {
+	extraMuxHandlers, err := buildAuthHandlers(apiCtx, clients.authCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	githubExchangeHandlers, err := buildGitHubActionsTokenExchangeHandlers(apiCtx, cfg, clients.k8sClient)
+	if err != nil {
+		return nil, nil, err
+	}
+	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
+
+	var mcpCache *cache.Cache
+	if cfg.mcpEnabled {
+		mcpCache, err = newCacheFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create MCP cache: %w", err)
+		}
+	}
+	mcpHandlers, err := buildMCPHandlers(apiCtx, cfg, connectHandler, clients.authCfg, mcpCache)
+	if err != nil {
+		return nil, mcpCache, err
+	}
+	return append(extraMuxHandlers, mcpHandlers...), mcpCache, nil
+}
+
+// closeMCPCacheIfPresent closes the MCP cache built by
+// buildAPIExtraMuxHandlers, if any (mcpCache is nil whenever MCP is
+// disabled, or when buildAPIExtraMuxHandlers failed before creating one).
+// Split out of runAPIMode, and always deferred unconditionally, so the
+// nil check does not add a branch to runAPIMode itself and push it over
+// the repo's cyclop budget.
+func closeMCPCacheIfPresent(mcpCache *cache.Cache, setupLog logr.Logger) {
+	if mcpCache == nil {
+		return
+	}
+	if closeErr := mcpCache.Close(); closeErr != nil {
+		setupLog.Error(closeErr, "Failed to close MCP cache")
+	}
 }
 
 func prepareStandaloneFleetRuntime(
@@ -763,6 +893,153 @@ func buildGitHubActionsTokenExchangeHandlers(ctx context.Context, cfg *cliConfig
 		func(mux *http.ServeMux) {
 			mux.Handle("/auth/github-actions/token", handler)
 		},
+	}, nil
+}
+
+// mcpConfirmationTTL is the two-phase destructive-write confirmation
+// window, fixed by the design spec at 60s
+// (docs/superpowers/specs/2026-09-11-mcp-server-design.md).
+const mcpConfirmationTTL = 60 * time.Second
+
+// buildMCPHandlers builds the MCP server's registrars, matching
+// buildAuthHandlers' shape so it slots into runAPIMode's extraMuxHandlers
+// alongside it. It returns nothing when MCP is disabled (the default,
+// TestBuildMCPHandlersReturnsNothingWhenDisabled) and fails loudly rather
+// than start MCP without authentication (TestBuildMCPHandlersRequiresAuthEnabled).
+//
+// Two further checks close carry-forwards from Task 13's review
+// (task-15-report.md, CF1 and CF2):
+//
+//   - CF1: mcp.ServerConfig.Client is deliberately not part of
+//     mcp.NewServer's own required-field validation — a server built
+//     without one still serves tools/list and the unauthenticated-401 path,
+//     it only fails a tools/call, cleanly (see ServerConfig.Client's doc
+//     comment). That is the right behaviour for a package that must support
+//     Client-less tests, but a PRODUCTION server built here must always
+//     carry a real one, or the whole tool surface silently never works.
+//     This function always constructs one over connectHandler.
+//   - CF2: nothing in the mcp package enforces that its HMAC Secret is the
+//     SAME secret the console API's self-signed authenticator validates
+//     against. If auth is enabled via OIDC/basic auth alone with no
+//     TokenSecret configured, buildAuthnAuthz (internal/api/auth) never
+//     builds a self-signed authenticator at all, and every MCP token this
+//     server mints — and every bearer /mcp/authorize needs — would be
+//     unverifiable. This function asserts authCfg.TokenSecret is non-empty
+//     and passes exactly that slice as ServerConfig.Secret.
+//
+// validateMCPConfig runs buildMCPHandlers' fail-closed preconditions, split
+// out to keep buildMCPHandlers itself under the repo's cyclop budget. Every
+// check here returns a startup error rather than letting the MCP server run
+// in a shape that would silently misbehave (unauthenticated, unverifiable
+// tokens, or no cache for confirmations/authorization codes).
+func validateMCPConfig(cfg *cliConfig, authCfg auth.Config, mcpCache *cache.Cache) error {
+	if !authCfg.Enabled {
+		return errors.New("mcp: --mcp-enabled requires --auth-enabled=true; " +
+			"refusing to serve an unauthenticated MCP surface")
+	}
+	if len(authCfg.TokenSecret) == 0 {
+		return errors.New("mcp: --mcp-enabled requires a non-empty auth token secret " +
+			"(--auth-token-secret / PAPRIKA_AUTH_TOKEN_SECRET); the MCP server signs and verifies " +
+			"tokens with the same secret the console API's self-signed authenticator uses")
+	}
+	if cfg.mcpOAuthClientID == "" {
+		return errors.New("mcp: --mcp-oauth-client-id is required when --mcp-enabled=true")
+	}
+	if len(cfg.mcpOAuthRedirectURIs) == 0 {
+		return errors.New("mcp: --mcp-oauth-redirect-uris is required when --mcp-enabled=true")
+	}
+	if cfg.mcpPublicURL == "" {
+		return errors.New("mcp: PAPRIKA_MCP_PUBLIC_URL is required when --mcp-enabled=true; " +
+			"it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's " +
+			"issuer, so it must be set explicitly to the real externally-reachable URL rather than " +
+			"silently defaulting to a loopback address")
+	}
+	if mcpCache == nil {
+		return errors.New("mcp: no cache configured; the MCP server requires one for " +
+			"confirmations, authorization codes, and refresh tokens")
+	}
+	return nil
+}
+
+func buildMCPHandlers(
+	ctx context.Context,
+	cfg *cliConfig,
+	connectHandler http.Handler,
+	authCfg auth.Config,
+	mcpCache *cache.Cache,
+) ([]func(*http.ServeMux), error) {
+	if !cfg.mcpEnabled {
+		return nil, nil
+	}
+	if err := validateMCPConfig(cfg, authCfg, mcpCache); err != nil {
+		return nil, err
+	}
+
+	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, "")
+	if err != nil {
+		return nil, fmt.Errorf("mcp: build authenticator: %w", err)
+	}
+
+	// consoleAuthenticator authenticates the OAuth authorize/consent surface
+	// (GET /mcp/authorize, POST /mcp/authorize/consent) as a console user —
+	// the same Google OIDC + Paprika self-signed stack the console API
+	// itself uses (auth.BuildAuthenticator), never the MCP-audience-only
+	// authenticator above. Using that one here would be circular: the only
+	// thing that ever mints an MCP-audience token is /mcp/token, which
+	// itself requires a code /mcp/authorize issues — no client could ever
+	// complete the flow. See mcp.ServerConfig.ConsoleAuthenticator's doc
+	// comment for the full rationale.
+	consoleAuthenticator, err := auth.BuildAuthenticator(ctx, authCfg)
+	if err != nil {
+		return nil, fmt.Errorf("mcp: build console authenticator: %w", err)
+	}
+
+	registry := mcp.NewRegistry()
+	if regErr := mcp.RegisterReadTools(registry); regErr != nil {
+		return nil, fmt.Errorf("mcp: register read tools: %w", regErr)
+	}
+	if regErr := mcp.RegisterWriteTools(registry); regErr != nil {
+		return nil, fmt.Errorf("mcp: register write tools: %w", regErr)
+	}
+
+	// mcpClient re-enters connectHandler — the SAME otel -> auth -> audit ->
+	// PaprikaServer chain that serves console requests — over an in-memory
+	// RoundTripper rather than a network call. See the package doc for why:
+	// this is what keeps MCP from needing its own, second authorization path.
+	mcpClient := v1connect.NewPaprikaServiceClient(
+		&http.Client{Transport: mcp.NewInProcessTransport(connectHandler)},
+		"http://mcp-in-process",
+	)
+
+	var auditor audit.Auditor = audit.NoopAuditor{}
+	if cfg.auditLogEnabled {
+		auditor = audit.NewLogAuditor()
+	}
+
+	srv, err := mcp.NewServer(mcp.ServerConfig{
+		Registry:             registry,
+		Authenticator:        authenticator,
+		ConsoleAuthenticator: consoleAuthenticator,
+		Confirmer:            mcp.NewConfirmer(mcpCache, mcpConfirmationTTL),
+		Auditor:              auditor,
+		Cache:                mcpCache,
+		Secret:               authCfg.TokenSecret,
+		PublicURL:            cfg.mcpPublicURL,
+		ClientID:             cfg.mcpOAuthClientID,
+		RedirectURIs:         cfg.mcpOAuthRedirectURIs,
+		AccessTTL:            cfg.mcpAccessTokenTTL,
+		RefreshTTL:           cfg.mcpRefreshTokenTTL,
+		Client:               mcpClient,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("mcp: build server: %w", err)
+	}
+
+	return []func(*http.ServeMux){
+		func(mux *http.ServeMux) {
+			mux.Handle("/mcp", srv.Handler())
+		},
+		srv.RegisterOAuthRoutes,
 	}, nil
 }
 
@@ -1133,6 +1410,7 @@ func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, lo
 		Addr:              uiAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}
 	return runHTTPServer(ctx, server, "API server", log, nil, true)
 }
