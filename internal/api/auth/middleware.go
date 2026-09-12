@@ -137,7 +137,19 @@ func BuildAuthenticator(ctx context.Context, cfg Config) (Authenticator, error) 
 	}
 
 	if len(cfg.TokenSecret) > 0 {
-		authenticators = append(authenticators, NewSelfSignedAuthenticator(cfg.TokenSecret))
+		// Strict audience match: a token minted for any OTHER audience (most
+		// importantly the MCP server's own "paprika-mcp", see
+		// mcp.MCPTokenAudience) must never authenticate here. Before this,
+		// NewSelfSignedAuthenticator performed no audience check at all, so
+		// a read-scoped MCP token could authenticate directly against this
+		// console/CLI Connect API as a full principal — bypassing the MCP
+		// layer's scope gate and two-phase confirmation entirely. See
+		// ConsoleAPIAudience's doc comment for the full rationale.
+		selfSigned, err := NewSelfSignedAuthenticatorForAudience(cfg.TokenSecret, ConsoleAPIAudience, "")
+		if err != nil {
+			return nil, fmt.Errorf("self-signed auth: %w", err)
+		}
+		authenticators = append(authenticators, selfSigned)
 	}
 
 	if len(authenticators) == 0 {

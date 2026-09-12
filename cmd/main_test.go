@@ -728,10 +728,11 @@ func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
 // TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken proves the real fix, at
 // the actual production wiring level: GET /mcp/authorize must authenticate
 // as a console user, not require a pre-existing MCP-audience token (the
-// circular requirement this whole change exists to break). A plain console
-// token — no "aud" claim, exactly what /auth/token issues once a human has
-// completed Google OIDC login — must be accepted here, never rejected with
-// the 401 an MCP-audience-only authenticator would produce.
+// circular requirement this whole change exists to break). A console token
+// minted with aud=paprika-api — exactly what /auth/basic-login issues, and
+// what the console chain now requires strictly (see auth.ConsoleAPIAudience)
+// — must be accepted here, never rejected with the 401 an MCP-audience-only
+// authenticator would produce.
 func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
 	ctx := context.Background()
 
@@ -762,9 +763,15 @@ func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
 		h(mux)
 	}
 
-	// A console token: no audience, no scope claim — exactly what
-	// /auth/token issues, never an MCP access token.
-	consoleToken, err := auth.IssueToken("console-user", "console-user@example.com", "Console User", secret)
+	// A console token: aud=paprika-api, no scope claim — exactly what
+	// /auth/basic-login issues, never an MCP access token.
+	consoleToken, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject:  "console-user",
+		Email:    "console-user@example.com",
+		Name:     "Console User",
+		Audience: auth.ConsoleAPIAudience,
+		Secret:   secret,
+	})
 	require.NoError(t, err)
 
 	query := url.Values{

@@ -171,6 +171,25 @@ func bearerFor(t *testing.T, scopes ...Scope) string {
 	return token
 }
 
+// internalCredentialFor mints an aud=paprika-api credential exactly like
+// Server.mintConsoleCredential does, for tests that stash a credential
+// directly into a context via withInternalCredential rather than driving a
+// real Server.serveHTTP call. The console/CLI Connect chain built by
+// authEnabledConnectClient now requires this audience strictly (see
+// auth.ConsoleAPIAudience), so a test that used to hand bearerFor's
+// aud=paprika-mcp token straight to withInternalCredential must use this
+// instead — that MCP-audience token is exactly what the fix this package
+// implements must no longer let through.
+func internalCredentialFor(t *testing.T, subject string) string {
+	t.Helper()
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject: subject, Email: subject + "@example.com", Name: "Test",
+		Audience: auth.ConsoleAPIAudience, TTL: time.Minute, Secret: testSecret,
+	})
+	require.NoError(t, err)
+	return token
+}
+
 // consoleBearerFor mints a plain console-style self-signed token: no
 // audience claim and no scope claim, matching exactly what /auth/token
 // issues once a human has completed the existing Google OIDC login. This is

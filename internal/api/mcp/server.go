@@ -217,20 +217,63 @@ func (s *Server) Handler() http.Handler {
 	return http.HandlerFunc(s.serveHTTP)
 }
 
-// serveHTTP authenticates r, attaches the resulting Principal and the raw
-// bearer token to its context, and delegates to the Streamable HTTP handler.
+// consoleCredentialTTL bounds the lifetime of the internal credential
+// mintConsoleCredential mints for each authenticated MCP request. It never
+// leaves this process — NewInProcessTransport's RoundTrip hands it straight
+// to an in-memory http.Handler, no socket involved — so it only needs to
+// outlive one synchronous in-process Connect call, not survive any kind of
+// transit or storage. Seconds, not hours: 30s comfortably covers even a slow
+// downstream call (a Kubernetes read, a git-backed render) while keeping the
+// window in which this credential would still verify as short as a TTL can
+// practically make it, in case anything downstream logs or otherwise
+// captures it.
+const consoleCredentialTTL = 30 * time.Second
+
+// mintConsoleCredential mints a short-lived, unscoped self-signed token for
+// the in-process Connect request tools/call issues, carrying p's real
+// subject/email/name so the audit trail records the actual acting user
+// rather than a service identity. Its audience is auth.ConsoleAPIAudience,
+// distinct from this server's own MCP-audience tokens (MCPTokenAudience) —
+// see transport.go's internalCredentialKey doc comment for why forwarding
+// the caller's own MCP-audience token instead would defeat the console
+// chain's audience check entirely.
 //
-// The bearer token is what closes the blocker this task exists for: nothing
-// else attaches credentials to the in-process Connect request tools/call
-// eventually issues, so without it every tool call would fail
+// It deliberately carries no "scope" claim. Scope enforcement for MCP tool
+// calls lives entirely in the Invoker (invoke.go), upstream of this call and
+// upstream of every use of the credential this mints; the console Connect
+// chain has no scope concept of its own, and stamping one onto this
+// credential could be mistaken for a grant it does not carry.
+func (s *Server) mintConsoleCredential(p *auth.Principal) (string, error) {
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject:  p.Subject,
+		Email:    p.Email,
+		Name:     p.Name,
+		Audience: auth.ConsoleAPIAudience,
+		TTL:      consoleCredentialTTL,
+		Secret:   s.secret,
+	})
+	if err != nil {
+		return "", fmt.Errorf("mcp: mint internal console credential: %w", err)
+	}
+	return token, nil
+}
+
+// serveHTTP authenticates r, attaches the resulting Principal and a freshly
+// minted internal credential to its context, and delegates to the
+// Streamable HTTP handler.
+//
+// The internal credential is what closes the blocker this task exists for:
+// nothing else attaches credentials to the in-process Connect request
+// tools/call eventually issues, so without it every tool call would fail
 // CodeUnauthenticated against a production chain that always has auth
-// enabled. Stashing it here — once, right after authenticating it ourselves
-// — lets NewInProcessTransport's RoundTrip (transport.go) forward it as the
-// outgoing request's Authorization header, so the SAME Connect auth
-// interceptor that guards console requests validates it again and derives
-// the Principal the Authorizer enforces project scoping against. See
-// ConfirmationRequiredError and the package-level blocker note for the rest
-// of the flow.
+// enabled. Stashing it here — once, right after authenticating the caller
+// ourselves and minting a credential for the SAME identity but the
+// console API's own audience — lets NewInProcessTransport's RoundTrip
+// (transport.go) forward it as the outgoing request's Authorization header,
+// so the SAME Connect auth interceptor that guards console requests
+// validates it again and derives the Principal the Authorizer enforces
+// project scoping against. See ConfirmationRequiredError and the
+// package-level blocker note for the rest of the flow.
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := auth.WithRequest(r.Context(), r)
 	principal, err := s.authenticator.Authenticate(ctx)
@@ -243,21 +286,14 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx = auth.WithPrincipal(ctx, principal)
-	token, ok := bearerToken(r)
-	if !ok {
-		// Authentication succeeded but no bearer token could be extracted —
-		// e.g. a non-bearer Authenticator Task 15 might configure, or a
-		// scheme this function fails to recognise. Proceeding here would
-		// let the request continue with nothing for RoundTrip to forward,
-		// and every tool call would then die deep in the chain with a
-		// misleading CodeUnauthenticated that looks like a client auth
-		// failure rather than the real, server-side problem: this front
-		// door has no credential to hand downstream. Fail loudly here
-		// instead, naming the real cause.
-		http.Error(w, "mcp: authenticated request carries no forwardable bearer token", http.StatusInternalServerError)
+
+	credential, err := s.mintConsoleCredential(principal)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "mcp: mint internal console credential failed")
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	ctx = withBearerToken(ctx, token)
+	ctx = withInternalCredential(ctx, credential)
 	r = r.WithContext(ctx)
 	r = ensureStreamableAccept(r)
 	s.streamable.ServeHTTP(w, r)
@@ -337,30 +373,6 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate",
 		fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, s.publicURL))
 	w.WriteHeader(http.StatusUnauthorized)
-}
-
-// bearerToken extracts the raw bearer token from r's Authorization header,
-// if present, for serveHTTP to hand to withBearerToken. It never appears in
-// a log line or error message anywhere in this package.
-func bearerToken(r *http.Request) (string, bool) {
-	v := r.Header.Get("Authorization")
-	// Matches SelfSignedAuthenticator.Authenticate's own parsing
-	// (self_signed_token.go): scheme compared case-insensitively per
-	// RFC 6750 section 2.1, which permits "bearer", "Bearer", or any
-	// other casing. Diverging from that here would re-open the blocker
-	// this task exists to close for any request whose scheme the
-	// authenticator accepts but this function's old case-sensitive match
-	// did not — the request would authenticate at the front door and
-	// then forward no token at all.
-	parts := strings.SplitN(v, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return "", false
-	}
-	token := parts[1]
-	if token == "" {
-		return "", false
-	}
-	return token, true
 }
 
 // callTool is the ToolHandler installed for every tool in the registry. It

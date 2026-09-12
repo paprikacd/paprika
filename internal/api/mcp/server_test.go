@@ -163,6 +163,13 @@ func (statusStubService) GetSystemStatus(
 // newInvokerForRegistry / stubConnectClient: those wire only the audit
 // interceptor and so cannot catch a missing-credential bug — see the task
 // brief's blocker note, which explains that exact gap.
+//
+// auth.Interceptor here builds its authenticator via auth.BuildAuthenticator,
+// which now requires aud=auth.ConsoleAPIAudience strictly (see
+// ConsoleAPIAudience's doc comment for why: this is the exact chain that must
+// reject an aud=paprika-mcp token). Any credential this test forwards must
+// therefore be minted for that audience — internalCredentialFor, not
+// bearerFor.
 func authEnabledConnectClient(t *testing.T, aud audit.Auditor) v1connect.PaprikaServiceClient {
 	t.Helper()
 	authInterceptor, err := auth.Interceptor(context.Background(), auth.Config{
@@ -203,8 +210,8 @@ func TestToolCallAuthenticatesThroughInProcessTransport(t *testing.T) {
 	})
 
 	t.Run("valid token in context -> succeeds", func(t *testing.T) {
-		token := bearerFor(t, ScopeRead)
-		ctx := withBearerToken(context.Background(), token)
+		credential := internalCredentialFor(t, "u1")
+		ctx := withInternalCredential(context.Background(), credential)
 		result, err := inv.Call(ctx, principal, "fleet_status", json.RawMessage(`{}`))
 		require.NoError(t, err)
 		resp, ok := result.(*v1.GetSystemStatusResponse)
@@ -216,10 +223,11 @@ func TestToolCallAuthenticatesThroughInProcessTransport(t *testing.T) {
 // TestServerAttachesBearerTokenFromRequest proves the other half of the
 // blocker fix end to end through the actual Server: given a Client wired
 // through the real auth interceptor, a tools/call arriving over HTTP with a
-// valid Authorization header succeeds, which is only possible if Handler's
-// serveHTTP put that same token into the context it hands to Invoker.Call
-// (via withBearerToken) rather than the token evaporating once the MCP
-// layer's own authentication step consumes it.
+// valid Authorization header succeeds, which is only possible if serveHTTP
+// minted a fresh aud=paprika-api credential for the authenticated caller and
+// stashed it (via withInternalCredential) into the context it hands to
+// Invoker.Call — the caller's own aud=paprika-mcp token is never forwarded
+// as-is, but authentication must still succeed end to end.
 func TestServerAttachesBearerTokenFromRequest(t *testing.T) {
 	r := NewRegistry()
 	require.NoError(t, RegisterReadTools(r))
@@ -333,54 +341,6 @@ func TestBearerSchemeIsCaseInsensitive(t *testing.T) {
 		"lowercase 'bearer' scheme must authenticate the tool call the same as 'Bearer' — body: %s", rec.Body.String())
 }
 
-// alwaysAuthenticates is an auth.Authenticator that always succeeds
-// regardless of the request's headers — standing in for a hypothetical
-// non-bearer Authenticator (e.g. an mTLS or API-key scheme Task 15 might
-// configure) so TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly
-// can put serveHTTP into the "authenticated, but nothing to forward" state
-// that SelfSignedAuthenticator can never reach on its own (it requires the
-// same Bearer scheme bearerToken now also recognises, so with it the two
-// always agree).
-type alwaysAuthenticates struct{}
-
-func (alwaysAuthenticates) Authenticate(context.Context) (*auth.Principal, error) {
-	return &auth.Principal{Subject: "u1", Scopes: []string{string(ScopeRead)}}, nil
-}
-
-// TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly proves
-// serveHTTP does not silently proceed to tool dispatch when authentication
-// succeeds but no bearer token could be extracted from the request. Left
-// unchecked, the request would reach the in-process Connect call with
-// nothing for RoundTrip to forward, and die deep in the chain with a
-// misleading CodeUnauthenticated that looks like a client-side auth
-// failure rather than the real, server-side cause: this front door had no
-// credential to hand downstream.
-func TestAuthenticationSucceedingWithNoForwardableTokenFailsLoudly(t *testing.T) {
-	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
-	require.NoError(t, err)
-	srv, err := NewServer(ServerConfig{
-		Registry:      NewRegistry(),
-		Authenticator: alwaysAuthenticates{},
-		Cache:         store,
-		Secret:        testSecret,
-		PublicURL:     "https://paprika.example",
-		ClientID:      "test",
-		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
-	})
-	require.NoError(t, err)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp",
-		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz") // no bearer token to extract
-	srv.Handler().ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusInternalServerError, rec.Code, "body: %s", rec.Body.String())
-	assert.Contains(t, rec.Body.String(), "bearer",
-		"the response must name the real, server-side cause rather than looking like a client auth failure")
-}
-
 // --- The token must never leak into logs or error messages ---
 //
 // transport.go's RoundTrip only ever uses the token to set a header on a
@@ -400,7 +360,7 @@ func TestBearerTokenDoesNotLeakIntoErrorsOrResponses(t *testing.T) {
 		})
 		rt := NewInProcessTransport(blocking)
 
-		ctx, cancel := context.WithCancel(withBearerToken(context.Background(), canary))
+		ctx, cancel := context.WithCancel(withInternalCredential(context.Background(), canary))
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://in-process/x", nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer "+canary)
@@ -426,7 +386,7 @@ func TestBearerTokenDoesNotLeakIntoErrorsOrResponses(t *testing.T) {
 		// A malformed / garbage token: still forwarded as a header by
 		// RoundTrip, still rejected by the real auth interceptor, and its
 		// value must not surface in the resulting error.
-		ctx := withBearerToken(context.Background(), canary)
+		ctx := withInternalCredential(context.Background(), canary)
 		_, callErr := inv.Call(ctx, principal, "fleet_status", json.RawMessage(`{}`))
 		require.Error(t, callErr)
 		assert.NotContains(t, callErr.Error(), canary)
@@ -451,6 +411,93 @@ func TestBearerTokenDoesNotLeakIntoErrorsOrResponses(t *testing.T) {
 // --- Error-mapping unit tests (server_test.go owns these directly, since
 // ErrToolNotFound is not reachable through the SDK's own HTTP dispatch —
 // see mapInvokeError's doc comment) ---
+
+// syncApplicationStubService implements only SyncApplication, returning
+// success unconditionally, so
+// TestAuditRecordsRealMCPUserNotAServiceIdentity can drive a full
+// authenticated write through the real auth + audit interceptor chain.
+type syncApplicationStubService struct {
+	v1connect.UnimplementedPaprikaServiceHandler
+}
+
+func (syncApplicationStubService) SyncApplication(
+	context.Context, *connect.Request[v1.SyncApplicationRequest],
+) (*connect.Response[v1.SyncApplicationResponse], error) {
+	return connect.NewResponse(&v1.SyncApplicationResponse{}), nil
+}
+
+// TestAuditRecordsRealMCPUserNotAServiceIdentity proves the internal
+// credential mintConsoleCredential mints does not launder the acting user's
+// identity into a service identity: the audit record the REAL Connect audit
+// interceptor writes for an MCP-initiated write must name the real MCP
+// caller's subject. mintConsoleCredential carries p.Subject/Email/Name
+// through onto the aud=paprika-api credential it mints specifically so this
+// holds — see server.go's doc comment on mintConsoleCredential.
+func TestAuditRecordsRealMCPUserNotAServiceIdentity(t *testing.T) {
+	const realSubject = "real-mcp-user-alice"
+
+	r := NewRegistry()
+	require.NoError(t, RegisterWriteTools(r))
+
+	connectAudit := &recordingAuditor{}
+	authInterceptor, err := auth.Interceptor(context.Background(), auth.Config{
+		Enabled:     true,
+		TokenSecret: testSecret,
+		RBACRules: []auth.RBACRule{
+			{Subjects: []string{"*"}, Actions: []string{"*"}, Resources: []string{"*"}, Namespaces: []string{"*"}},
+		},
+	}, nil)
+	require.NoError(t, err)
+	_, handler := v1connect.NewPaprikaServiceHandler(syncApplicationStubService{},
+		connect.WithInterceptors(authInterceptor, api.NewAuditInterceptor(connectAudit, nil)))
+	client := v1connect.NewPaprikaServiceClient(
+		&http.Client{Transport: NewInProcessTransport(handler)}, "http://in-process")
+
+	store, err := cache.New(context.Background(), cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	srv, err := NewServer(ServerConfig{
+		Registry:      r,
+		Authenticator: mustAudienceAuthenticator(t, testSecret, "paprika-mcp", testIssuer),
+		Confirmer:     NewConfirmer(store, time.Minute),
+		Auditor:       &recordingAuditor{},
+		Cache:         store,
+		Secret:        testSecret,
+		PublicURL:     "https://paprika.example",
+		ClientID:      "test",
+		RedirectURIs:  []string{"https://claude.ai/api/mcp/auth_callback"},
+		Client:        client,
+	})
+	require.NoError(t, err)
+
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject: realSubject, Email: realSubject + "@example.com", Name: "Alice Real",
+		Audience: "paprika-mcp", Scope: string(ScopeWrite), TTL: time.Hour, Secret: testSecret,
+	})
+	require.NoError(t, err)
+
+	body := doJSONRPC(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sync_application","arguments":{"name":"web","namespace":"prod"}}}`,
+		token)
+
+	var out struct {
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(body, &out))
+	require.Nil(t, out.Error, "body: %s", string(body))
+	require.False(t, out.Result.IsError, "body: %s", string(body))
+
+	require.NotEmpty(t, connectAudit.events, "the real Connect audit interceptor must have recorded the write")
+	last := connectAudit.events[len(connectAudit.events)-1]
+	assert.Equal(t, realSubject, last.Principal,
+		"the audit record must name the real MCP user, not a service identity minted for the internal credential")
+}
 
 func TestMapInvokeErrorTranslatesEachInvokerError(t *testing.T) {
 	srv := newTestServer(t)

@@ -8,31 +8,43 @@ import (
 	"net/http/httptest"
 )
 
-// bearerTokenKey is the context key carrying the caller's raw bearer token
-// from the MCP server's authentication step through to the in-process
-// Connect request. See RoundTrip's doc comment for why this exists: without
-// it, the in-process transport has no credential to attach, and the auth
-// interceptor in the real Connect chain rejects every MCP tool call with
-// CodeUnauthenticated.
-type bearerTokenKey struct{}
+// internalCredentialKey is the context key carrying the short-lived,
+// paprika-api-audience credential Server.mintConsoleCredential mints for the
+// in-process Connect request, through to RoundTrip. See RoundTrip's doc
+// comment for why this exists: without it, the in-process transport has no
+// credential to attach, and the auth interceptor in the real Connect chain
+// rejects every MCP tool call with CodeUnauthenticated.
+//
+// This deliberately does NOT carry the caller's own MCP-audience bearer
+// token. Forwarding that token verbatim was the original design, and it is
+// exactly what let a token minted for the MCP server's own audience
+// ("paprika-mcp") authenticate directly against the console/CLI Connect API
+// once that chain's self-signed authenticator started requiring
+// aud=paprika-api — the console chain has no way to accept both audiences
+// without accepting neither strictly. Minting a fresh, narrower-audience
+// credential per request — carrying the same subject/email/name so the
+// audit trail still names the real user — breaks that coupling: the console
+// chain enforces aud=paprika-api on every caller, MCP-forwarded or not.
+type internalCredentialKey struct{}
 
-// withBearerToken returns a context carrying token for RoundTrip to attach
-// to the outgoing in-process request as an Authorization header. Callers
-// must pass a token already validated by the MCP server's own
-// authentication step — RoundTrip performs no validation of its own, it
-// only forwards what it is given.
-func withBearerToken(ctx context.Context, token string) context.Context {
-	return context.WithValue(ctx, bearerTokenKey{}, token)
+// withInternalCredential returns a context carrying credential for
+// RoundTrip to attach to the outgoing in-process request as an Authorization
+// header. Callers must pass a credential already minted for the
+// paprika-api audience by the MCP server itself (Server.mintConsoleCredential)
+// — RoundTrip performs no validation or minting of its own, it only forwards
+// what it is given.
+func withInternalCredential(ctx context.Context, credential string) context.Context {
+	return context.WithValue(ctx, internalCredentialKey{}, credential)
 }
 
-// bearerTokenFromContext returns the token stashed by withBearerToken, if
-// any.
-func bearerTokenFromContext(ctx context.Context) (string, bool) {
-	token, ok := ctx.Value(bearerTokenKey{}).(string)
-	if !ok || token == "" {
+// internalCredentialFromContext returns the credential stashed by
+// withInternalCredential, if any.
+func internalCredentialFromContext(ctx context.Context) (string, bool) {
+	credential, ok := ctx.Value(internalCredentialKey{}).(string)
+	if !ok || credential == "" {
 		return "", false
 	}
-	return token, true
+	return credential, true
 }
 
 // inProcessTransport dispatches requests directly into an http.Handler with no
@@ -72,9 +84,9 @@ func NewInProcessTransport(h http.Handler) http.RoundTripper {
 // RoundTrip has already returned to its caller. RoundTrip does not, and
 // cannot, cancel the handler's work; it can only stop waiting for it.
 func (t *inProcessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if token, ok := bearerTokenFromContext(req.Context()); ok {
+	if credential, ok := internalCredentialFromContext(req.Context()); ok {
 		req = req.Clone(req.Context())
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Authorization", "Bearer "+credential)
 	}
 
 	respCh := make(chan *http.Response, 1)

@@ -15,6 +15,18 @@ import (
 // tokenExpiry is how long self-signed tokens are valid for.
 const tokenExpiry = 24 * time.Hour
 
+// ConsoleAPIAudience is the required "aud" claim for a Paprika self-signed
+// token to authenticate against the console/CLI Connect API — the same API
+// RollbackRelease and every other PaprikaService RPC live on. It is distinct
+// from, and must never be confused with, the MCP server's own token
+// audience (mcp.MCPTokenAudience, "paprika-mcp"): a token minted for one
+// audience must not authenticate against the other surface. Before this
+// audience existed, a token minted for MCP could authenticate directly
+// against the console API as a full principal, bypassing the MCP layer's
+// scope gate and two-phase confirmation entirely — see
+// NewSelfSignedAuthenticatorForAudience and middleware.go's BuildAuthenticator.
+const ConsoleAPIAudience = "paprika-api"
+
 // jwtHeader is the fixed JWT header for HS256 tokens.
 var jwtHeader = base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 
