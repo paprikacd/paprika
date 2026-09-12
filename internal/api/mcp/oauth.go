@@ -38,6 +38,29 @@ const (
 	// 4.1's fixed bounds on a PKCE code_verifier's length.
 	minCodeVerifierLength = 43
 	maxCodeVerifierLength = 128
+
+	// maxAuthorizeStateLen, maxAuthorizeScopeLen, maxAuthorizeChallengeLen,
+	// and maxAuthorizeChallengeMethodLen bound the query params
+	// redirectToConsent will ever copy into a pendingAuthzRecord and write
+	// to the shared cache.
+	//
+	// Fix round 3, Finding 1: before this, state and scope were stashed
+	// verbatim, from an UNAUTHENTICATED caller, with no length cap at all —
+	// a single GET with a 500,000-byte state produced a 500KB+ cache entry.
+	// That cache also holds live authorization codes and refresh tokens, so
+	// under maxmemory + LRU this is an eviction primitive against real
+	// grants, and on the in-memory backend it is worse: MemoryCache.Get
+	// never deletes an expired-but-unread entry, so nothing ever reaps it —
+	// a permanent leak. code_challenge and code_challenge_method are
+	// unauthenticated caller input too and were equally unbounded, so they
+	// are capped here for the same reason, using RFC 7636 section 4.1's own
+	// bound for the former (a legitimate code_challenge is 43-128 chars)
+	// and a generous allowance for the latter (the only value the flow ever
+	// accepts past this point is "S256").
+	maxAuthorizeStateLen           = 512
+	maxAuthorizeScopeLen           = 512
+	maxAuthorizeChallengeLen       = maxCodeVerifierLength
+	maxAuthorizeChallengeMethodLen = 32
 )
 
 // defaultDuration returns d if it is non-zero, else fallback. It centralises
@@ -358,18 +381,60 @@ func pendingAuthzKey(rid string) string {
 // PRINCIPAL-AGNOSTIC by construction — it is built before
 // authorizeAuthenticator ever runs and carries no subject/user identity, only
 // the caller-supplied request parameters (already visible to whoever crafted
-// the request). The authorization code eventually minted on approve is
-// always bound to whichever principal is authenticated AT APPROVAL TIME
-// (finishConsentApprove's principal argument), never to anything from this
-// pre-auth stash, so a rid can never be used to "replay" a grant as someone
-// else's identity. rid is still generated with randomToken's full 32-byte
-// entropy purely to prevent an unrelated risk: brute-forcing a live rid to
-// view another pending request's (low-sensitivity) client_id/redirect_uri
-// before its owner acts on it.
+// the request). That is what makes it safe to hand a rid to an
+// unauthenticated caller at all: no identity or session is exposed by it.
+//
+// Fix round 3, Finding 2: an earlier revision of this comment wrongly implied
+// that binding the eventual code to whoever authenticates at approval time
+// (finishConsentApprove's principal argument) prevents session fixation.
+// It does not, and PKCE does not either — a reviewer confirmed this by
+// walking the attack end to end: an attacker crafts their own authorize
+// request (their own PKCE code_verifier/code_challenge, their own state,
+// possibly a real registered client_id/redirect_uri) and gets a victim to
+// complete consent for it, e.g. by sending the victim the resulting
+// /mcp/consent?rid=... link. The code minted on approve IS bound to the
+// victim's principal, but that changes nothing about who can redeem it:
+// redemption only requires the matching code_verifier, and the attacker
+// already holds it, because they generated it. Redeeming the code this way
+// hands the attacker an access token stamped sub=victim.
+//
+// What actually stops this in practice is allowlist discipline on
+// redirect_uri, not PKCE and not the rid: the code is delivered by
+// redirecting the victim's browser to the single, exact,
+// operator-registered redirect_uri — never anywhere the attacker chose — so
+// the attacker only receives it if they also control whatever is listening
+// at that fixed destination. For a normal registered client (e.g. claude.ai's
+// callback) they don't. This is exactly why a LOOPBACK redirect_uri needs
+// extra scrutiny before it is ever added to the allowlist: once one is
+// registered, any other process on the victim's own machine that can bind or
+// observe that loopback port receives the code too — turning the bar from
+// "control claude.ai's infrastructure" into "run a process on the victim's
+// laptop".
+//
+// rid is still generated with randomToken's full 32-byte entropy to prevent
+// an unrelated risk: brute-forcing a live rid to view another pending
+// request's (low-sensitivity) client_id/redirect_uri before its owner acts
+// on it.
 func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	rec := pendingAuthzRecord{}
-	if s.clientIDAllowed(q.Get("client_id")) && s.isRegisteredRedirect(q.Get("redirect_uri")) {
+	// Fix round 3, Finding 1: an over-length state/scope/code_challenge/
+	// code_challenge_method folds into the SAME "invalid" branch as a bad
+	// client_id or redirect_uri, rather than being rejected some other,
+	// distinguishable way — this is deliberate. Finding 1 of the previous
+	// round spent an entire fix collapsing valid/invalid into one 302 shape
+	// specifically so that no property of the request, observable from
+	// outside, reveals anything about it; adding a differently-shaped
+	// rejection for "too long" here would reopen exactly that oracle for a
+	// new bit of information. Folding it into "invalid" also means an
+	// over-length value never gets copied into rec at all (rec stays the
+	// zero value below), so nothing oversized ever reaches the cache.
+	if s.clientIDAllowed(q.Get("client_id")) &&
+		s.isRegisteredRedirect(q.Get("redirect_uri")) &&
+		len(q.Get("state")) <= maxAuthorizeStateLen &&
+		len(q.Get("scope")) <= maxAuthorizeScopeLen &&
+		len(q.Get("code_challenge")) <= maxAuthorizeChallengeLen &&
+		len(q.Get("code_challenge_method")) <= maxAuthorizeChallengeMethodLen {
 		rec = pendingAuthzRecord{
 			Valid:               true,
 			ClientID:            q.Get("client_id"),

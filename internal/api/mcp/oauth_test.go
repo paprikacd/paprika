@@ -194,6 +194,18 @@ func TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable(t *testing.
 		"bad_client":   get(badClientQuery),
 	}
 
+	// Fix round 3, Finding 4: the loop below used to stop at "the set of query
+	// keys is {rid}", which leaves open the possibility of a difference
+	// elsewhere in the response — e.g. Content-Length or body bytes — that
+	// would still make the cases distinguishable to a real HTTP client. A
+	// reviewer confirmed by hand that Content-Length and (rid aside) the
+	// response body are in fact byte-identical across all three cases; this
+	// test now asserts that directly instead of merely trusting it. rid is
+	// always randomToken()'s base64.RawURLEncoding of 32 bytes, a fixed 43
+	// characters, so Content-Length is expected to match exactly, and the
+	// body should match once each case's own rid is substituted out.
+	var wantContentLength string
+	var wantBodyTemplate string
 	for name, rec := range cases {
 		require.Equal(t, http.StatusFound, rec.Code, "case %s", name)
 		loc, err := url.Parse(rec.Header().Get("Location"))
@@ -207,7 +219,106 @@ func TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable(t *testing.
 		assert.Equal(t, []string{"rid"}, keys,
 			"case %s: the only observable difference between outcomes must be the random rid value, "+
 				"never which query keys are present", name)
+
+		rid := loc.Query().Get("rid")
+		require.NotEmpty(t, rid, "case %s", name)
+
+		contentLength := rec.Header().Get("Content-Length")
+		bodyTemplate := strings.Replace(rec.Body.String(), rid, "{rid}", 1)
+
+		if wantContentLength == "" && wantBodyTemplate == "" {
+			wantContentLength = contentLength
+			wantBodyTemplate = bodyTemplate
+			continue
+		}
+		assert.Equal(t, wantContentLength, contentLength,
+			"case %s: Content-Length must be identical across all outcomes", name)
+		assert.Equal(t, wantBodyTemplate, bodyTemplate,
+			"case %s: response body must be identical (modulo the rid value) across all outcomes", name)
 	}
+}
+
+// TestAuthorizeOverlengthStateIsRejectedIndistinguishablyAndNeverStashed is
+// the Fix round 3, Finding 1 regression test. Before this fix,
+// redirectToConsent copied an UNAUTHENTICATED caller's state and scope query
+// params into the cache verbatim with no length cap at all: a reviewer's PoC
+// GET with a 500,000-byte state produced a 500,155-byte cache entry. That
+// cache also holds live authorization codes and refresh tokens, so under
+// maxmemory+LRU this was an eviction primitive against real grants, and on
+// the in-memory backend worse still — MemoryCache.Get never reaps an
+// expired-but-unread entry, so an oversized one leaked permanently.
+//
+// The fix folds an over-length state (also scope, code_challenge, and
+// code_challenge_method) into the SAME "invalid" branch a bad client_id or
+// redirect_uri already takes, rather than rejecting it some other,
+// observably-different way — reopening a new oracle bit here would undo Fix
+// round 2's entire indistinguishability guarantee. This test asserts both
+// required halves: (1) the response for an over-length state is byte-for-
+// byte identical (mod rid) to a valid request's, exactly like
+// TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable already
+// requires of a bad client_id/redirect_uri, and (2) the resulting rid
+// resolves, via the authenticated /mcp/authorize/pending lookup, to nothing
+// at all — proving the oversized state was never stashed in the first place.
+func TestAuthorizeOverlengthStateIsRejectedIndistinguishablyAndNeverStashed(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	get := func(query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/mcp/authorize?"+query, nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	baseQuery := "client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape(redirect)
+
+	// A generous, comfortably-valid state alongside the reviewer's PoC scale
+	// of over-length state (well past maxAuthorizeStateLen).
+	validRec := get(baseQuery + "&state=xyz")
+	overlengthState := strings.Repeat("A", 500_000)
+	overlengthRec := get(baseQuery + "&state=" + overlengthState)
+
+	require.Equal(t, http.StatusFound, validRec.Code)
+	require.Equal(t, http.StatusFound, overlengthRec.Code,
+		"an over-length state must still produce a 302, indistinguishable from a valid request")
+
+	validRid := ridFromLocation(t, validRec)
+	overlengthRid := ridFromLocation(t, overlengthRec)
+	assert.NotEqual(t, validRid, overlengthRid, "each redirect mints its own fresh rid")
+
+	// Half 1: the responses must be byte-identical modulo the rid itself —
+	// Content-Length included, since that is exactly what Finding 4 requires
+	// this indistinguishability property to cover.
+	assert.Equal(t, validRec.Header().Get("Content-Length"), overlengthRec.Header().Get("Content-Length"),
+		"an over-length state must not change Content-Length versus a valid request")
+	validBodyTemplate := strings.Replace(validRec.Body.String(), validRid, "{rid}", 1)
+	overlengthBodyTemplate := strings.Replace(overlengthRec.Body.String(), overlengthRid, "{rid}", 1)
+	assert.Equal(t, validBodyTemplate, overlengthBodyTemplate,
+		"an over-length state must produce a body identical (modulo the rid value) to a valid request's")
+
+	// Half 2: the oversized state must never have been stashed. Confirm via
+	// the authenticated pending lookup that the rid minted for the
+	// over-length request resolves to nothing valid at all (the same
+	// zero-value fallback a bad client_id/redirect_uri takes) — not merely
+	// that it doesn't come back with a huge state.
+	bearer := consoleBearerFor(t, "console-user")
+
+	validPending := getPendingAuthz(t, mux, validRid, bearer)
+	require.Equal(t, http.StatusOK, validPending.Code, validPending.Body.String())
+	var validBody pendingAuthzResponse
+	require.NoError(t, json.Unmarshal(validPending.Body.Bytes(), &validBody))
+	assert.Equal(t, redirect, validBody.RedirectURI, "the valid rid resolves to the original request")
+
+	overlengthPending := getPendingAuthz(t, mux, overlengthRid, bearer)
+	assert.Equal(t, http.StatusBadRequest, overlengthPending.Code,
+		"an over-length state must never resolve to a valid pending request")
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(overlengthPending.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_request", oerr.Error)
 }
 
 // TestAuthorizeCompletesWithAValidBearerToken drives the authorization

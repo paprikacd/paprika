@@ -90,6 +90,19 @@ const (
 	defaultRedisAddr         = "localhost:6379"
 	defaultCacheSyncTimeout  = 2 * time.Minute
 	apiCacheDisabledReason   = "fleet queries are unavailable because --api-cache-enabled=false"
+
+	// apiServerMaxHeaderBytes bounds the request line + header bytes the API
+	// server (startAPIServer) will read, including the query string —
+	// net/http otherwise defaults this to 1MB. Fix round 3, Finding 1: an
+	// unauthenticated GET /mcp/authorize with a huge `state` or `scope`
+	// query param used to be bounded only by that 1MB default before ever
+	// reaching mcp.redirectToConsent's own (much smaller) length checks;
+	// this cuts the window an attacker has to push bytes at the server in
+	// the first place. 64KB comfortably covers any legitimate request this
+	// server handles (large bearer tokens, cookies, long query strings)
+	// while being far below the point where it threatens memory or the
+	// shared cache.
+	apiServerMaxHeaderBytes = 64 * 1024
 )
 
 func newScheme() *runtime.Scheme {
@@ -1397,6 +1410,7 @@ func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, lo
 		Addr:              uiAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}
 	return runHTTPServer(ctx, server, "API server", log, nil, true)
 }

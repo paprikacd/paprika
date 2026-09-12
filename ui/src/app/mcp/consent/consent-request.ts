@@ -23,15 +23,6 @@ export type ConsentRequestResult =
   | { ok: true; value: ConsentRequest }
   | { ok: false; missing: string[] }
 
-/** The five params the server always attaches; `scope` is optional. */
-const REQUIRED_PARAMS = [
-  "client_id",
-  "redirect_uri",
-  "code_challenge",
-  "code_challenge_method",
-  "state",
-] as const
-
 export const SCOPE_READ = "paprika:read"
 export const SCOPE_WRITE = "paprika:write"
 
@@ -41,27 +32,6 @@ function scopesFromParam(scopeParam: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean)
   return requested.length > 0 ? requested : [SCOPE_READ]
-}
-
-export function parseConsentRequest(
-  searchParams: URLSearchParams
-): ConsentRequestResult {
-  const missing = REQUIRED_PARAMS.filter((key) => !searchParams.get(key))
-  if (missing.length > 0) {
-    return { ok: false, missing }
-  }
-
-  return {
-    ok: true,
-    value: {
-      clientId: searchParams.get("client_id")!,
-      redirectUri: searchParams.get("redirect_uri")!,
-      codeChallenge: searchParams.get("code_challenge")!,
-      codeChallengeMethod: searchParams.get("code_challenge_method")!,
-      state: searchParams.get("state")!,
-      requestedScopes: scopesFromParam(searchParams.get("scope") ?? ""),
-    },
-  }
 }
 
 /**
