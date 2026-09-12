@@ -783,14 +783,25 @@ func TestAuthorizeJSONGETUnauthenticatedStillReturns401(t *testing.T) {
 
 // TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent is the required
 // browser-redirect test: an Accept: text/html GET with no console credential
-// gets a 302 to /mcp/consent with the original query string preserved,
-// verbatim, rather than the 401 a JSON caller gets. Critically, this is
-// asserted for BOTH a registered and an unregistered redirect_uri, and the
-// two responses must be identical in shape (same status, same Location
-// prefix) — the redirect to /mcp/consent must never depend on whether
-// redirect_uri validates, or a browser could use it as exactly the oracle
-// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable already closes
-// for JSON callers.
+// gets a 302 to /mcp/consent rather than the 401 a JSON caller gets. Fix
+// round 1, Finding 1b changed what is forwarded: a registered redirect_uri
+// gets the original query string preserved, verbatim, while an unregistered
+// one gets ONLY "?error=invalid_request" — dropping every caller-supplied
+// parameter, including the unregistered redirect_uri itself, so it is never
+// reachable by an unauthenticated caller (see
+// TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI for
+// that property in isolation).
+//
+// Critically, both responses must still be identical in STATUS and PATH —
+// 302 to the exact same fixed /mcp/consent path — even though their query
+// now legitimately differs: a third-party page driving this as a top-level
+// navigation cannot read the Location header or the resulting cross-origin
+// URL, and a cross-origin fetch of this endpoint gets an opaque response,
+// so the differing query content is not an observable oracle the way a
+// directly-inspectable JSON body would be. That is a deliberately narrower
+// notion of "indistinguishable" than
+// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable's byte-identical
+// JSON-path guarantee, which is unaffected by this change and still holds.
 func TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	srv := newTestServerWithRedirects(t, []string{redirect})
@@ -815,9 +826,74 @@ func TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, registeredRec.Code)
 	require.Equal(t, http.StatusFound, unregisteredRec.Code,
-		"a browser probing an unregistered redirect_uri must be treated identically to a registered one")
-	assert.Equal(t, "/mcp/consent?"+registeredQuery, registeredRec.Header().Get("Location"))
-	assert.Equal(t, "/mcp/consent?"+unregisteredQuery, unregisteredRec.Header().Get("Location"))
+		"a browser probing an unregistered redirect_uri must get the same status and fixed path as a registered one")
+	assert.Equal(t, "/mcp/consent?"+registeredQuery, registeredRec.Header().Get("Location"),
+		"a registered client_id/redirect_uri gets the full original query forwarded")
+	assert.Equal(t, "/mcp/consent?error=invalid_request", unregisteredRec.Header().Get("Location"),
+		"an unregistered redirect_uri must never be forwarded to the browser-visible consent redirect")
+}
+
+// TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI proves
+// the required property in isolation: when client_id/redirect_uri fails
+// registration on the browser path, the resulting Location's query has no
+// redirect_uri parameter available to the consent page at all — not merely
+// a different one.
+func TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize?client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256"+
+			"&redirect_uri="+url.QueryEscape("https://evil.example/callback"), nil)
+	req.Header.Set("Accept", "text/html")
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusFound, rec.Code)
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "/mcp/consent", loc.Path)
+	assert.Empty(t, loc.Query().Get("redirect_uri"),
+		"the consent page must not receive any redirect_uri at all for an unregistered one")
+	assert.Equal(t, "invalid_request", loc.Query().Get("error"))
+}
+
+// TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent is Fix round 1,
+// Finding 2's regression test: an already-authenticated browser caller must
+// still go through the consent screen, never straight to a minted code —
+// closing the consent-free grant path the finding identified. It uses an
+// MCP-audience bearer (bearerFor) as the authenticated principal, standing
+// in for any caller that manages to authenticate via
+// authorizeAuthenticator, precisely because that authenticator accepts one
+// in this test setup (see newTestServer's ConsoleAuthenticator comment) —
+// the fix must not depend on which kind of credential authenticated.
+func TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := bearerFor(t, ScopeRead, ScopeWrite)
+	query := "client_id=test&response_type=code&code_challenge=" + pkceChallengeForFix1 +
+		"&code_challenge_method=S256&redirect_uri=" + url.QueryEscape(redirect) + "&state=xyz"
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/mcp/authorize?"+query, nil)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusFound, rec.Code,
+		"an authenticated browser caller must be redirected to consent, not given a code directly")
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, "/mcp/consent", loc.Path)
+	assert.Equal(t, redirect, loc.Query().Get("redirect_uri"),
+		"a registered redirect_uri is still forwarded to consent for an authenticated browser caller")
+	assert.Empty(t, loc.Query().Get("code"),
+		"no authorization code may ever be minted for a browser caller without going through consent")
 }
 
 // TestConsentRequiresAuthentication proves POST /mcp/authorize/consent
@@ -964,6 +1040,77 @@ func TestConsentRejectsEmptyScopes(t *testing.T) {
 	var oerr oauthError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
 	assert.Equal(t, "invalid_scope", oerr.Error)
+}
+
+// TestConsentDenyRoundTripsThroughServer is Fix round 1, Finding 1a's
+// central regression test: clicking Deny must route through the server,
+// which validates client_id/redirect_uri exactly as on approve and returns
+// a redirectTo IT built — carrying error=access_denied and the original
+// state — rather than the UI ever constructing a navigation target itself
+// from the raw, unvalidated redirect_uri. No code is minted on this path.
+func TestConsentDenyRoundTripsThroughServer(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: redirect, State: "xyz123",
+		Decision: "deny",
+	})
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var body consentResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	dest, err := url.Parse(body.RedirectTo)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(dest.String(), redirect))
+	assert.Equal(t, "access_denied", dest.Query().Get("error"))
+	assert.Equal(t, "xyz123", dest.Query().Get("state"))
+	assert.Empty(t, dest.Query().Get("code"), "a denial must never carry an authorization code")
+}
+
+// TestConsentDenyRejectsUnregisteredRedirectURI proves deny is validated
+// exactly as strictly as approve: an attacker cannot use decision=deny as a
+// side door to get the server to build a redirect to an unregistered URI.
+func TestConsentDenyRejectsUnregisteredRedirectURI(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: "https://evil.example/callback", State: "xyz",
+		Decision: "deny",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_request", oerr.Error)
+}
+
+// TestConsentRejectsUnrecognisedDecision proves an unrecognised decision
+// value is rejected outright rather than silently falling through to
+// either approve or deny.
+func TestConsentRejectsUnrecognisedDecision(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+		ClientID: "test", RedirectURI: redirect, State: "xyz",
+		Decision: "maybe",
+	})
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_request", oerr.Error)
 }
 
 // TestAuthorizeConsentTokenRoundTrip drives the FULL flow the design

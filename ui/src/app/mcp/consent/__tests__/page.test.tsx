@@ -104,11 +104,11 @@ describe("MCP consent page", () => {
       name: /make changes to the fleet/i,
     })
     expect(writeCheckbox).not.toBeChecked()
-    expect(screen.queryByText(/roll back releases/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/approve or reject.*deployment gates/i)).not.toBeInTheDocument()
 
     await userEvent.click(writeCheckbox)
     expect(writeCheckbox).toBeChecked()
-    expect(screen.getByText(/roll back releases/i)).toBeInTheDocument()
+    expect(screen.getByText(/approve or reject.*deployment gates/i)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
@@ -117,19 +117,58 @@ describe("MCP consent page", () => {
 
     await userEvent.click(writeCheckbox)
     expect(writeCheckbox).not.toBeChecked()
-    expect(screen.queryByText(/roll back releases/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/approve or reject.*deployment gates/i)).not.toBeInTheDocument()
   })
 
-  it("deny redirects to the exact redirect_uri with error=access_denied and the original state", async () => {
+  // Fix round 1, Finding 1(a): Deny is now a POST to the server, exactly
+  // like Allow, and the page navigates only to the redirectTo the server
+  // returns — it must never build that URL itself from the raw
+  // redirect_uri, which is what let a crafted javascript:-scheme
+  // redirect_uri execute script on this origin before this fix.
+  it("deny posts decision=deny to the server and navigates only to its server-validated redirectTo", async () => {
     const location = stubLocation()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        redirectTo: `${REDIRECT_URI}?error=access_denied&state=xyz123`,
+      }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
     render(<ConsentPage />)
 
     await userEvent.click(await screen.findByRole("button", { name: /deny/i }))
 
-    const url = new URL(location.href)
-    expect(url.origin + url.pathname).toBe(REDIRECT_URI)
-    expect(url.searchParams.get("error")).toBe("access_denied")
-    expect(url.searchParams.get("state")).toBe("xyz123")
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/mcp/authorize/consent")
+    const body = JSON.parse(init.body as string)
+    expect(body.decision).toBe("deny")
+    expect(body.client_id).toBe("claude-desktop")
+    expect(body.redirect_uri).toBe(REDIRECT_URI)
+    expect(body.state).toBe("xyz123")
+
+    await waitFor(() => expect(location.href).not.toBe(""))
+    const parsed = new URL(location.href)
+    expect(parsed.origin + parsed.pathname).toBe(REDIRECT_URI)
+    expect(parsed.searchParams.get("error")).toBe("access_denied")
+    expect(parsed.searchParams.get("state")).toBe("xyz123")
+  })
+
+  it("shows an error and never navigates when the server rejects a deny", async () => {
+    stubLocation()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "invalid_request" }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(<ConsentPage />)
+
+    await userEvent.click(await screen.findByRole("button", { name: /deny/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/invalid_request/i)).toBeInTheDocument()
   })
 
   it("shows a clear error and never calls fetch when required params are missing", async () => {

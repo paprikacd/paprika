@@ -54,7 +54,12 @@ function CallbackHandler() {
         const returnTo = consumeReturnTo()
         let dest = "/dashboard/"
         if (returnTo && !returnTo.startsWith("/login")) {
-          const [path, search = ""] = returnTo.split("?")
+          // indexOf, not split("?") — a query component may legally contain
+          // its own literal "?", and split would silently drop everything
+          // after a second one.
+          const qIndex = returnTo.indexOf("?")
+          const path = qIndex === -1 ? returnTo : returnTo.slice(0, qIndex)
+          const search = qIndex === -1 ? "" : returnTo.slice(qIndex + 1)
           const normalizedPath = path.endsWith("/") ? path : path + "/"
           dest = search ? `${normalizedPath}?${search}` : normalizedPath
         }

@@ -63,23 +63,53 @@ export function parseConsentRequest(
 }
 
 /**
- * Builds the deny redirect: the original `redirect_uri`, used verbatim, with
- * `error=access_denied` and the original `state` appended. This is the ONLY
- * place a denial is allowed to send the browser — never anything derived or
- * reconstructed from user input.
+ * Schemes buildDenyRedirect will ever navigate to. `https:` always; `http:`
+ * only for loopback, matching how a local dev OAuth client is registered.
+ * Deliberately excludes `javascript:`, `data:`, and everything else a
+ * malicious `redirect_uri` could carry.
  */
-export function buildDenyRedirect(redirectUri: string, state: string): string {
+const ALLOWED_DENY_SCHEMES = new Set(["https:"])
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"])
+
+function isAllowedDenyTarget(url: URL): boolean {
+  if (ALLOWED_DENY_SCHEMES.has(url.protocol)) return true
+  return url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)
+}
+
+/**
+ * Builds the deny redirect: the original `redirect_uri`, used verbatim (past
+ * an allowlist check), with `error=access_denied` and the original `state`
+ * appended.
+ *
+ * DEFENCE IN DEPTH ONLY — as of Fix round 1, Finding 1a, the consent page
+ * no longer calls this to build a navigation target itself; Deny is routed
+ * through POST /mcp/authorize/consent with decision="deny", and the browser
+ * navigates only to the server-validated `redirectTo` that endpoint
+ * returns. This function is kept (and tested) purely as a second layer: it
+ * must never be able to produce a `javascript:`, `data:`, or other
+ * non-allowlisted navigable string, even if some future caller passes it
+ * unvalidated input directly.
+ *
+ * Unlike the pre-fix version, there is NO fallback branch that raw-
+ * concatenates onto a string that failed to parse as a URL — that branch
+ * was the sink a crafted `redirect_uri` (e.g. a `javascript:` URI, whose
+ * trailing `//` comments out the appended query) exploited to execute
+ * script on this origin when assigned to `location.href`. A `redirect_uri`
+ * that fails to parse, or whose scheme is not allowlisted, is rejected
+ * outright: null is returned instead of any string derived from it.
+ */
+export function buildDenyRedirect(
+  redirectUri: string,
+  state: string
+): string | null {
+  let url: URL
   try {
-    const url = new URL(redirectUri)
-    url.searchParams.set("error", "access_denied")
-    if (state) url.searchParams.set("state", state)
-    return url.toString()
+    url = new URL(redirectUri)
   } catch {
-    // redirect_uri didn't parse as an absolute URL — still append verbatim
-    // rather than refusing to deny.
-    const params = new URLSearchParams({ error: "access_denied" })
-    if (state) params.set("state", state)
-    const separator = redirectUri.includes("?") ? "&" : "?"
-    return `${redirectUri}${separator}${params.toString()}`
+    return null
   }
+  if (!isAllowedDenyTarget(url)) return null
+  url.searchParams.set("error", "access_denied")
+  if (state) url.searchParams.set("state", state)
+  return url.toString()
 }

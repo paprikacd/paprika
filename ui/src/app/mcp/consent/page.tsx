@@ -9,11 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth-context"
 
-import {
-  buildDenyRedirect,
-  parseConsentRequest,
-  SCOPE_WRITE,
-} from "./consent-request"
+import { parseConsentRequest, SCOPE_WRITE } from "./consent-request"
 
 // A quiet mark, not a mascot — sized to sit above the fold text, not below a
 // hero. The stem is the point; keep it even if the body gets simplified.
@@ -109,12 +105,16 @@ function ConsentHandler() {
   } = request.value
   const writeRequested = requestedScopes.includes(SCOPE_WRITE)
 
-  function handleDeny() {
-    if (!request.ok) return
-    window.location.href = buildDenyRedirect(redirectUri, state)
-  }
-
-  async function handleApprove() {
+  // submitConsent is shared by Allow and Deny: both are server round trips
+  // that end with the browser navigating to whatever `redirectTo` the
+  // server returns. This is deliberate (Fix round 1, Finding 1a) — the UI
+  // must never build a navigation target itself from the raw, unvalidated
+  // redirect_uri a client supplied. The server re-validates client_id and
+  // redirect_uri for a deny exactly as it does for an approve (see
+  // handleAuthorizeConsent) before it ever constructs redirectTo, so the
+  // only thing this page ever assigns to location.href is a URL the server
+  // itself vouched for.
+  async function submitConsent(decision: "approve" | "deny", scopes: string[]) {
     if (submittingRef.current) return
     submittingRef.current = true
     setIsSubmitting(true)
@@ -133,7 +133,8 @@ function ConsentHandler() {
           code_challenge: codeChallenge,
           code_challenge_method: codeChallengeMethod,
           state,
-          scopes: grantWrite ? ["paprika:read", SCOPE_WRITE] : ["paprika:read"],
+          scopes,
+          decision,
         }),
       })
 
@@ -159,6 +160,17 @@ function ConsentHandler() {
       submittingRef.current = false
       setIsSubmitting(false)
     }
+  }
+
+  function handleDeny() {
+    void submitConsent("deny", [])
+  }
+
+  async function handleApprove() {
+    await submitConsent(
+      "approve",
+      grantWrite ? ["paprika:read", SCOPE_WRITE] : ["paprika:read"]
+    )
   }
 
   if (isLoading) {
@@ -253,8 +265,11 @@ function ConsentHandler() {
 
               {grantWrite && (
                 <p className="rounded-md bg-warning/10 px-2.5 py-2 text-xs text-warning">
-                  This lets {clientId} roll back releases, abort rollouts
-                  and cancel pipelines on your behalf.
+                  This lets {clientId} sync applications, approve or reject
+                  deployment gates, promote and deploy releases, and control
+                  pipelines and rollouts — rolling back, aborting,
+                  cancelling, holding, resuming, retrying or skipping steps
+                  — on your behalf.
                 </p>
               )}
             </div>

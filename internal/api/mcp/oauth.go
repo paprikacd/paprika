@@ -170,18 +170,26 @@ type authCodeRecord struct {
 // On authentication failure, a caller that looks like a browser (an Accept
 // header containing "text/html") is redirected to consentPath instead of
 // getting a 401, so a human with no console session yet can complete login
-// and consent there. This redirect performs NO validation of its own and
-// unconditionally forwards the raw query string — see redirectToConsent —
-// so it reveals nothing about whether client_id or redirect_uri is
-// registered, keeping the same oracle-closed property the JSON 401 path
-// already has. A non-browser (JSON/API) caller keeps getting exactly the
-// pre-existing 401.
+// and consent there — see redirectToConsent for the validation this
+// performs before choosing what to forward. A non-browser (JSON/API) caller
+// keeps getting exactly the pre-existing 401.
 //
-// Only once a caller is authenticated does validateAuthorizeRequest run,
-// and only then can a 400 distinguish an unregistered redirect_uri, a bad
-// response_type, or missing PKCE parameters from one another — see its doc
-// comment for why client_id and redirect_uri are still collapsed into one
-// response at that stage.
+// A caller that DOES authenticate but still looks like a browser is ALSO
+// sent to consentPath rather than getting a code minted directly here (Fix
+// round 1, Finding 2): explicit human consent is required for every
+// browser-driven authorization, not only the unauthenticated case. Skipping
+// straight to negotiateScope for an authenticated browser would let any
+// caller that manages to authenticate — today, only a console
+// principal, which never carries Scopes and so this path is harmless in
+// practice, but the bypass itself must not exist — mint a code with no
+// consent screen ever shown. Only a non-browser (JSON/API) authenticated
+// caller keeps the pre-existing direct-grant behaviour below.
+//
+// Only once a caller is authenticated AND does not look like a browser does
+// validateAuthorizeRequest run, and only then can a 400 distinguish an
+// unregistered redirect_uri, a bad response_type, or missing PKCE
+// parameters from one another — see its doc comment for why client_id and
+// redirect_uri are still collapsed into one response at that stage.
 func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -192,10 +200,15 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 	principal, err := s.authorizeAuthenticator.Authenticate(ctx)
 	if err != nil {
 		if looksLikeBrowser(r) {
-			redirectToConsent(w, r)
+			s.redirectToConsent(w, r)
 			return
 		}
 		s.writeUnauthenticated(w)
+		return
+	}
+
+	if looksLikeBrowser(r) {
+		s.redirectToConsent(w, r)
 		return
 	}
 
@@ -242,12 +255,29 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 // against an already-validated, exact-match-registered redirectURI and need
 // to build the identical final redirect target from it.
 func buildRedirectWithCode(redirectURI, code, state string) (string, error) {
+	return buildRedirectWithParam(redirectURI, "code", code, state)
+}
+
+// buildRedirectWithError appends an OAuth error code (e.g. "access_denied")
+// and, if non-empty, state to redirectURI's query string. Used by
+// handleAuthorizeConsent's deny path (Fix round 1, Finding 1a) so a denial
+// is always sent to a URL this server itself validated and built — never
+// one constructed in client-side script from unvalidated input.
+func buildRedirectWithError(redirectURI, errorCode, state string) (string, error) {
+	return buildRedirectWithParam(redirectURI, "error", errorCode, state)
+}
+
+// buildRedirectWithParam is the shared implementation behind
+// buildRedirectWithCode and buildRedirectWithError: it parses redirectURI,
+// sets a single named query parameter plus, if non-empty, state, and
+// returns the resulting URL as a string.
+func buildRedirectWithParam(redirectURI, key, value, state string) (string, error) {
 	dest, err := url.Parse(redirectURI)
 	if err != nil {
 		return "", fmt.Errorf("mcp: parse redirect_uri: %w", err)
 	}
 	values := dest.Query()
-	values.Set("code", code)
+	values.Set(key, value)
 	if state != "" {
 		values.Set("state", state)
 	}
@@ -268,21 +298,32 @@ func looksLikeBrowser(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// redirectToConsent sends a browser-like, unauthenticated GET
-// /mcp/authorize to consentPath, preserving the original request's raw
-// query string byte-for-byte. It deliberately performs NO validation of
-// client_id, redirect_uri, or PKCE before redirecting — every such request
-// gets this exact same 302 to this exact same fixed path, regardless of
-// whether any of those parameters would ultimately validate. That is what
-// keeps this closed as an oracle: a browser probing an unregistered
-// redirect_uri this way learns nothing a JSON caller could not, since real
-// validation happens only later, in handleAuthorizeConsent, once the caller
-// is authenticated and any error response cannot be observed by a
-// third-party site driving the browser's navigation.
-func redirectToConsent(w http.ResponseWriter, r *http.Request) {
+// redirectToConsent sends a browser-like GET /mcp/authorize to consentPath —
+// whether or not the caller is authenticated (Fix round 1, Finding 2 also
+// routes an authenticated browser here). It validates client_id and
+// redirect_uri registration FIRST (Fix round 1, Finding 1b): a valid pair
+// gets the original request's raw query string forwarded byte-for-byte, an
+// invalid pair gets ONLY "?error=invalid_request" forwarded, dropping every
+// other caller-supplied parameter (including the unregistered redirect_uri
+// itself, which must never be echoed anywhere in the response).
+//
+// Both outcomes are still a 302 to this exact same fixed path, which is
+// what keeps this closed as an oracle despite now validating first: a
+// third-party page driving this as a top-level browser navigation can
+// neither read the Location header nor observe the resulting cross-origin
+// URL, and a cross-origin fetch of this endpoint gets an opaque response —
+// so the differing query shape between the two outcomes is not observable
+// to an attacker, unlike a directly-inspectable JSON response would be. See
+// TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent.
+func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
 	dest := consentPath
-	if r.URL.RawQuery != "" {
-		dest += "?" + r.URL.RawQuery
+	if s.clientIDAllowed(q.Get("client_id")) && s.isRegisteredRedirect(q.Get("redirect_uri")) {
+		if r.URL.RawQuery != "" {
+			dest += "?" + r.URL.RawQuery
+		}
+	} else {
+		dest += "?error=invalid_request"
 	}
 	//nolint:gosec // dest always starts with the fixed constant consentPath; only the query
 	// string (never the scheme or host) comes from the request, so this can never redirect
@@ -356,6 +397,16 @@ func validatePKCE(w http.ResponseWriter, codeChallenge, codeChallengeMethod stri
 	return true
 }
 
+// decisionApprove and decisionDeny are the two values consentRequest.Decision
+// accepts. An empty Decision is treated as decisionApprove, matching the
+// field's pre-existing behaviour from before Decision was added — every
+// caller that never sends it (including every pre-existing test) keeps
+// getting the approve path.
+const (
+	decisionApprove = "approve"
+	decisionDeny    = "deny"
+)
+
 // consentRequest is the JSON body POST /mcp/authorize/consent accepts. It
 // mirrors the query parameters GET /mcp/authorize takes, plus Scopes: the
 // explicit list of scopes the user ticked in the consent UI. This is
@@ -363,6 +414,16 @@ func validatePKCE(w http.ResponseWriter, codeChallenge, codeChallengeMethod stri
 // the plain console self-signed token /auth/token issues) carries no
 // paprika:* scope claim at all, so consent is the only source of truth for
 // what is granted on this path.
+//
+// Decision (Fix round 1, Finding 1a) is "approve" or "deny" — an empty
+// value defaults to "approve". Routing Deny through this endpoint, rather
+// than having the UI build a rejection redirect from the raw redirect_uri
+// itself, is the fix for the CRITICAL finding that a crafted
+// "javascript:"-scheme redirect_uri could execute attacker script on the
+// console origin when the UI assigned an unvalidated navigation target to
+// location.href: the server validates client_id/redirect_uri exactly as on
+// approve (see handleAuthorizeConsent) and is the only party that ever
+// builds the resulting navigation target.
 //
 //nolint:tagliatelle // matches the snake_case field names GET /mcp/authorize's query parameters use.
 type consentRequest struct {
@@ -372,6 +433,7 @@ type consentRequest struct {
 	CodeChallengeMethod string   `json:"code_challenge_method"`
 	State               string   `json:"state"`
 	Scopes              []string `json:"scopes"`
+	Decision            string   `json:"decision"`
 }
 
 // consentResponse is what a successful POST /mcp/authorize/consent returns:
@@ -384,13 +446,24 @@ type consentResponse struct {
 
 // handleAuthorizeConsent implements POST /mcp/authorize/consent: the
 // endpoint the consent UI (consentPath) calls once an authenticated console
-// user has ticked which scopes to grant. It authenticates with the SAME
-// console authenticator stack GET /mcp/authorize uses (never the
-// MCP-audience one), re-validates client_id/redirect_uri/PKCE exactly as
-// the GET path does (the request could reach here directly, not only via
-// the browser redirect), validates the ticked scopes via consentedScope,
-// and mints an authorization code bound to both the authenticated principal
-// and exactly the consented scope.
+// user has either ticked which scopes to grant, or clicked Deny. It
+// authenticates with the SAME console authenticator stack GET
+// /mcp/authorize uses (never the MCP-audience one), and re-validates
+// client_id/redirect_uri exactly as the GET path does (the request could
+// reach here directly, not only via the browser redirect) BEFORE branching
+// on Decision.
+//
+// Decision == "deny" (Fix round 1, Finding 1a) skips PKCE and scope
+// validation entirely — no code is minted — and returns a redirectTo built
+// by buildRedirectWithError carrying error=access_denied and the original
+// state, appended to the now-validated redirect_uri. This is the only
+// server-approved rejection target; the UI must never construct one itself
+// from the raw, unvalidated redirect_uri a client supplied.
+//
+// Decision == "approve" (the default when omitted, preserving this
+// endpoint's pre-existing behaviour) re-validates PKCE, validates the
+// ticked scopes via consentedScope, and mints an authorization code bound
+// to both the authenticated principal and exactly the consented scope.
 //
 // CSRF: this endpoint is state-changing (POST) but is not vulnerable to a
 // classic cross-site CSRF, because it authenticates via an Authorization
@@ -423,6 +496,35 @@ func (s *Server) handleAuthorizeConsent(w http.ResponseWriter, r *http.Request) 
 	if !s.validateClientAndRedirect(w, req.ClientID, req.RedirectURI) {
 		return
 	}
+
+	switch req.Decision {
+	case "", decisionApprove:
+		s.finishConsentApprove(r.Context(), w, principal, &req)
+	case decisionDeny:
+		finishConsentDeny(w, &req)
+	default:
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "decision must be \"approve\" or \"deny\"")
+	}
+}
+
+// finishConsentDeny builds the server-validated deny redirect (carrying
+// error=access_denied and the original state) and returns it as the
+// response's redirectTo. Called only after validateClientAndRedirect has
+// already confirmed client_id and redirect_uri are registered — see Fix
+// round 1, Finding 1(a): the browser must never construct this URL itself.
+func finishConsentDeny(w http.ResponseWriter, req *consentRequest) {
+	dest, err := buildRedirectWithError(req.RedirectURI, "access_denied", req.State)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, consentResponse{RedirectTo: dest})
+}
+
+// finishConsentApprove validates PKCE and the consented scope, mints the
+// authorization code, and returns the redirect the browser should follow to
+// complete the flow.
+func (s *Server) finishConsentApprove(ctx context.Context, w http.ResponseWriter, principal *auth.Principal, req *consentRequest) {
 	if !validatePKCE(w, req.CodeChallenge, req.CodeChallengeMethod) {
 		return
 	}
