@@ -35,6 +35,14 @@ const REQUIRED_PARAMS = [
 export const SCOPE_READ = "paprika:read"
 export const SCOPE_WRITE = "paprika:write"
 
+function scopesFromParam(scopeParam: string): string[] {
+  const requested = scopeParam
+    .split(/\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return requested.length > 0 ? requested : [SCOPE_READ]
+}
+
 export function parseConsentRequest(
   searchParams: URLSearchParams
 ): ConsentRequestResult {
@@ -42,12 +50,6 @@ export function parseConsentRequest(
   if (missing.length > 0) {
     return { ok: false, missing }
   }
-
-  const scopeParam = searchParams.get("scope") ?? ""
-  const requested = scopeParam
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
 
   return {
     ok: true,
@@ -57,9 +59,94 @@ export function parseConsentRequest(
       codeChallenge: searchParams.get("code_challenge")!,
       codeChallengeMethod: searchParams.get("code_challenge_method")!,
       state: searchParams.get("state")!,
-      requestedScopes: requested.length > 0 ? requested : [SCOPE_READ],
+      requestedScopes: scopesFromParam(searchParams.get("scope") ?? ""),
     },
   }
+}
+
+/**
+ * Shape of a successful GET /mcp/authorize/pending?rid=... response — see
+ * pendingAuthzResponse in internal/api/mcp/oauth.go, which this must match
+ * field for field.
+ *
+ * Fix round 2, Finding 1: /mcp/authorize's redirect to the consent page now
+ * only ever carries an opaque `rid`, identical in shape whether the
+ * original request was valid, had an unregistered client_id, or an
+ * unregistered redirect_uri — collapsing what used to be a distinguishable
+ * 302 shape (an enumeration oracle any unauthenticated caller could probe
+ * directly with curl) into one. This endpoint — gated by the same
+ * authenticator as the rest of the authenticated MCP surface, checked
+ * before the rid is ever looked up — is now the only way to learn what a
+ * given rid actually refers to.
+ */
+export interface PendingAuthzResponse {
+  client_id: string
+  redirect_uri: string
+  code_challenge: string
+  code_challenge_method: string
+  state: string
+  scope?: string
+}
+
+function toConsentRequest(body: PendingAuthzResponse): ConsentRequest {
+  return {
+    clientId: body.client_id,
+    redirectUri: body.redirect_uri,
+    codeChallenge: body.code_challenge,
+    codeChallengeMethod: body.code_challenge_method,
+    state: body.state,
+    requestedScopes: scopesFromParam(body.scope ?? ""),
+  }
+}
+
+/**
+ * Resolves `rid` (the only thing the consent page's URL carries now) to the
+ * actual authorization request via the authenticated GET
+ * /mcp/authorize/pending endpoint.
+ *
+ * Every failure mode — no rid, a network error, a non-2xx response (unknown,
+ * expired, or genuinely invalid rid; or the caller isn't authenticated), or
+ * a malformed/incomplete body — collapses to the same `{ ok: false }` shape
+ * the page already knows how to render as "Can't show this request". None of
+ * these are actionable any differently by the human at the keyboard, and
+ * the security property here lives entirely server-side (see oauth.go's
+ * redirectToConsent / handleAuthorizePending) — this function's job is only
+ * to turn "resolved" into the shape the rest of the page already expects,
+ * not to make any security decision of its own.
+ */
+export async function fetchPendingAuthz(
+  rid: string,
+  idToken: string
+): Promise<ConsentRequestResult> {
+  if (!rid) return { ok: false, missing: ["rid"] }
+
+  let res: Response
+  try {
+    res = await fetch(`/mcp/authorize/pending?rid=${encodeURIComponent(rid)}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    })
+  } catch {
+    return { ok: false, missing: ["rid"] }
+  }
+  if (!res.ok) return { ok: false, missing: ["rid"] }
+
+  let body: PendingAuthzResponse
+  try {
+    body = (await res.json()) as PendingAuthzResponse
+  } catch {
+    return { ok: false, missing: ["rid"] }
+  }
+  if (
+    !body ||
+    !body.client_id ||
+    !body.redirect_uri ||
+    !body.code_challenge ||
+    !body.code_challenge_method
+  ) {
+    return { ok: false, missing: ["rid"] }
+  }
+
+  return { ok: true, value: toConsentRequest(body) }
 }
 
 /**

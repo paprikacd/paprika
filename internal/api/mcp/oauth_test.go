@@ -144,6 +144,72 @@ func TestAuthorizeUnauthenticatedRequestsAreIndistinguishable(t *testing.T) {
 	assert.Equal(t, registered.Header().Get("WWW-Authenticate"), unregistered.Header().Get("WWW-Authenticate"))
 }
 
+// TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable is the
+// Fix round 2, Finding 1 regression test. The JSON-path guarantee above
+// (TestAuthorizeUnauthenticatedRequestsAreIndistinguishable) only ever
+// exercised an unauthenticated caller with no "text/html" Accept header, so
+// it gave false assurance: it never actually drove the browser
+// (redirectToConsent) branch at all.
+//
+// An attacker does not need a victim's browser to exploit a differently
+// shaped browser-path response: they can curl /mcp/authorize themselves,
+// unauthenticated, with Accept: text/html, and directly compare a
+// registered-pair response against a bad-redirect_uri or bad-client_id one.
+// Before this fix, a registered pair got the full original query string
+// forwarded to /mcp/consent while an invalid one got only
+// "?error=invalid_request" — two distinguishable response shapes, i.e. an
+// oracle over client_id/redirect_uri registration, reachable with zero
+// authentication and no victim at all.
+//
+// The fix collapses every outcome — valid pair, bad redirect_uri, bad
+// client_id, or no credential — into the exact same response shape: a 302 to
+// the fixed /mcp/consent path carrying a single "rid" query parameter and
+// nothing else. This test asserts that shape survives all four cases, and
+// (per this fix's required TDD discipline) FAILS against the pre-fix code,
+// which forwarded either the raw query or "error=invalid_request" instead.
+func TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	get := func(query string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/mcp/authorize?"+query, nil)
+		req.Header.Set("Accept", "text/html,application/xhtml+xml")
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	registeredQuery := "client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape(redirect)
+	badRedirectQuery := "client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape("https://evil.example/callback")
+	badClientQuery := "client_id=not-a-client&response_type=code&code_challenge=abc&code_challenge_method=S256" +
+		"&redirect_uri=" + url.QueryEscape(redirect)
+
+	cases := map[string]*httptest.ResponseRecorder{
+		"registered":   get(registeredQuery),
+		"bad_redirect": get(badRedirectQuery),
+		"bad_client":   get(badClientQuery),
+	}
+
+	for name, rec := range cases {
+		require.Equal(t, http.StatusFound, rec.Code, "case %s", name)
+		loc, err := url.Parse(rec.Header().Get("Location"))
+		require.NoError(t, err, "case %s", name)
+		assert.Equal(t, "/mcp/consent", loc.Path, "case %s: path must be the fixed consent path", name)
+
+		keys := make([]string, 0, len(loc.Query()))
+		for k := range loc.Query() {
+			keys = append(keys, k)
+		}
+		assert.Equal(t, []string{"rid"}, keys,
+			"case %s: the only observable difference between outcomes must be the random rid value, "+
+				"never which query keys are present", name)
+	}
+}
+
 // TestAuthorizeCompletesWithAValidBearerToken drives the authorization
 // endpoint all the way to a redirect, using a valid Paprika bearer token —
 // obtained, in production, only after the existing Google OIDC login — to
@@ -781,27 +847,47 @@ func TestAuthorizeJSONGETUnauthenticatedStillReturns401(t *testing.T) {
 	assert.Contains(t, rec.Header().Get("WWW-Authenticate"), "resource_metadata")
 }
 
+// ridFromLocation extracts the "rid" query parameter from a 302 response's
+// Location header, failing the test if the path isn't the fixed consentPath
+// or no rid is present.
+func ridFromLocation(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, "/mcp/consent", loc.Path)
+	rid := loc.Query().Get("rid")
+	require.NotEmpty(t, rid)
+	return rid
+}
+
+// getPendingAuthz drives GET /mcp/authorize/pending?rid=... with bearer (may
+// be "" for unauthenticated) and returns the recorded response.
+func getPendingAuthz(t *testing.T, h http.Handler, rid, bearer string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize/pending?rid="+url.QueryEscape(rid), nil)
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
 // TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent is the required
 // browser-redirect test: an Accept: text/html GET with no console credential
-// gets a 302 to /mcp/consent rather than the 401 a JSON caller gets. Fix
-// round 1, Finding 1b changed what is forwarded: a registered redirect_uri
-// gets the original query string preserved, verbatim, while an unregistered
-// one gets ONLY "?error=invalid_request" — dropping every caller-supplied
-// parameter, including the unregistered redirect_uri itself, so it is never
-// reachable by an unauthenticated caller (see
-// TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI for
-// that property in isolation).
+// gets a 302 to /mcp/consent rather than the 401 a JSON caller gets.
 //
-// Critically, both responses must still be identical in STATUS and PATH —
-// 302 to the exact same fixed /mcp/consent path — even though their query
-// now legitimately differs: a third-party page driving this as a top-level
-// navigation cannot read the Location header or the resulting cross-origin
-// URL, and a cross-origin fetch of this endpoint gets an opaque response,
-// so the differing query content is not an observable oracle the way a
-// directly-inspectable JSON body would be. That is a deliberately narrower
-// notion of "indistinguishable" than
-// TestAuthorizeUnauthenticatedRequestsAreIndistinguishable's byte-identical
-// JSON-path guarantee, which is unaffected by this change and still holds.
+// Fix round 2, Finding 1: a registered pair and an unregistered one must now
+// produce the exact same response shape here — a 302 to consentPath with
+// only a "rid" query parameter — since a differently-shaped response is an
+// oracle any unauthenticated caller can probe directly with curl, no victim
+// required (see TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable
+// for that property in isolation). Whether each rid actually resolves to a
+// valid or invalid stashed request is only observable via a SEPARATE,
+// authenticated GET /mcp/authorize/pending call — which is exactly what this
+// test drives next, confirming the registered rid resolves to the original
+// parameters and the unregistered one collapses to invalid_request.
 func TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	srv := newTestServerWithRedirects(t, []string{redirect})
@@ -827,17 +913,32 @@ func TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent(t *testing.T) {
 	require.Equal(t, http.StatusFound, registeredRec.Code)
 	require.Equal(t, http.StatusFound, unregisteredRec.Code,
 		"a browser probing an unregistered redirect_uri must get the same status and fixed path as a registered one")
-	assert.Equal(t, "/mcp/consent?"+registeredQuery, registeredRec.Header().Get("Location"),
-		"a registered client_id/redirect_uri gets the full original query forwarded")
-	assert.Equal(t, "/mcp/consent?error=invalid_request", unregisteredRec.Header().Get("Location"),
-		"an unregistered redirect_uri must never be forwarded to the browser-visible consent redirect")
+
+	registeredRid := ridFromLocation(t, registeredRec)
+	unregisteredRid := ridFromLocation(t, unregisteredRec)
+	assert.NotEqual(t, registeredRid, unregisteredRid, "each redirect mints its own fresh rid")
+
+	bearer := consoleBearerFor(t, "console-user")
+
+	pendingOK := getPendingAuthz(t, mux, registeredRid, bearer)
+	require.Equal(t, http.StatusOK, pendingOK.Code, pendingOK.Body.String())
+	var pendingBody pendingAuthzResponse
+	require.NoError(t, json.Unmarshal(pendingOK.Body.Bytes(), &pendingBody))
+	assert.Equal(t, redirect, pendingBody.RedirectURI,
+		"the registered rid resolves to the original request's redirect_uri")
+
+	pendingBad := getPendingAuthz(t, mux, unregisteredRid, bearer)
+	assert.Equal(t, http.StatusBadRequest, pendingBad.Code,
+		"an unregistered redirect_uri must never resolve to a valid pending request")
+	var oerr oauthError
+	require.NoError(t, json.Unmarshal(pendingBad.Body.Bytes(), &oerr))
+	assert.Equal(t, "invalid_request", oerr.Error)
 }
 
 // TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI proves
 // the required property in isolation: when client_id/redirect_uri fails
-// registration on the browser path, the resulting Location's query has no
-// redirect_uri parameter available to the consent page at all — not merely
-// a different one.
+// registration, the resulting rid never resolves to any redirect_uri at all
+// (nor to a valid record of any kind) — not merely a different one.
 func TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	srv := newTestServerWithRedirects(t, []string{redirect})
@@ -852,12 +953,15 @@ func TestAuthorizeUnregisteredRedirectURIReachesConsentWithNoRedirectURI(t *test
 	mux.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusFound, rec.Code)
-	loc, err := url.Parse(rec.Header().Get("Location"))
-	require.NoError(t, err)
-	assert.Equal(t, "/mcp/consent", loc.Path)
-	assert.Empty(t, loc.Query().Get("redirect_uri"),
-		"the consent page must not receive any redirect_uri at all for an unregistered one")
-	assert.Equal(t, "invalid_request", loc.Query().Get("error"))
+	rid := ridFromLocation(t, rec)
+
+	pending := getPendingAuthz(t, mux, rid, consoleBearerFor(t, "console-user"))
+	assert.Equal(t, http.StatusBadRequest, pending.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(pending.Body.Bytes(), &body))
+	_, hasRedirectURI := body["redirect_uri"]
+	assert.False(t, hasRedirectURI,
+		"the consent page must not be able to obtain any redirect_uri at all for an unregistered one")
 }
 
 // TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent is Fix round 1,
@@ -887,13 +991,59 @@ func TestAuthorizeAuthenticatedBrowserGETIsRedirectedToConsent(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, rec.Code,
 		"an authenticated browser caller must be redirected to consent, not given a code directly")
+	rid := ridFromLocation(t, rec)
+	assert.Empty(t, ridFromLocationQuery(t, rec).Get("code"),
+		"no authorization code may ever be minted for a browser caller without going through consent")
+
+	pending := getPendingAuthz(t, mux, rid, bearer)
+	require.Equal(t, http.StatusOK, pending.Code, pending.Body.String())
+	var pendingBody pendingAuthzResponse
+	require.NoError(t, json.Unmarshal(pending.Body.Bytes(), &pendingBody))
+	assert.Equal(t, redirect, pendingBody.RedirectURI,
+		"a registered redirect_uri is still resolvable via the pending lookup for an authenticated browser caller")
+}
+
+// ridFromLocationQuery returns the full parsed query of rec's Location
+// header, for asserting on parameters other than rid (e.g. that no "code" is
+// ever present alongside it).
+func ridFromLocationQuery(t *testing.T, rec *httptest.ResponseRecorder) url.Values {
+	t.Helper()
 	loc, err := url.Parse(rec.Header().Get("Location"))
 	require.NoError(t, err)
-	assert.Equal(t, "/mcp/consent", loc.Path)
-	assert.Equal(t, redirect, loc.Query().Get("redirect_uri"),
-		"a registered redirect_uri is still forwarded to consent for an authenticated browser caller")
-	assert.Empty(t, loc.Query().Get("code"),
-		"no authorization code may ever be minted for a browser caller without going through consent")
+	return loc.Query()
+}
+
+// TestAuthorizePendingRequiresAuthentication proves GET
+// /mcp/authorize/pending authenticates BEFORE it ever looks at rid — an
+// unauthenticated caller gets exactly the same 401 regardless of whether the
+// rid it supplies is valid, invalid, expired, or entirely made up. This is
+// what stops this endpoint from reopening the oracle redirectToConsent
+// closes: an anonymous prober gains nothing by trying different rid values.
+func TestAuthorizePendingRequiresAuthentication(t *testing.T) {
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/mcp/authorize?client_id=test&response_type=code&code_challenge=abc&code_challenge_method=S256"+
+			"&redirect_uri="+url.QueryEscape(redirect), nil)
+	req.Header.Set("Accept", "text/html")
+	registered := httptest.NewRecorder()
+	mux.ServeHTTP(registered, req)
+	require.Equal(t, http.StatusFound, registered.Code)
+	validRid := ridFromLocation(t, registered)
+
+	for name, rid := range map[string]string{
+		"valid_rid":   validRid,
+		"unknown_rid": "not-a-real-rid",
+		"empty_rid":   "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := getPendingAuthz(t, mux, rid, "")
+			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		})
+	}
 }
 
 // TestConsentRequiresAuthentication proves POST /mcp/authorize/consent
@@ -1138,17 +1288,20 @@ func TestAuthorizeConsentTokenRoundTrip(t *testing.T) {
 	mux.ServeHTTP(getRec, getReq)
 	require.Equal(t, http.StatusFound, getRec.Code)
 
-	loc, err := url.Parse(getRec.Header().Get("Location"))
-	require.NoError(t, err)
-	require.Equal(t, "/mcp/consent", loc.Path)
+	rid := ridFromLocation(t, getRec)
 
 	bearer := consoleBearerFor(t, "console-user")
+	pendingRec := getPendingAuthz(t, mux, rid, bearer)
+	require.Equal(t, http.StatusOK, pendingRec.Code, pendingRec.Body.String())
+	var pending pendingAuthzResponse
+	require.NoError(t, json.Unmarshal(pendingRec.Body.Bytes(), &pending))
+
 	consentRec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
-		ClientID:            loc.Query().Get("client_id"),
-		RedirectURI:         loc.Query().Get("redirect_uri"),
-		CodeChallenge:       loc.Query().Get("code_challenge"),
-		CodeChallengeMethod: loc.Query().Get("code_challenge_method"),
-		State:               loc.Query().Get("state"),
+		ClientID:            pending.ClientID,
+		RedirectURI:         pending.RedirectURI,
+		CodeChallenge:       pending.CodeChallenge,
+		CodeChallengeMethod: pending.CodeChallengeMethod,
+		State:               pending.State,
 		Scopes:              []string{"paprika:read"},
 	})
 	require.Equal(t, http.StatusOK, consentRec.Code, consentRec.Body.String())

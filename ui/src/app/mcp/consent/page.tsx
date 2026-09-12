@@ -9,7 +9,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { useAuth } from "@/lib/auth-context"
 
-import { parseConsentRequest, SCOPE_WRITE } from "./consent-request"
+import {
+  fetchPendingAuthz,
+  SCOPE_WRITE,
+  type ConsentRequestResult,
+} from "./consent-request"
 
 // A quiet mark, not a mascot — sized to sit above the fold text, not below a
 // hero. The stem is the point; keep it even if the body gets simplified.
@@ -52,47 +56,100 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+function CantShowRequest({ missing }: { missing: string[] }) {
+  return (
+    <ConsentShell>
+      <div className="w-full max-w-sm space-y-4 rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/10">
+        <CapsicumMark />
+        <h1 className="text-lg font-semibold text-destructive text-balance">
+          Can&apos;t show this request
+        </h1>
+        <p className="text-sm text-pretty text-muted-foreground">
+          The request could not be loaded ({missing.join(", ")}). Ask the
+          application to restart the authorisation request.
+        </p>
+      </div>
+    </ConsentShell>
+  )
+}
+
 function ConsentHandler() {
   const searchParams = useSearchParams()
   const { user, idToken, isLoading, login } = useAuth()
 
   const loginTriggered = useRef(false)
   const submittingRef = useRef(false)
+  const pendingFetchTriggered = useRef(false)
 
   const [redirecting, setRedirecting] = useState(false)
   const [grantWrite, setGrantWrite] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [pending, setPending] = useState<ConsentRequestResult | null>(null)
 
-  const request = parseConsentRequest(searchParams)
+  // Fix round 2, Finding 1: /mcp/authorize's redirect to this page now
+  // carries only an opaque `rid` — never the client_id/redirect_uri/etc
+  // themselves — so this is the only thing we read from the URL directly.
+  const rid = searchParams.get("rid") ?? ""
+  const ridMissing = rid === ""
 
   // Not signed in: kick off the existing login flow and come straight back
-  // here — the query string (client_id, redirect_uri, ...) rides along via
-  // the normal return-to mechanism, so we never invent a second auth path.
+  // here — the query string (now just `?rid=...`) rides along via the
+  // normal return-to mechanism, so we never invent a second auth path. A
+  // request with no rid at all can never succeed, so we don't bounce an
+  // unauthenticated visitor through login for it.
   useEffect(() => {
-    if (isLoading || !request.ok || user) return
+    if (isLoading || ridMissing || user) return
     if (loginTriggered.current) return
     loginTriggered.current = true
     setRedirecting(true)
     void login()
-  }, [isLoading, user, request.ok, login])
+  }, [isLoading, user, ridMissing, login])
 
-  if (!request.ok) {
+  // Once we know rid and are authenticated, resolve it via the
+  // authenticated /mcp/authorize/pending endpoint — the only way to learn
+  // what the request actually was (see consent-request.ts).
+  useEffect(() => {
+    if (ridMissing || !user || !idToken) return
+    if (pendingFetchTriggered.current) return
+    pendingFetchTriggered.current = true
+    void fetchPendingAuthz(rid, idToken).then(setPending)
+  }, [ridMissing, user, idToken, rid])
+
+  if (ridMissing) {
+    return <CantShowRequest missing={["rid"]} />
+  }
+
+  if (isLoading) {
     return (
       <ConsentShell>
-        <div className="w-full max-w-sm space-y-4 rounded-2xl bg-card p-8 text-center ring-1 ring-foreground/10">
-          <CapsicumMark />
-          <h1 className="text-lg font-semibold text-destructive text-balance">
-            Can&apos;t show this request
-          </h1>
-          <p className="text-sm text-pretty text-muted-foreground">
-            The link is missing required information (
-            {request.missing.join(", ")}). Ask the application to restart the
-            authorisation request.
-          </p>
-        </div>
+        <p className="text-sm text-muted-foreground">Checking your session…</p>
       </ConsentShell>
     )
+  }
+
+  if (!user) {
+    return (
+      <ConsentShell>
+        <p className="text-sm text-muted-foreground">
+          {redirecting
+            ? "Redirecting you to sign in…"
+            : "Checking your session…"}
+        </p>
+      </ConsentShell>
+    )
+  }
+
+  if (!pending) {
+    return (
+      <ConsentShell>
+        <p className="text-sm text-muted-foreground">Loading the request…</p>
+      </ConsentShell>
+    )
+  }
+
+  if (!pending.ok) {
+    return <CantShowRequest missing={pending.missing} />
   }
 
   const {
@@ -102,7 +159,7 @@ function ConsentHandler() {
     codeChallengeMethod,
     state,
     requestedScopes,
-  } = request.value
+  } = pending.value
   const writeRequested = requestedScopes.includes(SCOPE_WRITE)
 
   // submitConsent is shared by Allow and Deny: both are server round trips
@@ -170,26 +227,6 @@ function ConsentHandler() {
     await submitConsent(
       "approve",
       grantWrite ? ["paprika:read", SCOPE_WRITE] : ["paprika:read"]
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <ConsentShell>
-        <p className="text-sm text-muted-foreground">Checking your session…</p>
-      </ConsentShell>
-    )
-  }
-
-  if (!user) {
-    return (
-      <ConsentShell>
-        <p className="text-sm text-muted-foreground">
-          {redirecting
-            ? "Redirecting you to sign in…"
-            : "Checking your session…"}
-        </p>
-      </ConsentShell>
     )
   }
 
@@ -283,7 +320,12 @@ function ConsentHandler() {
         )}
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button type="button" variant="outline" onClick={handleDeny}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDeny}
+            disabled={isSubmitting}
+          >
             Deny
           </Button>
           <Button type="button" onClick={handleApprove} disabled={isSubmitting}>

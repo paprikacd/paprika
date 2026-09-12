@@ -98,6 +98,24 @@ describe("auth callback page", () => {
     await waitFor(() => expect(window.location.href).toBe("/dashboard/pipelines/"))
   })
 
+  // Fix round 2, Fold-in 3: a protocol-relative return-to
+  // ("//evil.example/x") does not start with "/login", so the pre-fix guard
+  // would have let it through — a browser resolves a leading "//" as
+  // same-scheme navigation to a different host. Not reachable via the only
+  // real writer of this value today, but the guard must reject it
+  // structurally rather than rely on that caller's discipline.
+  it("falls back to /dashboard/ when the stored return-to is protocol-relative", async () => {
+    authMock.consumeReturnTo.mockReturnValue("//evil.example/x")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ idToken: "id-token" }) })
+    )
+
+    render(<CallbackPage />)
+
+    await waitFor(() => expect(window.location.href).toBe("/dashboard/"))
+  })
+
   it("falls back to /dashboard/ when the stored return-to points at /login", async () => {
     authMock.consumeReturnTo.mockReturnValue("/login?x=1")
     vi.stubGlobal(

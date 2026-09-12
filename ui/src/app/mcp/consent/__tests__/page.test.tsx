@@ -22,9 +22,19 @@ vi.mock("@/lib/auth-context", () => ({
 import ConsentPage from "../page"
 
 const REDIRECT_URI = "https://claude.ai/callback"
-const VALID_QS =
-  `client_id=claude-desktop&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-  "&code_challenge=abc123&code_challenge_method=S256&state=xyz123"
+const RID = "test-rid"
+
+// Fix round 2, Finding 1: the page no longer reads client_id/redirect_uri/
+// etc from the URL — it only reads `rid`, then fetches the actual request
+// from GET /mcp/authorize/pending. This is the body that endpoint returns
+// for a valid rid (see pendingAuthzResponse in internal/api/mcp/oauth.go).
+const DEFAULT_PENDING = {
+  client_id: "claude-desktop",
+  redirect_uri: REDIRECT_URI,
+  code_challenge: "abc123",
+  code_challenge_method: "S256",
+  state: "xyz123",
+}
 
 function stubLocation() {
   const location = { href: "" }
@@ -44,8 +54,47 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+/**
+ * Installs a fetch mock that branches on URL: GET /mcp/authorize/pending
+ * (the rid lookup) resolves immediately from `pendingBody`/`pendingOk`;
+ * POST /mcp/authorize/consent is handled by `consent`, defaulting to a
+ * successful approval response.
+ */
+function installFetch({
+  pendingOk = true,
+  pendingBody = DEFAULT_PENDING,
+  consent,
+}: {
+  pendingOk?: boolean
+  pendingBody?: unknown
+  consent?: () => { ok: boolean; json: () => Promise<unknown> }
+} = {}) {
+  const fetchMock = vi.fn((url: string) => {
+    if (url.startsWith("/mcp/authorize/pending")) {
+      return Promise.resolve({ ok: pendingOk, json: async () => pendingBody })
+    }
+    if (url === "/mcp/authorize/consent") {
+      return Promise.resolve(
+        consent
+          ? consent()
+          : { ok: true, json: async () => ({ redirectTo: "https://server.example/done" }) }
+      )
+    }
+    throw new Error(`unexpected fetch to ${url}`)
+  })
+  vi.stubGlobal("fetch", fetchMock)
+  return fetchMock
+}
+
+/** The POST /mcp/authorize/consent call, once the mock has recorded it. */
+function consentCall(fetchMock: ReturnType<typeof vi.fn>) {
+  const call = fetchMock.mock.calls.find(([url]) => url === "/mcp/authorize/consent")
+  if (!call) throw new Error("consent endpoint was never called")
+  return call
+}
+
 beforeEach(() => {
-  navigation.search = VALID_QS
+  navigation.search = `rid=${RID}`
   authState.user = { email: "ben@shorted.com.au", name: "Ben" }
   authState.idToken = "console-token"
   authState.isLoading = false
@@ -59,12 +108,9 @@ afterEach(() => {
 
 describe("MCP consent page", () => {
   it("defaults to read-only: write is unticked and approving sends only paprika:read", async () => {
-    navigation.search = `${VALID_QS}&scope=${encodeURIComponent("paprika:read paprika:write")}`
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ redirectTo: "https://server.example/done" }),
+    const fetchMock = installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: "paprika:read paprika:write" },
     })
-    vi.stubGlobal("fetch", fetchMock)
     stubLocation()
 
     render(<ConsentPage />)
@@ -82,20 +128,17 @@ describe("MCP consent page", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    const [, init] = fetchMock.mock.calls[0]
+    await waitFor(() => consentCall(fetchMock))
+    const [, init] = consentCall(fetchMock)
     const body = JSON.parse(init.body as string)
     expect(body.scopes).toEqual(["paprika:read"])
     expect(init.headers.Authorization).toBe("Bearer console-token")
   })
 
   it("ticking write includes it in the request and shows a warning; unticking removes both", async () => {
-    navigation.search = `${VALID_QS}&scope=${encodeURIComponent("paprika:write")}`
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ redirectTo: "https://server.example/done" }),
+    const fetchMock = installFetch({
+      pendingBody: { ...DEFAULT_PENDING, scope: "paprika:write" },
     })
-    vi.stubGlobal("fetch", fetchMock)
     stubLocation()
 
     render(<ConsentPage />)
@@ -111,8 +154,8 @@ describe("MCP consent page", () => {
     expect(screen.getByText(/approve or reject.*deployment gates/i)).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole("button", { name: /allow access/i }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    const bodyWithWrite = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    await waitFor(() => consentCall(fetchMock))
+    const bodyWithWrite = JSON.parse(consentCall(fetchMock)[1].body as string)
     expect(bodyWithWrite.scopes).toEqual(["paprika:read", "paprika:write"])
 
     await userEvent.click(writeCheckbox)
@@ -127,20 +170,21 @@ describe("MCP consent page", () => {
   // redirect_uri execute script on this origin before this fix.
   it("deny posts decision=deny to the server and navigates only to its server-validated redirectTo", async () => {
     const location = stubLocation()
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        redirectTo: `${REDIRECT_URI}?error=access_denied&state=xyz123`,
+    const fetchMock = installFetch({
+      consent: () => ({
+        ok: true,
+        json: async () => ({
+          redirectTo: `${REDIRECT_URI}?error=access_denied&state=xyz123`,
+        }),
       }),
     })
-    vi.stubGlobal("fetch", fetchMock)
 
     render(<ConsentPage />)
 
     await userEvent.click(await screen.findByRole("button", { name: /deny/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-    const [url, init] = fetchMock.mock.calls[0]
+    await waitFor(() => consentCall(fetchMock))
+    const [url, init] = consentCall(fetchMock)
     expect(url).toBe("/mcp/authorize/consent")
     const body = JSON.parse(init.body as string)
     expect(body.decision).toBe("deny")
@@ -156,23 +200,25 @@ describe("MCP consent page", () => {
   })
 
   it("shows an error and never navigates when the server rejects a deny", async () => {
-    stubLocation()
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      json: async () => ({ error: "invalid_request" }),
+    const location = stubLocation()
+    const fetchMock = installFetch({
+      consent: () => ({ ok: false, json: async () => ({ error: "invalid_request" }) }),
     })
-    vi.stubGlobal("fetch", fetchMock)
 
     render(<ConsentPage />)
 
     await userEvent.click(await screen.findByRole("button", { name: /deny/i }))
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => consentCall(fetchMock))
     expect(await screen.findByText(/invalid_request/i)).toBeInTheDocument()
+    // Fix round 2, Fold-in 2: a rejected decision must never navigate
+    // anywhere — the previous test only checked that a *rejected deny*
+    // showed an error, not that location.href was left untouched.
+    expect(location.href).toBe("")
   })
 
-  it("shows a clear error and never calls fetch when required params are missing", async () => {
-    navigation.search = "client_id=claude-desktop"
+  it("shows a clear error and never calls fetch when rid is missing", async () => {
+    navigation.search = ""
     authState.user = null
     const fetchMock = vi.fn()
     vi.stubGlobal("fetch", fetchMock)
@@ -182,13 +228,24 @@ describe("MCP consent page", () => {
     expect(
       await screen.findByText(/can't show this request/i)
     ).toBeInTheDocument()
-    expect(screen.getByText(/redirect_uri/)).toBeInTheDocument()
+    expect(screen.getByText(/rid/)).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /allow access/i })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /deny/i })).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
-    // An unauthenticated visitor with a broken request should not be bounced
+    // An unauthenticated visitor with no rid at all should not be bounced
     // through login for a request that can never succeed.
     expect(authState.login).not.toHaveBeenCalled()
+  })
+
+  it("shows a clear error and stops when the pending request can't be resolved", async () => {
+    installFetch({ pendingOk: false })
+
+    render(<ConsentPage />)
+
+    expect(
+      await screen.findByText(/can't show this request/i)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /allow access/i })).not.toBeInTheDocument()
   })
 
   it("redirects to the existing login flow when not signed in, and returns nothing to approve until then", async () => {
@@ -202,7 +259,12 @@ describe("MCP consent page", () => {
 
   it("guards against double submission: clicking Allow access twice only posts once", async () => {
     const pending = deferred<{ ok: boolean; json: () => Promise<unknown> }>()
-    const fetchMock = vi.fn().mockReturnValue(pending.promise)
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith("/mcp/authorize/pending")) {
+        return Promise.resolve({ ok: true, json: async () => DEFAULT_PENDING })
+      }
+      return pending.promise
+    })
     vi.stubGlobal("fetch", fetchMock)
     stubLocation()
 
@@ -214,13 +276,15 @@ describe("MCP consent page", () => {
     fireEvent.click(approveButton)
     fireEvent.click(approveButton)
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    // One GET for the pending lookup plus exactly one POST for the (still
+    // in-flight) consent decision, even though Allow was clicked twice.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
     pending.resolve({
       ok: true,
       json: async () => ({ redirectTo: "https://server.example/done" }),
     })
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
   })
 })

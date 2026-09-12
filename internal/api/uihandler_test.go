@@ -99,9 +99,25 @@ func TestEmbeddedDashboardBundleContainsCommandCenter(t *testing.T) {
 	}
 
 	for _, want := range []string{
+		// App-shell nav chrome (sidebar.tsx): present on every dashboard
+		// route, so these alone only catch a wholly pre-redesign bundle, not
+		// a stale or missing overview body.
 		"Operations console",
 		"Fleet map",
 		"Applications",
+		// Fix round 2, Finding 2: the nav-chrome strings above are not
+		// specific to the overview route at all — they would still pass
+		// against a bundle whose overview body was stale or entirely
+		// missing. "Loading the operations overview…" is
+		// dashboard/page.tsx's Suspense fallback specifically for the
+		// overview route (OverviewView's own static JSX, e.g. its
+		// "Operations overview" heading, is behind that Suspense boundary
+		// and only renders client-side, so it never reaches the static
+		// export's index.html) — it does not appear in any other dashboard
+		// route's index.html (e.g. dashboard/map or dashboard/applications
+		// render their own distinct fallback text), so it is the strongest
+		// overview-specific signal actually present in this static bundle.
+		"Loading the operations overview",
 	} {
 		if !strings.Contains(string(dashboardHTML), want) {
 			t.Fatalf("dashboard HTML missing %q; rebuild internal/api/uistatic from ui/out", want)

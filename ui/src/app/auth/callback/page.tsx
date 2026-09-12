@@ -53,7 +53,21 @@ function CallbackHandler() {
         persistAuth(data.idToken)
         const returnTo = consumeReturnTo()
         let dest = "/dashboard/"
-        if (returnTo && !returnTo.startsWith("/login")) {
+        // Fix round 2, Fold-in 3: require a leading "/" and reject a
+        // leading "//" (protocol-relative, e.g. "//evil.example/x", which a
+        // browser resolves as same-scheme navigation to a different host)
+        // in addition to the existing !startsWith("/login") check. Not
+        // attacker-reachable today — the only writer of this value
+        // (auth-context.tsx's login()) always stores
+        // `pathname + search`, which can never start with "//" — but this
+        // makes the guard structurally safe rather than safe only by that
+        // caller's discipline.
+        if (
+          returnTo &&
+          returnTo.startsWith("/") &&
+          !returnTo.startsWith("//") &&
+          !returnTo.startsWith("/login")
+        ) {
           // indexOf, not split("?") — a query component may legally contain
           // its own literal "?", and split would silently drop everything
           // after a second one.

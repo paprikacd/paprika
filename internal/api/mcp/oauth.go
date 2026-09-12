@@ -28,6 +28,12 @@ const (
 	// be exchanged within the same browser round trip, not held onto.
 	authCodeTTL = 5 * time.Minute
 
+	// pendingAuthzTTL bounds how long a stashed pre-consent authorize
+	// request (see pendingAuthzRecord) survives before the consent page must
+	// have fetched it — the same single-browser-round-trip lifetime as
+	// authCodeTTL, for the same reason.
+	pendingAuthzTTL = 5 * time.Minute
+
 	// minCodeVerifierLength and maxCodeVerifierLength are RFC 7636 section
 	// 4.1's fixed bounds on a PKCE code_verifier's length.
 	minCodeVerifierLength = 43
@@ -74,6 +80,7 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/.well-known/oauth-protected-resource", s.handleProtectedResourceMetadata)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", s.handleAuthorizationServerMetadata)
 	mux.HandleFunc("/mcp/authorize", s.handleAuthorize)
+	mux.HandleFunc("/mcp/authorize/pending", s.handleAuthorizePending)
 	mux.HandleFunc("/mcp/authorize/consent", s.handleAuthorizeConsent)
 	mux.HandleFunc("/mcp/token", s.handleToken)
 }
@@ -152,38 +159,38 @@ type authCodeRecord struct {
 
 // handleAuthorize implements the authorization_code + PKCE authorization
 // endpoint. Authentication runs FIRST, before any request validation
-// (response_type, client_id, redirect_uri, PKCE): every unauthenticated
-// caller gets an identical failure regardless of what else is wrong or right
-// about the request, so an unauthenticated probe can never distinguish a
-// registered redirect_uri from an unregistered one, or a valid client_id
-// from an invalid one, by status code, body, or headers (see
+// (response_type, client_id, redirect_uri, PKCE).
+//
+// A caller that does NOT look like a browser (no "text/html" in Accept) and
+// fails authentication gets an identical 401 regardless of what else is
+// wrong or right about the request, so an unauthenticated JSON/API probe can
+// never distinguish a registered redirect_uri from an unregistered one, or a
+// valid client_id from an invalid one, by status code, body, or headers (see
 // TestAuthorizeUnauthenticatedRequestsAreIndistinguishable). No Location
 // header pointing at redirect_uri is ever set before authentication
-// succeeds.
+// succeeds on this path.
+//
+// A caller that DOES look like a browser — authenticated or not — is always
+// sent to redirectToConsent instead: an already-authenticated browser
+// caller is routed there too (Fix round 1, Finding 2), so no caller can mint
+// a code directly without an explicit consent screen. Fix round 2, Finding 1
+// corrected a mistaken assumption in an earlier revision of this comment:
+// redirectToConsent's response shape (302 status, fixed consentPath, single
+// "rid" query parameter) is now IDENTICAL for a valid request and an invalid
+// one, because an attacker does not need a victim's browser to observe a
+// differently-shaped response — they can curl this endpoint themselves,
+// unauthenticated, with Accept: text/html, and compare responses directly.
+// See redirectToConsent's doc comment for the fix, and
+// TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable for what is
+// now asserted. Whether the stashed request was actually valid is only
+// discoverable via a SEPARATE, authenticated call to
+// handleAuthorizePending.
 //
 // Authentication here uses s.authorizeAuthenticator — the CONSOLE user
 // authenticator stack (Google OIDC + Paprika self-signed tokens), not
 // s.authenticator (the MCP-audience-only authenticator /mcp itself uses).
 // Requiring an MCP access token here would be circular: the only thing that
 // mints one is /mcp/token, which itself needs a code from this endpoint.
-//
-// On authentication failure, a caller that looks like a browser (an Accept
-// header containing "text/html") is redirected to consentPath instead of
-// getting a 401, so a human with no console session yet can complete login
-// and consent there — see redirectToConsent for the validation this
-// performs before choosing what to forward. A non-browser (JSON/API) caller
-// keeps getting exactly the pre-existing 401.
-//
-// A caller that DOES authenticate but still looks like a browser is ALSO
-// sent to consentPath rather than getting a code minted directly here (Fix
-// round 1, Finding 2): explicit human consent is required for every
-// browser-driven authorization, not only the unauthenticated case. Skipping
-// straight to negotiateScope for an authenticated browser would let any
-// caller that manages to authenticate — today, only a console
-// principal, which never carries Scopes and so this path is harmless in
-// practice, but the bypass itself must not exist — mint a code with no
-// consent screen ever shown. Only a non-browser (JSON/API) authenticated
-// caller keeps the pre-existing direct-grant behaviour below.
 //
 // Only once a caller is authenticated AND does not look like a browser does
 // validateAuthorizeRequest run, and only then can a 400 distinguish an
@@ -298,37 +305,205 @@ func looksLikeBrowser(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// redirectToConsent sends a browser-like GET /mcp/authorize to consentPath —
-// whether or not the caller is authenticated (Fix round 1, Finding 2 also
-// routes an authenticated browser here). It validates client_id and
-// redirect_uri registration FIRST (Fix round 1, Finding 1b): a valid pair
-// gets the original request's raw query string forwarded byte-for-byte, an
-// invalid pair gets ONLY "?error=invalid_request" forwarded, dropping every
-// other caller-supplied parameter (including the unregistered redirect_uri
-// itself, which must never be echoed anywhere in the response).
+// pendingAuthzRecord is what redirectToConsent stashes in the cache under an
+// opaque rid, for handleAuthorizePending to resolve once the consent page
+// fetches it. Valid is false whenever client_id/redirect_uri failed
+// registration (or were missing) at redirect time — in which case every
+// other field is left zero, so an invalid record never carries so much as
+// the caller-supplied redirect_uri into the cache, let alone back out of it.
 //
-// Both outcomes are still a 302 to this exact same fixed path, which is
-// what keeps this closed as an oracle despite now validating first: a
-// third-party page driving this as a top-level browser navigation can
-// neither read the Location header nor observe the resulting cross-origin
-// URL, and a cross-origin fetch of this endpoint gets an opaque response —
-// so the differing query shape between the two outcomes is not observable
-// to an attacker, unlike a directly-inspectable JSON response would be. See
-// TestAuthorizeBrowserGETWithNoCredentialRedirectsToConsent.
+//nolint:tagliatelle // mirrors the snake_case OAuth field names GET /mcp/authorize's query parameters use.
+type pendingAuthzRecord struct {
+	Valid               bool   `json:"valid"`
+	ClientID            string `json:"client_id,omitempty"`
+	RedirectURI         string `json:"redirect_uri,omitempty"`
+	CodeChallenge       string `json:"code_challenge,omitempty"`
+	CodeChallengeMethod string `json:"code_challenge_method,omitempty"`
+	State               string `json:"state,omitempty"`
+	Scope               string `json:"scope,omitempty"`
+}
+
+func pendingAuthzKey(rid string) string {
+	return "mcp:pending:" + rid
+}
+
+// redirectToConsent sends a browser-like GET /mcp/authorize to
+// consentPath?rid=<opaque> — whether or not the caller is authenticated (Fix
+// round 1, Finding 2 also routes an authenticated browser here), and whether
+// or not client_id/redirect_uri are registered.
+//
+// Fix round 2, Finding 1: an earlier revision validated client_id and
+// redirect_uri here and forwarded either the raw query string (valid pair)
+// or only "?error=invalid_request" (invalid pair). That produced two
+// distinguishable 302 response shapes, which is an oracle: an attacker does
+// not need a victim's browser to exploit it — they can curl this endpoint
+// themselves, unauthenticated, with Accept: text/html, and compare the two
+// shapes directly. The prior reasoning that "a third-party page can't read a
+// cross-origin Location header" was answering the wrong threat model — it
+// assumed a victim, when the attacker can simply be the caller.
+//
+// The fix: validity is still computed here, but it no longer changes the
+// response shape at all. Every call — valid or invalid, authenticated or
+// not — builds a pendingAuthzRecord, stashes it under a fresh random rid
+// (stashPendingAuthz), and redirects to exactly consentPath + "?rid=" + rid.
+// The 302 status, the path, and the single query key are identical in every
+// case; only the random rid value differs, and that value carries no
+// information about validity by construction. The consent page must fetch
+// GET /mcp/authorize/pending?rid=... (handleAuthorizePending) — which
+// authenticates FIRST, before ever resolving the rid — to learn whether the
+// request was valid and, if so, what it contained. See
+// TestAuthorizeUnauthenticatedBrowserRequestsAreIndistinguishable.
+//
+// rid safety, handed out before authentication: the stashed record is
+// PRINCIPAL-AGNOSTIC by construction — it is built before
+// authorizeAuthenticator ever runs and carries no subject/user identity, only
+// the caller-supplied request parameters (already visible to whoever crafted
+// the request). The authorization code eventually minted on approve is
+// always bound to whichever principal is authenticated AT APPROVAL TIME
+// (finishConsentApprove's principal argument), never to anything from this
+// pre-auth stash, so a rid can never be used to "replay" a grant as someone
+// else's identity. rid is still generated with randomToken's full 32-byte
+// entropy purely to prevent an unrelated risk: brute-forcing a live rid to
+// view another pending request's (low-sensitivity) client_id/redirect_uri
+// before its owner acts on it.
 func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	dest := consentPath
+	rec := pendingAuthzRecord{}
 	if s.clientIDAllowed(q.Get("client_id")) && s.isRegisteredRedirect(q.Get("redirect_uri")) {
-		if r.URL.RawQuery != "" {
-			dest += "?" + r.URL.RawQuery
+		rec = pendingAuthzRecord{
+			Valid:               true,
+			ClientID:            q.Get("client_id"),
+			RedirectURI:         q.Get("redirect_uri"),
+			CodeChallenge:       q.Get("code_challenge"),
+			CodeChallengeMethod: q.Get("code_challenge_method"),
+			State:               q.Get("state"),
+			Scope:               q.Get("scope"),
 		}
-	} else {
-		dest += "?error=invalid_request"
 	}
-	//nolint:gosec // dest always starts with the fixed constant consentPath; only the query
-	// string (never the scheme or host) comes from the request, so this can never redirect
+
+	rid, err := s.stashPendingAuthz(r.Context(), &rec)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	// dest always starts with the fixed constant consentPath, followed only by a
+	// server-generated random rid — never anything caller-controlled — so this can never redirect
 	// off-site regardless of what the caller supplies.
+	dest := consentPath + "?rid=" + url.QueryEscape(rid)
 	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// stashPendingAuthz mints a fresh random rid and stores rec under it for
+// pendingAuthzTTL, single-use lookup semantics not required (see
+// handleAuthorizePending's doc comment for why a repeatable Get, not GetDel,
+// is used instead).
+func (s *Server) stashPendingAuthz(ctx context.Context, rec *pendingAuthzRecord) (string, error) {
+	rid, err := randomToken()
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(rec)
+	if err != nil {
+		return "", fmt.Errorf("mcp: marshal pending authz record: %w", err)
+	}
+	if err := s.cache.Set(ctx, pendingAuthzKey(rid), payload, pendingAuthzTTL); err != nil {
+		return "", fmt.Errorf("mcp: store pending authz record: %w", err)
+	}
+	return rid, nil
+}
+
+// pendingAuthzResponse is what a successful GET /mcp/authorize/pending
+// returns: the actual request parameters redirectToConsent stashed, for the
+// consent page to render and to later echo back to POST
+// /mcp/authorize/consent.
+//
+//nolint:tagliatelle // mirrors the snake_case OAuth field names GET /mcp/authorize's query parameters use.
+type pendingAuthzResponse struct {
+	ClientID            string `json:"client_id"`
+	RedirectURI         string `json:"redirect_uri"`
+	CodeChallenge       string `json:"code_challenge"`
+	CodeChallengeMethod string `json:"code_challenge_method"`
+	State               string `json:"state"`
+	Scope               string `json:"scope,omitempty"`
+}
+
+// handleAuthorizePending implements GET /mcp/authorize/pending?rid=...: the
+// ONLY way the consent page (or anyone else) can learn what redirectToConsent
+// stashed under an rid, or whether it was valid at all.
+//
+// Authentication runs FIRST — using the exact same s.authorizeAuthenticator
+// GET /mcp/authorize and POST /mcp/authorize/consent use — before the rid is
+// looked up at all. An unauthenticated caller gets exactly
+// s.writeUnauthenticated's 401, regardless of whether the rid it supplies
+// corresponds to a valid record, an invalid one, or nothing at all. This is
+// what stops this endpoint from reopening the oracle redirectToConsent just
+// closed: since auth is checked before rid validity, an anonymous caller
+// gains nothing by probing here with any rid value — every response is
+// identical.
+//
+// Only once authenticated does a missing/expired/invalid rid collapse into
+// the same generic "invalid_request" 400 validateClientAndRedirect already
+// uses — mirroring the accepted precedent in that function's doc comment
+// (CF5) that an AUTHENTICATED caller may already learn "client_id or
+// redirect_uri is not registered" as a single collapsed bit. This endpoint
+// does not introduce a new class of leak beyond what that precedent already
+// accepts.
+//
+// The lookup uses cache.Get, not GetDel: the rid is deliberately NOT
+// single-use, so a page reload or a duplicate React effect invocation can
+// safely re-fetch the same pending request without losing it. This is safe
+// specifically because (see redirectToConsent's doc comment) the record is
+// principal-agnostic — repeatable read access to it grants no one anything
+// beyond viewing already-caller-supplied request parameters before their
+// owner decides to approve or deny.
+func (s *Server) handleAuthorizePending(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx := auth.WithRequest(r.Context(), r)
+	if _, err := s.authorizeAuthenticator.Authenticate(ctx); err != nil {
+		s.writeUnauthenticated(w)
+		return
+	}
+
+	rec, ok := s.lookupPendingAuthz(r.Context(), r.URL.Query().Get("rid"))
+	if !ok || !rec.Valid {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request",
+			"unknown, expired, or invalid authorization request")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pendingAuthzResponse{
+		ClientID:            rec.ClientID,
+		RedirectURI:         rec.RedirectURI,
+		CodeChallenge:       rec.CodeChallenge,
+		CodeChallengeMethod: rec.CodeChallengeMethod,
+		State:               rec.State,
+		Scope:               rec.Scope,
+	})
+}
+
+// lookupPendingAuthz resolves rid to the record redirectToConsent stashed.
+// ok is false for an empty rid, an unknown/expired one, or a cache/decode
+// error — every one of those collapses to the same caller-visible outcome in
+// handleAuthorizePending, so callers of this function must not need to tell
+// them apart.
+func (s *Server) lookupPendingAuthz(ctx context.Context, rid string) (pendingAuthzRecord, bool) {
+	var rec pendingAuthzRecord
+	if rid == "" {
+		return rec, false
+	}
+	payload, err := s.cache.Get(ctx, pendingAuthzKey(rid))
+	if err != nil || len(payload) == 0 {
+		return rec, false
+	}
+	if err := json.Unmarshal(payload, &rec); err != nil {
+		return rec, false
+	}
+	return rec, true
 }
 
 // validateAuthorizeRequest checks the request's remaining preconditions —
