@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -88,6 +89,76 @@ func TestInProcessTransportPropagatesHeaders(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Bearer token-abc", got,
 		"Authorization must reach the interceptor chain")
+}
+
+// benchListService returns a fixed, moderately large response so the
+// benchmark exercises marshal, buffering, and unmarshal rather than an
+// empty message.
+type benchListService struct {
+	v1connect.UnimplementedPaprikaServiceHandler
+	apps []*v1.Application
+}
+
+func (s *benchListService) ListApplications(
+	context.Context, *connect.Request[v1.ListApplicationsRequest],
+) (*connect.Response[v1.ListApplicationsResponse], error) {
+	return connect.NewResponse(&v1.ListApplicationsResponse{Applications: s.apps}), nil
+}
+
+// BenchmarkInProcessTransportRoundTrip measures one full in-process Connect
+// call: handler marshal into the recorder, the buffered copy back out, and
+// the client-side unmarshal.
+func BenchmarkInProcessTransportRoundTrip(b *testing.B) {
+	apps := make([]*v1.Application, 128)
+	for i := range apps {
+		apps[i] = &v1.Application{
+			Name:         fmt.Sprintf("app-%03d", i),
+			Namespace:    "paprika-e2e",
+			Phase:        "Healthy",
+			CurrentStage: "prod",
+			Revision:     "0123456789abcdef0123456789abcdef01234567",
+			Synced:       true,
+			TemplateRef:  "templates/web-service",
+			Strategy:     "rolling",
+		}
+	}
+	_, handler := v1connect.NewPaprikaServiceHandler(&benchListService{apps: apps})
+	client := v1connect.NewPaprikaServiceClient(
+		&http.Client{Transport: NewInProcessTransport(handler)}, "http://in-process")
+
+	b.ReportAllocs()
+	for b.Loop() {
+		resp, err := client.ListApplications(context.Background(),
+			connect.NewRequest(&v1.ListApplicationsRequest{}))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(resp.Msg.Applications) != len(apps) {
+			b.Fatalf("got %d applications, want %d", len(resp.Msg.Applications), len(apps))
+		}
+	}
+}
+
+// TestInProcessTransportRequestsIdentityEncoding proves RoundTrip strips the
+// Connect client's gzip offer: responses buffered in-process must not pay a
+// compress+inflate round trip on bytes that never leave memory.
+func TestInProcessTransportRequestsIdentityEncoding(t *testing.T) {
+	var gotEncoding string
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotEncoding = r.Header.Get("Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://in-process/", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	resp, err := NewInProcessTransport(handler).RoundTrip(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+
+	assert.Equal(t, "identity", gotEncoding,
+		"RoundTrip must pin identity so the handler skips gzip")
 }
 
 // TestInProcessTransportReturnsPromptlyOnContextCancellation proves RoundTrip

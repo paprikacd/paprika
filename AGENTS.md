@@ -206,6 +206,13 @@ hack/pprof-capture.sh http://localhost:16060 30 /tmp/paprika-perf/api
 kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 13000:3000 &
 MCP_TOKEN=... BASE=http://localhost:13000 hack/mcp-loadgen.sh 60
 
+# Caveat: kubectl port-forward adds hundreds of ms per connection and can
+# degrade to >1s/conn when the VKE control plane is slow — it dominates
+# per-call latency numbers, masking real server-side cost (~50-100ms/call
+# measured pod-locally via `kubectl exec ... wget localhost:3000/mcp`).
+# For latency comparisons, drive load inside the pod or reuse one HTTP
+# connection; use port-forward only for pprof/profile capture.
+
 # Controller logs:
 kubectl -n paprika-e2e logs deployment/paprika-e2e-controller-manager --since=10m
 
