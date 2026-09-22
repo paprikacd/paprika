@@ -285,12 +285,12 @@ func (s *stubInformer) AddEventHandlerWithOptions(toolscache.ResourceEventHandle
 func (s *stubInformer) RemoveEventHandler(toolscache.ResourceEventHandlerRegistration) error {
 	panic("unimplemented")
 }
-func (s *stubInformer) AddIndexers(toolscache.Indexers) error         { panic("unimplemented") }
-func (s *stubInformer) GetController() toolscache.Controller          { panic("unimplemented") }
-func (s *stubInformer) Run(<-chan struct{})                           { panic("unimplemented") }
-func (s *stubInformer) RunWithContext(context.Context)                { panic("unimplemented") }
-func (s *stubInformer) HasSyncedChecker() toolscache.DoneChecker      { panic("unimplemented") }
-func (s *stubInformer) LastSyncResourceVersion() string               { panic("unimplemented") }
+func (s *stubInformer) AddIndexers(toolscache.Indexers) error    { panic("unimplemented") }
+func (s *stubInformer) GetController() toolscache.Controller     { panic("unimplemented") }
+func (s *stubInformer) Run(<-chan struct{})                      { panic("unimplemented") }
+func (s *stubInformer) RunWithContext(context.Context)           { panic("unimplemented") }
+func (s *stubInformer) HasSyncedChecker() toolscache.DoneChecker { panic("unimplemented") }
+func (s *stubInformer) LastSyncResourceVersion() string          { panic("unimplemented") }
 func (s *stubInformer) SetWatchErrorHandler(toolscache.WatchErrorHandler) error {
 	panic("unimplemented")
 }

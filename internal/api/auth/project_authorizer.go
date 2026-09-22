@@ -42,7 +42,7 @@ func (a *ProjectAuthorizer) Authorize(ctx context.Context, p *Principal, action 
 		if apierrors.IsNotFound(err) && project == "default" {
 			return nil
 		}
-		return fmt.Errorf("get appproject %s/%s: %w", namespace, project, err)
+		return err
 	}
 
 	for _, role := range ap.Spec.Roles {
@@ -90,7 +90,7 @@ type informerSource interface {
 	GetInformer(context.Context, client.Object, ...crcache.InformerGetOption) (crcache.Informer, error)
 }
 
-var _ informerSource = (crcache.Cache)(nil)
+var _ informerSource = crcache.Cache(nil)
 
 // appProject returns the AppProject for namespace/name. When the reader is
 // informer-backed the object comes straight from the informer store —
@@ -104,7 +104,7 @@ func (a *ProjectAuthorizer) appProject(ctx context.Context, namespace, name stri
 	}
 	var ap corev1alpha1.AppProject
 	if err := a.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &ap); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get appproject %s/%s: %w", namespace, name, err)
 	}
 	return &ap, nil
 }
@@ -140,7 +140,7 @@ func (a *ProjectAuthorizer) appProjectInformer(ctx context.Context) (toolscache.
 func appProjectFromIndexer(indexer toolscache.Indexer, namespace, name string) (*corev1alpha1.AppProject, error) {
 	obj, exists, err := indexer.GetByKey(client.ObjectKey{Namespace: namespace, Name: name}.String())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get appproject %s/%s: %w", namespace, name, err)
 	}
 	if !exists {
 		return nil, apierrors.NewNotFound(
