@@ -149,7 +149,7 @@ func TestInProcessTransportRequestsIdentityEncoding(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	req, err := http.NewRequest(http.MethodPost, "http://in-process/", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://in-process/", nil)
 	require.NoError(t, err)
 	req.Header.Set("Accept-Encoding", "gzip")
 
