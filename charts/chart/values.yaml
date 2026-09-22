@@ -834,11 +834,10 @@ auth:
 ## The OAuth 2.1 + PKCE flow is functional end to end: /mcp/authorize
 ## authenticates the console user (Google OIDC or a Paprika self-signed
 ## token, never an MCP-audience token) and hands off through the /mcp/consent
-## page, so the authorize/token circularity is closed. Known remaining gap,
-## tracked as follow-up work: MCP tool calls re-enter the Connect chain with
-## the caller's aud=paprika-mcp token, so the console authenticator cannot be
-## tightened to require aud=paprika-api until the in-process leg gets a
-## distinct internal credential or per-RPC scope enforcement lands.
+## page, so the authorize/token circularity is closed. In-process tool calls
+## re-enter the Connect chain on a freshly minted aud=paprika-api credential
+## (Server.mintConsoleCredential), so the console authenticator strictly
+## requires its own audience and an MCP token cannot be replayed against it.
 mcp:
   enabled: false
   # -- Address advertised for the MCP server. Routes are mounted on the same
