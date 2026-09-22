@@ -84,10 +84,15 @@ func NewInProcessTransport(h http.Handler) http.RoundTripper {
 // RoundTrip has already returned to its caller. RoundTrip does not, and
 // cannot, cancel the handler's work; it can only stop waiting for it.
 func (t *inProcessTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
 	if credential, ok := internalCredentialFromContext(req.Context()); ok {
-		req = req.Clone(req.Context())
 		req.Header.Set("Authorization", "Bearer "+credential)
 	}
+	// The handler writes into a ResponseRecorder and this side reads the
+	// bytes back in the same process — negotiating gzip only burns a
+	// compress+inflate round trip on data that never leaves memory. Pin
+	// identity so the Connect handler streams uncompressed.
+	req.Header.Set("Accept-Encoding", "identity")
 
 	respCh := make(chan *http.Response, 1)
 	go func() {
