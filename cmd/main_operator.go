@@ -317,7 +317,7 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
 	policyEvaluator := governance.NewPolicyEvaluator(mgr.GetClient())
 
-	authz, err := buildOperatorAuthorizer(authCfg, mgr.GetClient())
+	authz, err := buildOperatorAuthorizer(authCfg, mgr.GetCache())
 	if err != nil {
 		return operatorGovernance{}, fmt.Errorf("build operator authorizer: %w", err)
 	}
@@ -381,7 +381,7 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 	return mgr, nil
 }
 
-func buildOperatorAuthorizer(cfg auth.Config, c client.Client) (auth.Authorizer, error) {
+func buildOperatorAuthorizer(cfg auth.Config, c client.Reader) (auth.Authorizer, error) {
 	if !cfg.Enabled {
 		return nil, nil
 	}
@@ -496,7 +496,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 }
 
 func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sClient kubernetes.Interface, authCfg auth.Config, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, authz auth.Authorizer, broker *events.Broker, fleetReader fleet.Reader, auditEnabled bool, capacityRegistry *dataprovider.Registry, setupLog logr.Logger) (*http.Server, error) {
-	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetClient())
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, mgr.GetCache())
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
