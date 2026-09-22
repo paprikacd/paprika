@@ -144,6 +144,13 @@ func isRecoverableGitCacheError(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
+	// Native upload-pack describes the local mirror as the "remote side" when
+	// it cannot read a damaged object. Only the worktree fetch uses that local
+	// mirror; do not reset caches for the same message from the real upstream.
+	if strings.Contains(msg, "aborting due to possible repository corruption on the remote side") &&
+		containsAny(msg, "fetch worktree:", "fetch worktree from mirror:") {
+		return true
+	}
 	if !containsAny(msg, "unexpected eof", "object not found", "invalid checksum", "malformed", "packfile") {
 		return false
 	}

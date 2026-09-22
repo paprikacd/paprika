@@ -11,6 +11,8 @@ fail() {
   exit 1
 }
 
+python3 "${ROOT_DIR}/hack/test-vke-deployment-gate.py"
+
 if grep -Fq 'auth.oidc.clientSecret' "${WORKFLOW}" "${VULTR}" "${VALUES}"; then
   fail 'active deployment configuration still contains auth.oidc.clientSecret'
 fi

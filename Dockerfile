@@ -1,5 +1,5 @@
 # Build the UI static export
-FROM node:26-alpine AS ui-builder
+FROM --platform=$BUILDPLATFORM node:26-alpine AS ui-builder
 WORKDIR /ui
 
 # Install deps first (layer cached unless package.json changes)
@@ -12,7 +12,7 @@ COPY ui/ .
 RUN npm run build
 
 # Build the manager binary
-FROM golang:1.26 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
