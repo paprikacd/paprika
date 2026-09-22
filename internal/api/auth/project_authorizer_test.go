@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	toolscache "k8s.io/client-go/tools/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -219,6 +223,152 @@ func TestAuthorizedProjectsProjectAuthorizerPropagatesOperationalErrors(t *testi
 	assert.ErrorIs(t, err, operationalErr)
 	assert.Equal(t, 1, reader.getCalls)
 	assert.Zero(t, reader.listCalls, "candidate filtering must never list or invent projects")
+}
+
+func TestAppProjectFromIndexer(t *testing.T) {
+	t.Parallel()
+	indexer := toolscache.NewIndexer(toolscache.MetaNamespaceKeyFunc, toolscache.Indexers{})
+	project := appProject("tenant-a", "payments", "alice")
+	require.NoError(t, indexer.Add(project))
+
+	got, err := appProjectFromIndexer(indexer, "tenant-a", "payments")
+	require.NoError(t, err)
+	assert.Same(t, project, got, "indexer reads return the shared store object")
+
+	_, err = appProjectFromIndexer(indexer, "tenant-a", "missing")
+	assert.True(t, apierrors.IsNotFound(err), "missing key must map to NotFound, got %v", err)
+}
+
+// informerBackedReader pairs a client.Reader with an informer source, like
+// crcache.Cache does in production.
+type informerBackedReader struct {
+	client.Reader
+	informer crcache.Informer
+}
+
+func (r *informerBackedReader) GetInformer(
+	context.Context, client.Object, ...crcache.InformerGetOption,
+) (crcache.Informer, error) {
+	return r.informer, nil
+}
+
+// stubInformer is a synced SharedIndexInformer over a hand-seeded indexer —
+// enough for the authorizer's GetIndexer/HasSynced path without a running
+// reflector.
+type stubInformer struct {
+	indexer toolscache.Indexer
+}
+
+func newStubInformer(t *testing.T, projects ...*corev1alpha1.AppProject) *stubInformer {
+	t.Helper()
+	indexer := toolscache.NewIndexer(toolscache.MetaNamespaceKeyFunc, toolscache.Indexers{})
+	for _, p := range projects {
+		require.NoError(t, indexer.Add(p))
+	}
+	return &stubInformer{indexer: indexer}
+}
+
+func (s *stubInformer) GetIndexer() toolscache.Indexer { return s.indexer }
+func (s *stubInformer) HasSynced() bool                { return true }
+func (s *stubInformer) IsStopped() bool                { return false }
+func (s *stubInformer) GetStore() toolscache.Store     { return s.indexer }
+
+func (s *stubInformer) AddEventHandler(toolscache.ResourceEventHandler) (toolscache.ResourceEventHandlerRegistration, error) {
+	panic("unimplemented")
+}
+func (s *stubInformer) AddEventHandlerWithResyncPeriod(toolscache.ResourceEventHandler, time.Duration) (toolscache.ResourceEventHandlerRegistration, error) {
+	panic("unimplemented")
+}
+func (s *stubInformer) AddEventHandlerWithOptions(toolscache.ResourceEventHandler, toolscache.HandlerOptions) (toolscache.ResourceEventHandlerRegistration, error) {
+	panic("unimplemented")
+}
+func (s *stubInformer) RemoveEventHandler(toolscache.ResourceEventHandlerRegistration) error {
+	panic("unimplemented")
+}
+func (s *stubInformer) AddIndexers(toolscache.Indexers) error    { panic("unimplemented") }
+func (s *stubInformer) GetController() toolscache.Controller     { panic("unimplemented") }
+func (s *stubInformer) Run(<-chan struct{})                      { panic("unimplemented") }
+func (s *stubInformer) RunWithContext(context.Context)           { panic("unimplemented") }
+func (s *stubInformer) HasSyncedChecker() toolscache.DoneChecker { panic("unimplemented") }
+func (s *stubInformer) LastSyncResourceVersion() string          { panic("unimplemented") }
+func (s *stubInformer) SetWatchErrorHandler(toolscache.WatchErrorHandler) error {
+	panic("unimplemented")
+}
+func (s *stubInformer) SetWatchErrorHandlerWithContext(toolscache.WatchErrorHandlerWithContext) error {
+	panic("unimplemented")
+}
+func (s *stubInformer) SetTransform(toolscache.TransformFunc) error { panic("unimplemented") }
+
+var _ toolscache.SharedIndexInformer = (*stubInformer)(nil)
+
+func TestProjectAuthorizerReadsFromInformerStore(t *testing.T) {
+	t.Parallel()
+	project := appProject("tenant-a", "payments", "alice")
+	failing := &failingProjectReader{err: errors.New("must not read via client.Get")}
+	reader := &informerBackedReader{
+		Reader:   failing,
+		informer: newStubInformer(t, project),
+	}
+	authorizer := NewProjectAuthorizer(reader)
+
+	require.NoError(t, authorizer.Authorize(
+		context.Background(), &Principal{Subject: "alice"},
+		ActionRead, ResourceApplications, "tenant-a", "payments",
+	))
+	assert.Error(t, authorizer.Authorize(
+		context.Background(), &Principal{Subject: "bob"},
+		ActionRead, ResourceApplications, "tenant-a", "payments",
+	))
+	assert.Zero(t, failing.getCalls, "informer-backed reads must never hit client.Get")
+	assert.Zero(t, failing.listCalls)
+}
+
+func BenchmarkProjectAuthorizerAuthorizedProjects(b *testing.B) {
+	const projects = 20
+	objects := make([]client.Object, 0, projects)
+	informerObjs := make([]*corev1alpha1.AppProject, 0, projects)
+	candidates := make([]ProjectRef, 0, projects)
+	for i := 0; i < projects; i++ {
+		ns := "tenant-" + string(rune('a'+i%26)) + string(rune('a'+i/26))
+		p := appProject(ns, "payments", "alice")
+		objects = append(objects, p)
+		informerObjs = append(informerObjs, p)
+		candidates = append(candidates, ProjectRef{Namespace: ns, Name: "payments"})
+	}
+	principal := &Principal{Subject: "alice"}
+
+	b.Run("client get", func(b *testing.B) {
+		authz := NewProjectAuthorizer(fake.NewClientBuilder().WithObjects(objects...).Build())
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := authz.AuthorizedProjects(
+				context.Background(), principal, ActionRead, ResourceApplications, candidates,
+			); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("informer store", func(b *testing.B) {
+		indexer := toolscache.NewIndexer(toolscache.MetaNamespaceKeyFunc, toolscache.Indexers{})
+		for _, p := range informerObjs {
+			require.NoError(b, indexer.Add(p))
+		}
+		authz := NewProjectAuthorizer(&informerBackedReader{
+			Reader:   fake.NewClientBuilder().Build(),
+			informer: &stubInformer{indexer: indexer},
+		})
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if _, err := authz.AuthorizedProjects(
+				context.Background(), principal, ActionRead, ResourceApplications, candidates,
+			); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func appProject(namespace, name, subject string) *corev1alpha1.AppProject {

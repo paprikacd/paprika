@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	toolscache "k8s.io/client-go/tools/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
@@ -16,6 +19,11 @@ import (
 
 type ProjectAuthorizer struct {
 	client client.Reader
+
+	informerMu       sync.Mutex
+	informerResolved bool
+	informer         toolscache.SharedIndexInformer
+	informerOK       bool
 }
 
 func NewProjectAuthorizer(c client.Reader) *ProjectAuthorizer {
@@ -29,12 +37,12 @@ func (a *ProjectAuthorizer) Authorize(ctx context.Context, p *Principal, action 
 	if namespace == "" {
 		namespace = "default"
 	}
-	var ap corev1alpha1.AppProject
-	if err := a.client.Get(ctx, client.ObjectKey{Name: project, Namespace: namespace}, &ap); err != nil {
+	ap, err := a.appProject(ctx, namespace, project)
+	if err != nil {
 		if apierrors.IsNotFound(err) && project == "default" {
 			return nil
 		}
-		return fmt.Errorf("get appproject %s/%s: %w", namespace, project, err)
+		return err
 	}
 
 	for _, role := range ap.Spec.Roles {
@@ -73,6 +81,76 @@ func (a *ProjectAuthorizer) AuthorizedProjects(
 		}
 	}
 	return authorized, nil
+}
+
+// informerSource is the subset of crcache.Cache that exposes typed
+// informers. The API server's informer-backed reader satisfies it; a plain
+// client.Reader does not.
+type informerSource interface {
+	GetInformer(context.Context, client.Object, ...crcache.InformerGetOption) (crcache.Informer, error)
+}
+
+var _ informerSource = crcache.Cache(nil)
+
+// appProject returns the AppProject for namespace/name. When the reader is
+// informer-backed the object comes straight from the informer store —
+// skipping the deep copy every client.Get performs — which matters because
+// this lookup runs once per candidate per authorized request (and once per
+// capability grant on fleet-scoped calls). The returned object is then the
+// store's SHARED instance: it is only ever read, never mutated.
+func (a *ProjectAuthorizer) appProject(ctx context.Context, namespace, name string) (*corev1alpha1.AppProject, error) {
+	if shared, ok := a.appProjectInformer(ctx); ok && shared.HasSynced() {
+		return appProjectFromIndexer(shared.GetIndexer(), namespace, name)
+	}
+	var ap corev1alpha1.AppProject
+	if err := a.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &ap); err != nil {
+		return nil, fmt.Errorf("get appproject %s/%s: %w", namespace, name, err)
+	}
+	return &ap, nil
+}
+
+// appProjectInformer resolves the AppProject SharedIndexInformer once and
+// reuses it — GetInformer itself allocates (GVK resolution, options) on every
+// call, and this lookup runs dozens of times per authorized request. A
+// GetInformer error leaves the resolution unset so the next call retries;
+// a non-shared informer resolves permanently to !ok.
+func (a *ProjectAuthorizer) appProjectInformer(ctx context.Context) (toolscache.SharedIndexInformer, bool) {
+	source, ok := a.client.(informerSource)
+	if !ok {
+		return nil, false
+	}
+	a.informerMu.Lock()
+	defer a.informerMu.Unlock()
+	if a.informerResolved {
+		return a.informer, a.informerOK
+	}
+	informer, err := source.GetInformer(ctx, &corev1alpha1.AppProject{})
+	if err != nil {
+		return nil, false
+	}
+	a.informerResolved = true
+	shared, ok := informer.(toolscache.SharedIndexInformer)
+	if ok {
+		a.informer = shared
+	}
+	a.informerOK = ok
+	return a.informer, a.informerOK
+}
+
+func appProjectFromIndexer(indexer toolscache.Indexer, namespace, name string) (*corev1alpha1.AppProject, error) {
+	obj, exists, err := indexer.GetByKey(client.ObjectKey{Namespace: namespace, Name: name}.String())
+	if err != nil {
+		return nil, fmt.Errorf("get appproject %s/%s: %w", namespace, name, err)
+	}
+	if !exists {
+		return nil, apierrors.NewNotFound(
+			corev1alpha1.GroupVersion.WithResource("appprojects").GroupResource(), name)
+	}
+	ap, ok := obj.(*corev1alpha1.AppProject)
+	if !ok {
+		return nil, fmt.Errorf("appproject informer returned %T", obj)
+	}
+	return ap, nil
 }
 
 // actionAllowed reports whether the supplied role actions permit action.

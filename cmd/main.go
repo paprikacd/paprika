@@ -479,7 +479,7 @@ func commaSeparatedValues(raw string) []string {
 
 func buildAPIServerOptions(
 	authCfg auth.Config,
-	apiClient client.Client,
+	authzReader client.Reader,
 	k8sClient kubernetes.Interface,
 	auditLogEnabled bool,
 	projectValidator *governance.ProjectValidator,
@@ -491,7 +491,7 @@ func buildAPIServerOptions(
 		apiserver.WithGovernancePolicyEvaluator(policyEvaluator),
 	}
 	if authCfg.Enabled {
-		authz, err := auth.BuildAuthorizer(authCfg, apiClient)
+		authz, err := auth.BuildAuthorizer(authCfg, authzReader)
 		if err != nil {
 			return nil, fmt.Errorf("build authorizer: %w", err)
 		}
@@ -609,7 +609,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}
 	defer broker.Close()
 
-	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.fleetReader, clients.authCfg, clients.interceptor, cfg, setupLog)
+	paprikaServer, connectHandler, err := buildConnectHandler(clients.client, clients.k8sClient, clients.restConfig, broker, clients.fleetReader, clients.authCfg, clients.authzReader, clients.interceptor, cfg, setupLog)
 	if err != nil {
 		return err
 	}
@@ -734,6 +734,7 @@ type apiClients struct {
 	k8sClient   kubernetes.Interface
 	restConfig  *rest.Config
 	authCfg     auth.Config
+	authzReader client.Reader
 	interceptor connect.Interceptor
 	cacheBundle *apiCacheBundle
 	fleetReader fleet.Reader
@@ -772,7 +773,14 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
 		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
 		cfg.authTokenSecret, cfg.authRBACRules, setupLog)
-	authInterceptor, err := auth.Interceptor(ctx, authCfg, apiClient)
+	// Prefer the informer cache for authorization reads so ProjectAuthorizer
+	// can resolve AppProjects straight from the informer store instead of a
+	// deep copy per check — this lookup runs per candidate per request.
+	authzReader := client.Reader(apiClient)
+	if cacheBundle != nil {
+		authzReader = cacheBundle.Cache
+	}
+	authInterceptor, err := auth.Interceptor(ctx, authCfg, authzReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build auth interceptor: %w", err)
 	}
@@ -782,18 +790,19 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		k8sClient:   k8sClient,
 		restConfig:  config,
 		authCfg:     authCfg,
+		authzReader: authzReader,
 		interceptor: authInterceptor,
 		cacheBundle: cacheBundle,
 		fleetReader: fleetReader,
 	}, nil
 }
 
-func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, fleetReader fleet.Reader, authCfg auth.Config, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
+func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface, restConfig *rest.Config, broker *events.Broker, fleetReader fleet.Reader, authCfg auth.Config, authzReader client.Reader, authInterceptor connect.Interceptor, cfg *cliConfig, setupLog logr.Logger) (*apiserver.PaprikaServer, http.Handler, error) {
 	resolver := governance.NewProjectResolver(apiClient)
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
 
-	opts, err := buildAPIServerOptions(authCfg, apiClient, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
+	opts, err := buildAPIServerOptions(authCfg, authzReader, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
 	if err != nil {
 		return nil, nil, err
 	}
