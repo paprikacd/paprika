@@ -327,6 +327,20 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
 - **WIP committed**: cluster-scoped resources, TargetNamespace, ValuesFile,
   status sorting, RBAC, and documentation were committed as a coherent feature
   set.
+- **ServiceMonitor RBAC in manager role**: managed apps can render
+  `ServiceMonitor`s (flaggr-api does); the manager ClusterRole lacked
+  `monitoring.coreos.com` verbs, which made every release apply fail with
+  RBAC errors and wedge apps at `ReleaseRetriesExhausted`. Granted the full
+  verb set in `charts/chart/templates/rbac/manager-role.yaml` (replaces a
+  hand-created `paprika-e2e-servicemonitor-manager` ClusterRole/Binding that
+  has been deleted — do not recreate).
+- **Flaggr evaluator cutover dogfooded**: flaggr-api rollout is driven by
+  native Release canary — Application declares `canary.steps [0,1,10,50,100]`
+  + `intervalSeconds 600`, the flaggr chart renders `canaryWeight` into
+  HTTPRoute backend weights (no `trafficRouter` on the stage), and
+  `analysis.checks` HTTP-probe candidate/fallback/public `/healthz` per step.
+  Note: `podMetrics` checks remain hardcoded to a `demo-app` selector — only
+  `http` checks are usable for real apps today.
 
 ### In Progress
 
