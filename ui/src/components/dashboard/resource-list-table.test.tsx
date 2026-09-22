@@ -1,25 +1,36 @@
-import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { ResourceListTable, buildTree, type FlatTreeNode } from "@/components/dashboard/resource-list-table"
+import { useState } from "react"
+import { describe, expect, it, vi } from "vitest"
 
-vi.mock("lucide-react", () => {
-  const Icon = (p: React.SVGProps<SVGSVGElement>) => <svg data-testid="icon" {...p} />
-  return {
-    ChevronRight: Icon,
-    Box: Icon,
-    Server: Icon,
-    Activity: Icon,
-  }
-})
+import {
+  ResourceTree,
+  buildTree,
+  collapsibleIds,
+  resourceSummary,
+  resourceSyncLabel,
+  type FlatTreeNode,
+} from "@/components/dashboard/resource-list-table"
 
 const flat: FlatTreeNode[] = [
-  { kind: "Deployment", name: "demo-deploy", namespace: "test-ns", syncStatus: "Synced", health: "Healthy", parentKind: "", parentName: "", managed: true, ready: 2, total: 3 },
+  {
+    kind: "Deployment",
+    name: "demo-deploy",
+    namespace: "test-ns",
+    syncStatus: "OutOfSync",
+    health: "Degraded",
+    parentKind: "",
+    parentName: "",
+    managed: true,
+    ready: 2,
+    total: 3,
+  },
   {
     kind: "ReplicaSet",
     name: "demo-deploy-abc12",
     namespace: "test-ns",
     syncStatus: "Synced",
+    health: "Progressing",
     parentKind: "Deployment",
     parentName: "demo-deploy",
     managed: false,
@@ -28,95 +39,158 @@ const flat: FlatTreeNode[] = [
     kind: "Pod",
     name: "demo-deploy-abc12-xyz34",
     namespace: "test-ns",
+    syncStatus: "Synced",
+    health: "Failed",
     parentKind: "ReplicaSet",
     parentName: "demo-deploy-abc12",
     managed: false,
-    phase: "Running",
+    phase: "CrashLoopBackOff",
   },
 ]
 
+/** The board owns collapse state, so the harness stands in for it. */
+function Harness({
+  nodes = flat,
+  onSelect = vi.fn(),
+  initialCollapsed = new Set<string>(),
+}: {
+  nodes?: FlatTreeNode[]
+  onSelect?: (n: { kind: string; name: string }) => void
+  initialCollapsed?: Set<string>
+}) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(initialCollapsed)
+  return (
+    <ResourceTree
+      nodes={nodes}
+      collapsed={collapsed}
+      onCollapsedChange={setCollapsed}
+      onSelect={onSelect}
+    />
+  )
+}
+
 describe("buildTree", () => {
-  it("builds parent → children index from flat list using parentKind/parentName", () => {
+  it("builds a parent → children index from parentKind/parentName", () => {
     const tree = buildTree(flat)
     expect(tree).toHaveLength(1)
-    const root = tree[0]
-    expect(root.kind).toBe("Deployment")
-    expect(root.subRows).toHaveLength(1)
-    expect(root.subRows?.[0].kind).toBe("ReplicaSet")
-    expect(root.subRows?.[0].subRows?.[0].kind).toBe("Pod")
+    expect(tree[0].subRows?.[0].kind).toBe("ReplicaSet")
+    expect(tree[0].subRows?.[0].subRows?.[0].kind).toBe("Pod")
   })
 
-  it("puts orphan roots first even when listed after their children", () => {
-    const shuffled: FlatTreeNode[] = [
-      { kind: "Pod", name: "p1", namespace: "ns", parentKind: "Deployment", parentName: "d1" },
-      { kind: "Deployment", name: "d1", namespace: "ns" },
-    ]
-    const tree = buildTree(shuffled)
-    expect(tree).toHaveLength(1)
-    expect(tree[0].kind).toBe("Deployment")
-    expect(tree[0].subRows).toHaveLength(1)
-  })
-
-  it("treats orphan children (parent not in list) as roots", () => {
-    const orphan: FlatTreeNode[] = [
-      { kind: "Pod", name: "loose-pod", namespace: "ns", parentKind: "Deployment", parentName: "missing" },
-    ]
-    const tree = buildTree(orphan)
+  it("treats a child whose parent is absent as a root, dropping nothing", () => {
+    const tree = buildTree([
+      { kind: "Pod", name: "loose", namespace: "ns", parentKind: "Deployment", parentName: "gone" },
+    ])
     expect(tree).toHaveLength(1)
     expect(tree[0].kind).toBe("Pod")
   })
 })
 
-describe("ResourceListTable", () => {
-  it("renders root rows by default; children appear after expansion", async () => {
-    const user = userEvent.setup()
-    render(<ResourceListTable nodes={flat} onSelect={vi.fn()} />)
+describe("collapsibleIds", () => {
+  it("closes every parent below the root and leaves the root open", () => {
+    expect([...collapsibleIds(flat)]).toEqual(["ReplicaSet/demo-deploy-abc12"])
+  })
+})
 
-    // Initially only the root (Deployment) renders — children are collapsed.
-    expect(screen.getByTestId("row-Deployment-demo-deploy")).toBeInTheDocument()
-    expect(screen.queryByTestId("row-ReplicaSet-demo-deploy-abc12")).not.toBeInTheDocument()
-
-    // Expand the root.
-    const expandBtn = screen.getByRole("button", { name: /expand/i })
-    await user.click(expandBtn)
-
-    expect(await screen.findByTestId("row-ReplicaSet-demo-deploy-abc12")).toBeInTheDocument()
+describe("resourceSummary", () => {
+  it("assembles a summary only from fields the server actually sent", () => {
+    expect(resourceSummary({ kind: "Pod", name: "p", namespace: "ns" })).toBe("")
+    expect(
+      resourceSummary({
+        kind: "Deployment",
+        name: "d",
+        namespace: "ns",
+        ready: 1,
+        total: 3,
+        message: "4 fields drifted",
+      })
+    ).toBe("1/3 ready · 4 fields drifted")
   })
 
-  it("renders empty state when there are no nodes", () => {
-    render(<ResourceListTable nodes={[]} onSelect={vi.fn()} />)
-    expect(screen.getByText(/No resources to display/i)).toBeInTheDocument()
+  it("never invents a ready count when the server reported no total", () => {
+    // A `0/0` would read as a real observation of zero replicas.
+    expect(resourceSummary({ kind: "Pod", name: "p", namespace: "ns", ready: 0, total: 0 })).toBe("")
   })
+})
 
-  it("calls onSelect when a row is clicked", async () => {
-    const user = userEvent.setup()
-    const onSelect = vi.fn()
-    render(<ResourceListTable nodes={flat} onSelect={onSelect} />)
-    await user.click(screen.getByTestId("row-Deployment-demo-deploy"))
-    expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "Deployment", name: "demo-deploy" }),
+describe("resourceSyncLabel", () => {
+  it("calls a drifted resource Drifted, not Degraded", () => {
+    expect(resourceSyncLabel("OutOfSync")).toBe("Drifted")
+    expect(resourceSyncLabel("Synced")).toBe("Synced")
+    expect(resourceSyncLabel("")).toBe("Unknown")
+  })
+})
+
+describe("ResourceTree", () => {
+  it("renders one row per resource, fully expanded, with its level", () => {
+    render(<Harness />)
+    const rows = screen.getAllByRole("row")
+    // Three resources plus the column header row.
+    expect(rows).toHaveLength(4)
+    expect(screen.getByTestId("row-Pod-demo-deploy-abc12-xyz34")).toHaveAttribute(
+      "aria-level",
+      "3"
     )
   })
 
-  it("expands and collapses children via the chevron", async () => {
+  it("hides descendants when a parent collapses and says so on the row", async () => {
     const user = userEvent.setup()
-    render(<ResourceListTable nodes={flat} onSelect={vi.fn()} />)
+    render(<Harness />)
 
-    // By default React Table starts collapsed, but rows are still rendered (just hidden via styling?).
-    // Click the chevron in the Deployment row to expand.
-    const deployRow = screen.getByTestId("row-Deployment-demo-deploy")
-    const chevron = deployRow.querySelector("button[aria-label]")!
-    await user.click(chevron)
+    const collapse = screen.getByRole("button", {
+      name: "Collapse ReplicaSet demo-deploy-abc12",
+    })
+    await user.click(collapse)
 
-    // After expanding, the child rows are visible.
-    expect(screen.getByTestId("row-ReplicaSet-demo-deploy-abc12")).toBeVisible()
+    expect(screen.queryByTestId("row-Pod-demo-deploy-abc12-xyz34")).not.toBeInTheDocument()
+    expect(screen.getByTestId("row-ReplicaSet-demo-deploy-abc12")).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
   })
 
-  it("renders the ready/total column with status color", () => {
-    render(<ResourceListTable nodes={flat} onSelect={vi.fn()} />)
-    // Deployment row has ready=2, total=3 (partial → amber).
+  it("expands and collapses from the keyboard on the row itself", async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    const row = screen.getByTestId("row-ReplicaSet-demo-deploy-abc12")
+    row.focus()
+    await user.keyboard("{ArrowLeft}")
+    expect(screen.queryByTestId("row-Pod-demo-deploy-abc12-xyz34")).not.toBeInTheDocument()
+
+    screen.getByTestId("row-ReplicaSet-demo-deploy-abc12").focus()
+    await user.keyboard("{ArrowRight}")
+    expect(screen.getByTestId("row-Pod-demo-deploy-abc12-xyz34")).toBeInTheDocument()
+  })
+
+  it("opens the inspector on Enter and on click", async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    render(<Harness onSelect={onSelect} />)
+
+    await user.click(screen.getByTestId("row-Deployment-demo-deploy"))
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "Deployment", name: "demo-deploy" })
+    )
+
+    screen.getByTestId("row-Pod-demo-deploy-abc12-xyz34").focus()
+    await user.keyboard("{Enter}")
+    expect(onSelect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "Pod", name: "demo-deploy-abc12-xyz34" })
+    )
+  })
+
+  it("states each row's health and sync in words, not colour alone", () => {
+    render(<Harness />)
     const row = screen.getByTestId("row-Deployment-demo-deploy")
-    const ready = row.querySelector("td:last-child")
-    expect(ready).toHaveTextContent("2/3")
+    expect(row).toHaveTextContent("Degraded")
+    expect(row).toHaveTextContent("Drifted")
+    expect(row).toHaveTextContent("2/3 ready")
+  })
+
+  it("says the tree is empty rather than drawing a header over nothing", () => {
+    render(<Harness nodes={[]} />)
+    expect(screen.getByText(/No managed resources reported/i)).toBeInTheDocument()
+    expect(screen.queryByRole("treegrid")).not.toBeInTheDocument()
   })
 })

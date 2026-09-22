@@ -107,7 +107,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem("paprika_code_verifier", codeVerifier)
       sessionStorage.setItem("paprika_expected_state", state)
       sessionStorage.setItem("paprika_redirect_uri", redirectURI)
-      localStorage.setItem(AUTH_RETURN_TO_KEY, window.location.pathname)
+      localStorage.setItem(
+        AUTH_RETURN_TO_KEY,
+        window.location.pathname + window.location.search
+      )
       window.location.href = url
     } catch (err) {
       console.error("Login failed:", err)

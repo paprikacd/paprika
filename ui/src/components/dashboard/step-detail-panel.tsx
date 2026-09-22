@@ -1,26 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
-
-import type { ArtifactRef, Step, StepStatus } from "@/gen/paprika/v1/api_pb"
-import { Button } from "@/components/ui/button"
-import { StatusBadge } from "@/components/ui/status-badge"
-import { ArtifactCard } from "@/components/dashboard/artifact-card"
-import { useStepArtifacts } from "@/lib/use-step-artifacts"
 import { Loader2 } from "lucide-react"
 
-function useElapsedMs(startedAt?: bigint) {
-  const [now, setNow] = useState(0)
-  useEffect(() => {
-    if (!startedAt) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [startedAt])
-  if (!startedAt || now === 0) return null
-  const startMs = Number(startedAt) * 1000
-  if (now < startMs) return null
-  return `${Math.floor((now - startMs) / 1000)}s`
-}
+import type { Step, StepStatus } from "@/gen/paprika/v1/api_pb"
+import {
+  formatDuration,
+  phaseLabel,
+  phaseTone,
+  stepElapsedMs,
+} from "@/app/dashboard/pipelines/pipeline-model"
+import { Button } from "@/components/ui/button"
+import { StatusPill } from "@/components/ui/status-chip"
+import { cn } from "@/lib/utils"
 
 interface StepDetailPanelProps {
   step: Step | null
@@ -29,7 +20,17 @@ interface StepDetailPanelProps {
   logsLoading: boolean
   onRetry: () => void
   onSkip: () => void
-  artifacts?: ArtifactRef[]
+  /**
+   * `4 CPU / 8 GiB`, from the PIPELINE_RUNS record. Null when that class
+   * cannot supply it — the segment is then absent rather than zeroed.
+   */
+  resourceLabel?: string | null
+  /** Renders the "Full logs" action when the caller can widen the tail. */
+  onLoadFullLogs?: () => void
+  showingFullLogs?: boolean
+  /** Clock for a running step's elapsed time. */
+  nowMs?: number
+  className?: string
 }
 
 export function StepDetailPanel({
@@ -39,72 +40,105 @@ export function StepDetailPanel({
   logsLoading,
   onRetry,
   onSkip,
-  artifacts,
+  resourceLabel,
+  onLoadFullLogs,
+  showingFullLogs = false,
+  nowMs,
+  className,
 }: StepDetailPanelProps) {
-  const stepName = step?.name ?? ""
-  const stepArtifacts = useStepArtifacts(artifacts ?? [], stepName)
-  const elapsed = useElapsedMs(status?.startedAt)
-
   if (!step) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+      <div
+        className={cn(
+          "flex h-full items-center justify-center p-6 text-console text-muted-foreground",
+          className
+        )}
+      >
         Select a step to view details
       </div>
     )
   }
 
   const phase = status?.phase ?? ""
+  const elapsed = nowMs ? stepElapsedMs(status, nowMs) : null
+  const meta = [
+    step.image,
+    resourceLabel ?? "",
+    elapsed === null ? "" : formatDuration(elapsed),
+  ].filter(Boolean)
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-mono text-sm font-semibold">{step.name}</h3>
-        <div className="flex items-center gap-2">
-          {phase && <StatusBadge status={phase} />}
-          {phase === "Running" && elapsed && (
-            <span className="text-xs text-muted-foreground">({elapsed})</span>
-          )}
+    <div className={cn("flex min-h-0 flex-col", className)}>
+      <div className="border-b border-rule px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="min-w-0 truncate font-cond text-card font-semibold tracking-[0.04em]">
+            {step.name}
+          </h3>
+          <StatusPill tone={phaseTone(phase)} label={phaseLabel(phase)} />
         </div>
+        {meta.length > 0 ? (
+          <p className="mt-1 truncate font-mono text-meta text-neutral-600">
+            {meta.join(" · ")}
+          </p>
+        ) : null}
       </div>
 
-      <div className="flex gap-2">
-        {phase === "Failed" && (
-          <Button size="sm" variant="outline" onClick={onRetry}>
-            Retry
-          </Button>
-        )}
-        {phase === "Pending" && (
-          <Button size="sm" variant="outline" onClick={onSkip}>
-            Skip
-          </Button>
-        )}
-      </div>
-
-      {stepArtifacts.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground">Artifacts</h4>
-          <div className="grid gap-2">
-            {stepArtifacts.map((a) => (
-              <ArtifactCard key={a.name} artifact={a} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-auto">
-        <h4 className="mb-2 text-xs font-medium text-muted-foreground">Logs</h4>
+      <section
+        aria-labelledby="step-log-heading"
+        className="min-h-0 border-b border-rule bg-ink-surface"
+      >
+        <h4 id="step-log-heading" className="sr-only">
+          Logs for {step.name}
+        </h4>
         {logsLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" />
-            Loading logs...
-          </div>
+          <p className="flex items-center gap-2 p-3 font-mono text-note text-ink-muted">
+            <Loader2 aria-hidden className="size-3 animate-spin" />
+            Loading logs…
+          </p>
         ) : logs ? (
-          <pre className="whitespace-pre-wrap rounded bg-muted p-3 font-mono text-xs leading-relaxed">
+          <pre
+            tabIndex={0}
+            className="m-0 max-h-[280px] overflow-auto p-[11px] font-mono text-note leading-[1.7] whitespace-pre-wrap text-log-text focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ink-accent"
+          >
             {logs}
           </pre>
         ) : (
-          <p className="text-sm text-muted-foreground">No logs available</p>
+          <p className="p-3 font-mono text-note text-ink-faint">
+            No logs available
+          </p>
         )}
+      </section>
+
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-note"
+          disabled={phase !== "Failed"}
+          onClick={onRetry}
+        >
+          Retry step
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-note"
+          disabled={phase !== "" && phase !== "Pending"}
+          onClick={onSkip}
+        >
+          Skip
+        </Button>
+        {onLoadFullLogs ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-note text-primary"
+            disabled={showingFullLogs}
+            onClick={onLoadFullLogs}
+          >
+            {showingFullLogs ? "Showing full logs" : "Full logs"}
+          </Button>
+        ) : null}
       </div>
     </div>
   )

@@ -3,7 +3,7 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetPipelineRequest, GetPipelineResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, GetSystemStatusRequest, GetSystemStatusResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutsRequest, ListRolloutsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse } from "./api_pb.js";
+import { AbortRolloutRequest, AbortRolloutResponse, ApplyBundleRequest, ApplyBundleResponse, ApplyResourcePatchRequest, ApplyResourcePatchResponse, ApproveGateRequest, ApproveGateResponse, CancelPipelineRequest, CancelPipelineResponse, GetAnalysisRunRequest, GetAnalysisRunResponse, GetApplicationLifecycleRequest, GetApplicationLifecycleResponse, GetApplicationOwnershipRequest, GetApplicationOwnershipResponse, GetApplicationRequest, GetApplicationResponse, GetApplicationSetRequest, GetApplicationSetResponse, GetArtifactRequest, GetArtifactResponse, GetClusterRequest, GetClusterResponse, GetDataSourcesRequest, GetDataSourcesResponse, GetPipelineRequest, GetPipelineResponse, GetPipelineRunRequest, GetPipelineRunResponse, GetResourceLogsRequest, GetResourceLogsResponse, GetResourceRequest, GetResourceResponse, GetResourceTreeDetailedRequest, GetResourceTreeDetailedResponse, GetResourceTreeRequest, GetResourceTreeResponse, GetRevisionInfoRequest, GetRevisionInfoResponse, GetRolloutHoldRequest, GetRolloutHoldResponse, GetRolloutRequest, GetRolloutResponse, GetStepLogsRequest, GetStepLogsResponse, GetSystemStatusRequest, GetSystemStatusResponse, HoldRolloutRequest, HoldRolloutResponse, IgnoreDriftedFieldRequest, IgnoreDriftedFieldResponse, InvestigateRequest, InvestigateResponse, ListAnalysisRunsRequest, ListAnalysisRunsResponse, ListApplicationSetsRequest, ListApplicationSetsResponse, ListApplicationsRequest, ListApplicationsResponse, ListArtifactsRequest, ListArtifactsResponse, ListClustersRequest, ListClustersResponse, ListDriftDetailsRequest, ListDriftDetailsResponse, ListGateStatusRequest, ListGateStatusResponse, ListInvestigatorPluginsRequest, ListInvestigatorPluginsResponse, ListNotificationConfigsRequest, ListNotificationConfigsResponse, ListPipelineRunsRequest, ListPipelineRunsResponse, ListPipelinesRequest, ListPipelinesResponse, ListPoliciesRequest, ListPoliciesResponse, ListReleasesRequest, ListReleasesResponse, ListRolloutHistoryRequest, ListRolloutHistoryResponse, ListRolloutsRequest, ListRolloutsResponse, ListSourceEventsRequest, ListSourceEventsResponse, ListStagesRequest, ListStagesResponse, LogChunk, PromoteRolloutRequest, PromoteRolloutResponse, QueryApplicationSignalsRequest, QueryApplicationSignalsResponse, QueryApplicationsRequest, QueryApplicationsResponse, QueryCostRequest, QueryCostResponse, QueryFleetMapRequest, QueryFleetMapResponse, QueryFleetMatrixRequest, QueryFleetMatrixResponse, RejectGateRequest, RejectGateResponse, RenderRequest, RenderResponse, ResolveSourceRequest, ResolveSourceResponse, ResumeRolloutRequest, ResumeRolloutResponse, RetryStepRequest, RetryStepResponse, RollbackReleaseRequest, RollbackReleaseResponse, SkipStepRequest, SkipStepResponse, StreamResourceLogsRequest, SyncApplicationRequest, SyncApplicationResponse, SyncResourcesRequest, SyncResourcesResponse } from "./api_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
@@ -379,6 +379,177 @@ export const PaprikaService = {
       name: "GetSystemStatus",
       I: GetSystemStatusRequest,
       O: GetSystemStatusResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetDataSources
+     */
+    getDataSources: {
+      name: "GetDataSources",
+      I: GetDataSourcesRequest,
+      O: GetDataSourcesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListClusters
+     */
+    listClusters: {
+      name: "ListClusters",
+      I: ListClustersRequest,
+      O: ListClustersResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetCluster
+     */
+    getCluster: {
+      name: "GetCluster",
+      I: GetClusterRequest,
+      O: GetClusterResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.QueryApplicationSignals
+     */
+    queryApplicationSignals: {
+      name: "QueryApplicationSignals",
+      I: QueryApplicationSignalsRequest,
+      O: QueryApplicationSignalsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.QueryCost
+     */
+    queryCost: {
+      name: "QueryCost",
+      I: QueryCostRequest,
+      O: QueryCostResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListSourceEvents
+     */
+    listSourceEvents: {
+      name: "ListSourceEvents",
+      I: ListSourceEventsRequest,
+      O: ListSourceEventsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListRolloutHistory
+     */
+    listRolloutHistory: {
+      name: "ListRolloutHistory",
+      I: ListRolloutHistoryRequest,
+      O: ListRolloutHistoryResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListPipelineRuns
+     */
+    listPipelineRuns: {
+      name: "ListPipelineRuns",
+      I: ListPipelineRunsRequest,
+      O: ListPipelineRunsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetPipelineRun
+     */
+    getPipelineRun: {
+      name: "GetPipelineRun",
+      I: GetPipelineRunRequest,
+      O: GetPipelineRunResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetRevisionInfo
+     */
+    getRevisionInfo: {
+      name: "GetRevisionInfo",
+      I: GetRevisionInfoRequest,
+      O: GetRevisionInfoResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetApplicationOwnership
+     */
+    getApplicationOwnership: {
+      name: "GetApplicationOwnership",
+      I: GetApplicationOwnershipRequest,
+      O: GetApplicationOwnershipResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ListDriftDetails
+     */
+    listDriftDetails: {
+      name: "ListDriftDetails",
+      I: ListDriftDetailsRequest,
+      O: ListDriftDetailsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetApplicationLifecycle
+     */
+    getApplicationLifecycle: {
+      name: "GetApplicationLifecycle",
+      I: GetApplicationLifecycleRequest,
+      O: GetApplicationLifecycleResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.GetRolloutHold
+     */
+    getRolloutHold: {
+      name: "GetRolloutHold",
+      I: GetRolloutHoldRequest,
+      O: GetRolloutHoldResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.HoldRollout
+     */
+    holdRollout: {
+      name: "HoldRollout",
+      I: HoldRolloutRequest,
+      O: HoldRolloutResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ResumeRollout
+     */
+    resumeRollout: {
+      name: "ResumeRollout",
+      I: ResumeRolloutRequest,
+      O: ResumeRolloutResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.IgnoreDriftedField
+     */
+    ignoreDriftedField: {
+      name: "IgnoreDriftedField",
+      I: IgnoreDriftedFieldRequest,
+      O: IgnoreDriftedFieldResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.ApplyResourcePatch
+     */
+    applyResourcePatch: {
+      name: "ApplyResourcePatch",
+      I: ApplyResourcePatchRequest,
+      O: ApplyResourcePatchResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * @generated from rpc paprika.v1.PaprikaService.SyncResources
+     */
+    syncResources: {
+      name: "SyncResources",
+      I: SyncResourcesRequest,
+      O: SyncResourcesResponse,
       kind: MethodKind.Unary,
     },
   }

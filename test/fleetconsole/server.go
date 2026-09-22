@@ -20,7 +20,12 @@ const (
 	shutdownTimeout        = 5 * time.Second
 )
 
-func newFixtureHandler(fixture *fixtureData, assetsDir string) (http.Handler, error) {
+func newFixtureHandler(
+	ctx context.Context,
+	fixture *fixtureData,
+	assetsDir string,
+	mode dataSourceMode,
+) (http.Handler, error) {
 	if fixture == nil || fixture.client == nil || fixture.index == nil {
 		return nil, errors.New("complete fixture data is required")
 	}
@@ -38,8 +43,12 @@ func newFixtureHandler(fixture *fixtureData, assetsDir string) (http.Handler, er
 		nil,
 		apiserver.WithFleetIndex(fixture.index),
 	)
+	service, err := newFixtureService(ctx, server, fixture, mode)
+	if err != nil {
+		return nil, err
+	}
 	procedurePrefix, connectHandler := v1connect.NewPaprikaServiceHandler(
-		server,
+		service,
 		connect.WithReadMaxBytes(maxConnectMessageBytes),
 	)
 
@@ -68,6 +77,34 @@ func newFixtureHandler(fixture *fixtureData, assetsDir string) (http.Handler, er
 	})
 	mux.Handle("/", static)
 	return mux, nil
+}
+
+// newFixtureService decides whether the console redesign RPCs are served by
+// the real stub handlers or by the fixture's synthetic ones.
+//
+// dataSourcesNone returns the real server unwrapped rather than a wrapper that
+// declines to synthesize. That is the point of the mode: the degraded console
+// is then tested against the production code path itself, so a divergence
+// between what the fixture calls "not configured" and what the control plane
+// calls "not configured" is not merely unlikely but impossible.
+func newFixtureService(
+	ctx context.Context,
+	server *apiserver.PaprikaServer,
+	fixture *fixtureData,
+	mode dataSourceMode,
+) (v1connect.PaprikaServiceHandler, error) {
+	if !mode.synthesizes() {
+		return server, nil
+	}
+	snapshot, err := fixture.index.LoadSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("load fixture snapshot: %w", err)
+	}
+	console, err := newConsoleServer(ctx, server, snapshot, mode, len(snapshot.Applications))
+	if err != nil {
+		return nil, fmt.Errorf("build console fixture data: %w", err)
+	}
+	return console, nil
 }
 
 func newHTTPServer(handler http.Handler) *http.Server {
@@ -129,7 +166,7 @@ func run(ctx context.Context, cfg config) error {
 	if err != nil {
 		return fmt.Errorf("seed fleet fixture: %w", err)
 	}
-	handler, err := newFixtureHandler(fixture, cfg.assets)
+	handler, err := newFixtureHandler(ctx, fixture, cfg.assets, cfg.dataSources)
 	if err != nil {
 		return fmt.Errorf("build fixture handler: %w", err)
 	}

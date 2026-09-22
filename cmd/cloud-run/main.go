@@ -51,6 +51,7 @@ import (
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
@@ -321,19 +322,9 @@ func buildK8sConfig(kubeconfigPath string) (*rest.Config, error) {
 		if inErr != nil {
 			return nil, fmt.Errorf("no kubeconfig and no in-cluster config: %w", err)
 		}
-		negotiateProtobuf(inCluster)
-		return inCluster, nil
+		return kube.WithProtobufResponses(inCluster), nil
 	}
-	negotiateProtobuf(k8sConfig)
-	return k8sConfig, nil
-}
-
-// negotiateProtobuf configures the client-go rest.Config to prefer protobuf over JSON
-// for built-in K8s kinds. CRDs and Watch payloads without protobuf schemas fall back
-// to JSON automatically because AcceptContentTypes lists both.
-func negotiateProtobuf(cfg *rest.Config) {
-	cfg.ContentType = runtime.ContentTypeProtobuf
-	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
+	return kube.WithProtobufResponses(k8sConfig), nil
 }
 
 func buildRenderer(ctx context.Context, setupLog logr.Logger, workDir string, k8sClient client.Client, repoServerAddr string, cacheCfg cache.Config) pipelines.TemplateRenderer {

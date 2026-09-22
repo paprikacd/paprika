@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background: oklch(0.115 0.01 50); color: oklch(0.93 0.012 50); font-family:"Instrument Sans", system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color: oklch(0.63 0.19 35); text-decoration:none; }
+  a:hover { color: oklch(0.72 0.17 35); }
+  *::-webkit-scrollbar { width:8px; height:8px; }
+  *::-webkit-scrollbar-track { background:transparent; }
+  *::-webkit-scrollbar-thumb { background: oklch(0.3 0.01 50); border-radius:4px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 50% { opacity:.5; } }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:oklch(0.115 0.01 50); font-size:14px;">
+
+  <aside style="position:fixed; top:0; bottom:0; left:0; z-index:40; width:256px; display:flex; flex-direction:column; border-right:1px solid oklch(0.24 0.012 50); background:oklch(0.115 0.01 50);">
+    <div style="display:flex; height:64px; align-items:center; border-bottom:1px solid oklch(0.24 0.012 50); padding:0 20px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="display:flex; width:32px; height:32px; align-items:center; justify-content:center; border-radius:6px; background:oklch(0.63 0.19 35); font-size:12px; font-weight:700; color:oklch(0.98 0.005 50);">P</span>
+        <span>
+          <span style="display:block; font-size:14px; font-weight:600; letter-spacing:-0.01em;">Paprika</span>
+          <span style="display:block; font-family:'JetBrains Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.14em; color:oklch(0.62 0.015 50);">Control plane</span>
+        </span>
+      </div>
+    </div>
+
+    <nav style="flex:1; overflow-y:auto; padding:20px 12px;">
+      <div style="display:flex; flex-direction:column; gap:24px;">
+        <section>
+          <h2 style="margin:0 0 8px; padding:0 12px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.18em; color:oklch(0.62 0.015 50);">Fleet</h2>
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <button type="button" onClick="{{ goOverview }}" style="{{ navOverview }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Overview</span></button>
+            <button type="button" onClick="{{ goApplications }}" style="{{ navApplications }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91 0z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/></svg><span>Applications</span></button>
+          </div>
+        </section>
+        <section>
+          <h2 style="margin:0 0 8px; padding:0 12px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.18em; color:oklch(0.62 0.015 50);">Delivery</h2>
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <button type="button" onClick="{{ goPipeline }}" style="{{ navPipelines }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg><span>Pipelines</span></button>
+            <button type="button" onClick="{{ goOverview }}" style="{{ navReleases }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg><span>Releases</span></button>
+            <button type="button" onClick="{{ goRollout }}" style="{{ navRollouts }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-4.5-2.7a2 2 0 0 0-2.06 0z"/><path d="m7 16.5-4.74-2.85"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8A2 2 0 0 0 22 17.87v-3.24a2 2 0 0 0-.97-1.71L16.5 10.8"/><path d="M12 8V2.5"/></svg><span>Rollouts</span></button>
+          </div>
+        </section>
+        <section>
+          <h2 style="margin:0 0 8px; padding:0 12px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.18em; color:oklch(0.62 0.015 50);">System</h2>
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <button type="button" disabled title="Available in a later plan" style="position:relative; display:flex; min-height:44px; width:100%; align-items:center; gap:12px; border:0; background:none; padding:0 12px; font:inherit; font-size:14px; font-weight:500; color:oklch(0.62 0.015 50); opacity:.4; cursor:not-allowed; text-align:left;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg><span>Activity</span></button>
+            <button type="button" disabled title="Available in a later plan" style="position:relative; display:flex; min-height:44px; width:100%; align-items:center; gap:12px; border:0; background:none; padding:0 12px; font:inherit; font-size:14px; font-weight:500; color:oklch(0.62 0.015 50); opacity:.4; cursor:not-allowed; text-align:left;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Admin</span></button>
+          </div>
+        </section>
+      </div>
+    </nav>
+
+    <div style="border-top:1px solid oklch(0.24 0.012 50); padding:12px;">
+      <div style="display:flex; min-height:44px; align-items:center; gap:8px;">
+        <span style="display:flex; width:32px; height:32px; flex:none; align-items:center; justify-content:center; background:oklch(0.21 0.012 50); color:oklch(0.62 0.015 50);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+        <div style="min-width:0; flex:1;">
+          <p style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600;">sre@paprika.io</p>
+          <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:9px; text-transform:uppercase; letter-spacing:0.12em; color:oklch(0.62 0.015 50);">Authenticated</p>
+        </div>
+        <span style="display:inline-flex; width:44px; height:44px; flex:none; align-items:center; justify-content:center; color:oklch(0.62 0.015 50);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+      </div>
+    </div>
+  </aside>
+
+  <div style="padding-left:256px;">
+    <section style="position:sticky; top:0; z-index:30; border-bottom:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+      <div style="display:flex; min-height:48px; align-items:stretch; overflow-x:auto; padding:0 24px;">
+        <div style="display:flex; flex:none; align-items:center; border-right:1px solid oklch(0.24 0.012 50); padding-right:16px;">
+          <span style="font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.63 0.19 35);">Fleet scope</span>
+        </div>
+        <div style="display:flex; flex:none; align-items:center; gap:8px; border-right:1px solid oklch(0.24 0.012 50); padding:0 16px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.62 0.015 50)" stroke-width="2"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 12-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83L17.9 12"/></svg><span style="font-size:12px; font-weight:500;">All projects</span></div>
+        <div style="display:flex; flex:none; align-items:center; gap:8px; border-right:1px solid oklch(0.24 0.012 50); padding:0 16px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.62 0.015 50)" stroke-width="2"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-4.5-2.7a2 2 0 0 0-2.06 0z"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8A2 2 0 0 0 22 17.87v-3.24a2 2 0 0 0-.97-1.71L16.5 10.8"/><path d="M12 8V2.5"/></svg><span style="font-size:12px; font-weight:500;">All clusters</span></div>
+        <div style="display:flex; flex:none; align-items:center; gap:8px; padding:0 16px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="oklch(0.62 0.015 50)" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91 0z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg><span style="font-size:12px; font-weight:500;">All stages</span></div>
+      </div>
+    </section>
+
+    <main style="min-height:calc(100vh - 48px);">
+
+      <sc-if value="{{ isOverview }}" hint-placeholder-val="{{ true }}">
+      <div style="margin:0 auto; max-width:1280px; padding:32px 24px; display:flex; flex-direction:column; gap:40px;">
+
+        <section style="display:flex; flex-direction:column; gap:16px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:12px; border-bottom:1px solid oklch(0.24 0.012 50); padding-bottom:20px;">
+            <div>
+              <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.18em; color:oklch(0.63 0.19 35);">Authorized fleet</p>
+              <h2 style="margin:8px 0 0; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Operations overview</h2>
+            </div>
+            <button type="button" onClick="{{ goApplications }}" style="display:inline-flex; min-height:44px; align-items:center; justify-content:center; border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50); padding:0 16px; font:inherit; font-size:14px; font-weight:600; color:oklch(0.93 0.012 50); cursor:pointer;">Open application inventory</button>
+          </div>
+
+          <section style="border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+            <div style="display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px; border-bottom:1px solid oklch(0.24 0.012 50); padding:12px 20px;">
+              <h3 style="margin:0; font-size:14px; font-weight:600;">Fleet health posture</h3>
+              <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">57 applications</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:1px; background:oklch(0.24 0.012 50);">
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Healthy</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">41</strong></div>
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Progressing</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">6</strong></div>
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Degraded</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">4</strong></div>
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Failed</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">2</strong></div>
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Missing</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">1</strong></div>
+              <div style="background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:12px; color:oklch(0.62 0.015 50);">Unknown</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">3</strong></div>
+            </div>
+          </section>
+
+          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px;">
+            <section style="border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+              <div style="border-bottom:1px solid oklch(0.24 0.012 50); padding:12px 20px;">
+                <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.62 0.015 50);">Change surface</p>
+                <h3 style="margin:4px 0 0; font-size:14px; font-weight:600;">Active delivery changes</h3>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:oklch(0.24 0.012 50);">
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Active releases</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">7</strong></div>
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Active rollouts</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">3</strong></div>
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Blocked gates</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">2</strong></div>
+              </div>
+              <p style="margin:0; border-top:1px solid oklch(0.24 0.012 50); padding:8px 20px; font-size:11px; line-height:20px; color:oklch(0.62 0.015 50);">8 highest-impact applications loaded; blocked-gate count reflects this window.</p>
+            </section>
+            <section style="border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+              <div style="border-bottom:1px solid oklch(0.24 0.012 50); padding:12px 20px;">
+                <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.62 0.015 50);">Dependency posture</p>
+                <h3 style="margin:4px 0 0; font-size:14px; font-weight:600;">Connection failures</h3>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:oklch(0.24 0.012 50);">
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Repository failures</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">1</strong></div>
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Cluster failures</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">0</strong></div>
+                <div style="min-width:0; background:oklch(0.115 0.01 50); padding:16px;"><span style="display:block; font-size:11px; line-height:16px; color:oklch(0.62 0.015 50);">Observability failures</span><strong style="display:block; margin-top:4px; font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:600; font-variant-numeric:tabular-nums;">0</strong></div>
+              </div>
+              <p style="margin:0; border-top:1px solid oklch(0.24 0.012 50); padding:8px 20px; font-size:11px; line-height:20px; color:oklch(0.62 0.015 50);">8 highest-impact applications loaded; connection counts reflect this window. Observability sources that are not configured are absent, not failed.</p>
+            </section>
+          </div>
+
+          <section style="border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+            <div style="display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px; border-bottom:1px solid oklch(0.24 0.012 50); padding:12px 20px;">
+              <div>
+                <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.63 0.19 35);">Server-ranked impact</p>
+                <h3 style="margin:4px 0 0; font-size:14px; font-weight:600;">Highest impact attention</h3>
+              </div>
+              <button type="button" onClick="{{ goApplications }}" style="border:0; background:none; min-height:44px; font:inherit; font-size:12px; font-weight:600; color:oklch(0.63 0.19 35); cursor:pointer;">Open full queue</button>
+            </div>
+            <ol style="margin:0; padding:0; list-style:none;">
+              <sc-for list="{{ attention }}" as="row" hint-placeholder-count="5">
+                <li style="border-bottom:1px solid oklch(0.24 0.012 50);">
+                  <button type="button" onClick="{{ row.open }}" style="display:grid; width:100%; min-height:64px; grid-template-columns:40px minmax(0,1fr) auto; align-items:center; gap:12px; border:0; background:none; padding:12px 20px; font:inherit; text-align:left; cursor:pointer; color:inherit;">
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; color:oklch(0.63 0.19 35);">{{ row.rank }}</span>
+                    <span style="min-width:0;">
+                      <strong style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600;">{{ row.name }}</strong>
+                      <span style="display:block; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.62 0.015 50);">{{ row.sub }}</span>
+                    </span>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:oklch(0.62 0.015 50);">{{ row.health }}</span>
+                  </button>
+                </li>
+              </sc-for>
+            </ol>
+          </section>
+        </section>
+
+        <section style="overflow:hidden; border-radius:21.6px; background:oklch(0.155 0.014 50); box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="border-bottom:1px solid oklch(0.24 0.012 50); padding:16px 24px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="display:flex; width:36px; height:36px; align-items:center; justify-content:center; border-radius:12px; background:oklch(0.63 0.19 35 / 0.1); color:oklch(0.63 0.19 35); box-shadow:0 0 0 1px oklch(0.63 0.19 35 / 0.15);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+                  <h2 style="margin:0; font-size:20px; font-weight:600; letter-spacing:-0.01em;">Cluster command center</h2>
+                </div>
+                <p style="margin:8px 0 0; max-width:42rem; font-size:14px; color:oklch(0.62 0.015 50);">Search applications, releases, rollouts, pipelines, and policies from one control surface, then drill into app health.</p>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">
+                <span style="display:inline-flex; align-items:center; gap:6px; border-radius:9px; background:oklch(0.53 0.12 145 / 0.1); padding:4px 8px; color:oklch(0.65 0.14 145); box-shadow:0 0 0 1px oklch(0.53 0.12 145 / 0.2);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>5 healthy</span>
+                <span style="display:inline-flex; align-items:center; gap:6px; border-radius:9px; background:oklch(0.19 0.01 50); padding:4px 8px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>3 needs attention</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,0.9fr);">
+            <div style="padding:24px; border-right:1px solid oklch(0.24 0.012 50);">
+              <div style="position:relative;">
+                <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:oklch(0.62 0.015 50); pointer-events:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+                <input type="search" placeholder="Search apps, releases, rollouts, pipelines, policies..." style="height:56px; width:100%; box-sizing:border-box; border-radius:16.8px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.115 0.01 50); padding:0 16px 0 40px; font-family:'JetBrains Mono',monospace; font-size:16px; color:oklch(0.93 0.012 50); outline:none;">
+              </div>
+              <div style="margin-top:16px; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+                <span style="display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>Latest searches</span>
+                <span style="font-size:12px; color:oklch(0.62 0.015 50 / 0.7);">No recent searches</span>
+              </div>
+              <div style="margin-top:20px;">
+                <div style="margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                  <h3 style="margin:0; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:oklch(0.62 0.015 50);">Search results</h3>
+                  <span style="font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">0/24</span>
+                </div>
+                <div style="border-radius:12px; border:1px dashed oklch(0.24 0.012 50); padding:32px 16px; text-align:center;">
+                  <p style="margin:0; font-size:14px; font-weight:500;">Start with a name, namespace, or status</p>
+                  <p style="margin:4px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">Results can open app drilldowns, rollout detail, pipeline detail, and policy anchors.</p>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:24px;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+                <div>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.63 0.19 35)" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                    <h3 style="margin:0; font-size:14px; font-weight:600;">Application health map</h3>
+                  </div>
+                  <p style="margin:4px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">Filter by status, then open an app tile for the full debug view.</p>
+                </div>
+                <span style="display:inline-flex; align-items:center; gap:6px; border-radius:9px; background:oklch(0.19 0.01 50); padding:4px 8px; font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">8/57 apps loaded</span>
+              </div>
+              <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:8px;">
+                <button type="button" style="display:inline-flex; align-items:center; gap:6px; border:0; border-radius:9px; background:oklch(0.93 0.012 50); padding:6px 10px; font:inherit; font-size:12px; font-weight:500; color:oklch(0.115 0.01 50); cursor:pointer;">All <span style="opacity:.75; font-variant-numeric:tabular-nums;">8</span></button>
+                <button type="button" style="display:inline-flex; align-items:center; gap:6px; border:0; border-radius:9px; background:oklch(0.19 0.01 50); padding:6px 10px; font:inherit; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50); cursor:pointer;"><span style="width:8px; height:8px; border-radius:50%; background:#10b981;"></span>Healthy <span style="opacity:.75; font-variant-numeric:tabular-nums;">5</span></button>
+                <button type="button" style="display:inline-flex; align-items:center; gap:6px; border:0; border-radius:9px; background:oklch(0.19 0.01 50); padding:6px 10px; font:inherit; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50); cursor:pointer;"><span style="width:8px; height:8px; border-radius:50%; background:#f43f5e;"></span>Degraded <span style="opacity:.75; font-variant-numeric:tabular-nums;">2</span></button>
+                <button type="button" style="display:inline-flex; align-items:center; gap:6px; border:0; border-radius:9px; background:oklch(0.19 0.01 50); padding:6px 10px; font:inherit; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50); cursor:pointer;"><span style="width:8px; height:8px; border-radius:50%; background:#0ea5e9;"></span>Progressing <span style="opacity:.75; font-variant-numeric:tabular-nums;">1</span></button>
+                <button type="button" style="display:inline-flex; align-items:center; gap:6px; border:0; border-radius:9px; background:oklch(0.19 0.01 50); padding:6px 10px; font:inherit; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50); cursor:pointer;"><span style="width:8px; height:8px; border-radius:50%; background:#f59e0b;"></span>Out of sync <span style="opacity:.75; font-variant-numeric:tabular-nums;">0</span></button>
+              </div>
+
+              <div style="margin-top:20px; display:flex; flex-direction:column; gap:16px;">
+                <sc-for list="{{ nsGroups }}" as="group" hint-placeholder-count="3">
+                  <div>
+                    <div style="margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                      <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600;">{{ group.ns }}</span>
+                      <span style="font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">{{ group.count }}</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;">
+                      <sc-for list="{{ group.apps }}" as="app" hint-placeholder-count="2">
+                        <button type="button" onClick="{{ app.open }}" style="{{ app.tileStyle }}">
+                          <span>
+                            <span style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                              <span style="min-width:0;">
+                                <span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:oklch(0.93 0.012 50);">{{ app.name }}</span>
+                                <span style="display:block; margin-top:2px; font-size:11px; color:oklch(0.62 0.015 50);">{{ app.nsLabel }}</span>
+                              </span>
+                              <span style="{{ app.dotStyle }}"></span>
+                            </span>
+                            <span style="display:block; margin-top:8px; font-size:12px; color:oklch(0.93 0.012 50 / 0.75);">{{ app.issue }}</span>
+                          </span>
+                          <span style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px;">
+                            <span style="{{ app.healthTextStyle }}">{{ app.health }}</span>
+                            <span style="color:oklch(0.62 0.015 50);">{{ app.meta }}</span>
+                          </span>
+                        </button>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div style="display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:12px;">
+          <sc-for list="{{ stats }}" as="stat" hint-placeholder-count="7">
+            <div style="border-radius:16.8px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+              <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+                <span style="display:flex; width:36px; height:36px; flex:none; align-items:center; justify-content:center; border-radius:12px; background:oklch(0.63 0.19 35 / 0.08); color:oklch(0.63 0.19 35);">{{ stat.icon }}</span>
+                <div style="min-width:0;">
+                  <p style="margin:0; font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; color:oklch(0.62 0.015 50 / 0.7);">{{ stat.label }}</p>
+                  <p style="margin:0; font-size:20px; font-weight:600; letter-spacing:-0.01em; font-variant-numeric:tabular-nums;">{{ stat.value }}</p>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <section>
+          <div style="margin-bottom:16px; display:flex; align-items:baseline; gap:8px;">
+            <h2 style="margin:0; font-size:14px; font-weight:600;">Pipelines</h2>
+            <span style="font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">3 total</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;">
+            <sc-for list="{{ pipelines }}" as="pl" hint-placeholder-count="3">
+              <button type="button" onClick="{{ pl.open }}" style="display:flex; flex-direction:column; gap:12px; border-radius:21.6px; border:0; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1); font:inherit; text-align:left; color:inherit; cursor:pointer;">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                  <div style="min-width:0; flex:1;">
+                    <h3 style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:500;">{{ pl.name }}</h3>
+                    <p style="margin:2px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">{{ pl.sub }}</p>
+                  </div>
+                  <span style="{{ pl.badgeStyle }}">{{ pl.phase }}</span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; height:6px; overflow:hidden; border-radius:9999px; background:oklch(0.19 0.01 50);"><div style="{{ pl.barStyle }}"></div></div>
+                  <p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">{{ pl.progressLabel }}</p>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                  <sc-for list="{{ pl.steps }}" as="st" hint-placeholder-count="3">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="{{ st.dotStyle }}"></span>
+                      <div style="display:flex; min-width:0; flex:1; align-items:center; justify-content:space-between; gap:8px;">
+                        <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:12px; color:oklch(0.93 0.012 50 / 0.8);">{{ st.name }}</span>
+                        <span style="flex:none; font-size:11px; color:oklch(0.62 0.015 50);">{{ st.image }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </button>
+            </sc-for>
+          </div>
+        </section>
+
+        <section>
+          <div style="margin-bottom:16px; display:flex; align-items:baseline; gap:8px;">
+            <h2 style="margin:0; font-size:14px; font-weight:600;">Policies</h2>
+            <span style="font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">2 total</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;">
+            <div style="border-radius:16.8px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+              <div style="display:flex; align-items:center; gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.63 0.19 35)" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:500;">require-resource-limits</span></div>
+              <p style="margin:8px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">Every container must declare CPU and memory limits</p>
+              <div style="margin-top:12px; display:flex; align-items:center; gap:8px;"><span style="border-radius:9px; background:oklch(0.19 0.01 50); padding:2px 8px; font-size:11px; font-weight:500; color:oklch(0.62 0.015 50);">critical</span><span style="border-radius:9px; background:oklch(0.19 0.01 50); padding:2px 8px; font-size:11px; font-weight:500; color:oklch(0.62 0.015 50);">enforce</span></div>
+            </div>
+            <div style="border-radius:16.8px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+              <div style="display:flex; align-items:center; gap:10px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.63 0.19 35)" stroke-width="2"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:500;">signed-images-only</span></div>
+              <p style="margin:8px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">Reject unsigned OCI artifacts at promotion</p>
+              <div style="margin-top:12px; display:flex; align-items:center; gap:8px;"><span style="border-radius:9px; background:oklch(0.19 0.01 50); padding:2px 8px; font-size:11px; font-weight:500; color:oklch(0.62 0.015 50);">warning</span><span style="border-radius:9px; background:oklch(0.19 0.01 50); padding:2px 8px; font-size:11px; font-weight:500; color:oklch(0.62 0.015 50);">warn</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isApplications }}">
+      <section>
+        <header style="border-bottom:1px solid oklch(0.24 0.012 50); padding:28px 24px; display:flex; align-items:flex-end; justify-content:space-between; gap:32px;">
+          <div>
+            <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.18em; color:oklch(0.63 0.19 35);">Fleet inventory</p>
+            <h1 style="margin:8px 0 0; font-size:30px; font-weight:600; letter-spacing:-0.02em;">Applications</h1>
+          </div>
+          <p style="margin:0; max-width:36rem; font-size:14px; line-height:24px; color:oklch(0.62 0.015 50); text-align:right;">Filter, compare, and troubleshoot every authorized deployment from one indexed snapshot.</p>
+        </header>
+
+        <section style="border-bottom:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+          <div style="display:grid; grid-template-columns:minmax(18rem,1fr) auto; align-items:flex-end; gap:12px; border-bottom:1px solid oklch(0.24 0.012 50); padding:16px 24px;">
+            <div style="min-width:0;">
+              <label style="display:block; margin-bottom:6px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.62 0.015 50);">Search fleet</label>
+              <div style="position:relative; max-width:42rem;">
+                <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:oklch(0.62 0.015 50); pointer-events:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+                <input type="search" placeholder="Application, project, cluster, revision…" style="min-height:44px; width:100%; box-sizing:border-box; border-radius:9px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.115 0.01 50); padding:0 12px 0 40px; font:inherit; font-size:14px; color:oklch(0.93 0.012 50); outline:none;">
+              </div>
+            </div>
+            <fieldset style="min-width:0; border:0; margin:0; padding:0;">
+              <legend style="margin-bottom:6px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:oklch(0.62 0.015 50);">Presentation</legend>
+              <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; overflow:hidden; border-radius:9px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.24 0.012 50);">
+                <sc-for list="{{ presentations }}" as="p" hint-placeholder-count="4">
+                  <button type="button" onClick="{{ p.select }}" style="{{ p.style }}">{{ p.label }}</button>
+                </sc-for>
+              </div>
+            </fieldset>
+          </div>
+          <details style="border-bottom:1px solid oklch(0.24 0.012 50);">
+            <summary style="display:flex; min-height:44px; cursor:pointer; list-style:none; align-items:center; justify-content:space-between; gap:12px; padding:0 24px; font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.14em; color:oklch(0.62 0.015 50);"><span>Filter dimensions</span><span style="font-size:16px;">+</span></summary>
+            <div style="display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border-top:1px solid oklch(0.24 0.012 50);">
+              <sc-for list="{{ filterGroups }}" as="g" hint-placeholder-count="5">
+                <fieldset style="min-width:0; margin:0; border:0; border-right:1px solid oklch(0.24 0.012 50); border-bottom:1px solid oklch(0.24 0.012 50); padding:20px;">
+                  <legend style="float:left; margin-bottom:8px; width:100%; font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.14em;">{{ g.legend }}</legend>
+                  <div style="clear:both; max-height:13rem; overflow-y:auto;">
+                    <sc-for list="{{ g.options }}" as="o" hint-placeholder-count="4">
+                      <label style="display:flex; min-height:44px; cursor:pointer; align-items:center; gap:12px; border-radius:6px; padding:0 8px; font-size:14px;">
+                        <input type="checkbox" style="width:16px; height:16px; flex:none; accent-color:oklch(0.63 0.19 35);">
+                        <span style="min-width:0; flex:1;"><span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500;">{{ o.label }}</span></span>
+                        <span style="flex:none; font-family:'JetBrains Mono',monospace; font-size:11px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">{{ o.count }}</span>
+                      </label>
+                    </sc-for>
+                  </div>
+                </fieldset>
+              </sc-for>
+            </div>
+          </details>
+        </section>
+
+        <div style="height:min(62vh,42rem); min-height:20rem; overflow:auto; border-bottom:1px solid oklch(0.24 0.012 50); background:oklch(0.115 0.01 50);">
+          <div style="position:sticky; top:0; z-index:10; min-width:58rem; border-bottom:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50);">
+            <div style="display:grid; min-height:44px; grid-template-columns:minmax(15rem,1.5fr) minmax(9rem,1fr) 8rem 8rem 7rem minmax(10rem,1fr); align-items:center; gap:12px; padding:0 24px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.14em; color:oklch(0.62 0.015 50);">
+              <span>Application</span><span>Target</span><span>Health</span><span>Sync</span><span>Resources</span><span>Authorized actions</span>
+            </div>
+          </div>
+          <div style="min-width:58rem;">
+            <sc-for list="{{ inventory }}" as="row" hint-placeholder-count="8">
+              <div onClick="{{ row.open }}" style="display:grid; grid-template-columns:minmax(15rem,1.5fr) minmax(9rem,1fr) 8rem 8rem 7rem minmax(10rem,1fr); align-items:center; gap:12px; border-bottom:1px solid oklch(0.24 0.012 50 / 0.7); padding:12px 24px; font-size:14px; cursor:pointer;">
+                <span style="min-width:0;">
+                  <strong style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">{{ row.name }}</strong>
+                  <span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:11px; color:oklch(0.62 0.015 50);">{{ row.id }}</span>
+                </span>
+                <span style="min-width:0;">
+                  <span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ row.cluster }}</span>
+                  <span style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:oklch(0.62 0.015 50);">{{ row.stage }}</span>
+                </span>
+                <span><span style="{{ row.healthStyle }}">{{ row.healthLabel }}</span></span>
+                <span><span style="{{ row.syncStyle }}">{{ row.syncLabel }}</span></span>
+                <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-variant-numeric:tabular-nums;">{{ row.resources }}</span>
+                <span style="display:flex; flex-wrap:wrap; gap:6px;">
+                  <sc-for list="{{ row.actions }}" as="a" hint-placeholder-count="2">
+                    <span style="display:inline-flex; align-items:center; min-height:44px; border-radius:9px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.21 0.012 50); padding:0 10px; font-size:11px; font-weight:600; color:oklch(0.93 0.012 50); opacity:.7;">{{ a }}</span>
+                  </sc-for>
+                </span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50); padding:16px 24px;">
+          <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:11px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">8 loaded / 57 indexed</p>
+          <button type="button" style="min-height:44px; border:0; border-radius:9px; background:oklch(0.63 0.19 35); padding:0 16px; font:inherit; font-size:14px; font-weight:600; color:oklch(0.115 0.01 50); cursor:pointer;">Load next 100</button>
+        </div>
+      </section>
+      </sc-if>
+
+      <sc-if value="{{ isAppDetail }}">
+      <div style="margin:0 auto; max-width:1280px; padding:32px 24px; display:flex; flex-direction:column; gap:32px;">
+        <div style="display:flex; align-items:center; gap:8px; font-size:14px; color:oklch(0.62 0.015 50);">
+          <button type="button" onClick="{{ goOverview }}" style="display:flex; align-items:center; gap:4px; border:0; background:none; font:inherit; color:inherit; cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Dashboard</button>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          <span style="color:oklch(0.93 0.012 50);">checkout-api</span>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+          <div>
+            <h1 style="margin:0; font-size:30px; font-weight:700; letter-spacing:-0.02em;">checkout-api</h1>
+            <p style="margin:0; color:oklch(0.62 0.015 50);">payments</p>
+          </div>
+          <button type="button" style="display:inline-flex; height:32px; align-items:center; gap:6px; border-radius:12px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.24 0.012 50 / 0.3); padding:0 10px; font:inherit; font-size:14px; font-weight:500; color:oklch(0.93 0.012 50); cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Refresh</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px;">
+          <div style="display:flex; flex-direction:column; gap:16px; overflow:hidden; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+            <div style="padding:0 16px;"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Current Phase</div><div style="margin-top:4px;"><span style="display:inline-flex; height:20px; align-items:center; gap:6px; border-radius:9999px; background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-size:12px; font-weight:500; color:oklch(0.65 0.18 25); box-shadow:0 0 0 1px oklch(0.56 0.18 25 / 0.2);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></svg>Degraded</span></div></div>
+            <div style="padding:0 16px;"><p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">Strategy: canary</p></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:16px; overflow:hidden; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+            <div style="padding:0 16px;"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Current Release</div><div style="margin-top:4px; font-size:18px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">checkout-api-r241</div></div>
+            <div style="padding:0 16px;"><p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">prod-eu / ring 2</p></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:16px; overflow:hidden; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+            <div style="padding:0 16px;"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Policy Results</div><div style="margin-top:4px; font-size:18px; font-weight:500;">4</div></div>
+            <div style="padding:0 16px;"><p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">Failures present</p></div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:16px; overflow:hidden; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+            <div style="padding:0 16px;"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Release History</div><div style="margin-top:4px; font-size:18px; font-weight:500;">18</div></div>
+            <div style="padding:0 16px;"><p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">Releases tracked for this application</p></div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;">
+            <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px; font-size:16px; font-weight:500;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 11 2 2 4-4"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>Investigation Triage</div>
+                <div style="margin-top:4px; font-size:14px; color:oklch(0.62 0.015 50);">Degraded resources, failing checks, and manual investigation entry points for this application.</div>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <span style="display:inline-flex; height:20px; align-items:center; border-radius:9999px; background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-size:12px; font-weight:500; color:oklch(0.65 0.18 25);">Degraded</span>
+                <span style="display:inline-flex; height:20px; align-items:center; border-radius:9999px; background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-size:12px; font-weight:500; color:oklch(0.65 0.18 25);">3&nbsp;out of sync</span>
+              </div>
+            </div>
+          </div>
+          <div style="padding:0 16px;">
+            <div style="overflow:hidden; border-radius:16.8px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+              <sc-for list="{{ triage }}" as="t" hint-placeholder-count="2">
+                <div style="display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) 12rem; align-items:flex-start; gap:12px; border-bottom:1px solid oklch(0.93 0.012 50 / 0.05); padding:12px;">
+                  <div style="min-width:0;">
+                    <div style="display:flex; align-items:center; gap:8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.62 0.015 50)" stroke-width="2"><path d="M6 18h8"/><path d="M3 22h18"/><path d="M14 22a7 7 0 1 0 0-14h-1"/><path d="M9 14h2"/><path d="M9 12a2 2 0 0 1-2-2V6h6v4a2 2 0 0 1-2 2Z"/><path d="M12 6V3a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v3"/></svg><span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500;">{{ t.kind }}</span><span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:'JetBrains Mono',monospace; font-size:12px;">{{ t.name }}</span></div>
+                    <p style="margin:4px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">{{ t.ns }}</p>
+                    <div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;"><span style="display:inline-flex; height:20px; align-items:center; border-radius:9999px; background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-size:12px; color:oklch(0.65 0.18 25);">{{ t.sync }}</span><span style="display:inline-flex; height:20px; align-items:center; border-radius:9999px; background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-size:12px; color:oklch(0.65 0.18 25);">{{ t.health }}</span></div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">{{ t.reason }}</p>
+                  </div>
+                  <div style="display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end;">
+                    <span style="display:inline-flex; height:28px; align-items:center; gap:4px; border-radius:12px; border:1px solid oklch(0.24 0.012 50); padding:0 10px; font-size:13px; font-weight:500;">Run</span>
+                    <span style="display:inline-flex; height:28px; align-items:center; padding:0 10px; font-size:13px; font-weight:500; color:oklch(0.62 0.015 50);">Open</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px; font-size:16px; font-weight:500;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-4.5-2.7a2 2 0 0 0-2.06 0z"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8A2 2 0 0 0 22 17.87v-3.24a2 2 0 0 0-.97-1.71L16.5 10.8"/><path d="M12 8V2.5"/></svg>Managed Resources</div>
+                <div style="margin-top:4px; font-size:14px; color:oklch(0.62 0.015 50);">14 resources · <span style="font-variant-numeric:tabular-nums;">3</span> out of sync · <span style="font-variant-numeric:tabular-nums;">0</span> pruned</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:4px; border-radius:12px; background:oklch(0.19 0.01 50 / 0.4); padding:2px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.05);">
+                <span style="display:inline-flex; align-items:center; gap:4px; border-radius:9px; background:oklch(0.155 0.014 50); padding:4px 10px; font-size:12px; font-weight:500;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>Graph</span>
+                <span style="display:inline-flex; align-items:center; gap:4px; border-radius:9px; padding:4px 10px; font-size:12px; font-weight:500; color:oklch(0.62 0.015 50);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>List</span>
+              </div>
+            </div>
+          </div>
+          <div style="padding:0 16px;">
+            <div style="position:relative; height:500px; width:100%; border-radius:16.8px; background:oklch(0.115 0.01 50); box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1); overflow:hidden;">
+              {{ legacyGraph }}
+              <div style="position:absolute; left:12px; bottom:12px; display:flex; flex-direction:column; border-radius:6px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50); overflow:hidden;">
+                <span style="display:flex; width:26px; height:26px; align-items:center; justify-content:center; border-bottom:1px solid oklch(0.24 0.012 50); font-size:14px; color:oklch(0.62 0.015 50);">+</span>
+                <span style="display:flex; width:26px; height:26px; align-items:center; justify-content:center; border-bottom:1px solid oklch(0.24 0.012 50); font-size:14px; color:oklch(0.62 0.015 50);">−</span>
+                <span style="display:flex; width:26px; height:26px; align-items:center; justify-content:center; font-size:11px; color:oklch(0.62 0.015 50);">⤢</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;"><div style="display:flex; align-items:center; gap:8px; font-size:16px; font-weight:500;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>Health Checks</div><div style="margin-top:4px; font-size:14px; color:oklch(0.62 0.015 50);">CEL-based health check results.</div></div>
+          <div style="padding:0 16px;">
+            <div style="display:grid; grid-template-columns:1fr 8rem 5rem 2fr 10rem; border-bottom:1px solid oklch(0.24 0.012 50); padding:8px 0; font-size:14px; color:oklch(0.62 0.015 50);"><span>Name</span><span>Status</span><span>HTTP</span><span>Message</span><span>Checked</span></div>
+            <sc-for list="{{ healthChecks }}" as="hc" hint-placeholder-count="3">
+              <div style="display:grid; grid-template-columns:1fr 8rem 5rem 2fr 10rem; align-items:center; border-bottom:1px solid oklch(0.24 0.012 50); padding:10px 0; font-size:14px;">
+                <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500;">{{ hc.name }}</span>
+                <span><span style="{{ hc.badgeStyle }}">{{ hc.status }}</span></span>
+                <span style="font-variant-numeric:tabular-nums;">{{ hc.code }}</span>
+                <span style="font-size:12px; color:oklch(0.62 0.015 50);">{{ hc.message }}</span>
+                <span style="font-size:12px; font-variant-numeric:tabular-nums; color:oklch(0.62 0.015 50);">{{ hc.at }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;"><div style="display:flex; align-items:center; gap:8px; font-size:16px; font-weight:500;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 12-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83L17.9 12"/></svg>Promotion Stages</div><div style="margin-top:4px; font-size:14px; color:oklch(0.62 0.015 50);">Per-stage ring, release, and phase breakdown.</div></div>
+          <div style="padding:0 16px;">
+            <div style="display:flex; flex-wrap:wrap; gap:8px;">
+              <sc-for list="{{ stages }}" as="s" hint-placeholder-count="3">
+                <div style="display:flex; align-items:center; gap:8px; border-radius:12px; background:oklch(0.19 0.01 50 / 0.4); padding:8px 12px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.05);">
+                  <span style="display:flex; width:20px; height:20px; align-items:center; justify-content:center; border-radius:50%; background:oklch(0.115 0.01 50); font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; box-shadow:0 0 0 1px oklch(0.24 0.012 50);">{{ s.ring }}</span>
+                  <div>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:500;">{{ s.name }}</span>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:2px;"><span style="{{ s.badgeStyle }}">{{ s.phase }}</span><span style="font-size:10px; color:oklch(0.62 0.015 50);">{{ s.release }}</span></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;"><div style="display:flex; align-items:center; gap:8px; font-size:16px; font-weight:500;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Source</div></div>
+          <div style="padding:0 16px;">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">Repository URL</span><span style="font-weight:500;">github.com/acme/checkout-api</span></div>
+            <hr style="border:0; border-top:1px solid oklch(0.24 0.012 50); margin:0;">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">Path</span><span style="font-weight:500;">deploy/chart</span></div>
+            <hr style="border:0; border-top:1px solid oklch(0.24 0.012 50); margin:0;">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">Revision</span><span style="font-weight:500;">9f3a1c2</span></div>
+            <hr style="border:0; border-top:1px solid oklch(0.24 0.012 50); margin:0;">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">Sync Policy</span><span style="font-weight:500;">Automated</span></div>
+            <hr style="border:0; border-top:1px solid oklch(0.24 0.012 50); margin:0;">
+            <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">Strategy</span><span style="font-weight:500;">canary</span></div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isPipeline }}">
+      <div style="margin:0 auto; max-width:1152px; padding:32px 24px; display:flex; flex-direction:column; gap:24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <button type="button" onClick="{{ goOverview }}" style="display:inline-flex; width:32px; height:32px; align-items:center; justify-content:center; border:0; border-radius:12px; background:none; color:oklch(0.93 0.012 50); cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg></button>
+            <div>
+              <h1 style="margin:0; font-size:20px; font-weight:600;">checkout-api-build</h1>
+              <p style="margin:0; font-size:12px; color:oklch(0.62 0.015 50);">ns/payments</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span style="display:inline-flex; height:20px; align-items:center; gap:6px; border-radius:9999px; background:oklch(0.63 0.19 35 / 0.1); padding:0 8px; font-size:12px; font-weight:500; color:oklch(0.63 0.19 35); box-shadow:0 0 0 1px oklch(0.63 0.19 35 / 0.2);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>Running</span>
+            <button type="button" style="display:inline-flex; height:28px; align-items:center; border:0; border-radius:12px; background:oklch(0.56 0.18 25 / 0.2); padding:0 10px; font:inherit; font-size:13px; font-weight:500; color:oklch(0.65 0.18 25); cursor:pointer;">Cancel</button>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:24px;">
+          <div style="flex:1; min-width:0;">
+            <div style="border-radius:12px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50); height:600px; position:relative; overflow:hidden;">
+              {{ legacyDag }}
+            </div>
+          </div>
+          <div style="width:384px; flex:none;">
+            <div style="height:600px; border-radius:12px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.155 0.014 50); display:flex; flex-direction:column;">
+              <div style="border-bottom:1px solid oklch(0.24 0.012 50); padding:16px;">
+                <p style="margin:0; font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600;">unit-test</p>
+                <p style="margin:4px 0 0; font-size:12px; color:oklch(0.62 0.015 50);">ghcr.io/acme/test-runner:3.2</p>
+              </div>
+              <div style="flex:1; overflow:auto; padding:16px;">
+                <p style="margin:0 0 8px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:oklch(0.62 0.015 50);">Logs</p>
+                <pre style="margin:0; overflow:auto; border-radius:12px; background:oklch(0.115 0.01 50); padding:12px; font-family:'JetBrains Mono',monospace; font-size:11px; line-height:1.7; color:oklch(0.93 0.012 50 / 0.9); box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1); white-space:pre-wrap;">{{ legacyLogs }}</pre>
+              </div>
+              <div style="border-top:1px solid oklch(0.24 0.012 50); padding:12px 16px; display:flex; gap:8px;">
+                <span style="display:inline-flex; height:28px; align-items:center; border-radius:12px; border:1px solid oklch(0.24 0.012 50); padding:0 10px; font-size:13px; font-weight:500;">Retry</span>
+                <span style="display:inline-flex; height:28px; align-items:center; padding:0 10px; font-size:13px; font-weight:500; color:oklch(0.62 0.015 50);">Skip</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isRollout }}">
+      <div style="margin:0 auto; max-width:1280px; padding:32px 24px; display:flex; flex-direction:column; gap:32px;">
+        <div style="display:flex; align-items:center; gap:8px; font-size:14px; color:oklch(0.62 0.015 50);">
+          <button type="button" onClick="{{ goOverview }}" style="display:flex; align-items:center; gap:4px; border:0; background:none; font:inherit; color:inherit; cursor:pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Dashboard</button>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          <span>Rollouts</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          <span style="color:oklch(0.93 0.012 50);">checkout-api</span>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+          <div>
+            <h1 style="margin:0; font-size:30px; font-weight:700; letter-spacing:-0.02em;">checkout-api</h1>
+            <p style="margin:0; color:oklch(0.62 0.015 50);">payments</p>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="display:inline-flex; height:32px; align-items:center; gap:6px; border-radius:12px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.24 0.012 50 / 0.3); padding:0 10px; font-size:14px; font-weight:500;">Refresh</span>
+            <span style="display:inline-flex; height:32px; align-items:center; gap:6px; border-radius:12px; border:1px solid oklch(0.24 0.012 50); background:oklch(0.24 0.012 50 / 0.3); padding:0 10px; font-size:14px; font-weight:500;">Promote</span>
+            <span style="display:inline-flex; height:32px; align-items:center; gap:6px; border-radius:12px; padding:0 10px; font-size:14px; font-weight:500; color:oklch(0.62 0.015 50);">Abort</span>
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px;">
+          <div style="border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Strategy</div><div style="margin-top:4px; font-size:18px; font-weight:500;">Canary</div></div>
+          <div style="border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Phase</div><div style="margin-top:4px;"><span style="display:inline-flex; height:20px; align-items:center; gap:6px; border-radius:9999px; background:oklch(0.68 0.14 75 / 0.1); padding:0 8px; font-size:12px; font-weight:500; color:oklch(0.75 0.14 75);">Paused</span></div></div>
+          <div style="border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Current Step</div><div style="margin-top:4px; font-size:18px; font-weight:500;">3</div></div>
+          <div style="border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);"><div style="font-size:14px; color:oklch(0.62 0.015 50);">Current Weight</div><div style="margin-top:4px; font-size:18px; font-weight:500;">25%</div></div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:16px; border-radius:21.6px; background:oklch(0.155 0.014 50); padding:16px 0; box-shadow:0 0 0 1px oklch(0.93 0.012 50 / 0.1);">
+          <div style="padding:0 16px;"><div style="font-size:16px; font-weight:500;">Details</div><div style="margin-top:4px; font-size:14px; color:oklch(0.62 0.015 50);">Observed state and target workload.</div></div>
+          <div style="padding:0 16px;">
+            <sc-for list="{{ rolloutRows }}" as="r" hint-placeholder-count="6">
+              <div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0; font-size:14px;"><span style="color:oklch(0.62 0.015 50);">{{ r.label }}</span><span style="font-weight:500;">{{ r.value }}</span></div>
+                <hr style="border:0; border-top:1px solid oklch(0.24 0.012 50); margin:0;">
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </main>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000}}">
+const C = {
+  bg: "oklch(0.115 0.01 50)", fg: "oklch(0.93 0.012 50)", card: "oklch(0.155 0.014 50)",
+  border: "oklch(0.24 0.012 50)", muted: "oklch(0.19 0.01 50)", mutedFg: "oklch(0.62 0.015 50)",
+  primary: "oklch(0.63 0.19 35)", accentSb: "oklch(0.21 0.012 50)",
+  success: "oklch(0.53 0.12 145)", destructive: "oklch(0.56 0.18 25)", warning: "oklch(0.68 0.14 75)",
+};
+
+const navBase = "position:relative; display:flex; min-height:44px; width:100%; align-items:center; gap:12px; border:0; padding:0 12px; font:inherit; font-size:14px; font-weight:500; text-align:left; cursor:pointer;";
+const navOn = navBase + `background:${C.accentSb}; color:${C.fg}; box-shadow:inset 2px 0 0 ${C.primary};`;
+const navOff = navBase + `background:none; color:${C.mutedFg};`;
+
+const tileTone = {
+  Healthy:  { bg: "rgba(16,185,129,0.15)", ring: "rgba(16,185,129,0.25)", dot: "#10b981", text: "#10b981" },
+  Degraded: { bg: "rgba(244,63,94,0.15)",  ring: "rgba(244,63,94,0.25)",  dot: "#f43f5e", text: "#f43f5e" },
+  Progressing: { bg: "rgba(14,165,233,0.15)", ring: "rgba(14,165,233,0.25)", dot: "#0ea5e9", text: "#0ea5e9" },
+  OutOfSync: { bg: "rgba(245,158,11,0.15)", ring: "rgba(245,158,11,0.25)", dot: "#f59e0b", text: "#f59e0b" },
+};
+
+function badge(bg, fg) {
+  return `display:inline-flex; height:20px; align-items:center; gap:6px; border-radius:9999px; background:${bg}; padding:0 8px; font-size:12px; font-weight:500; color:${fg}; box-shadow:0 0 0 1px ${bg};`;
+}
+function statusLabel(kind) {
+  if (kind === "danger") return `display:inline-flex; min-height:24px; align-items:center; border-radius:6px; border:1px solid oklch(0.56 0.18 25 / 0.4); background:oklch(0.56 0.18 25 / 0.1); padding:0 8px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:oklch(0.65 0.18 25);`;
+  if (kind === "ok") return `display:inline-flex; min-height:24px; align-items:center; border-radius:6px; border:1px solid oklch(0.53 0.12 145 / 0.4); background:oklch(0.53 0.12 145 / 0.1); padding:0 8px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:oklch(0.66 0.13 145);`;
+  return `display:inline-flex; min-height:24px; align-items:center; border-radius:6px; border:1px solid ${C.border}; background:${C.muted}; padding:0 8px; font-family:'JetBrains Mono',monospace; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:${C.mutedFg};`;
+}
+
+const APPS = [
+  { name: "checkout-api", ns: "payments", health: "Degraded", sync: "out_of_sync", cluster: "prod-eu-1", stage: "prod / ring 2", resources: 14, issue: "3 out-of-sync resources", actions: ["Sync", "Rollback"] },
+  { name: "payments-gateway", ns: "payments", health: "Healthy", sync: "synced", cluster: "prod-eu-1", stage: "prod / ring 2", resources: 22, issue: "", actions: ["Sync"] },
+  { name: "ledger-worker", ns: "payments", health: "Progressing", sync: "synced", cluster: "prod-us-1", stage: "staging / ring 1", resources: 9, issue: "Canary at 25% weight", actions: ["Sync", "Approve"] },
+  { name: "notifications", ns: "platform", health: "Degraded", sync: "out_of_sync", cluster: "prod-us-1", stage: "prod / ring 2", resources: 11, issue: "Deployment notifications has 1/3 replicas ready", actions: ["Sync", "Retry"] },
+  { name: "auth-service", ns: "platform", health: "Healthy", sync: "synced", cluster: "prod-us-1", stage: "prod / ring 2", resources: 17, issue: "", actions: ["Sync"] },
+  { name: "search-indexer", ns: "search", health: "Healthy", sync: "synced", cluster: "prod-eu-1", stage: "prod / ring 2", resources: 8, issue: "", actions: ["Sync"] },
+  { name: "web-frontend", ns: "web", health: "Healthy", sync: "synced", cluster: "prod-eu-1", stage: "prod / ring 2", resources: 12, issue: "", actions: ["Sync", "Rollback"] },
+  { name: "reporting-etl", ns: "data", health: "Healthy", sync: "synced", cluster: "prod-us-1", stage: "staging / ring 1", resources: 6, issue: "", actions: ["Sync"] },
+];
+
+const GRAPH_NODES = [
+  { kind: "Deployment", name: "checkout-api", x: 300, y: 24, sync: "OutOfSync", health: "Degraded", icon: "\u{1F4E6}" },
+  { kind: "Service", name: "checkout-api", x: 96, y: 128, sync: "Synced", health: "Healthy", icon: "\u{1F310}" },
+  { kind: "ReplicaSet", name: "checkout-api-7d4f", x: 300, y: 128, sync: "Synced", health: "Progressing", icon: "\u{1F504}" },
+  { kind: "ConfigMap", name: "checkout-api-env", x: 504, y: 128, sync: "OutOfSync", health: "Healthy", icon: "\u{1F4DD}" },
+  { kind: "Pod", name: "checkout-api-7d4f-x9k2", x: 200, y: 232, sync: "Synced", health: "Healthy", icon: "\u{25C9}" },
+  { kind: "Pod", name: "checkout-api-7d4f-m4p1", x: 400, y: 232, sync: "Synced", health: "Degraded", icon: "\u{25C9}" },
+  { kind: "Ingress", name: "checkout-api", x: 96, y: 336, sync: "Synced", health: "Healthy", icon: "\u{1F517}" },
+  { kind: "Secret", name: "checkout-api-tls", x: 504, y: 336, sync: "Synced", health: "Healthy", icon: "\u{1F510}" },
+];
+const GRAPH_EDGES = [[0,1],[0,2],[0,3],[2,4],[2,5],[1,6],[3,7]];
+
+const DAG_NODES = [
+  { name: "checkout", phase: "Succeeded", x: 250, y: 40 },
+  { name: "build", phase: "Succeeded", x: 250, y: 140 },
+  { name: "unit-test", phase: "Running", x: 130, y: 240 },
+  { name: "lint", phase: "Succeeded", x: 370, y: 240 },
+  { name: "package", phase: "Pending", x: 250, y: 340 },
+  { name: "deploy", phase: "Pending", x: 250, y: 440 },
+];
+const DAG_EDGES = [[0,1],[1,2],[1,3],[2,4],[3,4],[4,5]];
+const DAG_COLOR = { Running: "#3b82f6", Succeeded: "#22c55e", Failed: "#ef4444", Skipped: "#eab308", Cancelled: "#6b7280", Pending: "#94a3b8" };
+
+class Component extends DCLogic {
+  state = { screen: "overview", view: "table" };
+
+  go(screen) { return () => this.setState({ screen }); }
+
+  legacyGraph() {
+    const R = React.createElement;
+    const NW = 180, NH = 56;
+    const edges = GRAPH_EDGES.map(([a, b], i) => {
+      const from = GRAPH_NODES[a], to = GRAPH_NODES[b];
+      const x1 = from.x + NW / 2, y1 = from.y + NH, x2 = to.x + NW / 2, y2 = to.y;
+      const my = (y1 + y2) / 2;
+      return R("path", { key: i, d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, fill: "none", stroke: "oklch(0.35 0.012 50)", strokeWidth: 1.2 });
+    });
+    const syncTone = {
+      Synced: ["rgba(16,185,129,0.4)", "rgba(16,185,129,0.05)"],
+      OutOfSync: ["rgba(245,158,11,0.4)", "rgba(245,158,11,0.05)"],
+      Missing: ["oklch(0.56 0.18 25 / 0.4)", "oklch(0.56 0.18 25 / 0.05)"],
+    };
+    const healthDot = { Healthy: "#10b981", Degraded: "oklch(0.56 0.18 25)", Progressing: "#f59e0b", Unknown: C.mutedFg };
+    const nodes = GRAPH_NODES.map((n, i) => {
+      const [bc, bg] = syncTone[n.sync] || syncTone.Synced;
+      return R("div", { key: i, style: { position: "absolute", left: n.x, top: n.y, width: NW, boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, borderRadius: 12, border: `1px solid ${bc}`, background: bg, padding: "8px 12px", fontSize: 12, boxShadow: "0 0 0 1px oklch(0.93 0.012 50 / 0.05)" } },
+        R("span", { style: { flex: "none", fontSize: 14 } }, n.icon),
+        R("div", { style: { minWidth: 0, flex: 1 } },
+          R("p", { style: { margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, fontWeight: 500 } }, n.name),
+          R("div", { style: { display: "flex", alignItems: "center", gap: 6, marginTop: 2 } },
+            R("span", { style: { width: 6, height: 6, borderRadius: "50%", background: healthDot[n.health] } }),
+            R("span", { style: { fontSize: 9, color: C.mutedFg } }, n.kind),
+            R("span", { style: { fontSize: 9, color: C.primary } }, "managed"))));
+    });
+    return R("div", { style: { position: "absolute", inset: 0, overflow: "hidden" } },
+      R("div", { style: { position: "absolute", inset: 0, backgroundImage: `radial-gradient(${C.muted} 1px, transparent 1px)`, backgroundSize: "16px 16px" } }),
+      R("div", { style: { position: "absolute", left: 40, top: 30 } },
+        R("svg", { width: 720, height: 440, style: { position: "absolute", left: 0, top: 0, overflow: "visible" } }, edges),
+        nodes));
+  }
+
+  legacyDag() {
+    const R = React.createElement;
+    const edges = DAG_EDGES.map(([a, b], i) => {
+      const from = DAG_NODES[a], to = DAG_NODES[b];
+      const x1 = from.x + 70, y1 = from.y + 36, x2 = to.x + 70, y2 = to.y;
+      const my = (y1 + y2) / 2;
+      return R("path", { key: i, d: `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`, fill: "none", stroke: "oklch(0.35 0.012 50)", strokeWidth: 1.2 });
+    });
+    const nodes = DAG_NODES.map((n, i) => R("div", { key: i, style: { position: "absolute", left: n.x, top: n.y, minWidth: 140, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 9, border: `1px solid ${C.border}`, borderLeftWidth: 4, borderLeftColor: DAG_COLOR[n.phase], background: C.card, padding: "8px 16px", fontSize: 14, fontWeight: 500, boxShadow: "0 1px 2px rgba(0,0,0,0.3)", outline: n.name === "unit-test" ? `2px solid ${C.primary}` : "none", outlineOffset: 2 } }, n.name));
+    return R("div", { style: { position: "absolute", inset: 0 } },
+      R("div", { style: { position: "absolute", left: 60, top: 20 } },
+        R("svg", { width: 560, height: 520, style: { position: "absolute", left: 0, top: 0, overflow: "visible" } }, edges),
+        nodes));
+  }
+
+  renderVals() {
+    const s = this.state.screen;
+    const open = (screen) => () => this.setState({ screen });
+
+    const attention = [
+      { rank: "01", name: "checkout-api", sub: "payments/checkout-api \u00b7 3 blocked gates", health: "degraded" },
+      { rank: "02", name: "notifications", sub: "platform/notifications \u00b7 rollout paused", health: "degraded" },
+      { rank: "03", name: "reporting-etl", sub: "data/reporting-etl \u00b7 repository connection", health: "missing" },
+      { rank: "04", name: "ledger-worker", sub: "payments/ledger-worker \u00b7 release awaiting approval", health: "progressing" },
+      { rank: "05", name: "search-indexer", sub: "search/search-indexer \u00b7 out of sync", health: "healthy" },
+    ].map((r) => ({ ...r, open: open("appDetail") }));
+
+    const groups = {};
+    APPS.forEach((a) => { (groups[a.ns] = groups[a.ns] || []).push(a); });
+    const nsGroups = Object.keys(groups).sort().map((ns) => ({
+      ns,
+      count: groups[ns].length + (groups[ns].length === 1 ? " app" : " apps"),
+      apps: groups[ns].map((a) => {
+        const t = tileTone[a.health] || tileTone.Healthy;
+        return {
+          name: a.name, nsLabel: "ns/" + a.ns, health: a.health,
+          issue: a.issue, meta: a.stage.split(" / ")[0] + " / " + a.resources + " resources",
+          tileStyle: `display:flex; min-height:96px; flex-direction:column; justify-content:space-between; border:0; border-radius:12px; background:${t.bg}; padding:12px; box-shadow:0 0 0 1px ${t.ring}; font:inherit; text-align:left; color:inherit; cursor:pointer;`,
+          dotStyle: `width:10px; height:10px; flex:none; border-radius:50%; background:${t.dot};`,
+          healthTextStyle: `font-weight:500; color:${t.text};`,
+          open: open("appDetail"),
+        };
+      }),
+    }));
+
+    const icon = (d) => React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, dangerouslySetInnerHTML: { __html: d } });
+    const stats = [
+      { label: "Pipelines", value: "3", icon: icon('<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>') },
+      { label: "Running", value: "1", icon: icon('<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>') },
+      { label: "Succeeded", value: "1", icon: icon('<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/>') },
+      { label: "Failed", value: "1", icon: icon('<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>') },
+      { label: "Applications", value: "57", icon: icon('<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91 0z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>') },
+      { label: "Rollouts", value: "3/5", icon: icon('<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>') },
+      { label: "App Sets", value: "2", icon: icon('<path d="M20 10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-6a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2"/><path d="M2 12h20"/><path d="M6 20a2 2 0 0 1-2-2v-2"/>') },
+    ];
+
+    const pipelines = [
+      { name: "checkout-api-build", sub: "ns/payments \u00b7 84s \u00b7 2m ago", phase: "Running", done: 2, total: 6, tone: [C.primary, "oklch(0.63 0.19 35 / 0.1)"], steps: [["checkout","git:2.45"],["build","kaniko:1.23"],["unit-test","test-runner:3.2"]] },
+      { name: "web-frontend-build", sub: "ns/web \u00b7 61s \u00b7 14m ago", phase: "Succeeded", done: 5, total: 5, tone: ["oklch(0.66 0.13 145)", "oklch(0.53 0.12 145 / 0.1)"], steps: [["checkout","git:2.45"],["build","node:22"],["deploy","helm:3.16"]] },
+      { name: "ledger-worker-build", sub: "ns/payments \u00b7 22s \u00b7 41m ago", phase: "Failed", done: 3, total: 5, tone: ["oklch(0.65 0.18 25)", "oklch(0.56 0.18 25 / 0.1)"], steps: [["checkout","git:2.45"],["build","kaniko:1.23"],["integration-test","test-runner:3.2"]] },
+    ].map((p) => ({
+      name: p.name, sub: p.sub, phase: p.phase,
+      badgeStyle: badge(p.tone[1], p.tone[0]),
+      barStyle: `width:${Math.round((p.done / p.total) * 100)}%; border-radius:9999px; background:${C.primary};`,
+      progressLabel: p.done + "/" + p.total + " steps completed",
+      steps: p.steps.map(([name, image], i) => ({
+        name, image,
+        dotStyle: `width:14px; height:14px; flex:none; border-radius:50%; border:2px solid ${i < p.done ? "oklch(0.66 0.13 145)" : C.mutedFg};`,
+      })),
+      open: open("pipeline"),
+    }));
+
+    const presentations = ["Treemap", "Matrix", "Table", "Queue"].map((label) => {
+      const active = label.toLowerCase() === this.state.view;
+      return {
+        label,
+        style: `min-height:44px; min-width:5.5rem; border:0; padding:0 12px; font:inherit; font-size:12px; font-weight:600; cursor:pointer; background:${active ? C.primary : C.bg}; color:${active ? C.bg : C.mutedFg};`,
+        select: () => this.setState({ view: label.toLowerCase() }),
+      };
+    });
+
+    const filterGroups = [
+      { legend: "Project", options: [["payments/core", 18], ["platform/shared", 21], ["web/storefront", 12], ["data/analytics", 6]] },
+      { legend: "Cluster", options: [["fleet/prod-eu-1", 24], ["fleet/prod-us-1", 22], ["fleet/staging-1", 11]] },
+      { legend: "Stage", options: [["dev", 14], ["staging", 18], ["prod", 25]] },
+      { legend: "Health", options: [["Healthy", 41], ["Progressing", 6], ["Degraded", 4], ["Failed", 2], ["Missing", 1], ["Unknown", 3]] },
+      { legend: "Sync", options: [["Synced", 49], ["Out of sync", 8]] },
+    ].map((g) => ({ legend: g.legend, options: g.options.map(([label, count]) => ({ label, count })) }));
+
+    const inventory = APPS.map((a) => ({
+      name: a.name, id: a.ns + "/" + a.name, cluster: a.cluster, stage: a.stage, resources: a.resources.toLocaleString(),
+      healthLabel: a.health.toLowerCase(),
+      healthStyle: statusLabel(a.health === "Degraded" ? "danger" : a.health === "Healthy" ? "ok" : "neutral"),
+      syncLabel: a.sync.replace(/_/g, " "),
+      syncStyle: statusLabel(a.sync === "out_of_sync" ? "danger" : "ok"),
+      actions: a.actions, open: open("appDetail"),
+    }));
+
+    const triage = [
+      { kind: "Deployment", name: "checkout-api", ns: "payments", sync: "OutOfSync", health: "Degraded", reason: "Deployment does not have minimum availability: 1/3 replicas ready" },
+      { kind: "Pod", name: "checkout-api-7d4f-m4p1", ns: "payments", sync: "Synced", health: "Degraded", reason: "Back-off restarting failed container app: CrashLoopBackOff" },
+    ];
+
+    const healthChecks = [
+      { name: "http-readyz", status: "Degraded", code: 503, message: "readyz returned 503", at: "9/9/2026, 09:41:02", badgeStyle: badge("oklch(0.56 0.18 25 / 0.1)", "oklch(0.65 0.18 25)") },
+      { name: "cel-replicas", status: "Degraded", code: "-", message: "status.readyReplicas < spec.replicas", at: "9/9/2026, 09:41:02", badgeStyle: badge("oklch(0.56 0.18 25 / 0.1)", "oklch(0.65 0.18 25)") },
+      { name: "http-livez", status: "Healthy", code: 200, message: "-", at: "9/9/2026, 09:41:02", badgeStyle: badge("oklch(0.53 0.12 145 / 0.1)", "oklch(0.66 0.13 145)") },
+    ];
+
+    const stages = [
+      { ring: 0, name: "dev", phase: "Complete", release: "checkout-api-r241", badgeStyle: badge("oklch(0.53 0.12 145 / 0.1)", "oklch(0.66 0.13 145)") },
+      { ring: 1, name: "staging", phase: "Complete", release: "checkout-api-r241", badgeStyle: badge("oklch(0.53 0.12 145 / 0.1)", "oklch(0.66 0.13 145)") },
+      { ring: 2, name: "prod", phase: "Paused", release: "checkout-api-r241", badgeStyle: badge("oklch(0.68 0.14 75 / 0.1)", "oklch(0.75 0.14 75)") },
+    ];
+
+    const rolloutRows = [
+      { label: "Target", value: "Deployment/checkout-api" },
+      { label: "Stable ReplicaSet", value: "checkout-api-6b9c" },
+      { label: "Canary ReplicaSet", value: "checkout-api-7d4f" },
+      { label: "Active Service", value: "checkout-api" },
+      { label: "Preview Service", value: "checkout-api-preview" },
+      { label: "Observed Generation", value: "37" },
+      { label: "Message", value: "Paused at step 3 pending analysis" },
+    ];
+
+    return {
+      isOverview: s === "overview", isApplications: s === "applications", isAppDetail: s === "appDetail",
+      isPipeline: s === "pipeline", isRollout: s === "rollout",
+      goOverview: this.go("overview"), goApplications: this.go("applications"),
+      goPipeline: this.go("pipeline"), goRollout: this.go("rollout"),
+      navOverview: s === "overview" ? navOn : navOff,
+      navApplications: (s === "applications" || s === "appDetail") ? navOn : navOff,
+      navPipelines: s === "pipeline" ? navOn : navOff,
+      navReleases: navOff,
+      navRollouts: s === "rollout" ? navOn : navOff,
+      attention, nsGroups, stats, pipelines, presentations, filterGroups, inventory,
+      triage, healthChecks, stages, rolloutRows,
+      legacyGraph: this.legacyGraph(), legacyDag: this.legacyDag(),
+      legacyLogs: "2026-09-09T09:38:41Z  ==> running 214 tests\n2026-09-09T09:38:44Z  ok  \tcheckout/cart\t0.42s\n2026-09-09T09:38:47Z  ok  \tcheckout/pricing\t1.10s\n2026-09-09T09:38:52Z  ok  \tcheckout/tax\t0.88s\n2026-09-09T09:39:01Z  --- FAIL: TestIdempotentCapture\n2026-09-09T09:39:01Z      capture_test.go:118: want 1 charge, got 2\n2026-09-09T09:39:03Z  ok  \tcheckout/webhooks\t2.31s\n2026-09-09T09:39:09Z  ==> 213 passed, 1 failed",
+    };
+  }
+}
+
+</script>
+</body>
+</html>

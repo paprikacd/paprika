@@ -1,29 +1,28 @@
-import { describe, expect, it } from "vitest"
 import { render, screen } from "@testing-library/react"
+import { describe, expect, it } from "vitest"
+
+import { RolloutDebugPanel } from "@/components/dashboard/rollout-debug-panel"
 import {
   GatewayAPIRouterConfig,
   Rollout,
   RolloutABRoute,
-  RolloutAnalysisCheck,
-  RolloutStep,
   TrafficRouter,
 } from "@/gen/paprika/v1/api_pb"
-import { RolloutDebugPanel } from "@/components/dashboard/rollout-debug-panel"
 
-function makeRollout(): Rollout {
+function makeRollout(patch: Partial<Rollout> = {}): Rollout {
   return new Rollout({
     name: "checkout",
     namespace: "apps",
     strategyType: "Canary",
-    currentStep: 1,
-    currentWeight: 50,
+    phase: "Paused",
+    paused: true,
     replicas: 4,
     stableReadyReplicas: 4,
     canaryReadyReplicas: 2,
-    paused: true,
-    abort: true,
+    stableRs: "checkout-66c",
+    canaryRs: "checkout-95f",
     currentPodHash: "95f",
-    previousActiveRs: "checkout-66c",
+    autoPromotionSeconds: 120,
     trafficRouter: new TrafficRouter({
       provider: "gateway-api",
       gatewayApi: new GatewayAPIRouterConfig({
@@ -32,17 +31,6 @@ function makeRollout(): Rollout {
         canaryService: "checkout-canary",
       }),
     }),
-    canarySteps: [
-      new RolloutStep({ setWeight: 10, duration: "2m0s" }),
-      new RolloutStep({ setWeight: 50 }),
-    ],
-    analysisChecks: [
-      new RolloutAnalysisCheck({
-        type: "http",
-        url: "https://checkout.example.com/health",
-        successThreshold: "99%",
-      }),
-    ],
     abRoutes: [
       new RolloutABRoute({
         type: "Header",
@@ -51,30 +39,53 @@ function makeRollout(): Rollout {
         service: "canary",
       }),
     ],
-    mirrorPercent: 15,
-    autoPromotionSeconds: 120,
-    scaleDownDelaySeconds: 60,
+    ...patch,
   })
 }
 
 describe("RolloutDebugPanel", () => {
-  it("renders strategy, traffic, analysis, and replica debugging state", () => {
+  it("reports replica readiness as one phrase rather than two loose numbers", () => {
     render(<RolloutDebugPanel rollout={makeRollout()} />)
 
-    expect(screen.getByText("Strategy Plan")).toBeInTheDocument()
-    expect(screen.getByText("10%")).toBeInTheDocument()
-    expect(screen.getByText("50%")).toBeInTheDocument()
-    expect(screen.getByText("2m0s")).toBeInTheDocument()
-    expect(screen.getByText("gateway-api")).toBeInTheDocument()
+    expect(
+      screen.getByText("4 of 4 stable replicas ready"),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("2 of 4 canary replicas ready"),
+    ).toBeInTheDocument()
+  })
+
+  it("names the objects the controller is steering", () => {
+    render(<RolloutDebugPanel rollout={makeRollout()} />)
+
     expect(screen.getByText("checkout-route")).toBeInTheDocument()
-    expect(screen.getByText("http")).toBeInTheDocument()
-    expect(screen.getByText("99%")).toBeInTheDocument()
-    expect(screen.getByText("x-user-ring")).toBeInTheDocument()
-    expect(screen.getByText("15%")).toBeInTheDocument()
-    expect(screen.getByText("4 / 4")).toBeInTheDocument()
-    expect(screen.getByText("2 / 4")).toBeInTheDocument()
+    expect(screen.getByText("checkout-stable")).toBeInTheDocument()
+    expect(screen.getByText(/x-user-ring/)).toBeInTheDocument()
     expect(screen.getByText("Paused")).toBeInTheDocument()
-    expect(screen.getByText("Aborted")).toBeInTheDocument()
-    expect(screen.getByText("checkout-66c")).toBeInTheDocument()
+  })
+
+  it("omits a field the object did not carry instead of showing a zero", () => {
+    render(
+      <RolloutDebugPanel
+        rollout={makeRollout({ autoPromotionSeconds: 0, currentPodHash: "" })}
+      />,
+    )
+
+    expect(screen.queryByText("Auto promote after")).not.toBeInTheDocument()
+    expect(screen.queryByText("0s")).not.toBeInTheDocument()
+    expect(screen.queryByText("Scale-down delay")).not.toBeInTheDocument()
+  })
+
+  it("says a rollout has no router rather than drawing empty routing rows", () => {
+    render(
+      <RolloutDebugPanel
+        rollout={makeRollout({ trafficRouter: undefined, abRoutes: [] })}
+      />,
+    )
+
+    expect(
+      screen.getByText(/declares no traffic router/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText("HTTPRoute")).not.toBeInTheDocument()
   })
 })

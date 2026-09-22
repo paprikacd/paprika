@@ -47,7 +47,19 @@ func BasicLoginHandler(cfg BasicAuthConfig, tokenSecret []byte) http.HandlerFunc
 			return
 		}
 
-		token, err := IssueToken(req.Username, req.Username+"@paprika.cd", req.Username, tokenSecret)
+		// IssueTokenWithOptions (not the audience-less IssueToken) so this
+		// token carries aud=paprika-api: BuildAuthenticator now requires that
+		// audience strictly (see ConsoleAPIAudience), and a token with no aud
+		// claim at all is rejected exactly like one minted for a different
+		// audience would be. Without this, basic-auth login would keep
+		// issuing tokens the console API can never again accept.
+		token, err := IssueTokenWithOptions(TokenOptions{
+			Subject:  req.Username,
+			Email:    req.Username + "@paprika.cd",
+			Name:     req.Username,
+			Audience: ConsoleAPIAudience,
+			Secret:   tokenSecret,
+		})
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return

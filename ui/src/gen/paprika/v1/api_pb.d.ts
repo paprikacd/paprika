@@ -464,6 +464,21 @@ export declare enum FleetCapability {
    * @generated from enum value: FLEET_CAPABILITY_PIPELINE_RETRY = 4;
    */
   PIPELINE_RETRY = 4,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_ROLLOUT_HOLD = 5;
+   */
+  ROLLOUT_HOLD = 5,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_RESOURCE_PATCH = 6;
+   */
+  RESOURCE_PATCH = 6,
+
+  /**
+   * @generated from enum value: FLEET_CAPABILITY_DRIFT_IGNORE = 7;
+   */
+  DRIFT_IGNORE = 7,
 }
 
 /**
@@ -514,6 +529,653 @@ export declare enum FleetMapNodeKind {
    * @generated from enum value: FLEET_MAP_NODE_KIND_APPLICATION = 2;
    */
   APPLICATION = 2,
+}
+
+/**
+ * @generated from enum paprika.v1.DataState
+ */
+export declare enum DataState {
+  /**
+   * @generated from enum value: DATA_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DATA_STATE_OK = 1;
+   */
+  OK = 1,
+
+  /**
+   * @generated from enum value: DATA_STATE_NOT_CONFIGURED = 2;
+   */
+  NOT_CONFIGURED = 2,
+
+  /**
+   * @generated from enum value: DATA_STATE_NOT_AVAILABLE = 3;
+   */
+  NOT_AVAILABLE = 3,
+
+  /**
+   * @generated from enum value: DATA_STATE_STALE = 4;
+   */
+  STALE = 4,
+
+  /**
+   * @generated from enum value: DATA_STATE_ERROR = 5;
+   */
+  ERROR = 5,
+
+  /**
+   * @generated from enum value: DATA_STATE_FORBIDDEN = 6;
+   */
+  FORBIDDEN = 6,
+}
+
+/**
+ * @generated from enum paprika.v1.DataClass
+ */
+export declare enum DataClass {
+  /**
+   * @generated from enum value: DATA_CLASS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DATA_CLASS_CLUSTER_INVENTORY = 1;
+   */
+  CLUSTER_INVENTORY = 1,
+
+  /**
+   * @generated from enum value: DATA_CLASS_CLUSTER_CAPACITY = 2;
+   */
+  CLUSTER_CAPACITY = 2,
+
+  /**
+   * @generated from enum value: DATA_CLASS_APPLICATION_SIGNALS = 3;
+   */
+  APPLICATION_SIGNALS = 3,
+
+  /**
+   * @generated from enum value: DATA_CLASS_COST = 4;
+   */
+  COST = 4,
+
+  /**
+   * @generated from enum value: DATA_CLASS_SOURCE_EVENTS = 5;
+   */
+  SOURCE_EVENTS = 5,
+
+  /**
+   * @generated from enum value: DATA_CLASS_ROLLOUT_HISTORY = 6;
+   */
+  ROLLOUT_HISTORY = 6,
+
+  /**
+   * @generated from enum value: DATA_CLASS_PIPELINE_RUNS = 7;
+   */
+  PIPELINE_RUNS = 7,
+
+  /**
+   * @generated from enum value: DATA_CLASS_COMMIT_METADATA = 8;
+   */
+  COMMIT_METADATA = 8,
+
+  /**
+   * @generated from enum value: DATA_CLASS_OWNERSHIP = 9;
+   */
+  OWNERSHIP = 9,
+
+  /**
+   * @generated from enum value: DATA_CLASS_DRIFT_DETAIL = 10;
+   */
+  DRIFT_DETAIL = 10,
+
+  /**
+   * @generated from enum value: DATA_CLASS_LIFECYCLE = 11;
+   */
+  LIFECYCLE = 11,
+}
+
+/**
+ * @generated from enum paprika.v1.ResourceUnit
+ */
+export declare enum ResourceUnit {
+  /**
+   * @generated from enum value: RESOURCE_UNIT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: RESOURCE_UNIT_MILLICORES = 1;
+   */
+  MILLICORES = 1,
+
+  /**
+   * @generated from enum value: RESOURCE_UNIT_BYTES = 2;
+   */
+  BYTES = 2,
+}
+
+/**
+ * @generated from enum paprika.v1.ClusterMode
+ */
+export declare enum ClusterMode {
+  /**
+   * @generated from enum value: CLUSTER_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CLUSTER_MODE_IN_CLUSTER = 1;
+   */
+  IN_CLUSTER = 1,
+
+  /**
+   * @generated from enum value: CLUSTER_MODE_DIRECT = 2;
+   */
+  DIRECT = 2,
+
+  /**
+   * @generated from enum value: CLUSTER_MODE_AGENT = 3;
+   */
+  AGENT = 3,
+}
+
+/**
+ * @generated from enum paprika.v1.ClusterPhase
+ */
+export declare enum ClusterPhase {
+  /**
+   * @generated from enum value: CLUSTER_PHASE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: CLUSTER_PHASE_PENDING = 1;
+   */
+  PENDING = 1,
+
+  /**
+   * @generated from enum value: CLUSTER_PHASE_HEALTHY = 2;
+   */
+  HEALTHY = 2,
+
+  /**
+   * @generated from enum value: CLUSTER_PHASE_UNHEALTHY = 3;
+   */
+  UNHEALTHY = 3,
+
+  /**
+   * @generated from enum value: CLUSTER_PHASE_DISABLED = 4;
+   */
+  DISABLED = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.SignalKind
+ */
+export declare enum SignalKind {
+  /**
+   * @generated from enum value: SIGNAL_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SIGNAL_KIND_REQUEST_RATE = 1;
+   */
+  REQUEST_RATE = 1,
+
+  /**
+   * @generated from enum value: SIGNAL_KIND_ERROR_RATE = 2;
+   */
+  ERROR_RATE = 2,
+
+  /**
+   * @generated from enum value: SIGNAL_KIND_LATENCY = 3;
+   */
+  LATENCY = 3,
+
+  /**
+   * @generated from enum value: SIGNAL_KIND_SATURATION = 4;
+   */
+  SATURATION = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.SignalUnit
+ */
+export declare enum SignalUnit {
+  /**
+   * @generated from enum value: SIGNAL_UNIT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SIGNAL_UNIT_REQUESTS_PER_SECOND = 1;
+   */
+  REQUESTS_PER_SECOND = 1,
+
+  /**
+   * @generated from enum value: SIGNAL_UNIT_RATIO = 2;
+   */
+  RATIO = 2,
+
+  /**
+   * @generated from enum value: SIGNAL_UNIT_MILLISECONDS = 3;
+   */
+  MILLISECONDS = 3,
+
+  /**
+   * @generated from enum value: SIGNAL_UNIT_PERCENT = 4;
+   */
+  PERCENT = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.CostBasis
+ */
+export declare enum CostBasis {
+  /**
+   * @generated from enum value: COST_BASIS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Estimate: rate card x requested resources.
+   *
+   * @generated from enum value: COST_BASIS_RATE_CARD_REQUESTED = 1;
+   */
+  RATE_CARD_REQUESTED = 1,
+
+  /**
+   * Estimate: rate card x node allocatable.
+   *
+   * @generated from enum value: COST_BASIS_RATE_CARD_ALLOCATABLE = 2;
+   */
+  RATE_CARD_ALLOCATABLE = 2,
+
+  /**
+   * Actual spend from a billing provider.
+   *
+   * @generated from enum value: COST_BASIS_BILLING = 3;
+   */
+  BILLING = 3,
+}
+
+/**
+ * @generated from enum paprika.v1.SourceEventKind
+ */
+export declare enum SourceEventKind {
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_GIT_PUSH = 1;
+   */
+  GIT_PUSH = 1,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_GIT_TAG = 2;
+   */
+  GIT_TAG = 2,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_OCI_PUSH = 3;
+   */
+  OCI_PUSH = 3,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_S3_OBJECT = 4;
+   */
+  S3_OBJECT = 4,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_POLL_DETECTED = 5;
+   */
+  POLL_DETECTED = 5,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_KIND_MANUAL_SYNC = 6;
+   */
+  MANUAL_SYNC = 6,
+}
+
+/**
+ * @generated from enum paprika.v1.SourceEventOutcome
+ */
+export declare enum SourceEventOutcome {
+  /**
+   * @generated from enum value: SOURCE_EVENT_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_OUTCOME_ACCEPTED = 1;
+   */
+  ACCEPTED = 1,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_OUTCOME_NO_MATCH = 2;
+   */
+  NO_MATCH = 2,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_OUTCOME_REJECTED = 3;
+   */
+  REJECTED = 3,
+
+  /**
+   * @generated from enum value: SOURCE_EVENT_OUTCOME_FAILED = 4;
+   */
+  FAILED = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.RolloutOutcome
+ */
+export declare enum RolloutOutcome {
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_SUCCEEDED = 1;
+   */
+  SUCCEEDED = 1,
+
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_ABORTED = 2;
+   */
+  ABORTED = 2,
+
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_FAILED = 3;
+   */
+  FAILED = 3,
+
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_ROLLED_BACK = 4;
+   */
+  ROLLED_BACK = 4,
+
+  /**
+   * @generated from enum value: ROLLOUT_OUTCOME_SUPERSEDED = 5;
+   */
+  SUPERSEDED = 5,
+}
+
+/**
+ * @generated from enum paprika.v1.PipelineRunOutcome
+ */
+export declare enum PipelineRunOutcome {
+  /**
+   * @generated from enum value: PIPELINE_RUN_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PIPELINE_RUN_OUTCOME_SUCCEEDED = 1;
+   */
+  SUCCEEDED = 1,
+
+  /**
+   * @generated from enum value: PIPELINE_RUN_OUTCOME_FAILED = 2;
+   */
+  FAILED = 2,
+
+  /**
+   * @generated from enum value: PIPELINE_RUN_OUTCOME_CANCELLED = 3;
+   */
+  CANCELLED = 3,
+}
+
+/**
+ * @generated from enum paprika.v1.ComputeBasis
+ */
+export declare enum ComputeBasis {
+  /**
+   * @generated from enum value: COMPUTE_BASIS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Declared requests multiplied by wall duration. An allocation figure, not usage.
+   *
+   * @generated from enum value: COMPUTE_BASIS_REQUESTED = 1;
+   */
+  REQUESTED = 1,
+
+  /**
+   * @generated from enum value: COMPUTE_BASIS_MEASURED = 2;
+   */
+  MEASURED = 2,
+}
+
+/**
+ * @generated from enum paprika.v1.OwnershipTier
+ */
+export declare enum OwnershipTier {
+  /**
+   * @generated from enum value: OWNERSHIP_TIER_UNSPECIFIED = 0;
+   */
+  OWNERSHIP_TIER_UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OWNERSHIP_TIER_1 = 1;
+   */
+  OWNERSHIP_TIER_1 = 1,
+
+  /**
+   * @generated from enum value: OWNERSHIP_TIER_2 = 2;
+   */
+  OWNERSHIP_TIER_2 = 2,
+
+  /**
+   * @generated from enum value: OWNERSHIP_TIER_3 = 3;
+   */
+  OWNERSHIP_TIER_3 = 3,
+
+  /**
+   * @generated from enum value: OWNERSHIP_TIER_4 = 4;
+   */
+  OWNERSHIP_TIER_4 = 4,
+}
+
+/**
+ * @generated from enum paprika.v1.DrilldownKind
+ */
+export declare enum DrilldownKind {
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_DASHBOARD = 1;
+   */
+  DASHBOARD = 1,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_LOGS = 2;
+   */
+  LOGS = 2,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_TRACES = 3;
+   */
+  TRACES = 3,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_RUNBOOK = 4;
+   */
+  RUNBOOK = 4,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_COST = 5;
+   */
+  COST = 5,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_REPOSITORY = 6;
+   */
+  REPOSITORY = 6,
+
+  /**
+   * @generated from enum value: DRILLDOWN_KIND_CUSTOM = 7;
+   */
+  CUSTOM = 7,
+}
+
+/**
+ * @generated from enum paprika.v1.DriftReason
+ */
+export declare enum DriftReason {
+  /**
+   * @generated from enum value: DRIFT_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DRIFT_REASON_FIELD_CHANGED = 1;
+   */
+  FIELD_CHANGED = 1,
+
+  /**
+   * @generated from enum value: DRIFT_REASON_RESOURCE_MISSING = 2;
+   */
+  RESOURCE_MISSING = 2,
+
+  /**
+   * @generated from enum value: DRIFT_REASON_RESOURCE_UNMANAGED = 3;
+   */
+  RESOURCE_UNMANAGED = 3,
+
+  /**
+   * @generated from enum value: DRIFT_REASON_PRUNE_PENDING = 4;
+   */
+  PRUNE_PENDING = 4,
+
+  /**
+   * @generated from enum value: DRIFT_REASON_IGNORED = 5;
+   */
+  IGNORED = 5,
+}
+
+/**
+ * @generated from enum paprika.v1.LifecyclePhase
+ */
+export declare enum LifecyclePhase {
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_SOURCE = 1;
+   */
+  SOURCE = 1,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_BUILD = 2;
+   */
+  BUILD = 2,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_TEST = 3;
+   */
+  TEST = 3,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_RENDER = 4;
+   */
+  RENDER = 4,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_DEPLOY = 5;
+   */
+  DEPLOY = 5,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_VERIFY = 6;
+   */
+  VERIFY = 6,
+}
+
+/**
+ * @generated from enum paprika.v1.LifecyclePhaseState
+ */
+export declare enum LifecyclePhaseState {
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The application has no such stage at all; render as inert, not failed.
+   *
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_NOT_APPLICABLE = 1;
+   */
+  NOT_APPLICABLE = 1,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_PENDING = 2;
+   */
+  PENDING = 2,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_RUNNING = 3;
+   */
+  RUNNING = 3,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_BLOCKED = 4;
+   */
+  BLOCKED = 4,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_SUCCEEDED = 5;
+   */
+  SUCCEEDED = 5,
+
+  /**
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_FAILED = 6;
+   */
+  FAILED = 6,
+
+  /**
+   * Applicable but no data; render as unknown, not failed.
+   *
+   * @generated from enum value: LIFECYCLE_PHASE_STATE_UNKNOWN = 7;
+   */
+  UNKNOWN = 7,
+}
+
+/**
+ * @generated from enum paprika.v1.PatchType
+ */
+export declare enum PatchType {
+  /**
+   * @generated from enum value: PATCH_TYPE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PATCH_TYPE_JSON_PATCH = 1;
+   */
+  JSON_PATCH = 1,
+
+  /**
+   * @generated from enum value: PATCH_TYPE_MERGE_PATCH = 2;
+   */
+  MERGE_PATCH = 2,
+
+  /**
+   * @generated from enum value: PATCH_TYPE_STRATEGIC_MERGE = 3;
+   */
+  STRATEGIC_MERGE = 3,
 }
 
 /**
@@ -5528,6 +6190,28 @@ export declare class ApplicationSummary extends Message<ApplicationSummary> {
    */
   capabilities: FleetCapability[];
 
+  /**
+   * @generated from field: paprika.v1.LifecycleVector lifecycle = 23;
+   */
+  lifecycle?: LifecycleVector;
+
+  /**
+   * @generated from field: paprika.v1.OwnershipSummary ownership = 24;
+   */
+  ownership?: OwnershipSummary;
+
+  /**
+   * @generated from field: paprika.v1.CommitSummary commit = 25;
+   */
+  commit?: CommitSummary;
+
+  /**
+   * Release identifier for the current stage, e.g. "r241". Empty when none.
+   *
+   * @generated from field: string release_id = 26;
+   */
+  releaseId: string;
+
   constructor(data?: PartialMessage<ApplicationSummary>);
 
   static readonly runtime: typeof proto3;
@@ -6198,5 +6882,3421 @@ export declare class QueryFleetMatrixResponse extends Message<QueryFleetMatrixRe
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryFleetMatrixResponse;
 
   static equals(a: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined, b: QueryFleetMatrixResponse | PlainMessage<QueryFleetMatrixResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.DataSourceStatus
+ */
+export declare class DataSourceStatus extends Message<DataSourceStatus> {
+  /**
+   * @generated from field: paprika.v1.DataClass data_class = 1;
+   */
+  dataClass: DataClass;
+
+  /**
+   * @generated from field: paprika.v1.DataState state = 2;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: string provider = 3;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 4;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * Age beyond which the server reports DATA_STATE_STALE.
+   *
+   * @generated from field: int64 staleness_budget_ms = 5;
+   */
+  stalenessBudgetMs: bigint;
+
+  /**
+   * @generated from field: string unavailable_reason = 6;
+   */
+  unavailableReason: string;
+
+  /**
+   * @generated from field: uint32 retention_limit = 7;
+   */
+  retentionLimit: number;
+
+  /**
+   * @generated from field: int64 retention_window_ms = 8;
+   */
+  retentionWindowMs: bigint;
+
+  constructor(data?: PartialMessage<DataSourceStatus>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.DataSourceStatus";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DataSourceStatus;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DataSourceStatus;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DataSourceStatus;
+
+  static equals(a: DataSourceStatus | PlainMessage<DataSourceStatus> | undefined, b: DataSourceStatus | PlainMessage<DataSourceStatus> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetDataSourcesRequest
+ */
+export declare class GetDataSourcesRequest extends Message<GetDataSourcesRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  constructor(data?: PartialMessage<GetDataSourcesRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetDataSourcesRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetDataSourcesRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetDataSourcesRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetDataSourcesRequest;
+
+  static equals(a: GetDataSourcesRequest | PlainMessage<GetDataSourcesRequest> | undefined, b: GetDataSourcesRequest | PlainMessage<GetDataSourcesRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetDataSourcesResponse
+ */
+export declare class GetDataSourcesResponse extends Message<GetDataSourcesResponse> {
+  /**
+   * Always one entry per DataClass, in enum order, regardless of configuration.
+   *
+   * @generated from field: repeated paprika.v1.DataSourceStatus sources = 1;
+   */
+  sources: DataSourceStatus[];
+
+  /**
+   * @generated from field: uint64 index_generation = 2;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<GetDataSourcesResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetDataSourcesResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetDataSourcesResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetDataSourcesResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetDataSourcesResponse;
+
+  static equals(a: GetDataSourcesResponse | PlainMessage<GetDataSourcesResponse> | undefined, b: GetDataSourcesResponse | PlainMessage<GetDataSourcesResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResourceMeter
+ */
+export declare class ResourceMeter extends Message<ResourceMeter> {
+  /**
+   * @generated from field: paprika.v1.ResourceUnit unit = 1;
+   */
+  unit: ResourceUnit;
+
+  /**
+   * @generated from field: paprika.v1.DataState used_state = 2;
+   */
+  usedState: DataState;
+
+  /**
+   * @generated from field: double used = 3;
+   */
+  used: number;
+
+  /**
+   * @generated from field: paprika.v1.DataState requested_state = 4;
+   */
+  requestedState: DataState;
+
+  /**
+   * @generated from field: double requested = 5;
+   */
+  requested: number;
+
+  /**
+   * @generated from field: paprika.v1.DataState allocatable_state = 6;
+   */
+  allocatableState: DataState;
+
+  /**
+   * @generated from field: double allocatable = 7;
+   */
+  allocatable: number;
+
+  /**
+   * @generated from field: double capacity = 8;
+   */
+  capacity: number;
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 9;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string unavailable_reason = 10;
+   */
+  unavailableReason: string;
+
+  constructor(data?: PartialMessage<ResourceMeter>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResourceMeter";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResourceMeter;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResourceMeter;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResourceMeter;
+
+  static equals(a: ResourceMeter | PlainMessage<ResourceMeter> | undefined, b: ResourceMeter | PlainMessage<ResourceMeter> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterInventory
+ */
+export declare class ClusterInventory extends Message<ClusterInventory> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: uint32 node_count = 2;
+   */
+  nodeCount: number;
+
+  /**
+   * @generated from field: uint32 ready_node_count = 3;
+   */
+  readyNodeCount: number;
+
+  /**
+   * @generated from field: uint32 pod_count = 4;
+   */
+  podCount: number;
+
+  /**
+   * @generated from field: uint32 running_pod_count = 5;
+   */
+  runningPodCount: number;
+
+  /**
+   * @generated from field: uint32 namespace_count = 6;
+   */
+  namespaceCount: number;
+
+  /**
+   * Distinct topology.kubernetes.io/region values observed on nodes. Empty when unknown.
+   *
+   * @generated from field: repeated string regions = 7;
+   */
+  regions: string[];
+
+  /**
+   * @generated from field: repeated string zones = 8;
+   */
+  zones: string[];
+
+  /**
+   * Distinct kubelet versions; more than one entry means version skew.
+   *
+   * @generated from field: repeated string kubelet_versions = 9;
+   */
+  kubeletVersions: string[];
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 10;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string unavailable_reason = 11;
+   */
+  unavailableReason: string;
+
+  constructor(data?: PartialMessage<ClusterInventory>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterInventory";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterInventory;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterInventory;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterInventory;
+
+  static equals(a: ClusterInventory | PlainMessage<ClusterInventory> | undefined, b: ClusterInventory | PlainMessage<ClusterInventory> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterCapacity
+ */
+export declare class ClusterCapacity extends Message<ClusterCapacity> {
+  /**
+   * @generated from field: paprika.v1.ResourceMeter cpu = 1;
+   */
+  cpu?: ResourceMeter;
+
+  /**
+   * @generated from field: paprika.v1.ResourceMeter memory = 2;
+   */
+  memory?: ResourceMeter;
+
+  /**
+   * e.g. "metrics-server". Empty when no usage source is present.
+   *
+   * @generated from field: string usage_provider = 3;
+   */
+  usageProvider: string;
+
+  constructor(data?: PartialMessage<ClusterCapacity>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterCapacity";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterCapacity;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterCapacity;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterCapacity;
+
+  static equals(a: ClusterCapacity | PlainMessage<ClusterCapacity> | undefined, b: ClusterCapacity | PlainMessage<ClusterCapacity> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterAgentInfo
+ */
+export declare class ClusterAgentInfo extends Message<ClusterAgentInfo> {
+  /**
+   * NOT_CONFIGURED unless mode == CLUSTER_MODE_AGENT.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: string address = 2;
+   */
+  address: string;
+
+  /**
+   * @generated from field: string version = 3;
+   */
+  version: string;
+
+  /**
+   * @generated from field: int64 last_seen_unix_ms = 4;
+   */
+  lastSeenUnixMs: bigint;
+
+  /**
+   * @generated from field: bool connected = 5;
+   */
+  connected: boolean;
+
+  constructor(data?: PartialMessage<ClusterAgentInfo>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterAgentInfo";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterAgentInfo;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterAgentInfo;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterAgentInfo;
+
+  static equals(a: ClusterAgentInfo | PlainMessage<ClusterAgentInfo> | undefined, b: ClusterAgentInfo | PlainMessage<ClusterAgentInfo> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.Cluster
+ */
+export declare class Cluster extends Message<Cluster> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey identity = 1;
+   */
+  identity?: FleetObjectKey;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: paprika.v1.ClusterMode mode = 3;
+   */
+  mode: ClusterMode;
+
+  /**
+   * @generated from field: string server = 4;
+   */
+  server: string;
+
+  /**
+   * @generated from field: string service_account = 5;
+   */
+  serviceAccount: string;
+
+  /**
+   * @generated from field: map<string, string> labels = 6;
+   */
+  labels: { [key: string]: string };
+
+  /**
+   * @generated from field: bool disabled = 7;
+   */
+  disabled: boolean;
+
+  /**
+   * @generated from field: paprika.v1.ClusterPhase phase = 8;
+   */
+  phase: ClusterPhase;
+
+  /**
+   * @generated from field: paprika.v1.FleetConnectionState connection = 9;
+   */
+  connection: FleetConnectionState;
+
+  /**
+   * Empty when never observed. Always empty for agent-mode clusters today.
+   *
+   * @generated from field: string kubernetes_version = 10;
+   */
+  kubernetesVersion: string;
+
+  /**
+   * @generated from field: int64 last_health_check_unix_ms = 11;
+   */
+  lastHealthCheckUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 12;
+   */
+  createdAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 observed_generation = 13;
+   */
+  observedGeneration: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.Condition conditions = 14;
+   */
+  conditions: Condition[];
+
+  /**
+   * @generated from field: uint64 application_count = 15;
+   */
+  applicationCount: bigint;
+
+  /**
+   * @generated from field: uint64 target_count = 16;
+   */
+  targetCount: bigint;
+
+  /**
+   * @generated from field: paprika.v1.ClusterInventory inventory = 17;
+   */
+  inventory?: ClusterInventory;
+
+  /**
+   * @generated from field: paprika.v1.ClusterCapacity capacity = 18;
+   */
+  capacity?: ClusterCapacity;
+
+  /**
+   * @generated from field: paprika.v1.CostSummary cost = 19;
+   */
+  cost?: CostSummary;
+
+  /**
+   * @generated from field: paprika.v1.ClusterAgentInfo agent = 20;
+   */
+  agent?: ClusterAgentInfo;
+
+  /**
+   * @generated from field: string health_check_interval = 21;
+   */
+  healthCheckInterval: string;
+
+  /**
+   * @generated from field: string health_check_timeout = 22;
+   */
+  healthCheckTimeout: string;
+
+  constructor(data?: PartialMessage<Cluster>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.Cluster";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Cluster;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Cluster;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Cluster;
+
+  static equals(a: Cluster | PlainMessage<Cluster> | undefined, b: Cluster | PlainMessage<Cluster> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListClustersRequest
+ */
+export declare class ListClustersRequest extends Message<ListClustersRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: uint32 page_size = 2;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 3;
+   */
+  cursor: string;
+
+  /**
+   * @generated from field: bool include_capacity = 4;
+   */
+  includeCapacity: boolean;
+
+  /**
+   * Include clusters with zero authorized applications. Requires admin.
+   *
+   * @generated from field: bool include_unreferenced = 5;
+   */
+  includeUnreferenced: boolean;
+
+  constructor(data?: PartialMessage<ListClustersRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListClustersRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListClustersRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListClustersRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListClustersRequest;
+
+  static equals(a: ListClustersRequest | PlainMessage<ListClustersRequest> | undefined, b: ListClustersRequest | PlainMessage<ListClustersRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListClustersResponse
+ */
+export declare class ListClustersResponse extends Message<ListClustersResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.Cluster clusters = 1;
+   */
+  clusters: Cluster[];
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: string next_cursor = 3;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: uint64 index_generation = 4;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<ListClustersResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListClustersResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListClustersResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListClustersResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListClustersResponse;
+
+  static equals(a: ListClustersResponse | PlainMessage<ListClustersResponse> | undefined, b: ListClustersResponse | PlainMessage<ListClustersResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetClusterRequest
+ */
+export declare class GetClusterRequest extends Message<GetClusterRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetClusterRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetClusterRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetClusterRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetClusterRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetClusterRequest;
+
+  static equals(a: GetClusterRequest | PlainMessage<GetClusterRequest> | undefined, b: GetClusterRequest | PlainMessage<GetClusterRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetClusterResponse
+ */
+export declare class GetClusterResponse extends Message<GetClusterResponse> {
+  /**
+   * @generated from field: paprika.v1.Cluster cluster = 1;
+   */
+  cluster?: Cluster;
+
+  /**
+   * @generated from field: uint64 index_generation = 2;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<GetClusterResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetClusterResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetClusterResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetClusterResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetClusterResponse;
+
+  static equals(a: GetClusterResponse | PlainMessage<GetClusterResponse> | undefined, b: GetClusterResponse | PlainMessage<GetClusterResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SignalValue
+ */
+export declare class SignalValue extends Message<SignalValue> {
+  /**
+   * @generated from field: paprika.v1.SignalKind kind = 1;
+   */
+  kind: SignalKind;
+
+  /**
+   * @generated from field: paprika.v1.DataState state = 2;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: double value = 3;
+   */
+  value: number;
+
+  /**
+   * @generated from field: paprika.v1.SignalUnit unit = 4;
+   */
+  unit: SignalUnit;
+
+  /**
+   * 0 when the signal is not a quantile; 0.99 for p99.
+   *
+   * @generated from field: double quantile = 5;
+   */
+  quantile: number;
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 6;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 window_seconds = 7;
+   */
+  windowSeconds: bigint;
+
+  /**
+   * @generated from field: string unavailable_reason = 8;
+   */
+  unavailableReason: string;
+
+  constructor(data?: PartialMessage<SignalValue>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SignalValue";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SignalValue;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SignalValue;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SignalValue;
+
+  static equals(a: SignalValue | PlainMessage<SignalValue> | undefined, b: SignalValue | PlainMessage<SignalValue> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplicationSignals
+ */
+export declare class ApplicationSignals extends Message<ApplicationSignals> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 1;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: string stage = 2;
+   */
+  stage: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey cluster = 3;
+   */
+  cluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.DataState state = 4;
+   */
+  state: DataState;
+
+  /**
+   * The effective observability source. Empty when none is bound.
+   *
+   * @generated from field: paprika.v1.FleetObjectKey source = 5;
+   */
+  source?: FleetObjectKey;
+
+  /**
+   * One entry per requested SignalKind, even when unavailable.
+   *
+   * @generated from field: repeated paprika.v1.SignalValue signals = 6;
+   */
+  signals: SignalValue[];
+
+  constructor(data?: PartialMessage<ApplicationSignals>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplicationSignals";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplicationSignals;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplicationSignals;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationSignals;
+
+  static equals(a: ApplicationSignals | PlainMessage<ApplicationSignals> | undefined, b: ApplicationSignals | PlainMessage<ApplicationSignals> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryApplicationSignalsRequest
+ */
+export declare class QueryApplicationSignalsRequest extends Message<QueryApplicationSignalsRequest> {
+  /**
+   * Bounded batch of at most 100 identities; matches one console page.
+   *
+   * @generated from field: repeated paprika.v1.FleetObjectKey applications = 1;
+   */
+  applications: FleetObjectKey[];
+
+  /**
+   * @generated from field: string stage = 2;
+   */
+  stage: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.SignalKind signals = 3;
+   */
+  signals: SignalKind[];
+
+  /**
+   * @generated from field: int64 window_seconds = 4;
+   */
+  windowSeconds: bigint;
+
+  constructor(data?: PartialMessage<QueryApplicationSignalsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryApplicationSignalsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryApplicationSignalsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryApplicationSignalsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryApplicationSignalsRequest;
+
+  static equals(a: QueryApplicationSignalsRequest | PlainMessage<QueryApplicationSignalsRequest> | undefined, b: QueryApplicationSignalsRequest | PlainMessage<QueryApplicationSignalsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryApplicationSignalsResponse
+ */
+export declare class QueryApplicationSignalsResponse extends Message<QueryApplicationSignalsResponse> {
+  /**
+   * NOT_CONFIGURED when no observability source exists anywhere in scope.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.ApplicationSignals applications = 2;
+   */
+  applications: ApplicationSignals[];
+
+  /**
+   * @generated from field: uint64 index_generation = 3;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<QueryApplicationSignalsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryApplicationSignalsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryApplicationSignalsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryApplicationSignalsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryApplicationSignalsResponse;
+
+  static equals(a: QueryApplicationSignalsResponse | PlainMessage<QueryApplicationSignalsResponse> | undefined, b: QueryApplicationSignalsResponse | PlainMessage<QueryApplicationSignalsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CostSummary
+ */
+export declare class CostSummary extends Message<CostSummary> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: paprika.v1.CostBasis basis = 2;
+   */
+  basis: CostBasis;
+
+  /**
+   * @generated from field: double monthly_amount = 3;
+   */
+  monthlyAmount: number;
+
+  /**
+   * ISO 4217. Empty when state != DATA_STATE_OK.
+   *
+   * @generated from field: string currency = 4;
+   */
+  currency: string;
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 5;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string provider = 6;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: string unavailable_reason = 7;
+   */
+  unavailableReason: string;
+
+  constructor(data?: PartialMessage<CostSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CostSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CostSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CostSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CostSummary;
+
+  static equals(a: CostSummary | PlainMessage<CostSummary> | undefined, b: CostSummary | PlainMessage<CostSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplicationCost
+ */
+export declare class ApplicationCost extends Message<ApplicationCost> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 1;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.CostSummary cost = 2;
+   */
+  cost?: CostSummary;
+
+  constructor(data?: PartialMessage<ApplicationCost>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplicationCost";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplicationCost;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplicationCost;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationCost;
+
+  static equals(a: ApplicationCost | PlainMessage<ApplicationCost> | undefined, b: ApplicationCost | PlainMessage<ApplicationCost> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterCost
+ */
+export declare class ClusterCost extends Message<ClusterCost> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey cluster = 1;
+   */
+  cluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.CostSummary cost = 2;
+   */
+  cost?: CostSummary;
+
+  constructor(data?: PartialMessage<ClusterCost>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterCost";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterCost;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterCost;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterCost;
+
+  static equals(a: ClusterCost | PlainMessage<ClusterCost> | undefined, b: ClusterCost | PlainMessage<ClusterCost> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryCostRequest
+ */
+export declare class QueryCostRequest extends Message<QueryCostRequest> {
+  /**
+   * @generated from field: paprika.v1.FleetFilter filter = 1;
+   */
+  filter?: FleetFilter;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey applications = 2;
+   */
+  applications: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey clusters = 3;
+   */
+  clusters: FleetObjectKey[];
+
+  /**
+   * @generated from field: uint32 page_size = 4;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 5;
+   */
+  cursor: string;
+
+  constructor(data?: PartialMessage<QueryCostRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryCostRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryCostRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryCostRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryCostRequest;
+
+  static equals(a: QueryCostRequest | PlainMessage<QueryCostRequest> | undefined, b: QueryCostRequest | PlainMessage<QueryCostRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.QueryCostResponse
+ */
+export declare class QueryCostResponse extends Message<QueryCostResponse> {
+  /**
+   * NOT_CONFIGURED when no cost source exists. One check hides every cost surface.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.ApplicationCost applications = 2;
+   */
+  applications: ApplicationCost[];
+
+  /**
+   * @generated from field: repeated paprika.v1.ClusterCost clusters = 3;
+   */
+  clusters: ClusterCost[];
+
+  /**
+   * @generated from field: paprika.v1.CostSummary total = 4;
+   */
+  total?: CostSummary;
+
+  /**
+   * @generated from field: string next_cursor = 5;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: uint64 index_generation = 6;
+   */
+  indexGeneration: bigint;
+
+  constructor(data?: PartialMessage<QueryCostResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.QueryCostResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): QueryCostResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): QueryCostResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): QueryCostResponse;
+
+  static equals(a: QueryCostResponse | PlainMessage<QueryCostResponse> | undefined, b: QueryCostResponse | PlainMessage<QueryCostResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CommitInfo
+ */
+export declare class CommitInfo extends Message<CommitInfo> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Full SHA, OCI digest, or S3 ETag depending on source type.
+   *
+   * @generated from field: string revision = 2;
+   */
+  revision: string;
+
+  /**
+   * @generated from field: string short_revision = 3;
+   */
+  shortRevision: string;
+
+  /**
+   * @generated from field: string author_name = 4;
+   */
+  authorName: string;
+
+  /**
+   * @generated from field: string author_email = 5;
+   */
+  authorEmail: string;
+
+  /**
+   * First line only, clamped to 200 bytes by the server.
+   *
+   * @generated from field: string message = 6;
+   */
+  message: string;
+
+  /**
+   * @generated from field: int64 committed_at_unix_ms = 7;
+   */
+  committedAtUnixMs: bigint;
+
+  /**
+   * Provider commit URL. Empty when the provider is unknown.
+   *
+   * @generated from field: string url = 8;
+   */
+  url: string;
+
+  constructor(data?: PartialMessage<CommitInfo>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CommitInfo";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CommitInfo;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CommitInfo;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CommitInfo;
+
+  static equals(a: CommitInfo | PlainMessage<CommitInfo> | undefined, b: CommitInfo | PlainMessage<CommitInfo> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRevisionInfoRequest
+ */
+export declare class GetRevisionInfoRequest extends Message<GetRevisionInfoRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string application = 2;
+   */
+  application: string;
+
+  /**
+   * Empty means the application's current revision.
+   *
+   * @generated from field: string revision = 3;
+   */
+  revision: string;
+
+  constructor(data?: PartialMessage<GetRevisionInfoRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRevisionInfoRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRevisionInfoRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRevisionInfoRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRevisionInfoRequest;
+
+  static equals(a: GetRevisionInfoRequest | PlainMessage<GetRevisionInfoRequest> | undefined, b: GetRevisionInfoRequest | PlainMessage<GetRevisionInfoRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRevisionInfoResponse
+ */
+export declare class GetRevisionInfoResponse extends Message<GetRevisionInfoResponse> {
+  /**
+   * @generated from field: paprika.v1.CommitInfo commit = 1;
+   */
+  commit?: CommitInfo;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey repository = 2;
+   */
+  repository?: FleetObjectKey;
+
+  /**
+   * @generated from field: string repository_url = 3;
+   */
+  repositoryUrl: string;
+
+  /**
+   * @generated from field: uint64 run_number = 4;
+   */
+  runNumber: bigint;
+
+  /**
+   * @generated from field: paprika.v1.DataState run_number_state = 5;
+   */
+  runNumberState: DataState;
+
+  constructor(data?: PartialMessage<GetRevisionInfoResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRevisionInfoResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRevisionInfoResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRevisionInfoResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRevisionInfoResponse;
+
+  static equals(a: GetRevisionInfoResponse | PlainMessage<GetRevisionInfoResponse> | undefined, b: GetRevisionInfoResponse | PlainMessage<GetRevisionInfoResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SourceEvent
+ */
+export declare class SourceEvent extends Message<SourceEvent> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey identity = 1;
+   */
+  identity?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.SourceEventKind kind = 2;
+   */
+  kind: SourceEventKind;
+
+  /**
+   * @generated from field: paprika.v1.FleetSourceType source_type = 3;
+   */
+  sourceType: FleetSourceType;
+
+  /**
+   * @generated from field: string repository_url = 4;
+   */
+  repositoryUrl: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey repository = 5;
+   */
+  repository?: FleetObjectKey;
+
+  /**
+   * Branch, tag, object key, or OCI tag.
+   *
+   * @generated from field: string reference = 6;
+   */
+  reference: string;
+
+  /**
+   * @generated from field: paprika.v1.CommitInfo commit = 7;
+   */
+  commit?: CommitInfo;
+
+  /**
+   * github | gitlab | s3 | oci | poll | api
+   *
+   * @generated from field: string provider = 8;
+   */
+  provider: string;
+
+  /**
+   * @generated from field: string delivery_id = 9;
+   */
+  deliveryId: string;
+
+  /**
+   * @generated from field: int64 received_at_unix_ms = 10;
+   */
+  receivedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: paprika.v1.SourceEventOutcome outcome = 11;
+   */
+  outcome: SourceEventOutcome;
+
+  /**
+   * Bounded to 50; the count is authoritative.
+   *
+   * @generated from field: repeated paprika.v1.FleetObjectKey triggered_applications = 12;
+   */
+  triggeredApplications: FleetObjectKey[];
+
+  /**
+   * @generated from field: uint32 triggered_application_count = 13;
+   */
+  triggeredApplicationCount: number;
+
+  /**
+   * @generated from field: bool triggered_applications_truncated = 14;
+   */
+  triggeredApplicationsTruncated: boolean;
+
+  /**
+   * @generated from field: string message = 15;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<SourceEvent>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SourceEvent";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SourceEvent;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SourceEvent;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SourceEvent;
+
+  static equals(a: SourceEvent | PlainMessage<SourceEvent> | undefined, b: SourceEvent | PlainMessage<SourceEvent> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListSourceEventsRequest
+ */
+export declare class ListSourceEventsRequest extends Message<ListSourceEventsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey applications = 2;
+   */
+  applications: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated paprika.v1.SourceEventKind kinds = 3;
+   */
+  kinds: SourceEventKind[];
+
+  /**
+   * @generated from field: int64 since_unix_ms = 4;
+   */
+  sinceUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 page_size = 5;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 6;
+   */
+  cursor: string;
+
+  constructor(data?: PartialMessage<ListSourceEventsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListSourceEventsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListSourceEventsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListSourceEventsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListSourceEventsRequest;
+
+  static equals(a: ListSourceEventsRequest | PlainMessage<ListSourceEventsRequest> | undefined, b: ListSourceEventsRequest | PlainMessage<ListSourceEventsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListSourceEventsResponse
+ */
+export declare class ListSourceEventsResponse extends Message<ListSourceEventsResponse> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.SourceEvent events = 2;
+   */
+  events: SourceEvent[];
+
+  /**
+   * @generated from field: string next_cursor = 3;
+   */
+  nextCursor: string;
+
+  /**
+   * Oldest event still retained. The feed is a recent window, never an archive.
+   *
+   * @generated from field: int64 retention_horizon_unix_ms = 4;
+   */
+  retentionHorizonUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 retention_limit = 5;
+   */
+  retentionLimit: number;
+
+  constructor(data?: PartialMessage<ListSourceEventsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListSourceEventsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListSourceEventsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListSourceEventsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListSourceEventsResponse;
+
+  static equals(a: ListSourceEventsResponse | PlainMessage<ListSourceEventsResponse> | undefined, b: ListSourceEventsResponse | PlainMessage<ListSourceEventsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutHistoryEntry
+ */
+export declare class RolloutHistoryEntry extends Message<RolloutHistoryEntry> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey identity = 1;
+   */
+  identity?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 2;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey rollout = 3;
+   */
+  rollout?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey release = 4;
+   */
+  release?: FleetObjectKey;
+
+  /**
+   * @generated from field: string stage = 5;
+   */
+  stage: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey cluster = 6;
+   */
+  cluster?: FleetObjectKey;
+
+  /**
+   * @generated from field: string strategy = 7;
+   */
+  strategy: string;
+
+  /**
+   * @generated from field: paprika.v1.RolloutOutcome outcome = 8;
+   */
+  outcome: RolloutOutcome;
+
+  /**
+   * @generated from field: int64 started_at_unix_ms = 9;
+   */
+  startedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 finished_at_unix_ms = 10;
+   */
+  finishedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 duration_ms = 11;
+   */
+  durationMs: bigint;
+
+  /**
+   * @generated from field: uint32 steps_completed = 12;
+   */
+  stepsCompleted: number;
+
+  /**
+   * @generated from field: uint32 steps_total = 13;
+   */
+  stepsTotal: number;
+
+  /**
+   * @generated from field: int32 final_weight = 14;
+   */
+  finalWeight: number;
+
+  /**
+   * @generated from field: string revision = 15;
+   */
+  revision: string;
+
+  /**
+   * @generated from field: paprika.v1.CommitInfo commit = 16;
+   */
+  commit?: CommitInfo;
+
+  /**
+   * @generated from field: string reason = 17;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 18;
+   */
+  message: string;
+
+  /**
+   * @generated from field: string triggered_by = 19;
+   */
+  triggeredBy: string;
+
+  constructor(data?: PartialMessage<RolloutHistoryEntry>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutHistoryEntry";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutHistoryEntry;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutHistoryEntry;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutHistoryEntry;
+
+  static equals(a: RolloutHistoryEntry | PlainMessage<RolloutHistoryEntry> | undefined, b: RolloutHistoryEntry | PlainMessage<RolloutHistoryEntry> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutHistoryStats
+ */
+export declare class RolloutHistoryStats extends Message<RolloutHistoryStats> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: uint64 total = 2;
+   */
+  total: bigint;
+
+  /**
+   * @generated from field: uint64 succeeded = 3;
+   */
+  succeeded: bigint;
+
+  /**
+   * @generated from field: uint64 aborted = 4;
+   */
+  aborted: bigint;
+
+  /**
+   * @generated from field: uint64 failed = 5;
+   */
+  failed: bigint;
+
+  /**
+   * @generated from field: uint64 rolled_back = 6;
+   */
+  rolledBack: bigint;
+
+  /**
+   * @generated from field: int64 median_duration_ms = 7;
+   */
+  medianDurationMs: bigint;
+
+  /**
+   * @generated from field: int64 p90_duration_ms = 8;
+   */
+  p90DurationMs: bigint;
+
+  /**
+   * Number of retained records the statistics actually cover.
+   *
+   * @generated from field: uint64 sample_size = 9;
+   */
+  sampleSize: bigint;
+
+  /**
+   * @generated from field: int64 window_start_unix_ms = 10;
+   */
+  windowStartUnixMs: bigint;
+
+  constructor(data?: PartialMessage<RolloutHistoryStats>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutHistoryStats";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutHistoryStats;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutHistoryStats;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutHistoryStats;
+
+  static equals(a: RolloutHistoryStats | PlainMessage<RolloutHistoryStats> | undefined, b: RolloutHistoryStats | PlainMessage<RolloutHistoryStats> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListRolloutHistoryRequest
+ */
+export declare class ListRolloutHistoryRequest extends Message<ListRolloutHistoryRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey applications = 2;
+   */
+  applications: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated paprika.v1.FleetObjectKey clusters = 3;
+   */
+  clusters: FleetObjectKey[];
+
+  /**
+   * @generated from field: repeated string stages = 4;
+   */
+  stages: string[];
+
+  /**
+   * @generated from field: int64 since_unix_ms = 5;
+   */
+  sinceUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 page_size = 6;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 7;
+   */
+  cursor: string;
+
+  constructor(data?: PartialMessage<ListRolloutHistoryRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListRolloutHistoryRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRolloutHistoryRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRolloutHistoryRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRolloutHistoryRequest;
+
+  static equals(a: ListRolloutHistoryRequest | PlainMessage<ListRolloutHistoryRequest> | undefined, b: ListRolloutHistoryRequest | PlainMessage<ListRolloutHistoryRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListRolloutHistoryResponse
+ */
+export declare class ListRolloutHistoryResponse extends Message<ListRolloutHistoryResponse> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.RolloutHistoryEntry entries = 2;
+   */
+  entries: RolloutHistoryEntry[];
+
+  /**
+   * @generated from field: string next_cursor = 3;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: paprika.v1.RolloutHistoryStats stats = 4;
+   */
+  stats?: RolloutHistoryStats;
+
+  /**
+   * @generated from field: int64 retention_horizon_unix_ms = 5;
+   */
+  retentionHorizonUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 retention_limit = 6;
+   */
+  retentionLimit: number;
+
+  constructor(data?: PartialMessage<ListRolloutHistoryResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListRolloutHistoryResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRolloutHistoryResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRolloutHistoryResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRolloutHistoryResponse;
+
+  static equals(a: ListRolloutHistoryResponse | PlainMessage<ListRolloutHistoryResponse> | undefined, b: ListRolloutHistoryResponse | PlainMessage<ListRolloutHistoryResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.StepResources
+ */
+export declare class StepResources extends Message<StepResources> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * Millicores.
+   *
+   * @generated from field: double cpu_request_millicores = 2;
+   */
+  cpuRequestMillicores: number;
+
+  /**
+   * Bytes.
+   *
+   * @generated from field: double memory_request_bytes = 3;
+   */
+  memoryRequestBytes: number;
+
+  /**
+   * @generated from field: double cpu_limit_millicores = 4;
+   */
+  cpuLimitMillicores: number;
+
+  /**
+   * @generated from field: double memory_limit_bytes = 5;
+   */
+  memoryLimitBytes: number;
+
+  constructor(data?: PartialMessage<StepResources>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.StepResources";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): StepResources;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): StepResources;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): StepResources;
+
+  static equals(a: StepResources | PlainMessage<StepResources> | undefined, b: StepResources | PlainMessage<StepResources> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PipelineRunStep
+ */
+export declare class PipelineRunStep extends Message<PipelineRunStep> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string phase = 2;
+   */
+  phase: string;
+
+  /**
+   * @generated from field: int64 started_at_unix_ms = 3;
+   */
+  startedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 finished_at_unix_ms = 4;
+   */
+  finishedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 duration_ms = 5;
+   */
+  durationMs: bigint;
+
+  /**
+   * @generated from field: uint32 attempts = 6;
+   */
+  attempts: number;
+
+  /**
+   * @generated from field: paprika.v1.StepResources resources = 7;
+   */
+  resources?: StepResources;
+
+  /**
+   * @generated from field: string image = 8;
+   */
+  image: string;
+
+  /**
+   * @generated from field: string message = 9;
+   */
+  message: string;
+
+  constructor(data?: PartialMessage<PipelineRunStep>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PipelineRunStep";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PipelineRunStep;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PipelineRunStep;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PipelineRunStep;
+
+  static equals(a: PipelineRunStep | PlainMessage<PipelineRunStep> | undefined, b: PipelineRunStep | PlainMessage<PipelineRunStep> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PipelineTestSummary
+ */
+export declare class PipelineTestSummary extends Message<PipelineTestSummary> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: uint32 total = 2;
+   */
+  total: number;
+
+  /**
+   * @generated from field: uint32 passed = 3;
+   */
+  passed: number;
+
+  /**
+   * @generated from field: uint32 failed = 4;
+   */
+  failed: number;
+
+  /**
+   * @generated from field: uint32 skipped = 5;
+   */
+  skipped: number;
+
+  /**
+   * @generated from field: uint32 flaked = 6;
+   */
+  flaked: number;
+
+  /**
+   * "junit" | "json". Empty when no report was declared.
+   *
+   * @generated from field: string report_format = 7;
+   */
+  reportFormat: string;
+
+  constructor(data?: PartialMessage<PipelineTestSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PipelineTestSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PipelineTestSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PipelineTestSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PipelineTestSummary;
+
+  static equals(a: PipelineTestSummary | PlainMessage<PipelineTestSummary> | undefined, b: PipelineTestSummary | PlainMessage<PipelineTestSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PipelineCacheSummary
+ */
+export declare class PipelineCacheSummary extends Message<PipelineCacheSummary> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: uint32 hits = 2;
+   */
+  hits: number;
+
+  /**
+   * @generated from field: uint32 misses = 3;
+   */
+  misses: number;
+
+  /**
+   * @generated from field: double hit_ratio = 4;
+   */
+  hitRatio: number;
+
+  /**
+   * "manifest-render". Pipeline step caching does not exist and reports NOT_AVAILABLE.
+   *
+   * @generated from field: string scope = 5;
+   */
+  scope: string;
+
+  constructor(data?: PartialMessage<PipelineCacheSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PipelineCacheSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PipelineCacheSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PipelineCacheSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PipelineCacheSummary;
+
+  static equals(a: PipelineCacheSummary | PlainMessage<PipelineCacheSummary> | undefined, b: PipelineCacheSummary | PlainMessage<PipelineCacheSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.PipelineRunSummary
+ */
+export declare class PipelineRunSummary extends Message<PipelineRunSummary> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey identity = 1;
+   */
+  identity?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey pipeline = 2;
+   */
+  pipeline?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 3;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: uint64 run_number = 4;
+   */
+  runNumber: bigint;
+
+  /**
+   * @generated from field: paprika.v1.PipelineRunOutcome outcome = 5;
+   */
+  outcome: PipelineRunOutcome;
+
+  /**
+   * @generated from field: int64 started_at_unix_ms = 6;
+   */
+  startedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 finished_at_unix_ms = 7;
+   */
+  finishedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 duration_ms = 8;
+   */
+  durationMs: bigint;
+
+  /**
+   * @generated from field: uint32 steps_total = 9;
+   */
+  stepsTotal: number;
+
+  /**
+   * @generated from field: uint32 steps_succeeded = 10;
+   */
+  stepsSucceeded: number;
+
+  /**
+   * @generated from field: repeated paprika.v1.PipelineRunStep steps = 11;
+   */
+  steps: PipelineRunStep[];
+
+  /**
+   * @generated from field: paprika.v1.CommitInfo commit = 12;
+   */
+  commit?: CommitInfo;
+
+  /**
+   * @generated from field: string triggered_by = 13;
+   */
+  triggeredBy: string;
+
+  /**
+   * @generated from field: paprika.v1.PipelineTestSummary tests = 14;
+   */
+  tests?: PipelineTestSummary;
+
+  /**
+   * @generated from field: paprika.v1.PipelineCacheSummary cache = 15;
+   */
+  cache?: PipelineCacheSummary;
+
+  /**
+   * @generated from field: paprika.v1.DataState compute_state = 16;
+   */
+  computeState: DataState;
+
+  /**
+   * @generated from field: double cpu_minutes = 17;
+   */
+  cpuMinutes: number;
+
+  /**
+   * @generated from field: paprika.v1.ComputeBasis cpu_minutes_basis = 18;
+   */
+  cpuMinutesBasis: ComputeBasis;
+
+  /**
+   * @generated from field: repeated paprika.v1.ArtifactRef artifacts = 19;
+   */
+  artifacts: ArtifactRef[];
+
+  constructor(data?: PartialMessage<PipelineRunSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.PipelineRunSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PipelineRunSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PipelineRunSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PipelineRunSummary;
+
+  static equals(a: PipelineRunSummary | PlainMessage<PipelineRunSummary> | undefined, b: PipelineRunSummary | PlainMessage<PipelineRunSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListPipelineRunsRequest
+ */
+export declare class ListPipelineRunsRequest extends Message<ListPipelineRunsRequest> {
+  /**
+   * @generated from field: optional string namespace = 1;
+   */
+  namespace?: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey pipeline = 2;
+   */
+  pipeline?: FleetObjectKey;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 3;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * @generated from field: int64 since_unix_ms = 4;
+   */
+  sinceUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 page_size = 5;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 6;
+   */
+  cursor: string;
+
+  constructor(data?: PartialMessage<ListPipelineRunsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListPipelineRunsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListPipelineRunsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListPipelineRunsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListPipelineRunsRequest;
+
+  static equals(a: ListPipelineRunsRequest | PlainMessage<ListPipelineRunsRequest> | undefined, b: ListPipelineRunsRequest | PlainMessage<ListPipelineRunsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListPipelineRunsResponse
+ */
+export declare class ListPipelineRunsResponse extends Message<ListPipelineRunsResponse> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.PipelineRunSummary runs = 2;
+   */
+  runs: PipelineRunSummary[];
+
+  /**
+   * @generated from field: string next_cursor = 3;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: int64 retention_horizon_unix_ms = 4;
+   */
+  retentionHorizonUnixMs: bigint;
+
+  /**
+   * @generated from field: uint32 retention_limit = 5;
+   */
+  retentionLimit: number;
+
+  constructor(data?: PartialMessage<ListPipelineRunsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListPipelineRunsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListPipelineRunsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListPipelineRunsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListPipelineRunsResponse;
+
+  static equals(a: ListPipelineRunsResponse | PlainMessage<ListPipelineRunsResponse> | undefined, b: ListPipelineRunsResponse | PlainMessage<ListPipelineRunsResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetPipelineRunRequest
+ */
+export declare class GetPipelineRunRequest extends Message<GetPipelineRunRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetPipelineRunRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetPipelineRunRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetPipelineRunRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetPipelineRunRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetPipelineRunRequest;
+
+  static equals(a: GetPipelineRunRequest | PlainMessage<GetPipelineRunRequest> | undefined, b: GetPipelineRunRequest | PlainMessage<GetPipelineRunRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetPipelineRunResponse
+ */
+export declare class GetPipelineRunResponse extends Message<GetPipelineRunResponse> {
+  /**
+   * @generated from field: paprika.v1.PipelineRunSummary run = 1;
+   */
+  run?: PipelineRunSummary;
+
+  constructor(data?: PartialMessage<GetPipelineRunResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetPipelineRunResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetPipelineRunResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetPipelineRunResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetPipelineRunResponse;
+
+  static equals(a: GetPipelineRunResponse | PlainMessage<GetPipelineRunResponse> | undefined, b: GetPipelineRunResponse | PlainMessage<GetPipelineRunResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.DrilldownLink
+ */
+export declare class DrilldownLink extends Message<DrilldownLink> {
+  /**
+   * @generated from field: paprika.v1.DrilldownKind kind = 1;
+   */
+  kind: DrilldownKind;
+
+  /**
+   * @generated from field: string label = 2;
+   */
+  label: string;
+
+  /**
+   * Fully resolved server-side. http(s) only, validated.
+   *
+   * @generated from field: string url = 3;
+   */
+  url: string;
+
+  constructor(data?: PartialMessage<DrilldownLink>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.DrilldownLink";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DrilldownLink;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DrilldownLink;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DrilldownLink;
+
+  static equals(a: DrilldownLink | PlainMessage<DrilldownLink> | undefined, b: DrilldownLink | PlainMessage<DrilldownLink> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.Ownership
+ */
+export declare class Ownership extends Message<Ownership> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: string owner = 2;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: string owner_label = 3;
+   */
+  ownerLabel: string;
+
+  /**
+   * @generated from field: string on_call = 4;
+   */
+  onCall: string;
+
+  /**
+   * @generated from field: paprika.v1.OwnershipTier tier = 5;
+   */
+  tier: OwnershipTier;
+
+  /**
+   * @generated from field: string escalation_url = 6;
+   */
+  escalationUrl: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.DrilldownLink links = 7;
+   */
+  links: DrilldownLink[];
+
+  /**
+   * "application" | "appproject" | "inherited"
+   *
+   * @generated from field: string source = 8;
+   */
+  source: string;
+
+  constructor(data?: PartialMessage<Ownership>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.Ownership";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Ownership;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Ownership;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Ownership;
+
+  static equals(a: Ownership | PlainMessage<Ownership> | undefined, b: Ownership | PlainMessage<Ownership> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationOwnershipRequest
+ */
+export declare class GetApplicationOwnershipRequest extends Message<GetApplicationOwnershipRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetApplicationOwnershipRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationOwnershipRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationOwnershipRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationOwnershipRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationOwnershipRequest;
+
+  static equals(a: GetApplicationOwnershipRequest | PlainMessage<GetApplicationOwnershipRequest> | undefined, b: GetApplicationOwnershipRequest | PlainMessage<GetApplicationOwnershipRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationOwnershipResponse
+ */
+export declare class GetApplicationOwnershipResponse extends Message<GetApplicationOwnershipResponse> {
+  /**
+   * @generated from field: paprika.v1.Ownership ownership = 1;
+   */
+  ownership?: Ownership;
+
+  constructor(data?: PartialMessage<GetApplicationOwnershipResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationOwnershipResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationOwnershipResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationOwnershipResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationOwnershipResponse;
+
+  static equals(a: GetApplicationOwnershipResponse | PlainMessage<GetApplicationOwnershipResponse> | undefined, b: GetApplicationOwnershipResponse | PlainMessage<GetApplicationOwnershipResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.DriftedField
+ */
+export declare class DriftedField extends Message<DriftedField> {
+  /**
+   * JSON pointer into the object.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: string desired = 2;
+   */
+  desired: string;
+
+  /**
+   * @generated from field: string live = 3;
+   */
+  live: string;
+
+  /**
+   * @generated from field: bool ignored = 4;
+   */
+  ignored: boolean;
+
+  constructor(data?: PartialMessage<DriftedField>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.DriftedField";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DriftedField;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DriftedField;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DriftedField;
+
+  static equals(a: DriftedField | PlainMessage<DriftedField> | undefined, b: DriftedField | PlainMessage<DriftedField> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResourceDriftDetail
+ */
+export declare class ResourceDriftDetail extends Message<ResourceDriftDetail> {
+  /**
+   * @generated from field: string group = 1;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 4;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 5;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetSyncState sync = 6;
+   */
+  sync: FleetSyncState;
+
+  /**
+   * @generated from field: paprika.v1.DriftReason reason = 7;
+   */
+  reason: DriftReason;
+
+  /**
+   * @generated from field: uint32 changed_field_count = 8;
+   */
+  changedFieldCount: number;
+
+  /**
+   * Bounded to 20 entries. changed_field_count is authoritative.
+   *
+   * @generated from field: repeated paprika.v1.DriftedField fields = 9;
+   */
+  fields: DriftedField[];
+
+  /**
+   * @generated from field: bool fields_truncated = 10;
+   */
+  fieldsTruncated: boolean;
+
+  /**
+   * @generated from field: int64 drift_detected_at_unix_ms = 11;
+   */
+  driftDetectedAtUnixMs: bigint;
+
+  /**
+   * NOT_AVAILABLE for objects last reconciled before this feature shipped.
+   *
+   * @generated from field: paprika.v1.DataState detail_state = 12;
+   */
+  detailState: DataState;
+
+  /**
+   * From metadata.managedFields. Empty when unknown.
+   *
+   * @generated from field: string last_applied_by = 13;
+   */
+  lastAppliedBy: string;
+
+  /**
+   * @generated from field: int64 last_applied_at_unix_ms = 14;
+   */
+  lastAppliedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<ResourceDriftDetail>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResourceDriftDetail";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResourceDriftDetail;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResourceDriftDetail;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResourceDriftDetail;
+
+  static equals(a: ResourceDriftDetail | PlainMessage<ResourceDriftDetail> | undefined, b: ResourceDriftDetail | PlainMessage<ResourceDriftDetail> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListDriftDetailsRequest
+ */
+export declare class ListDriftDetailsRequest extends Message<ListDriftDetailsRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string application = 2;
+   */
+  application: string;
+
+  /**
+   * @generated from field: uint32 page_size = 3;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string cursor = 4;
+   */
+  cursor: string;
+
+  /**
+   * @generated from field: bool include_fields = 5;
+   */
+  includeFields: boolean;
+
+  constructor(data?: PartialMessage<ListDriftDetailsRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListDriftDetailsRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListDriftDetailsRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListDriftDetailsRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListDriftDetailsRequest;
+
+  static equals(a: ListDriftDetailsRequest | PlainMessage<ListDriftDetailsRequest> | undefined, b: ListDriftDetailsRequest | PlainMessage<ListDriftDetailsRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ListDriftDetailsResponse
+ */
+export declare class ListDriftDetailsResponse extends Message<ListDriftDetailsResponse> {
+  /**
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * @generated from field: repeated paprika.v1.ResourceDriftDetail resources = 2;
+   */
+  resources: ResourceDriftDetail[];
+
+  /**
+   * @generated from field: uint32 drifted_count = 3;
+   */
+  driftedCount: number;
+
+  /**
+   * @generated from field: uint32 missing_count = 4;
+   */
+  missingCount: number;
+
+  /**
+   * @generated from field: uint32 pruned_count = 5;
+   */
+  prunedCount: number;
+
+  /**
+   * @generated from field: string next_cursor = 6;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: int64 evaluated_at_unix_ms = 7;
+   */
+  evaluatedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<ListDriftDetailsResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ListDriftDetailsResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListDriftDetailsResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListDriftDetailsResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListDriftDetailsResponse;
+
+  static equals(a: ListDriftDetailsResponse | PlainMessage<ListDriftDetailsResponse> | undefined, b: ListDriftDetailsResponse | PlainMessage<ListDriftDetailsResponse> | undefined): boolean;
+}
+
+/**
+ * Compact per-row form carried on ApplicationSummary.
+ *
+ * @generated from message paprika.v1.LifecycleVector
+ */
+export declare class LifecycleVector extends Message<LifecycleVector> {
+  /**
+   * Exactly 6 entries, in LifecyclePhase order 1..6.
+   *
+   * @generated from field: repeated paprika.v1.LifecyclePhaseState states = 1;
+   */
+  states: LifecyclePhaseState[];
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 2;
+   */
+  observedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<LifecycleVector>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.LifecycleVector";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): LifecycleVector;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): LifecycleVector;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LifecycleVector;
+
+  static equals(a: LifecycleVector | PlainMessage<LifecycleVector> | undefined, b: LifecycleVector | PlainMessage<LifecycleVector> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.LifecyclePhaseStatus
+ */
+export declare class LifecyclePhaseStatus extends Message<LifecyclePhaseStatus> {
+  /**
+   * @generated from field: paprika.v1.LifecyclePhase phase = 1;
+   */
+  phase: LifecyclePhase;
+
+  /**
+   * @generated from field: paprika.v1.LifecyclePhaseState state = 2;
+   */
+  state: LifecyclePhaseState;
+
+  /**
+   * @generated from field: int64 started_at_unix_ms = 3;
+   */
+  startedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 finished_at_unix_ms = 4;
+   */
+  finishedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 duration_ms = 5;
+   */
+  durationMs: bigint;
+
+  /**
+   * @generated from field: string detail = 6;
+   */
+  detail: string;
+
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey reference = 7;
+   */
+  reference?: FleetObjectKey;
+
+  /**
+   * "Pipeline" | "Release" | "Rollout" | "AnalysisRun"
+   *
+   * @generated from field: string reference_kind = 8;
+   */
+  referenceKind: string;
+
+  constructor(data?: PartialMessage<LifecyclePhaseStatus>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.LifecyclePhaseStatus";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): LifecyclePhaseStatus;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): LifecyclePhaseStatus;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): LifecyclePhaseStatus;
+
+  static equals(a: LifecyclePhaseStatus | PlainMessage<LifecyclePhaseStatus> | undefined, b: LifecyclePhaseStatus | PlainMessage<LifecyclePhaseStatus> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplicationLifecycle
+ */
+export declare class ApplicationLifecycle extends Message<ApplicationLifecycle> {
+  /**
+   * @generated from field: paprika.v1.FleetObjectKey application = 1;
+   */
+  application?: FleetObjectKey;
+
+  /**
+   * Always 6 entries, fixed order.
+   *
+   * @generated from field: repeated paprika.v1.LifecyclePhaseStatus phases = 2;
+   */
+  phases: LifecyclePhaseStatus[];
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 3;
+   */
+  observedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<ApplicationLifecycle>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplicationLifecycle";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplicationLifecycle;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplicationLifecycle;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationLifecycle;
+
+  static equals(a: ApplicationLifecycle | PlainMessage<ApplicationLifecycle> | undefined, b: ApplicationLifecycle | PlainMessage<ApplicationLifecycle> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationLifecycleRequest
+ */
+export declare class GetApplicationLifecycleRequest extends Message<GetApplicationLifecycleRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetApplicationLifecycleRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationLifecycleRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationLifecycleRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationLifecycleRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationLifecycleRequest;
+
+  static equals(a: GetApplicationLifecycleRequest | PlainMessage<GetApplicationLifecycleRequest> | undefined, b: GetApplicationLifecycleRequest | PlainMessage<GetApplicationLifecycleRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetApplicationLifecycleResponse
+ */
+export declare class GetApplicationLifecycleResponse extends Message<GetApplicationLifecycleResponse> {
+  /**
+   * @generated from field: paprika.v1.ApplicationLifecycle lifecycle = 1;
+   */
+  lifecycle?: ApplicationLifecycle;
+
+  constructor(data?: PartialMessage<GetApplicationLifecycleResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetApplicationLifecycleResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetApplicationLifecycleResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetApplicationLifecycleResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetApplicationLifecycleResponse;
+
+  static equals(a: GetApplicationLifecycleResponse | PlainMessage<GetApplicationLifecycleResponse> | undefined, b: GetApplicationLifecycleResponse | PlainMessage<GetApplicationLifecycleResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.RolloutHold
+ */
+export declare class RolloutHold extends Message<RolloutHold> {
+  /**
+   * @generated from field: bool held = 1;
+   */
+  held: boolean;
+
+  /**
+   * @generated from field: string held_by = 2;
+   */
+  heldBy: string;
+
+  /**
+   * @generated from field: int64 held_at_unix_ms = 3;
+   */
+  heldAtUnixMs: bigint;
+
+  /**
+   * 0 means held until explicitly resumed.
+   *
+   * @generated from field: int64 expires_at_unix_ms = 4;
+   */
+  expiresAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: int32 frozen_weight = 6;
+   */
+  frozenWeight: number;
+
+  constructor(data?: PartialMessage<RolloutHold>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RolloutHold";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RolloutHold;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RolloutHold;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RolloutHold;
+
+  static equals(a: RolloutHold | PlainMessage<RolloutHold> | undefined, b: RolloutHold | PlainMessage<RolloutHold> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRolloutHoldRequest
+ */
+export declare class GetRolloutHoldRequest extends Message<GetRolloutHoldRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  constructor(data?: PartialMessage<GetRolloutHoldRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRolloutHoldRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRolloutHoldRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRolloutHoldRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRolloutHoldRequest;
+
+  static equals(a: GetRolloutHoldRequest | PlainMessage<GetRolloutHoldRequest> | undefined, b: GetRolloutHoldRequest | PlainMessage<GetRolloutHoldRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.GetRolloutHoldResponse
+ */
+export declare class GetRolloutHoldResponse extends Message<GetRolloutHoldResponse> {
+  /**
+   * @generated from field: paprika.v1.RolloutHold hold = 1;
+   */
+  hold?: RolloutHold;
+
+  constructor(data?: PartialMessage<GetRolloutHoldResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.GetRolloutHoldResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRolloutHoldResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRolloutHoldResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRolloutHoldResponse;
+
+  static equals(a: GetRolloutHoldResponse | PlainMessage<GetRolloutHoldResponse> | undefined, b: GetRolloutHoldResponse | PlainMessage<GetRolloutHoldResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.HoldRolloutRequest
+ */
+export declare class HoldRolloutRequest extends Message<HoldRolloutRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: int64 expires_at_unix_ms = 4;
+   */
+  expiresAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<HoldRolloutRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.HoldRolloutRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HoldRolloutRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HoldRolloutRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HoldRolloutRequest;
+
+  static equals(a: HoldRolloutRequest | PlainMessage<HoldRolloutRequest> | undefined, b: HoldRolloutRequest | PlainMessage<HoldRolloutRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.HoldRolloutResponse
+ */
+export declare class HoldRolloutResponse extends Message<HoldRolloutResponse> {
+  /**
+   * @generated from field: paprika.v1.Rollout rollout = 1;
+   */
+  rollout?: Rollout;
+
+  /**
+   * @generated from field: paprika.v1.RolloutHold hold = 2;
+   */
+  hold?: RolloutHold;
+
+  constructor(data?: PartialMessage<HoldRolloutResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.HoldRolloutResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HoldRolloutResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HoldRolloutResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HoldRolloutResponse;
+
+  static equals(a: HoldRolloutResponse | PlainMessage<HoldRolloutResponse> | undefined, b: HoldRolloutResponse | PlainMessage<HoldRolloutResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResumeRolloutRequest
+ */
+export declare class ResumeRolloutRequest extends Message<ResumeRolloutRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  constructor(data?: PartialMessage<ResumeRolloutRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResumeRolloutRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResumeRolloutRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResumeRolloutRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResumeRolloutRequest;
+
+  static equals(a: ResumeRolloutRequest | PlainMessage<ResumeRolloutRequest> | undefined, b: ResumeRolloutRequest | PlainMessage<ResumeRolloutRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResumeRolloutResponse
+ */
+export declare class ResumeRolloutResponse extends Message<ResumeRolloutResponse> {
+  /**
+   * @generated from field: paprika.v1.Rollout rollout = 1;
+   */
+  rollout?: Rollout;
+
+  constructor(data?: PartialMessage<ResumeRolloutResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResumeRolloutResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResumeRolloutResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResumeRolloutResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResumeRolloutResponse;
+
+  static equals(a: ResumeRolloutResponse | PlainMessage<ResumeRolloutResponse> | undefined, b: ResumeRolloutResponse | PlainMessage<ResumeRolloutResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.IgnoredFieldRule
+ */
+export declare class IgnoredFieldRule extends Message<IgnoredFieldRule> {
+  /**
+   * @generated from field: string group = 1;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string kind = 2;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 3;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 4;
+   */
+  namespace: string;
+
+  /**
+   * @generated from field: repeated string json_pointers = 5;
+   */
+  jsonPointers: string[];
+
+  /**
+   * @generated from field: string reason = 6;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string created_by = 7;
+   */
+  createdBy: string;
+
+  /**
+   * @generated from field: int64 created_at_unix_ms = 8;
+   */
+  createdAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<IgnoredFieldRule>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.IgnoredFieldRule";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): IgnoredFieldRule;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): IgnoredFieldRule;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): IgnoredFieldRule;
+
+  static equals(a: IgnoredFieldRule | PlainMessage<IgnoredFieldRule> | undefined, b: IgnoredFieldRule | PlainMessage<IgnoredFieldRule> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.IgnoreDriftedFieldRequest
+ */
+export declare class IgnoreDriftedFieldRequest extends Message<IgnoreDriftedFieldRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * Application name.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string group = 3;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string kind = 4;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string resource_name = 5;
+   */
+  resourceName: string;
+
+  /**
+   * @generated from field: string resource_namespace = 6;
+   */
+  resourceNamespace: string;
+
+  /**
+   * @generated from field: repeated string json_pointers = 7;
+   */
+  jsonPointers: string[];
+
+  /**
+   * @generated from field: string reason = 8;
+   */
+  reason: string;
+
+  /**
+   * True stops ignoring the listed pointers.
+   *
+   * @generated from field: bool remove = 9;
+   */
+  remove: boolean;
+
+  constructor(data?: PartialMessage<IgnoreDriftedFieldRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.IgnoreDriftedFieldRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): IgnoreDriftedFieldRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): IgnoreDriftedFieldRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): IgnoreDriftedFieldRequest;
+
+  static equals(a: IgnoreDriftedFieldRequest | PlainMessage<IgnoreDriftedFieldRequest> | undefined, b: IgnoreDriftedFieldRequest | PlainMessage<IgnoreDriftedFieldRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.IgnoreDriftedFieldResponse
+ */
+export declare class IgnoreDriftedFieldResponse extends Message<IgnoreDriftedFieldResponse> {
+  /**
+   * @generated from field: repeated paprika.v1.IgnoredFieldRule rules = 1;
+   */
+  rules: IgnoredFieldRule[];
+
+  constructor(data?: PartialMessage<IgnoreDriftedFieldResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.IgnoreDriftedFieldResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): IgnoreDriftedFieldResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): IgnoreDriftedFieldResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): IgnoreDriftedFieldResponse;
+
+  static equals(a: IgnoreDriftedFieldResponse | PlainMessage<IgnoreDriftedFieldResponse> | undefined, b: IgnoreDriftedFieldResponse | PlainMessage<IgnoreDriftedFieldResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplyResourcePatchRequest
+ */
+export declare class ApplyResourcePatchRequest extends Message<ApplyResourcePatchRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * Application name.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string group = 3;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string version = 4;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string kind = 5;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string resource_name = 6;
+   */
+  resourceName: string;
+
+  /**
+   * @generated from field: string resource_namespace = 7;
+   */
+  resourceNamespace: string;
+
+  /**
+   * @generated from field: paprika.v1.PatchType patch_type = 8;
+   */
+  patchType: PatchType;
+
+  /**
+   * @generated from field: string patch = 9;
+   */
+  patch: string;
+
+  /**
+   * The server dry-runs unless confirm is explicitly true.
+   *
+   * @generated from field: bool confirm = 10;
+   */
+  confirm: boolean;
+
+  /**
+   * @generated from field: string reason = 11;
+   */
+  reason: string;
+
+  constructor(data?: PartialMessage<ApplyResourcePatchRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplyResourcePatchRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplyResourcePatchRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplyResourcePatchRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplyResourcePatchRequest;
+
+  static equals(a: ApplyResourcePatchRequest | PlainMessage<ApplyResourcePatchRequest> | undefined, b: ApplyResourcePatchRequest | PlainMessage<ApplyResourcePatchRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ApplyResourcePatchResponse
+ */
+export declare class ApplyResourcePatchResponse extends Message<ApplyResourcePatchResponse> {
+  /**
+   * @generated from field: bool applied = 1;
+   */
+  applied: boolean;
+
+  /**
+   * @generated from field: bool dry_run = 2;
+   */
+  dryRun: boolean;
+
+  /**
+   * @generated from field: string result_manifest = 3;
+   */
+  resultManifest: string;
+
+  /**
+   * @generated from field: string diff = 4;
+   */
+  diff: string;
+
+  /**
+   * Always populated when applied: this change is outside Git and will be reverted on next sync.
+   *
+   * @generated from field: string warning = 5;
+   */
+  warning: string;
+
+  /**
+   * @generated from field: int64 applied_at_unix_ms = 6;
+   */
+  appliedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<ApplyResourcePatchResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ApplyResourcePatchResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ApplyResourcePatchResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ApplyResourcePatchResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplyResourcePatchResponse;
+
+  static equals(a: ApplyResourcePatchResponse | PlainMessage<ApplyResourcePatchResponse> | undefined, b: ApplyResourcePatchResponse | PlainMessage<ApplyResourcePatchResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ResourceSelector
+ */
+export declare class ResourceSelector extends Message<ResourceSelector> {
+  /**
+   * @generated from field: string group = 1;
+   */
+  group: string;
+
+  /**
+   * @generated from field: string version = 2;
+   */
+  version: string;
+
+  /**
+   * @generated from field: string kind = 3;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 4;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string namespace = 5;
+   */
+  namespace: string;
+
+  constructor(data?: PartialMessage<ResourceSelector>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ResourceSelector";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ResourceSelector;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ResourceSelector;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ResourceSelector;
+
+  static equals(a: ResourceSelector | PlainMessage<ResourceSelector> | undefined, b: ResourceSelector | PlainMessage<ResourceSelector> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SyncResourcesRequest
+ */
+export declare class SyncResourcesRequest extends Message<SyncResourcesRequest> {
+  /**
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * Application name.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * Empty selects the whole application, matching SyncApplication.
+   *
+   * @generated from field: repeated paprika.v1.ResourceSelector resources = 3;
+   */
+  resources: ResourceSelector[];
+
+  /**
+   * @generated from field: bool prune = 4;
+   */
+  prune: boolean;
+
+  /**
+   * The server dry-runs unless confirm is explicitly true.
+   *
+   * @generated from field: bool confirm = 5;
+   */
+  confirm: boolean;
+
+  /**
+   * @generated from field: string reason = 6;
+   */
+  reason: string;
+
+  constructor(data?: PartialMessage<SyncResourcesRequest>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SyncResourcesRequest";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SyncResourcesRequest;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SyncResourcesRequest;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SyncResourcesRequest;
+
+  static equals(a: SyncResourcesRequest | PlainMessage<SyncResourcesRequest> | undefined, b: SyncResourcesRequest | PlainMessage<SyncResourcesRequest> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SyncResourcesResponse
+ */
+export declare class SyncResourcesResponse extends Message<SyncResourcesResponse> {
+  /**
+   * @generated from field: bool accepted = 1;
+   */
+  accepted: boolean;
+
+  /**
+   * @generated from field: bool dry_run = 2;
+   */
+  dryRun: boolean;
+
+  /**
+   * @generated from field: uint32 selected_count = 3;
+   */
+  selectedCount: number;
+
+  /**
+   * @generated from field: repeated paprika.v1.ResourceSelector unmatched = 4;
+   */
+  unmatched: ResourceSelector[];
+
+  /**
+   * @generated from field: string sync_token = 5;
+   */
+  syncToken: string;
+
+  constructor(data?: PartialMessage<SyncResourcesResponse>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SyncResourcesResponse";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SyncResourcesResponse;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SyncResourcesResponse;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SyncResourcesResponse;
+
+  static equals(a: SyncResourcesResponse | PlainMessage<SyncResourcesResponse> | undefined, b: SyncResourcesResponse | PlainMessage<SyncResourcesResponse> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.OwnershipSummary
+ */
+export declare class OwnershipSummary extends Message<OwnershipSummary> {
+  /**
+   * @generated from field: string owner = 1;
+   */
+  owner: string;
+
+  /**
+   * @generated from field: string on_call = 2;
+   */
+  onCall: string;
+
+  /**
+   * @generated from field: paprika.v1.OwnershipTier tier = 3;
+   */
+  tier: OwnershipTier;
+
+  constructor(data?: PartialMessage<OwnershipSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.OwnershipSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): OwnershipSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): OwnershipSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): OwnershipSummary;
+
+  static equals(a: OwnershipSummary | PlainMessage<OwnershipSummary> | undefined, b: OwnershipSummary | PlainMessage<OwnershipSummary> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.CommitSummary
+ */
+export declare class CommitSummary extends Message<CommitSummary> {
+  /**
+   * @generated from field: string short_revision = 1;
+   */
+  shortRevision: string;
+
+  /**
+   * @generated from field: string author_name = 2;
+   */
+  authorName: string;
+
+  /**
+   * First line, clamped to 120 bytes.
+   *
+   * @generated from field: string message = 3;
+   */
+  message: string;
+
+  /**
+   * @generated from field: int64 committed_at_unix_ms = 4;
+   */
+  committedAtUnixMs: bigint;
+
+  constructor(data?: PartialMessage<CommitSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.CommitSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CommitSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): CommitSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CommitSummary;
+
+  static equals(a: CommitSummary | PlainMessage<CommitSummary> | undefined, b: CommitSummary | PlainMessage<CommitSummary> | undefined): boolean;
 }
 

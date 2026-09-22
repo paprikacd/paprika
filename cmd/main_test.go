@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,7 +28,10 @@ import (
 
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
@@ -539,4 +545,248 @@ func waitForHTTPStatus(ctx context.Context, addr, path string, wantStatus int) (
 		case <-ticker.C:
 		}
 	}
+}
+
+// --- Task 15: MCP wiring -----------------------------------------------
+//
+// These tests cover the base task (the four given in task-15-brief.md) plus
+// carry-forwards CF1 and CF2 from Task 13's review (progress.md). CF3, CF4,
+// and CF5 are addressed elsewhere:
+//   - CF3 (nil-principal guard in negotiateScope) has its own white-box test
+//     in internal/api/mcp/task15_carryforward_test.go, since negotiateScope
+//     is unexported.
+//   - CF4 (the /mcp/authorize browser dead-end) and CF5 (the redirect/
+//     client_id enumeration oracle) are documented in task-15-report.md;
+//     CF5's client_id/redirect_uri half has its own test alongside CF3's,
+//     in the same file.
+
+func TestMCPDisabledByDefault(t *testing.T) {
+	cfg, err := registerFlags(nil, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.False(t, cfg.mcpEnabled, "MCP must be opt-in")
+}
+
+func TestMCPFlagsParse(t *testing.T) {
+	cfg, err := registerFlags(
+		[]string{"--mcp-enabled", "--mcp-bind-address=:9999", "--mcp-access-token-ttl=1h"},
+		func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.True(t, cfg.mcpEnabled)
+	assert.Equal(t, ":9999", cfg.mcpBindAddress)
+	assert.Equal(t, time.Hour, cfg.mcpAccessTokenTTL)
+}
+
+func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
+	handlers, err := buildMCPHandlers(context.Background(),
+		&cliConfig{mcpEnabled: false}, nil, auth.Config{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, handlers)
+}
+
+func TestBuildMCPHandlersRequiresAuthEnabled(t *testing.T) {
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{mcpEnabled: true}, http.NewServeMux(),
+		auth.Config{Enabled: false}, nil)
+	require.Error(t, err,
+		"MCP must refuse to start without authentication")
+}
+
+// TestBuildMCPHandlersRequiresTokenSecret guards CF2 (progress.md, Task 13's
+// review): nothing enforces that mcp.ServerConfig.Secret is the same secret
+// auth.Config.TokenSecret uses. If MCP is enabled with auth enabled via
+// OIDC/basic auth alone and no token secret configured, buildAuthnAuthz
+// never builds a self-signed authenticator, and every MCP token would be
+// unverifiable. buildMCPHandlers must refuse to start in that shape too, not
+// just when auth is fully disabled.
+func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+		},
+		http.NewServeMux(),
+		auth.Config{Enabled: true, TokenSecret: nil},
+		nil,
+	)
+	require.Error(t, err,
+		"MCP must refuse to start when auth is enabled but no token secret is configured")
+}
+
+// TestApplyMCPPostParseConfigDoesNotDefaultPublicURL guards Fix round 1,
+// Finding 2 (task-15-report.md): mcpPublicURL used to default to
+// "http://localhost"+bindAddress when PAPRIKA_MCP_PUBLIC_URL was unset, so
+// a misconfigured production deployment would silently advertise a
+// localhost authorization server in RFC 9728/8414 discovery metadata and
+// mint tokens claiming to be issued by it. There must be no default now —
+// an unset env var must leave mcpPublicURL empty, so validateMCPConfig can
+// fail closed instead.
+func TestApplyMCPPostParseConfigDoesNotDefaultPublicURL(t *testing.T) {
+	cfg := &cliConfig{mcpBindAddress: ":8090"}
+	applyMCPPostParseConfig(cfg, func(string) string { return "" })
+	assert.Empty(t, cfg.mcpPublicURL, "mcpPublicURL must not default to a loopback address")
+}
+
+func TestApplyMCPPostParseConfigUsesConfiguredPublicURL(t *testing.T) {
+	cfg := &cliConfig{mcpBindAddress: ":8090"}
+	applyMCPPostParseConfig(cfg, func(key string) string {
+		if key == "PAPRIKA_MCP_PUBLIC_URL" {
+			return "https://paprika.example"
+		}
+		return ""
+	})
+	assert.Equal(t, "https://paprika.example", cfg.mcpPublicURL)
+}
+
+// TestBuildMCPHandlersRequiresPublicURL guards Fix round 1, Finding 2
+// (task-15-report.md): --mcp-enabled=true must fail at startup when
+// PAPRIKA_MCP_PUBLIC_URL was never set, rather than silently running with a
+// localhost authorization server identity — every other MCP precondition
+// (auth enabled, token secret, client ID) already fails closed this way.
+func TestBuildMCPHandlersRequiresPublicURL(t *testing.T) {
+	secret := []byte("test-token-secret-test-token-sec")
+	_, err := buildMCPHandlers(context.Background(),
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			mcpPublicURL:         "",
+		},
+		http.NewServeMux(),
+		auth.Config{Enabled: true, TokenSecret: secret},
+		&cache.Cache{},
+	)
+	require.Error(t, err,
+		"MCP must refuse to start without an explicitly configured public URL")
+}
+
+// TestBuildMCPHandlersWiresRealClient guards CF1 (progress.md, Task 13's
+// review): mcp.ServerConfig.Client is deliberately not part of
+// mcp.NewServer's own required-field validation, so a production server
+// built without one would start cleanly and fail every tools/call with an
+// internal error. This proves buildMCPHandlers always constructs a real
+// Client wired over connectHandler: a tools/call for fleet_status (which
+// needs no request fields) reaches the stub PaprikaService handler and
+// receives its CodeUnimplemented response, rather than the
+// "no Connect client configured" error a nil Client would produce.
+func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
+	ctx := context.Background()
+
+	// A stub PaprikaService that only needs to prove requests actually
+	// reach it — it doesn't need to implement anything for real, since
+	// CF1 only tests that Server.Client is wired, not the full request
+	// pipeline (that's covered by Task 13's own tests).
+	_, handler := v1connect.NewPaprikaServiceHandler(v1connect.UnimplementedPaprikaServiceHandler{})
+
+	secret := []byte("test-token-secret-test-token-sec")
+	store, err := cache.New(ctx, cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	handlers, err := buildMCPHandlers(ctx,
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			mcpPublicURL:         "https://paprika.example",
+			mcpAccessTokenTTL:    time.Hour,
+			mcpRefreshTokenTTL:   24 * time.Hour,
+		},
+		handler,
+		auth.Config{Enabled: true, TokenSecret: secret},
+		store,
+	)
+	require.NoError(t, err)
+	require.Len(t, handlers, 2, "buildMCPHandlers must register /mcp plus the OAuth routes")
+
+	mux := http.NewServeMux()
+	for _, h := range handlers {
+		h(mux)
+	}
+
+	token, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject:  "task15-test",
+		Audience: mcp.MCPTokenAudience,
+		Scope:    string(mcp.ScopeRead),
+		TTL:      time.Hour,
+		Secret:   secret,
+	})
+	require.NoError(t, err)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fleet_status","arguments":{}}}`
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, "the JSON-RPC envelope itself is 200 even when the tool call errors")
+	respBody := rec.Body.String()
+	assert.NotContains(t, respBody, "no Connect client configured",
+		"buildMCPHandlers must always wire a real Client (CF1); this error string indicates a nil one")
+}
+
+// TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken proves the real fix, at
+// the actual production wiring level: GET /mcp/authorize must authenticate
+// as a console user, not require a pre-existing MCP-audience token (the
+// circular requirement this whole change exists to break). A console token
+// minted with aud=paprika-api — exactly what /auth/basic-login issues, and
+// what the console chain now requires strictly (see auth.ConsoleAPIAudience)
+// — must be accepted here, never rejected with the 401 an MCP-audience-only
+// authenticator would produce.
+func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
+	ctx := context.Background()
+
+	_, handler := v1connect.NewPaprikaServiceHandler(v1connect.UnimplementedPaprikaServiceHandler{})
+
+	secret := []byte("test-token-secret-test-token-sec")
+	store, err := cache.New(ctx, cache.Config{Backend: cache.BackendMemory})
+	require.NoError(t, err)
+
+	const redirect = "https://claude.ai/api/mcp/auth_callback"
+	handlers, err := buildMCPHandlers(ctx,
+		&cliConfig{
+			mcpEnabled:           true,
+			mcpOAuthClientID:     "test-client",
+			mcpOAuthRedirectURIs: []string{redirect},
+			mcpPublicURL:         "https://paprika.example",
+			mcpAccessTokenTTL:    time.Hour,
+			mcpRefreshTokenTTL:   24 * time.Hour,
+		},
+		handler,
+		auth.Config{Enabled: true, TokenSecret: secret},
+		store,
+	)
+	require.NoError(t, err)
+
+	mux := http.NewServeMux()
+	for _, h := range handlers {
+		h(mux)
+	}
+
+	// A console token: aud=paprika-api, no scope claim — exactly what
+	// /auth/basic-login issues, never an MCP access token.
+	consoleToken, err := auth.IssueTokenWithOptions(auth.TokenOptions{
+		Subject:  "console-user",
+		Email:    "console-user@example.com",
+		Name:     "Console User",
+		Audience: auth.ConsoleAPIAudience,
+		Secret:   secret,
+	})
+	require.NoError(t, err)
+
+	query := url.Values{
+		"client_id":             {"test-client"},
+		"response_type":         {"code"},
+		"redirect_uri":          {redirect},
+		"code_challenge":        {"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"},
+		"code_challenge_method": {"S256"},
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/mcp/authorize?"+query.Encode(), nil)
+	req.Header.Set("Authorization", "Bearer "+consoleToken)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	assert.NotEqual(t, http.StatusUnauthorized, rec.Code,
+		"a console token must authenticate GET /mcp/authorize; requiring an MCP-audience token here is exactly the circular flow this fix closes")
+	assert.Equal(t, http.StatusFound, rec.Code)
 }

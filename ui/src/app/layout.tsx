@@ -1,21 +1,21 @@
 import type { Metadata } from "next"
-import { Instrument_Sans, JetBrains_Mono } from "next/font/google"
+import { Barlow, Barlow_Condensed } from "next/font/google"
 import "./globals.css"
 import { Nav } from "@/components/layout/nav"
 import { AuthProvider } from "@/lib/auth-context"
 import { ConnectionProvider } from "@/lib/connection-context"
 import { QueryProvider } from "@/lib/query-provider"
 
-const instrumentSans = Instrument_Sans({
+const barlow = Barlow({
   variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
 })
 
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-cond",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600", "700"],
 })
 
 export const metadata: Metadata = {
@@ -35,8 +35,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${instrumentSans.variable} ${jetbrainsMono.variable} h-full antialiased dark`}
-      style={{ colorScheme: "dark" }}
+      className={`${barlow.variable} ${barlowCondensed.variable} h-full antialiased`}
+      style={{ colorScheme: "light" }}
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>

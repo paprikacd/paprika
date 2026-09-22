@@ -75,6 +75,27 @@ func (c *MemoryCache) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// GetDel atomically retrieves and removes key's value under a single write
+// lock, so two goroutines racing the same key can never both observe it
+// present — exactly one gets the value, and it is gone (deleted, or already
+// absent) for everyone else by the time this returns. An expired-but-still
+// -present entry is treated as a miss (nil, nil) and evicted while the lock
+// is already held, matching Get's expiry semantics.
+func (c *MemoryCache) GetDel(_ context.Context, key string) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, ok := c.items[key]
+	if !ok {
+		return nil, nil
+	}
+	delete(c.items, key)
+	if !item.expiry.IsZero() && c.clock.Now().After(item.expiry) {
+		return nil, nil
+	}
+	return item.value, nil
+}
+
 // Ping always succeeds for the in-memory cache.
 func (c *MemoryCache) Ping(ctx context.Context) error {
 	return nil
@@ -102,6 +123,7 @@ var (
 	_ Getter        = (*MemoryCache)(nil)
 	_ Setter        = (*MemoryCache)(nil)
 	_ Deleter       = (*MemoryCache)(nil)
+	_ GetDeleter    = (*MemoryCache)(nil)
 	_ Pinger        = (*MemoryCache)(nil)
 	_ Closer        = (*MemoryCache)(nil)
 	_ PrefixDeleter = (*MemoryCache)(nil)

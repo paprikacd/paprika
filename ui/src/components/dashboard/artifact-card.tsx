@@ -1,38 +1,65 @@
 "use client"
 
 import { useState } from "react"
-import { Copy, Download, Check } from "lucide-react"
+import {
+  Check,
+  Copy,
+  Download,
+  FileText,
+  FlaskConical,
+  Package,
+  Paperclip,
+} from "lucide-react"
 
 import type { ArtifactRef } from "@/gen/paprika/v1/api_pb"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { StatusPill } from "@/components/ui/status-chip"
+import { buttonVariants } from "@/components/ui/button"
 import { copyToClipboard } from "@/lib/clipboard"
+import type { StatusTone } from "@/lib/status-tone"
 import { cn } from "@/lib/utils"
+
+/**
+ * The kind glyph. Written as a component rather than a returned component
+ * reference so React sees one stable type per branch.
+ */
+function ArtifactIcon({ artifact }: { artifact: ArtifactRef }) {
+  const className = "size-3.5 flex-none text-steel-700"
+  const kind = artifact.kind.toLowerCase()
+  if (kind.includes("oci") || kind.includes("image")) {
+    return <Package aria-hidden className={className} />
+  }
+  if (/junit|test|report/i.test(artifact.name)) {
+    return <FlaskConical aria-hidden className={className} />
+  }
+  if (kind.includes("config") || kind.includes("json") || kind.includes("file")) {
+    return <FileText aria-hidden className={className} />
+  }
+  return <Paperclip aria-hidden className={className} />
+}
+
+function artifactTone(phase: string): StatusTone {
+  switch (phase) {
+    case "Ready":
+    case "Succeeded":
+      return "healthy"
+    case "Failed":
+      return "failed"
+    case "Pending":
+      return "pending"
+    default:
+      return "unknown"
+  }
+}
 
 function truncateDigest(digest: string): string {
   if (!digest) return ""
-  if (digest.length <= 18) return digest
-  return `${digest.slice(0, 18)}…`
+  return digest.length <= 18 ? digest : `${digest.slice(0, 18)}…`
 }
 
 function formatCreatedAt(ts: bigint): string {
   const ms = Number(ts) * 1000
   if (!Number.isFinite(ms) || ms <= 0) return ""
   return new Date(ms).toLocaleString()
-}
-
-function phaseClassName(phase: string): string {
-  switch (phase) {
-    case "Ready":
-    case "Succeeded":
-      return "bg-success/10 text-success border-success/20"
-    case "Failed":
-      return "bg-destructive/10 text-destructive border-destructive/20"
-    case "Pending":
-      return "bg-warning/10 text-warning border-warning/20"
-    default:
-      return "bg-muted text-muted-foreground border-border/50"
-  }
 }
 
 function refToCopy(artifact: ArtifactRef): string {
@@ -42,81 +69,112 @@ function refToCopy(artifact: ArtifactRef): string {
 interface ArtifactCardProps {
   artifact: ArtifactRef
   /**
-   * Optional download URL (e.g. a base64 JSON data URI for ConfigMap artifacts
-   * under the size limit). When present, a Download link is rendered instead of
-   * the "Copy reference" button.
+   * Optional download URL (e.g. a base64 JSON data URI for ConfigMap
+   * artifacts under the size limit). When present, a download link replaces
+   * the copy-reference control.
    */
   downloadUrl?: string
+  /**
+   * Extra provenance the artifact message cannot carry — test counts, sizes.
+   * Only ever passed by a caller that has checked its DataState.
+   */
+  extraMeta?: string
   className?: string
 }
 
-export function ArtifactCard({ artifact, downloadUrl, className }: ArtifactCardProps) {
+/**
+ * One artifact, as a row in the artifacts board: kind glyph, identity, state.
+ *
+ * The reference — not the Kubernetes object name — is the headline, because
+ * the reference is what an operator pastes somewhere. The name stays in the
+ * meta line so the link back to the manifest is not lost.
+ */
+export function ArtifactCard({
+  artifact,
+  downloadUrl,
+  extraMeta,
+  className,
+}: ArtifactCardProps) {
   const [copied, setCopied] = useState(false)
+  const reference = refToCopy(artifact)
+  const title = reference || artifact.name
+
+  const meta = [
+    title === artifact.name ? "" : artifact.name,
+    artifact.kind,
+    extraMeta ?? "",
+    truncateDigest(artifact.digest),
+    formatCreatedAt(artifact.createdAt),
+  ].filter(Boolean)
 
   async function handleCopy() {
     try {
-      await copyToClipboard(refToCopy(artifact))
+      await copyToClipboard(reference)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      // clipboard unavailable; ignore
+      // Clipboard unavailable; the reference is still on screen.
     }
   }
 
   return (
-    <div
+    <li
       className={cn(
-        "rounded-lg border bg-card p-3 text-sm shadow-xs",
+        "flex items-center gap-2.5 border-b border-rule-soft px-3 py-2",
         className
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-mono text-xs font-medium">{artifact.name}</p>
-          {artifact.digest && (
-            <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-              {truncateDigest(artifact.digest)}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {artifact.kind && (
-            <Badge variant="outline" className="font-mono text-[10px]">
-              {artifact.kind}
-            </Badge>
-          )}
-          {artifact.phase && (
-            <Badge className={cn("text-[10px]", phaseClassName(artifact.phase))}>
-              {artifact.phase}
-            </Badge>
-          )}
-        </div>
+      <ArtifactIcon artifact={artifact} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-mono text-note">{title}</p>
+        {meta.length > 0 ? (
+          <p className="truncate text-meta text-neutral-600">
+            {meta.join(" · ")}
+          </p>
+        ) : null}
+        {artifact.phase === "Failed" && artifact.failedReason ? (
+          <p className="mt-0.5 text-meta text-status-failed-text">
+            {artifact.failedReason}
+          </p>
+        ) : null}
       </div>
 
-      {artifact.phase === "Failed" && artifact.failedReason && (
-        <p className="mt-2 text-xs text-destructive">{artifact.failedReason}</p>
+      {downloadUrl ? (
+        <a
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "icon-xs" }),
+            "relative flex-none after:absolute after:-inset-2.5 after:content-['']"
+          )}
+          href={downloadUrl}
+          download={`${artifact.name}.json`}
+          aria-label={`Download ${artifact.name}`}
+        >
+          <Download aria-hidden />
+        </a>
+      ) : (
+        <button
+          type="button"
+          onClick={handleCopy}
+          aria-label={`Copy reference for ${artifact.name}`}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "icon-xs" }),
+            "relative flex-none after:absolute after:-inset-2.5 after:content-['']"
+          )}
+        >
+          {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+        </button>
       )}
+      <span aria-live="polite" className="sr-only">
+        {copied ? `Reference for ${artifact.name} copied` : ""}
+      </span>
 
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted-foreground">
-          {formatCreatedAt(artifact.createdAt)}
-        </span>
-        {downloadUrl ? (
-          <a
-            className={cn(buttonVariants({ variant: "outline", size: "xs" }))}
-            href={downloadUrl}
-            download={`${artifact.name}.json`}
-          >
-            <Download className="size-3" />
-            Download
-          </a>
-        ) : (
-          <Button size="xs" variant="outline" onClick={handleCopy}>
-            {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-            {copied ? "Copied" : "Copy reference"}
-          </Button>
-        )}
-      </div>
-    </div>
+      {artifact.phase ? (
+        <StatusPill
+          tone={artifactTone(artifact.phase)}
+          label={artifact.phase}
+          className="flex-none"
+        />
+      ) : null}
+    </li>
   )
 }

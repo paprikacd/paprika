@@ -39,7 +39,7 @@ const test = base.extend<EventAuditFixtures>({
   ],
 })
 
-test("serves the compiled shell with exact links and disabled placeholders", async ({ page }) => {
+test("serves the compiled shell with exact links that all resolve", async ({ page }) => {
   await page.goto("/dashboard/applications")
 
   await expect(page.getByRole("heading", { level: 1, name: "Applications" })).toBeVisible()
@@ -47,47 +47,99 @@ test("serves the compiled shell with exact links and disabled placeholders", asy
   const expectedLinks = [
     ["Overview", "/dashboard/"],
     ["Applications", "/dashboard/applications/"],
-    ["Pipelines", "/dashboard/#pipelines"],
-    ["Releases", "/dashboard/#releases"],
+    ["Fleet map", "/dashboard/map/"],
+    ["Pipelines", "/dashboard/pipelines/"],
     ["Rollouts", "/dashboard/rollouts/"],
+    ["Sync & diff", "/dashboard/diff/"],
+    ["Repositories", "/dashboard/repositories/"],
+    ["Templates", "/dashboard/templates/"],
+    ["Clusters", "/dashboard/clusters/"],
   ] as const
 
+  // The rail carries these nine destinations, in this order, and nothing else:
+  // an extra, missing or reordered entry fails here.
+  await expect
+    .poll(() =>
+      navigation
+        .getByRole("link")
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+    )
+    .toEqual(expectedLinks.map(([, href]) => href))
   for (const [name, href] of expectedLinks) {
     await expect(navigation.getByRole("link", { name, exact: true })).toHaveAttribute("href", href)
   }
 
-  for (const name of ["Activity", "Admin"] as const) {
-    const placeholder = navigation.getByRole("button", {
-      name: new RegExp(`^${name}\\. Available in a later plan$`, "i"),
-    })
-    await expect(placeholder).toBeDisabled()
-    await expect(placeholder).toHaveAttribute("aria-disabled", "true")
-    await expect(placeholder).toHaveAttribute("title", "Available in a later plan")
-    await expect(navigation.getByRole("link", { name, exact: true })).toHaveCount(0)
+  // The nav no longer carries disabled placeholders, so the guarantee that
+  // clause bought — no dead entries in the rail — is asserted directly: every
+  // href must be served by a compiled route of its own. The export routes any
+  // unknown extensionless path to the application shell with a 200, so the
+  // shell is fetched first and used as the negative control.
+  const notFound = await page.request.get("/dashboard/not-a-compiled-route/")
+  expect(notFound.status()).toBe(200)
+  const shell = await notFound.text()
+
+  for (const [name, href] of expectedLinks) {
+    const response = await page.request.get(href)
+    expect(response.status(), `${name} → ${href} must be served`).toBe(200)
+    expect(
+      await response.text(),
+      `${name} → ${href} must be a compiled route, not the not-found shell`,
+    ).not.toBe(shell)
   }
 })
 
 test("applies a namespaced project facet and typo-tolerant application search", async ({
   page,
 }, testInfo) => {
-  await page.goto("/dashboard/applications?view=table")
+  // Project is scoped from the console header, and its options are the server's
+  // project facet buckets. They are labelled by name alone, so the run is
+  // namespaced to team-00 first: exactly one `payments` bucket is then on
+  // offer, and choosing it must still write the namespaced key.
+  await page.goto("/dashboard/applications?view=table&namespace=team-00")
   await expect(page.getByRole("table", { name: "Applications" })).toBeVisible()
+  const sentinel = page.getByTestId("fleet-load-more-sentinel")
+  await expect(sentinel).toContainText("21 loaded / 21 indexed")
 
-  const filterDisclosure = page.locator("summary").filter({ hasText: "Filter dimensions" })
-  await activate(page, filterDisclosure, testInfo)
+  const projectScope = page.getByRole("combobox").filter({ hasText: "Project" })
+  await expect(projectScope).toHaveCount(1)
+  await activate(page, projectScope, testInfo)
+  const projectOption = page.getByRole("option").filter({ hasText: /^payments/ })
+  await expect(projectOption).toHaveCount(1)
+  await chooseOption(page, projectOption, testInfo)
 
-  const projectFilter = page.getByRole("checkbox", { name: `Project ${projectKey}` })
-  await activate(page, projectFilter, testInfo, "Space")
   await expect.poll(() => queryValues(page, "project")).toEqual([projectKey])
+  await expect(sentinel).toContainText("9 loaded / 9 indexed")
 
-  const search = page.getByRole("searchbox", { name: "Search applications" })
+  // The chip toolbar replaced the checkbox fieldsets. A chip's count is what
+  // selecting it yields — facets are self-excluding — so the count printed on
+  // the chip is asserted against the scope the chip produces, and toggling it
+  // off must give the project scope back.
+  const rolloutChip = page
+    .getByRole("group", { name: "Facet filters" })
+    .getByRole("button", { name: /^paused, \d+ applications$/ })
+  await expect(rolloutChip).toHaveCount(1)
+  const chipLabel = await rolloutChip.getAttribute("aria-label")
+  const chipCount = Number(/^paused, (\d+) applications$/.exec(chipLabel ?? "")?.[1])
+  expect(chipCount).toBeGreaterThan(0)
+  expect(chipCount).toBeLessThan(9)
+
+  await activate(page, rolloutChip, testInfo)
+  await expect.poll(() => queryValues(page, "rollout")).toEqual(["paused"])
+  await expect(rolloutChip).toHaveAttribute("aria-pressed", "true")
+  await expect(sentinel).toContainText(`${chipCount} loaded / ${chipCount} indexed`)
+
+  await activate(page, rolloutChip, testInfo)
+  await expect.poll(() => queryValues(page, "rollout")).toEqual([])
+  await expect(sentinel).toContainText("9 loaded / 9 indexed")
+
+  const search = page.getByRole("searchbox", {
+    name: "Filter applications by name, project, cluster or revision",
+  })
   await enterText(page, search, "checkout servce", testInfo)
   await expect.poll(() => queryValue(page, "q")).toBe("checkout servce")
 
   await expect(page.getByRole("row", { name: fuzzyApplication })).toBeVisible()
-  await expect(page.getByTestId("fleet-load-more-sentinel")).toContainText(
-    "1 loaded / 1 indexed",
-  )
+  await expect(sentinel).toContainText("1 loaded / 1 indexed")
 })
 
 test("preserves URL state through Treemap, Matrix, and Table with keyboard selection", async ({
@@ -162,8 +214,10 @@ test("opens a real Application deep link from highest-impact attention", async (
 }, testInfo) => {
   await page.goto("/dashboard")
 
-  const attention = page.getByRole("region", { name: "Highest impact attention" })
-  const applicationLink = attention.getByRole("listitem").first().getByRole("link")
+  // "Highest impact attention" is now board 03, "Needs attention": the same
+  // server-ranked (`sort=impact`) window, worst first.
+  const attention = page.getByRole("region", { name: "03 Needs attention" })
+  const applicationLink = attention.getByRole("listitem").first().getByRole("link").first()
   await expect(applicationLink).toBeVisible()
   const href = await applicationLink.getAttribute("href")
   expect(href).toBeTruthy()
@@ -177,8 +231,16 @@ test("opens a real Application deep link from highest-impact attention", async (
   await activate(page, applicationLink, testInfo)
   await expect(page).toHaveURL(destination.toString())
   await expect(page.getByRole("heading", { level: 1, name: applicationName! })).toBeVisible()
-  await expect(page.getByText("Current Phase", { exact: true })).toBeVisible()
-  await expect(page.getByText("Application not found.", { exact: true })).toHaveCount(0)
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toContainText(
+    applicationName!,
+  )
+  // The "Current Phase" card became the delivery timeline: the same lifecycle
+  // phase read, so the deep link still has to land on a rendered detail rather
+  // than an empty shell.
+  await expect(page.getByRole("heading", { name: /^Delivery timeline/ })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Application not found", exact: true }),
+  ).toHaveCount(0)
 })
 
 test("redirects the legacy applications hash to the dedicated inventory", async ({ page }) => {
@@ -203,6 +265,28 @@ async function activate(
 
   await tabTo(page, locator)
   await page.keyboard.press(key)
+}
+
+/**
+ * Commits one option of an open listbox. A listbox is arrow-driven rather than
+ * tab-driven, so the keyboard-only project cannot reach it through `activate`.
+ */
+async function chooseOption(page: Page, option: Locator, testInfo: TestInfo) {
+  const locator = option.first()
+  await expect(locator).toBeVisible()
+  if (testInfo.project.name !== keyboardProject) {
+    await locator.click()
+    return
+  }
+
+  for (let attempt = 0; attempt < 250; attempt += 1) {
+    if (await locator.evaluate((element) => element.hasAttribute("data-highlighted"))) {
+      await page.keyboard.press("Enter")
+      return
+    }
+    await page.keyboard.press("ArrowDown")
+  }
+  throw new Error("keyboard navigation did not reach the requested option")
 }
 
 async function enterText(page: Page, target: Locator, value: string, testInfo: TestInfo) {

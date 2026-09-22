@@ -1,31 +1,57 @@
 "use client"
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { createPromiseClient } from "@connectrpc/connect"
-import { createTransport } from "@/lib/transport"
-import { PaprikaService } from "@/gen/paprika/v1/api_connect"
-import type { GetResourceResponse, KubernetesEvent, LogChunk } from "@/gen/paprika/v1/api_pb"
-import { X, FileText, GitCompare, ListChecks, Loader2, CheckCircle2, AlertTriangle, Terminal, Pause, Play, Search, Wifi, WifiOff, Sparkles } from "lucide-react"
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react"
+
 import { InvestigationPanel } from "@/components/dashboard/investigation-panel"
-import { SyncDiffView } from "@/components/dashboard/sync-diff-view"
+import {
+  resourceHealthTone,
+  resourceSyncLabel,
+  resourceSyncTone,
+} from "@/components/dashboard/resource-list-table"
+import { parseUnifiedDiff, summarizeUnifiedDiff } from "@/components/dashboard/sync-diff-view"
+import { StatusGlyph } from "@/components/ui/status-chip"
+import { PaprikaService } from "@/gen/paprika/v1/api_connect"
+import type {
+  GetResourceResponse,
+  KubernetesEvent,
+  LogChunk,
+} from "@/gen/paprika/v1/api_pb"
+import { STATUS_TONES } from "@/lib/status-tone"
+import { createTransport } from "@/lib/transport"
+import { cn } from "@/lib/utils"
 
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
-type Tab = "live" | "desired" | "diff" | "events" | "logs"
+type Tab = "diff" | "live" | "desired" | "events" | "logs"
 
-const tabs: { id: Tab; label: string; icon: typeof FileText }[] = [
-  { id: "diff", label: "Diff", icon: GitCompare },
-  { id: "live", label: "Live", icon: FileText },
-  { id: "desired", label: "Desired", icon: FileText },
-  { id: "events", label: "Events", icon: ListChecks },
-  { id: "logs", label: "Logs", icon: Terminal },
+const TABS: { id: Tab; label: string }[] = [
+  { id: "diff", label: "Diff" },
+  { id: "live", label: "Live" },
+  { id: "desired", label: "Desired" },
+  { id: "events", label: "Events" },
+  { id: "logs", label: "Logs" },
 ]
 
 const LOG_BUFFER_LIMIT = 5000
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30_000
 
+export interface InspectedResource {
+  kind: string
+  name: string
+  namespace: string
+  syncStatus: string
+  health: string
+  healthMessage: string
+}
+
+/**
+ * The resource inspector: a right-anchored drawer over the application detail
+ * view. It opens on Diff because drift is the question the reader almost
+ * always arrived with; Live and Desired are the manifests behind that answer.
+ */
 export function ResourceDetailPanel({
   applicationNamespace,
   applicationName,
@@ -34,7 +60,7 @@ export function ResourceDetailPanel({
 }: {
   applicationNamespace: string
   applicationName: string
-  resource: { kind: string; name: string; namespace: string; syncStatus: string; health: string; healthMessage: string }
+  resource: InspectedResource
   onClose: () => void
 }) {
   const [tab, setTab] = useState<Tab>("diff")
@@ -42,6 +68,9 @@ export function ResourceDetailPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [investigationOpen, setInvestigationOpen] = useState(false)
+  const titleId = useId()
+  const drawerRef = useRef<HTMLElement | null>(null)
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -58,155 +87,218 @@ export function ResourceDetailPanel({
           resourceNamespace: resource.namespace,
         })
         .then((res) => {
-          if (!cancelled) {
-            setData(res)
-            if (!res.diff && !res.liveManifest) {
-              setTab("live")
-            }
-          }
+          if (cancelled) return
+          setData(res)
+          // Nothing to diff against — land on the manifest instead of an
+          // empty frame.
+          if (!res.diff && !res.liveManifest) setTab("live")
         })
         .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load resource")
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : "Failed to load resource")
+          }
         })
         .finally(() => {
           if (!cancelled) setLoading(false)
         })
-      })
+    })
     return () => {
       cancelled = true
     }
   }, [applicationNamespace, applicationName, resource])
 
+  useEffect(() => {
+    drawerRef.current?.focus()
+  }, [])
+
+  const healthTone = resourceHealthTone(resource.health)
+  const syncTone = resourceSyncTone(resource.syncStatus)
+
+  const tags = [
+    resource.namespace,
+    data?.apiVersion ?? "",
+    data?.resource ?? "",
+    data?.uid ?? "",
+    ...Object.entries(data?.labels ?? {})
+      .slice(0, 3)
+      .map(([key, value]) => `${key}=${value}`),
+  ].filter(Boolean)
+
+  const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
+    const last = TABS.length - 1
+    let next = -1
+    if (event.key === "ArrowRight") next = index === last ? 0 : index + 1
+    else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1
+    else if (event.key === "Home") next = 0
+    else if (event.key === "End") next = last
+    if (next === -1) return
+    event.preventDefault()
+    setTab(TABS[next].id)
+    tabRefs.current[next]?.focus()
+  }
+
   return (
     <>
       <div
-        className="fixed inset-0 z-50 bg-foreground/20 backdrop-blur-sm"
+        aria-hidden
         onClick={onClose}
-        onKeyDown={(e) => e.key === "Escape" && onClose()}
+        className="fixed inset-0 z-[60] bg-foreground/30"
       />
-      <aside className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col bg-card shadow-2xl ring-1 ring-foreground/10">
-        {/* Header */}
-        <div className="flex items-start justify-between border-b border-border/40 px-6 py-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-semibold">{resource.kind}</span>
-              <span className="font-mono text-sm text-muted-foreground">/{resource.name}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-3 text-xs">
-              <span className="inline-flex items-center gap-1 text-muted-foreground tabular-nums">
-                {resource.namespace}
-              </span>
-              <span className="text-muted-foreground">Sync: {resource.syncStatus || "-"}</span>
-              <span className="text-muted-foreground">Health: {resource.health || "-"}</span>
-            </div>
-            {resource.healthMessage && (
-              <p className="mt-1 text-xs text-muted-foreground">{resource.healthMessage}</p>
-            )}
-            {data && (
-              <div className="mt-2 flex max-w-xl flex-wrap gap-1.5">
-                {data.apiVersion && (
-                  <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                    {data.apiVersion}
-                  </span>
-                )}
-                {data.resource && (
-                  <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                    {data.resource}
-                  </span>
-                )}
-                {data.uid && (
-                  <span className="max-w-48 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                    {data.uid}
-                  </span>
-                )}
-                {Object.entries(data.labels ?? {}).slice(0, 3).map(([key, value]) => (
+      <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose()
+        }}
+        className="fixed inset-y-0 right-0 z-[61] flex w-[560px] max-w-full flex-col border-l border-rule-strong bg-background shadow-drawer outline-none"
+      >
+        <div className="border-b border-rule bg-card px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-mono text-meta tracking-[0.12em] text-neutral-600">
+                {resource.kind.toUpperCase()}
+              </p>
+              <h2
+                id={titleId}
+                className="mt-0.5 font-cond text-weight font-semibold tracking-[0.02em]"
+              >
+                {resource.name}
+              </h2>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1.5 rounded-[2px] border border-rule bg-inset px-1.5 py-px font-mono text-meta text-muted-foreground">
+                  <StatusGlyph
+                    tone={healthTone}
+                    label={`${STATUS_TONES[healthTone].label} health`}
+                    className="size-3"
+                  />
+                  {STATUS_TONES[healthTone].label}
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-[2px] border border-rule bg-inset px-1.5 py-px font-mono text-meta text-muted-foreground">
+                  <StatusGlyph
+                    tone={syncTone}
+                    label={`${resourceSyncLabel(resource.syncStatus)} sync`}
+                    className="size-3"
+                  />
+                  {resourceSyncLabel(resource.syncStatus)}
+                </span>
+                {tags.map((tag) => (
                   <span
-                    key={key}
-                    className="max-w-64 truncate rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary"
+                    key={tag}
+                    className="max-w-56 truncate rounded-[2px] border border-rule bg-inset px-1.5 py-px font-mono text-meta text-muted-foreground"
                   >
-                    {key}={value}
+                    {tag}
                   </span>
                 ))}
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setInvestigationOpen(true)}
-              aria-label="Investigate"
-              data-testid="open-investigation"
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-foreground/80 transition-[color,background-color] hover:bg-muted/40"
-            >
-              <Sparkles className="size-3.5" />
-              Investigate
-            </button>
-            <button
-              onClick={onClose}
-              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-1 border-b border-border/40 px-4">
-          {tabs.map((t) => {
-            const Icon = t.icon
-            const isActive = tab === t.id
-            return (
+              {resource.healthMessage ? (
+                <p className="mt-1.5 text-note text-muted-foreground">
+                  {resource.healthMessage}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-none items-center gap-1.5">
               <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-[color,box-shadow] ${
-                  isActive ? "border-b-2 border-primary text-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
+                type="button"
+                onClick={() => setInvestigationOpen(true)}
+                data-testid="open-investigation"
+                className="inline-flex h-[26px] items-center border border-rule bg-card px-2.5 font-cond text-note font-semibold hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
-                <Icon className="size-3.5" />
-                {t.label}
+                Investigate
               </button>
-            )
-          })}
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close resource inspector"
+                className="inline-flex size-[26px] items-center justify-center border border-rule bg-card text-muted-foreground hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                <span aria-hidden>✕</span>
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div
+          role="tablist"
+          aria-label="Resource inspector views"
+          className="flex border-b border-rule bg-card px-4"
+        >
+          {TABS.map((t, index) => (
+            <button
+              key={t.id}
+              ref={(el) => {
+                tabRefs.current[index] = el
+              }}
+              type="button"
+              role="tab"
+              id={`inspector-tab-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls="inspector-panel"
+              tabIndex={tab === t.id ? 0 : -1}
+              onClick={() => setTab(t.id)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className={cn(
+                "border-b-2 px-3 py-2.5 text-chip focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                tab === t.id
+                  ? "border-primary font-semibold text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          id="inspector-panel"
+          role="tabpanel"
+          aria-labelledby={`inspector-tab-${tab}`}
+          tabIndex={0}
+          className="flex-1 overflow-auto px-4 py-3.5"
+        >
           {tab === "logs" ? (
             <LogsTab
               applicationNamespace={applicationNamespace}
               applicationName={applicationName}
               resource={resource}
-              isActive={tab === "logs"}
+              isActive
             />
           ) : loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
+            <p role="status" className="py-12 text-center text-chip text-muted-foreground">
+              Loading resource…
+            </p>
           ) : error ? (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p
+              role="alert"
+              className="border border-status-failed-line bg-status-failed-fill px-3 py-2.5 text-chip text-status-failed-text"
+            >
               {error}
-            </div>
+            </p>
           ) : !data ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">No data available.</p>
+            <p className="py-12 text-center text-chip text-muted-foreground">
+              No data available.
+            </p>
           ) : tab === "live" ? (
-            <ManifestView manifest={data.liveManifest} label="Live Manifest" />
+            <ManifestView manifest={data.liveManifest} label="Live manifest" />
           ) : tab === "desired" ? (
-            <ManifestView manifest={data.desiredManifest} label="Desired Manifest" />
+            <ManifestView manifest={data.desiredManifest} label="Desired manifest" />
           ) : tab === "diff" ? (
-            <SyncDiffView diff={data.diff} />
-           ) : (
+            <DiffView diff={data.diff} />
+          ) : (
             <EventsView events={data.events} />
           )}
         </div>
       </aside>
-      {investigationOpen && (
+      {investigationOpen ? (
         <InvestigationPanel
           applicationNamespace={applicationNamespace}
           applicationName={applicationName}
           resource={resource}
           onClose={() => setInvestigationOpen(false)}
         />
-      )}
+      ) : null}
     </>
   )
 }
@@ -214,55 +306,103 @@ export function ResourceDetailPanel({
 function ManifestView({ manifest, label }: { manifest: string; label: string }) {
   if (!manifest) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
-        <FileText className="size-5 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">{label} not available</p>
-      </div>
+      <p className="py-12 text-center text-chip text-muted-foreground">
+        {label} not available.
+      </p>
     )
   }
   return (
-    <pre className="overflow-auto rounded-lg bg-background p-4 font-mono text-xs leading-relaxed text-foreground/90 ring-1 ring-foreground/10">
+    <pre
+      aria-label={label}
+      className="m-0 border border-rule bg-card p-3 font-mono text-note leading-[1.7] whitespace-pre-wrap"
+    >
       {manifest}
     </pre>
+  )
+}
+
+function DiffView({ diff }: { diff: string }) {
+  const lines = useMemo(() => parseUnifiedDiff(diff), [diff])
+  const summary = useMemo(() => summarizeUnifiedDiff(diff), [diff])
+  const changed = summary.additions + summary.deletions
+
+  if (lines.length === 0) {
+    return (
+      <p className="py-12 text-center text-chip text-muted-foreground">
+        No differences — live matches desired.
+      </p>
+    )
+  }
+
+  return (
+    <div className="border border-rule bg-card" data-testid="inspector-diff">
+      <div className="flex items-center justify-between border-b border-rule px-2.5 py-1.5">
+        <span className="font-mono text-meta text-muted-foreground">
+          desired ↔ live · {changed} changed {changed === 1 ? "line" : "lines"}
+        </span>
+        <span className="font-mono text-meta text-status-failed-text">
+          +{summary.additions} −{summary.deletions}
+        </span>
+      </div>
+      <div className="font-mono text-note leading-[1.75]">
+        {lines.map((line) => (
+          <div
+            key={line.id}
+            className={cn(
+              "px-2.5 whitespace-pre",
+              line.kind === "add" && "bg-diff-add-bg text-diff-add-text",
+              line.kind === "delete" && "bg-diff-del-bg text-diff-del-text",
+              line.kind === "context" && "text-diff-ctx-text",
+              (line.kind === "file" || line.kind === "hunk") &&
+                "bg-inset text-muted-foreground"
+            )}
+          >
+            <span
+              aria-hidden
+              className="mr-2.5 inline-block w-[26px] text-right text-diff-gutter tabular-nums"
+            >
+              {line.newLine ?? line.oldLine ?? ""}
+            </span>
+            {line.raw}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
 function EventsView({ events }: { events: KubernetesEvent[] }) {
   if (!events || events.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center">
-        <ListChecks className="size-5 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">No recent events.</p>
-      </div>
+      <p className="py-12 text-center text-chip text-muted-foreground">
+        No recent events.
+      </p>
     )
   }
   return (
-    <div className="space-y-2">
+    <ul className="list-none space-y-2">
       {events.map((e, i) => {
-        const isWarning = e.type === "Warning"
+        const tone = e.type === "Warning" ? "degraded" : "healthy"
         return (
-          <div key={i} className="flex items-start gap-3 rounded-lg bg-muted/30 px-3 py-2.5 ring-1 ring-foreground/5">
-            {isWarning ? (
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-            ) : (
-              <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium">{e.reason}</span>
-                {e.count > 1 && (
-                  <span className="text-[10px] text-muted-foreground tabular-nums">x{e.count}</span>
-                )}
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">{e.message}</p>
-              {e.lastTimestamp && (
-                <p className="mt-0.5 text-[10px] text-muted-foreground/60 tabular-nums">{e.lastTimestamp}</p>
-              )}
-            </div>
-          </div>
+          <li
+            key={`${e.reason}-${i}`}
+            className="flex gap-2.5 border border-rule bg-card px-2.5 py-2"
+          >
+            <StatusGlyph tone={tone} label={e.type || "Normal"} />
+            <span className="min-w-0 flex-1">
+              <span className="block text-chip font-semibold">{e.reason}</span>
+              <span className="mt-0.5 block text-note text-muted-foreground">
+                {e.message}
+              </span>
+              <span className="mt-1 block font-mono text-meta text-neutral-600">
+                {e.count > 1 ? `${e.count} × · ` : ""}
+                {e.lastTimestamp}
+              </span>
+            </span>
+          </li>
         )
       })}
-    </div>
+    </ul>
   )
 }
 
@@ -289,6 +429,7 @@ function LogsTab({
   const abortRef = useRef<AbortController | null>(null)
   const preRef = useRef<HTMLPreElement | null>(null)
   const userScrolledAwayRef = useRef(false)
+  const filterId = useId()
 
   // Reset state when (re)entering the tab or changing resource.
   useEffect(() => {
@@ -305,7 +446,14 @@ function LogsTab({
       setFirstChunkAt(null)
       setReconnecting(false)
     })
-  }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
+  }, [
+    isActive,
+    applicationNamespace,
+    applicationName,
+    resource.kind,
+    resource.name,
+    resource.namespace,
+  ])
 
   // Open the streaming RPC and pump chunks into the line buffer with
   // exponential reconnect on transient errors.
@@ -344,7 +492,10 @@ function LogsTab({
           }
           if (!podName && chunk.podName) setPodName(chunk.podName)
           setLines((prev) => {
-            const next = prev.length >= LOG_BUFFER_LIMIT ? prev.slice(prev.length - LOG_BUFFER_LIMIT + 1) : prev
+            const next =
+              prev.length >= LOG_BUFFER_LIMIT
+                ? prev.slice(prev.length - LOG_BUFFER_LIMIT + 1)
+                : prev
             next.push(chunk)
             return next
           })
@@ -352,9 +503,7 @@ function LogsTab({
           if (firstChunkAt == null) setFirstChunkAt(Date.now())
         }
         // Normal completion (EOF or end of follow=false): close cleanly.
-        if (!cancelled) {
-          setConnected(false)
-        }
+        if (!cancelled) setConnected(false)
       } catch (err) {
         if (cancelled) return
         const msg = err instanceof Error ? err.message : String(err)
@@ -363,7 +512,7 @@ function LogsTab({
           // Unimplemented on agent/repo-server: don't keep trying.
           const code = (err as { code: unknown }).code
           if (typeof code === "string" && code.includes("unimplemented")) {
-            setError("Streaming logs not available on this server. Falling back to polling.")
+            setError("Streaming logs are not available on this server.")
             setConnected(false)
             setReconnecting(false)
             return
@@ -371,7 +520,6 @@ function LogsTab({
         }
         setError(msg)
         setConnected(false)
-        // Exponential backoff reconnect
         const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, attempt), RECONNECT_MAX_MS)
         attempt++
         setReconnecting(true)
@@ -389,10 +537,16 @@ function LogsTab({
       if (reconnectTimer) clearTimeout(reconnectTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, applicationNamespace, applicationName, resource.kind, resource.name, resource.namespace])
+  }, [
+    isActive,
+    applicationNamespace,
+    applicationName,
+    resource.kind,
+    resource.name,
+    resource.namespace,
+  ])
 
-  // Filter is debounced via useDeferredValue so input stays responsive even
-  // when the buffered set is large.
+  // Filter is deferred so the input stays responsive on a large buffer.
   const deferredFilter = useDeferredValue(filter)
   const visible = useMemo(() => {
     const f = deferredFilter.trim().toLowerCase()
@@ -400,9 +554,6 @@ function LogsTab({
     return lines.filter((c) => c.line.toLowerCase().includes(f))
   }, [lines, deferredFilter])
 
-  // Auto-scroll to bottom unless the user has scrolled up. Only attempt
-  // autoscroll when the log buffer (length) actually changes, so React
-  // re-renders triggered by the filter don't snap-scroll.
   useEffect(() => {
     if (paused) return
     if (userScrolledAwayRef.current) return
@@ -413,139 +564,108 @@ function LogsTab({
 
   if (error && lines.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12 text-center" data-testid="logs-tab-error">
-        <AlertTriangle className="size-5 text-amber-500" />
-        <p className="text-sm text-muted-foreground">{error}</p>
-        {reconnecting && <p className="text-xs text-muted-foreground/60 tabular-nums">reconnecting…</p>}
+      <div data-testid="logs-tab-error" className="py-12 text-center">
+        <p role="alert" className="text-chip text-muted-foreground">
+          {error}
+        </p>
+        {reconnecting ? (
+          <p className="mt-1 font-mono text-meta text-neutral-600">reconnecting…</p>
+        ) : null}
       </div>
     )
   }
 
   return (
     <div className="flex h-full flex-col gap-2" data-testid="logs-tab">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <ConnectionDot connected={connected} reconnecting={reconnecting} />
-        <span className="tabular-nums">{connected ? "live" : reconnecting ? "reconnecting…" : "idle"}</span>
-        {podName && (
-          <span className="font-mono text-muted-foreground">
-            · pod/<span className="text-foreground/80">{podName}</span>
-          </span>
-        )}
-        <span className="tabular-nums">· {lineCount} lines</span>
-        <button
-          onClick={() => {
-            const next = !paused
-            setPaused(next)
-            if (!next) {
-              // Unpausing: snap to bottom on next render.
-              userScrolledAwayRef.current = false
-            }
-          }}
-          aria-label={paused ? "Resume follow" : "Pause follow"}
-          data-testid="pause-toggle"
-          className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 transition-[color,background-color] hover:bg-muted/40"
+      <label htmlFor={filterId} className="sr-only">
+        Filter log lines
+      </label>
+      <input
+        id={filterId}
+        type="text"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter (case insensitive)"
+        data-testid="logs-filter"
+        className="h-8 w-full border border-rule bg-card px-2 text-note outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      />
+
+      {error && lines.length > 0 ? (
+        <p
+          role="status"
+          className="border border-status-degraded-line bg-status-degraded-fill px-2 py-1 text-meta text-status-degraded-text"
         >
-          {paused ? (
-            <>
-              <Play className="size-3" />
-              Resume
-            </>
-          ) : (
-            <>
-              <Pause className="size-3" />
-              Pause
-            </>
-          )}
-        </button>
-      </div>
+          {error}
+          {reconnecting ? " · reconnecting…" : ""}
+        </p>
+      ) : null}
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
-        <input
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter (case insensitive) - pause to inspect"
-          data-testid="logs-filter"
-          className="w-full rounded-md bg-background py-1 pl-7 pr-3 text-xs text-foreground/90 ring-1 ring-foreground/10 outline-none transition-[color,box-shadow] placeholder:text-muted-foreground/40 focus:ring-foreground/30"
-        />
-      </div>
-
-      {error && lines.length > 0 && (
-        <div className="flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[10px] text-amber-600">
-          <AlertTriangle className="size-3" />
-          <span className="truncate">{error}</span>
-          {reconnecting && <span className="ml-auto opacity-60">reconnecting…</span>}
-        </div>
-      )}
-
-      <pre
-        ref={preRef}
-        data-testid="logs-output"
-        onScroll={(e) => {
-          const el = e.currentTarget
-          const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16
-          userScrolledAwayRef.current = !atBottom
-        }}
-        className="max-h-[60vh] min-h-[200px] flex-1 overflow-auto whitespace-pre-wrap rounded-lg bg-background p-4 font-mono text-xs leading-relaxed ring-1 ring-foreground/10"
-      >
-        {visible.length === 0 ? (
-          <span className="text-muted-foreground/40 italic">
-            {firstChunkAt == null
-              ? "Waiting for first log line…"
-              : "No matches."}
+      <div className="border border-rule bg-ink-surface">
+        <div className="flex items-center gap-2 border-b border-ink-rule px-2.5 py-1.5">
+          <span
+            aria-hidden
+            className={cn(
+              "size-1.5 flex-none",
+              connected ? "animate-blip bg-ink-accent" : "bg-ink-kicker"
+            )}
+          />
+          <span className="font-mono text-meta text-ink-accent">
+            {connected ? "live" : reconnecting ? "reconnecting…" : "idle"}
+            {podName ? ` · pod/${podName}` : ""} · {lineCount} lines
           </span>
-        ) : (
-          visible.map((chunk, i) => (
-            <div key={`${chunk.timestampMs}-${i}`} className="flex gap-2">
-              <span className="select-none whitespace-nowrap text-muted-foreground/40 tabular-nums">
-                {formatTimestamp(chunk.timestampMs)}
-              </span>
-              <span className="min-w-0 flex-1 break-words">{chunk.line}</span>
-            </div>
-          ))
-        )}
-      </pre>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !paused
+              setPaused(next)
+              if (!next) userScrolledAwayRef.current = false
+            }}
+            data-testid="pause-toggle"
+            className="ml-auto font-mono text-meta text-ink-muted hover:text-ink-on focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-accent"
+          >
+            {paused ? "resume" : "pause"}
+          </button>
+        </div>
+        <pre
+          ref={preRef}
+          data-testid="logs-output"
+          aria-label="Resource logs"
+          aria-live="off"
+          onScroll={(e) => {
+            const el = e.currentTarget
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 16
+            userScrolledAwayRef.current = !atBottom
+          }}
+          className="m-0 max-h-[60vh] min-h-[200px] overflow-auto p-2.5 font-mono text-note leading-[1.7] whitespace-pre-wrap text-log-text"
+        >
+          {visible.length === 0
+            ? firstChunkAt == null
+              ? "Waiting for first log line…"
+              : "No matches."
+            : visible.map((chunk, i) => (
+                <div key={`${chunk.timestampMs}-${i}`} className="flex gap-2">
+                  <span className="flex-none text-ink-kicker tabular-nums select-none">
+                    {formatTimestamp(chunk.timestampMs)}
+                  </span>
+                  <span className="min-w-0 flex-1 break-words">{chunk.line}</span>
+                </div>
+              ))}
+        </pre>
+      </div>
     </div>
-  )
-}
-
-function ConnectionDot({ connected, reconnecting }: { connected: boolean; reconnecting: boolean }) {
-  const live = connected
-  return (
-    <span className="relative flex size-2">
-      {live ? (
-        <>
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60" />
-          <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
-        </>
-      ) : reconnecting ? (
-        <>
-          <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-amber-500/40" />
-          <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
-        </>
-      ) : (
-        <>
-          <WifiOff className="size-3 text-muted-foreground/60" />
-        </>
-      )}
-      {!connected && !reconnecting ? null : null}
-      {live || reconnecting ? null : <Wifi className="hidden" />}
-    </span>
   )
 }
 
 function formatTimestamp(ms: bigint): string {
   if (!ms) return ""
-  const n = Number(ms)
-  const d = new Date(n)
-  // Compact HH:MM:SS.mmm is easier to skim than full RFC3339.
+  const d = new Date(Number(ms))
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
 
 function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
+
 function pad3(n: number): string {
   if (n < 10) return `00${n}`
   if (n < 100) return `0${n}`

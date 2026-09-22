@@ -37,6 +37,7 @@ import (
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
+	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
@@ -84,6 +85,23 @@ func WithRESTMapper(m meta.RESTMapper) ServerOption {
 	return func(s *PaprikaServer) { s.restMapper = m }
 }
 
+// WithCapacityProviders sets the registry of capacity data providers the
+// console's capacity meters are served from. When unset, every capacity field
+// reports DATA_STATE_NOT_CONFIGURED, which is the honest answer for an install
+// that has bound no provider.
+func WithCapacityProviders(registry *dataprovider.Registry) ServerOption {
+	return func(s *PaprikaServer) { s.capacityProviders = registry }
+}
+
+// WithControlPlaneNamespace sets the namespace this control plane runs in,
+// which is the only namespace permitted to host a Global-scoped
+// DataProviderBinding. Leave it unset and no Global binding is honoured at
+// all — see DataProviderBinding.ScopeIsPermitted for why that is the safe
+// default rather than an inconvenient one.
+func WithControlPlaneNamespace(namespace string) ServerOption {
+	return func(s *PaprikaServer) { s.controlPlaneNamespace = namespace }
+}
+
 // WithAuditor sets the audit logger used to record mutating API operations.
 // If not set, auditing is disabled (NoopAuditor).
 func WithAuditor(a audit.Auditor) ServerOption {
@@ -103,6 +121,8 @@ type PaprikaServer struct {
 	governancePolicyEvaluator *governance.PolicyEvaluator
 	authorizer                auth.Authorizer
 	fleetIndex                fleet.Reader
+	capacityProviders         *dataprovider.Registry
+	controlPlaneNamespace     string
 	// Auditor records structured audit events for mutating API operations. When
 	// nil, the AuditInterceptor falls back to a NoopAuditor.
 	Auditor audit.Auditor

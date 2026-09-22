@@ -1,21 +1,18 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, Microscope, Play, SearchCheck, Terminal } from "lucide-react"
+import { Microscope, Play, Terminal } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
+import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
 import {
   mergeResourcesFromApplication,
+  resourceHealthTone,
+  resourceSyncLabel,
+  resourceSyncTone,
   type MergedResource,
 } from "@/components/dashboard/resource-list-table"
+import { STATUS_TONES } from "@/lib/status-tone"
 
 interface InvestigationApplicationLike {
   name: string
@@ -107,61 +104,46 @@ export function InvestigationTriage({
   }
 
   return (
-    <Card data-testid="investigation-triage">
-      <CardHeader>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-balance">
-              <SearchCheck className="size-5" />
-              Investigation Triage
-            </CardTitle>
-            <CardDescription className="text-pretty">
-              Degraded resources, failing checks, and manual investigation entry points for this application.
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs">
-            <Badge variant={isApplicationUnhealthy(application) ? "destructive" : "secondary"}>
-              {application.phase || "Unknown"}
-            </Badge>
-            <Badge variant={(application.outOfSync ?? 0) > 0 ? "destructive" : "secondary"}>
-              <span className="tabular-nums">{application.outOfSync ?? 0}</span>&nbsp;out of sync
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {resources.length > 0 && (
-          <div className="overflow-hidden rounded-xl ring-1 ring-foreground/10">
-            <div className="divide-y divide-foreground/5">
-              {resources.map(({ resource, reasons }) => (
-                <InvestigationResourceRow
-                  key={resourceKey(resource)}
-                  resource={resource}
-                  reasons={reasons}
-                  run={runs[resourceKey(resource)]}
-                  onRun={() => void runInvestigation(resource, "manual")}
-                  onSelectResource={onSelectResource}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+    <Blueprint data-testid="investigation-triage">
+      <BoardHeader
+        title="Investigation triage"
+        meta={`${resources.length} flagged · ${application.outOfSync ?? 0} out of sync`}
+      />
+      {resources.length > 0 ? (
+        <ul className="list-none">
+          {resources.map(({ resource, reasons }) => (
+            <li key={resourceKey(resource)} className="border-b border-rule-soft">
+              <InvestigationResourceRow
+                resource={resource}
+                reasons={reasons}
+                run={runs[resourceKey(resource)]}
+                onRun={() => void runInvestigation(resource, "manual")}
+                onSelectResource={onSelectResource}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
-        {supportingSignals.length > 0 && (
-          <div className="rounded-xl bg-muted/20 p-3 ring-1 ring-foreground/10">
-            <p className="mb-2 text-xs font-medium text-foreground/80">Additional signals</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {supportingSignals.map((signal) => (
-                <div key={signal} className="flex items-start gap-2 rounded-lg bg-background px-2 py-2 text-xs ring-1 ring-foreground/10">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                  <span className="text-muted-foreground text-pretty">{signal}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {supportingSignals.length > 0 ? (
+        <div className="px-3.5 py-3">
+          <p className="font-mono text-kicker tracking-[0.14em] text-muted-foreground uppercase">
+            Additional signals
+          </p>
+          <ul className="mt-1.5 grid list-none gap-1.5 md:grid-cols-2">
+            {supportingSignals.map((signal) => (
+              <li
+                key={signal}
+                className="flex items-start gap-2 border border-rule-faint bg-inset px-2 py-1.5 text-note"
+              >
+                <StatusGlyph tone="degraded" label="Signal" />
+                <span className="text-muted-foreground">{signal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </Blueprint>
   )
 }
 
@@ -179,52 +161,60 @@ function InvestigationResourceRow({
   onSelectResource: (resource: MergedResource) => void
 }) {
   return (
-    <div className="grid gap-3 px-3 py-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_12rem] lg:items-start">
+    <div className="grid gap-3 px-3.5 py-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_12rem] lg:items-start">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <Microscope className="size-4 shrink-0 text-muted-foreground" />
-          <span className="font-mono text-xs font-medium">{resource.kind}</span>
-          <span className="min-w-0 truncate font-mono text-xs text-foreground">{resource.name}</span>
+          <Microscope className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="font-mono text-kicker tracking-[0.08em] text-neutral-600">
+            {resource.kind.toUpperCase()}
+          </span>
+          <span className="min-w-0 truncate font-cond text-label font-semibold">
+            {resource.name}
+          </span>
         </div>
-        <p className="mt-1 truncate text-xs text-muted-foreground">{resource.namespace || "cluster-scoped"}</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <Badge variant={resource.syncStatus === "Synced" ? "secondary" : "destructive"}>{resource.syncStatus || "Unknown"}</Badge>
-          <Badge variant={resource.health === "Healthy" ? "secondary" : "destructive"}>{resource.health || "Unknown"}</Badge>
+        <p className="mt-1 truncate font-mono text-meta text-muted-foreground">
+          {resource.namespace || "cluster-scoped"}
+        </p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <StatusPill
+            tone={resourceHealthTone(resource.health)}
+            label={STATUS_TONES[resourceHealthTone(resource.health)].label}
+          />
+          <StatusPill
+            tone={resourceSyncTone(resource.syncStatus)}
+            label={resourceSyncLabel(resource.syncStatus)}
+          />
         </div>
       </div>
       <div className="space-y-2">
-        <ul className="space-y-1">
+        <ul className="list-none space-y-1">
           {reasons.map((reason) => (
-            <li key={reason} className="text-xs text-muted-foreground text-pretty">
+            <li key={reason} className="text-note text-muted-foreground">
               {reason}
             </li>
           ))}
         </ul>
         <RunResult run={run} />
       </div>
-      <div className="flex flex-wrap gap-2 lg:justify-end">
-        <Button
+      <div className="flex flex-wrap gap-1.5 lg:justify-end">
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           aria-label={`Run investigation for ${resource.name}`}
           onClick={onRun}
           disabled={run?.loading}
-          className="transition-[scale] active:scale-[0.96]"
+          className="inline-flex h-11 items-center gap-1 border border-rule bg-card px-2.5 text-note hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Play className="mr-1 size-3.5" />
+          <Play className="size-3" aria-hidden />
           {run?.loading ? "Running" : "Run"}
-        </Button>
-        <Button
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="sm"
           aria-label={`Open resource ${resource.name}`}
           onClick={() => onSelectResource(resource)}
-          className="transition-[scale] active:scale-[0.96]"
+          className="inline-flex h-11 items-center border border-rule bg-card px-2.5 text-note hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Open
-        </Button>
+        </button>
       </div>
     </div>
   )
@@ -233,25 +223,32 @@ function InvestigationResourceRow({
 function RunResult({ run }: { run?: RunState }) {
   if (!run) return null
   if (run.loading) {
-    return <p className="text-xs text-muted-foreground">Investigation running</p>
+    return (
+      <p role="status" className="text-note text-muted-foreground">
+        Investigation running
+      </p>
+    )
   }
   if (run.error) {
-    return <p className="text-xs text-destructive">{run.error}</p>
+    return (
+      <p role="alert" className="text-note text-status-failed-text">
+        {run.error}
+      </p>
+    )
   }
   const findings = run.response?.findings ?? []
   return (
-    <div className="rounded-lg bg-background p-2 text-xs ring-1 ring-foreground/10">
+    <div className="border border-rule-faint bg-inset p-2 text-note">
       <div className="flex items-start gap-2">
-        {findings.length > 0 ? (
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-        ) : (
-          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
-        )}
+        <StatusGlyph
+          tone={findings.length > 0 ? "degraded" : "healthy"}
+          label={findings.length > 0 ? "Findings detected" : "No issues detected"}
+        />
         <div className="min-w-0">
-          <p className="font-medium text-foreground/80">
+          <p className="font-semibold">
             {run.response?.summary || (findings.length > 0 ? "Findings detected" : "No issues detected")}
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-note text-muted-foreground">
             {run.source === "auto" ? "Auto-run" : "Manual run"}
             {run.response?.narrator ? ` via ${run.response.narrator}` : ""}
           </p>
@@ -260,15 +257,15 @@ function RunResult({ run }: { run?: RunState }) {
       {findings.length > 0 && (
         <div className="mt-2 space-y-2">
           {findings.map((finding) => (
-            <div key={finding.id} className="rounded-md bg-muted/25 px-2 py-1.5">
-              <p className="font-medium text-foreground/85">{finding.title}</p>
+            <div key={finding.id} className="border border-rule-faint bg-card px-2 py-1.5">
+              <p className="font-semibold">{finding.title}</p>
               {finding.description && (
                 <p className="mt-0.5 text-muted-foreground text-pretty">{finding.description}</p>
               )}
               {finding.evidence && finding.evidence.length > 0 && (
                 <div className="mt-1 space-y-1">
                   {finding.evidence.map((evidence, index) => (
-                    <p key={`${evidence.source}-${index}`} className="font-mono text-[11px] text-muted-foreground">
+                    <p key={`${evidence.source}-${index}`} className="font-mono text-note text-muted-foreground">
                       {evidence.source}: {evidence.summary}
                     </p>
                   ))}
@@ -277,7 +274,7 @@ function RunResult({ run }: { run?: RunState }) {
               {finding.playbook && finding.playbook.length > 0 && (
                 <div className="mt-1 space-y-1">
                   {finding.playbook.map((step) => (
-                    <p key={step} className="flex gap-1 font-mono text-[11px] text-muted-foreground">
+                    <p key={step} className="flex gap-1 font-mono text-note text-muted-foreground">
                       <Terminal className="mt-0.5 size-3 shrink-0" />
                       <span>{step}</span>
                     </p>

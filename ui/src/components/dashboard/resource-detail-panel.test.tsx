@@ -105,8 +105,9 @@ describe("ResourceDetailPanel", () => {
         onClose={vi.fn()}
       />,
     )
-    expect(screen.getByText("Deployment")).toBeInTheDocument()
-    expect(screen.getByText("/demo-deploy")).toBeInTheDocument()
+    expect(screen.getByRole("dialog", { name: /demo-deploy/ })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "demo-deploy" })).toBeInTheDocument()
+    expect(screen.getByText("DEPLOYMENT")).toBeInTheDocument()
   })
 
   it("renders diff tab with syntax highlighting when data loads", async () => {
@@ -202,13 +203,13 @@ describe("ResourceDetailPanel", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Diff")).toBeInTheDocument()
+      expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument()
     })
-    await user.click(screen.getByText("Events"))
+    await user.click(screen.getByRole("tab", { name: "Events" }))
 
     expect(screen.getByText("FailedScheduling")).toBeInTheDocument()
     expect(screen.getByText("Insufficient cpu")).toBeInTheDocument()
-    expect(screen.getByText(/x3/)).toBeInTheDocument()
+    expect(screen.getByText(/3 ×/)).toBeInTheDocument()
     expect(screen.getByText("Scheduled")).toBeInTheDocument()
   })
 
@@ -254,12 +255,55 @@ describe("ResourceDetailPanel", () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText("Deployment")).toBeInTheDocument()
+      expect(screen.getByRole("heading", { name: "demo-deploy" })).toBeInTheDocument()
     })
 
     const backdrop = container.querySelector(".fixed.inset-0")
     await userEvent.click(backdrop!)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it("moves between tabs with the arrow keys and closes on Escape", async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    mockClient.getResource.mockResolvedValue({
+      kind: "Deployment",
+      name: "demo-deploy",
+      namespace: "test-ns",
+      syncStatus: "Synced",
+      healthStatus: "Healthy",
+      healthMessage: "",
+      liveManifest: "spec: {}",
+      desiredManifest: "spec: {}",
+      diff: "--- a\n+++ b\n@@ -1 +1 @@\n-a\n+b",
+      events: [],
+    })
+
+    render(
+      <ResourceDetailPanel
+        applicationNamespace="test-ns"
+        applicationName="demo-app"
+        resource={resource}
+        onClose={onClose}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Diff" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    )
+
+    screen.getByRole("tab", { name: "Diff" }).focus()
+    await user.keyboard("{ArrowRight}")
+    expect(screen.getByRole("tab", { name: "Live" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+
+    await user.keyboard("{Escape}")
+    expect(onClose).toHaveBeenCalled()
   })
 
   describe("LogsTab (streaming)", () => {
@@ -289,8 +333,10 @@ describe("ResourceDetailPanel", () => {
           onClose={vi.fn()}
         />,
       )
-      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-      await user.click(screen.getByText("Logs"))
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument(),
+      )
+      await user.click(screen.getByRole("tab", { name: "Logs" }))
 
       expect(mockClient.streamResourceLogs).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -318,8 +364,10 @@ describe("ResourceDetailPanel", () => {
           onClose={vi.fn()}
         />,
       )
-      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-      await user.click(screen.getByText("Logs"))
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument(),
+      )
+      await user.click(screen.getByRole("tab", { name: "Logs" }))
 
       const output = await screen.findByTestId("logs-output")
       await waitFor(() => {
@@ -345,8 +393,10 @@ describe("ResourceDetailPanel", () => {
           onClose={vi.fn()}
         />,
       )
-      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-      await user.click(screen.getByText("Logs"))
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument(),
+      )
+      await user.click(screen.getByRole("tab", { name: "Logs" }))
 
       await waitFor(() => expect(screen.getByTestId("logs-output")).toHaveTextContent(/again/))
 
@@ -374,8 +424,10 @@ describe("ResourceDetailPanel", () => {
           onClose={vi.fn()}
         />,
       )
-      await waitFor(() => expect(screen.getByText("Diff")).toBeInTheDocument())
-      await user.click(screen.getByText("Logs"))
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Diff" })).toBeInTheDocument(),
+      )
+      await user.click(screen.getByRole("tab", { name: "Logs" }))
       await waitFor(() => expect(screen.getByTestId("logs-output")).toHaveTextContent(/one/))
 
       await user.click(screen.getByTestId("pause-toggle"))

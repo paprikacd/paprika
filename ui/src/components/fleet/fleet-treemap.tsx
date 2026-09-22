@@ -42,13 +42,13 @@ const HEALTH_STYLE: Record<
   FleetHealthStatus,
   { fill: string; border: string; glyph: string; label: string }
 > = {
-  healthy: { fill: "#273126", border: "#70906a", glyph: "✓", label: "Healthy" },
-  progressing: { fill: "#332e22", border: "#b8904b", glyph: "↻", label: "Progressing" },
-  degraded: { fill: "#382922", border: "#c77752", glyph: "!", label: "Degraded" },
-  failed: { fill: "#382324", border: "#bd5c5c", glyph: "×", label: "Failed" },
-  unknown: { fill: "#2b2926", border: "#827b73", glyph: "?", label: "Unknown" },
-  missing: { fill: "#292623", border: "#776f67", glyph: "∅", label: "Missing" },
-  unspecified: { fill: "#292724", border: "#716b64", glyph: "·", label: "Unspecified" },
+  healthy: { fill: "#e6f2e8", border: "#7fae86", glyph: "✓", label: "Healthy" },
+  progressing: { fill: "#e7f0f8", border: "#8bb0d0", glyph: "↻", label: "Progressing" },
+  degraded: { fill: "#fdf2df", border: "#e0ad66", glyph: "!", label: "Degraded" },
+  failed: { fill: "#fbe9e8", border: "#dd9490", glyph: "×", label: "Failed" },
+  unknown: { fill: "#f4f4f6", border: "#c2c2c6", glyph: "?", label: "Unknown" },
+  missing: { fill: "#efedf4", border: "#aea8bd", glyph: "∅", label: "Missing" },
+  unspecified: { fill: "#ffffff", border: "#d4d4d7", glyph: "·", label: "Unspecified" },
 }
 
 export interface FleetTreemapProps {
@@ -297,13 +297,13 @@ export function FleetTreemap({
             onZoomChange(rectangle.stableId)
           }
         }}
-        className="relative mt-4 h-[clamp(28rem,60vh,44rem)] min-h-[28rem] w-full cursor-crosshair overflow-hidden border border-border bg-[#171614] outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="relative mt-4 h-[clamp(28rem,60vh,44rem)] min-h-[28rem] w-full cursor-crosshair overflow-hidden border border-rule bg-card outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <canvas ref={canvasRef} aria-hidden="true" className="block" />
         {tooltip ? (
           <div
             role="tooltip"
-            className="pointer-events-none absolute z-10 max-w-64 border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl"
+            className="pointer-events-none absolute z-10 max-w-64 border border-rule bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl"
             style={{
               left: Math.min(tooltip.x + 12, Math.max(8, viewport.width - 240)),
               top: Math.min(tooltip.y + 12, Math.max(8, viewport.height - 72)),
@@ -350,8 +350,8 @@ function drawTreemap(
     const style = HEALTH_STYLE[health]
     const isGroup = rectangle.node.kind === "group"
     const inset = isGroup ? 0.5 : 1
-    context.fillStyle = isGroup ? "#201e1b" : style.fill
-    context.strokeStyle = activeStableId === rectangle.stableId ? "#ef873f" : style.border
+    context.fillStyle = isGroup ? "#f5f5f8" : style.fill
+    context.strokeStyle = activeStableId === rectangle.stableId ? "#5980a6" : style.border
     context.lineWidth = activeStableId === rectangle.stableId ? 2.5 : 1
     context.fillRect(
       rectangle.x + inset,
@@ -372,7 +372,7 @@ function drawTreemap(
       context.beginPath()
       context.rect(rectangle.x + 2, rectangle.y + 2, Math.max(0, rectangle.width - 4), Math.max(0, rectangle.height - 4))
       context.clip()
-      context.fillStyle = "#f4efe8"
+      context.fillStyle = "#1d1f20"
       context.font = isGroup
         ? "600 10px ui-monospace, SFMono-Regular, monospace"
         : "600 12px Instrument Sans, ui-sans-serif, sans-serif"
@@ -383,7 +383,7 @@ function drawTreemap(
         labelY,
       )
       if (!isGroup && rectangle.width >= 110 && rectangle.height >= 38) {
-        context.fillStyle = "#b8b0a7"
+        context.fillStyle = "#5d5d60"
         context.font = "10px ui-monospace, SFMono-Regular, monospace"
         context.fillText(
           `${style.label} · ${rectangle.node.targetCount.toString()} target${rectangle.node.targetCount === BigInt(1) ? "" : "s"}`,

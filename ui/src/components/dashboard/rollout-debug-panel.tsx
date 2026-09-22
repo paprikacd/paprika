@@ -1,142 +1,193 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Activity, GitBranch, RadioTower, Route, ShieldCheck } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
+import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
+import { StatusPill } from "@/components/ui/status-chip"
 import type { Rollout } from "@/gen/paprika/v1/api_pb"
 
-function Ratio({ ready, total }: { ready: number; total: number }) {
-  return (
-    <span className="font-mono text-sm tabular-nums">
-      {ready} / {total}
-    </span>
+/**
+ * The rollout's mechanical state: how many pods each side has, which objects
+ * the controller is steering, and the timers it is counting down. The ladder,
+ * the analysis table and the log above it answer "what is happening"; this
+ * board answers "what is it actually pointed at", which is the first thing
+ * anyone asks when a rollout is not moving.
+ *
+ * Every value here is a field on `Rollout`. A field the object left empty is
+ * left empty on screen — the `Field` below renders nothing rather than a zero,
+ * because `0s` and "no delay configured" are different facts.
+ */
+export function RolloutDebugPanel({ rollout }: { rollout: Rollout }) {
+  const desiredReplicas =
+    rollout.replicas ||
+    Math.max(rollout.stableReadyReplicas, rollout.canaryReadyReplicas)
+  const router = rollout.trafficRouter
+  const gateway = router?.gatewayApi
+  const istio = router?.istio
+  const hasRouting = Boolean(
+    router?.provider ||
+      gateway?.httpRoute ||
+      istio?.virtualService ||
+      gateway?.stableService ||
+      istio?.stableService,
   )
-}
 
-function Field({ label, children }: { label: string; children?: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/50 py-2 last:border-b-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="truncate font-mono text-xs text-foreground">{children || "—"}</span>
+    <div className="grid gap-4 xl:grid-cols-2">
+      <Blueprint>
+        <BoardHeader
+          title="Workload"
+          meta={rollout.currentPodHash || undefined}
+          actions={
+            <span className="flex flex-wrap justify-end gap-1.5">
+              {rollout.paused ? (
+                <StatusPill tone="pending" label="Paused" />
+              ) : null}
+              {rollout.abort ? (
+                <StatusPill tone="failed" label="Aborted" />
+              ) : null}
+              {rollout.mirrorPercent > 0 ? (
+                <StatusPill
+                  tone="progressing"
+                  label={`Mirror ${rollout.mirrorPercent}%`}
+                />
+              ) : null}
+            </span>
+          }
+        />
+        <dl className="px-3.5 py-1">
+          <Field label="Stable replicas ready">
+            <Ratio
+              ready={rollout.stableReadyReplicas}
+              total={desiredReplicas}
+              name="stable"
+            />
+          </Field>
+          <Field label="Canary replicas ready">
+            <Ratio
+              ready={rollout.canaryReadyReplicas}
+              total={desiredReplicas}
+              name="canary"
+            />
+          </Field>
+          <Field label="Stable ReplicaSet">{rollout.stableRs}</Field>
+          <Field label="Canary ReplicaSet">{rollout.canaryRs}</Field>
+          <Field label="Previous active ReplicaSet">
+            {rollout.previousActiveRs}
+          </Field>
+          <Field label="Auto promote after">
+            {rollout.autoPromotionSeconds
+              ? `${rollout.autoPromotionSeconds}s`
+              : ""}
+          </Field>
+          <Field label="Scale-down delay">
+            {rollout.scaleDownDelaySeconds
+              ? `${rollout.scaleDownDelaySeconds}s`
+              : ""}
+          </Field>
+          <Field label="Observed generation">
+            {rollout.observedGeneration
+              ? rollout.observedGeneration.toString()
+              : ""}
+          </Field>
+        </dl>
+      </Blueprint>
+
+      <Blueprint>
+        <BoardHeader title="Traffic routing" meta={router?.provider || undefined} />
+        {hasRouting ? (
+          <dl className="px-3.5 py-1">
+            <Field label="HTTPRoute">{gateway?.httpRoute}</Field>
+            <Field label="VirtualService">{istio?.virtualService}</Field>
+            <Field label="Stable service">
+              {gateway?.stableService || istio?.stableService}
+            </Field>
+            <Field label="Canary service">
+              {gateway?.canaryService || istio?.canaryService}
+            </Field>
+            <Field label="Active service">{rollout.activeService}</Field>
+            <Field label="Preview service">{rollout.previewService}</Field>
+          </dl>
+        ) : (
+          <p className="px-3.5 py-4 text-reason text-muted-foreground">
+            This rollout declares no traffic router, so weight is applied by
+            replica count alone.
+          </p>
+        )}
+
+        {rollout.abRoutes.length > 0 ? (
+          <div className="border-t border-rule">
+            <h3 className="px-3.5 pt-2.5 font-cond text-label font-semibold tracking-[0.06em] uppercase">
+              A/B routes
+            </h3>
+            <ul className="px-3.5 pt-1 pb-2">
+              {rollout.abRoutes.map((route, index) => (
+                <li
+                  key={`${route.name}-${index}`}
+                  className="flex items-baseline justify-between gap-3 border-b border-rule-faint py-1.5 last:border-b-0"
+                >
+                  <span className="truncate font-mono text-note">
+                    {route.type ? `${route.type} ` : ""}
+                    {route.name}
+                  </span>
+                  <span className="font-mono text-meta whitespace-nowrap text-muted-foreground">
+                    {route.value}
+                    {route.service ? ` → ${route.service}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Blueprint>
     </div>
   )
 }
 
-export function RolloutDebugPanel({ rollout }: { rollout: Rollout }) {
-  const desiredReplicas = rollout.replicas || Math.max(rollout.stableReadyReplicas, rollout.canaryReadyReplicas)
-  const router = rollout.trafficRouter
-  const gateway = router?.gatewayApi
-  const istio = router?.istio
+/**
+ * `ready / total` as one accessible phrase. Read as two numbers in separate
+ * elements it announces as "4 4", which is not what it says.
+ *
+ * Returns nothing when the total is zero. These are bare proto3 int32s with no
+ * field presence, so a rollout that never reported replica counts is
+ * indistinguishable from one reporting zero — and "0 / 0" reads as a
+ * measurement. `0 / 4` is real information and still renders; the enclosing
+ * `Field` drops the row entirely when this yields nothing.
+ */
+function Ratio({
+  ready,
+  total,
+  name,
+}: {
+  ready: number
+  total: number
+  name: string
+}) {
+  if (total === 0) return null
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-      <section className="rounded-lg border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <GitBranch className="size-4 text-primary" aria-hidden="true" />
-            <h2 className="text-sm font-semibold">Strategy Plan</h2>
-          </div>
-          <div className="flex flex-wrap justify-end gap-1.5">
-            {rollout.paused && <Badge variant="secondary">Paused</Badge>}
-            {rollout.abort && <Badge variant="destructive">Aborted</Badge>}
-            {rollout.mirrorPercent > 0 && <Badge variant="outline">{`${rollout.mirrorPercent}%`}</Badge>}
-          </div>
-        </div>
+    <span className="font-mono text-note tabular-nums">
+      <span aria-hidden="true">{`${ready} / ${total}`}</span>
+      <span className="sr-only">{`${ready} of ${total} ${name} replicas ready`}</span>
+    </span>
+  )
+}
 
-        {rollout.canarySteps.length > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {rollout.canarySteps.map((step, index) => (
-              <div
-                key={`${step.setWeight}-${index}`}
-                className="rounded-md border border-border/70 bg-background px-3 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] uppercase text-muted-foreground">Step {index + 1}</span>
-                  <span className="font-mono text-sm font-semibold tabular-nums">{step.setWeight}%</span>
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">{step.duration || "manual gate"}</div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No explicit canary steps.</p>
-        )}
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-md border border-border/70 bg-background p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Activity className="size-3.5" aria-hidden="true" />
-              Replica Readiness
-            </div>
-            <Field label="Stable"><Ratio ready={rollout.stableReadyReplicas} total={desiredReplicas} /></Field>
-            <Field label="Canary"><Ratio ready={rollout.canaryReadyReplicas} total={desiredReplicas} /></Field>
-          </div>
-          <div className="rounded-md border border-border/70 bg-background p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <ShieldCheck className="size-3.5" aria-hidden="true" />
-              Debug State
-            </div>
-            <Field label="Current hash">{rollout.currentPodHash}</Field>
-            <Field label="Previous active RS">{rollout.previousActiveRs}</Field>
-            <Field label="Auto promote">{rollout.autoPromotionSeconds ? `${rollout.autoPromotionSeconds}s` : ""}</Field>
-            <Field label="Scale-down delay">{rollout.scaleDownDelaySeconds ? `${rollout.scaleDownDelaySeconds}s` : ""}</Field>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-lg border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <RadioTower className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="text-sm font-semibold">Routing And Analysis</h2>
-        </div>
-        <div className="space-y-3">
-          <div className="rounded-md border border-border/70 bg-background p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Route className="size-3.5" aria-hidden="true" />
-              Traffic Router
-            </div>
-            <Field label="Provider">{router?.provider}</Field>
-            <Field label="HTTPRoute">{gateway?.httpRoute}</Field>
-            <Field label="VirtualService">{istio?.virtualService}</Field>
-            <Field label="Stable service">{gateway?.stableService || istio?.stableService}</Field>
-            <Field label="Canary service">{gateway?.canaryService || istio?.canaryService}</Field>
-          </div>
-
-          {rollout.analysisChecks.length > 0 && (
-            <div className="rounded-md border border-border/70 bg-background p-3">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">Analysis Checks</div>
-              <div className="space-y-2">
-                {rollout.analysisChecks.map((check, index) => (
-                  <div key={`${check.type}-${index}`} className="rounded border border-border/50 px-2 py-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <Badge variant="secondary">{check.type}</Badge>
-                      <span className="font-mono text-xs">{check.successThreshold || check.threshold || "—"}</span>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {check.url || check.metric || "No target"}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {rollout.abRoutes.length > 0 && (
-            <div className="rounded-md border border-border/70 bg-background p-3">
-              <div className="mb-2 text-xs font-medium text-muted-foreground">A/B Routes</div>
-              <div className="space-y-1.5">
-                {rollout.abRoutes.map((route, index) => (
-                  <div key={`${route.name}-${index}`} className="grid grid-cols-[1fr_auto] gap-3 text-xs">
-                    <span className="truncate font-mono">{route.name}</span>
-                    <span className="text-muted-foreground">{route.value} → {route.service}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+/**
+ * A row that removes itself when the object did not carry the field. An empty
+ * row would say "the control plane reports nothing here", which is a claim the
+ * console cannot make about a field it simply was not sent.
+ */
+function Field({ label, children }: { label: string; children?: ReactNode }) {
+  if (children === undefined || children === null || children === "") {
+    return null
+  }
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-3 border-b border-rule-faint py-1.5 last:border-b-0">
+      <dt className="text-note whitespace-nowrap text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="truncate font-mono text-note">{children}</dd>
     </div>
   )
 }

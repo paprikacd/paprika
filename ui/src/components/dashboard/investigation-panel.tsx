@@ -6,7 +6,6 @@ import { createTransport } from "@/lib/transport"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type { InvestigateResponse } from "@/gen/paprika/v1/api_pb"
 import {
-  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Loader2,
@@ -16,16 +15,20 @@ import {
   X,
 } from "lucide-react"
 
+import { StatusGlyph } from "@/components/ui/status-chip"
+import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
+import { cn } from "@/lib/utils"
+
 const transport = createTransport()
 const client = createPromiseClient(PaprikaService, transport)
 
 type Severity = "CRITICAL" | "WARNING" | "INFO" | "UNSPECIFIED"
 
-const severityClass: Record<Severity, string> = {
-  CRITICAL: "border-destructive/40 bg-destructive/10 text-destructive",
-  WARNING: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  INFO: "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  UNSPECIFIED: "border-muted/40 bg-muted/20 text-muted-foreground",
+const severityTone: Record<Severity, StatusTone> = {
+  CRITICAL: "failed",
+  WARNING: "degraded",
+  INFO: "progressing",
+  UNSPECIFIED: "unknown",
 }
 
 const severityLabel: Record<Severity, string> = {
@@ -100,31 +103,41 @@ export function InvestigationPanel({
         onKeyDown={(e) => e.key === "Escape" && onClose()}
       />
       <aside
-        className="fixed right-0 top-0 z-50 flex h-full w-full max-w-3xl flex-col bg-card shadow-2xl ring-1 ring-foreground/10"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Investigation of ${resource.kind} ${resource.name}`}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose()
+        }}
+        className="fixed inset-y-0 right-0 z-[63] flex w-[640px] max-w-full flex-col border-l border-rule-strong bg-background shadow-drawer"
         data-testid="investigation-panel"
       >
-        <div className="flex items-start justify-between border-b border-border/40 px-6 py-4">
+        <div className="flex items-start justify-between border-b border-rule bg-card px-4 py-3">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="size-5 text-foreground/80" aria-hidden />
-              <span className="text-sm font-semibold">Investigation</span>
+              <Sparkles className="size-4 text-muted-foreground" aria-hidden />
+              <h2 className="font-cond text-card font-semibold tracking-[0.05em] uppercase">
+                Investigation
+              </h2>
             </div>
-            <div className="mt-1 font-mono text-xs text-muted-foreground">
+            <p className="mt-1 font-mono text-meta text-neutral-600">
               {resource.kind}/{resource.name}
-            </div>
+            </p>
             {data && (
-              <p className="mt-2 text-sm">
+              <p className="mt-2 text-chip">
                 <span
                   className={
                     sorted.length > 0
-                      ? "font-medium text-foreground/90"
-                      : "text-emerald-600 dark:text-emerald-400"
+                      ? "font-semibold text-foreground"
+                      : "text-status-healthy-text"
                   }
                 >
                   {data.summary ?? ""}
                 </span>
                 {data.narrator && (
-                  <span className="ml-2 text-xs text-muted-foreground">via {data.narrator}</span>
+                  <span className="ml-2 text-note text-muted-foreground">
+                    via {data.narrator}
+                  </span>
                 )}
               </p>
             )}
@@ -134,9 +147,9 @@ export function InvestigationPanel({
               onClick={run}
               aria-label="Re-run investigation"
               data-testid="investigation-refresh"
-              className="rounded-md p-1.5 text-muted-foreground transition-[color,box-shadow] hover:text-foreground active:scale-[0.96]"
+              className="inline-flex size-[26px] items-center justify-center border border-rule bg-card text-muted-foreground hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-              <RefreshCw className="size-4" />
+              <RefreshCw className="size-3.5" />
             </button>
             <button
               onClick={onClose}
@@ -149,7 +162,7 @@ export function InvestigationPanel({
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto px-6 py-4">
+        <div className="flex-1 overflow-auto px-4 py-3.5">
           {loading && !data ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -163,8 +176,8 @@ export function InvestigationPanel({
               data-testid="investigation-empty"
               className="flex flex-col items-center gap-2 py-12 text-center"
             >
-              <CheckCircle2 className="size-8 text-emerald-500" />
-              <p className="text-sm font-medium text-foreground/80">No issues detected</p>
+              <CheckCircle2 className="size-6 text-status-healthy-text" />
+              <p className="text-chip font-semibold">No issues detected</p>
               {data?.generatedAtMs && (
                 <p className="text-xs text-muted-foreground tabular-nums">
                   Scanned {countPlugins(plugins)} at{" "}
@@ -182,18 +195,23 @@ export function InvestigationPanel({
                   <article
                     key={f.id}
                     data-testid={`finding-${f.id}`}
-                    className={`overflow-hidden rounded-lg border ${
-                      severityClass[sevKey] ?? severityClass.UNSPECIFIED
-                    }`}
+                    className={cn(
+                      "border",
+                      STATUS_TONES[severityTone[sevKey] ?? "unknown"].line,
+                      STATUS_TONES[severityTone[sevKey] ?? "unknown"].fill
+                    )}
                   >
-                    <header className="flex items-start gap-3 px-3 py-2.5">
-                      <span className="rounded-full bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide tabular-nums">
-                        {sev}
-                      </span>
+                    <header className="flex items-start gap-2.5 px-3 py-2.5">
+                      <StatusGlyph
+                        tone={severityTone[sevKey] ?? "unknown"}
+                        label={`${sev} finding`}
+                      />
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-medium">{f.title}</h3>
+                        <h3 className="text-chip font-semibold">{f.title}</h3>
                         {f.description && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">{f.description}</p>
+                          <p className="mt-0.5 text-note text-muted-foreground">
+                            {f.description}
+                          </p>
                         )}
                       </div>
                     </header>
@@ -208,7 +226,7 @@ export function InvestigationPanel({
                           })
                         }}
                         aria-expanded={isOpen}
-                        className="flex w-full items-center justify-between border-t border-current/10 px-3 py-1.5 text-left text-xs transition-[background-color] hover:bg-background/40"
+                        className="flex w-full items-center justify-between border-t border-rule-soft px-3 py-1.5 text-left text-note hover:bg-background/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                       >
                         <span>
                           Evidence ({f.evidence.length})
@@ -219,18 +237,18 @@ export function InvestigationPanel({
                       </button>
                     )}
                     {isOpen && f.evidence && f.evidence.length > 0 && (
-                      <ul className="space-y-1 bg-background/30 px-3 py-2 text-xs">
+                      <ul className="list-none space-y-1 bg-background/40 px-3 py-2 text-note">
                         {f.evidence.map((e, j) => (
                           <li
                             key={j}
-                            className="rounded-md bg-background/60 px-2 py-1 font-mono ring-1 ring-foreground/5"
+                            className="border border-rule-faint bg-card px-2 py-1 font-mono"
                           >
-                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                            <span className="text-meta tracking-[0.08em] text-neutral-600 uppercase">
                               {e.source}
                             </span>
-                            <span className="ml-2 text-foreground/80">{e.summary}</span>
+                            <span className="ml-2">{e.summary}</span>
                             {e.timestamp && (
-                              <span className="ml-2 tabular-nums text-muted-foreground">
+                              <span className="ml-2 text-muted-foreground tabular-nums">
                                 {e.timestamp}
                               </span>
                             )}
@@ -239,11 +257,11 @@ export function InvestigationPanel({
                       </ul>
                     )}
                     {f.playbook && f.playbook.length > 0 && (
-                      <div className="border-t border-current/10 bg-background/30 px-3 py-2">
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                      <div className="border-t border-rule-soft bg-background/40 px-3 py-2">
+                        <p className="font-mono text-kicker tracking-[0.14em] text-muted-foreground uppercase">
                           Suggested fixes
                         </p>
-                        <ul className="mt-1 space-y-1 text-xs text-foreground/80">
+                        <ul className="mt-1 list-none space-y-1 text-note">
                           {f.playbook.map((step, k) => (
                             <li key={k} className="flex items-start gap-2">
                               <Terminal className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
@@ -263,7 +281,7 @@ export function InvestigationPanel({
         {plugins && data && sorted.length > 0 && (
           <div
             data-testid="investigation-footer"
-            className="border-t border-border/40 px-6 py-2 text-[10px] text-muted-foreground/80 tabular-nums"
+            className="border-t border-rule px-4 py-2 font-mono text-meta text-muted-foreground tabular-nums"
           >
             {plugins}
             {data.narrator && ` · narrator: ${data.narrator}`}
@@ -306,8 +324,3 @@ function countPlugins(p: string | null): string {
   return p ?? "—"
 }
 
-function AlertTriangleFallback() {
-  return <AlertTriangle className="size-4" />
-}
-// silence unused
-void AlertTriangleFallback
