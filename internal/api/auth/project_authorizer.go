@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	toolscache "k8s.io/client-go/tools/cache"
@@ -18,6 +19,11 @@ import (
 
 type ProjectAuthorizer struct {
 	client client.Reader
+
+	informerMu       sync.Mutex
+	informerResolved bool
+	informer         toolscache.SharedIndexInformer
+	informerOK       bool
 }
 
 func NewProjectAuthorizer(c client.Reader) *ProjectAuthorizer {
@@ -93,22 +99,42 @@ var _ informerSource = (crcache.Cache)(nil)
 // capability grant on fleet-scoped calls). The returned object is then the
 // store's SHARED instance: it is only ever read, never mutated.
 func (a *ProjectAuthorizer) appProject(ctx context.Context, namespace, name string) (*corev1alpha1.AppProject, error) {
-	if source, ok := a.client.(informerSource); ok {
-		informer, err := source.GetInformer(ctx, &corev1alpha1.AppProject{})
-		if err == nil && informer.HasSynced() {
-			if shared, ok := informer.(toolscache.SharedIndexInformer); ok {
-				return appProjectFromIndexer(shared.GetIndexer(), namespace, name)
-			}
-		}
-		// On GetInformer failure, an unsynced informer, or a non-shared
-		// informer implementation, fall through to the plain client read
-		// (which itself blocks until the informer syncs when cache-backed).
+	if shared, ok := a.appProjectInformer(ctx); ok && shared.HasSynced() {
+		return appProjectFromIndexer(shared.GetIndexer(), namespace, name)
 	}
 	var ap corev1alpha1.AppProject
 	if err := a.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &ap); err != nil {
 		return nil, err
 	}
 	return &ap, nil
+}
+
+// appProjectInformer resolves the AppProject SharedIndexInformer once and
+// reuses it — GetInformer itself allocates (GVK resolution, options) on every
+// call, and this lookup runs dozens of times per authorized request. A
+// GetInformer error leaves the resolution unset so the next call retries;
+// a non-shared informer resolves permanently to !ok.
+func (a *ProjectAuthorizer) appProjectInformer(ctx context.Context) (toolscache.SharedIndexInformer, bool) {
+	source, ok := a.client.(informerSource)
+	if !ok {
+		return nil, false
+	}
+	a.informerMu.Lock()
+	defer a.informerMu.Unlock()
+	if a.informerResolved {
+		return a.informer, a.informerOK
+	}
+	informer, err := source.GetInformer(ctx, &corev1alpha1.AppProject{})
+	if err != nil {
+		return nil, false
+	}
+	a.informerResolved = true
+	shared, ok := informer.(toolscache.SharedIndexInformer)
+	if ok {
+		a.informer = shared
+	}
+	a.informerOK = ok
+	return a.informer, a.informerOK
 }
 
 func appProjectFromIndexer(indexer toolscache.Indexer, namespace, name string) (*corev1alpha1.AppProject, error) {
