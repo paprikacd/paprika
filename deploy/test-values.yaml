@@ -77,7 +77,10 @@ manager:
       maxSurge: 0
       maxUnavailable: 1
 
-  args: []
+  # pprof for the ongoing profiling loop — :6060 is never exposed by a
+  # Service or the Gateway; reach it only via kubectl port-forward.
+  args:
+    - --pprof-bind-address=:6060
 
   extraEnv:
     - name: PAPRIKA_AUTH_TOKEN_SECRET
@@ -123,6 +126,12 @@ apiServer:
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
+
+  # Replaces the chart's apiServer.args list — keep --ui-bind-address and add
+  # pprof for the ongoing profiling loop (:6060 is port-forward only).
+  args:
+    - --ui-bind-address=:3000
+    - --pprof-bind-address=:6060
 
   terminationGracePeriodSeconds: 20
 
