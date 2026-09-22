@@ -334,6 +334,12 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   verb set in `charts/chart/templates/rbac/manager-role.yaml` (replaces a
   hand-created `paprika-e2e-servicemonitor-manager` ClusterRole/Binding that
   has been deleted — do not recreate).
+- **Revision-only source drift no longer churns releases**: git source hashes
+  are `<commit>:<dirHash>`; `checkSourceChanged` now compares only the content
+  segment and pins `SourceHash`/`SourceRevision` to the commit that introduced
+  the current content. Previously every unrelated repo commit superseded the
+  active release and restarted canaries from step 0 (flaggr-api docs push →
+  full ~100min restart). OCI/S3 were already content-only.
 - **Flaggr evaluator cutover dogfooded**: flaggr-api rollout is driven by
   native Release canary — Application declares `canary.steps [0,1,10,50,100]`
   + `intervalSeconds 600`, the flaggr chart renders `canaryWeight` into
