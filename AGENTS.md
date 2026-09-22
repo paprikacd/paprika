@@ -126,6 +126,16 @@ helm upgrade paprika-e2e charts/chart/ \
 - DeepHost is Healthy with outOfSync=0, all resources Synced.
 - The controller-manager runs an immutable GHCR digest.
 - Metrics live at `:8443/metrics` (HTTP, `--metrics-secure=false`).
+- api-server e2e resources are pinned to 100m/96Mi via
+  `deploy/test-values.yaml` (chart defaults are 1000m/256Mi) — the 0.1-core
+  cap makes bcrypt basic auth ~1s/request and amplifies GC pressure, so
+  latency measurements there are worst-case, not representative of defaults.
+- MCP read tools over port-forward: ~180ms/call sequential, ~14.8 calls/s
+  aggregate under 3 concurrent workers (post authz-informer optimization).
+- Profiling baseline (MCP read load): ~50% of cumulative allocs is upstream
+  MCP SDK JSON decode; paprika-controlled hotspots after the AppProject
+  informer fix are `fleet.Snapshot` queries, `mcp.toolResult` (payload is
+  emitted twice: structured + text), and `auth.verifySelfSigned`.
 
 ## Key Metrics
 
@@ -186,6 +196,16 @@ source .env && helm upgrade paprika-e2e charts/chart/ \
 ### Debug
 
 ```sh
+# pprof: enable with --pprof-bind-address=:6060 (flag exists on every mode,
+# patched into paprika-e2e api-server + controller-manager args). Reach it
+# only through port-forward — no Service/Ingress exposes 6060.
+kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 16060:6060 &
+hack/pprof-capture.sh http://localhost:16060 30 /tmp/paprika-perf/api
+
+# Load gen (needs an MCP bearer token in MCP_TOKEN or MCP_TOKEN_FILE):
+kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 13000:3000 &
+MCP_TOKEN=... BASE=http://localhost:13000 hack/mcp-loadgen.sh 60
+
 # Controller logs:
 kubectl -n paprika-e2e logs deployment/paprika-e2e-controller-manager --since=10m
 
