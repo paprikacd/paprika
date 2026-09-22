@@ -831,14 +831,13 @@ auth:
 ## and enabling mcp.enabled there fails the `helm template` render rather
 ## than silently doing nothing.
 ##
-## WARNING: even with mcp.enabled=true and every precondition satisfied,
-## the MCP server is currently NON-FUNCTIONAL end to end. /mcp/authorize
-## cannot be completed by any client: it requires a token with
-## aud=paprika-mcp, which only /mcp/token can mint, and /mcp/token in turn
-## needs an authorization code that only a completed /mcp/authorize can
-## issue. Enabling this today does not give you a working MCP server; it
-## is chart/config plumbing landed ahead of the fix, which is tracked as a
-## follow-up task.
+## The OAuth 2.1 + PKCE flow is functional end to end: /mcp/authorize
+## authenticates the console user (Google OIDC or a Paprika self-signed
+## token, never an MCP-audience token) and hands off through the /mcp/consent
+## page, so the authorize/token circularity is closed. In-process tool calls
+## re-enter the Connect chain on a freshly minted aud=paprika-api credential
+## (Server.mintConsoleCredential), so the console authenticator strictly
+## requires its own audience and an MCP token cannot be replayed against it.
 mcp:
   enabled: false
   # -- Address advertised for the MCP server. Routes are mounted on the same

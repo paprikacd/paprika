@@ -366,6 +366,7 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		Metrics:                *metricsOpts,
 		WebhookServer:          webhookSrv,
 		HealthProbeBindAddress: cfg.probeAddr,
+		PprofBindAddress:       cfg.pprofAddr,
 		LeaderElection:         leaderElect,
 		LeaderElectionID:       "paprika-operator.paprika.io",
 		Cache: crcache.Options{

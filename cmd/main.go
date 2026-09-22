@@ -27,6 +27,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"strconv"
 	"strings"
@@ -123,7 +124,7 @@ func newScheme() *runtime.Scheme {
 type cliConfig struct {
 	metricsAddr, metricsCertPath, metricsCertName, metricsCertKey string
 	webhookCertPath, webhookCertName, webhookCertKey              string
-	probeAddr, uiAddr, webhookAddr                                string
+	probeAddr, uiAddr, webhookAddr, pprofAddr                     string
 	operatorNamespace, mode, k8sAPIServer, k8sTokenFile           string
 	repoServerAddr, repoWorkDir, agentClusterID                   string
 	webhookSecret, authRBACRules                                  string
@@ -200,9 +201,9 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 
 	switch cfg.mode {
 	case "agent":
-		return runAgentMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.agentClusterID, cfg.metricsAddr, setupLog)
+		return runAgentMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.agentClusterID, cfg.metricsAddr, cfg.pprofAddr, setupLog)
 	case "repo-server":
-		return runRepoServerMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.repoWorkDir, cfg.metricsAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
+		return runRepoServerMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.repoWorkDir, cfg.metricsAddr, cfg.pprofAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
 	case "api":
 		return runAPIMode(ctx, cfg, scheme, setupLog, nil)
 	case "webhook":
@@ -271,6 +272,9 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 	fs.StringVar(&cfg.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	fs.StringVar(&cfg.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	fs.StringVar(&cfg.pprofAddr, "pprof-bind-address", "", "The address the pprof debug endpoint binds to "+
+		"(e.g. :6060 serves /debug/pprof/*). Empty disables it. Off by default because it "+
+		"exposes heap, goroutine and execution-trace internals; enable only for profiling.")
 	fs.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -632,6 +636,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	}()
 
 	startMetricsServer(apiCtx, cfg.metricsAddr, setupLog)
+	startPprofServer(apiCtx, cfg.pprofAddr, setupLog)
 
 	if clients.cacheBundle == nil {
 		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
@@ -1100,6 +1105,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	}()
 
 	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
+	startPprofServer(ctx, cfg.pprofAddr, setupLog)
 
 	server := &http.Server{
 		Addr:              webhookAddr,
@@ -1109,7 +1115,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true)
 }
 
-func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAddr string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
+func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAddr, pprofAddr string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
 	if workDir == "" {
 		workDir = "/tmp/paprika-repo"
 	}
@@ -1152,6 +1158,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 	}()
 
 	startMetricsServer(ctx, metricsAddr, setupLog)
+	startPprofServer(ctx, pprofAddr, setupLog)
 
 	if err := srv.Run(rsCtx, addr); err != nil {
 		return fmt.Errorf("repo server run: %w", err)
@@ -1159,7 +1166,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 	return nil
 }
 
-func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr string, setupLog logr.Logger) error {
+func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr, pprofAddr string, setupLog logr.Logger) error {
 	if clusterID == "" {
 		clusterID = "default"
 	}
@@ -1189,6 +1196,7 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr s
 	}()
 
 	startMetricsServer(ctx, metricsAddr, setupLog)
+	startPprofServer(ctx, pprofAddr, setupLog)
 
 	if err := srv.Run(agentCtx, addr); err != nil {
 		return fmt.Errorf("agent server run: %w", err)
@@ -1401,6 +1409,42 @@ func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) 
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			setupLog.Error(err, "Failed to shutdown metrics server")
+		}
+	}()
+}
+
+// startPprofServer serves the net/http/pprof handlers on their own listener,
+// gated by --pprof-bind-address. The handlers expose heap, goroutine, mutex,
+// block and execution-trace internals, so the listener is unauthenticated and
+// must stay off in anything but a deliberate profiling session. Disabled when
+// addr is empty.
+func startPprofServer(ctx context.Context, addr string, setupLog logr.Logger) {
+	if addr == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+	}
+	go func() {
+		setupLog.Info("Starting pprof server", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			setupLog.Error(err, "pprof server exited with error")
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), serverShutdownTimeout)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			setupLog.Error(err, "Failed to shutdown pprof server")
 		}
 	}()
 }
