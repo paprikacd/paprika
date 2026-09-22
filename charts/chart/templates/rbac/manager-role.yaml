@@ -463,3 +463,18 @@ rules:
   - get
   - patch
   - update
+# Managed applications may render ServiceMonitors (e.g. flaggr-api's
+# serviceMonitor.enabled); the release controller needs full apply/diff/prune
+# verbs on them in every target namespace.
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
