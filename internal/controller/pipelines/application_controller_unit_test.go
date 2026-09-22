@@ -446,6 +446,139 @@ func TestApplicationReconciler_handleSyncTrigger_changedSourceStartsNewReleaseFl
 	}
 }
 
+func TestApplicationReconciler_checkSourceChanged_contentSegment(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name         string
+		oldHash      string
+		oldRevision  string
+		newHash      string
+		newRevision  string
+		wantChanged  bool
+		wantHash     string
+		wantRevision string
+	}{
+		{
+			name:         "git commit-only drift does not count as a change",
+			oldHash:      "commit1111111111:chartaaaaaaaaaa",
+			oldRevision:  "commit-1",
+			newHash:      "commit2222222222:chartaaaaaaaaaa",
+			newRevision:  "commit-2",
+			wantChanged:  false,
+			wantHash:     "commit1111111111:chartaaaaaaaaaa",
+			wantRevision: "commit-1",
+		},
+		{
+			name:         "git content change updates hash and revision",
+			oldHash:      "commit1111111111:chartaaaaaaaaaa",
+			oldRevision:  "commit-1",
+			newHash:      "commit2222222222:chartbbbbbbbbbb",
+			newRevision:  "commit-2",
+			wantChanged:  true,
+			wantHash:     "commit2222222222:chartbbbbbbbbbb",
+			wantRevision: "commit-2",
+		},
+		{
+			name:         "bare content hash unchanged",
+			oldHash:      "chartaaaaaaaaaa",
+			oldRevision:  "rev-1",
+			newHash:      "chartaaaaaaaaaa",
+			newRevision:  "rev-2",
+			wantChanged:  false,
+			wantHash:     "chartaaaaaaaaaa",
+			wantRevision: "rev-1",
+		},
+		{
+			name:         "bare content hash changed",
+			oldHash:      "chartaaaaaaaaaa",
+			oldRevision:  "rev-1",
+			newHash:      "chartbbbbbbbbbb",
+			newRevision:  "rev-2",
+			wantChanged:  true,
+			wantHash:     "chartbbbbbbbbbb",
+			wantRevision: "rev-2",
+		},
+		{
+			name:         "initial observation records identity without change",
+			oldHash:      "",
+			oldRevision:  "",
+			newHash:      "commit1111111111:chartaaaaaaaaaa",
+			newRevision:  "commit-1",
+			wantChanged:  false,
+			wantHash:     "commit1111111111:chartaaaaaaaaaa",
+			wantRevision: "commit-1",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+			app := &pipelinesv1alpha1.Application{
+				ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
+				Spec: pipelinesv1alpha1.ApplicationSpec{
+					Source: pipelinesv1alpha1.ApplicationSource{
+						Type:     pipelinesv1alpha1.SourceTypeGit,
+						RepoURL:  "https://github.com/org/repo.git",
+						Revision: "main",
+						Path:     "charts/app",
+					},
+				},
+				Status: pipelinesv1alpha1.ApplicationStatus{
+					Phase:          pipelinesv1alpha1.ApplicationHealthy,
+					SourceHash:     tc.oldHash,
+					SourceRevision: tc.oldRevision,
+				},
+			}
+			template := &pipelinesv1alpha1.Template{
+				ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+				Spec: pipelinesv1alpha1.TemplateSpec{
+					Type: pipelinesv1alpha1.SourceTypeGit,
+					Git: &pipelinesv1alpha1.GitSourceSpec{
+						RepoURL:  "https://github.com/org/repo.git",
+						Revision: "main",
+						Path:     "charts/app",
+					},
+				},
+			}
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(app, template).
+				WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+				Build()
+
+			r := &ApplicationReconciler{
+				client: c,
+				TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+					Hash:     tc.newHash,
+					Revision: tc.newRevision,
+				}},
+			}
+
+			changed, err := r.checkSourceChanged(ctx, app)
+			if err != nil {
+				t.Fatalf("checkSourceChanged failed: %v", err)
+			}
+			if changed != tc.wantChanged {
+				t.Fatalf("changed = %v, want %v", changed, tc.wantChanged)
+			}
+
+			var updated pipelinesv1alpha1.Application
+			if err := c.Get(ctx, client.ObjectKey{Name: "git-app", Namespace: "default"}, &updated); err != nil {
+				t.Fatalf("get application: %v", err)
+			}
+			if updated.Status.SourceHash != tc.wantHash {
+				t.Fatalf("sourceHash = %q, want %q", updated.Status.SourceHash, tc.wantHash)
+			}
+			if updated.Status.SourceRevision != tc.wantRevision {
+				t.Fatalf("sourceRevision = %q, want %q", updated.Status.SourceRevision, tc.wantRevision)
+			}
+		})
+	}
+}
+
 func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
 	cases := []struct {
 		name string

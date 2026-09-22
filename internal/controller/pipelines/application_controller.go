@@ -1365,7 +1365,20 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 
 	oldHash := app.Status.SourceHash
 	oldRevision := app.Status.SourceRevision
-	changed := oldHash != "" && oldHash != newHash
+
+	// Git source hashes embed the resolved commit ("<commit>:<dirHash>").
+	// Compare only the content segment so commits that don't touch the managed
+	// tree don't count as source changes — otherwise every unrelated push would
+	// supersede an in-flight canary and restart it from step 0.
+	changed := oldHash != "" && sourceContentHash(oldHash) != sourceContentHash(newHash)
+
+	if oldHash != "" && !changed {
+		// Content unchanged: keep the stored hash/revision pinned to the commit
+		// that introduced the current content. Release identity includes
+		// SourceRevision, so letting it drift with HEAD would churn releases on
+		// every unrelated commit.
+		return false, nil
+	}
 
 	app.Status.SourceHash = newHash
 	app.Status.SourceRevision = newRevision
@@ -1387,6 +1400,16 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 
 	return changed, nil
+}
+
+// sourceContentHash extracts the content-addressed segment of a source hash.
+// Git sources produce "<commit>:<dirHash>"; OCI/S3 sources already return a
+// bare content hash, which is returned unchanged.
+func sourceContentHash(hash string) string {
+	if i := strings.LastIndex(hash, ":"); i >= 0 {
+		return hash[i+1:]
+	}
+	return hash
 }
 
 func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
