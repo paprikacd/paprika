@@ -44,6 +44,23 @@ import (
 // when it names no key of its own.
 const defaultKubeconfigKey = "kubeconfig"
 
+// client-go defaults a config to 5 QPS / 10 burst — fine for a CLI, but a
+// throttle on a controller applying dozens of manifests per release and
+// polling health across a fleet. Match the rate the operator gives its own
+// client.
+const (
+	clusterClientQPS   = 50
+	clusterClientBurst = 100
+)
+
+// WithClientRateLimits applies the controller's client-side rate limits to a
+// config minted for a target cluster.
+func WithClientRateLimits(cfg *rest.Config) *rest.Config {
+	cfg.QPS = clusterClientQPS
+	cfg.Burst = clusterClientBurst
+	return cfg
+}
+
 // ForCluster returns the rest.Config to reach cluster, reading its kubeconfig
 // Secret through reader when the spec points at one.
 //
@@ -62,7 +79,7 @@ func ForCluster(
 		if err != nil {
 			return nil, fmt.Errorf("in-cluster config: %w", err)
 		}
-		return cfg, nil
+		return WithClientRateLimits(cfg), nil
 	case clustersv1alpha1.ClusterModeAgent:
 		return nil, nil
 	case clustersv1alpha1.ClusterModeDirect:
@@ -70,7 +87,7 @@ func ForCluster(
 			return configFromSecret(ctx, reader, cluster)
 		}
 		if cluster.Spec.Server != "" {
-			return &rest.Config{Host: cluster.Spec.Server}, nil
+			return WithClientRateLimits(&rest.Config{Host: cluster.Spec.Server}), nil
 		}
 		return nil, errors.New("direct mode requires server or kubeconfigSecretRef")
 	default:
@@ -112,7 +129,7 @@ func configFromSecret(
 		return nil, fmt.Errorf("parsing kubeconfig: %w", err)
 	}
 
-	return cfg, nil
+	return WithClientRateLimits(cfg), nil
 }
 
 // Resolver resolves a cluster key to the rest.Config that reaches it.
@@ -143,7 +160,7 @@ func (r *Resolver) ConfigFor(ctx context.Context, clusterKey string) (*rest.Conf
 		if err != nil {
 			return nil, fmt.Errorf("resolving in-cluster config: %w", err)
 		}
-		return cfg, nil
+		return WithClientRateLimits(cfg), nil
 	}
 	if r.reader == nil {
 		return nil, fmt.Errorf("no cluster reader is configured to resolve cluster %q", clusterKey)

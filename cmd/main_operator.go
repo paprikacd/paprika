@@ -62,6 +62,7 @@ import (
 	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
@@ -352,7 +353,7 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 }
 
 func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *metricsserver.Options, webhookSrv webhook.Server) (ctrl.Manager, error) {
-	restCfg := ctrl.GetConfigOrDie()
+	restCfg := negotiateProtobuf(ctrl.GetConfigOrDie())
 	restCfg.QPS = 50
 	restCfg.Burst = 100
 
@@ -545,13 +546,13 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	}
 	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
-	return &http.Server{
+	return httpx.WithH2C(&http.Server{
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
-	}, nil
+	}), nil
 }
 
 func buildOperatorUIMux(

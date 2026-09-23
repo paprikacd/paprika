@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -1220,7 +1219,7 @@ func (r *ReleaseReconciler) applyViaAgent(ctx context.Context, cluster *paprikav
 	builder := r.AgentClientBuilder
 	if builder == nil {
 		builder = func(baseURL string) AgentApplier {
-			return agentclient.NewControllerClient(baseURL, http.DefaultClient)
+			return agentclient.NewControllerClient(baseURL, nil)
 		}
 	}
 	cli := builder(baseURL)
