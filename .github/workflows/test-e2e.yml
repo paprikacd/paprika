@@ -1,8 +1,9 @@
 name: E2E Tests
 
 on:
-  schedule:
-    - cron: '17 3 * * *'
+  # No schedule: the daily run failed for a week on kind-bootstrap races and
+  # burned ~35min of CI each night without anyone acting on the result.
+  # Run manually via workflow_dispatch when needed.
   workflow_dispatch:
     inputs:
       ginkgo_focus:

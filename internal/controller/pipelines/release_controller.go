@@ -995,6 +995,11 @@ func normalizeManifestNamespaces(objects []*unstructured.Unstructured, ns string
 	}
 }
 
+// errNoApplicationOwner marks a standalone Release — created directly rather
+// than by an Application — so callers can degrade gracefully instead of
+// failing the release.
+var errNoApplicationOwner = errors.New("no Application owner reference")
+
 func (r *ReleaseReconciler) resolveOwningApplication(ctx context.Context, release *paprikav1.Release) (*paprikav1.Application, error) {
 	for _, ref := range release.OwnerReferences {
 		if ref.APIVersion == paprikav1.GroupVersion.String() && ref.Kind == "Application" {
@@ -1005,7 +1010,7 @@ func (r *ReleaseReconciler) resolveOwningApplication(ctx context.Context, releas
 			return &app, nil
 		}
 	}
-	return nil, fmt.Errorf("release %s/%s has no Application owner reference", release.Namespace, release.Name)
+	return nil, fmt.Errorf("release %s/%s: %w", release.Namespace, release.Name, errNoApplicationOwner)
 }
 
 func (r *ReleaseReconciler) resolveStageServer(ctx context.Context, release *paprikav1.Release) (string, error) {
@@ -2885,19 +2890,20 @@ func (r *ReleaseReconciler) cleanupCanaryResources(ctx context.Context, namespac
 	return nil
 }
 
-//nolint:unused // will be consumed by promotion flow in Chunk 3 continuation.
 func (r *ReleaseReconciler) effectiveApprovalGates(app *paprikav1.Application, stage *paprikav1.Stage) []*gates.ApprovalGate {
 	target := stage.Spec.Name
 	var out []*gates.ApprovalGate
-	for i := range app.Spec.ApprovalGates {
-		g := &app.Spec.ApprovalGates[i]
-		if !g.Required {
-			continue
+	if app != nil {
+		for i := range app.Spec.ApprovalGates {
+			g := &app.Spec.ApprovalGates[i]
+			if !g.Required {
+				continue
+			}
+			if g.Stage != "" && g.Stage != target {
+				continue
+			}
+			out = append(out, convertApprovalGate(g))
 		}
-		if g.Stage != "" && g.Stage != target {
-			continue
-		}
-		out = append(out, convertApprovalGate(g))
 	}
 	for i := range stage.Spec.ApprovalGates {
 		g := &stage.Spec.ApprovalGates[i]
@@ -2959,7 +2965,12 @@ func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *pap
 	log := logf.FromContext(ctx)
 	app, err := r.resolveOwningApplication(ctx, release)
 	if err != nil {
-		return false, false, fmt.Errorf("resolve owning application: %w", err)
+		if !errors.Is(err, errNoApplicationOwner) {
+			return false, false, fmt.Errorf("resolve owning application: %w", err)
+		}
+		// Standalone Release: no Application owner means only stage-level
+		// approval gates can apply, and there is no app status to sync.
+		app = nil
 	}
 	stage, err := r.fetchStage(ctx, release)
 	if err != nil {
@@ -2972,10 +2983,12 @@ func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *pap
 	}
 
 	payload := &gates.ApprovalGatePayload{
-		Application: app.Name,
-		Namespace:   app.Namespace,
-		Release:     release.Name,
-		Stage:       stage.Spec.Name,
+		Namespace: release.Namespace,
+		Release:   release.Name,
+		Stage:     stage.Spec.Name,
+	}
+	if app != nil {
+		payload.Application = app.Name
 	}
 
 	statuses := make([]paprikav1.GateStatus, 0, len(gateList))
@@ -2983,7 +2996,10 @@ func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *pap
 	anyRejected := false
 
 	for _, g := range gateList {
-		current := r.findGateStatus(app, g.Name)
+		var current *paprikav1.GateStatus
+		if app != nil {
+			current = r.findGateStatus(app, g.Name)
+		}
 		currentStatus := ""
 		if current != nil {
 			currentStatus = current.Status
@@ -3010,8 +3026,10 @@ func (r *ReleaseReconciler) checkApprovalGates(ctx context.Context, release *pap
 		log.Info("Evaluated approval gate", "gate", g.Name, "type", g.Type, "status", result.Status)
 	}
 
-	if err := r.syncApplicationGateStatus(ctx, app, statuses); err != nil {
-		return false, false, fmt.Errorf("sync gate status: %w", err)
+	if app != nil {
+		if err := r.syncApplicationGateStatus(ctx, app, statuses); err != nil {
+			return false, false, fmt.Errorf("sync gate status: %w", err)
+		}
 	}
 
 	if anyRejected {

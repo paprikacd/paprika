@@ -369,6 +369,13 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   resource's namespace — no selector, zero matching pods, and the
   unimplemented `latencyP99` metric all fail closed now (were silent passes
   via a hardcoded `demo-app` selector in the operator namespace).
+- **Standalone Releases stay valid**: `checkApprovalGates` degrades to
+  stage-only gates when a Release has no Application owner
+  (`errNoApplicationOwner`), same as `runGovernanceGate`. The nightly e2e
+  (direct `kubectl apply` of a Release) caught the original hard-fail.
+- **Basic auth verification cache**: bcrypt results cached 60s keyed by
+  SHA-256 of the credential, singleflight-shared, capped at 1024 entries —
+  per-request bcrypt was ~1s at the e2e 100m CPU pin (DoS amplifier).
 
 ### In Progress
 

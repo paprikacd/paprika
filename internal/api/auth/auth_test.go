@@ -614,6 +614,52 @@ func TestBasicAuthenticator(t *testing.T) {
 	assert.ErrorIs(t, err, ErrUnauthenticated)
 }
 
+func TestBasicAuthenticator_VerifyCache(t *testing.T) {
+	t.Parallel()
+	ph, err := bcrypt.GenerateFromPassword([]byte(testPassword), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	authn, err := NewBasicAuthenticator(BasicAuthConfig{
+		Username:     testUsername,
+		PasswordHash: string(ph),
+	})
+	require.NoError(t, err)
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
+	req.SetBasicAuth(testUsername, testPassword)
+	ctx := WithRequest(context.Background(), req)
+
+	p, err := authn.Authenticate(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, testUsername, p.Subject)
+
+	// Second request with the same credential is served from the cache —
+	// exactly one entry exists and the result stays authenticated.
+	authn.mu.Lock()
+	assert.Len(t, authn.cache, 1)
+	authn.mu.Unlock()
+	_, err = authn.Authenticate(ctx)
+	require.NoError(t, err)
+
+	// A wrong password caches a negative result (second entry) rather than
+	// poisoning the good credential.
+	req2, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
+	req2.SetBasicAuth(testUsername, "wrong")
+	_, err = authn.Authenticate(WithRequest(context.Background(), req2))
+	assert.ErrorIs(t, err, ErrUnauthenticated)
+	authn.mu.Lock()
+	assert.Len(t, authn.cache, 2)
+	authn.mu.Unlock()
+
+	// A wrong username rejects before verification and never enters the cache.
+	req3, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, "/", http.NoBody)
+	req3.SetBasicAuth("nobody", testPassword)
+	_, err = authn.Authenticate(WithRequest(context.Background(), req3))
+	assert.ErrorIs(t, err, ErrUnauthenticated)
+	authn.mu.Lock()
+	assert.Len(t, authn.cache, 2)
+	authn.mu.Unlock()
+}
+
 func TestBasicAuthenticator_MissingUsername(t *testing.T) {
 	t.Parallel()
 	_, err := NewBasicAuthenticator(BasicAuthConfig{PasswordHash: "x"})

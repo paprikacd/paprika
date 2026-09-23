@@ -24,7 +24,7 @@ require (
 	github.com/google/cel-go v0.28.1
 	github.com/google/go-cmp v0.7.0
 	github.com/mattn/go-isatty v0.0.22
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.0
 	github.com/open-feature/go-sdk v1.17.2

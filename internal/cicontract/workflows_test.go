@@ -80,7 +80,7 @@ func TestWorkflowContract(t *testing.T) {
 	t.Run("legacy deployments consume repository dispatch payload digests", testLegacyDeployments)
 	t.Run("Helm publishing validates and renders before packaging", testHelmPublishing)
 	t.Run("GitHub Pages publishing uses a trusted manual entrypoint", testGitHubPagesPublishing)
-	t.Run("full e2e runs on a schedule and on demand", testE2ETriggers)
+	t.Run("full e2e runs on demand only", testE2ETriggers)
 	t.Run("full e2e isolates application and demo build caches", testE2ECacheScopes)
 	t.Run("full e2e verifies the Kind download", testE2EKindChecksum)
 	t.Run("VKE chart values render the complete token exchange boundary", testGitHubActionsTokenExchangeChartWiring)
@@ -1251,26 +1251,11 @@ func testGitHubPagesPublishing(t *testing.T) {
 
 func testE2ETriggers(t *testing.T) {
 	workflow := loadWorkflow(t, "test-e2e.yml")
-	if _, ok := workflow.triggers["workflow_dispatch"]; !ok {
-		t.Error("test-e2e.yml must declare workflow_dispatch")
-	}
-	if got := sortedKeys(workflow.triggers); len(got) != 2 || !contains(got, "schedule") || !contains(got, "workflow_dispatch") {
-		t.Errorf("test-e2e.yml triggers = %v, want exactly schedule and workflow_dispatch", got)
-	}
-
-	schedules := anyList(workflow.triggers["schedule"])
-	if len(schedules) != 1 {
-		t.Errorf("test-e2e.yml must declare one nightly schedule; got %d", len(schedules))
-		return
-	}
-	schedule, ok := schedules[0].(map[string]any)
-	if !ok {
-		t.Errorf("test-e2e.yml schedule must be a mapping, got %T", schedules[0])
-		return
-	}
-	cron := scalarString(schedule["cron"])
-	if !isOnceDailyCron(cron) {
-		t.Errorf("test-e2e.yml schedule cron = %q, want exactly one run every day", cron)
+	// The nightly schedule was removed: every scheduled run failed for a
+	// week (kind bootstrap race) with nobody acting on it. The suite stays
+	// runnable via workflow_dispatch only.
+	if got := sortedKeys(workflow.triggers); len(got) != 1 || !contains(got, "workflow_dispatch") {
+		t.Errorf("test-e2e.yml triggers = %v, want exactly workflow_dispatch", got)
 	}
 }
 
@@ -1549,10 +1534,6 @@ func sameStrings(got, want []string) bool {
 
 func exactly(values []string, want string) bool {
 	return len(values) == 1 && values[0] == want
-}
-
-func isOnceDailyCron(cron string) bool {
-	return regexp.MustCompile(`^(?:[0-5]?\d)\s+(?:[01]?\d|2[0-3])\s+\*\s+\*\s+\*$`).MatchString(strings.TrimSpace(cron))
 }
 
 func normalizeExpression(expression string) string {
