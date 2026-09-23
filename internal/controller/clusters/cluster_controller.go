@@ -273,7 +273,7 @@ func applyProviderOutcome(
 		status.ClusterID = details.ClusterID
 		status.Region = details.Region
 		if len(details.NodePools) > 0 {
-			status.NodePools = mergePoolCounts(details.NodePools, status.NodePools)
+			status.NodePools = mergePools(details.NodePools, status.NodePools)
 		}
 	case errors.Is(err, clusterprovider.ErrNotConfigured):
 		status.State = clusterprovider.StateNotConfigured
@@ -291,23 +291,35 @@ func applyProviderOutcome(
 	}
 }
 
-// mergePoolCounts fills API-reported pools whose count is zero from the
+// mergePools fills figures the provider API does not report from the
 // node-label-derived set. Some provider APIs report pool shape (plan,
-// autoscaler bounds) without a live node count — Vultr v2 returns
-// count: null — where the Kubernetes node list already knows the truth.
-func mergePoolCounts(
+// autoscaler bounds) without live figures — Vultr v2 returns count: null
+// and no sizing at all — where the Kubernetes node list already knows the
+// truth. A pool the provider reports that no node matches keeps its zeroes:
+// that is real (provisioned but empty), not missing data.
+func mergePools(
 	reported []clustersv1alpha1.ClusterNodePool,
 	derived []clustersv1alpha1.ClusterNodePool,
 ) []clustersv1alpha1.ClusterNodePool {
-	byName := make(map[string]int32, len(derived))
+	byName := make(map[string]clustersv1alpha1.ClusterNodePool, len(derived))
 	for _, p := range derived {
-		byName[p.Name] = p.NodeCount
+		byName[p.Name] = p
 	}
 	out := make([]clustersv1alpha1.ClusterNodePool, len(reported))
 	for i, p := range reported {
 		out[i] = p
+		d, ok := byName[p.Name]
+		if !ok {
+			continue
+		}
 		if out[i].NodeCount == 0 {
-			out[i].NodeCount = byName[p.Name]
+			out[i].NodeCount = d.NodeCount
+		}
+		if out[i].AllocatableCPUMillis == 0 {
+			out[i].AllocatableCPUMillis = d.AllocatableCPUMillis
+		}
+		if out[i].AllocatableMemoryBytes == 0 {
+			out[i].AllocatableMemoryBytes = d.AllocatableMemoryBytes
 		}
 	}
 	return out

@@ -943,6 +943,15 @@ capacity:
     # this to false to manage capacity providers yourself; see
     # docs/guides/multi-cluster.md.
     enabled: true
+  metricsServer:
+    # Ship a MetricsServer provider bound at Global scope, completing the
+    # `used` meter alongside KubernetesCapacity's requested/allocatable. On
+    # clusters without the metrics.k8s.io aggregated API (metrics-server is
+    # an optional add-on) the provider reports an honest NOT_AVAILABLE state
+    # rather than failing — so enabling it is safe even where usage cannot
+    # be read yet, and the meter completes itself if metrics-server is
+    # installed later. Set to false to manage usage providers yourself.
+    enabled: true
 
 ## Cluster inventory and provider enrichment.
 ##

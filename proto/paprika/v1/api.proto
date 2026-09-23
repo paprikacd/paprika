@@ -1272,6 +1272,10 @@ message ClusterNodePool {
   uint32 min_nodes = 4;
   uint32 max_nodes = 5;
   bool auto_scaled = 6;
+  // Sum of the pool nodes' status.allocatable — the CPU and memory
+  // workloads can actually draw on. Zero when unknown.
+  int64 allocatable_cpu_millis = 7;
+  int64 allocatable_memory_bytes = 8;
 }
 
 message ClusterProvider {

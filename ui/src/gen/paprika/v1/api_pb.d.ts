@@ -7267,6 +7267,19 @@ export declare class ClusterNodePool extends Message<ClusterNodePool> {
    */
   autoScaled: boolean;
 
+  /**
+   * Sum of the pool nodes' status.allocatable — the CPU and memory
+   * workloads can actually draw on. Zero when unknown.
+   *
+   * @generated from field: int64 allocatable_cpu_millis = 7;
+   */
+  allocatableCpuMillis: bigint;
+
+  /**
+   * @generated from field: int64 allocatable_memory_bytes = 8;
+   */
+  allocatableMemoryBytes: bigint;
+
   constructor(data?: PartialMessage<ClusterNodePool>);
 
   static readonly runtime: typeof proto3;

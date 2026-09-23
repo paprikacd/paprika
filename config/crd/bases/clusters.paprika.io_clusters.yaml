@@ -302,6 +302,17 @@ spec:
                         ClusterNodePool describes one node pool as reported by the cloud provider
                         (or derived from node labels when no provider credential is configured).
                       properties:
+                        allocatableCpuMillis:
+                          description: |-
+                            AllocatableCPUMillis and AllocatableMemoryBytes sum the pool nodes'
+                            status.allocatable: the CPU and memory workloads can actually draw on.
+                            Derived pools always carry them; API-enriched pools inherit them from
+                            the derived set when the provider does not report a figure.
+                          format: int64
+                          type: integer
+                        allocatableMemoryBytes:
+                          format: int64
+                          type: integer
                         autoScaled:
                           description: |-
                             AutoScaled reports whether the provider has the pool under autoscaler
