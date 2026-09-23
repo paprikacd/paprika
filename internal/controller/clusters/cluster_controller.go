@@ -273,7 +273,7 @@ func applyProviderOutcome(
 		status.ClusterID = details.ClusterID
 		status.Region = details.Region
 		if len(details.NodePools) > 0 {
-			status.NodePools = details.NodePools
+			status.NodePools = mergePoolCounts(details.NodePools, status.NodePools)
 		}
 	case errors.Is(err, clusterprovider.ErrNotConfigured):
 		status.State = clusterprovider.StateNotConfigured
@@ -289,6 +289,28 @@ func applyProviderOutcome(
 		status.State = clusterprovider.StateError
 		status.Reason = "provider enrichment failed; see the controller logs"
 	}
+}
+
+// mergePoolCounts fills API-reported pools whose count is zero from the
+// node-label-derived set. Some provider APIs report pool shape (plan,
+// autoscaler bounds) without a live node count — Vultr v2 returns
+// count: null — where the Kubernetes node list already knows the truth.
+func mergePoolCounts(
+	reported []clustersv1alpha1.ClusterNodePool,
+	derived []clustersv1alpha1.ClusterNodePool,
+) []clustersv1alpha1.ClusterNodePool {
+	byName := make(map[string]int32, len(derived))
+	for _, p := range derived {
+		byName[p.Name] = p.NodeCount
+	}
+	out := make([]clustersv1alpha1.ClusterNodePool, len(reported))
+	for i, p := range reported {
+		out[i] = p
+		if out[i].NodeCount == 0 {
+			out[i].NodeCount = byName[p.Name]
+		}
+	}
+	return out
 }
 
 // providerCredentials reads the credentialsSecretRef document. A nil ref is
