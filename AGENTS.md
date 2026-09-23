@@ -127,6 +127,21 @@ helm upgrade paprika-e2e charts/chart/ \
 - Failure conditions (`Degraded`, `RolledBack`, `Pending`,
   `ReleaseRetriesExhausted`) are cleared when the Application transitions to
   Healthy.
+- A stage with no `cluster` ref resolves to the registered `mode: in-cluster`
+  Cluster CR (the chart installs `<release>-in-cluster` by default). The
+  cluster controller fills `status.inventory` (nodes/pods/namespaces/
+  topology) on each health check and detects the cloud provider from node
+  providerID prefixes. `spec.provider` selects API enrichment (vultr, gke,
+  eks, aks); credentials come from `credentialsSecretRef` or ambient
+  identity (IRSA / GKE WI / Azure WI). Provider failures set
+  `status.provider.state` — they never change the cluster's phase, and
+  sanitized reasons never carry credential or endpoint detail.
+- Credential documents accepted by `spec.provider.credentialsSecretRef`:
+  vultr = raw API key; eks = JSON access keys or ambient SDK chain; gke =
+  Google credential JSON restricted to service_account/external_account/
+  impersonated_service_account (the type is checked before loading, per the
+  x/oauth2 deprecation guidance); aks = service-principal JSON or
+  federated-token-file WI.
 
 ## Current State
 

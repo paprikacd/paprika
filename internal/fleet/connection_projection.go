@@ -38,6 +38,7 @@ func projectClusterSummary(cluster *clustersv1alpha1.Cluster) ClusterSummary {
 	summary := ClusterSummary{
 		Identity:    types.NamespacedName{Namespace: cluster.Namespace, Name: cluster.Name},
 		DisplayName: strings.TrimSpace(cluster.Spec.DisplayName),
+		Mode:        cluster.Spec.Mode,
 	}
 	if summary.DisplayName == "" {
 		summary.DisplayName = cluster.Name
@@ -84,6 +85,17 @@ func projectStageConnection(
 	}
 	ref := stage.Spec.Cluster
 	if ref.Name == "" {
+		// An empty ref means the stage deploys to the cluster the control
+		// plane runs in. When a Cluster CR registers that cluster (mode:
+		// in-cluster) it becomes the target's identity, so the cluster board
+		// can count the apps that run there; without one the label and the
+		// NotConfigured connection report the absence honestly.
+		if inCluster, ok := findInCluster(clusters, stage.Namespace); ok {
+			target.Cluster = inCluster.Identity
+			target.ClusterLabel = inCluster.DisplayName
+			target.ClusterConnection = inCluster.Connection
+			return target, false
+		}
 		target.ClusterLabel = inlineClusterLabel
 		target.ClusterConnection = ConnectionStateNotConfigured
 		target.UnmanagedInlineCluster = hasInlineClusterConfiguration(&ref)
@@ -118,4 +130,39 @@ func projectStageConnection(
 func hasInlineClusterConfiguration(ref *pipelinesv1alpha1.ClusterRef) bool {
 	return ref.Mode != "" || ref.Server != "" || ref.AgentAddress != "" ||
 		ref.KubeconfigSecret != "" || ref.ServiceAccount != ""
+}
+
+// findInCluster returns the Cluster CR that represents the cluster the
+// control plane runs in — the one a stage with no cluster ref deploys to.
+// A stage's own namespace wins when more than one in-cluster registration
+// exists; otherwise the smallest identity is taken so the answer is stable
+// across rebuilds. Two in-cluster CRs in one install is a misconfiguration
+// this resolves deterministically rather than an error the projection
+// surfaces.
+func findInCluster(
+	clusters map[ClusterKey]ClusterSummary,
+	preferredNamespace string,
+) (ClusterSummary, bool) {
+	var best ClusterSummary
+	found := false
+	for key, summary := range clusters {
+		if summary.Mode != clustersv1alpha1.ClusterModeInCluster {
+			continue
+		}
+		if !found ||
+			(key.Namespace == preferredNamespace && best.Identity.Namespace != preferredNamespace) ||
+			(key.Namespace == preferredNamespace == (best.Identity.Namespace == preferredNamespace) &&
+				clusterKeyLess(key, best.Identity)) {
+			best = summary
+			found = true
+		}
+	}
+	return best, found
+}
+
+func clusterKeyLess(a, b ClusterKey) bool {
+	if a.Namespace != b.Namespace {
+		return a.Namespace < b.Namespace
+	}
+	return a.Name < b.Name
 }

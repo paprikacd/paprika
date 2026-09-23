@@ -7230,6 +7230,121 @@ export declare class ClusterAgentInfo extends Message<ClusterAgentInfo> {
 }
 
 /**
+ * @generated from message paprika.v1.ClusterNodePool
+ */
+export declare class ClusterNodePool extends Message<ClusterNodePool> {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: uint32 node_count = 2;
+   */
+  nodeCount: number;
+
+  /**
+   * The provider's size label: Vultr plan, EC2 instance type, GKE machine type.
+   *
+   * @generated from field: string machine_type = 3;
+   */
+  machineType: string;
+
+  /**
+   * Autoscaler bounds; zero when the pool is not autoscaled or unknown.
+   *
+   * @generated from field: uint32 min_nodes = 4;
+   */
+  minNodes: number;
+
+  /**
+   * @generated from field: uint32 max_nodes = 5;
+   */
+  maxNodes: number;
+
+  /**
+   * @generated from field: bool auto_scaled = 6;
+   */
+  autoScaled: boolean;
+
+  constructor(data?: PartialMessage<ClusterNodePool>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterNodePool";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterNodePool;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterNodePool;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterNodePool;
+
+  static equals(a: ClusterNodePool | PlainMessage<ClusterNodePool> | undefined, b: ClusterNodePool | PlainMessage<ClusterNodePool> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.ClusterProvider
+ */
+export declare class ClusterProvider extends Message<ClusterProvider> {
+  /**
+   * NOT_CONFIGURED when the provider was detected but no credential is
+   * configured; the node-label-derived pools still ship in that state.
+   *
+   * @generated from field: paprika.v1.DataState state = 1;
+   */
+  state: DataState;
+
+  /**
+   * e.g. "vultr", "gke", "eks", "aks". Set whenever a provider resolved,
+   * including when it was only detected from node providerIDs.
+   *
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  /**
+   * The provider's own identifier for the managed cluster.
+   *
+   * @generated from field: string provider_cluster_id = 3;
+   */
+  providerClusterId: string;
+
+  /**
+   * @generated from field: string region = 4;
+   */
+  region: string;
+
+  /**
+   * @generated from field: repeated paprika.v1.ClusterNodePool node_pools = 5;
+   */
+  nodePools: ClusterNodePool[];
+
+  /**
+   * @generated from field: int64 observed_at_unix_ms = 6;
+   */
+  observedAtUnixMs: bigint;
+
+  /**
+   * @generated from field: string unavailable_reason = 7;
+   */
+  unavailableReason: string;
+
+  constructor(data?: PartialMessage<ClusterProvider>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.ClusterProvider";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ClusterProvider;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ClusterProvider;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ClusterProvider;
+
+  static equals(a: ClusterProvider | PlainMessage<ClusterProvider> | undefined, b: ClusterProvider | PlainMessage<ClusterProvider> | undefined): boolean;
+}
+
+/**
  * @generated from message paprika.v1.Cluster
  */
 export declare class Cluster extends Message<Cluster> {
@@ -7344,6 +7459,15 @@ export declare class Cluster extends Message<Cluster> {
    * @generated from field: string health_check_timeout = 22;
    */
   healthCheckTimeout: string;
+
+  /**
+   * Cloud-provider enrichment. Null when no provider resolved for this
+   * cluster; the message's own state distinguishes detected-only from
+   * API-enriched.
+   *
+   * @generated from field: optional paprika.v1.ClusterProvider provider = 23;
+   */
+  provider?: ClusterProvider;
 
   constructor(data?: PartialMessage<Cluster>);
 

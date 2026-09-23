@@ -2448,6 +2448,37 @@ export const ClusterAgentInfo = /*@__PURE__*/ proto3.makeMessageType(
 );
 
 /**
+ * @generated from message paprika.v1.ClusterNodePool
+ */
+export const ClusterNodePool = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterNodePool",
+  () => [
+    { no: 1, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "node_count", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 3, name: "machine_type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "min_nodes", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 5, name: "max_nodes", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
+    { no: 6, name: "auto_scaled", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.ClusterProvider
+ */
+export const ClusterProvider = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.ClusterProvider",
+  () => [
+    { no: 1, name: "state", kind: "enum", T: proto3.getEnumType(DataState) },
+    { no: 2, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "provider_cluster_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "region", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "node_pools", kind: "message", T: ClusterNodePool, repeated: true },
+    { no: 6, name: "observed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 7, name: "unavailable_reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
  * @generated from message paprika.v1.Cluster
  */
 export const Cluster = /*@__PURE__*/ proto3.makeMessageType(
@@ -2475,6 +2506,7 @@ export const Cluster = /*@__PURE__*/ proto3.makeMessageType(
     { no: 20, name: "agent", kind: "message", T: ClusterAgentInfo },
     { no: 21, name: "health_check_interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 22, name: "health_check_timeout", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 23, name: "provider", kind: "message", T: ClusterProvider, opt: true },
   ],
 );
 

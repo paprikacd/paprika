@@ -162,6 +162,65 @@ func TestConnectionResolutionNamespaceMissingAndInlineModes(t *testing.T) {
 	}
 }
 
+func TestConnectionResolutionEmptyRefResolvesToInClusterRegistration(t *testing.T) {
+	t.Parallel()
+
+	store := newFakeProjectionStore()
+	app := projectionApplication("apps", "checkout", "checkout-uid")
+	app.Spec.Stages = []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "default", Ring: 1}}
+	stages := []*pipelinesv1alpha1.Stage{
+		projectionStage(app, "checkout-default", "stage-1", "default", 1, pipelinesv1alpha1.ClusterRef{}),
+	}
+	store.putApplication(app)
+	for _, stage := range stages {
+		store.putStage(stage)
+	}
+	inCluster := cluster("paprika-e2e", "in-cluster", "In-cluster", clustersv1alpha1.ClusterPhaseHealthy)
+	inCluster.Spec.Mode = clustersv1alpha1.ClusterModeInCluster
+	store.putCluster(inCluster)
+	// A direct-mode registration must never absorb an empty ref: the mode is
+	// what makes a Cluster the control plane's own.
+	store.putCluster(cluster("shared", "production", "Production", clustersv1alpha1.ClusterPhaseHealthy))
+
+	index := NewIndex()
+	result, err := NewRebuilder(index, store).Rebuild(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, result.ProjectionErrorCount)
+
+	snapshot := requireSnapshot(t, index)
+	summary := snapshot.Applications[clientKey(app)]
+	require.Len(t, summary.Targets, 1)
+	target := summary.Targets[0]
+	require.Equal(t, ClusterKey{Namespace: "paprika-e2e", Name: "in-cluster"}, target.Cluster)
+	require.Equal(t, "In-cluster", target.ClusterLabel)
+	require.Equal(t, ConnectionStateHealthy, target.ClusterConnection)
+	require.False(t, target.UnmanagedInlineCluster)
+	// The in-cluster CR counts as a fleet posting: list_clusters can see the
+	// apps that deploy to it.
+	require.Equal(t, idSet(clientKey(app)), snapshot.ByCluster[target.Cluster])
+}
+
+func TestConnectionResolutionEmptyRefWithoutRegistrationKeepsStubShape(t *testing.T) {
+	t.Parallel()
+
+	store := newFakeProjectionStore()
+	app := projectionApplication("apps", "checkout", "checkout-uid")
+	app.Spec.Stages = []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "default", Ring: 1}}
+	store.putApplication(app)
+	store.putStage(projectionStage(app, "checkout-default", "stage-1", "default", 1, pipelinesv1alpha1.ClusterRef{}))
+	// A registered cluster in another mode does not qualify.
+	store.putCluster(cluster("shared", "production", "Production", clustersv1alpha1.ClusterPhaseHealthy))
+
+	index := NewIndex()
+	_, err := NewRebuilder(index, store).Rebuild(context.Background())
+	require.NoError(t, err)
+
+	target := requireSnapshot(t, index).Applications[clientKey(app)].Targets[0]
+	require.Zero(t, target.Cluster)
+	require.Equal(t, inlineClusterLabel, target.ClusterLabel)
+	require.Equal(t, ConnectionStateNotConfigured, target.ClusterConnection)
+}
+
 func TestConnectionUpdateDeleteRecreateIsTargetedAndCopyOnWrite(t *testing.T) {
 	t.Parallel()
 

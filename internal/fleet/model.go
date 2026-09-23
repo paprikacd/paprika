@@ -1,6 +1,10 @@
 package fleet
 
-import "k8s.io/apimachinery/pkg/types"
+import (
+	"k8s.io/apimachinery/pkg/types"
+
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
+)
 
 // ProjectKey identifies a project without coupling fleet queries to a provider
 // or Kubernetes custom resource type.
@@ -184,11 +188,14 @@ type RepositorySummary struct {
 }
 
 // ClusterSummary retains only the identity and display/connection data needed
-// by fleet views. Connection configuration and Secret references are excluded.
+// by fleet views. Connection configuration and Secret references are excluded;
+// Mode is kept because an empty stage cluster ref resolves to the in-cluster
+// registration, which is a lookup over this field.
 type ClusterSummary struct {
 	Identity    ClusterKey
 	DisplayName string
 	Connection  ConnectionState
+	Mode        clustersv1alpha1.ClusterMode
 }
 
 // SourceSummary is the provider-neutral output of an optional source

@@ -1,11 +1,8 @@
-{{- if .Values.crd.enable }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    {{- if .Values.crd.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
     controller-gen.kubebuilder.io/version: v0.20.1
   name: clusters.clusters.paprika.io
 spec:
@@ -98,6 +95,71 @@ spec:
                 - agent
                 - in-cluster
                 type: string
+              provider:
+                description: |-
+                  Provider configures cloud-provider enrichment. Nil disables enrichment;
+                  a non-nil provider with type "auto" still runs detection-only inventory.
+                properties:
+                  clusterId:
+                    description: |-
+                      ClusterID is the provider's own identifier for the cluster — the VKE
+                      cluster UUID, the EKS cluster name, the GKE cluster name, or the AKS
+                      resource name. When empty the enricher matches the cluster by API
+                      endpoint where the provider supports it.
+                    type: string
+                  credentialsSecretRef:
+                    description: |-
+                      CredentialsSecretRef references a Secret holding the provider
+                      credential. The referenced key contains a provider-specific document:
+
+                        vultr — the API key, as a plain string.
+                        eks   — optional; ambient identity (IRSA, pod identity, node role) is
+                                used when absent. When set, JSON with access_key_id and
+                                secret_access_key (session_token optional).
+                        gke   — a Google credential JSON document: either a workload identity
+                                federation external_account configuration or a service-account
+                                key. When absent, application default credentials are used.
+                        aks   — JSON with tenant_id, client_id and either client_secret or
+                                federated_token_file. When absent, the AZURE_* workload
+                                identity environment is used.
+                    properties:
+                      key:
+                        type: string
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  project:
+                    description: |-
+                      Project is the GCP project for GKE or the Azure resource group for AKS.
+                      Ignored by other providers.
+                    type: string
+                  region:
+                    description: |-
+                      Region narrows provider lookups: the EKS region, the GKE location, or
+                      the AKS location. Vultr does not require it.
+                    type: string
+                  subscriptionId:
+                    description: |-
+                      SubscriptionID is the Azure subscription the AKS cluster lives in.
+                      Ignored by other providers.
+                    type: string
+                  type:
+                    default: auto
+                    description: |-
+                      Type selects the integration. "auto" detects the provider from node
+                      providerID prefixes (vultr://, gce://, aws://, azure://).
+                    enum:
+                    - auto
+                    - vultr
+                    - gke
+                    - eks
+                    - aks
+                    type: string
+                type: object
               server:
                 type: string
               serviceAccount:
@@ -178,6 +240,40 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              inventory:
+                description: |-
+                  Inventory is what the Kubernetes API reports about the cluster itself.
+                  Populated on each successful health check; nil until the first one
+                  completes.
+                properties:
+                  kubeletVersions:
+                    items:
+                      type: string
+                    type: array
+                  namespaceCount:
+                    format: int32
+                    type: integer
+                  nodeCount:
+                    format: int32
+                    type: integer
+                  podCount:
+                    format: int32
+                    type: integer
+                  readyNodeCount:
+                    format: int32
+                    type: integer
+                  regions:
+                    items:
+                      type: string
+                    type: array
+                  runningPodCount:
+                    format: int32
+                    type: integer
+                  zones:
+                    items:
+                      type: string
+                    type: array
+                type: object
               lastHealthCheckTime:
                 format: date-time
                 type: string
@@ -192,6 +288,72 @@ spec:
                 - Unhealthy
                 - Disabled
                 type: string
+              provider:
+                description: |-
+                  Provider is what the cloud-provider integration observed. Detection
+                  from node providerIDs always runs; the API-level fields (clusterID,
+                  autoscaler bounds) only populate when the provider answered.
+                properties:
+                  clusterId:
+                    type: string
+                  nodePools:
+                    items:
+                      description: |-
+                        ClusterNodePool describes one node pool as reported by the cloud provider
+                        (or derived from node labels when no provider credential is configured).
+                      properties:
+                        autoScaled:
+                          description: |-
+                            AutoScaled reports whether the provider has the pool under autoscaler
+                            control. Derived pools leave it false.
+                          type: boolean
+                        machineType:
+                          type: string
+                        maxNodes:
+                          format: int32
+                          type: integer
+                        minNodes:
+                          description: |-
+                            MinNodes and MaxNodes are the autoscaler bounds. Zero when the pool is
+                            not autoscaled or the bound is unknown.
+                          format: int32
+                          type: integer
+                        name:
+                          type: string
+                        nodeCount:
+                          format: int32
+                          type: integer
+                      required:
+                      - name
+                      - nodeCount
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  observedAt:
+                    format: date-time
+                    type: string
+                  reason:
+                    description: |-
+                      Reason is a sanitized explanation for a non-OK state; it never carries
+                      credential material or endpoint details.
+                    type: string
+                  region:
+                    type: string
+                  state:
+                    enum:
+                    - OK
+                    - NotConfigured
+                    - NotAvailable
+                    - Error
+                    - Forbidden
+                    type: string
+                  type:
+                    description: Type is the provider the controller resolved, e.g.
+                      "vultr".
+                    type: string
+                type: object
               version:
                 type: string
             type: object
@@ -203,4 +365,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}
