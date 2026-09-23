@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/net/netutil"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -132,6 +133,7 @@ type cliConfig struct {
 	cacheRedisDB                                                  int
 	shardID, shardTotal                                           int
 	shardIDSource                                                 string
+	apiMaxConns                                                   int
 	auditLogEnabled                                               bool
 	enableLeaderElection, secureMetrics, enableHTTP2              bool
 	apiCacheEnabled                                               bool
@@ -300,6 +302,10 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
 	fs.StringVar(&cfg.uiAddr, "ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
+	fs.IntVar(&cfg.apiMaxConns, "api-max-conns", 128,
+		"Maximum number of concurrent TCP connections the UI/API server accepts. "+
+			"Bounds connection and in-flight request memory on small pods; excess "+
+			"connections wait in the kernel accept queue. 0 disables the limit.")
 	fs.StringVar(&cfg.mode, "mode", "operator",
 		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent).")
 	fs.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
@@ -630,7 +636,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 
 	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
+		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -639,7 +645,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	startPprofServer(apiCtx, cfg.pprofAddr, setupLog)
 
 	if clients.cacheBundle == nil {
-		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, setupLog)
+		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, cfg.apiMaxConns, setupLog)
 	}
 	return runFleetCacheLifecycle(
 		apiCtx,
@@ -648,7 +654,7 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 		cfg.cacheSyncTimeout,
 		func(ctx context.Context) error {
 			setupLog.Info("API informer cache and fleet index ready")
-			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, setupLog)
+			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, cfg.apiMaxConns, setupLog)
 		},
 	)
 }
@@ -1108,7 +1114,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(whCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
+		if srvErr := runHTTPServer(whCtx, healthSrv, "health probe server", setupLog, nil, false, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -1121,7 +1127,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 	}
-	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true)
+	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true, 0)
 }
 
 func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAddr, pprofAddr string, scheme *runtime.Scheme, setupLog logr.Logger, cacheCfg cache.Config, probeAddrCh chan<- string, k8sClient client.Client) error {
@@ -1161,7 +1167,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(rsCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false); srvErr != nil {
+		if srvErr := runHTTPServer(rsCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -1199,7 +1205,7 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr, 
 	healthMux := buildHealthMux(setupLog, healthz.Ping)
 	healthSrv := buildHealthProbeServer(healthMux, probeAddr)
 	go func() {
-		if srvErr := runHTTPServer(agentCtx, healthSrv, "health probe server", setupLog, nil, false); srvErr != nil {
+		if srvErr := runHTTPServer(agentCtx, healthSrv, "health probe server", setupLog, nil, false, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
@@ -1458,17 +1464,17 @@ func startPprofServer(ctx context.Context, addr string, setupLog logr.Logger) {
 	}()
 }
 
-func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, log logr.Logger) error {
+func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, maxConns int, log logr.Logger) error {
 	server := &http.Server{
 		Addr:              uiAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}
-	return runHTTPServer(ctx, server, "API server", log, nil, true)
+	return runHTTPServer(ctx, server, "API server", log, nil, true, maxConns)
 }
 
-func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.Logger, boundAddrCh chan<- string, useMTLS bool) error {
+func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.Logger, boundAddrCh chan<- string, useMTLS bool, maxConns int) error {
 	go func() {
 		<-ctx.Done()
 		// Use WithoutCancel so the shutdown deadline is independent of the
@@ -1482,6 +1488,9 @@ func runHTTPServer(ctx context.Context, srv *http.Server, name string, log logr.
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", srv.Addr)
 	if err != nil {
 		return fmt.Errorf("%s listen error: %w", name, err)
+	}
+	if maxConns > 0 {
+		ln = netutil.LimitListener(ln, maxConns)
 	}
 	if boundAddrCh != nil {
 		select {
