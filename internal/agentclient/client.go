@@ -13,6 +13,7 @@ import (
 	agentserver "github.com/benebsworth/paprika/internal/agent/server"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/httpx"
 )
 
 // ControllerClient calls a remote agent from the controller manager.
@@ -22,10 +23,12 @@ type ControllerClient struct {
 }
 
 // NewControllerClient creates a client for the agent at baseURL.
-// If client is nil, http.DefaultClient is used.
+// If client is nil, a pooled h2c-capable transport is used (cleartext
+// in-cluster agents speak prior-knowledge HTTP/2 via the agent listener's
+// h2c wrapper).
 func NewControllerClient(baseURL string, client *http.Client) *ControllerClient {
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Transport: httpx.ConnectTransport(baseURL)}
 	}
 	return &ControllerClient{
 		baseURL: baseURL,

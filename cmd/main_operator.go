@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	gozap "go.uber.org/zap"
 	gozapcore "go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -62,6 +63,7 @@ import (
 	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
@@ -352,7 +354,7 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 }
 
 func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *metricsserver.Options, webhookSrv webhook.Server) (ctrl.Manager, error) {
-	restCfg := ctrl.GetConfigOrDie()
+	restCfg := negotiateProtobuf(ctrl.GetConfigOrDie())
 	restCfg.QPS = 50
 	restCfg.Burst = 100
 
@@ -371,6 +373,17 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		LeaderElectionID:       "paprika-operator.paprika.io",
 		Cache: crcache.Options{
 			SyncPeriod: ptr.To(time.Hour),
+		},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// Controllers read Secrets (kubeconfig refs, repository
+				// basic auth) through the delegating client; without
+				// DisableFor the first keyed read lazily starts a
+				// cluster-wide Secret informer, caching every Secret for
+				// what is an occasional GET. No controller watches Secrets,
+				// so nothing is lost by routing reads direct.
+				DisableFor: []client.Object{&corev1.Secret{}},
+			},
 		},
 		Controller: config.Controller{
 			CacheSyncTimeout: cfg.cacheSyncTimeout,
@@ -493,6 +506,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 		Addr:              ":8080",
 		Handler:           webhookMux,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       apiServerIdleTimeout,
 	}
 }
 
@@ -545,13 +559,13 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	}
 	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
-	return &http.Server{
+	return httpx.WithH2C(&http.Server{
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
-	}, nil
+	}), nil
 }
 
 func buildOperatorUIMux(

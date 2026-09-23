@@ -19,6 +19,7 @@ import (
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/controller/pipelines"
 	"github.com/benebsworth/paprika/internal/engine"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/mtls"
 )
 
@@ -159,11 +160,12 @@ func (s *Server) handleInvalidate(w http.ResponseWriter, r *http.Request) {
 
 // Run starts the repo server on the given address.
 func (s *Server) Run(ctx context.Context, addr string) error {
-	srv := &http.Server{
+	srv := httpx.WithH2C(&http.Server{
 		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-	}
+		IdleTimeout:       90 * time.Second,
+	})
 	log.FromContext(ctx).Info("Starting repo server", "addr", addr)
 	go func() {
 		<-ctx.Done()

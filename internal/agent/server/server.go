@@ -30,6 +30,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/engine/hooks"
+	"github.com/benebsworth/paprika/internal/httpx"
 )
 
 const (
@@ -575,11 +576,12 @@ func (s *Server) handleApply(w http.ResponseWriter, r *http.Request) {
 
 // Run starts the agent server on the given address.
 func (s *Server) Run(ctx context.Context, addr string) error {
-	srv := &http.Server{
+	srv := httpx.WithH2C(&http.Server{
 		Addr:              addr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
-	}
+		IdleTimeout:       90 * time.Second,
+	})
 	log.FromContext(ctx).Info("Starting agent server", "addr", addr, "cluster", s.clusterID)
 	go func() {
 		<-ctx.Done()

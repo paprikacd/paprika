@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
+	"github.com/benebsworth/paprika/internal/httpx"
 )
 
 func TestNewFromEnv(t *testing.T) {
@@ -48,11 +49,15 @@ func TestNewWithTimeout_DefaultsInvalidTimeout(t *testing.T) {
 	assert.Equal(t, DefaultTimeout, c.httpClient.Timeout)
 }
 
+// The client speaks prior-knowledge h2c to http:// repo-server URLs, so the
+// test server is configured the same way the real repo server listener is.
 func TestClient_ResolveSource(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/paprika.v1.PaprikaService/ResolveSource", r.URL.Path)
 		http.Error(w, "forced failure", http.StatusInternalServerError)
 	}))
+	httpx.WithH2C(ts.Config)
+	ts.Start()
 	defer ts.Close()
 
 	c := New(ts.URL)

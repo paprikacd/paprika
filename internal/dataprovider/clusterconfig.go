@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"k8s.io/client-go/rest"
+
+	"github.com/benebsworth/paprika/internal/clusterconfig"
 )
 
 // ClusterConfigResolver hands a capacity provider the connection details for
@@ -42,7 +44,7 @@ func (InClusterConfigResolver) ConfigFor(_ context.Context, clusterKey string) (
 		return nil, fmt.Errorf("resolving in-cluster config: %w", err)
 	}
 
-	return cfg, nil
+	return clusterconfig.WithClientRateLimits(cfg), nil
 }
 
 // configResolverOrDefault returns configs, or the local-only fallback when no

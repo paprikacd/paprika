@@ -4,10 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -199,4 +201,12 @@ func TestForClusterRejectsAnUnsetMode(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: "fleet", Name: "mystery"},
 	})
 	require.ErrorContains(t, err, "unsupported cluster mode")
+}
+
+func TestWithClientRateLimits(t *testing.T) {
+	t.Parallel()
+
+	cfg := WithClientRateLimits(&rest.Config{})
+	assert.Equal(t, float32(clusterClientQPS), cfg.QPS)
+	assert.Equal(t, clusterClientBurst, cfg.Burst)
 }

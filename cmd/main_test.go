@@ -23,6 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -875,4 +876,12 @@ func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
 	assert.NotEqual(t, http.StatusUnauthorized, rec.Code,
 		"a console token must authenticate GET /mcp/authorize; requiring an MCP-audience token here is exactly the circular flow this fix closes")
 	assert.Equal(t, http.StatusFound, rec.Code)
+}
+
+func TestWithAPIRateLimits(t *testing.T) {
+	t.Parallel()
+
+	cfg := withAPIRateLimits(&rest.Config{})
+	assert.Equal(t, float32(apiClientQPS), cfg.QPS)
+	assert.Equal(t, apiClientBurst, cfg.Burst)
 }

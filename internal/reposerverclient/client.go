@@ -16,6 +16,7 @@ import (
 	paprika "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/source"
 )
 
@@ -44,7 +45,7 @@ func NewWithTimeout(baseURL string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	httpClient := &http.Client{Timeout: timeout}
+	httpClient := &http.Client{Timeout: timeout, Transport: httpx.ConnectTransport(baseURL)}
 	return &Client{
 		baseURL:       baseURL,
 		httpClient:    httpClient,

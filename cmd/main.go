@@ -36,17 +36,21 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/net/netutil"
 	"golang.org/x/sync/errgroup"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/component-base/metrics/legacyregistry"
+	_ "k8s.io/component-base/metrics/prometheus/restclient" // emit rest_client_* client-go metrics
 	ctrl "sigs.k8s.io/controller-runtime"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,6 +80,7 @@ import (
 	"github.com/benebsworth/paprika/internal/dataprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/httpx"
 	"github.com/benebsworth/paprika/internal/kube"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/mtls"
@@ -1098,6 +1103,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	if err != nil {
 		config = ctrl.GetConfigOrDie()
 	}
+	config = clusterconfig.WithClientRateLimits(config)
 
 	apiClient, err := createAPIClient(config, scheme)
 	if err != nil {
@@ -1132,6 +1138,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		Addr:              webhookAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		IdleTimeout:       apiServerIdleTimeout,
 	}
 	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true, 0)
 }
@@ -1156,7 +1163,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 		if err != nil {
 			return fmt.Errorf("get k8s config: %w", err)
 		}
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+		k8sClient, err = client.New(clusterconfig.WithClientRateLimits(negotiateProtobuf(cfg)), client.Options{Scheme: scheme})
 		if err != nil {
 			return fmt.Errorf("create k8s client: %w", err)
 		}
@@ -1196,6 +1203,7 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr, 
 	if err != nil {
 		return fmt.Errorf("load in-cluster config: %w", err)
 	}
+	cfg = clusterconfig.WithClientRateLimits(cfg)
 
 	srv, err := agentserver.NewServer(clusterID, cfg)
 	if err != nil {
@@ -1225,13 +1233,21 @@ func runAgentMode(ctx context.Context, addr, probeAddr, clusterID, metricsAddr, 
 	return nil
 }
 
+// client-go's default rate limit (5 QPS / 10 burst) is tuned for a quiet
+// controller; the API server issues uncached reads and writes per request and
+// needs the same headroom operator mode sets on its manager config.
+const (
+	apiClientQPS   = 50
+	apiClientBurst = 100
+)
+
 func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 	if k8sAPIServer == "" {
 		config, err := rest.InClusterConfig()
 		if err != nil {
 			return nil, fmt.Errorf("get in-cluster config (use --k8s-api-server): %w", err)
 		}
-		return negotiateProtobuf(config), nil
+		return negotiateProtobuf(withAPIRateLimits(config)), nil
 	}
 
 	token, err := readBearerToken(k8sTokenFile)
@@ -1243,7 +1259,13 @@ func buildAPIConfig(k8sAPIServer, k8sTokenFile string) (*rest.Config, error) {
 		BearerToken:     token,
 		TLSClientConfig: rest.TLSClientConfig{Insecure: false},
 	}
-	return negotiateProtobuf(cfg), nil
+	return negotiateProtobuf(withAPIRateLimits(cfg)), nil
+}
+
+func withAPIRateLimits(cfg *rest.Config) *rest.Config {
+	cfg.QPS = apiClientQPS
+	cfg.Burst = apiClientBurst
+	return cfg
 }
 
 func readBearerToken(k8sTokenFile string) (string, error) {
@@ -1313,7 +1335,18 @@ func createAPICacheBundle(ctx context.Context, config *rest.Config, scheme *runt
 
 	apiClient, err := client.New(config, client.Options{
 		Scheme: scheme,
-		Cache:  &client.CacheOptions{Reader: apiCache},
+		Cache: &client.CacheOptions{
+			Reader: apiCache,
+			// Reads of types outside the warmed set would otherwise lazily
+			// start cluster-wide informers at request time — a Secret informer
+			// caches every Secret in the cluster for what is a keyed GET of a
+			// kubeconfig ref, and a ConfigMap informer does the same for the
+			// occasional artifact lookup. Route both straight to the API.
+			DisableFor: []client.Object{
+				&corev1.Secret{},
+				&corev1.ConfigMap{},
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create cache-backed k8s client: %w", err)
@@ -1412,7 +1445,14 @@ func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) 
 		return
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	// The restclient blank import makes client-go emit rest_client_* metrics
+	// (request latency, rate-limiter wait, transport cache stats) into the
+	// component-base legacy registry — gather it alongside ours so /metrics
+	// shows how hard Kubernetes API calls are being throttled.
+	mux.Handle("/metrics", promhttp.HandlerFor(
+		prometheus.Gatherers{crmetrics.Registry, legacyregistry.DefaultGatherer},
+		promhttp.HandlerOpts{},
+	))
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -1471,13 +1511,13 @@ func startPprofServer(ctx context.Context, addr string, setupLog logr.Logger) {
 }
 
 func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, maxConns int, log logr.Logger) error {
-	server := &http.Server{
+	server := httpx.WithH2C(&http.Server{
 		Addr:              uiAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
 		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
-	}
+	})
 	return runHTTPServer(ctx, server, "API server", log, nil, true, maxConns)
 }
 

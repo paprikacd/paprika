@@ -27,6 +27,9 @@ spec:
     port: {{ .Values.repoServer.service.port }}
     protocol: TCP
     targetPort: 8082
+    # Pod serves prior-knowledge h2c on :8082 — the hint lets mesh/Gateway
+    # upstreams multiplex h2 instead of one h1 request per connection.
+    appProtocol: kubernetes.io/h2c
   - name: metrics
     port: 8080
     targetPort: 8080
