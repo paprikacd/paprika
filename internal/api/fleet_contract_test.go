@@ -776,7 +776,7 @@ func TestConsoleDescriptor(t *testing.T) {
 		require.Equalf(t, wantValues, enumValueNumbers(enum), "enum %s changed", enumName)
 	}
 
-	require.Len(t, consoleMessageDescriptorContracts, 70, "snapshot must cover every console message")
+	require.Len(t, consoleMessageDescriptorContracts, 72, "snapshot must cover every console message")
 	assertMessageDescriptorContracts(t, file.Messages(), consoleMessageDescriptorContracts)
 
 	service := file.Services().ByName("PaprikaService")
@@ -1119,9 +1119,37 @@ var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescript
 			number: 8, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
 			referencedType: "paprika.v1.ClusterPhase",
 		},
+		"provider": {
+			number: 23, kind: protoreflect.MessageKind, cardinality: protoreflect.Optional,
+			explicitPresence: true,
+			referencedType:   "paprika.v1.ClusterProvider",
+		},
 		"server":          {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"service_account": {number: 5, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 		"target_count":    {number: 16, kind: protoreflect.Uint64Kind, cardinality: protoreflect.Optional},
+	},
+	"ClusterNodePool": {
+		"auto_scaled":  {number: 6, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"machine_type": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"max_nodes":    {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"min_nodes":    {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"name":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"node_count":   {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+	},
+	"ClusterProvider": {
+		"node_pools": {
+			number: 5, kind: protoreflect.MessageKind, cardinality: protoreflect.Repeated,
+			referencedType: "paprika.v1.ClusterNodePool",
+		},
+		"observed_at_unix_ms": {number: 6, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
+		"provider_cluster_id": {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"region":              {number: 4, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"state": {
+			number: 1, kind: protoreflect.EnumKind, cardinality: protoreflect.Optional,
+			referencedType: "paprika.v1.DataState",
+		},
+		"type":               {number: 2, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"unavailable_reason": {number: 7, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	},
 	"ListClustersRequest": {
 		"cursor":               {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
