@@ -592,7 +592,8 @@ func TestRunHTTPServerMaxConns(t *testing.T) {
 
 	release := make(chan struct{})
 	srv := &http.Server{
-		Addr: "127.0.0.1:0",
+		Addr:              "127.0.0.1:0",
+		ReadHeaderTimeout: 5 * time.Second,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			select {
 			case <-release:
@@ -622,9 +623,9 @@ func TestRunHTTPServerMaxConns(t *testing.T) {
 
 	dial := func(t *testing.T) net.Conn {
 		t.Helper()
-		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", addr)
 		require.NoError(t, err)
-		t.Cleanup(func() { conn.Close() })
+		t.Cleanup(func() { _ = conn.Close() })
 		_, err = fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: %s\r\n\r\n", addr)
 		require.NoError(t, err)
 		return conn
