@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	gozap "go.uber.org/zap"
 	gozapcore "go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -372,6 +373,17 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		LeaderElectionID:       "paprika-operator.paprika.io",
 		Cache: crcache.Options{
 			SyncPeriod: ptr.To(time.Hour),
+		},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// Controllers read Secrets (kubeconfig refs, repository
+				// basic auth) through the delegating client; without
+				// DisableFor the first keyed read lazily starts a
+				// cluster-wide Secret informer, caching every Secret for
+				// what is an occasional GET. No controller watches Secrets,
+				// so nothing is lost by routing reads direct.
+				DisableFor: []client.Object{&corev1.Secret{}},
+			},
 		},
 		Controller: config.Controller{
 			CacheSyncTimeout: cfg.cacheSyncTimeout,
