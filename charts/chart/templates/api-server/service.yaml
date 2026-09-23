@@ -24,6 +24,10 @@ spec:
     port: {{ .Values.apiServer.service.port }}
     targetPort: 3000
     protocol: TCP
+    # The pod serves prior-knowledge h2c on :3000; the hint lets Envoy
+    # Gateway multiplex h2 upstream (gRPC + Connect) instead of one h1
+    # request per connection.
+    appProtocol: kubernetes.io/h2c
   - name: health
     port: 8081
     targetPort: 8081

@@ -28,6 +28,8 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+      # Agent listener serves prior-knowledge h2c alongside HTTP/1.1.
+      appProtocol: kubernetes.io/h2c
   selector:
     app.kubernetes.io/name: {{ include "paprika.name" . }}
     app.kubernetes.io/component: agent

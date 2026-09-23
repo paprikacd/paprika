@@ -494,6 +494,7 @@ func buildInlineWebhookServer(c client.Client, secret string) *http.Server {
 		Addr:              ":8080",
 		Handler:           webhookMux,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       apiServerIdleTimeout,
 	}
 }
 

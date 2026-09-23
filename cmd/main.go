@@ -1135,6 +1135,7 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		Addr:              webhookAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		IdleTimeout:       apiServerIdleTimeout,
 	}
 	return runHTTPServer(whCtx, server, "webhook receiver", setupLog, nil, true, 0)
 }
@@ -1159,7 +1160,7 @@ func runRepoServerMode(ctx context.Context, addr, probeAddr, workDir, metricsAdd
 		if err != nil {
 			return fmt.Errorf("get k8s config: %w", err)
 		}
-		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+		k8sClient, err = client.New(clusterconfig.WithClientRateLimits(negotiateProtobuf(cfg)), client.Options{Scheme: scheme})
 		if err != nil {
 			return fmt.Errorf("create k8s client: %w", err)
 		}
