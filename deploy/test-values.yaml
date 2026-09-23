@@ -65,7 +65,7 @@ manager:
 
   resources:
     limits:
-      cpu: 200m
+      cpu: 1000m
       memory: 768Mi
     requests:
       cpu: 25m
