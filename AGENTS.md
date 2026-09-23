@@ -376,6 +376,21 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
 - **Basic auth verification cache**: bcrypt results cached 60s keyed by
   SHA-256 of the credential, singleflight-shared, capped at 1024 entries —
   per-request bcrypt was ~1s at the e2e 100m CPU pin (DoS amplifier).
+- **h2c on paprika listeners** (`internal/httpx.WithH2C`): API/UI,
+  repo-server and agent accept prior-knowledge h2 alongside HTTP/1.1 on one
+  port via `http.Server.Protocols` (native since Go 1.24; `x/net/http2/h2c`
+  is deprecated). Bounded at 256 concurrent streams. Deploy order matters:
+  servers accept both protocols, so roll server images before clients that
+  speak h2c unconditionally (`httpx.ConnectTransport` does for `http://`).
+- **Tuned k8s client rate limits**: API-mode config and every config minted
+  via `clusterconfig` (`ForCluster`, `Resolver`, dataprovider fallback,
+  webhook/agent/repo-server modes) run QPS=50/Burst=100 — client-go's 5/10
+  default throttled uncached calls.
+- **Bounded informer set**: the API cache client sets `DisableFor` for
+  Secret and ConfigMap — reads of non-warmed types through the cached
+  client lazily start cluster-wide informers (a Secret informer caches
+  every Secret in the cluster for what is a keyed GET). Keep the warmed
+  set + DisableFor list in sync with what request paths actually read.
 
 ### In Progress
 
