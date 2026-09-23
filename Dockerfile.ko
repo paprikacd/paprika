@@ -1,8 +1,10 @@
-# Dockerfile.ko — designed for `ko build --dockerfile`
-# ko replaces the ko:// stage with a natively cross-compiled Go binary.
+# Dockerfile.ko — wraps a locally-built ko binary image (see `make ko-build-full`).
+# ko 0.19 removed `ko build --dockerfile`, so ko produces the binary-only image
+# (--local) and this file assembles the runtime image around it.
 # UI is pre-built by `make build-ui` and embedded via go:embed.
 
-FROM ko://github.com/benebsworth/paprika/cmd AS ko-build
+ARG KO_IMAGE
+FROM ${KO_IMAGE} AS ko-build
 
 FROM alpine:3.24 AS helm-builder
 RUN apk add --no-cache curl && \
@@ -11,9 +13,14 @@ RUN apk add --no-cache curl && \
     tar -xzf /tmp/helm.tar.gz -C /tmp && \
     mv /tmp/linux-${ARCH}/helm /helm
 
-FROM gcr.io/distroless/static:nonroot
+# Alpine (not distroless): the repo-backed renderer executes git, matching the
+# main Dockerfile's runtime.
+FROM alpine:3.24
 WORKDIR /
-COPY --from=ko-build /ko-app/main /manager
+RUN apk add --no-cache ca-certificates git && \
+    addgroup -S -g 65532 nonroot && \
+    adduser -S -D -H -u 65532 -G nonroot nonroot
+COPY --from=ko-build /ko-app/cmd /manager
 COPY --from=helm-builder /helm /usr/local/bin/helm
 COPY charts /charts
 ENV HELM_CACHE_HOME=/tmp/helm/cache \

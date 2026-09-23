@@ -184,35 +184,36 @@ docker-build-fast: ## Build Go-only docker image (skips UI, uses cache mounts).
 	$(CONTAINER_TOOL) buildx build -f Dockerfile.fast --platform linux/amd64 -t "$${IMG}" --push .
 
 # ko settings — fast native Go cross-compilation (no QEMU emulation)
+# ko 0.19: the image repo is KO_DOCKER_REPO (no --image-repo flag), base
+# import paths are the default (no --base-import-paths flag), and `ko build
+# --dockerfile` was removed — ko-build-full wraps a --local ko image instead.
 KO ?= ko
 KO_PLATFORM ?= linux/amd64
 KO_REPO ?= ttl.sh/paprika-amd64
 
 .PHONY: ko-build-ui
 ko-build-ui: build-ui ## Pre-build UI then compile Go binary with ko (native cross-compile).
-	$(KO) build --platform=$(KO_PLATFORM) \
-	  --base-import-paths \
-	  --image-repo=$(KO_REPO) \
-	  --tags=ko-$(shell git rev-parse --short HEAD) \
+	KO_DOCKER_REPO=$(KO_REPO) $(KO) build --platform=$(KO_PLATFORM) \
+	  -t ko-$(shell git rev-parse --short HEAD) \
 	  --local \
 	  ./cmd
 
 .PHONY: ko-push
 ko-push: build-ui ## Build Go binary with ko and push directly to registry.
-	$(KO) build --platform=$(KO_PLATFORM) \
-	  --base-import-paths \
-	  --image-repo=$(KO_REPO) \
-	  --tags=ko-$(shell git rev-parse --short HEAD),ko-latest \
+	KO_DOCKER_REPO=$(KO_REPO) $(KO) build --platform=$(KO_PLATFORM) \
+	  -t ko-$(shell git rev-parse --short HEAD),ko-latest \
 	  ./cmd
 
 .PHONY: ko-build-full
-ko-build-full: build-ui ## Build full image with helm+charts using ko for the Go binary.
-	$(KO) build --platform=$(KO_PLATFORM) \
-	  --base-import-paths \
-	  --image-repo=$(KO_REPO) \
-	  --tags=ko-$(shell git rev-parse --short HEAD),ko-latest \
-	  --dockerfile=Dockerfile.ko \
+ko-build-full: build-ui ## Build full image (UI + Go + helm + charts): ko binary, docker wrap.
+	KO_DOCKER_REPO=$(KO_REPO) $(KO) build --platform=$(KO_PLATFORM) \
+	  -t ko-full-$(shell git rev-parse --short HEAD) \
+	  --local \
+	  --image-refs=/tmp/paprika-ko-refs \
 	  ./cmd
+	$(CONTAINER_TOOL) buildx build -f Dockerfile.ko --platform $(KO_PLATFORM) \
+	  --build-arg KO_IMAGE=$$(cat /tmp/paprika-ko-refs) \
+	  -t $(KO_REPO):ko-full-$(shell git rev-parse --short HEAD) --push .
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
