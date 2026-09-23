@@ -115,7 +115,7 @@ apiServer:
 
   resources:
     limits:
-      cpu: 100m
+      cpu: 500m
       memory: 192Mi
     requests:
       cpu: 10m
