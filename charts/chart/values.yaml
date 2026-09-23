@@ -683,7 +683,7 @@ agent:
     - --ui-bind-address=:8083
     - --health-probe-bind-address=:8081
 
-  clusterID: ""
+  clusterId: ""
 
   ## Termination grace period (seconds). Defaults to 30 if unset.
   ##
@@ -943,6 +943,38 @@ capacity:
     # this to false to manage capacity providers yourself; see
     # docs/guides/multi-cluster.md.
     enabled: true
+
+## Cluster inventory and provider enrichment.
+##
+## The self-registration Cluster CR is what makes the cluster board non-empty
+## on a default install: stages with no cluster ref deploy to the cluster
+## Paprika runs in, and this object is how that cluster enters the fleet
+## index. The cluster controller health-checks it with the pod's own service
+## account and fills status.inventory (node/pod counts, regions, zones,
+## kubelet versions) from the Kubernetes API.
+##
+cluster:
+  self:
+    # Ship a mode: in-cluster Cluster so applications with no explicit cluster
+    # ref resolve to it. Set to false to manage the registration yourself.
+    enabled: true
+    # Label shown on the cluster card; defaults to "In-cluster".
+    displayName: ""
+    # Cloud-provider enrichment. type: auto detects the provider from node
+    # providerID prefixes and reports node-label-derived pools with no
+    # credential at all. Set the provider's identity fields plus a
+    # credentialsSecretRef (Vultr API key, GCP WIF/SA JSON, AWS static keys,
+    # Azure SP JSON) for full enrichment — autoscaler bounds, plan names, the
+    # managed-cluster ID. eks/gke/aks also accept ambient identity
+    # (IRSA/GKE WI/Azure WI) with no secret at all.
+    provider:
+      type: auto
+      clusterId: ""
+      region: ""
+      project: ""
+      subscriptionId: ""
+      credentialsSecretRef: {}
+      # credentialsSecretRef: {name: vultr-api-key, namespace: "", key: credentials}
 
 ## Controller metrics endpoint.
 ## Enable to expose /metrics endpoint

@@ -318,3 +318,68 @@ kubectl get cluster -n paprika-system
 ```
 
 A cluster in `Unhealthy` phase will block deployments to stages that reference it.
+
+## The In-Cluster Registration
+
+The chart installs a `Cluster` with `mode: in-cluster` (named
+`<release>-in-cluster`) so the cluster the control plane runs in appears on
+the cluster board. A stage with no `cluster` ref deploys in-cluster, and the
+fleet index resolves that empty ref to this registration — which is what
+lets `list_clusters` count the applications that run there.
+
+On each health check the controller also gathers **inventory** — node and
+ready counts, pod counts, namespace count, distinct regions and zones, and
+kubelet versions — into `status.inventory`, and detects the cloud provider
+from node `providerID` prefixes (`vultr://`, `gce://`, `aws://`,
+`azure://`).
+
+Disable the self-registration with `--set cluster.self.enabled=false`.
+
+## Cloud Provider Enrichment
+
+`spec.provider` adds what the provider's own API knows: the managed
+cluster's provider-side ID and region, and node pools with plan names and
+autoscaler bounds — things Kubernetes node objects do not carry.
+
+```yaml
+spec:
+  provider:
+    type: auto            # auto | vultr | gke | eks | aks
+    clusterId: ""         # provider's identifier: VKE UUID, EKS/GKE/AKS name
+    region: ""            # EKS region / GKE location / AKS location
+    project: ""           # GCP project, or Azure resource group
+    subscriptionId: ""    # Azure subscription (aks only)
+    credentialsSecretRef: # optional where ambient identity exists
+      name: cluster-cloud-creds
+      key: credentials    # default
+```
+
+`type: auto` resolves the provider from node providerIDs. Even with no
+credential configured, `status.provider` reports the detected provider and
+node pools derived from node labels (`vke.vultr.com/node-pool`,
+`cloud.google.com/gke-nodepool`, `eks.amazonaws.com/nodegroup`,
+`kubernetes.azure.com/agentpool`), with state `NotConfigured`. API-enriched
+pools — autoscaler bounds included — only appear once the provider answers.
+
+### Credentials per provider
+
+The referenced Secret key holds a provider-specific document:
+
+| Provider | Document | Ambient alternative |
+| --- | --- | --- |
+| `vultr` | the API key, as a plain string | none — Vultr has no workload identity |
+| `eks` | JSON `{"access_key_id","secret_access_key","session_token"}` | SDK default chain: IRSA, pod identity, node role |
+| `gke` | Google credential JSON — a **workload identity federation** `external_account` config or a `service_account` key | application default credentials (GKE workload identity) |
+| `aks` | JSON `{"tenant_id","client_id","client_secret"}` or `{"tenant_id","client_id","federated_token_file"}` | `AZURE_*` workload-identity environment |
+
+The credential document's shape is checked before use: a Google document is
+only accepted as `service_account`, `external_account` or
+`impersonated_service_account`, and every provider failure maps to a state
+(`NotConfigured`, `Forbidden`, `NotAvailable`, `Error`) with a sanitized
+reason — credential material and endpoint details never appear in status.
+
+Matching rules when `clusterId` is empty: `vultr` and `eks` match the
+cluster whose published apiserver endpoint equals the one Paprika dials —
+which cannot work for `mode: in-cluster` (`kubernetes.default.svc` is never
+a published endpoint), so set `clusterId` for the self-registration.
+`gke`/`aks` always require `clusterId` (admission-enforced).

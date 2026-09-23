@@ -1263,6 +1263,32 @@ message ClusterAgentInfo {
   bool connected = 5;
 }
 
+message ClusterNodePool {
+  string name = 1;
+  uint32 node_count = 2;
+  // The provider's size label: Vultr plan, EC2 instance type, GKE machine type.
+  string machine_type = 3;
+  // Autoscaler bounds; zero when the pool is not autoscaled or unknown.
+  uint32 min_nodes = 4;
+  uint32 max_nodes = 5;
+  bool auto_scaled = 6;
+}
+
+message ClusterProvider {
+  // NOT_CONFIGURED when the provider was detected but no credential is
+  // configured; the node-label-derived pools still ship in that state.
+  DataState state = 1;
+  // e.g. "vultr", "gke", "eks", "aks". Set whenever a provider resolved,
+  // including when it was only detected from node providerIDs.
+  string type = 2;
+  // The provider's own identifier for the managed cluster.
+  string provider_cluster_id = 3;
+  string region = 4;
+  repeated ClusterNodePool node_pools = 5;
+  int64 observed_at_unix_ms = 6;
+  string unavailable_reason = 7;
+}
+
 message Cluster {
   FleetObjectKey identity = 1;
   string display_name = 2;
@@ -1287,6 +1313,10 @@ message Cluster {
   ClusterAgentInfo agent = 20;
   string health_check_interval = 21;
   string health_check_timeout = 22;
+  // Cloud-provider enrichment. Null when no provider resolved for this
+  // cluster; the message's own state distinguishes detected-only from
+  // API-enriched.
+  optional ClusterProvider provider = 23;
 }
 
 message ListClustersRequest {

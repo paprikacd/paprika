@@ -127,6 +127,8 @@ func validateCluster(cluster *clustersv1alpha1.Cluster) error {
 		}
 	}
 
+	allErrs = append(allErrs, validateClusterProvider(cluster.Spec.Provider, specPath)...)
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -135,4 +137,52 @@ func validateCluster(cluster *clustersv1alpha1.Cluster) error {
 		cluster.Name,
 		allErrs,
 	)
+}
+
+// validateClusterProvider checks spec.provider's cross-field requirements.
+// The identity fields that cannot be satisfied by ambient identity or
+// endpoint matching are admission errors: nothing the controller can do at
+// runtime will locate the cluster without them, so failing fast at the API
+// boundary is kinder than a permanently NotAvailable status.
+func validateClusterProvider(
+	provider *clustersv1alpha1.ClusterProviderSpec,
+	specPath *field.Path,
+) field.ErrorList {
+	if provider == nil {
+		return nil
+	}
+	providerPath := specPath.Child("provider")
+	var allErrs field.ErrorList
+	if provider.CredentialsSecretRef != nil && provider.CredentialsSecretRef.Name == "" {
+		allErrs = append(allErrs, field.Required(providerPath.Child("credentialsSecretRef").Child("name"), "provider credentials secret name is required"))
+	}
+	allErrs = append(allErrs, validateProviderIdentity(provider, providerPath)...)
+	return allErrs
+}
+
+// validateProviderIdentity checks the fields a provider needs to locate the
+// managed cluster — required at admission because no runtime credential can
+// substitute for not knowing which cluster to describe.
+func validateProviderIdentity(
+	provider *clustersv1alpha1.ClusterProviderSpec,
+	providerPath *field.Path,
+) field.ErrorList {
+	var allErrs field.ErrorList
+	switch provider.Type {
+	case "aks":
+		if provider.SubscriptionID == "" || provider.Project == "" || provider.ClusterID == "" {
+			allErrs = append(allErrs, field.Required(providerPath,
+				"aks requires subscriptionId, project (resource group) and clusterId"))
+		}
+	case "gke":
+		if provider.Project == "" && provider.CredentialsSecretRef == nil {
+			allErrs = append(allErrs, field.Required(providerPath.Child("project"),
+				"gke requires project or a credentials document carrying project_id"))
+		}
+		if provider.ClusterID == "" {
+			allErrs = append(allErrs, field.Required(providerPath.Child("clusterId"),
+				"gke requires clusterId (the cluster name)"))
+		}
+	}
+	return allErrs
 }

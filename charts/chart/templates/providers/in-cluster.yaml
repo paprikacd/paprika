@@ -1,0 +1,59 @@
+{{- if .Values.cluster.self.enabled }}
+{{/*
+The cluster board is meant to work on a default install. A stage with no
+cluster ref deploys to the cluster Paprika runs in, and this Cluster CR is
+what registers that cluster with the fleet index — without it the apps it
+hosts exist but the board has no row to count them on, and list_clusters
+comes back empty on the deployment doing the most work.
+
+mode: in-cluster means the controller health-checks it with its own service
+account — no kubeconfig, no Secret — and the inventory it reports (node and
+pod counts, regions, zones, kubelet skew) is read through the same identity.
+Provider enrichment defaults to auto: node providerIDs name the cloud
+(vultr://, gce://, aws://, azure://) and node labels shape the pools, so the
+board shows provider, region and pool structure with no credential at all.
+spec.provider.* only needs setting when the provider's own API should fill
+in the rest — autoscaler bounds, plan names, the managed-cluster ID — which
+takes a credentialsSecretRef (or ambient workload identity on eks/gke/aks).
+
+post-install for the same reason the capacity provider pair is: the
+clusters.paprika.io CRD is a plain template in this release, so on a fresh
+install the mapping cannot resolve until the main manifest has created it.
+post-install only, not post-upgrade, so an operator's later edits to this
+Cluster are never reset by a release.
+*/}}
+apiVersion: clusters.paprika.io/v1alpha1
+kind: Cluster
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "in-cluster" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install
+    helm.sh/hook-weight: "5"
+  labels:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "paprika.commonLabels" . | nindent 4 }}
+spec:
+  displayName: {{ .Values.cluster.self.displayName | default "In-cluster" | quote }}
+  mode: in-cluster
+  provider:
+    type: {{ .Values.cluster.self.provider.type | default "auto" | quote }}
+    {{- with .Values.cluster.self.provider.clusterId }}
+    clusterId: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.cluster.self.provider.region }}
+    region: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.cluster.self.provider.project }}
+    project: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.cluster.self.provider.subscriptionId }}
+    subscriptionId: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.cluster.self.provider.credentialsSecretRef }}
+    credentialsSecretRef:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

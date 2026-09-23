@@ -12,6 +12,7 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/clusterprovider"
 	"github.com/benebsworth/paprika/internal/fleet"
 )
 
@@ -180,7 +181,87 @@ func clusterMessage(
 		message.HealthCheckInterval = cluster.Spec.HealthCheck.Interval
 		message.HealthCheckTimeout = cluster.Spec.HealthCheck.Timeout
 	}
+	message.Inventory = clusterInventoryMessage(cluster.Status.Inventory)
+	message.Provider = clusterProviderMessage(cluster.Status.Provider)
 
+	return message
+}
+
+// clusterInventoryMessage projects the controller-gathered inventory onto the
+// wire. A nil inventory is one the controller has never produced — it keeps
+// the stub's NOT_CONFIGURED shape rather than reporting zeroed counts that
+// would read as a measured empty cluster.
+func clusterInventoryMessage(inv *clustersv1alpha1.ClusterInventory) *paprikav1.ClusterInventory {
+	if inv == nil {
+		return notConfiguredClusterInventory()
+	}
+	return &paprikav1.ClusterInventory{
+		State:           paprikav1.DataState_DATA_STATE_OK,
+		NodeCount:       uint32(max(inv.NodeCount, 0)),
+		ReadyNodeCount:  uint32(max(inv.ReadyNodeCount, 0)),
+		PodCount:        uint32(max(inv.PodCount, 0)),
+		RunningPodCount: uint32(max(inv.RunningPodCount, 0)),
+		NamespaceCount:  uint32(max(inv.NamespaceCount, 0)),
+		Regions:         inv.Regions,
+		Zones:           inv.Zones,
+		KubeletVersions: inv.KubeletVersions,
+	}
+}
+
+func notConfiguredClusterInventory() *paprikav1.ClusterInventory {
+	return &paprikav1.ClusterInventory{
+		State:             paprikav1.DataState_DATA_STATE_NOT_CONFIGURED,
+		Regions:           []string{},
+		Zones:             []string{},
+		KubeletVersions:   []string{},
+		UnavailableReason: clusterInventoryUnavailableReason,
+	}
+}
+
+// clusterProviderMessage projects status.provider onto the wire. The CRD's
+// state strings are the data-provider vocabulary spelt out, so the mapping
+// is a switch rather than a cast — a new state is a compile-time decision
+// here, not a silently mistranslated one.
+func clusterProviderMessage(status *clustersv1alpha1.ClusterProviderStatus) *paprikav1.ClusterProvider {
+	if status == nil {
+		return nil
+	}
+	message := &paprikav1.ClusterProvider{
+		Type:              status.Type,
+		ProviderClusterId: status.ClusterID,
+		Region:            status.Region,
+		UnavailableReason: status.Reason,
+	}
+	switch status.State {
+	case clusterprovider.StateOK:
+		message.State = paprikav1.DataState_DATA_STATE_OK
+	case clusterprovider.StateNotConfigured:
+		message.State = paprikav1.DataState_DATA_STATE_NOT_CONFIGURED
+	case clusterprovider.StateNotAvailable:
+		message.State = paprikav1.DataState_DATA_STATE_NOT_AVAILABLE
+	case clusterprovider.StateError:
+		message.State = paprikav1.DataState_DATA_STATE_ERROR
+	case clusterprovider.StateForbidden:
+		message.State = paprikav1.DataState_DATA_STATE_FORBIDDEN
+	default:
+		message.State = paprikav1.DataState_DATA_STATE_UNSPECIFIED
+	}
+	if status.ObservedAt != nil {
+		message.ObservedAtUnixMs = status.ObservedAt.UnixMilli()
+	}
+	pools := make([]*paprikav1.ClusterNodePool, 0, len(status.NodePools))
+	for i := range status.NodePools {
+		pool := &status.NodePools[i]
+		pools = append(pools, &paprikav1.ClusterNodePool{
+			Name:        pool.Name,
+			NodeCount:   uint32(max(pool.NodeCount, 0)),
+			MachineType: pool.MachineType,
+			MinNodes:    uint32(max(pool.MinNodes, 0)),
+			MaxNodes:    uint32(max(pool.MaxNodes, 0)),
+			AutoScaled:  pool.AutoScaled,
+		})
+	}
+	message.NodePools = pools
 	return message
 }
 
