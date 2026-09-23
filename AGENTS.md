@@ -126,10 +126,20 @@ helm upgrade paprika-e2e charts/chart/ \
 - DeepHost is Healthy with outOfSync=0, all resources Synced.
 - The controller-manager runs an immutable GHCR digest.
 - Metrics live at `:8443/metrics` (HTTP, `--metrics-secure=false`).
-- api-server e2e resources are pinned to 100m/96Mi via
+- api-server e2e resources are pinned to 100m/192Mi via
   `deploy/test-values.yaml` (chart defaults are 1000m/256Mi) — the 0.1-core
   cap makes bcrypt basic auth ~1s/request and amplifies GC pressure, so
   latency measurements there are worst-case, not representative of defaults.
+- The :3000 listener bounds concurrent connections via `--api-max-conns`
+  (default 128, kernel accept-queue backpressure) — an unbounded flood of
+  ~300 conns OOM-killed the 96Mi pod before this existed. `IdleTimeout`
+  (90s) is set so idle keep-alives can't exhaust the cap.
+- `/mcp` and embedded UI responses are gzip-compressed when the client
+  sends Accept-Encoding: gzip — a 20KB fleet_map result is ~2KB on the
+  wire (the structuredContent/text duplication compresses away).
+- Per-tool MCP metrics exist: `paprika.mcp.tool.calls`,
+  `paprika.mcp.tool.duration`, `paprika.mcp.tool.response_bytes` with
+  tool+outcome attributes.
 - MCP read tools over port-forward: ~180ms/call sequential, ~14.8 calls/s
   aggregate under 3 concurrent workers (post authz-informer optimization).
 - Profiling baseline (MCP read load): ~50% of cumulative allocs is upstream
