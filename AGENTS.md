@@ -344,9 +344,31 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
   native Release canary — Application declares `canary.steps [0,1,10,50,100]`
   + `intervalSeconds 600`, the flaggr chart renders `canaryWeight` into
   HTTPRoute backend weights (no `trafficRouter` on the stage), and
-  `analysis.checks` HTTP-probe candidate/fallback/public `/healthz` per step.
-  Note: `podMetrics` checks remain hardcoded to a `demo-app` selector — only
-  `http` checks are usable for real apps today.
+  `analysis.checks` probe candidate/fallback/public `/healthz` plus a
+  `podMetrics` restartRate check on the canary pods per step.
+- **Rollback hardening (battle-tested live on flaggr-api)**:
+  - Superseded releases are valid rollback targets — their
+    `status.RenderedManifestSnapshot` is the steady-state render. Excluding
+    them meant a rollback of a just-replaced release had no target at all.
+  - `markRolledBack` spends the release's auto-retry budget so the app's
+    adopt+auto-resync path cannot resurrect a rolled-back release and
+    re-run the canary that was meant to stop. Manual sync still bypasses.
+  - A parked (retry-exhausted) app still watches release identity, not just
+    the source hash — a param change produces a different release name and
+    must start a new flow instead of wedging in RolledBack.
+  - `patchApplicationReleaseRef` retries on optimistic-concurrency
+    conflicts; the release and app controllers race on status writes.
+  - Verified live: `paprika.io/rollback-requested` on a canarying release →
+    superseded snapshot restored (route 100/0), release `RolledBack`,
+    app parked `ReleaseRetriesExhausted`, no resurrection; param revert →
+    adopted+resynced the prior release (self-heal re-canary).
+- **Analysis hardening**: results persist as a `CanaryAnalysis` status
+  condition + Kubernetes event (were metrics-only). `analysis.Result`
+  carries the check type so metric labels don't depend on goroutine order.
+  `podMetrics` checks take `podSelector` and list pods in the analyzed
+  resource's namespace — no selector, zero matching pods, and the
+  unimplemented `latencyP99` metric all fail closed now (were silent passes
+  via a hardcoded `demo-app` selector in the operator namespace).
 
 ### In Progress
 
