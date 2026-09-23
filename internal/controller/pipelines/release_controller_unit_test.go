@@ -3,6 +3,7 @@ package pipelines
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ type releaseFakeAnalyzer struct {
 	results []analysis.Result
 }
 
-func (f *releaseFakeAnalyzer) RunChecks(_ context.Context, _ []pipelinesv1alpha1.AnalysisCheck) []analysis.Result {
+func (f *releaseFakeAnalyzer) RunChecks(_ context.Context, _ string, _ []pipelinesv1alpha1.AnalysisCheck) []analysis.Result {
 	return f.results
 }
 
@@ -846,10 +847,12 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		}
 	})
 
-	t.Run("falls back to newest non-failed non-superseded with snapshot", func(t *testing.T) {
+	t.Run("falls back to newest non-failed with snapshot, including superseded", func(t *testing.T) {
 		ctx := context.Background()
 		current := newRelease("current", base.Add(2*time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
 		failed := newRelease("failed", base, pipelinesv1alpha1.ReleaseFailed, "snap-failed")
+		// The release that was just replaced is the correct rollback target:
+		// superseded releases keep their steady-state manifest snapshot.
 		superseded := newRelease("superseded", base.Add(time.Hour), pipelinesv1alpha1.ReleaseSuperseded, "snap-super")
 		viable := newRelease("viable", base.Add(30*time.Minute), pipelinesv1alpha1.ReleasePromoting, "snap-viable")
 		r := &ReleaseReconciler{client: buildClient(current, failed, superseded, viable)}
@@ -858,8 +861,24 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 		if err != nil {
 			t.Fatalf("findRollbackTarget error: %v", err)
 		}
-		if target == nil || target.Name != "viable" {
-			t.Fatalf("expected viable, got %v", target)
+		if target == nil || target.Name != "superseded" {
+			t.Fatalf("expected superseded, got %v", target)
+		}
+	})
+
+	t.Run("prefers complete over newer superseded", func(t *testing.T) {
+		ctx := context.Background()
+		current := newRelease("current", base.Add(3*time.Hour), pipelinesv1alpha1.ReleaseFailed, "snap-current")
+		superseded := newRelease("superseded", base.Add(2*time.Hour), pipelinesv1alpha1.ReleaseSuperseded, "snap-super")
+		complete := newRelease("complete", base.Add(time.Hour), pipelinesv1alpha1.ReleaseComplete, "snap-complete")
+		r := &ReleaseReconciler{client: buildClient(current, superseded, complete)}
+
+		target, err := r.findRollbackTarget(ctx, current, appName)
+		if err != nil {
+			t.Fatalf("findRollbackTarget error: %v", err)
+		}
+		if target == nil || target.Name != "complete" {
+			t.Fatalf("expected complete, got %v", target)
 		}
 	})
 
@@ -893,6 +912,49 @@ func TestReleaseReconciler_findRollbackTarget(t *testing.T) {
 			t.Fatalf("expected nil target, got %s", target.Name)
 		}
 	})
+}
+
+func TestReleaseReconciler_markRolledBack_spendsRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "rb-release",
+			Namespace:  "default",
+			Generation: 1,
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{
+			Phase: pipelinesv1alpha1.ReleaseCanarying,
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(release).
+		WithStatusSubresource(&pipelinesv1alpha1.Release{}).Build()
+	r := &ReleaseReconciler{client: c}
+
+	if err := r.markRolledBack(ctx, release, "prev-release", "rollback requested"); err != nil {
+		t.Fatalf("markRolledBack error: %v", err)
+	}
+
+	var stored pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: "rb-release", Namespace: "default"}, &stored); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if stored.Status.Phase != pipelinesv1alpha1.ReleaseRolledBack {
+		t.Fatalf("expected phase RolledBack, got %s", stored.Status.Phase)
+	}
+	if stored.Status.RolledBackTo != "prev-release" {
+		t.Fatalf("expected RolledBackTo=prev-release, got %q", stored.Status.RolledBackTo)
+	}
+	// The spent retry budget is what keeps the application controller from
+	// adopting this release's identity and auto-resyncing it back to life.
+	got := stored.Annotations[autoRetryCountAnnotation]
+	if got != strconv.Itoa(maxReleaseAutoRetries) {
+		t.Fatalf("expected %s=%d, got %q", autoRetryCountAnnotation, maxReleaseAutoRetries, got)
+	}
 }
 
 func TestReleaseReconciler_handleResyncAnnotation(t *testing.T) {

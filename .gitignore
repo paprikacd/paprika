@@ -41,3 +41,5 @@ test-results/
 output/
 /artifacts/
 .goreleaser-dist/
+.claude/
+.serena/

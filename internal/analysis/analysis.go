@@ -21,6 +21,7 @@ import (
 // Result holds the outcome of a single analysis check.
 type Result struct {
 	Name    string
+	Type    string
 	Passed  bool
 	Message string
 	Detail  string
@@ -49,7 +50,9 @@ func NewCELAnalyzer(k8sClient kubernetes.Interface, namespace string, config *re
 }
 
 // RunChecks executes all specified analysis checks concurrently and returns their results.
-func (a *CELAnalyzer) RunChecks(ctx context.Context, checks []pipelinesv1alpha1.AnalysisCheck) []Result {
+// namespace is the namespace of the resource under analysis; podMetrics
+// checks list pods there.
+func (a *CELAnalyzer) RunChecks(ctx context.Context, namespace string, checks []pipelinesv1alpha1.AnalysisCheck) []Result {
 	var results []Result
 	var mu sync.Mutex
 	g, gCtx := errgroup.WithContext(ctx)
@@ -63,11 +66,12 @@ func (a *CELAnalyzer) RunChecks(ctx context.Context, checks []pipelinesv1alpha1.
 				case "http":
 					r = a.runHTTPCheck(gCtx, c)
 				case "podMetrics":
-					r = a.runPodMetricsCheck(gCtx, c)
+					r = a.runPodMetricsCheck(gCtx, c, namespace)
 				default:
 					r = Result{Passed: false, Message: "unknown check type: " + c.Type}
 				}
 				r.Name = c.Name
+				r.Type = c.Type
 				mu.Lock()
 				results = append(results, r)
 				mu.Unlock()
@@ -145,7 +149,13 @@ func (a *CELAnalyzer) buildHTTPResult(url string, successes, failures, count int
 	}
 }
 
-func (a *CELAnalyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck) Result {
+func (a *CELAnalyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1alpha1.AnalysisCheck, namespace string) Result {
+	if check.PodSelector == "" {
+		return Result{Passed: false, Message: "podMetrics check requires podSelector"}
+	}
+	if namespace == "" {
+		return Result{Passed: false, Message: "podMetrics check requires a namespace"}
+	}
 	threshold, err := strconv.ParseFloat(check.Threshold, 64)
 	if err != nil {
 		return Result{Passed: false, Message: fmt.Sprintf("invalid pod metric threshold %q: %v", check.Threshold, err)}
@@ -157,13 +167,13 @@ func (a *CELAnalyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1
 
 	switch check.Metric {
 	case "restartRate":
-		return a.checkRestartRate(ctx, threshold, windowSeconds)
+		return a.checkRestartRate(ctx, check.PodSelector, namespace, threshold)
 	case "errorRate":
-		return a.checkPodStatusRate(ctx, threshold, windowSeconds)
+		return a.checkPodStatusRate(ctx, check.PodSelector, namespace, threshold)
 	case "latencyP99":
 		return Result{
-			Passed:  true,
-			Message: "latencyP99 check passed (no metrics server available, assuming pass)",
+			Passed:  false,
+			Message: "latencyP99 requires a metrics backend; none is configured — failing closed",
 			Detail:  "metric=latencyP99 threshold=" + check.Threshold,
 		}
 	default:
@@ -174,16 +184,16 @@ func (a *CELAnalyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1
 	}
 }
 
-func (a *CELAnalyzer) checkRestartRate(ctx context.Context, threshold float64, _ int) Result {
-	pods, err := a.K8sClient.CoreV1().Pods(a.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=demo-app",
+func (a *CELAnalyzer) checkRestartRate(ctx context.Context, podSelector, namespace string, threshold float64) Result {
+	pods, err := a.K8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: podSelector,
 	})
 	if err != nil {
 		return Result{Passed: false, Message: fmt.Sprintf("failed to list pods: %v", err)}
 	}
 
 	if len(pods.Items) == 0 {
-		return Result{Passed: true, Message: "no pods found, assuming pass"}
+		return Result{Passed: false, Message: fmt.Sprintf("no pods matched selector %q in namespace %q", podSelector, namespace)}
 	}
 
 	var totalRestarts int32
@@ -203,16 +213,16 @@ func (a *CELAnalyzer) checkRestartRate(ctx context.Context, threshold float64, _
 	}
 }
 
-func (a *CELAnalyzer) checkPodStatusRate(ctx context.Context, threshold float64, _ int) Result {
-	pods, err := a.K8sClient.CoreV1().Pods(a.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=demo-app",
+func (a *CELAnalyzer) checkPodStatusRate(ctx context.Context, podSelector, namespace string, threshold float64) Result {
+	pods, err := a.K8sClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: podSelector,
 	})
 	if err != nil {
 		return Result{Passed: false, Message: fmt.Sprintf("failed to list pods: %v", err)}
 	}
 
 	if len(pods.Items) == 0 {
-		return Result{Passed: true, Message: "no pods found, assuming pass"}
+		return Result{Passed: false, Message: fmt.Sprintf("no pods matched selector %q in namespace %q", podSelector, namespace)}
 	}
 
 	var failed, total int

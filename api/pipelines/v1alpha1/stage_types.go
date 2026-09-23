@@ -56,6 +56,10 @@ type AnalysisCheck struct {
 	// Pod metric to check (for type=podMetrics): errorRate, latencyP99, restartRate
 	// +kubebuilder:validation:Enum=errorRate;latencyP99;restartRate
 	Metric string `json:"metric,omitempty"`
+	// Label selector for pods evaluated by podMetrics checks (e.g.
+	// "app.kubernetes.io/name=my-api"). Pods are listed in the namespace of
+	// the resource under analysis. Required for type=podMetrics.
+	PodSelector string `json:"podSelector,omitempty"`
 	// Threshold as a string (errorRate: "0.01" = 1%, latencyP99: "500" = 500ms, restartRate: "3" = count)
 	Threshold string `json:"threshold,omitempty"`
 	// Time window in seconds to evaluate the metric

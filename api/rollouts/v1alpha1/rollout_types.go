@@ -145,6 +145,9 @@ type AnalysisCheck struct {
 	// Pod metric to check (for type=podMetrics)
 	// +kubebuilder:validation:Enum=errorRate;latencyP99;restartRate
 	Metric string `json:"metric,omitempty"`
+	// Label selector for pods evaluated by podMetrics checks. Pods are listed
+	// in the Rollout's namespace. Required for type=podMetrics.
+	PodSelector string `json:"podSelector,omitempty"`
 	// Threshold as a string
 	Threshold string `json:"threshold,omitempty"`
 	// Time window in seconds to evaluate the metric

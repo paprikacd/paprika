@@ -546,6 +546,12 @@ spec:
                                 name:
                                   description: Name of the check.
                                   type: string
+                                podSelector:
+                                  description: |-
+                                    Label selector for pods evaluated by podMetrics checks (e.g.
+                                    "app.kubernetes.io/name=my-api"). Pods are listed in the namespace of
+                                    the resource under analysis. Required for type=podMetrics.
+                                  type: string
                                 requestCount:
                                   description: Number of requests to make per analysis
                                     cycle
@@ -963,6 +969,12 @@ spec:
                                       name:
                                         description: Name of the check.
                                         type: string
+                                      podSelector:
+                                        description: |-
+                                          Label selector for pods evaluated by podMetrics checks (e.g.
+                                          "app.kubernetes.io/name=my-api"). Pods are listed in the namespace of
+                                          the resource under analysis. Required for type=podMetrics.
+                                        type: string
                                       requestCount:
                                         description: Number of requests to make per
                                           analysis cycle
@@ -1108,6 +1120,11 @@ spec:
                                             - latencyP99
                                             - restartRate
                                             type: string
+                                          podSelector:
+                                            description: |-
+                                              Label selector for pods evaluated by podMetrics checks. Pods are listed
+                                              in the Rollout's namespace. Required for type=podMetrics.
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
@@ -1203,6 +1220,11 @@ spec:
                                             - latencyP99
                                             - restartRate
                                             type: string
+                                          podSelector:
+                                            description: |-
+                                              Label selector for pods evaluated by podMetrics checks. Pods are listed
+                                              in the Rollout's namespace. Required for type=podMetrics.
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
@@ -1283,6 +1305,11 @@ spec:
                                             - latencyP99
                                             - restartRate
                                             type: string
+                                          podSelector:
+                                            description: |-
+                                              Label selector for pods evaluated by podMetrics checks. Pods are listed
+                                              in the Rollout's namespace. Required for type=podMetrics.
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
@@ -1353,6 +1380,11 @@ spec:
                                                   - errorRate
                                                   - latencyP99
                                                   - restartRate
+                                                  type: string
+                                                podSelector:
+                                                  description: |-
+                                                    Label selector for pods evaluated by podMetrics checks. Pods are listed
+                                                    in the Rollout's namespace. Required for type=podMetrics.
                                                   type: string
                                                 requestCount:
                                                   description: Number of requests
@@ -1433,6 +1465,11 @@ spec:
                                             - errorRate
                                             - latencyP99
                                             - restartRate
+                                            type: string
+                                          podSelector:
+                                            description: |-
+                                              Label selector for pods evaluated by podMetrics checks. Pods are listed
+                                              in the Rollout's namespace. Required for type=podMetrics.
                                             type: string
                                           requestCount:
                                             description: Number of requests to make

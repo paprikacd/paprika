@@ -2133,7 +2133,11 @@ func (r *ReleaseReconciler) findRollbackTarget(ctx context.Context, release *pap
 		return nil, nil
 	}
 
-	// Prefer the newest Complete release, otherwise the newest non-failed/non-superseded release.
+	// Prefer the newest Complete release, otherwise the newest eligible
+	// release. Superseded releases remain eligible: their stored manifest
+	// snapshot is the steady-state render recorded at creation, which is
+	// exactly the "previous good" state a rollback should restore. The newest
+	// superseded release is typically the release this one replaced.
 	sortReleasesByCreation(candidates)
 	for _, c := range candidates {
 		if c.Status.Phase == paprikav1.ReleaseComplete {
@@ -2153,7 +2157,7 @@ func (r *ReleaseReconciler) collectRollbackCandidates(release *paprikav1.Release
 		if other.Spec.Target != release.Spec.Target {
 			continue
 		}
-		if other.Status.Phase == paprikav1.ReleaseFailed || other.Status.Phase == paprikav1.ReleaseSuperseded {
+		if other.Status.Phase == paprikav1.ReleaseFailed {
 			continue
 		}
 		if r.releaseSnapshotName(other) == "" {
@@ -2204,6 +2208,26 @@ func truncateConditionMessage(msg string) string {
 
 func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprikav1.Release, rolledBackTo, message string) error {
 	oldPhase := release.Status.Phase
+
+	// Spend the release's automatic retry budget. Without this, the
+	// application's replacement-release flow adopts the rolled-back release
+	// (same desired identity) and auto-resyncs it — resurrecting a release the
+	// operator or analysis just rolled back and re-running the canary that was
+	// meant to stop. With the cap spent, adoption parks the app in
+	// holdExhaustedRelease (which keeps polling the source: a new commit
+	// yields a new identity and un-parks cleanly), and an explicit
+	// paprika.io/manual-sync on the Application still bypasses the cap.
+	if release.Annotations[autoRetryCountAnnotation] != strconv.Itoa(maxReleaseAutoRetries) {
+		patch := client.MergeFrom(release.DeepCopy())
+		if release.Annotations == nil {
+			release.Annotations = map[string]string{}
+		}
+		release.Annotations[autoRetryCountAnnotation] = strconv.Itoa(maxReleaseAutoRetries)
+		if err := r.client.Patch(ctx, release, patch); err != nil {
+			return fmt.Errorf("stamp rollback retry cap: %w", err)
+		}
+	}
+
 	release.Status.Phase = paprikav1.ReleaseRolledBack
 	release.Status.RolledBackTo = rolledBackTo
 	release.Status.Conditions = append(release.Status.Conditions, metav1.Condition{
@@ -2519,26 +2543,51 @@ func (r *ReleaseReconciler) runCanaryAnalysis(ctx context.Context, release *papr
 		return false, nil
 	}
 
-	results := r.Analyzer.RunChecks(ctx, canaryCfg.Analysis.Checks)
+	if r.Analyzer == nil {
+		return false, fmt.Errorf("analysis checks configured but no analyzer is available")
+	}
+	results := r.Analyzer.RunChecks(ctx, release.Namespace, canaryCfg.Analysis.Checks)
 
-	for i, chkResult := range results {
-		checkType := ""
-		if i < len(canaryCfg.Analysis.Checks) {
-			checkType = canaryCfg.Analysis.Checks[i].Type
-		}
+	var failedChecks []string
+	for _, chkResult := range results {
+		// Results arrive in goroutine completion order — use the type stamped
+		// on the result, not the check index, for metric labels.
 		resultLabel := "failed"
 		if chkResult.Passed {
 			resultLabel = "passed"
 		}
-		metrics.AnalysisCheckTotal.WithLabelValues(release.Name, release.Namespace, checkType, resultLabel).Inc()
+		metrics.AnalysisCheckTotal.WithLabelValues(release.Name, release.Namespace, chkResult.Type, resultLabel).Inc()
 		if chkResult.Passed {
 			log.Info("PDV check passed", "message", chkResult.Message)
 			continue
 		}
 		log.Info("PDV check failed", "message", chkResult.Message)
-		if canaryCfg.Analysis.RollbackOnFail {
-			return true, r.handleAnalysisRollback(ctx, release, result, chkResult)
+		failedChecks = append(failedChecks, fmt.Sprintf("%s: %s", chkResult.Name, chkResult.Message))
+	}
+
+	// Surface the run on the Release itself — results were previously only
+	// visible in metrics/logs, leaving operators blind after the fact.
+	summary := fmt.Sprintf("%d/%d checks passed", len(results)-len(failedChecks), len(results))
+	if len(failedChecks) > 0 {
+		summary += "; failed: " + strings.Join(failedChecks, "; ")
+	}
+	meta.SetStatusCondition(&release.Status.Conditions, metav1.Condition{
+		Type:               "CanaryAnalysis",
+		Status:             metav1.ConditionTrue,
+		Reason:             "ChecksEvaluated",
+		Message:            summary,
+		LastTransitionTime: metav1.NewTime(r.now()),
+	})
+	if r.EventRecorder != nil {
+		eventType := corev1.EventTypeNormal
+		if len(failedChecks) > 0 {
+			eventType = corev1.EventTypeWarning
 		}
+		r.EventRecorder.Eventf(release, eventType, "CanaryAnalysis", "%s", summary)
+	}
+
+	if len(failedChecks) > 0 && canaryCfg.Analysis.RollbackOnFail {
+		return true, r.handleAnalysisRollback(ctx, release, result, analysis.Result{Message: failedChecks[0]})
 	}
 	return false, nil
 }

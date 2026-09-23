@@ -98,7 +98,7 @@ func (r *AnalysisRunReconciler) reconcileRun(ctx context.Context, run *pipelines
 		checks = append(checks, rendered)
 	}
 
-	results := r.Analyzer.RunChecks(ctx, checks)
+	results := r.Analyzer.RunChecks(ctx, run.Namespace, checks)
 	run.Status.Results = r.convertResults(results)
 	run.Status.CyclesExecuted++
 

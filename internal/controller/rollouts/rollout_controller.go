@@ -846,7 +846,7 @@ func (r *RolloutReconciler) runAnalysis(ctx context.Context, ro *rolloutsv1alpha
 	if analysis == nil || len(analysis.Checks) == 0 {
 		return nil
 	}
-	results := r.Analyzer.RunChecks(ctx, convertAnalysisChecks(analysis.Checks))
+	results := r.Analyzer.RunChecks(ctx, ro.Namespace, convertAnalysisChecks(analysis.Checks))
 	for _, res := range results {
 		if !res.Passed {
 			setCondition(ro, progressingCondition, metav1.ConditionFalse, "AnalysisFailed", res.Message)
@@ -973,6 +973,7 @@ func convertAnalysisChecks(checks []rolloutsv1alpha1.AnalysisCheck) []pipelinesv
 			TimeoutSeconds:   c.TimeoutSeconds,
 			RequestCount:     c.RequestCount,
 			Metric:           c.Metric,
+			PodSelector:      c.PodSelector,
 			Threshold:        c.Threshold,
 			WindowSeconds:    c.WindowSeconds,
 		}

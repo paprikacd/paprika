@@ -17,7 +17,7 @@ type fakeAnalyzer struct {
 	results []analysis.Result
 }
 
-func (f *fakeAnalyzer) RunChecks(_ context.Context, _ []pipelinesv1alpha1.AnalysisCheck) []analysis.Result {
+func (f *fakeAnalyzer) RunChecks(_ context.Context, _ string, _ []pipelinesv1alpha1.AnalysisCheck) []analysis.Result {
 	return f.results
 }
 
