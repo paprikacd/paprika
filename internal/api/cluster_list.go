@@ -253,12 +253,14 @@ func clusterProviderMessage(status *clustersv1alpha1.ClusterProviderStatus) *pap
 	for i := range status.NodePools {
 		pool := &status.NodePools[i]
 		pools = append(pools, &paprikav1.ClusterNodePool{
-			Name:        pool.Name,
-			NodeCount:   uint32(max(pool.NodeCount, 0)),
-			MachineType: pool.MachineType,
-			MinNodes:    uint32(max(pool.MinNodes, 0)),
-			MaxNodes:    uint32(max(pool.MaxNodes, 0)),
-			AutoScaled:  pool.AutoScaled,
+			Name:                   pool.Name,
+			NodeCount:              uint32(max(pool.NodeCount, 0)),
+			MachineType:            pool.MachineType,
+			MinNodes:               uint32(max(pool.MinNodes, 0)),
+			MaxNodes:               uint32(max(pool.MaxNodes, 0)),
+			AutoScaled:             pool.AutoScaled,
+			AllocatableCpuMillis:   max(pool.AllocatableCPUMillis, 0),
+			AllocatableMemoryBytes: max(pool.AllocatableMemoryBytes, 0),
 		})
 	}
 	message.NodePools = pools

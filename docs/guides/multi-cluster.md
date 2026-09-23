@@ -138,9 +138,14 @@ Two implementations ship today:
 
 The chart ships a `KubernetesCapacity` provider bound at `Global` scope in the
 release namespace, so allocatable and requested capacity work with nothing to
-configure. `used` reports `NOT_CONFIGURED` until you bind a usage provider.
-Turn the defaults off with `--set capacity.defaultProvider.enabled=false` if you
-would rather manage them yourself.
+configure, plus a `MetricsServer` provider bound the same way so `used` populates
+wherever the metrics.k8s.io aggregated API exists. On clusters without
+metrics-server installed the provider reports `NOT_AVAILABLE` with a fixed
+reason — it never fails the read — and the meter completes itself if
+metrics-server is installed later. Turn the defaults off with
+`--set capacity.defaultProvider.enabled=false` and
+`--set capacity.metricsServer.enabled=false` if you would rather manage them
+yourself.
 
 ### Completing the Meter
 
@@ -360,6 +365,14 @@ node pools derived from node labels (`vke.vultr.com/node-pool`,
 `cloud.google.com/gke-nodepool`, `eks.amazonaws.com/nodegroup`,
 `kubernetes.azure.com/agentpool`), with state `NotConfigured`. API-enriched
 pools — autoscaler bounds included — only appear once the provider answers.
+
+Every pool also carries `allocatableCpuMillis` and `allocatableMemoryBytes`:
+the sum of its nodes' `status.allocatable`, i.e. the pool's real capacity for
+workloads. Provider APIs generally report pool shape (plan, autoscaler
+bounds) without live node counts or sizing — Vultr v2 returns `count: null` —
+so figures the provider does not report are filled from the node-derived set
+by name. A pool the provider reports but no node matches keeps its zeroes:
+provisioned but empty is real data, not a gap.
 
 ### Credentials per provider
 

@@ -135,6 +135,12 @@ type ClusterNodePool struct {
 	// AutoScaled reports whether the provider has the pool under autoscaler
 	// control. Derived pools leave it false.
 	AutoScaled bool `json:"autoScaled,omitempty"`
+	// AllocatableCPUMillis and AllocatableMemoryBytes sum the pool nodes'
+	// status.allocatable: the CPU and memory workloads can actually draw on.
+	// Derived pools always carry them; API-enriched pools inherit them from
+	// the derived set when the provider does not report a figure.
+	AllocatableCPUMillis    int64 `json:"allocatableCpuMillis,omitempty"`
+	AllocatableMemoryBytes  int64 `json:"allocatableMemoryBytes,omitempty"`
 }
 
 // ClusterProviderStatus reports what the cloud-provider integration observed.

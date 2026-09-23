@@ -12442,11 +12442,15 @@ type ClusterNodePool struct {
 	// The provider's size label: Vultr plan, EC2 instance type, GKE machine type.
 	MachineType string `protobuf:"bytes,3,opt,name=machine_type,json=machineType,proto3" json:"machine_type,omitempty"`
 	// Autoscaler bounds; zero when the pool is not autoscaled or unknown.
-	MinNodes      uint32 `protobuf:"varint,4,opt,name=min_nodes,json=minNodes,proto3" json:"min_nodes,omitempty"`
-	MaxNodes      uint32 `protobuf:"varint,5,opt,name=max_nodes,json=maxNodes,proto3" json:"max_nodes,omitempty"`
-	AutoScaled    bool   `protobuf:"varint,6,opt,name=auto_scaled,json=autoScaled,proto3" json:"auto_scaled,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	MinNodes   uint32 `protobuf:"varint,4,opt,name=min_nodes,json=minNodes,proto3" json:"min_nodes,omitempty"`
+	MaxNodes   uint32 `protobuf:"varint,5,opt,name=max_nodes,json=maxNodes,proto3" json:"max_nodes,omitempty"`
+	AutoScaled bool   `protobuf:"varint,6,opt,name=auto_scaled,json=autoScaled,proto3" json:"auto_scaled,omitempty"`
+	// Sum of the pool nodes' status.allocatable — the CPU and memory
+	// workloads can actually draw on. Zero when unknown.
+	AllocatableCpuMillis   int64 `protobuf:"varint,7,opt,name=allocatable_cpu_millis,json=allocatableCpuMillis,proto3" json:"allocatable_cpu_millis,omitempty"`
+	AllocatableMemoryBytes int64 `protobuf:"varint,8,opt,name=allocatable_memory_bytes,json=allocatableMemoryBytes,proto3" json:"allocatable_memory_bytes,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ClusterNodePool) Reset() {
@@ -12519,6 +12523,20 @@ func (x *ClusterNodePool) GetAutoScaled() bool {
 		return x.AutoScaled
 	}
 	return false
+}
+
+func (x *ClusterNodePool) GetAllocatableCpuMillis() int64 {
+	if x != nil {
+		return x.AllocatableCpuMillis
+	}
+	return 0
+}
+
+func (x *ClusterNodePool) GetAllocatableMemoryBytes() int64 {
+	if x != nil {
+		return x.AllocatableMemoryBytes
+	}
+	return 0
 }
 
 type ClusterProvider struct {
@@ -18743,7 +18761,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12)\n" +
 	"\x11last_seen_unix_ms\x18\x04 \x01(\x03R\x0elastSeenUnixMs\x12\x1c\n" +
-	"\tconnected\x18\x05 \x01(\bR\tconnected\"\xc2\x01\n" +
+	"\tconnected\x18\x05 \x01(\bR\tconnected\"\xb2\x02\n" +
 	"\x0fClusterNodePool\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -18752,7 +18770,9 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\tmin_nodes\x18\x04 \x01(\rR\bminNodes\x12\x1b\n" +
 	"\tmax_nodes\x18\x05 \x01(\rR\bmaxNodes\x12\x1f\n" +
 	"\vauto_scaled\x18\x06 \x01(\bR\n" +
-	"autoScaled\"\xb4\x02\n" +
+	"autoScaled\x124\n" +
+	"\x16allocatable_cpu_millis\x18\a \x01(\x03R\x14allocatableCpuMillis\x128\n" +
+	"\x18allocatable_memory_bytes\x18\b \x01(\x03R\x16allocatableMemoryBytes\"\xb4\x02\n" +
 	"\x0fClusterProvider\x12+\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x15.paprika.v1.DataStateR\x05state\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12.\n" +

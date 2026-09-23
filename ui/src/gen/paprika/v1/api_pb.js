@@ -2459,6 +2459,8 @@ export const ClusterNodePool = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "min_nodes", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 5, name: "max_nodes", kind: "scalar", T: 13 /* ScalarType.UINT32 */ },
     { no: 6, name: "auto_scaled", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 7, name: "allocatable_cpu_millis", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "allocatable_memory_bytes", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
   ],
 );
 

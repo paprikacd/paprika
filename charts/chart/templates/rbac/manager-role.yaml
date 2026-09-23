@@ -174,6 +174,18 @@ rules:
   verbs:
   - get
   - list
+# nodes/pods in metrics.k8s.io is what MetricsServer sums live usage across
+# for the capacity board's `used` meter. Read-only, same blast radius as the
+# core node/pod reads above: where the aggregated API is absent the provider
+# reports NOT_AVAILABLE rather than needing this grant at all.
+- apiGroups:
+  - metrics.k8s.io
+  resources:
+  - nodes
+  - pods
+  verbs:
+  - get
+  - list
 - apiGroups:
   - apps
   resources:

@@ -139,6 +139,8 @@ func NodePoolsFromNodes(providerType string, nodes []corev1.Node) []clustersv1al
 			pools[key] = pool
 		}
 		pool.NodeCount++
+		pool.AllocatableCPUMillis += nodes[i].Status.Allocatable.Cpu().MilliValue()
+		pool.AllocatableMemoryBytes += nodes[i].Status.Allocatable.Memory().Value()
 	}
 
 	out := make([]clustersv1alpha1.ClusterNodePool, 0, len(pools))
