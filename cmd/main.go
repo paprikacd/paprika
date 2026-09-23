@@ -105,6 +105,12 @@ const (
 	// while being far below the point where it threatens memory or the
 	// shared cache.
 	apiServerMaxHeaderBytes = 64 * 1024
+
+	// apiServerIdleTimeout closes keep-alive connections after this much
+	// idle time. Required pairing with --api-max-conns: without it, 128
+	// clients holding idle keep-alive connections would exhaust every
+	// listener slot and starve new connections permanently.
+	apiServerIdleTimeout = 90 * time.Second
 )
 
 func newScheme() *runtime.Scheme {
@@ -1469,6 +1475,7 @@ func startAPIServer(ctx context.Context, handler http.Handler, uiAddr string, ma
 		Addr:              uiAddr,
 		Handler:           handler,
 		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		IdleTimeout:       apiServerIdleTimeout,
 		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}
 	return runHTTPServer(ctx, server, "API server", log, nil, true, maxConns)

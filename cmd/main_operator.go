@@ -549,6 +549,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       apiServerIdleTimeout,
+		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}, nil
 }
 
