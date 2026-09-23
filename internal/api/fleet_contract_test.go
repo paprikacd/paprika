@@ -1133,10 +1133,10 @@ var consoleMessageDescriptorContracts = map[string]map[string]fleetFieldDescript
 		"allocatable_memory_bytes": {number: 8, kind: protoreflect.Int64Kind, cardinality: protoreflect.Optional},
 		"auto_scaled":              {number: 6, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
 		"machine_type":             {number: 3, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"max_nodes":    {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
-		"min_nodes":    {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
-		"name":         {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
-		"node_count":   {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"max_nodes":                {number: 5, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"min_nodes":                {number: 4, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
+		"name":                     {number: 1, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"node_count":               {number: 2, kind: protoreflect.Uint32Kind, cardinality: protoreflect.Optional},
 	},
 	"ClusterProvider": {
 		"node_pools": {

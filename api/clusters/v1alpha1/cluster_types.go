@@ -139,8 +139,8 @@ type ClusterNodePool struct {
 	// status.allocatable: the CPU and memory workloads can actually draw on.
 	// Derived pools always carry them; API-enriched pools inherit them from
 	// the derived set when the provider does not report a figure.
-	AllocatableCPUMillis    int64 `json:"allocatableCpuMillis,omitempty"`
-	AllocatableMemoryBytes  int64 `json:"allocatableMemoryBytes,omitempty"`
+	AllocatableCPUMillis   int64 `json:"allocatableCpuMillis,omitempty"`
+	AllocatableMemoryBytes int64 `json:"allocatableMemoryBytes,omitempty"`
 }
 
 // ClusterProviderStatus reports what the cloud-provider integration observed.
