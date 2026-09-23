@@ -116,10 +116,10 @@ apiServer:
   resources:
     limits:
       cpu: 100m
-      memory: 96Mi
+      memory: 192Mi
     requests:
       cpu: 10m
-      memory: 32Mi
+      memory: 64Mi
 
   strategy:
     type: RollingUpdate
@@ -129,9 +129,11 @@ apiServer:
 
   # Replaces the chart's apiServer.args list — keep --ui-bind-address and add
   # pprof for the ongoing profiling loop (:6060 is port-forward only).
+  # --api-max-conns bounds accepted conns so a connection flood can't OOM the pod.
   args:
     - --ui-bind-address=:3000
     - --pprof-bind-address=:6060
+    - --api-max-conns=128
 
   terminationGracePeriodSeconds: 20
 
