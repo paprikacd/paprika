@@ -36,6 +36,7 @@ import (
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -48,6 +49,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/component-base/metrics/legacyregistry"
+	_ "k8s.io/component-base/metrics/prometheus/restclient" // emit rest_client_* client-go metrics
 	ctrl "sigs.k8s.io/controller-runtime"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1442,7 +1445,14 @@ func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) 
 		return
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.HandlerFor(crmetrics.Registry, promhttp.HandlerOpts{}))
+	// The restclient blank import makes client-go emit rest_client_* metrics
+	// (request latency, rate-limiter wait, transport cache stats) into the
+	// component-base legacy registry — gather it alongside ours so /metrics
+	// shows how hard Kubernetes API calls are being throttled.
+	mux.Handle("/metrics", promhttp.HandlerFor(
+		prometheus.Gatherers{crmetrics.Registry, legacyregistry.DefaultGatherer},
+		promhttp.HandlerOpts{},
+	))
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
