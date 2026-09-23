@@ -1079,6 +1079,82 @@ func TestReleaseReconciler_handlePromotingPhase_awaitsApproval(t *testing.T) {
 	}
 }
 
+func TestReleaseReconciler_handlePromotingPhase_standaloneReleaseStageGate(t *testing.T) {
+	// A Release created directly (no Application owner) is a supported flow:
+	// the gate check must not fail it, and stage-level gates still apply.
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "gate-stage", Namespace: "default"},
+		Spec: pipelinesv1alpha1.StageSpec{
+			Name: "dev", Ring: 1, Templates: []string{},
+			ApprovalGates: []pipelinesv1alpha1.ApprovalGate{
+				{Name: "stage-gate", Type: pipelinesv1alpha1.ApprovalGateTypeManual, Required: true},
+			},
+		},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "standalone-release",
+			Namespace:  "default",
+			Finalizers: []string{releaseFinalizer},
+		},
+		Spec:   pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleasePromoting},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stage, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}).Build()
+	r := &ReleaseReconciler{
+		client:                c,
+		Scheme:                scheme,
+		ApprovalGateEvaluator: &fakeApprovalEvaluator{},
+	}
+
+	_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: release.Name, Namespace: release.Namespace}})
+	if err != nil {
+		t.Fatalf("reconcile error: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKeyFromObject(release), &updated); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ReleaseAwaitingApproval {
+		t.Errorf("phase = %s, want AwaitingApproval", updated.Status.Phase)
+	}
+}
+
+func TestReleaseReconciler_handlePromotingPhase_standaloneReleaseNoGates(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "plain-stage", Namespace: "default"},
+		Spec:       pipelinesv1alpha1.StageSpec{Name: "dev", Ring: 1, Templates: []string{}},
+	}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "standalone-release", Namespace: "default"},
+		Spec:       pipelinesv1alpha1.ReleaseSpec{Target: stage.Name},
+		Status:     pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleasePromoting},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(stage, release).WithStatusSubresource(&pipelinesv1alpha1.Release{}).Build()
+	r := &ReleaseReconciler{client: c, Scheme: scheme, ApprovalGateEvaluator: &fakeApprovalEvaluator{}}
+
+	approved, rejected, err := r.checkApprovalGates(ctx, release)
+	if err != nil {
+		t.Fatalf("checkApprovalGates error: %v", err)
+	}
+	if !approved || rejected {
+		t.Errorf("approved=%v rejected=%v, want approved=true rejected=false", approved, rejected)
+	}
+}
+
 func TestReleaseReconciler_handleAwaitingApprovalPhase_promotesWhenApproved(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
