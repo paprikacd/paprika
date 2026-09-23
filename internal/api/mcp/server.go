@@ -10,8 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NYTimes/gziphandler"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -20,6 +23,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
+	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
 )
 
 // codeScopeDenied is the JSON-RPC application error code returned for
@@ -214,7 +218,11 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 // delegating to the underlying Streamable HTTP handler, so an unauthenticated
 // request never reaches tool dispatch.
 func (s *Server) Handler() http.Handler {
-	return http.HandlerFunc(s.serveHTTP)
+	// Tool results carry the payload twice on the wire (structuredContent and
+	// a serialized TextContent fallback); gzip collapses the duplication for
+	// clients that send Accept-Encoding. Stateless+JSONResponse mode means no
+	// SSE streams flow through here, so buffering is safe.
+	return gziphandler.GzipHandler(http.HandlerFunc(s.serveHTTP))
 }
 
 // consoleCredentialTTL bounds the lifetime of the internal credential
@@ -381,11 +389,42 @@ func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 // truth: the registry itself.
 func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
 	name := req.Params.Name
+	start := time.Now()
 	result, err := s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
+	outcome := "ok"
 	if err != nil {
-		return s.mapInvokeError(ctx, name, err)
+		var confirmErr *ConfirmationRequiredError
+		switch {
+		case errors.As(err, &confirmErr):
+			outcome = "confirmation_required"
+		case errors.Is(err, ErrScopeDenied):
+			outcome = "scope_denied"
+		case errors.Is(err, ErrToolNotFound):
+			outcome = "not_found"
+		default:
+			outcome = "error"
+		}
 	}
-	return toolResult(result)
+	attrs := metric.WithAttributes(
+		attribute.String("tool", name),
+		attribute.String("outcome", outcome),
+	)
+	paprikametrics.MCPToolCalls.Add(ctx, 1, attrs)
+	paprikametrics.MCPToolDuration.Record(ctx, time.Since(start).Milliseconds(), attrs)
+
+	var res *sdkmcp.CallToolResult
+	if err != nil {
+		res, err = s.mapInvokeError(ctx, name, err)
+	} else {
+		res, err = toolResult(result)
+	}
+	if res != nil {
+		if raw, ok := res.StructuredContent.(json.RawMessage); ok && len(raw) > 0 {
+			paprikametrics.MCPToolResponseBytes.Record(ctx, int64(len(raw)),
+				metric.WithAttributes(attribute.String("tool", name)))
+		}
+	}
+	return res, err
 }
 
 // invoke guards Invoker.Call against a Server built with no Client: calling

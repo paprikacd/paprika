@@ -84,6 +84,20 @@ var (
 		"Number of source resolution errors")
 )
 
+// MCP metrics
+var (
+	MCPToolCalls = mustCounter(meter, "paprika.mcp.tool.calls",
+		"Number of MCP tool calls by tool and outcome")
+
+	MCPToolDuration = mustHistogram(meter, "paprika.mcp.tool.duration", "ms",
+		"Duration of MCP tool invocations by tool and outcome",
+		metric.WithExplicitBucketBoundaries(msBuckets...))
+
+	MCPToolResponseBytes = mustHistogram(meter, "paprika.mcp.tool.response_bytes", "By",
+		"Serialized size of MCP tool results by tool",
+		metric.WithExplicitBucketBoundaries(256, 1024, 4096, 16384, 65536, 262144, 1048576))
+)
+
 // SSE / Event broker metrics
 var (
 	SSEConnections = mustUpDownCounter(meter, "paprika.sse.connections", "1",

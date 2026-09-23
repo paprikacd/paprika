@@ -8,6 +8,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/NYTimes/gziphandler"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -50,7 +52,11 @@ func UIHandler() (http.Handler, error) {
 		return nil, fmt.Errorf("read embedded index.html: %w", err)
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Compress responses when the client accepts gzip: the embedded bundles
+	// are served raw and the JS chunks lose ~70% on the wire. Handlers that
+	// set their own Content-Encoding (promhttp on /metrics, the Connect
+	// passthrough) pass through untouched.
+	return gziphandler.GzipHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
@@ -90,5 +96,5 @@ func UIHandler() (http.Handler, error) {
 		}
 
 		fileServer.ServeHTTP(w, r)
-	}), nil
+	})), nil
 }

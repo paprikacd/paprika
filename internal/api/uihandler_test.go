@@ -1,7 +1,10 @@
 package apiserver
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -84,6 +87,51 @@ func TestUIHandlerCacheHeaders(t *testing.T) {
 				t.Fatalf("Cache-Control = %q, want to contain %q", got, tt.wantContains)
 			}
 		})
+	}
+}
+
+func TestUIHandlerGzipNegotiation(t *testing.T) {
+	handler, err := UIHandler()
+	if err != nil {
+		t.Fatalf("UIHandler() error = %v", err)
+	}
+	chunk := findAnEmbeddedStaticChunk(t)
+
+	newReq := func(acceptEncoding string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, chunk, nil)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		return rec
+	}
+
+	plain := newReq("")
+	if got := plain.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("Content-Encoding = %q, want empty without Accept-Encoding", got)
+	}
+
+	gzipped := newReq("gzip")
+	if got := gzipped.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	if gzipped.Body.Len() >= plain.Body.Len() {
+		t.Fatalf("gzipped body (%d) not smaller than plain (%d)", gzipped.Body.Len(), plain.Body.Len())
+	}
+	zr, err := gzip.NewReader(gzipped.Body)
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	decompressed, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if !bytes.Equal(decompressed, plain.Body.Bytes()) {
+		t.Fatal("decompressed body differs from plain response")
 	}
 }
 
