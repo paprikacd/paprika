@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -574,6 +575,91 @@ func TestMCPFlagsParse(t *testing.T) {
 	assert.True(t, cfg.mcpEnabled)
 	assert.Equal(t, ":9999", cfg.mcpBindAddress)
 	assert.Equal(t, time.Hour, cfg.mcpAccessTokenTTL)
+}
+
+func TestAPIMaxConnsFlag(t *testing.T) {
+	cfg, err := registerFlags([]string{}, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 128, cfg.apiMaxConns)
+
+	cfg, err = registerFlags([]string{"--api-max-conns=0"}, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 0, cfg.apiMaxConns)
+}
+
+func TestRunHTTPServerMaxConns(t *testing.T) {
+	t.Parallel()
+
+	release := make(chan struct{})
+	srv := &http.Server{
+		Addr:              "127.0.0.1:0",
+		ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	boundCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runHTTPServer(ctx, srv, "test server", logr.Discard(), boundCh, false, 1)
+	}()
+
+	var addr string
+	select {
+	case addr = <-boundCh:
+	case err := <-errCh:
+		t.Fatalf("runHTTPServer exited before binding: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for test server to bind")
+	}
+
+	dial := func(t *testing.T) net.Conn {
+		t.Helper()
+		conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "tcp", addr)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+		_, err = fmt.Fprintf(conn, "GET / HTTP/1.1\r\nHost: %s\r\n\r\n", addr)
+		require.NoError(t, err)
+		return conn
+	}
+
+	// conn1 occupies the only slot: its handler blocks until release closes.
+	conn1 := dial(t)
+
+	// conn2 connects at TCP level but is never Accept()ed while the slot is held.
+	conn2 := dial(t)
+	require.NoError(t, conn2.SetReadDeadline(time.Now().Add(500*time.Millisecond)))
+	_, err := conn2.Read(make([]byte, 64))
+	require.Error(t, err, "second connection must not be served while the limit is held")
+
+	close(release)
+	require.NoError(t, conn1.SetReadDeadline(time.Now().Add(5*time.Second)))
+	code := make([]byte, 64)
+	n, err := conn1.Read(code)
+	require.NoError(t, err)
+	assert.Contains(t, string(code[:n]), "204")
+
+	// Freeing the slot lets the queued connection through.
+	require.NoError(t, conn1.Close())
+	require.NoError(t, conn2.SetReadDeadline(time.Now().Add(5*time.Second)))
+	n, err = conn2.Read(code)
+	require.NoError(t, err)
+	assert.Contains(t, string(code[:n]), "204")
+
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for test server to exit")
+	}
 }
 
 func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {

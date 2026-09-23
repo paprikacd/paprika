@@ -468,7 +468,7 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
 	go func() {
-		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true); srvErr != nil {
+		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true, cfg.apiMaxConns); srvErr != nil {
 			setupLog.Error(srvErr, "UI server exited with error")
 		}
 	}()
@@ -478,7 +478,7 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig
 func startInlineWebhookServer(ctx context.Context, c client.Client, webhookSecret string, setupLog logr.Logger) error {
 	webhookSrv := buildInlineWebhookServer(c, webhookSecret)
 	go func() {
-		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil, true); srvErr != nil {
+		if srvErr := runHTTPServer(ctx, webhookSrv, "inline webhook receiver", setupLog, nil, true, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Inline webhook receiver exited with error")
 		}
 	}()
@@ -549,6 +549,8 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 		Addr:              cfg.uiAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       apiServerIdleTimeout,
+		MaxHeaderBytes:    apiServerMaxHeaderBytes,
 	}, nil
 }
 
