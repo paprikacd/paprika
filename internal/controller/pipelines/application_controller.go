@@ -1933,6 +1933,17 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 		return r.startNewReleaseFlow(ctx, app, false, "SourceChanged", "source hash changed after retry exhaustion, creating a new release")
 	}
 
+	// A parameter or stage change yields a different release identity — that
+	// is a NEW release, not a resurrection of the exhausted one, so the cap
+	// must not hold it. Without this the app wedges in RolledBack forever,
+	// ignoring spec drift until a source commit or manual sync arrives.
+	if changed, desired := releaseIdentityChanged(app); changed {
+		logger.Info("Release identity changed while retry budget exhausted, starting a fresh release flow",
+			"app", app.Name, "currentRelease", app.Status.ReleaseRef, "desiredRelease", desired)
+		return r.startNewReleaseFlow(ctx, app, false, "ReleaseSpecChanged",
+			"release parameters changed after retry exhaustion, creating a new release")
+	}
+
 	setReleaseRetriesExhaustedCondition(app, release)
 	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
 		logger.Error(patchErr, "Failed to patch application status while holding exhausted release")

@@ -1717,14 +1717,17 @@ func TestApplicationReconciler_handleHealthyPhase_holdsExhaustedRelease(t *testi
 		},
 		Status: pipelinesv1alpha1.ApplicationStatus{
 			Phase:          pipelinesv1alpha1.ApplicationHealthy,
-			ReleaseRef:     "exhausted-app-release",
 			SourceHash:     "same-source-hash",
 			SourceRevision: "same-source-revision",
 		},
 	}
+	// The parked releaseRef must be the identity the current spec computes —
+	// that is what "spec unchanged since the release was created" means.
+	releaseName := applicationReleaseName(app, &app.Spec.Stages[0])
+	app.Status.ReleaseRef = releaseName
 	release := &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "exhausted-app-release",
+			Name:      releaseName,
 			Namespace: "default",
 			Annotations: map[string]string{
 				autoRetryCountAnnotation: strconv.Itoa(maxReleaseAutoRetries),
@@ -1759,8 +1762,8 @@ func TestApplicationReconciler_handleHealthyPhase_holdsExhaustedRelease(t *testi
 	}
 	// The failing release is NOT superseded/recreated: ReleaseRef still points
 	// at it (a replacement flow would clear ReleaseRef).
-	if updated.Status.ReleaseRef != "exhausted-app-release" {
-		t.Fatalf("releaseRef = %q, want it held at exhausted-app-release", updated.Status.ReleaseRef)
+	if updated.Status.ReleaseRef != releaseName {
+		t.Fatalf("releaseRef = %q, want it held at %s", updated.Status.ReleaseRef, releaseName)
 	}
 	if cond := meta.FindStatusCondition(updated.Status.Conditions, releaseRetriesExhaustedCondition); cond == nil || cond.Status != metav1.ConditionTrue {
 		t.Fatalf("want %s=True condition, got %+v", releaseRetriesExhaustedCondition, cond)
@@ -1773,6 +1776,91 @@ func TestApplicationReconciler_handleHealthyPhase_holdsExhaustedRelease(t *testi
 	}
 	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseRolledBack {
 		t.Fatalf("release phase = %s, want it left RolledBack (not resurrected)", updatedRelease.Status.Phase)
+	}
+}
+
+// A parked (retry-exhausted) application must still notice spec drift: a
+// parameter change produces a different release identity, which is a new
+// release — not a resurrection of the exhausted one — so the cap must not
+// hold it back.
+func TestApplicationReconciler_handleHealthyPhase_unparksOnIdentityChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	_ = pipelinesv1alpha1.AddToScheme(scheme)
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "drifting-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://example.com/repo.git",
+				Revision: "main",
+				Path:     ".",
+			},
+			SyncPolicy: pipelinesv1alpha1.SyncAuto,
+			Stages:     []pipelinesv1alpha1.ApplicationPromotionStage{{Name: "prod", Ring: 1}},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationRolledBack,
+			SourceHash:     "same-source-hash",
+			SourceRevision: "same-source-revision",
+		},
+	}
+	// The release was created before a parameter was added — its identity name
+	// does not include the param, so it differs from the desired identity.
+	releaseName := applicationReleaseName(app, &app.Spec.Stages[0])
+	app.Status.ReleaseRef = releaseName
+	app.Spec.Parameters = map[string]string{"image.digest": "sha256:new"}
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      releaseName,
+			Namespace: "default",
+			Annotations: map[string]string{
+				autoRetryCountAnnotation: strconv.Itoa(maxReleaseAutoRetries),
+				sourceHashAnnotation:     "same-source-hash",
+			},
+		},
+		Status: pipelinesv1alpha1.ReleaseStatus{Phase: pipelinesv1alpha1.ReleaseRolledBack},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, release).
+		WithStatusSubresource(app, release).
+		Build()
+	r := &ApplicationReconciler{
+		client: c,
+		Scheme: scheme,
+		TemplateRenderer: &staticSourceRenderer{result: &source.ResolveResult{
+			Hash:     "same-source-hash",
+			Revision: "same-source-revision",
+		}},
+	}
+
+	if _, err := r.handleHealthyPhase(ctx, app); err != nil {
+		t.Fatalf("handleHealthyPhase failed: %v", err)
+	}
+
+	var updated pipelinesv1alpha1.Application
+	if err := c.Get(ctx, client.ObjectKey{Name: app.Name, Namespace: app.Namespace}, &updated); err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	// startNewReleaseFlow supersedes the parked release and clears ReleaseRef
+	// so the next reconcile creates the release for the new identity.
+	if updated.Status.ReleaseRef != "" {
+		t.Fatalf("releaseRef = %q, want it cleared for the new release flow", updated.Status.ReleaseRef)
+	}
+	if updated.Status.Phase != pipelinesv1alpha1.ApplicationPending {
+		t.Fatalf("phase = %s, want Pending", updated.Status.Phase)
+	}
+
+	var updatedRelease pipelinesv1alpha1.Release
+	if err := c.Get(ctx, client.ObjectKey{Name: release.Name, Namespace: "default"}, &updatedRelease); err != nil {
+		t.Fatalf("get release: %v", err)
+	}
+	if updatedRelease.Status.Phase != pipelinesv1alpha1.ReleaseSuperseded {
+		t.Fatalf("release phase = %s, want Superseded", updatedRelease.Status.Phase)
 	}
 }
 
