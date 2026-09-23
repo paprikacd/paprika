@@ -315,14 +315,27 @@ helm rollback paprika-e2e -n paprika-e2e
 ### Application Rollback
 
 If a release fails, the application rolls back automatically (if
-`onFailure.action: rollback`). For manual rollback:
+`onFailure.action: rollback`). To request a rollback of a live release:
+
+```sh
+kubectl -n <ns> annotate releases.pipelines.paprika.io <release> \
+  paprika.io/rollback-requested="$(date +%s)" --overwrite
+```
+
+The controller restores the newest `Complete` (or newest non-`Failed`,
+including `Superseded`) release's manifest snapshot, then marks the
+release `RolledBack` with `status.rolledBackTo` and spends its automatic
+retry budget so it cannot be resurrected by the adopt+resync flow. The
+application parks in `ReleaseRetriesExhausted` — still polling the
+source and watching release identity, so a new commit or parameter
+change un-parks it. See `docs/guides/canary.md` → Rollback for the full
+lifecycle.
 
 ```sh
 # Check previous releases
 kubectl get releases.pipelines.paprika.io -n <ns> --sort-by=.metadata.creationTimestamp | grep <app>
 
-# The rollback happens automatically on failure. To force a clean state,
-# trigger a manual sync after fixing the source:
+# Retry the same identity deliberately (bypasses and resets the retry cap):
 kubectl -n <ns> annotate application <app> \
   paprika.io/sync="$(date +%s)" paprika.io/manual-sync="$(date +%s)" --overwrite
 ```
