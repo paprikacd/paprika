@@ -2253,7 +2253,7 @@ func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, rele
 	}
 	// The application controller writes status on its own reconcile loop —
 	// retry on conflict instead of erroring out of the whole rollback.
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var app paprikav1.Application
 		if err := r.client.Get(ctx, types.NamespacedName{Name: appName, Namespace: release.Namespace}, &app); err != nil {
 			return fmt.Errorf("get application for rollback patch: %w", err)
@@ -2266,7 +2266,10 @@ func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, rele
 			return fmt.Errorf("update application releaseRef: %w", err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("patch application releaseRef for rollback: %w", err)
+	}
+	return nil
 }
 
 func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Release) error {
@@ -2551,7 +2554,7 @@ func (r *ReleaseReconciler) runCanaryAnalysis(ctx context.Context, release *papr
 	}
 
 	if r.Analyzer == nil {
-		return false, fmt.Errorf("analysis checks configured but no analyzer is available")
+		return false, errors.New("analysis checks configured but no analyzer is available")
 	}
 	results := r.Analyzer.RunChecks(ctx, release.Namespace, canaryCfg.Analysis.Checks)
 

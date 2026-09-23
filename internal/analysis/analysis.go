@@ -160,11 +160,9 @@ func (a *CELAnalyzer) runPodMetricsCheck(ctx context.Context, check *pipelinesv1
 	if err != nil {
 		return Result{Passed: false, Message: fmt.Sprintf("invalid pod metric threshold %q: %v", check.Threshold, err)}
 	}
-	windowSeconds := check.WindowSeconds
-	if windowSeconds <= 0 {
-		windowSeconds = 60
-	}
-
+	// TODO: check.WindowSeconds is parsed but not yet wired into the pod
+	// metric checks below — restartRate/errorRate currently evaluate the
+	// unfiltered pod event history.
 	switch check.Metric {
 	case "restartRate":
 		return a.checkRestartRate(ctx, check.PodSelector, namespace, threshold)

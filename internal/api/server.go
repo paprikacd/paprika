@@ -1116,7 +1116,8 @@ func convertRolloutAnalysisChecks(strategy *rolloutsv1alpha1.RolloutStrategy) []
 		checks = append(checks, strategy.Mirror.Analysis.Checks...)
 	}
 	out := make([]*paprikav1.RolloutAnalysisCheck, 0, len(checks))
-	for _, check := range checks {
+	for i := range checks {
+		check := checks[i]
 		out = append(out, &paprikav1.RolloutAnalysisCheck{
 			Type:             check.Type,
 			Url:              check.URL,
