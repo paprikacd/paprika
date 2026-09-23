@@ -87,7 +87,7 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	defer lock.Unlock()
 
 	result, err := g.resolveLocked(ctx, mirrorDir, worktreeDir)
-	if err == nil || !isRecoverableGitCacheError(err) {
+	if err == nil || (!isRecoverableGitCacheError(err) && !g.isStalePinnedRevisionError(err)) {
 		return result, err
 	}
 
@@ -234,6 +234,16 @@ func (g *GitSource) setMirrorHEAD(repo *git.Repository) error {
 
 func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repository, mirrorDir, worktreeDir string) (string, error) {
 	hash, err := g.resolveRevision(mirrorRepo, g.Revision)
+	if err != nil && isHexSHA(strings.TrimSpace(g.Revision)) {
+		// A shallow mirror never receives commits below its boundary:
+		// "have" lines transitively claim ancestors, and go-git only sends
+		// shallow declarations when a depth is requested. Pinned release
+		// revisions can sit below the boundary after the cache is rebuilt,
+		// so fetch the exact commit before giving up.
+		if fetchErr := g.fetchPinnedCommit(ctx, mirrorRepo, g.Revision); fetchErr == nil {
+			hash, err = g.resolveRevision(mirrorRepo, g.Revision)
+		}
+	}
 	if err != nil {
 		return "", err
 	}
@@ -346,6 +356,7 @@ func (g *GitSource) openExistingWorktree(ctx context.Context, worktreeDir string
 		RefSpecs: []config.RefSpec{
 			"+refs/heads/*:refs/remotes/origin/*",
 			"+refs/tags/*:refs/tags/*",
+			"+" + pinnedCommitRefPrefix + "*:refs/paprika-pinned/*",
 		},
 	}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return nil, fmt.Errorf("fetch worktree: %w", err)
@@ -375,12 +386,50 @@ func (g *GitSource) cloneWorktree(ctx context.Context, mirrorDir, worktreeDir st
 		RefSpecs: []config.RefSpec{
 			"+refs/heads/*:refs/remotes/origin/*",
 			"+refs/tags/*:refs/tags/*",
+			"+" + pinnedCommitRefPrefix + "*:refs/paprika-pinned/*",
 		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetch worktree from mirror: %w", err)
 	}
 	return worktreeRepo, nil
+}
+
+// pinnedCommitRefPrefix namespaces exact-commit fetches in the mirror so the
+// worktree can carry them with an explicit refspec.
+const pinnedCommitRefPrefix = "refs/paprika-pinned/"
+
+// isStalePinnedRevisionError reports whether err is an unresolvable revision
+// for a pinned commit. Pinned commits can fall below a shallow mirror's
+// boundary after the cache is rebuilt (pod restart, recovery reset), so the
+// caller may safely discard and rebuild the cache when this is true.
+func (g *GitSource) isStalePinnedRevisionError(err error) bool {
+	return err != nil &&
+		isHexSHA(strings.TrimSpace(g.Revision)) &&
+		strings.Contains(err.Error(), "not found as branch, tag, or commit")
+}
+
+// fetchPinnedCommit fetches one exact commit into the mirror under
+// refs/paprika-pinned/. Depth is set so the fetch negotiates shallow
+// boundaries correctly; the server must advertise allow-tip/reachable
+// sha1-in-want (GitHub does). Transports without it return
+// transport.ErrExactSHA1NotSupported and the caller falls back to a full
+// cache rebuild.
+func (g *GitSource) fetchPinnedCommit(ctx context.Context, repo *git.Repository, sha string) error {
+	auth, err := g.authMethod(ctx)
+	if err != nil {
+		return fmt.Errorf("auth for pinned commit fetch: %w", err)
+	}
+	refSpec := config.RefSpec(sha + ":" + pinnedCommitRefPrefix + sha)
+	fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+		Auth:     auth,
+		Depth:    1,
+		RefSpecs: []config.RefSpec{refSpec},
+	})
+	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+		return fmt.Errorf("fetch pinned commit %s: %w", sha, fetchErr)
+	}
+	return nil
 }
 
 func (g *GitSource) resolveRevision(repo *git.Repository, revision string) (*plumbing.Hash, error) {

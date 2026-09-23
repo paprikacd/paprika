@@ -108,6 +108,14 @@ helm upgrade paprika-e2e charts/chart/ \
 - GVR resolution uses a three-tier strategy: static `knownGVRs` fast path,
   discovery API with caching, pluralization fallback. The resolver is
   `CachedGVRResolver` in `internal/engine/gvr_resolver.go`.
+- Release renders pin the resolved commit SHA into the template spec
+  (`stampTemplateSourceIdentity`) for reproducibility. The repo-server git
+  mirror is depth-1 shallow on an `emptyDir` — pod restarts wipe it, and a
+  rebuilt shallow mirror can't resolve below-boundary pinned commits without
+  the exact-commit fetch recovery in `internal/source/git.go`
+  (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
+  commits a release has pinned; upstream-unreachable SHAs permanently fail
+  that release's renders.
 - Prune is opt-in via `SyncOptions.Prune` (default false). When enabled,
   `pruneStaleResources` deletes live resources that are paprika-labelled,
   ownerless, and not in the desired manifest set. Resources annotated

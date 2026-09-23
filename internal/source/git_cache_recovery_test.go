@@ -100,6 +100,65 @@ func TestGitSourceResolve_RepairsLocalUploadPackCorruption(t *testing.T) {
 	}
 }
 
+func TestGitSourceResolve_PinnedCommitBelowShallowBoundary(t *testing.T) {
+	src, mirror, worktree, pinned := cacheRecoveryFixture(t)
+
+	// Advance main so the pinned commit sits below the next shallow tip.
+	work := filepath.Join(t.TempDir(), "work")
+	runGit(t, filepath.Dir(work), "clone", src.RepoURL, work)
+	runGit(t, work, "config", "user.email", "synthetic@example.test")
+	runGit(t, work, "config", "user.name", "Synthetic Test")
+	writeChartFile(t, work, "advanced")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "advance main")
+	runGit(t, work, "push", "origin", "main")
+
+	// Pod restart: the emptyDir cache is wiped, then a branch resolve
+	// rebuilds the mirror shallow at the new tip.
+	if err := resetGitCache(mirror, worktree); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	src.Revision = "main"
+	if _, err := src.Resolve(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(mirror, "shallow")); err != nil {
+		t.Fatalf("fixture requires a shallow mirror: %v", err)
+	}
+
+	// Rendering the previously pinned release commit must recover: either
+	// an exact-commit fetch or a full cache rebuild, never a hard failure.
+	src.Revision = pinned
+	got, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("pinned commit below shallow boundary did not recover: %v", err)
+	}
+	if got.Revision != pinned {
+		t.Fatalf("revision changed: %s != %s", got.Revision, pinned)
+	}
+	content, err := os.ReadFile(filepath.Join(got.LocalPath, "values.yaml"))
+	if err != nil || string(content) != "version: synthetic-recovery\n" {
+		t.Fatalf("pinned content mismatch: %q (%v)", content, err)
+	}
+}
+
+func TestGitSourceResolve_PinnedCommitGoneFromRemote(t *testing.T) {
+	src, mirror, worktree, _ := cacheRecoveryFixture(t)
+	if err := resetGitCache(mirror, worktree); err != nil {
+		t.Fatal(err)
+	}
+	src.Revision = "0123456789abcdef0123456789abcdef01234567"
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := src.Resolve(ctx); err == nil {
+		t.Fatal("expected unresolvable pinned commit to fail")
+	} else if !strings.Contains(err.Error(), "not found as branch, tag, or commit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 type failingCacheTransport struct {
 	transport.Transport
 	target   string
