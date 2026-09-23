@@ -1448,9 +1448,14 @@ func startMetricsServer(ctx context.Context, addr string, setupLog logr.Logger) 
 	// The restclient blank import makes client-go emit rest_client_* metrics
 	// (request latency, rate-limiter wait, transport cache stats) into the
 	// component-base legacy registry — gather it alongside ours so /metrics
-	// shows how hard Kubernetes API calls are being throttled.
+	// shows how hard Kubernetes API calls are being throttled. The legacy
+	// registry also carries go_*/process_* collectors that our registry
+	// already emits, so only the rest_client_* families pass through.
 	mux.Handle("/metrics", promhttp.HandlerFor(
-		prometheus.Gatherers{crmetrics.Registry, legacyregistry.DefaultGatherer},
+		prometheus.Gatherers{
+			crmetrics.Registry,
+			metrics.PrefixGatherer(legacyregistry.DefaultGatherer, "rest_client_"),
+		},
 		promhttp.HandlerOpts{},
 	))
 	srv := &http.Server{
