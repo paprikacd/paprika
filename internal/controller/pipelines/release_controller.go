@@ -2247,19 +2247,26 @@ func (r *ReleaseReconciler) markRolledBack(ctx context.Context, release *paprika
 }
 
 func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, release *paprikav1.Release, releaseRef string) error {
-	var app paprikav1.Application
 	appName := release.Labels[engine.ApplicationNameLabelKey]
 	if appName == "" {
 		return errors.New("release missing app.paprika.io/name label")
 	}
-	if err := r.client.Get(ctx, types.NamespacedName{Name: appName, Namespace: release.Namespace}, &app); err != nil {
-		return fmt.Errorf("get application for rollback patch: %w", err)
-	}
-	app.Status.ReleaseRef = releaseRef
-	if err := r.client.Status().Update(ctx, &app); err != nil {
-		return fmt.Errorf("update application releaseRef: %w", err)
-	}
-	return nil
+	// The application controller writes status on its own reconcile loop —
+	// retry on conflict instead of erroring out of the whole rollback.
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var app paprikav1.Application
+		if err := r.client.Get(ctx, types.NamespacedName{Name: appName, Namespace: release.Namespace}, &app); err != nil {
+			return fmt.Errorf("get application for rollback patch: %w", err)
+		}
+		if app.Status.ReleaseRef == releaseRef {
+			return nil
+		}
+		app.Status.ReleaseRef = releaseRef
+		if err := r.client.Status().Update(ctx, &app); err != nil {
+			return fmt.Errorf("update application releaseRef: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Release) error {
