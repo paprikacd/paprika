@@ -169,6 +169,26 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_applications.yaml
 kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
 ```
 
+### HTTP/2 (h2c) Rollout Ordering
+
+All listeners (API/UI :3000, repo-server :8082, agent :8083) serve **both**
+HTTP/1.1 and cleartext HTTP/2 (`Server.Protocols` with h2c, 256 max streams).
+Internal Connect clients use prior-knowledge h2c on `http://` URLs.
+
+When enabling h2c on a listener:
+
+1. Deploy the **callee** first (repo-server, agent) — it accepts h1 + h2c.
+2. Deploy callers (controller-manager, api-server).
+3. Apply `appProtocol: kubernetes.io/h2c` on the Service **last** — a mesh or
+   Gateway that sees the hint against an h1-only pod will break upstream.
+
+Probe h2c on a live pod (binary SETTINGS frame = h2c, `HTTP/1.1` text = h1):
+
+```sh
+kubectl -n paprika-e2e exec deploy/paprika-e2e-repo-server -- sh -c \
+  'printf "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" | nc -w 5 localhost 8082 | od -t x1 | head -3'
+```
+
 ## Verifying
 
 ### Application Health

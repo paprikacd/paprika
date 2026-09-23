@@ -89,6 +89,21 @@ These are observable gauges populated from the K8s API on each scrape:
 Note: The `_ratio` suffix is the OTel Prometheus exporter's convention for
 dimensionless (unit "1") observable gauges. Not a bug.
 
+### Kubernetes Client (`rest_client_*`)
+
+Client-go REST metrics are exposed on every component's `/metrics` endpoint,
+filtered to the `rest_client_` prefix from the component-base legacy registry:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `rest_client_requests_total` | Counter | Requests by code/host/method |
+| `rest_client_request_duration_seconds` | Histogram | Per-request latency |
+| `rest_client_rate_limiter_duration_seconds` | Histogram | **Client-side throttle wait** — sustained `sum/count` growth means QPS/Burst is the bottleneck |
+| `rest_client_transport_cache_entries` | Gauge | Shared transport pool size |
+
+All Paprika REST configs are tuned to QPS=50 / Burst=100 (client-go defaults
+are 5/10, which throttles uncached calls under load).
+
 ## Alerting Rules
 
 ### Critical Alerts
