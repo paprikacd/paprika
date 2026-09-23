@@ -1,9 +1,11 @@
 package mcp
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +52,42 @@ func TestInitializeAdvertisesTools(t *testing.T) {
 	}
 	assert.True(t, byName["fleet_status"], "read tools carry readOnlyHint")
 	assert.False(t, byName["rollback_release"], "write tools must not")
+}
+
+func TestHandlerCompressesWhenClientAcceptsGzip(t *testing.T) {
+	srv := newTestServer(t)
+	token := bearerFor(t, ScopeRead)
+
+	newReq := func(acceptEncoding string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp",
+			strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+token)
+		if acceptEncoding != "" {
+			req.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		srv.Handler().ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+		return rec
+	}
+
+	plain := newReq("")
+	assert.Empty(t, plain.Header().Get("Content-Encoding"))
+	plainBody := plain.Body.Bytes()
+
+	gzipped := newReq("gzip")
+	assert.Equal(t, "gzip", gzipped.Header().Get("Content-Encoding"))
+	assert.Contains(t, gzipped.Header().Values("Vary"), "Accept-Encoding")
+	assert.Less(t, gzipped.Body.Len(), len(plainBody),
+		"tools/list has enough structure to compress below the raw size")
+
+	zr, err := gzip.NewReader(gzipped.Body)
+	require.NoError(t, err)
+	decompressed, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(plainBody), string(decompressed))
 }
 
 func TestUnauthenticatedReturns401WithWWWAuthenticate(t *testing.T) {

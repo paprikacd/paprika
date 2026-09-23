@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NYTimes/gziphandler"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -214,7 +215,11 @@ func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler 
 // delegating to the underlying Streamable HTTP handler, so an unauthenticated
 // request never reaches tool dispatch.
 func (s *Server) Handler() http.Handler {
-	return http.HandlerFunc(s.serveHTTP)
+	// Tool results carry the payload twice on the wire (structuredContent and
+	// a serialized TextContent fallback); gzip collapses the duplication for
+	// clients that send Accept-Encoding. Stateless+JSONResponse mode means no
+	// SSE streams flow through here, so buffering is safe.
+	return gziphandler.GzipHandler(http.HandlerFunc(s.serveHTTP))
 }
 
 // consoleCredentialTTL bounds the lifetime of the internal credential
