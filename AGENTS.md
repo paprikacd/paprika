@@ -54,11 +54,10 @@ helm template paprika charts/chart/
 go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
   crd:allowDangerousTypes=true paths=./api/... \
   output:crd:artifacts:config=config/crd/bases
-# Then copy CRDs to the chart:
-#   for f in config/crd/bases/pipelines.paprika.io_{applications,applicationsets,releases}.yaml; do
-#     base=$(basename $f); chart_name=$(echo $base | sed 's/pipelines.paprika.io_//;s/\.yaml$/.pipelines.paprika.io.yaml/')
-#     cp "$f" "charts/chart/templates/crd/$chart_name"
-#   done
+# Then copy CRDs to the chart (wraps each with the crd.enable gate and the
+# helm.sh/resource-policy: keep annotation — do NOT hand-copy bases, that
+# drops the gate and breaks crd.enable=false installs):
+hack/chart-crds.sh
 ```
 
 For deployed image changes, build an immutable tag, push it to the registry,
@@ -226,6 +225,37 @@ source .env && helm upgrade paprika-e2e charts/chart/ \
   --wait --timeout 5m
 ```
 
+### Local E2E & Perf (kind)
+
+```sh
+# Standard e2e suite (creates kind paprika-test-e2e, installs cert-manager
+# + metrics-server, deploys operator + api-server + MCP api release):
+make test-e2e
+
+# Fast re-run against an existing cluster/image:
+E2E_SKIP_IMAGE_BUILD=true E2E_SKIP_IMAGE_LOAD=true \
+  go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m
+
+# Local perf/profiling stack (kind paprika-perf: full split chart,
+# MCP + basic auth admin/admin123, pprof on :6060, metrics-server):
+make perf-up        # build image (native arch), kind load, helm install
+make perf-token     # mint MCP OAuth token -> /tmp/paprika-perf-token
+make perf-load      # MCP read-tool loadgen (SECONDS=60)
+make perf-profile   # pprof CPU/heap/allocs/goroutines -> /tmp/paprika-perf
+make perf-metrics   # snapshot paprika_* metrics -> /tmp/paprika-perf
+make perf-status    # fleet_status + list_clusters via MCP
+make perf-down      # delete the cluster
+```
+
+E2E coverage notes: `test/e2e/cluster_test.go` covers Cluster registration
+(in-cluster health, inventory, no-provider honesty, bad-kubeconfig
+Unhealthy), `test/e2e/rollout_test.go` covers Rollout strategies (rolling,
+canary steps, template-change rollout, webhook rejection, rollout metrics),
+`test/e2e/mcp_test.go` covers the MCP OAuth 2.1 + PKCE flow end-to-end
+(discovery, consent, token, tools/list, tools/call, 401 rejection).
+metrics-server is installed by `setup-test-e2e` and the suite itself;
+skip with `E2E_SKIP_METRICS_SERVER=true`.
+
 ### Debug
 
 ```sh
@@ -277,12 +307,9 @@ go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
   crd:allowDangerousTypes=true paths=./api/... \
   output:crd:artifacts:config=config/crd/bases
 
-# Copy to chart templates:
-for f in config/crd/bases/pipelines.paprika.io_{applications,applicationsets,releases}.yaml; do
-  base=$(basename $f)
-  chart_name=$(echo $base | sed 's/pipelines.paprika.io_//;s/\.yaml$/.pipelines.paprika.io.yaml/')
-  cp "$f" "charts/chart/templates/crd/$chart_name"
-done
+# Copy to chart templates (handles all groups, adds the crd.enable gate +
+# keep annotation):
+hack/chart-crds.sh
 
 # Apply to cluster:
 kubectl apply -f config/crd/bases/pipelines.paprika.io_applications.yaml

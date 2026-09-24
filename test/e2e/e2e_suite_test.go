@@ -103,8 +103,46 @@ var _ = BeforeSuite(func() {
 
 	configureKubectlKubeRC()
 	setupCertManager()
+	setupMetricsServer()
 	deployManager()
 })
+
+// setupMetricsServer installs metrics-server so cluster capacity metrics
+// (metrics.k8s.io) are available during e2e. Kind requires
+// --kubelet-insecure-tls because its kubelets use self-signed certs.
+// Skippable via E2E_SKIP_METRICS_SERVER=true.
+func setupMetricsServer() {
+	if os.Getenv("E2E_SKIP_METRICS_SERVER") == "true" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping metrics-server install (E2E_SKIP_METRICS_SERVER=true)\n")
+		return
+	}
+
+	By("checking for an existing metrics-server deployment")
+	cmd := exec.Command("kubectl", "-n", "kube-system", "get", "deployment", "metrics-server")
+	if _, err := utils.Run(cmd); err == nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "metrics-server already installed. Skipping.\n")
+		return
+	}
+
+	By("installing metrics-server")
+	cmd = exec.Command("kubectl", "apply", "-f",
+		"https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml")
+	_, err := utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to install metrics-server")
+
+	By("patching metrics-server for kind (kubelet insecure TLS)")
+	cmd = exec.Command("kubectl", "-n", "kube-system", "patch", "deployment", "metrics-server",
+		"--type=json", "-p",
+		`[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]`)
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to patch metrics-server")
+
+	By("waiting for metrics-server rollout")
+	cmd = exec.Command("kubectl", "-n", "kube-system", "rollout", "status",
+		"deployment/metrics-server", "--timeout=120s")
+	_, err = utils.Run(cmd)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "metrics-server did not become available")
+}
 
 var _ = AfterSuite(func() {
 	teardownManager()

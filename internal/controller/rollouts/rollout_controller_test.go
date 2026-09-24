@@ -780,9 +780,11 @@ func setRSReady(rsName string, ready int32) {
 	Expect(k8sClient.Status().Update(ctx, &rs)).To(Succeed())
 }
 
-func podTemplate(version string) corev1.PodTemplateSpec {
-	return corev1.PodTemplateSpec{
-		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test", "version": version}},
+func podTemplate(version string) rolloutsv1alpha1.RolloutTemplate {
+	return rolloutsv1alpha1.RolloutTemplate{
+		Metadata: rolloutsv1alpha1.RolloutTemplateMetadata{
+			Labels: map[string]string{"app": "test", "version": version},
+		},
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{{Name: "app", Image: "nginx:" + version}},
 		},

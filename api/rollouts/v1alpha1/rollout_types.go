@@ -195,16 +195,60 @@ type GatewayAPIRouterConfig struct {
 	CanaryService string `json:"canaryService,omitempty"`
 }
 
+// RolloutTemplateMetadata is the subset of pod-template metadata a Rollout
+// may set. Embedded metav1.ObjectMeta collapses to a bare "type: object" in
+// the generated schema, which strict-decodes labels/annotations as unknown
+// fields — declaring them explicitly keeps the pod spec validated.
+type RolloutTemplateMetadata struct {
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// RolloutTemplate describes the pods a Rollout manages.
+type RolloutTemplate struct {
+	// +optional
+	Metadata RolloutTemplateMetadata `json:"metadata,omitempty"`
+	// +optional
+	Spec corev1.PodSpec `json:"spec"`
+}
+
+// PodTemplateSpec converts the rollout template to the core type ReplicaSets
+// consume. Only labels and annotations carry over — name, namespace, and the
+// other ObjectMeta fields have no meaning on a ReplicaSet pod template.
+func (t RolloutTemplate) PodTemplateSpec() *corev1.PodTemplateSpec {
+	return &corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:      t.Metadata.Labels,
+			Annotations: t.Metadata.Annotations,
+		},
+		Spec: t.Spec,
+	}
+}
+
+// RolloutTemplateFromPodTemplate converts a core PodTemplateSpec (e.g. adopted
+// from a target Deployment) to the rollout template type.
+func RolloutTemplateFromPodTemplate(t corev1.PodTemplateSpec) RolloutTemplate {
+	return RolloutTemplate{
+		Metadata: RolloutTemplateMetadata{
+			Labels:      t.ObjectMeta.Labels,
+			Annotations: t.ObjectMeta.Annotations,
+		},
+		Spec: t.Spec,
+	}
+}
+
 // RolloutSpec defines the desired state of a Rollout.
 type RolloutSpec struct {
-	Target               RolloutTarget          `json:"target"`
-	Strategy             RolloutStrategy        `json:"strategy"`
-	Template             corev1.PodTemplateSpec `json:"template,omitempty"`
-	Replicas             *int32                 `json:"replicas,omitempty"`
-	RevisionHistoryLimit *int32                 `json:"revisionHistoryLimit,omitempty"`
-	Paused               bool                   `json:"paused,omitempty"`
-	RollbackPolicy       *RollbackPolicy        `json:"rollbackPolicy,omitempty"`
-	TrafficRouter        *TrafficRouter         `json:"trafficRouter,omitempty"`
+	Target               RolloutTarget   `json:"target"`
+	Strategy             RolloutStrategy `json:"strategy"`
+	Template             RolloutTemplate `json:"template,omitempty"`
+	Replicas             *int32          `json:"replicas,omitempty"`
+	RevisionHistoryLimit *int32          `json:"revisionHistoryLimit,omitempty"`
+	Paused               bool            `json:"paused,omitempty"`
+	RollbackPolicy       *RollbackPolicy `json:"rollbackPolicy,omitempty"`
+	TrafficRouter        *TrafficRouter  `json:"trafficRouter,omitempty"`
 }
 
 // RolloutStatus defines the observed state of a Rollout.

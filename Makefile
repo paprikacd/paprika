@@ -114,6 +114,15 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
 			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
 	esac
+	@echo "Ensuring metrics-server is installed (kind requires --kubelet-insecure-tls)..."
+	@$(KUBECTL) --context kind-$(KIND_CLUSTER) -n kube-system get deployment metrics-server >/dev/null 2>&1 || { \
+		$(KUBECTL) --context kind-$(KIND_CLUSTER) apply -f \
+			https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.8.0/components.yaml && \
+		$(KUBECTL) --context kind-$(KIND_CLUSTER) -n kube-system patch deployment metrics-server \
+			--type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'; \
+	}
+	@$(KUBECTL) --context kind-$(KIND_CLUSTER) -n kube-system rollout status \
+		deployment/metrics-server --timeout=120s
 
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
@@ -127,6 +136,30 @@ test-e2e-split: manifests generate fmt vet ## Run the split-plane e2e tests. Kin
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+##@ Local perf / profiling (kind)
+
+.PHONY: perf-up perf-down perf-token perf-load perf-profile perf-metrics perf-status
+perf-up: ## Bring up the local perf stack on kind (full chart + MCP + metrics-server + pprof)
+	./hack/kind-perf.sh up
+
+perf-down: ## Tear down the local perf kind cluster
+	./hack/kind-perf.sh down
+
+perf-token: ## Mint an MCP OAuth token for the local perf stack
+	./hack/kind-perf.sh token
+
+perf-load: ## Run MCP loadgen against the local stack (SECONDS=60)
+	./hack/kind-perf.sh load $(SECONDS)
+
+perf-profile: ## Capture pprof CPU/heap/allocs from the api-server (SECONDS=30)
+	./hack/kind-perf.sh profile $(SECONDS)
+
+perf-metrics: ## Snapshot paprika_* metrics from all components into /tmp/paprika-perf
+	./hack/kind-perf.sh metrics
+
+perf-status: ## Print fleet/cluster health via the local MCP endpoint
+	./hack/kind-perf.sh status
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter

@@ -575,15 +575,25 @@ func (s *PaprikaServer) createOrUpdateApplication(
 		}
 		return app, nil
 	}
-	existing.Spec = app.Spec
-	if existing.Labels == nil {
-		existing.Labels = map[string]string{}
-	}
-	for k, v := range app.Labels {
-		existing.Labels[k] = v
-	}
-	if err := s.client.Update(ctx, &existing); err != nil {
-		return nil, fmt.Errorf("update application: %w", err)
+	// The Application controller writes status concurrently — re-read inside
+	// each attempt so an optimistic-concurrency conflict retries cleanly.
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: appName}, &existing); getErr != nil {
+			return fmt.Errorf("get application for update: %w", getErr)
+		}
+		existing.Spec = app.Spec
+		if existing.Labels == nil {
+			existing.Labels = map[string]string{}
+		}
+		for k, v := range app.Labels {
+			existing.Labels[k] = v
+		}
+		if updateErr := s.client.Update(ctx, &existing); updateErr != nil {
+			return fmt.Errorf("update application: %w", updateErr)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return &existing, nil
 }
@@ -613,29 +623,36 @@ func (s *PaprikaServer) ensureStage(
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("create stage: %w", err)
 		}
-		var existing pipelinesv1alpha1.Stage
-		if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: stageName}, &existing); getErr != nil {
-			return fmt.Errorf("get existing stage: %w", getErr)
-		}
-		ownerChanged, ownerErr := repairApplicationControllerOwner(&existing, owner)
-		if ownerErr != nil {
-			return ownerErr
-		}
-		if existing.Labels == nil {
-			existing.Labels = map[string]string{}
-		}
-		changed := ownerChanged
-		for k, v := range labels {
-			if existing.Labels[k] != v {
-				existing.Labels[k] = v
-				changed = true
+		// The Stage controller writes status concurrently — re-read inside each
+		// attempt so an optimistic-concurrency conflict retries cleanly instead
+		// of failing the whole apply.
+		return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			var existing pipelinesv1alpha1.Stage
+			if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: stageName}, &existing); getErr != nil {
+				return fmt.Errorf("get existing stage: %w", getErr)
 			}
-		}
-		if changed {
+			ownerChanged, ownerErr := repairApplicationControllerOwner(&existing, owner)
+			if ownerErr != nil {
+				return ownerErr
+			}
+			if existing.Labels == nil {
+				existing.Labels = map[string]string{}
+			}
+			changed := ownerChanged
+			for k, v := range labels {
+				if existing.Labels[k] != v {
+					existing.Labels[k] = v
+					changed = true
+				}
+			}
+			if !changed {
+				return nil
+			}
 			if updateErr := s.client.Update(ctx, &existing); updateErr != nil {
 				return fmt.Errorf("update stage labels: %w", updateErr)
 			}
-		}
+			return nil
+		})
 	}
 	return nil
 }

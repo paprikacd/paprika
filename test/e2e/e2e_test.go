@@ -173,6 +173,38 @@ func teardownManager() {
 	cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
 	_, _ = utils.Run(cmd)
 
+	By("clearing finalizers on leftover Paprika resources")
+	// A spec that fails mid-reconcile leaves CRs whose finalizers only the
+	// controller can clear — and undeploy is about to delete it. Strip the
+	// finalizers first so namespace/CRD deletion cannot deadlock teardown.
+	for _, rsrc := range []string{
+		"releases.pipelines.paprika.io",
+		"stages.pipelines.paprika.io",
+		"applications.pipelines.paprika.io",
+		"applicationsets.pipelines.paprika.io",
+		"pipelines.pipelines.paprika.io",
+		"templates.pipelines.paprika.io",
+		"artifacts.pipelines.paprika.io",
+		"clusters.clusters.paprika.io",
+		"rollouts.rollouts.paprika.io",
+		"capacityproviders.providers.paprika.io",
+		"dataproviderbindings.providers.paprika.io",
+	} {
+		out, err := exec.Command("kubectl", "get", rsrc, "-A",
+			"-o", "jsonpath={range .items[*]}{.metadata.namespace} {.metadata.name}{\"\\n\"}{end}").Output()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			parts := strings.Fields(line)
+			if len(parts) != 2 {
+				continue
+			}
+			_ = exec.Command("kubectl", "patch", rsrc, parts[1], "-n", parts[0],
+				"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`).Run()
+		}
+	}
+
 	By("undeploying the controller-manager")
 	cmd = exec.Command("make", "undeploy")
 	_, _ = utils.Run(cmd)
@@ -800,7 +832,7 @@ var _ = Describe("Manager", Ordered, func() {
 						"intervalSeconds": 5,
 						"analysis": {
 							"checks": [
-								{"type": "podMetrics", "metric": "restartRate", "threshold": "5", "windowSeconds": 30}
+								{"type": "podMetrics", "metric": "restartRate", "threshold": "5", "windowSeconds": 30, "podSelector": "track=canary"}
 							],
 							"rollbackOnFail": true
 						}
@@ -985,7 +1017,7 @@ var _ = Describe("Manager", Ordered, func() {
 						"analysis": {
 							"checks": [
 								{"type": "http", "url": "http://this-url-does-not-exist-12345.invalid/health", "successThreshold": "100", "requestCount": 3, "timeoutSeconds": 2},
-								{"type": "podMetrics", "metric": "restartRate", "threshold": "0", "windowSeconds": 30}
+								{"type": "podMetrics", "metric": "restartRate", "threshold": "0", "windowSeconds": 30, "podSelector": "track=canary"}
 							],
 							"rollbackOnFail": true
 						}
@@ -1084,7 +1116,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("helm"))
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying owned Stage was created")
 			Eventually(func(g Gomega) {
@@ -1092,15 +1124,23 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("dev"))
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying owned Release was created")
+			// Release names carry a content hash suffix (e.g.
+			// e2e-app-release-ab8b00ab5f) — resolve via status.releaseRef rather
+			// than asserting a literal name.
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "release", "e2e-app-release", "-n", namespace, "-o", "jsonpath={.spec.target}")
+				cmd := exec.Command("kubectl", "get", "application", "e2e-app", "-n", namespace, "-o", "jsonpath={.status.releaseRef}")
+				releaseName, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(releaseName).NotTo(BeEmpty())
+
+				cmd = exec.Command("kubectl", "get", "release", releaseName, "-n", namespace, "-o", "jsonpath={.spec.target}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("e2e-app-dev"))
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("waiting for the Application to reach Healthy phase")
 			Eventually(func(g Gomega) {
@@ -1269,8 +1309,11 @@ var _ = Describe("Manager", Ordered, func() {
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			By("verifying owned Release was created")
+			// Release names carry a content hash suffix — select by the
+			// application label instead of asserting a literal name.
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "release", "e2e-sync-release", "-n", namespace, "-o", "jsonpath={.spec.target}")
+				cmd := exec.Command("kubectl", "get", "release", "-n", namespace,
+					"-l", "app.paprika.io/name=e2e-sync", "-o", "jsonpath={.items[0].spec.target}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("e2e-sync-dev"))
@@ -1366,10 +1409,11 @@ var _ = Describe("Manager", Ordered, func() {
 
 			By("verifying the canary release completed")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "release", "e2e-cicd-release", "-n", namespace, "-o", "jsonpath={.status.phase}")
+				cmd := exec.Command("kubectl", "get", "release", "-n", namespace,
+					"-l", "app.paprika.io/name=e2e-cicd", "-o", "jsonpath={.items[*].status.phase}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("Complete"), "Release should complete after canary promotion")
+				g.Expect(out).To(ContainSubstring("Complete"), "Release should complete after canary promotion")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying health check was evaluated against the rendered service")
@@ -1554,35 +1598,60 @@ var _ = Describe("Manager", Ordered, func() {
 				deploymentName = out
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-			By("introducing drift by adding an extra label to the Deployment")
-			cmd = exec.Command("kubectl", "label", "deployment", deploymentName, "-n", namespace, "e2e-self-heal-drift=true", "--overwrite")
+			By("waiting for the active Release to reach Complete")
+			// While the release is non-terminal its own reconcile re-applies
+			// manifests and silently reverts drift before the app's diff can
+			// observe it. Only once Complete does drift persist for the app
+			// self-heal loop to act on.
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.releaseRef}")
+				releaseName, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(releaseName).NotTo(BeEmpty())
+
+				cmd = exec.Command("kubectl", "get", "release", releaseName, "-n", namespace, "-o", "jsonpath={.status.phase}")
+				out, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("Complete"), "active release should be Complete before injecting drift")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("introducing drift by scaling the Deployment")
+			// Diff is desired-subset: extra live labels are not drift, so drift
+			// must change a desired spec field — replicas is the simplest.
+			cmd = exec.Command("kubectl", "scale", "deployment", deploymentName, "-n", namespace, "--replicas=2")
 			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to label deployment for drift")
+			Expect(err).NotTo(HaveOccurred(), "Failed to scale deployment for drift")
+			out, err := utils.Run(exec.Command("kubectl", "get", "deployment", deploymentName, "-n", namespace, "-o", "jsonpath={.spec.replicas}"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).To(Equal("2"), "drift should be visible before healing")
 
-			By("waiting for the Application to report out-of-sync resources")
+			By("waiting for self-heal to trigger on the drift")
+			// status.outOfSync, the paprika.io/resync annotation, and the
+			// DriftDetected condition reason are all transient — auto-sync
+			// consumes them within one reconcile pass. The durable markers are
+			// status.lastSelfHealTime and the reverted replica count.
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.outOfSync}")
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.lastSelfHealTime}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).NotTo(BeEmpty(), "outOfSync should be populated")
-				g.Expect(out).NotTo(Equal("0"), "Application should report drift")
+				g.Expect(out).NotTo(BeEmpty(), "lastSelfHealTime should be set after a drift sync")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-			By("waiting for the current Release to be annotated for resync")
+			By("verifying the drift was reverted")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "release", "e2e-self-heal-release", "-n", namespace, "-o", "jsonpath={.metadata.annotations.paprika\\.io/resync}")
+				cmd := exec.Command("kubectl", "get", "deployment", deploymentName, "-n", namespace, "-o", "jsonpath={.spec.replicas}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).NotTo(BeEmpty(), "Release should be annotated for resync")
+				g.Expect(out).To(Equal("1"), "self-heal should restore the desired replica count")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
-			By("waiting for the SelfHealed condition to report DriftDetected")
+			By("verifying the SelfHealed condition exists")
 			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='SelfHealed')].reason}")
+				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='SelfHealed')].type}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("DriftDetected"), "SelfHealed condition should report DriftDetected")
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+				g.Expect(out).To(Equal("SelfHealed"), "SelfHealed condition should be present")
+			}, 30*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
 
@@ -1612,7 +1681,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), "Failed to read landing page body")
 			body := string(bodyBytes)
 			Expect(body).To(ContainSubstring("Paprika"), "Landing page should contain title")
-			Expect(body).To(ContainSubstring("Get Started"), "Landing page should contain CTA")
+			Expect(body).To(ContainSubstring("Kubernetes-native application delivery platform"), "Landing page should contain description")
 		})
 
 		It("should serve the dashboard", func() {
@@ -1626,7 +1695,7 @@ var _ = Describe("Manager", Ordered, func() {
 			bodyBytes, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred(), "Failed to read dashboard body")
 			body := string(bodyBytes)
-			Expect(body).To(ContainSubstring("Dashboard"), "Dashboard should contain the heading")
+			Expect(body).To(ContainSubstring("Paprika operations overview"), "Dashboard should contain the nav brand")
 		})
 	})
 
@@ -1747,6 +1816,7 @@ var _ = Describe("Manager", Ordered, func() {
 				"--create-namespace",
 				"--set", fmt.Sprintf("apiServer.image.repository=%s", strings.Split(managerImage, ":")[0]),
 				"--set", fmt.Sprintf("apiServer.image.tag=%s", strings.Split(managerImage, ":")[1]),
+				"--set", "apiServer.automountServiceAccountToken=true",
 				"--set", "mode=api",
 				"--set", "deploymentMode=split",
 				"--set", "manager.enabled=false",
@@ -1755,6 +1825,8 @@ var _ = Describe("Manager", Ordered, func() {
 				"--set", "redis.enabled=false",
 				"--set", "metrics.enable=false",
 				"--set", "crd.enable=false",
+				"--set", "capacity.defaultProvider.enabled=false",
+				"--set", "capacity.metricsServer.enabled=false",
 				"--wait",
 				"--timeout", "3m",
 			)

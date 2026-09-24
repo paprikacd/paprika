@@ -2279,7 +2279,27 @@ func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, rele
 func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
 
-	// Use the name recorded in status; fall back to label-based search if empty
+	if release.Status.RolloutRef != "" {
+		ro := &rolloutsv1alpha1.Rollout{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      release.Status.RolloutRef,
+				Namespace: release.Namespace,
+			},
+		}
+		if err := r.client.Delete(ctx, ro); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting rollout child: %w", err)
+		}
+		log.Info("Deleted Rollout child", "rollout", release.Status.RolloutRef)
+	}
+
+	if r.DynamicClient != nil {
+		if err := r.cleanupManagedResources(ctx, release); err != nil {
+			return err
+		}
+	}
+
+	// Delete the manifest snapshot last — cleanupManagedResources reads it to
+	// scope deletion to the GVRs this release actually applied.
 	cmName := release.Status.RenderedManifestSnapshot
 	if cmName != "" {
 		cm := &corev1.ConfigMap{
@@ -2294,24 +2314,7 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 		log.Info("Deleted manifest snapshot ConfigMap", "configmap", cmName)
 	}
 
-	if release.Status.RolloutRef != "" {
-		ro := &rolloutsv1alpha1.Rollout{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      release.Status.RolloutRef,
-				Namespace: release.Namespace,
-			},
-		}
-		if err := r.client.Delete(ctx, ro); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("deleting rollout child: %w", err)
-		}
-		log.Info("Deleted Rollout child", "rollout", release.Status.RolloutRef)
-	}
-
-	if r.DynamicClient == nil {
-		return nil
-	}
-
-	return r.cleanupManagedResources(ctx, release)
+	return nil
 }
 
 func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release *paprikav1.Release) error {
@@ -2332,6 +2335,12 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 			LabelSelector: labelSelector,
 		})
 		if err != nil {
+			// The API may not be installed on this cluster (e.g. httproutes
+			// without Gateway API, or a CRD removed after apply) — nothing to
+			// clean up for it.
+			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+				continue
+			}
 			return fmt.Errorf("listing %s: %w", gvr.Resource, err)
 		}
 		for _, item := range items.Items {
@@ -2466,10 +2475,16 @@ func (r *ReleaseReconciler) reconcileCanary(ctx context.Context, release *paprik
 }
 
 func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, canaryCfg *paprikav1.CanaryConfig, stepIdx, currentWeight int, log logr.Logger, result *string) (ctrl.Result, error) {
-	if stop, analysisErr := r.runCanaryAnalysis(ctx, release, canaryCfg, result, log); analysisErr != nil {
-		return ctrl.Result{}, analysisErr
-	} else if stop {
-		return ctrl.Result{}, nil
+	// Analysis evaluates the state produced by the previously applied step.
+	// At stepIdx 0 nothing has been applied yet — there are no canary pods or
+	// traffic to measure — so checks like podMetrics would fail spuriously on
+	// an empty selector rather than measuring real canary health.
+	if stepIdx > 0 {
+		if stop, analysisErr := r.runCanaryAnalysis(ctx, release, canaryCfg, result, log); analysisErr != nil {
+			return ctrl.Result{}, analysisErr
+		} else if stop {
+			return ctrl.Result{}, nil
+		}
 	}
 
 	if err := r.applyCanaryWeight(ctx, release, stage, currentWeight); err != nil {

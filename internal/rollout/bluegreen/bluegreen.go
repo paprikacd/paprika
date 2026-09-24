@@ -48,7 +48,7 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 	if ro.Spec.Replicas != nil {
 		desiredReplicas = *ro.Spec.Replicas
 	}
-	hash := hash.Template(&ro.Spec.Template)
+	hash := hash.Template(ro.Spec.Template.PodTemplateSpec())
 
 	if status.StableRS == "" {
 		return &core.SyncResult{
@@ -230,7 +230,7 @@ func makeActiveRS(ro *rolloutsv1alpha1.Rollout, hash string, replicas int32) cor
 	return core.ReplicaSetAction{
 		Name:     ro.Name + "-active-" + hash,
 		Replicas: replicas,
-		Template: &ro.Spec.Template,
+		Template: ro.Spec.Template.PodTemplateSpec(),
 		Labels: map[string]string{
 			"rollouts.paprika.io/active":   "true",
 			"rollouts.paprika.io/stable":   "true",
@@ -244,7 +244,7 @@ func makePreviewRS(ro *rolloutsv1alpha1.Rollout, hash string, replicas int32) co
 	return core.ReplicaSetAction{
 		Name:     ro.Name + "-preview-" + hash,
 		Replicas: replicas,
-		Template: &ro.Spec.Template,
+		Template: ro.Spec.Template.PodTemplateSpec(),
 		Labels: map[string]string{
 			"rollouts.paprika.io/preview":  "true",
 			"rollouts.paprika.io/canary":   "true",

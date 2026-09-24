@@ -527,18 +527,26 @@ spec:
                     type: string
                 type: object
               template:
-                description: PodTemplateSpec describes the data a pod should have
-                  when created from a template
+                description: RolloutTemplate describes the pods a Rollout manages.
                 properties:
                   metadata:
                     description: |-
-                      Standard object's metadata.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                      RolloutTemplateMetadata is the subset of pod-template metadata a Rollout
+                      may set. Embedded metav1.ObjectMeta collapses to a bare "type: object" in
+                      the generated schema, which strict-decodes labels/annotations as unknown
+                      fields — declaring them explicitly keeps the pod spec validated.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
                     type: object
                   spec:
-                    description: |-
-                      Specification of the desired behavior of the pod.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+                    description: PodSpec is a description of a pod.
                     properties:
                       activeDeadlineSeconds:
                         description: |-
