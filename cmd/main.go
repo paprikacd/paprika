@@ -211,6 +211,7 @@ type cliConfig struct {
 	StageMaxConcurrentReconciles    int           `mapstructure:"stage-max-concurrent-reconciles"`
 	PipelineMaxConcurrentReconciles int           `mapstructure:"pipeline-max-concurrent-reconciles"`
 	AppTransientRequeue             time.Duration `mapstructure:"application-transient-requeue"`
+	AppSourceResolveTTL             time.Duration `mapstructure:"application-source-resolve-ttl"`
 	CacheResyncPeriod               time.Duration `mapstructure:"cache-resync-period"`
 	ReconcileGlobalRate             float64       `mapstructure:"reconcile-global-rate"`
 	ReconcileGlobalBurst            int           `mapstructure:"reconcile-global-burst"`
@@ -438,6 +439,10 @@ func registerControllerTuningFlags(fs *pflag.FlagSet) {
 	fs.Duration("application-transient-requeue", 5*time.Second,
 		"Requeue interval for in-flight Application states (pending, building, releasing) "+
 			"and the steady-state poll fallback when spec.source.pollInterval is unset.")
+	fs.Duration("application-source-resolve-ttl", time.Minute,
+		"How long a source resolve (git fetch) result is reused by the steady-state "+
+			"application poll. 0 resolves the source on every poll. Sync triggers "+
+			"always bypass the cache.")
 	fs.Duration("cache-resync-period", time.Hour,
 		"Full resync period for the manager's informer cache.")
 	fs.Float64("reconcile-global-rate", 100,
@@ -459,6 +464,7 @@ type controllerTuning struct {
 	stageMaxConcurrent    int
 	pipelineMaxConcurrent int
 	appTransientRequeue   time.Duration
+	appSourceResolveTTL   time.Duration
 }
 
 // validateControllerTuning rejects values that would wedge or thrash the
@@ -476,11 +482,20 @@ func validateControllerTuning(cfg *cliConfig) error {
 			return fmt.Errorf("--%s must be >= 1, got %d", flag, v)
 		}
 	}
-	if cfg.AppTransientRequeue < time.Second || cfg.AppTransientRequeue > 24*time.Hour {
-		return fmt.Errorf("--application-transient-requeue must be in [1s, 24h], got %s", cfg.AppTransientRequeue)
+	durations := map[string][2]time.Duration{
+		"application-transient-requeue":  {time.Second, 24 * time.Hour},
+		"application-source-resolve-ttl": {0, 24 * time.Hour},
+		"cache-resync-period":            {time.Minute, 1<<63 - 1},
 	}
-	if cfg.CacheResyncPeriod < time.Minute {
-		return fmt.Errorf("--cache-resync-period must be >= 1m, got %s", cfg.CacheResyncPeriod)
+	values := map[string]time.Duration{
+		"application-transient-requeue":  cfg.AppTransientRequeue,
+		"application-source-resolve-ttl": cfg.AppSourceResolveTTL,
+		"cache-resync-period":            cfg.CacheResyncPeriod,
+	}
+	for flag, bounds := range durations {
+		if v := values[flag]; v < bounds[0] || v > bounds[1] {
+			return fmt.Errorf("--%s must be in [%s, %s], got %s", flag, bounds[0], bounds[1], v)
+		}
 	}
 	if cfg.ReconcileGlobalBurst < 1 || cfg.ReconcileAppBurst < 1 {
 		return fmt.Errorf("reconcile rate-limit bursts must be >= 1 (global=%d, app=%d)", cfg.ReconcileGlobalBurst, cfg.ReconcileAppBurst)
@@ -498,6 +513,7 @@ func (cfg *cliConfig) tuning() controllerTuning {
 		stageMaxConcurrent:    cfg.StageMaxConcurrentReconciles,
 		pipelineMaxConcurrent: cfg.PipelineMaxConcurrentReconciles,
 		appTransientRequeue:   cfg.AppTransientRequeue,
+		appSourceResolveTTL:   cfg.AppSourceResolveTTL,
 	}
 }
 

@@ -405,6 +405,7 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	appRec.Clock = clock.Real{}
 	appRec.MaxConcurrentWorkers = tuning.appMaxConcurrent
 	appRec.TransientRequeue = tuning.appTransientRequeue
+	appRec.SourceResolveTTL = tuning.appSourceResolveTTL
 	if err := appRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}

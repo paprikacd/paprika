@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -126,7 +127,9 @@ func steadyStateRequeue(app *paprikav1.Application, base time.Duration) time.Dur
 	_, _ = h.Write([]byte(app.Namespace))
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(app.Name))
-	return base/2 + time.Duration(h.Sum32()%uint32(base))
+	// int64(uint32) is always safe; uint32(base) would truncate any base over
+	// ~4.29s of nanoseconds and silently collapse the jitter window.
+	return base/2 + time.Duration(int64(h.Sum32())%int64(base))
 }
 
 // manifestParseCache is a bounded content-addressed cache for
@@ -178,6 +181,63 @@ func (r *ApplicationReconciler) parsedManifests(manifests []byte, namespace stri
 	return parsed
 }
 
+// sourceResolveCache memoizes ResolveSource results for the steady-state poll
+// path so a Healthy application's unchanged source does not git-fetch on every
+// reconcile. Keys fingerprint the template's source spec, so applications
+// pointing at the same repo share entries and a spec edit misses naturally.
+// Entries expire after the configured TTL; sync-triggered checks bypass it so
+// "sync now" always sees the latest commit. Resolve errors are never cached.
+type sourceResolveCache struct {
+	mu      sync.Mutex
+	entries map[[32]byte]sourceResolveEntry
+	now     func() time.Time
+}
+
+type sourceResolveEntry struct {
+	hash, revision string
+	expires        time.Time
+}
+
+const sourceResolveCacheMax = 1024
+
+func newSourceResolveCache(now func() time.Time) *sourceResolveCache {
+	return &sourceResolveCache{entries: make(map[[32]byte]sourceResolveEntry), now: now}
+}
+
+func sourceResolveKey(tmpl *paprikav1.Template) [32]byte {
+	// Spec-only fingerprint: ResolveSource reads nothing outside the spec, so
+	// applications sharing a repo+path share the cache entry. JSON marshalling
+	// dereferences pointers and sorts map keys, unlike %#v which prints pointer
+	// addresses and produces a different key on every call.
+	raw, err := json.Marshal(tmpl.Spec)
+	if err != nil {
+		raw = []byte(fmt.Sprintf("%+v", tmpl.Spec))
+	}
+	return sha256.Sum256(raw)
+}
+
+func (c *sourceResolveCache) get(key [32]byte) (hash, revision string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, found := c.entries[key]
+	if !found || !e.expires.After(c.now()) {
+		return "", "", false
+	}
+	return e.hash, e.revision, true
+}
+
+func (c *sourceResolveCache) put(key [32]byte, hash, revision string, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= sourceResolveCacheMax {
+		c.entries = make(map[[32]byte]sourceResolveEntry, sourceResolveCacheMax)
+	}
+	c.entries[key] = sourceResolveEntry{hash: hash, revision: revision, expires: c.now().Add(ttl)}
+}
+
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
 	if labels == nil {
 		labels = map[string]string{}
@@ -191,6 +251,8 @@ func withProjectLabels(app *paprikav1.Application, labels map[string]string) map
 }
 
 // ApplicationReconciler reconciles Application resources.
+//
+//nolint:gocritic // typeDefFirst: free helpers intentionally precede the type.
 type ApplicationReconciler struct {
 	client              client.Client
 	Scheme              *runtime.Scheme
@@ -216,12 +278,27 @@ type ApplicationReconciler struct {
 	// building, releasing) and as the steady-state poll fallback when
 	// spec.source.pollInterval is unset. <=0 uses defaultRequeue.
 	TransientRequeue time.Duration
+	// SourceResolveTTL bounds how long a source resolve (git fetch) result is
+	// reused by the steady-state poll. <=0 disables caching and resolves every
+	// poll. Sync-triggered checks always bypass the cache.
+	SourceResolveTTL time.Duration
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
 	// manifestCache memoizes parsed desired manifests keyed by content hash so
 	// a Healthy application's unchanged snapshot is not re-unmarshalled on
 	// every poll.
 	manifestCache *manifestParseCache
+	// resolveCache memoizes ResolveSource results for the poll path; built
+	// lazily so zero-value reconcilers in tests still work.
+	resolveCache     *sourceResolveCache
+	resolveCacheOnce sync.Once
+}
+
+// sourceResolveCache lazily builds the poll-path resolve cache in a
+// race-free way for reconcilers constructed without NewApplicationReconciler.
+func (r *ApplicationReconciler) sourceResolveCache() *sourceResolveCache {
+	r.resolveCacheOnce.Do(func() { r.resolveCache = newSourceResolveCache(r.currentTime) })
+	return r.resolveCache
 }
 
 // transientRequeue resolves the configured in-flight requeue interval,
@@ -573,7 +650,9 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	}
 
 	if app.Status.Phase == paprikav1.ApplicationHealthy && !r.isInlineSource(app) {
-		sourceChanged, err := r.checkSourceChanged(ctx, app)
+		// Bypass the resolve cache: a sync trigger means the operator wants the
+		// latest commit now, not a result up to SourceResolveTTL stale.
+		sourceChanged, err := r.checkSourceChanged(ctx, app, true)
 		if err != nil {
 			log.Error(err, "Failed to refresh source after sync trigger")
 			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
@@ -765,49 +844,71 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		return fmt.Errorf("failed to set controller reference on template: %w", err)
 	}
 
-	var existing paprikav1.Template
-	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
-	if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get template: %w", err)
-	}
-
-	if err != nil {
-		if err := r.client.Create(ctx, expected); err != nil {
-			return fmt.Errorf("failed to create template: %w", err)
-		}
-	} else {
-		// The compare-and-update runs inside RetryOnConflict with a fresh Get:
-		// the Template controller writes status continuously, so an update on
-		// a previously fetched object conflicts. Skip no-op updates: every
-		// Update round-trips through the in-process admission webhooks, and
-		// doing it unconditionally on each reconcile starves the webhook
-		// server under load.
-		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var current paprikav1.Template
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
-				return fmt.Errorf("failed to get template: %w", err)
-			}
-			if !specOrLabelsChanged(&current.Spec, &expected.Spec, current.Labels, expected.Labels) {
-				return nil
-			}
-			current.Spec = expected.Spec
-			if len(current.Labels) == 0 {
-				current.Labels = make(map[string]string)
-			}
-			for k, v := range expected.Labels {
-				current.Labels[k] = v
-			}
-			if err := r.client.Update(ctx, &current); err != nil {
-				return fmt.Errorf("failed to update template: %w", err)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
+	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
+		func() *paprikav1.Template { return &paprikav1.Template{} },
+		func(t *paprikav1.Template) paprikav1.TemplateSpec { return t.Spec },
+		func(t *paprikav1.Template, s paprikav1.TemplateSpec) { t.Spec = s },
+		"template"); err != nil {
+		return err
 	}
 
 	app.Status.TemplateRef = templateName
 	app.Status.Synced = true
+	return nil
+}
+
+// createOrConvergeSpecLabels creates expected when absent, otherwise converges
+// the existing object's spec and labels inside RetryOnConflict with a fresh
+// Get per attempt: the child controllers write status continuously, so an
+// update on a previously fetched object conflicts. No-op updates are skipped —
+// every Update round-trips through the in-process admission webhooks, and
+// doing it unconditionally on each reconcile starves the webhook server under
+// load.
+func createOrConvergeSpecLabels[O client.Object, S any](
+	ctx context.Context,
+	c client.Client,
+	expected O,
+	fresh func() O,
+	getSpec func(O) S,
+	setSpec func(O, S),
+	kind string,
+) error {
+	existing := fresh()
+	err := c.Get(ctx, client.ObjectKeyFromObject(expected), existing)
+	if client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to get %s: %w", kind, err)
+	}
+	if err != nil {
+		if cerr := c.Create(ctx, expected); cerr != nil {
+			return fmt.Errorf("failed to create %s: %w", kind, cerr)
+		}
+		return nil
+	}
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := fresh()
+		if gerr := c.Get(ctx, client.ObjectKeyFromObject(expected), current); gerr != nil {
+			return fmt.Errorf("failed to get %s: %w", kind, gerr)
+		}
+		if !specOrLabelsChanged(getSpec(current), getSpec(expected), current.GetLabels(), expected.GetLabels()) {
+			return nil
+		}
+		setSpec(current, getSpec(expected))
+		labels := current.GetLabels()
+		if len(labels) == 0 {
+			labels = make(map[string]string)
+		}
+		for k, v := range expected.GetLabels() {
+			labels[k] = v
+		}
+		current.SetLabels(labels)
+		if uerr := c.Update(ctx, current); uerr != nil {
+			return fmt.Errorf("failed to update %s: %w", kind, uerr)
+		}
+		return nil
+	})
+	if retryErr != nil {
+		return fmt.Errorf("failed to converge %s: %w", kind, retryErr)
+	}
 	return nil
 }
 
@@ -861,42 +962,12 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		return fmt.Errorf("failed to set controller reference on pipeline: %w", err)
 	}
 
-	var existing paprikav1.Pipeline
-	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
-	if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get pipeline: %w", err)
-	}
-
-	if err != nil {
-		if err := r.client.Create(ctx, expected); err != nil {
-			return fmt.Errorf("failed to create pipeline: %w", err)
-		}
-	} else {
-		// RetryOnConflict with a fresh Get: the Pipeline controller writes
-		// status continuously, so an update on a previously fetched object
-		// conflicts.
-		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var current paprikav1.Pipeline
-			if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
-				return fmt.Errorf("failed to get pipeline: %w", err)
-			}
-			if !specOrLabelsChanged(&current.Spec, &expected.Spec, current.Labels, expected.Labels) {
-				return nil
-			}
-			current.Spec = expected.Spec
-			if len(current.Labels) == 0 {
-				current.Labels = make(map[string]string)
-			}
-			for k, v := range expected.Labels {
-				current.Labels[k] = v
-			}
-			if err := r.client.Update(ctx, &current); err != nil {
-				return fmt.Errorf("failed to update pipeline: %w", err)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
+	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
+		func() *paprikav1.Pipeline { return &paprikav1.Pipeline{} },
+		func(p *paprikav1.Pipeline) paprikav1.PipelineSpec { return p.Spec },
+		func(p *paprikav1.Pipeline, s paprikav1.PipelineSpec) { p.Spec = s },
+		"pipeline"); err != nil {
+		return err
 	}
 
 	app.Status.PipelineRef = pipelineName
@@ -998,7 +1069,7 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 // runs inside RetryOnConflict with a fresh Get: the Stage controller writes
 // status continuously, so an update on a previously fetched object conflicts.
 func (r *ApplicationReconciler) updateStage(ctx context.Context, expected *paprikav1.Stage, stageName string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var existing paprikav1.Stage
 		if err := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); err != nil {
 			return fmt.Errorf("failed to get stage %s: %w", stageName, err)
@@ -1023,6 +1094,10 @@ func (r *ApplicationReconciler) updateStage(ctx context.Context, expected *papri
 		}
 		return nil
 	})
+	if retryErr != nil {
+		return fmt.Errorf("failed to converge stage %s: %w", stageName, retryErr)
+	}
+	return nil
 }
 
 //nolint:cyclop // owner reconciliation explicitly preserves unrelated non-controller references.
@@ -1585,9 +1660,9 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
-func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
+func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (bool, error) {
 	log := log.FromContext(ctx)
-	newHash, newRevision, err := r.resolveSourceHash(ctx, app)
+	newHash, newRevision, err := r.resolveSourceHash(ctx, app, forceRefresh)
 	if err != nil {
 		return false, err
 	}
@@ -1646,36 +1721,61 @@ func sourceContentHash(hash string) string {
 	return hash
 }
 
-func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
+func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (hash, revision string, err error) {
 	if r.isInlineSource(app) {
 		return "", "", nil
 	}
 
-	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize || app.Spec.Source.Type == paprikav1.SourceTypeOCI {
-		renderer := r.TemplateRenderer
-		if renderer == nil {
-			renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
-		}
-
-		templateName := app.Name + "-template"
-		var tmpl paprikav1.Template
-		if getErr := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
-			return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
-		}
-
-		result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
-		if resolveErr != nil {
-			return "", "", fmt.Errorf("resolve source: %w", resolveErr)
-		}
-
-		if result != nil {
-			return result.Hash, result.Revision, nil
-		}
+	if isRemoteSourceType(app.Spec.Source.Type) {
+		return r.resolveTemplateSource(ctx, app, forceRefresh)
 	}
 
 	// For helm/local sources, compute a stable hash from the chart config.
 	h := sha256.Sum256([]byte(app.Spec.Source.Chart.Path + app.Spec.Source.Chart.Repo + app.Spec.Source.Chart.Name))
 	return hex.EncodeToString(h[:]), "", nil
+}
+
+func isRemoteSourceType(t string) bool {
+	switch t {
+	case paprikav1.SourceTypeGit, paprikav1.SourceTypeS3, paprikav1.SourceTypeKustomize, paprikav1.SourceTypeOCI:
+		return true
+	}
+	return false
+}
+
+// resolveTemplateSource resolves the app's template against the renderer,
+// reusing the cached result for the poll path while SourceResolveTTL is fresh.
+// forceRefresh (sync triggers) always performs a live resolve.
+func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (hash, revision string, err error) {
+	renderer := r.TemplateRenderer
+	if renderer == nil {
+		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
+	}
+
+	templateName := app.Name + "-template"
+	var tmpl paprikav1.Template
+	if getErr := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
+		return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
+	}
+
+	key := sourceResolveKey(&tmpl)
+	if !forceRefresh && r.SourceResolveTTL > 0 {
+		if cachedHash, cachedRevision, ok := r.sourceResolveCache().get(key); ok {
+			return cachedHash, cachedRevision, nil
+		}
+	}
+
+	result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
+	if resolveErr != nil {
+		return "", "", fmt.Errorf("resolve source: %w", resolveErr)
+	}
+	if result == nil {
+		return "", "", nil
+	}
+	if r.SourceResolveTTL > 0 {
+		r.sourceResolveCache().put(key, result.Hash, result.Revision, r.SourceResolveTTL)
+	}
+	return result.Hash, result.Revision, nil
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
@@ -2141,7 +2241,7 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 			pollInterval = d
 		}
 	}
-	sourceChanged, err := r.checkSourceChanged(ctx, app)
+	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {
 		log.Error(err, "Failed to check source changes")
 		return ctrl.Result{RequeueAfter: pollInterval}, nil
@@ -2195,7 +2295,7 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 		}
 	}
 
-	sourceChanged, err := r.checkSourceChanged(ctx, app)
+	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {
 		logger.Error(err, "Failed to check source changes while retry budget exhausted")
 	} else if sourceChanged {

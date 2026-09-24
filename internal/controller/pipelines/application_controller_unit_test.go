@@ -2,6 +2,7 @@ package pipelines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -557,7 +559,7 @@ func TestApplicationReconciler_checkSourceChanged_contentSegment(t *testing.T) {
 				}},
 			}
 
-			changed, err := r.checkSourceChanged(ctx, app)
+			changed, err := r.checkSourceChanged(ctx, app, false)
 			if err != nil {
 				t.Fatalf("checkSourceChanged failed: %v", err)
 			}
@@ -577,6 +579,141 @@ func TestApplicationReconciler_checkSourceChanged_contentSegment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// countingSourceRenderer records ResolveSource calls so tests can observe when
+// the poll path hits the source (git fetch) versus the resolve cache.
+type countingSourceRenderer struct {
+	calls  int
+	result *source.ResolveResult
+	err    error
+}
+
+func (r *countingSourceRenderer) ResolveSource(context.Context, *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	r.calls++
+	return r.result, r.err
+}
+
+func (r *countingSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Template, map[string]string) ([]byte, error) {
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
+}
+
+func newSourceChangeFixture(t *testing.T, renderer SourceResolvingRenderer, ttl time.Duration, now *time.Time) (*ApplicationReconciler, *pipelinesv1alpha1.Application) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash:     "commit0:content0",
+			SourceRevision: "commit-0",
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git: &pipelinesv1alpha1.GitSourceSpec{
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+	r := &ApplicationReconciler{client: c, TemplateRenderer: renderer, SourceResolveTTL: ttl}
+	if now != nil {
+		r.now = func() time.Time { return *now }
+	}
+	return r, app
+}
+
+func TestApplicationReconciler_checkSourceChanged_resolveCache(t *testing.T) {
+	ctx := context.Background()
+	fresh := &source.ResolveResult{Hash: "commit0:content0", Revision: "commit-0"}
+
+	t.Run("steady-state polls share one resolve within the TTL", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		for i := 0; i < 3; i++ {
+			changed, err := r.checkSourceChanged(ctx, app, false)
+			require.NoError(t, err)
+			require.False(t, changed)
+		}
+		require.Equal(t, 1, renderer.calls)
+	})
+
+	t.Run("sync trigger bypasses the cache", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		_, err = r.checkSourceChanged(ctx, app, true)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("entries expire after the TTL", func(t *testing.T) {
+		now := time.Now()
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, &now)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		now = now.Add(2 * time.Minute)
+		_, err = r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("zero TTL resolves every poll", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, 0, nil)
+		for i := 0; i < 2; i++ {
+			_, err := r.checkSourceChanged(ctx, app, false)
+			require.NoError(t, err)
+		}
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("resolve errors are never cached", func(t *testing.T) {
+		renderer := &countingSourceRenderer{err: errors.New("fetch failed")}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		for i := 0; i < 2; i++ {
+			_, err := r.checkSourceChanged(ctx, app, false)
+			require.Error(t, err)
+		}
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("spec edits miss the cache", func(t *testing.T) {
+		now := time.Now()
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, &now)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+
+		var tmpl pipelinesv1alpha1.Template
+		require.NoError(t, r.client.Get(ctx, client.ObjectKey{Name: "git-app-template", Namespace: "default"}, &tmpl))
+		tmpl.Spec.Git.Revision = "release-branch"
+		require.NoError(t, r.client.Update(ctx, &tmpl))
+
+		_, err = r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
 }
 
 func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {

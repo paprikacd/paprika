@@ -663,6 +663,7 @@ func TestResourceEqual_SecretStringDataNormalization(t *testing.T) {
 			"namespace": "default",
 		},
 		"data": map[string]interface{}{
+			// #nosec G101 -- base64 test fixture, not a real credential.
 			"password": "czNjcmV0",
 		},
 	}}

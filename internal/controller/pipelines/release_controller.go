@@ -311,7 +311,7 @@ func (r *ReleaseReconciler) ensureReleaseFinalizer(ctx context.Context, release 
 	// RetryOnConflict with a fresh Get: status writers (and the initial
 	// status update racing the create reconcile) bump resourceVersion
 	// constantly, so updating the reconcile-fetched object conflicts.
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var current paprikav1.Release
 		if err := r.client.Get(ctx, client.ObjectKeyFromObject(release), &current); err != nil {
 			return fmt.Errorf("getting release for finalizer: %w", err)
@@ -325,6 +325,10 @@ func (r *ReleaseReconciler) ensureReleaseFinalizer(ctx context.Context, release 
 		}
 		return nil
 	})
+	if retryErr != nil {
+		return fmt.Errorf("adding release finalizer after conflict retries: %w", retryErr)
+	}
+	return nil
 }
 
 func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *paprikav1.Release) (ctrl.Result, error) {
@@ -355,7 +359,7 @@ func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *
 		}
 		return nil
 	}); err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("removing release finalizer after conflict retries: %w", err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -1241,8 +1245,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts)
 	}
 
-	elapsed := time.Since(start).Milliseconds()
-	metrics.SyncDuration.Record(ctx, elapsed, metric.WithAttributes(
+	metrics.SyncDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
 		attribute.String("app", appName),
 	))
 	if err != nil {
