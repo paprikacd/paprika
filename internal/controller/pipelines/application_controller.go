@@ -82,6 +82,21 @@ const (
 	releaseRetriesExhaustedCondition = "ReleaseRetriesExhausted"
 )
 
+// applicationPhaseConditionTypes is every ApplicationPhase value written as a
+// status condition by setApplicationPhase. They form a mutually exclusive set
+// — only the current phase may be True.
+var applicationPhaseConditionTypes = []string{
+	string(paprikav1.ApplicationPending),
+	string(paprikav1.ApplicationBuilding),
+	string(paprikav1.ApplicationPromoting),
+	string(paprikav1.ApplicationCanarying),
+	string(paprikav1.ApplicationVerifying),
+	string(paprikav1.ApplicationHealthy),
+	string(paprikav1.ApplicationDegraded),
+	string(paprikav1.ApplicationFailed),
+	string(paprikav1.ApplicationRolledBack),
+}
+
 // releaseResyncOrigin distinguishes automatic release resurrections (which
 // count toward the auto-retry cap) from operator-requested ones (which reset
 // it).
@@ -484,8 +499,8 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	}
 
 	r.evaluateHealth(ctx, app)
-	r.evaluateDiff(ctx, app)
-	r.evaluateResourceHealth(ctx, app)
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
 
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
@@ -569,6 +584,10 @@ func (r *ApplicationReconciler) patchAppStatusAllowingReleaseRefClear(ctx contex
 }
 
 func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, app *paprikav1.Application, preserveReleaseRef bool) error {
+	// Backstop cleanup for stale phase conditions on apps parked in one phase
+	// (e.g. a held exhausted release): any status write converges conditions
+	// to the one true phase condition.
+	normalizePhaseConditions(app, "PhaseChanged", "phase "+string(app.Status.Phase)+" is active")
 	desiredStatus := app.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh paprikav1.Application
@@ -1401,45 +1420,43 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 	}
 }
 
-// collapsing them would hide which transitions are legal.
-//
-//nolint:cyclop // a phase transition table; the branches are the states.
+// setApplicationPhase transitions the application to the given phase, records
+// the phase as a status condition, and returns true when anything changed so
+// callers persist it. Callers pass the full target phase explicitly rather
+// than collapsing transitions — collapsing them would hide which transitions
+// are legal.
 func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) bool {
-	if app.Status.Phase == phase {
-		return false
-	}
-
 	previousPhase := app.Status.Phase
 	app.Status.Phase = phase
-	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
+
 	// Upsert by condition type (like every other controller here) instead of
 	// appending: a thrashing release once appended 3.7k conditions and grew
 	// the Application object to 641KB, slowing every status write and starving
 	// the in-process admission webhooks.
-	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-		Type:               string(phase),
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             reason,
-		Message:            message,
-	})
+	conditionsChanged := normalizePhaseConditions(app, reason, message)
 
-	// When the application recovers to Healthy, clear the failure conditions
-	// left behind by the previous failure cycle. Without this, Degraded,
-	// RolledBack, Pending, and ReleaseRetriesExhausted stay True forever and
-	// mislead operators about the current state.
+	if previousPhase == phase {
+		// Phase unchanged — still report when stale conditions were retired so
+		// callers persist the cleanup.
+		return conditionsChanged
+	}
+
+	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
+
+	// ReleaseRetriesExhausted is a latch rather than a phase — it is cleared
+	// by clearReleaseRetriesExhaustedCondition when a new release flow starts
+	// and, as a backstop, on the transition into Healthy. It must NOT be
+	// cleared on every write while Healthy: a Healthy-phase app can hold an
+	// exhausted release (holdExhaustedRelease) and the latch is the signal.
 	if phase == paprikav1.ApplicationHealthy {
-		now := metav1.Now()
-		for _, condType := range []string{"Degraded", "RolledBack", "Pending", releaseRetriesExhaustedCondition} {
-			if cond := meta.FindStatusCondition(app.Status.Conditions, condType); cond != nil && cond.Status == metav1.ConditionTrue {
-				meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-					Type:               condType,
-					Status:             metav1.ConditionFalse,
-					LastTransitionTime: now,
-					Reason:             "Recovered",
-					Message:            "recovered to Healthy",
-				})
-			}
+		if cond := meta.FindStatusCondition(app.Status.Conditions, releaseRetriesExhaustedCondition); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type:               releaseRetriesExhaustedCondition,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: metav1.Now(),
+				Reason:             "Recovered",
+				Message:            "recovered to Healthy",
+			})
 		}
 	}
 
@@ -1474,6 +1491,53 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 
 	r.publishApplicationEvent(ctx, app, reason, previousPhase, message)
 	return true
+}
+
+// normalizePhaseConditions makes the condition for app.Status.Phase the only
+// phase condition at True: every other phase condition left True by earlier
+// transitions is retired to False, and the current phase condition is created
+// or re-marked True when missing. Phase conditions are mutually exclusive —
+// without this, Promoting=True, Canarying=True, Verifying=True and even
+// Healthy=True survive forever alongside the current phase and mislead
+// anything reading conditions (fleet attention, kubectl, API consumers).
+// It deliberately does not touch the ReleaseRetriesExhausted latch — that is
+// not a phase and survives being held under any phase including Healthy.
+//
+// Returns true when it changed anything so callers can decide to persist.
+func normalizePhaseConditions(app *paprikav1.Application, reason, message string) bool {
+	phase := string(app.Status.Phase)
+	if phase == "" {
+		return false
+	}
+
+	changed := false
+	now := metav1.Now()
+	if cond := meta.FindStatusCondition(app.Status.Conditions, phase); cond == nil || cond.Status != metav1.ConditionTrue {
+		meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+			Type:               phase,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             reason,
+			Message:            message,
+		})
+		changed = true
+	}
+	for _, other := range applicationPhaseConditionTypes {
+		if other == phase {
+			continue
+		}
+		if cond := meta.FindStatusCondition(app.Status.Conditions, other); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type:               other,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: now,
+				Reason:             "PhaseChanged",
+				Message:            "transitioned to " + phase,
+			})
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string, previousPhase paprikav1.ApplicationPhase, message string) {
@@ -1674,17 +1738,17 @@ func evalResultFromHealthCheckResult(result *paprikav1.HealthCheckResult) health
 	return eval
 }
 
-func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) {
+func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) *engine.DiffResult {
 	log := log.FromContext(ctx)
 
 	if r.DiffEngine == nil {
-		return
+		return nil
 	}
 
 	manifests, err := r.desiredManifests(ctx, app)
 	if err != nil {
 		log.Error(err, "Failed to get desired manifests for diff")
-		return
+		return nil
 	}
 
 	targetNamespace := app.Namespace
@@ -1701,7 +1765,7 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	})
 	if err != nil {
 		log.Error(err, "Failed to compute diff")
-		return
+		return nil
 	}
 
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
@@ -1725,6 +1789,8 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 			app.Status.HookStatuses = nil
 		}
 	}
+
+	return result
 }
 
 // parseDesiredManifests splits rendered YAML manifests into unstructured objects,
@@ -1892,8 +1958,23 @@ func resourceStatusSortKey(kind, namespace, name, status, message string) string
 	return strings.Join([]string{kind, namespace, name, status, message}, "\x00")
 }
 
-func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application) {
-	if r.ResHealth == nil {
+// evaluateResourceHealth assesses each managed resource against the live
+// objects the diff already fetched — same snapshot, no second pass through
+// the API. When there is no diff result (engine disabled or diff failed) it
+// falls back to per-resource reads through the health checker.
+func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application, result *engine.DiffResult) {
+	var liveIndex map[string]unstructured.Unstructured
+	if result != nil {
+		// An empty Live set is still authoritative: every desired resource is
+		// missing. Only a nil result (diff engine off or failed) falls back to
+		// per-resource reads.
+		liveIndex = make(map[string]unstructured.Unstructured, len(result.Live))
+		for i := range result.Live {
+			obj := &result.Live[i]
+			liveIndex[resourceHealthKey(obj.GetKind(), obj.GetNamespace(), obj.GetName())] = *obj
+		}
+	}
+	if liveIndex == nil && r.ResHealth == nil {
 		return
 	}
 
@@ -1904,12 +1985,26 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 		if rs.Status == "Pruned" {
 			continue
 		}
-		h := r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
+		var h paprikav1.ResourceHealth
+		switch {
+		case liveIndex != nil:
+			if obj, found := liveIndex[resourceHealthKey(rs.Kind, rs.Namespace, rs.Name)]; found {
+				h = health.AssessObject(&obj)
+			} else {
+				h = paprikav1.ResourceHealth{Kind: rs.Kind, Name: rs.Name, Namespace: rs.Namespace, Health: "Missing"}
+			}
+		default:
+			h = r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
+		}
 		healthResults = append(healthResults, h)
 	}
 
 	app.Status.ResourceHealth = healthResults
 	sortResourceHealth(app.Status.ResourceHealth)
+}
+
+func resourceHealthKey(kind, namespace, name string) string {
+	return kind + "\x00" + namespace + "\x00" + name
 }
 
 func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *paprikav1.Application) error {
@@ -2038,8 +2133,8 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 	log := log.FromContext(ctx)
 
 	r.evaluateHealth(ctx, app)
-	r.evaluateDiff(ctx, app)
-	r.evaluateResourceHealth(ctx, app)
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
 	}

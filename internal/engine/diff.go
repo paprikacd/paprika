@@ -26,6 +26,10 @@ type DiffResult struct {
 	Deleted   []ResourceDiff
 	Unchanged []ResourceDiff
 	Summary   string
+	// Live holds the live objects consulted by the diff so callers can run
+	// follow-up analysis (resource health) off the same snapshot instead of
+	// re-fetching each resource through the API.
+	Live []unstructured.Unstructured
 }
 
 // ResourceDiff describes the diff for a single resource between desired and live state.
@@ -132,7 +136,17 @@ func (d *DiffEngine) ComputeDiff(ctx context.Context, desired []unstructured.Uns
 	}
 
 	result.Summary = fmt.Sprintf("+%d ~%d -%d", len(result.Added), len(result.Modified), len(result.Deleted))
+	result.Live = liveObjects(liveMap)
 	return result, nil
+}
+
+// liveObjects flattens the live map into a slice for follow-up readers.
+func liveObjects(liveMap map[string]unstructured.Unstructured) []unstructured.Unstructured {
+	objects := make([]unstructured.Unstructured, 0, len(liveMap))
+	for _, obj := range liveMap {
+		objects = append(objects, obj)
+	}
+	return objects
 }
 
 //nolint:cyclop // one branch per discovery edge case; see fetchLiveResources in scalable_diff.go.

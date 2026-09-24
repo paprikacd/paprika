@@ -123,9 +123,18 @@ helm upgrade paprika-e2e charts/chart/ \
   `SyncOptions.PruneClusterScopedKinds`.
 - The release controller sets `app.paprika.io/release` on every applied
   resource so `cleanupManagedResources` can find them on release deletion.
-- Failure conditions (`Degraded`, `RolledBack`, `Pending`,
-  `ReleaseRetriesExhausted`) are cleared when the Application transitions to
-  Healthy.
+- Phase conditions (`Pending`…`RolledBack`) are mutually exclusive:
+  `setApplicationPhase` and the status-patch path retire every other phase
+  condition to False, even when the phase itself does not change (apps parked
+  in `holdExhaustedRelease` still converge). `ReleaseRetriesExhausted` is a
+  latch, not a phase — it clears when a new release flow starts and on the
+  transition into Healthy, but NOT on every write while Healthy (a
+  Healthy-phase app can hold an exhausted release).
+- Resource health is assessed from the live objects the diff engine already
+  fetched (`DiffResult.Live` → `health.AssessObject`), not a second pass
+  through the API. Unsupported kinds are assessed generically — conditions,
+  replica counters, `status.phase` — and existence-only kinds (ServiceAccount,
+  RBAC, PDB, …) are Healthy when present instead of Unknown.
 - A stage with no `cluster` ref resolves to the registered `mode: in-cluster`
   Cluster CR (the chart installs `<release>-in-cluster` by default). The
   cluster controller fills `status.inventory` (nodes/pods/namespaces/
