@@ -817,7 +817,16 @@ func (r *ApplicationReconciler) buildStageSpec(app *paprikav1.Application, promo
 
 func (r *ApplicationReconciler) createStage(ctx context.Context, expected *paprikav1.Stage, stageName string) error {
 	if err := r.client.Create(ctx, expected); err != nil {
-		return fmt.Errorf("failed to create stage %s: %w", stageName, err)
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create stage %s: %w", stageName, err)
+		}
+		// Created concurrently (e.g. by ApplyBundle's ensureStage) between the
+		// Get and Create above — adopt it via the update path.
+		var existing paprikav1.Stage
+		if getErr := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); getErr != nil {
+			return fmt.Errorf("failed to create stage %s: %w", stageName, err)
+		}
+		return r.updateStage(ctx, &existing, expected, stageName)
 	}
 	return nil
 }
@@ -1182,6 +1191,12 @@ func releaseParameters(app *paprikav1.Application, targetStage *paprikav1.Applic
 }
 
 func releaseIdentityChanged(app *paprikav1.Application) (changed bool, desiredRelease string) {
+	// Inline-source applications have no pollable source identity — their
+	// release is pushed by ApplyBundle with its own timestamped name, so the
+	// hash-derived desired name would always mismatch and loop resyncs.
+	if app.Spec.Source.Type == paprikav1.SourceTypeInline {
+		return false, ""
+	}
 	if app.Status.ReleaseRef == "" || len(app.Spec.Stages) == 0 {
 		return false, ""
 	}

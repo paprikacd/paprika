@@ -106,7 +106,7 @@ func makeRollout(name string, tmpl *corev1.PodTemplateSpec) *rolloutsv1alpha1.Ro
 	return &rolloutsv1alpha1.Rollout{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: rolloutsv1alpha1.RolloutSpec{
-			Template: *tmpl,
+			Template: rolloutsv1alpha1.RolloutTemplateFromPodTemplate(*tmpl),
 			Strategy: rolloutsv1alpha1.RolloutStrategy{Type: "ABTest"},
 		},
 	}

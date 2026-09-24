@@ -263,7 +263,7 @@ func (r *RolloutReconciler) latchAbort(ro *rolloutsv1alpha1.Rollout) {
 	// the annotation alone won't clear the abort. The documented flow (remove
 	// annotation + bump template) works; this note exists so a future reader
 	// doesn't trip on the edge case.
-	currentHash := hash.Template(&ro.Spec.Template)
+	currentHash := hash.Template(ro.Spec.Template.PodTemplateSpec())
 	// Don't clear before the first reconcile has stamped a hash.
 	if ro.Status.CurrentPodHash != "" && currentHash != ro.Status.CurrentPodHash {
 		ro.Status.Abort = false
@@ -385,8 +385,8 @@ func (r *RolloutReconciler) resolveTarget(ctx context.Context, ro *rolloutsv1alp
 		}
 		return fmt.Errorf("getting target deployment: %w", err)
 	}
-	if ro.Spec.Template.ObjectMeta.Labels == nil && len(deploy.Spec.Template.ObjectMeta.Labels) > 0 {
-		ro.Spec.Template = deploy.Spec.Template
+	if ro.Spec.Template.Metadata.Labels == nil && len(deploy.Spec.Template.ObjectMeta.Labels) > 0 {
+		ro.Spec.Template = rolloutsv1alpha1.RolloutTemplateFromPodTemplate(deploy.Spec.Template)
 	}
 	return nil
 }
@@ -890,7 +890,7 @@ func (r *RolloutReconciler) updateStatusFromResult(ro *rolloutsv1alpha1.Rollout,
 	ro.Status.Phase = result.Phase
 	ro.Status.Message = result.Message
 	ro.Status.ObservedGeneration = ro.Generation
-	ro.Status.CurrentPodHash = hash.Template(&ro.Spec.Template)
+	ro.Status.CurrentPodHash = hash.Template(ro.Spec.Template.PodTemplateSpec())
 
 	for _, rs := range result.ReplicaSets {
 		if rs.Labels["rollouts.paprika.io/stable"] == "true" || rs.Labels["rollouts.paprika.io/active"] == "true" {

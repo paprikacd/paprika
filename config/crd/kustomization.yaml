@@ -20,6 +20,8 @@ resources:
 - bases/featureflags.paprika.io_featureflags.yaml
 - bases/featureflags.paprika.io_featureflagbindings.yaml
 - bases/pipelines.paprika.io_conftestpolicies.yaml
+- bases/providers.paprika.io_capacityproviders.yaml
+- bases/providers.paprika.io_dataproviderbindings.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

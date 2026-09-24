@@ -44,7 +44,7 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 	if ro.Spec.Replicas != nil {
 		desiredReplicas = *ro.Spec.Replicas
 	}
-	hash := hash.Template(&ro.Spec.Template)
+	hash := hash.Template(ro.Spec.Template.PodTemplateSpec())
 
 	if status.StableRS == "" {
 		return &core.SyncResult{
@@ -83,7 +83,7 @@ func (s *Strategy) Sync(_ context.Context, ro *rolloutsv1alpha1.Rollout, status 
 				{
 					Name:     stableName,
 					Replicas: desiredReplicas,
-					Template: &ro.Spec.Template,
+					Template: ro.Spec.Template.PodTemplateSpec(),
 					Labels: map[string]string{
 						"rollouts.paprika.io/stable":   "true",
 						"rollouts.paprika.io/revision": hash,
@@ -177,7 +177,7 @@ func (s *Strategy) rollingUpdate(
 				{
 					Name:     ro.Name + "-canary-" + hash,
 					Replicas: desiredReplicas,
-					Template: &ro.Spec.Template,
+					Template: ro.Spec.Template.PodTemplateSpec(),
 					Labels: map[string]string{
 						"rollouts.paprika.io/stable":   "true", // promoted
 						"rollouts.paprika.io/revision": hash,
@@ -230,7 +230,7 @@ func makeCanaryRS(ro *rolloutsv1alpha1.Rollout, hash string, replicas int32) cor
 	return core.ReplicaSetAction{
 		Name:     ro.Name + "-canary-" + hash,
 		Replicas: replicas,
-		Template: &ro.Spec.Template,
+		Template: ro.Spec.Template.PodTemplateSpec(),
 		Labels: map[string]string{
 			"rollouts.paprika.io/canary":   "true",
 			"rollouts.paprika.io/revision": hash,
@@ -259,7 +259,7 @@ func makeStableRS(ro *rolloutsv1alpha1.Rollout, hash string, replicas int32) cor
 	return core.ReplicaSetAction{
 		Name:     ro.Name + "-" + hash,
 		Replicas: replicas,
-		Template: &ro.Spec.Template,
+		Template: ro.Spec.Template.PodTemplateSpec(),
 		Labels: map[string]string{
 			"rollouts.paprika.io/stable":   "true",
 			"rollouts.paprika.io/revision": hash,
