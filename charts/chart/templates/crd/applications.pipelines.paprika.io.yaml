@@ -1583,6 +1583,8 @@ spec:
                   description: HealthCheckResult contains the result of a single health
                     check evaluation.
                   properties:
+                    bodyTruncated:
+                      type: boolean
                     checkedAt:
                       format: date-time
                       type: string
@@ -1602,6 +1604,45 @@ spec:
                       type: string
                     name:
                       type: string
+                    reason:
+                      type: string
+                    recentFailures:
+                      description: Newest five unsuccessful observations within 30
+                        days, reset on probe changes.
+                      items:
+                        description: HealthCheckFailure preserves bounded diagnostic
+                          evidence after a check recovers.
+                        properties:
+                          bodyTruncated:
+                            type: boolean
+                          checkedAt:
+                            format: date-time
+                            type: string
+                          durationMillis:
+                            format: int64
+                            type: integer
+                          httpBody:
+                            description: Sanitized response excerpt; request/response
+                              headers are never retained.
+                            maxLength: 2048
+                            type: string
+                          httpStatusCode:
+                            type: integer
+                          message:
+                            maxLength: 1024
+                            type: string
+                          reason:
+                            type: string
+                          status:
+                            description: HealthStatus represents the health status
+                              of an application or resource.
+                            type: string
+                        required:
+                        - checkedAt
+                        - status
+                        type: object
+                      maxItems: 5
+                      type: array
                     sloHistory:
                       description: |-
                         SLOHistory is a bounded, durable ring of scheduled observations. Two bits per

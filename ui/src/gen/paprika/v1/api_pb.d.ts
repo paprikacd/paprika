@@ -1873,6 +1873,21 @@ export declare class HealthCheckResult extends Message<HealthCheckResult> {
    */
   slo?: SLOSummary;
 
+  /**
+   * @generated from field: string reason = 9;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: bool body_truncated = 10;
+   */
+  bodyTruncated: boolean;
+
+  /**
+   * @generated from field: repeated paprika.v1.HealthCheckFailure recent_failures = 11;
+   */
+  recentFailures: HealthCheckFailure[];
+
   constructor(data?: PartialMessage<HealthCheckResult>);
 
   static readonly runtime: typeof proto3;
@@ -10677,5 +10692,64 @@ export declare class VerificationCheck extends Message<VerificationCheck> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): VerificationCheck;
 
   static equals(a: VerificationCheck | PlainMessage<VerificationCheck> | undefined, b: VerificationCheck | PlainMessage<VerificationCheck> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.HealthCheckFailure
+ */
+export declare class HealthCheckFailure extends Message<HealthCheckFailure> {
+  /**
+   * @generated from field: int64 checked_at = 1;
+   */
+  checkedAt: bigint;
+
+  /**
+   * @generated from field: string status = 2;
+   */
+  status: string;
+
+  /**
+   * @generated from field: string reason = 3;
+   */
+  reason: string;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+
+  /**
+   * @generated from field: int32 http_status_code = 5;
+   */
+  httpStatusCode: number;
+
+  /**
+   * @generated from field: int64 duration_millis = 6;
+   */
+  durationMillis: bigint;
+
+  /**
+   * @generated from field: string http_body = 7;
+   */
+  httpBody: string;
+
+  /**
+   * @generated from field: bool body_truncated = 8;
+   */
+  bodyTruncated: boolean;
+
+  constructor(data?: PartialMessage<HealthCheckFailure>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.HealthCheckFailure";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): HealthCheckFailure;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): HealthCheckFailure;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HealthCheckFailure;
+
+  static equals(a: HealthCheckFailure | PlainMessage<HealthCheckFailure> | undefined, b: HealthCheckFailure | PlainMessage<HealthCheckFailure> | undefined): boolean;
 }
 

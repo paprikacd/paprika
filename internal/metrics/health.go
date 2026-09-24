@@ -93,8 +93,9 @@ func (h *healthInstruments) replace(app *api.Application) {
 	defer h.mu.Unlock()
 	key := app.Namespace + "/" + app.Name
 	delete(h.snapshots, key)
-	results := map[string]api.HealthCheckResult{}
-	for _, r := range app.Status.HealthChecks {
+	results := map[string]*api.HealthCheckResult{}
+	for i := range app.Status.HealthChecks {
+		r := &app.Status.HealthChecks[i]
 		results[r.Name] = r
 	}
 	for _, check := range app.Spec.HealthChecks {

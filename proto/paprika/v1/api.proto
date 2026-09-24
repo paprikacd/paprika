@@ -137,6 +137,9 @@ message HealthCheckResult {
   string http_body = 6;
   int64 duration_millis = 7;
   SLOSummary slo = 8;
+  string reason = 9;
+  bool body_truncated = 10;
+  repeated HealthCheckFailure recent_failures = 11;
 }
 
 message ResourceSync {
@@ -2119,4 +2122,15 @@ message VerificationCheck {
   string type = 1;
   string endpoint = 2;
   int32 timeout_seconds = 3;
+}
+
+message HealthCheckFailure {
+  int64 checked_at = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  int32 http_status_code = 5;
+  int64 duration_millis = 6;
+  string http_body = 7;
+  bool body_truncated = 8;
 }

@@ -95,7 +95,7 @@ func ownershipLinks(namespace, name, project string) []*paprikav1.DrilldownLink 
 			Url: base + "runbooks/" + project,
 		},
 		{
-			Kind: paprikav1.DrilldownKind_DRILLDOWN_KIND_REPOSITORY, Label: "Repository",
+			Kind: paprikav1.DrilldownKind_DRILLDOWN_KIND_REPOSITORY, Label: "GitHub repository",
 			Url: base + project + "/" + name + ".git",
 		},
 	}

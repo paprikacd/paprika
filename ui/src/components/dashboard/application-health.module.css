@@ -76,3 +76,6 @@ button.bar[data-selected=true]::after { content:""; position:absolute; left:0; r
   .diagnostic summary { padding:14px; }
 }
 @media(prefers-reduced-motion:reduce) { .bar,.diagnostic summary > svg { transition:none; } }
+
+.diagnostic .response > summary { display:list-item; list-style:disclosure-closed; padding:8px 0; font-size:12px; font-weight:500; }
+.diagnostic .response[open] > summary { list-style:disclosure-open; }

@@ -712,6 +712,9 @@ export const HealthCheckResult = /*@__PURE__*/ proto3.makeMessageType(
     { no: 6, name: "http_body", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 7, name: "duration_millis", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
     { no: 8, name: "slo", kind: "message", T: SLOSummary },
+    { no: 9, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "body_truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 11, name: "recent_failures", kind: "message", T: HealthCheckFailure, repeated: true },
   ],
 );
 
@@ -3477,6 +3480,23 @@ export const VerificationCheck = /*@__PURE__*/ proto3.makeMessageType(
     { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "timeout_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.HealthCheckFailure
+ */
+export const HealthCheckFailure = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.HealthCheckFailure",
+  () => [
+    { no: 1, name: "checked_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 2, name: "status", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "reason", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "http_status_code", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 6, name: "duration_millis", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 7, name: "http_body", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 8, name: "body_truncated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
   ],
 );
 

@@ -341,3 +341,18 @@ async function expectQueryState(page: Page, expected: Record<string, string | nu
     return Object.fromEntries(Object.keys(expected).map((key) => [key, search.get(key)]))
   }).toEqual(expected)
 }
+
+
+test("inspects retained dependency failures after recovery", async ({ page }) => {
+  await page.goto("/dashboard/application/?namespace=team-00&name=checkout-service")
+  await expect(page.getByRole("link", { name: "Grafana (opens in a new tab)", exact: true })).toBeVisible()
+  await page.getByRole("tab", { name: "Health", exact: true }).click()
+  await page.getByText("Unexpected HTTP status", { exact: true }).click()
+  await expect(page.getByText("Expected HTTP 200, received HTTP 503", { exact: true })).toBeVisible()
+  const issue = page.locator("details").filter({ has: page.getByRole("heading", { name: "Unexpected HTTP status", exact: true }) })
+  const dependencies = issue.getByLabel("Dependency check results")
+  await expect(dependencies.getByText("database_app", { exact: true })).toBeVisible()
+  await expect(dependencies.getByText("dependency unavailable", { exact: true })).toBeVisible()
+  await issue.getByText("Captured response", { exact: true }).click()
+  await expect(issue.locator("pre").filter({hasText:'"status": "degraded"'})).toBeVisible()
+})

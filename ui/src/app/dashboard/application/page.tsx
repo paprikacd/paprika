@@ -44,6 +44,7 @@ import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
 import { applicationClient as client, useApplicationData } from "@/lib/use-application-data"
 import { ApplicationHealth } from "@/components/dashboard/application-health"
 import { ApplicationSLOs } from "@/components/dashboard/application-slos"
+import { OperationalLinkIcon } from "@/components/dashboard/operational-link-icon"
 import { OperationalMetadata, safeOperationalLink } from "@/components/dashboard/application-operations"
 import { cn } from "@/lib/utils"
 
@@ -965,6 +966,7 @@ function DrilldownRail({
                 rel="noreferrer noopener"
                 className="flex h-11 items-center gap-2 border-b border-rule-soft px-3 text-chip text-foreground no-underline hover:bg-inset"
               >
+                <OperationalLinkIcon url={link.url} label={link.label} kind={link.kind} />
                 <span className="flex-1 truncate">{link.label}</span>
                 <span aria-hidden className="font-mono text-meta text-neutral-600">
                   ↗

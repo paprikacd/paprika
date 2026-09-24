@@ -36,6 +36,7 @@ func NewCELEvaluator() *CELEvaluator {
 
 // HTTPResult contains the result of an HTTP probe.
 type HTTPResult struct {
+	Reason     string            `json:"-"`
 	StatusCode int               `json:"statusCode"`
 	Body       string            `json:"body"`
 	Headers    map[string]string `json:"headers"`
@@ -57,6 +58,11 @@ func (e *CELEvaluator) Evaluate(ctx context.Context, check paprikav1.HealthCheck
 	if check.HTTPProbe != nil {
 		httpResult = e.doHTTPProbe(ctx, check.HTTPProbe)
 		result.HTTPResult = httpResult
+		if httpResult.Reason != "" {
+			result.Status = paprikav1.HealthDegraded
+			result.Message = httpResult.Body
+			return result
+		}
 	}
 
 	status, message := e.evalExpression(check.Expression, app, httpResult)
@@ -89,7 +95,7 @@ func (e *CELEvaluator) doHTTPProbe(ctx context.Context, probe *paprikav1.HTTPPro
 
 	req, err := http.NewRequestWithContext(ctx, method, probe.URL, body)
 	if err != nil {
-		return &HTTPResult{StatusCode: 0, Body: err.Error(), Headers: map[string]string{}}
+		return &HTTPResult{Reason: "InvalidRequest", Body: "The HTTP probe request could not be constructed."}
 	}
 
 	for k, v := range probe.Headers {
@@ -98,7 +104,7 @@ func (e *CELEvaluator) doHTTPProbe(ctx context.Context, probe *paprikav1.HTTPPro
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return &HTTPResult{StatusCode: 0, Body: err.Error(), Headers: map[string]string{}}
+		return probeTransportFailure(err)
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort body close
 
@@ -108,7 +114,7 @@ func (e *CELEvaluator) doHTTPProbe(ctx context.Context, probe *paprikav1.HTTPPro
 func readProbeResponse(resp *http.Response) *HTTPResult {
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024+1))
 	if len(respBody) > 64*1024 {
-		return &HTTPResult{Body: "health response exceeds 64 KiB", Headers: map[string]string{}}
+		return &HTTPResult{StatusCode: resp.StatusCode, Reason: "ResponseTooLarge", Body: "Health response exceeds 64 KiB."}
 	}
 	headers := make(map[string]string)
 	for k, v := range resp.Header {
@@ -117,7 +123,7 @@ func readProbeResponse(resp *http.Response) *HTTPResult {
 		}
 	}
 	if err != nil {
-		return &HTTPResult{StatusCode: resp.StatusCode, Body: err.Error(), Headers: headers}
+		return &HTTPResult{StatusCode: resp.StatusCode, Reason: "ResponseReadError", Body: "The HTTP response body could not be read completely."}
 	}
 
 	return &HTTPResult{
