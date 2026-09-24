@@ -2202,6 +2202,13 @@ export declare class Application extends Message<Application> {
    */
   analysisResults: AnalysisResult[];
 
+  /**
+   * Configured checks; HTTP credentials, headers and bodies are omitted.
+   *
+   * @generated from field: repeated paprika.v1.HealthCheck health_check_definitions = 27;
+   */
+  healthCheckDefinitions: HealthCheck[];
+
   constructor(data?: PartialMessage<Application>);
 
   static readonly runtime: typeof proto3;
@@ -2451,6 +2458,11 @@ export declare class Release extends Message<Release> {
    * @generated from field: repeated paprika.v1.HookStatus hook_statuses = 20;
    */
   hookStatuses: HookStatus[];
+
+  /**
+   * @generated from field: repeated paprika.v1.VerificationCheck verification_checks = 21;
+   */
+  verificationChecks: VerificationCheck[];
 
   constructor(data?: PartialMessage<Release>);
 
@@ -10435,5 +10447,41 @@ export declare class CommitSummary extends Message<CommitSummary> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): CommitSummary;
 
   static equals(a: CommitSummary | PlainMessage<CommitSummary> | undefined, b: CommitSummary | PlainMessage<CommitSummary> | undefined): boolean;
+}
+
+/**
+ * Configuration only. Per-check execution results are not retained by the controller.
+ *
+ * @generated from message paprika.v1.VerificationCheck
+ */
+export declare class VerificationCheck extends Message<VerificationCheck> {
+  /**
+   * @generated from field: string type = 1;
+   */
+  type: string;
+
+  /**
+   * @generated from field: string endpoint = 2;
+   */
+  endpoint: string;
+
+  /**
+   * @generated from field: int32 timeout_seconds = 3;
+   */
+  timeoutSeconds: number;
+
+  constructor(data?: PartialMessage<VerificationCheck>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.VerificationCheck";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): VerificationCheck;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): VerificationCheck;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): VerificationCheck;
+
+  static equals(a: VerificationCheck | PlainMessage<VerificationCheck> | undefined, b: VerificationCheck | PlainMessage<VerificationCheck> | undefined): boolean;
 }
 

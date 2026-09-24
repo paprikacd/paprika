@@ -42,7 +42,7 @@ describe("FleetTreemap", () => {
     expect(container.querySelectorAll('[tabindex="0"]')).toHaveLength(1)
     expect(container.querySelectorAll("button, a, input, select, textarea")).toHaveLength(0)
     expect(
-      screen.getByText(/Table presentation is the complete semantic equivalent/i),
+      screen.getByText(/Click or press Enter to open the application/i),
     ).toBeInTheDocument()
 
     await waitFor(() => {
@@ -86,12 +86,16 @@ describe("FleetTreemap", () => {
 
     const controller = screen.getByRole("application", { name: /fleet treemap/i })
     fireEvent.keyDown(controller, { key: "ArrowRight" })
+    expect(onSelectApplication).not.toHaveBeenCalled()
+    fireEvent.keyDown(controller, { key: "Enter" })
     expect(onSelectApplication).toHaveBeenLastCalledWith({ namespace: "apps", name: "ledger" })
 
     fireEvent.keyDown(controller, { key: "Home" })
+    fireEvent.keyDown(controller, { key: "Enter" })
     expect(onSelectApplication).toHaveBeenLastCalledWith({ namespace: "apps", name: "checkout" })
 
     fireEvent.keyDown(controller, { key: "End" })
+    fireEvent.keyDown(controller, { key: " " })
     expect(onSelectApplication).toHaveBeenLastCalledWith({ namespace: "apps", name: "ledger" })
   })
 

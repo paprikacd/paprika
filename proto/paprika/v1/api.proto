@@ -199,6 +199,8 @@ message Application {
   string project = 24;
   repeated Condition conditions = 25;
   repeated AnalysisResult analysis_results = 26;
+  // Configured checks; HTTP credentials, headers and bodies are omitted.
+  repeated HealthCheck health_check_definitions = 27;
 }
 
 message Pipeline {
@@ -247,6 +249,7 @@ message Release {
   int64 canary_step_started_at = 18;
   string rollout_ref = 19;
   repeated HookStatus hook_statuses = 20;
+  repeated VerificationCheck verification_checks = 21;
 }
 
 message Promotion {
@@ -2072,4 +2075,11 @@ service PaprikaService {
   rpc IgnoreDriftedField(IgnoreDriftedFieldRequest) returns (IgnoreDriftedFieldResponse);
   rpc ApplyResourcePatch(ApplyResourcePatchRequest) returns (ApplyResourcePatchResponse);
   rpc SyncResources(SyncResourcesRequest) returns (SyncResourcesResponse);
+}
+
+// Configuration only. Per-check execution results are not retained by the controller.
+message VerificationCheck {
+  string type = 1;
+  string endpoint = 2;
+  int32 timeout_seconds = 3;
 }

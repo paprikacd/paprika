@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { render as rtlRender, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -176,7 +177,7 @@ describe("ApplicationDetailPage", () => {
         await screen.findByRole("heading", { name: /Drilldowns/i })
       ).toBeInTheDocument()
       expect(
-        screen.getByRole("link", { name: /Grafana — service overview/ })
+        await screen.findByRole("link", { name: /Grafana — service overview/ })
       ).toHaveAttribute("href", "https://grafana.example/d/1")
       expect(screen.getByRole("link", { name: /Logs — Loki/ })).toBeInTheDocument()
     })
@@ -184,7 +185,7 @@ describe("ApplicationDetailPage", () => {
     it("tags the header with owner, on-call and tier", async () => {
       render(<ApplicationDetailPage />)
       await screen.findByRole("heading", { level: 1, name: "checkout-api" })
-      expect(screen.getByText("owner: payments-core")).toBeInTheDocument()
+      expect(await screen.findByText("owner: payments-core")).toBeInTheDocument()
       expect(screen.getByText("on-call: @rmoreau")).toBeInTheDocument()
       expect(screen.getByText("tier: 1")).toBeInTheDocument()
     })
@@ -213,7 +214,7 @@ describe("ApplicationDetailPage", () => {
       const heading = await screen.findByRole("heading", { name: /Delivery timeline/i })
       const board = within(heading.closest("section")!)
       for (const label of ["Source", "Build", "Test", "Render", "Deploy", "Verify"]) {
-        expect(board.getByText(label)).toBeInTheDocument()
+        expect(await board.findByText(label)).toBeInTheDocument()
       }
       expect(board.getAllByRole("listitem")).toHaveLength(6)
     })
@@ -349,3 +350,8 @@ describe("ApplicationDetailPage", () => {
     }
   })
 })
+
+function render(ui: React.ReactElement) {
+ const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
+ return rtlRender(ui, {wrapper: ({children}) => <QueryClientProvider client={client}>{children}</QueryClientProvider>})
+}

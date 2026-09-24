@@ -91,8 +91,11 @@ func UIHandler() (http.Handler, error) {
 
 		if statErr == nil && isUIHTMLRequest(sub, r.URL.Path, info) {
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		} else {
+		} else if strings.HasPrefix(r.URL.Path, "/_next/static/") || strings.HasPrefix(r.URL.Path, "/kubernetes/70a4bb2d8cc3/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// Next route payloads (.txt) and unversioned assets can change on deployment.
+			w.Header().Set("Cache-Control", "no-cache")
 		}
 
 		fileServer.ServeHTTP(w, r)

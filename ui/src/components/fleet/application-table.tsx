@@ -1,5 +1,8 @@
 "use client"
 
+import Link from "next/link"
+import { applicationURL } from "@/lib/application-url"
+
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ChevronDown } from "lucide-react"
 import { useCallback, useMemo, useRef, useState } from "react"
@@ -452,7 +455,7 @@ function ApplicationRow({
       }
       onClick={() => identity && onSelect(identity)}
       onKeyDown={(event) => {
-        if (!identity || (event.key !== "Enter" && event.key !== " ")) return
+        if (event.target !== event.currentTarget || !identity || (event.key !== "Enter" && event.key !== " ")) return
         event.preventDefault()
         onSelect(identity)
       }}
@@ -466,9 +469,7 @@ function ApplicationRow({
       <span role="cell" aria-colindex={colIndex.get("application")} className="min-w-0">
         <span className="flex items-center gap-1.75">
           <StatusGlyph tone={healthTone} label={healthLabelOf(application.health)} />
-          <span className="truncate font-cond text-name font-semibold tracking-[0.02em]">
-            {identity?.name || "Unnamed application"}
-          </span>
+          {identity ? <Link href={applicationURL(identity)} tabIndex={-1} onClick={(event) => event.stopPropagation()} className="truncate font-cond text-name font-semibold tracking-[0.02em] hover:underline">{identity.name}</Link> : <span>Unnamed application</span>}
         </span>
         <span className="block truncate pl-4.75 font-mono text-meta text-neutral-600">
           {identity ? identityKey(identity) : "Identity unavailable"}
