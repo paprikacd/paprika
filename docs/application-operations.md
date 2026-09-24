@@ -37,6 +37,34 @@ ownership. Link kinds are `dashboard`, `logs`, `traces`, `runbook`, `cost`,
 `repository` and `custom`. Limits are 20 links and 16 metadata entries per app.
 Existing application/project authorization applies to every operational read.
 
+## Health failure evidence
+
+The Health tab shows the latest response and **Recent check issues**. Expand an
+issue to inspect its timestamp, classified reason, HTTP status, elapsed time and
+response excerpt. Responses with a `checks` array containing `name` and boolean
+`ok` fields also show dependency results, optional `latency` and `error` details.
+JSON is formatted; other responses are displayed as text, never rendered HTML.
+
+The controller retains the newest five unsuccessful observations per check for
+up to 30 days in Application status. They survive successful probes and controller
+restarts. A probe/CEL/interval/window change clears the diagnostic sample; changing
+only the SLO target retains it. This sample is independent of the SLO ring and
+must not be interpreted as the total failure count. Results collected before
+this feature have counts only; overwritten responses cannot be reconstructed.
+
+Latest bodies are capped at 4 KiB; historical bodies at 2 KiB, with an explicit
+truncation indicator. Common credential fields, configured credentials and URL
+query values are redacted before storage. Headers are never retained. Health
+endpoints should still return diagnostic information only, not secrets or user
+data. The same application authorization applies to these responses. Transport
+errors are classified without persisting raw errors that can contain credentials.
+Incomplete or oversized HTTP responses cannot pass a check, even with a constant
+true expression.
+
+Operational links use bundled Grafana/GitHub marks based on the hostname or link
+label, including self-hosted services. Other links use their configured kind's
+icon. No external favicon requests are made.
+
 ## What the SLO measures
 
 This is availability observed by scheduled HTTP probes, not request success rate.

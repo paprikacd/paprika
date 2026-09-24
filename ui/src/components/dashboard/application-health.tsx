@@ -4,6 +4,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleAlert, Clock3, ChevronRight } from "lucide-react"
 import { durationSeconds } from "./uptime-history"
 import styles from "./application-health.module.css"
+import { ProbeResponse, RecentCheckIssues, failureReason } from "./health-check-evidence"
 import { useHealthClock } from "./use-health-clock"
 
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
@@ -72,6 +73,7 @@ export function ApplicationHealth({ application, release, resources, observedAt,
       <span className={styles.statusMeta}>{healthy}/{health.length} resources healthy</span>
     </div>
     <ApplicationSLOs application={application} />
+    <RecentCheckIssues application={application} />
     <div className="flex min-w-0 flex-col gap-4">
       <Blueprint>
         <BoardHeader title="Application checks" meta={`${checkNames.length} checks`} />
@@ -86,7 +88,9 @@ export function ApplicationHealth({ application, release, resources, observedAt,
                 <div className="space-y-2 border-t border-rule-soft px-5 py-4">
                 {probe ? <p className="break-all font-mono text-meta">{probe.method || "GET"} {probe.url} · expected HTTP {probe.expectedStatus || 200} · timeout {probe.timeout || 5}s</p> : null}
                 {definition?.expression ? <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded border border-rule bg-inset p-2 text-meta">{definition.expression}</pre> : null}
+                {check?.reason ? <p className="font-medium text-note">{failureReason(check.reason)}</p> : null}
                 <p className="text-note text-muted-foreground">{check?.message || "No result message reported."}</p>
+                {check?.httpBody ? <ProbeResponse body={check.httpBody} truncated={check.bodyTruncated} /> : null}
                 {check?.checkedAt ? <p className="font-mono text-meta text-muted-foreground">Probe duration {(check.durationMillis ?? BigInt(0)).toString()}ms</p> : null}
                 <p className="font-mono text-meta text-muted-foreground">Checked {time(check?.checkedAt)}{check?.httpStatusCode ? ` · HTTP ${check.httpStatusCode}` : ""}{definition ? ` · interval ${definition.interval || "30s"}` : ""}</p>
                 </div></details></li>

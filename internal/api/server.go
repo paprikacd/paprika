@@ -1686,13 +1686,24 @@ func convertAnalysisRunResults(results []pipelinesv1alpha1.AnalysisRunResult) []
 
 func convertHealthChecks(results []pipelinesv1alpha1.HealthCheckResult) []*paprikav1.HealthCheckResult {
 	out := make([]*paprikav1.HealthCheckResult, 0, len(results))
-	for _, r := range results {
+	for i := range results {
+		r := &results[i]
 		hcr := &paprikav1.HealthCheckResult{
 			Name:           r.Name,
 			Status:         string(r.Status),
 			Message:        r.Message,
 			HttpStatusCode: safeInt32(r.HTTPStatusCode),
 			HttpBody:       r.HTTPBody,
+			Reason:         r.Reason,
+			BodyTruncated:  r.BodyTruncated,
+			DurationMillis: r.DurationMillis,
+		}
+		for _, failure := range r.RecentFailures {
+			hcr.RecentFailures = append(hcr.RecentFailures, &paprikav1.HealthCheckFailure{
+				CheckedAt: failure.CheckedAt.Unix(), Status: string(failure.Status), Reason: failure.Reason,
+				Message: failure.Message, HttpStatusCode: safeInt32(failure.HTTPStatusCode),
+				DurationMillis: failure.DurationMillis, HttpBody: failure.HTTPBody, BodyTruncated: failure.BodyTruncated,
+			})
 		}
 		if r.CheckedAt != nil {
 			hcr.CheckedAt = ptr(r.CheckedAt.Unix())

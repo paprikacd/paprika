@@ -647,7 +647,7 @@ var legacyFleetMessageDescriptorHashes = map[string]string{
 	"ApplicationStage":                "2eb853f73cdd240cff83e2af8b55d33332e5df966b8f5ce6caeb190b3f3208bd",
 	"HTTPProbe":                       "88aa6ae5cb999ef1e39c9195d80b9a34c40934b2e6aa73e21297ab8808f282d6",
 	"HealthCheck":                     "212e885604d6479d0cfbe9f93352d94e0d03f232de88e3bc46eb285ade43ff19",
-	"HealthCheckResult":               "401a09cf014e25f5d097c275c84aede85eca39b057a7f580d308be5565b75754",
+	"HealthCheckResult":               "03cc50844fa021b7d29cd0f491dbfafd378e18b7e4607c38fce4df7208d79ae4",
 	"ResourceSync":                    "27c03d6dfe07b123fc7b2249a5b0a311d9636c29c8425b46a71a941bd815063f",
 	"ResourceHealth":                  "8538b3b3fb94ddf0a3adf21f90824b9382dd738ac86927b95517104b1d37fe45",
 	"GateStatus":                      "7029c6f25f2a5571fdae5b47047e0638a2277cfddcfa7aef55c29a2b3743c1d5",

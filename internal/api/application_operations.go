@@ -99,7 +99,8 @@ func convertApplicationHealthChecks(app *api.Application, now time.Time) []*prot
 	for _, c := range app.Spec.HealthChecks {
 		checks[c.Name] = c
 	}
-	for i, result := range app.Status.HealthChecks {
+	for i := range app.Status.HealthChecks {
+		result := &app.Status.HealthChecks[i]
 		results[i].DurationMillis = result.DurationMillis
 		check, ok := checks[result.Name]
 		if !ok || check.SLO == nil {

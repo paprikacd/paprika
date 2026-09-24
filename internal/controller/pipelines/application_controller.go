@@ -2333,7 +2333,7 @@ func (r *ApplicationReconciler) evaluateHealthCheck(ctx context.Context, check p
 		}
 	}
 	result := r.HealthEval.Evaluate(ctx, check, app)
-	if check.SLO == nil || result.HTTPResult == nil {
+	if check.SLO == nil || result.HTTPResult == nil || result.HTTPResult.Reason != "" {
 		return result
 	}
 	expected := check.HTTPProbe.ExpectedStatus
@@ -2342,7 +2342,7 @@ func (r *ApplicationReconciler) evaluateHealthCheck(ctx context.Context, check p
 	}
 	if result.HTTPResult.StatusCode != expected {
 		result.Status = paprikav1.HealthDegraded
-		result.Message = "HTTP probe did not return its expected status"
+		result.Message = fmt.Sprintf("Expected HTTP %d, received HTTP %d", expected, result.HTTPResult.StatusCode)
 	}
 	return result
 }
@@ -2367,13 +2367,7 @@ func observationResult(check paprikav1.HealthCheck, prev *paprikav1.HealthCheckR
 		ConfigurationHash: health.MeasurementHash(check),
 		DurationMillis:    duration.Milliseconds(),
 	}
-	if result.HTTPResult != nil {
-		hcr.HTTPStatusCode = result.HTTPResult.StatusCode
-		hcr.HTTPBody = result.HTTPResult.Body
-		if len(hcr.HTTPBody) > 4096 {
-			hcr.HTTPBody = hcr.HTTPBody[:4096] + " [truncated]"
-		}
-	}
+	health.CaptureEvidence(check, prev, result, &hcr)
 	if check.SLO != nil {
 		var history *paprikav1.SLOHistory
 		if prev != nil {

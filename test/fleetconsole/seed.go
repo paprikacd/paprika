@@ -255,6 +255,9 @@ func fixtureApplication(index int, namespace string, state *fixtureState) *pipel
 			Type: pipelinesv1alpha1.ApprovalGateTypeManual, Status: pipelinesv1alpha1.GateStatusPending,
 		}}
 	}
+	if index == 0 {
+		seedHealthEvidence(application)
+	}
 	return application
 }
 

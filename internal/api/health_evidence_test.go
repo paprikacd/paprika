@@ -2,6 +2,9 @@ package apiserver
 
 import (
 	"testing"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/stretchr/testify/require"
 
@@ -29,4 +32,15 @@ func TestHealthEvidenceOmitsProbeCredentials(t *testing.T) {
 	require.Equal(t, "https://example.com/ready", evidence[0].Endpoint)
 	require.EqualValues(t, 20, evidence[0].TimeoutSeconds)
 	require.Equal(t, "[invalid endpoint]", healthEndpoint("https://%password"))
+}
+
+func TestHealthFailureEvidenceReachesAPI(t *testing.T) {
+	now := metav1.NewTime(time.Unix(1800000000, 0))
+	app := &pipelinesv1alpha1.Application{}
+	app.Status.HealthChecks = []pipelinesv1alpha1.HealthCheckResult{{Name: "deepcheck", Status: pipelinesv1alpha1.HealthHealthy, RecentFailures: []pipelinesv1alpha1.HealthCheckFailure{{CheckedAt: now, Status: pipelinesv1alpha1.HealthDegraded, Reason: "Timeout", Message: "Probe timed out", DurationMillis: 5000, HTTPBody: "excerpt", BodyTruncated: true}}}}
+	result := convertApplication(app).HealthChecks[0]
+	require.Len(t, result.RecentFailures, 1)
+	require.EqualValues(t, 1800000000, result.RecentFailures[0].CheckedAt)
+	require.Equal(t, "Timeout", result.RecentFailures[0].Reason)
+	require.True(t, result.RecentFailures[0].BodyTruncated)
 }

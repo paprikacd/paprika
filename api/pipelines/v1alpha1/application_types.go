@@ -439,6 +439,21 @@ type GateStatus struct {
 	Message    string `json:"message,omitempty"`
 }
 
+// HealthCheckFailure preserves bounded diagnostic evidence after a check recovers.
+type HealthCheckFailure struct {
+	CheckedAt metav1.Time  `json:"checkedAt"`
+	Status    HealthStatus `json:"status"`
+	Reason    string       `json:"reason,omitempty"`
+	// +kubebuilder:validation:MaxLength=1024
+	Message        string `json:"message,omitempty"`
+	HTTPStatusCode int    `json:"httpStatusCode,omitempty"`
+	DurationMillis int64  `json:"durationMillis,omitempty"`
+	// Sanitized response excerpt; request/response headers are never retained.
+	// +kubebuilder:validation:MaxLength=2048
+	HTTPBody      string `json:"httpBody,omitempty"`
+	BodyTruncated bool   `json:"bodyTruncated,omitempty"`
+}
+
 // HealthCheckResult contains the result of a single health check evaluation.
 type HealthCheckResult struct {
 	Name      string       `json:"name"`
@@ -452,7 +467,13 @@ type HealthCheckResult struct {
 	ConfigurationHash string `json:"configurationHash,omitempty"`
 	DurationMillis    int64  `json:"durationMillis,omitempty"`
 	// +optional
-	SLOHistory *SLOHistory `json:"sloHistory,omitempty"`
+	SLOHistory    *SLOHistory `json:"sloHistory,omitempty"`
+	Reason        string      `json:"reason,omitempty"`
+	BodyTruncated bool        `json:"bodyTruncated,omitempty"`
+	// Newest five unsuccessful observations within 30 days, reset on probe changes.
+	// +optional
+	// +kubebuilder:validation:MaxItems=5
+	RecentFailures []HealthCheckFailure `json:"recentFailures,omitempty"`
 }
 
 // ApplicationSpec defines the specification for an application.

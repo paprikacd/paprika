@@ -56,5 +56,10 @@ func TestHealthSLOPersistsFailureRecoveryAndRestart(t *testing.T) {
 	require.EqualValues(t, 1, summary.Unhealthy)
 	require.EqualValues(t, 1, summary.Unknown)
 	require.Equal(t, api.HealthHealthy, restored.Status.HealthChecks[0].Status)
+	require.Len(t, restored.Status.HealthChecks[0].RecentFailures, 1)
+	failure := restored.Status.HealthChecks[0].RecentFailures[0]
+	require.EqualValues(t, 503, failure.HTTPStatusCode)
+	require.Equal(t, "UnexpectedStatus", failure.Reason)
+	require.Equal(t, "Expected HTTP 200, received HTTP 503", failure.Message)
 	require.Equal(t, 30*time.Second, nextHealthObservation(restored, now))
 }
