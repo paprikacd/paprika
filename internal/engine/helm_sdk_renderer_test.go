@@ -65,6 +65,48 @@ func TestBuildValuesReportsInvalidParameterPaths(t *testing.T) {
 	assert.Contains(t, err.Error(), "parse parameter")
 }
 
+// PromQL exprs routinely contain commas (histogram_quantile(a, b)) and range
+// selectors ([10m]). Raw strvals treats "," as list syntax and then parses
+// the remainder as a key path, failing on "10m" as an index — this is what
+// stalled every cuttlefish Deploy VKE run (render of
+// observability.prometheus.extraRuleGroups[0].rules[4].expr).
+func TestBuildValuesPreservesCommasAndBackslashesInParameterValues(t *testing.T) {
+	t.Parallel()
+
+	expr := `histogram_quantile(0.95, sum by (le) (rate(check_queue_delay_bucket[10m]))) > 30000`
+	path := `C:\runner\work`
+	renderer := NewHelmSDKRenderer(t.TempDir())
+	values, err := renderer.buildValues(map[string]string{
+		"observability.prometheus.extraRuleGroups[0].rules[4].expr": expr,
+		"runner.workRoot": path,
+		"simple.list[0]":  "a",
+		"simple.list[1]":  "b,c",
+	}, "")
+	require.NoError(t, err)
+
+	obs := requireMap(t, values, "observability")
+	prom := requireMap(t, obs, "prometheus")
+	groups, ok := prom["extraRuleGroups"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, groups, 1)
+	group, ok := groups[0].(map[string]interface{})
+	require.True(t, ok)
+	rules, ok := group["rules"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, rules, 5) // sparse: index 4 is the one the cuttlefish Application sets
+	rule, ok := rules[4].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, expr, rule["expr"])
+
+	runner := requireMap(t, values, "runner")
+	assert.Equal(t, path, runner["workRoot"])
+
+	simple := requireMap(t, values, "simple")
+	list, ok := simple["list"].([]interface{})
+	require.True(t, ok)
+	assert.Equal(t, []interface{}{"a", "b,c"}, list)
+}
+
 func requireMap(t *testing.T, values map[string]interface{}, key string) map[string]interface{} {
 	t.Helper()
 
