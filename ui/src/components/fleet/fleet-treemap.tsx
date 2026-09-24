@@ -100,8 +100,8 @@ export function FleetTreemap({
   )
   const retainedActive = retainTreemapSelection(activeStableId, layout.rectangles)
   const effectiveActiveId =
-    selectedStableId ??
     retainedActive ??
+    selectedStableId ??
     layout.rectangles.find((rectangle) => rectangle.selectable)?.stableId ??
     null
   const activeRectangle =
@@ -220,7 +220,9 @@ export function FleetTreemap({
           layout.rectangles.find(
             (rectangle) => rectangle.stableId === nextStableId,
           ) ?? null
-        selectRectangle(next)
+        // Arrows move focus; only click/Enter/Space activates navigation.
+        if (next) setActiveStableId(next.stableId)
+        onFocusedApplication(next?.node.application ?? null)
         return
       }
       if (event.key === "Enter" || event.key === " ") {
@@ -233,7 +235,7 @@ export function FleetTreemap({
         onZoomChange("")
       }
     },
-    [activeRectangle, effectiveActiveId, layout.rectangles, onZoomChange, selectRectangle, zoom],
+    [activeRectangle, effectiveActiveId, layout.rectangles, onFocusedApplication, onZoomChange, selectRectangle, zoom],
   )
 
   const handleFocus = useCallback(() => {
@@ -297,7 +299,7 @@ export function FleetTreemap({
             onZoomChange(rectangle.stableId)
           }
         }}
-        className="relative mt-4 h-[clamp(28rem,60vh,44rem)] min-h-[28rem] w-full cursor-crosshair overflow-hidden border border-rule bg-card outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="relative mt-4 h-[clamp(28rem,60vh,44rem)] min-h-[28rem] w-full cursor-pointer overflow-hidden border border-rule bg-card outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <canvas ref={canvasRef} aria-hidden="true" className="block" />
         {tooltip ? (
@@ -329,7 +331,7 @@ export function FleetTreemap({
           id="fleet-treemap-instructions"
           className="text-xs leading-5 text-muted-foreground sm:max-w-md sm:text-right"
         >
-          Use arrows, Home, and End to navigate. Table presentation is the complete semantic equivalent.
+          Use arrows, Home, and End to select. Click or press Enter to open the application.
         </p>
       </div>
     </section>

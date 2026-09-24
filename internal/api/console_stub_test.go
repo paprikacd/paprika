@@ -191,14 +191,6 @@ func TestConsoleReadStubsReportNotConfiguredWithZeroedNumerics(t *testing.T) {
 			// The commit itself and the run number, which are separately sourced.
 			wantNotConfigured: 2,
 		},
-		"GetApplicationOwnership": {
-			call: func(ctx context.Context, server *PaprikaServer) (proto.Message, error) {
-				return consoleStubMessage(server.GetApplicationOwnership(ctx, connect.NewRequest(
-					&paprikav1.GetApplicationOwnershipRequest{Namespace: "tenant", Name: "checkout"},
-				)))
-			},
-			wantNotConfigured: 1,
-		},
 		"ListDriftDetails": {
 			call: func(ctx context.Context, server *PaprikaServer) (proto.Message, error) {
 				return consoleStubMessage(server.ListDriftDetails(ctx, connect.NewRequest(

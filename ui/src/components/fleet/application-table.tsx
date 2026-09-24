@@ -1,5 +1,8 @@
 "use client"
 
+import Link from "next/link"
+import { applicationURL } from "@/lib/application-url"
+
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ChevronDown } from "lucide-react"
 import Link from "next/link"
@@ -40,7 +43,6 @@ import {
   type ApplicationGroup,
   type GroupDimension,
 } from "@/components/fleet/fleet-rows"
-import { applicationHref } from "@/components/overview/overview-links"
 import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
 import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { STATUS_TONES } from "@/lib/status-tone"
@@ -455,7 +457,7 @@ function ApplicationRow({
       }
       onClick={() => identity && onSelect(identity)}
       onKeyDown={(event) => {
-        if (!identity || (event.key !== "Enter" && event.key !== " ")) return
+        if (event.target !== event.currentTarget || !identity || (event.key !== "Enter" && event.key !== " ")) return
         event.preventDefault()
         onSelect(identity)
       }}
@@ -471,16 +473,15 @@ function ApplicationRow({
           <StatusGlyph tone={healthTone} label={healthLabelOf(application.health)} />
           {identity ? (
             <Link
-              href={applicationHref(identity, application.attentionResource || undefined)}
+              href={applicationURL(identity, application.attentionResource || undefined)}
+              tabIndex={-1}
               onClick={(event) => event.stopPropagation()}
-              className="truncate font-cond text-name font-semibold tracking-[0.02em] text-foreground no-underline hover:underline"
+              className="truncate font-cond text-name font-semibold tracking-[0.02em] hover:underline"
             >
               {identity.name}
             </Link>
           ) : (
-            <span className="truncate font-cond text-name font-semibold tracking-[0.02em]">
-              Unnamed application
-            </span>
+            <span>Unnamed application</span>
           )}
         </span>
         <span

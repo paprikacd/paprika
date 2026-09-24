@@ -643,6 +643,58 @@ export const HealthCheck = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "expression", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "http_probe", kind: "message", T: HTTPProbe },
     { no: 4, name: "interval", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 5, name: "slo", kind: "message", T: AvailabilitySLO },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.AvailabilitySLO
+ */
+export const AvailabilitySLO = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.AvailabilitySLO",
+  () => [
+    { no: 1, name: "target_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 2, name: "window", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ],
+);
+
+/**
+ * @generated from message paprika.v1.SLOBucket
+ */
+export const SLOBucket = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SLOBucket",
+  () => [
+    { no: 1, name: "started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 2, name: "healthy", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 3, name: "unhealthy", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "unknown", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * Observation-based availability, with explicit coverage and startup state.
+ *
+ * @generated from message paprika.v1.SLOSummary
+ */
+export const SLOSummary = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.SLOSummary",
+  () => [
+    { no: 1, name: "state", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "target_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 3, name: "window_seconds", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "interval_seconds", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 5, name: "availability_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 6, name: "coverage_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 7, name: "window_coverage_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 8, name: "error_budget_remaining_percentage", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 9, name: "burn_rate", kind: "scalar", T: 1 /* ScalarType.DOUBLE */ },
+    { no: 10, name: "healthy", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 11, name: "unhealthy", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 12, name: "unknown", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 13, name: "expected", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 14, name: "first_observed_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 15, name: "last_observed_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 16, name: "timeline", kind: "message", T: SLOBucket, repeated: true },
   ],
 );
 
@@ -658,6 +710,8 @@ export const HealthCheckResult = /*@__PURE__*/ proto3.makeMessageType(
     { no: 4, name: "checked_at", kind: "scalar", T: 3 /* ScalarType.INT64 */, opt: true },
     { no: 5, name: "http_status_code", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
     { no: 6, name: "http_body", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 7, name: "duration_millis", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 8, name: "slo", kind: "message", T: SLOSummary },
   ],
 );
 
@@ -799,6 +853,9 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 25, name: "conditions", kind: "message", T: Condition, repeated: true },
     { no: 26, name: "analysis_results", kind: "message", T: AnalysisResult, repeated: true },
+    { no: 27, name: "health_check_definitions", kind: "message", T: HealthCheck, repeated: true },
+    { no: 28, name: "operations", kind: "message", T: Ownership },
+    { no: 29, name: "operational_metadata", kind: "map", K: 9 /* ScalarType.STRING */, V: {kind: "scalar", T: 9 /* ScalarType.STRING */} },
   ],
 );
 
@@ -869,6 +926,7 @@ export const Release = /*@__PURE__*/ proto3.makeMessageType(
     { no: 18, name: "canary_step_started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
     { no: 19, name: "rollout_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 20, name: "hook_statuses", kind: "message", T: HookStatus, repeated: true },
+    { no: 21, name: "verification_checks", kind: "message", T: VerificationCheck, repeated: true },
   ],
 );
 
@@ -3408,6 +3466,20 @@ export const CommitSummary = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "author_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "committed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * Configuration only. Per-check execution results are not retained by the controller.
+ *
+ * @generated from message paprika.v1.VerificationCheck
+ */
+export const VerificationCheck = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.VerificationCheck",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "timeout_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ],
 );
 

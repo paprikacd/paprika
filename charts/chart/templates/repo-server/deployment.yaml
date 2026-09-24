@@ -145,12 +145,6 @@ spec:
         envFrom:
         {{- include "paprika.extraEnvFrom" . | nindent 8 }}
         {{- end }}
-      securityContext:
-        {{- if .Values.repoServer.podSecurityContext }}
-        {{- toYaml .Values.repoServer.podSecurityContext | nindent 8 }}
-        {{- else }}
-        {}
-        {{- end }}
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
       {{- $pc := .Values.repoServer.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}

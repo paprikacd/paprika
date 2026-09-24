@@ -65,6 +65,7 @@ func TestUIHandlerCacheHeaders(t *testing.T) {
 			path:         "/missing-client-route",
 			wantContains: "no-cache",
 		},
+		{name: "route payloads revalidate", path: "/dashboard/index.txt", wantContains: "no-cache"},
 		{
 			name:         "hashed static chunks are immutable",
 			path:         findAnEmbeddedStaticChunk(t),

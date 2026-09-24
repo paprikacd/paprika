@@ -161,7 +161,7 @@ test("preserves URL state through Treemap, Matrix, and Table with keyboard selec
 
   await tabTo(page, treemap)
   await page.keyboard.press("Home")
-  await expect.poll(() => queryValue(page, "selected")).toBe(fuzzyApplication)
+  await expect(page.getByRole("status", { name: "Treemap selection" })).toContainText("checkout-service")
 
   const selected = queryValue(page, "selected")
   await activate(
@@ -191,7 +191,22 @@ test("preserves URL state through Treemap, Matrix, and Table with keyboard selec
     selected,
     view: "table",
   })
-  await expect(page.getByRole("row", { name: fuzzyApplication })).toBeVisible()
+  const applicationRow = page.getByRole("row", { name: fuzzyApplication })
+  await expect(applicationRow).toBeVisible()
+  await activate(page, applicationRow, testInfo)
+  await expect(page).toHaveURL(/\/dashboard\/application\/?\?namespace=team-00&name=checkout-service/)
+  await expect(page.getByRole("heading", {name: "checkout-service", exact: true})).toBeVisible()
+  if (testInfo.project.name === keyboardProject) {
+    // Tabs use the standard roving tabindex pattern: Tab enters the active tab,
+    // then arrows move through the tablist without extra page tab stops.
+    await tabTo(page, page.getByRole("tab", {name: "Overview", exact: true}))
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowRight")
+  } else {
+    await activate(page, page.getByRole("tab", {name: "Health", exact: true}), testInfo)
+  }
+  await expect(page.getByRole("tab", {name: "Health", exact: true})).toHaveAttribute("aria-selected", "true")
+  await expect(page.getByRole("heading", {name: "Service health", exact: true})).toBeVisible()
 })
 
 test("loads the next cursor page without replacing existing applications", async ({

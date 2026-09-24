@@ -1,9 +1,8 @@
 "use client"
 
-import { createPromiseClient } from "@connectrpc/connect"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { Suspense, useCallback, useMemo, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { ApplicationReleaseHistory } from "@/components/dashboard/application-release-history"
 import { InvestigationTriage } from "@/components/dashboard/investigation-triage"
@@ -27,7 +26,6 @@ import { usePublishConsoleScope } from "@/components/layout/console-header"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { Seg } from "@/components/ui/seg"
 import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
-import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import {
   DataClass,
   DataState,
@@ -43,12 +41,13 @@ import {
 } from "@/gen/paprika/v1/api_pb"
 import { useConnection } from "@/lib/connection-context"
 import { FOCUSED_REFRESH_INTERVAL_MS, useFocusedRefresh } from "@/lib/fleet-refresh"
-import { STATUS_TONES, worstTone, type StatusTone } from "@/lib/status-tone"
-import { createTransport } from "@/lib/transport"
+import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
+import { applicationClient as client, useApplicationData } from "@/lib/use-application-data"
+import { ApplicationHealth } from "@/components/dashboard/application-health"
+import { ApplicationSLOs } from "@/components/dashboard/application-slos"
+import { OperationalMetadata, safeOperationalLink } from "@/components/dashboard/application-operations"
 import { cn } from "@/lib/utils"
 
-const transport = createTransport()
-const client = createPromiseClient(PaprikaService, transport)
 
 /* ── DataState gating ──────────────────────────────────────────────────
    §4 of the backend design is normative: a data class that is not
@@ -56,7 +55,7 @@ const client = createPromiseClient(PaprikaService, transport)
    the non-OK states. `gateFor` is the single place that decision is made.
    ──────────────────────────────────────────────────────────────────── */
 
-export interface SurfaceGate {
+interface SurfaceGate {
   /** False means the surface must not be drawn at all. */
   visible: boolean
   /** True means draw the frame and the reason, and no figures. */
@@ -74,7 +73,7 @@ const HIDDEN_GATE: SurfaceGate = {
   observedAtMs: 0,
 }
 
-export function gateFor(
+function gateFor(
   sources: readonly DataSourceStatus[] | undefined,
   dataClass: DataClass
 ): SurfaceGate {
@@ -143,13 +142,6 @@ function formatAge(unixMs: number, now = Date.now()): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
-}
-
-function formatSeconds(ts?: bigint): string {
-  if (ts === undefined || ts === null) return ""
-  const seconds = Number(ts)
-  if (!seconds) return ""
-  return new Date(seconds * 1000).toLocaleString()
 }
 
 /* ── Tones for the application's own strings ───────────────────────── */
@@ -234,6 +226,7 @@ const TIER_LABELS: Record<number, string> = { 1: "1", 2: "2", 3: "3", 4: "4" }
 const SUB_TABS = [
   { id: "overview", label: "Overview" },
   { id: "resources", label: "Resources" },
+  { id: "health", label: "Health" },
   { id: "releases", label: "Releases" },
   { id: "pipelines", label: "Pipelines" },
   { id: "policy", label: "Policy" },
@@ -244,38 +237,11 @@ type SubTab = (typeof SUB_TABS)[number]["id"]
 
 type ResourceView = "graph" | "tree"
 
-interface DetailData {
-  application: Application | null
-  releases: Release[]
-  tree: FlatTreeNode[]
-  sources: DataSourceStatus[] | undefined
-  ownership: Ownership | undefined
-  lifecycle: LifecyclePhaseStatus[] | undefined
-  lifecycleObservedAtMs: number
-  commit: CommitInfo | undefined
-}
-
-const EMPTY_DATA: DetailData = {
-  application: null,
-  releases: [],
-  tree: [],
-  sources: undefined,
-  ownership: undefined,
-  lifecycle: undefined,
-  lifecycleObservedAtMs: 0,
-  commit: undefined,
-}
-
 function ApplicationDetail() {
   const searchParams = useSearchParams()
   const namespace = searchParams.get("namespace") ?? ""
   const name = searchParams.get("name") ?? ""
 
-  const [data, setData] = useState<DetailData>(EMPTY_DATA)
-  const [indexGeneration, setIndexGeneration] = useState<bigint | undefined>()
-  const [loading, setLoading] = useState(true)
-  const [refreshedAt, setRefreshedAt] = useState<number | undefined>()
-  const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState("")
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [tab, setTab] = useState<SubTab>("overview")
@@ -285,83 +251,36 @@ function ApplicationDetail() {
   const { reportRequestOutcome } = useConnection()
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
 
-  const fetchData = useCallback(async () => {
-    if (!namespace || !name) return
-    setLoading(true)
-    setError(null)
-    try {
-      // Round one: the application itself, plus the capability probe that
-      // decides which of the state-carrying boards may exist at all.
-      const [appRes, relRes, treeRes, sourcesRes] = await Promise.all([
-        client.getApplication({ namespace, name }),
-        client.listReleases({ namespace, applicationName: name }),
-        client
-          .getResourceTreeDetailed({
-            applicationNamespace: namespace,
-            applicationName: name,
-          })
-          .catch(() => ({ nodes: [] })),
-        client.getDataSources({ namespace }).catch(() => undefined),
-      ])
-
-      const sources = sourcesRes?.sources
-      const ownershipGate = gateFor(sources, DataClass.OWNERSHIP)
-      const lifecycleGate = gateFor(sources, DataClass.LIFECYCLE)
-      const commitGate = gateFor(sources, DataClass.COMMIT_METADATA)
-
-      // Round two: only the classes the probe says are worth asking for.
-      const [ownershipRes, lifecycleRes, revisionRes] = await Promise.all([
-        ownershipGate.visible && !ownershipGate.degraded
-          ? client.getApplicationOwnership({ namespace, name }).catch(() => undefined)
-          : Promise.resolve(undefined),
-        lifecycleGate.visible && !lifecycleGate.degraded
-          ? client.getApplicationLifecycle({ namespace, name }).catch(() => undefined)
-          : Promise.resolve(undefined),
-        commitGate.visible && !commitGate.degraded
-          ? client
-              .getRevisionInfo({ namespace, application: name, revision: "" })
-              .catch(() => undefined)
-          : Promise.resolve(undefined),
-      ])
-
-      setData({
-        application: appRes.application ?? null,
-        releases: relRes.releases ?? [],
-        tree: (treeRes.nodes ?? []) as unknown as FlatTreeNode[],
-        sources,
-        ownership: ownershipRes?.ownership,
-        lifecycle: lifecycleRes?.lifecycle?.phases,
-        lifecycleObservedAtMs: Number(lifecycleRes?.lifecycle?.observedAtUnixMs ?? 0),
-        commit: revisionRes?.commit,
-      })
-      setIndexGeneration(sourcesRes?.indexGeneration)
-      setRefreshedAt(Date.now())
-    } catch (err) {
-      setError("Could not load this application.")
-      console.error(err)
-      throw err
-    } finally {
-      setLoading(false)
-    }
-  }, [namespace, name])
+  const queries = useApplicationData(namespace, name, ["overview", "resources", "health"].includes(tab))
+  const application = queries.application.data?.application ?? null
+  const releases = queries.releases.data?.releases
+  const tree = queries.tree.data?.nodes
+  const sources = queries.sources.data?.sources
+  const ownership = application?.operations ?? queries.ownership.data?.ownership
+  const lifecycle = queries.lifecycle.data?.lifecycle?.phases
+  const commit = queries.commit.data?.commit
+  const loading = queries.application.isPending
+  const error = queries.application.isError ? (application ? "Could not refresh this application. Showing the last available observation." : "Could not load this application. Check your access and connection, then retry.") : null
+  const refreshedAt = queries.application.dataUpdatedAt || undefined
+  const fetchData = queries.refresh
 
   useFocusedRefresh(fetchData, {
-    enabled: Boolean(namespace && name),
+    enabled: Boolean(namespace && name), refreshOnMount: false,
     onRequestOutcome: reportRequestOutcome,
   })
+  useEffect(() => {
+    if (!queries.application.isPending) reportRequestOutcome(!queries.application.isError)
+  }, [queries.application.isPending, queries.application.isError, reportRequestOutcome])
 
   usePublishConsoleScope({
-    indexGeneration,
-    refreshedAt,
-    isRefreshing: loading,
+    indexGeneration: queries.sources.data?.indexGeneration,
+    refreshedAt, isRefreshing: queries.application.isFetching,
     intervalMs: FOCUSED_REFRESH_INTERVAL_MS,
   })
 
-  const { application, releases, tree, sources, ownership, lifecycle, commit } = data
-
   const ownershipGate = useMemo(
-    () => gateFor(sources, DataClass.OWNERSHIP),
-    [sources]
+    () => application?.operations ? { ...HIDDEN_GATE, visible: application.operations.state === DataState.OK } : gateFor(sources, DataClass.OWNERSHIP),
+    [application, sources]
   )
   const lifecycleGate = useMemo(
     () => gateFor(sources, DataClass.LIFECYCLE),
@@ -370,7 +289,7 @@ function ApplicationDetail() {
 
   const appReleases = useMemo(
     () =>
-      releases
+      (releases ?? [])
         .filter((r) => r.application === name && r.namespace === namespace)
         .sort((a, b) => Number(b.createdAt) - Number(a.createdAt)),
     [releases, namespace, name]
@@ -388,7 +307,7 @@ function ApplicationDetail() {
   // The tree RPC is the authority. Only when it returns nothing do we fall
   // back to the flat resource list carried on the Application itself.
   const treeNodes = useMemo<FlatTreeNode[]>(() => {
-    if (tree.length > 0) return tree
+    if (tree && tree.length > 0) return tree as unknown as FlatTreeNode[]
     if (!application) return []
     return mergeResourcesFromApplication(application).map((r) => ({
       ...r,
@@ -494,7 +413,7 @@ function ApplicationDetail() {
   if (!application) {
     return (
       <div className="px-5 py-12">
-        <h1 className="font-cond text-title font-semibold">Application not found</h1>
+        <h1 className="font-cond text-title font-semibold">{error ? "Application unavailable" : "Application not found"}</h1>
         <p className="mt-2 text-chip text-muted-foreground">
           {error ?? `No application named ${name} in ${namespace}.`}
         </p>
@@ -641,6 +560,13 @@ function ApplicationDetail() {
         </p>
       ) : null}
 
+      {["overview", "resources", "health"].includes(tab) && (queries.tree.isPending || queries.tree.isError) ? (
+        <p role="status" className="border-b border-rule px-5 py-2 text-note text-muted-foreground">
+          {queries.tree.isError ? "Live resource details are unavailable. Showing the application's recorded resources." : "Loading live resource details…"}
+        </p>
+      ) : null}
+      {queries.releases.isError ? <p role="status" className="px-5 py-2 text-note">Release details could not be refreshed.</p> : null}
+
       <div
         id="app-tabpanel"
         role="tabpanel"
@@ -655,7 +581,7 @@ function ApplicationDetail() {
               phases={lifecycle}
               commit={commit}
               release={application.releaseRef}
-              observedAtMs={data.lifecycleObservedAtMs}
+              observedAtMs={Number(queries.lifecycle.data?.lifecycle?.observedAtUnixMs ?? 0)}
             />
             <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
               <ResourceBoard
@@ -671,6 +597,8 @@ function ApplicationDetail() {
               />
               <div className="flex flex-col gap-3.5">
                 <DrilldownRail gate={ownershipGate} ownership={ownership} />
+                <OperationalMetadata metadata={application.operationalMetadata ?? {}} />
+                <ApplicationSLOs application={application} compact onOpenHealth={() => setTab("health")} />
                 <GatesBoard
                   application={application}
                   policyResults={currentRelease?.policyResults ?? []}
@@ -706,7 +634,6 @@ function ApplicationDetail() {
               selectedId={selectedId}
               driftedCount={driftedCount}
             />
-            <HealthChecksBoard application={application} />
             <InvestigationTriage
               application={application}
               investigate={(resource) =>
@@ -721,6 +648,17 @@ function ApplicationDetail() {
               onSelectResource={setSelected}
             />
           </>
+        ) : null}
+
+        {tab === "health" ? (
+          <ApplicationHealth
+            application={application}
+            release={currentRelease}
+            resources={treeNodes}
+            observedAt={refreshedAt}
+            releaseLoading={queries.releases.isPending}
+            onSelectResource={setSelected}
+          />
         ) : null}
 
         {tab === "releases" ? (
@@ -1041,7 +979,7 @@ function DrilldownRail({
   if (!gate.visible) return null
 
   const links: DrilldownLink[] = ownership?.links ?? []
-  const ordered = [...links].sort(
+  const ordered = links.filter((link) => safeOperationalLink(link.url)).sort(
     (a, b) => DRILLDOWN_ORDER.indexOf(a.kind) - DRILLDOWN_ORDER.indexOf(b.kind)
   )
 
@@ -1293,52 +1231,6 @@ function PromotionStages({ application }: { application: Application }) {
 }
 
 /* ── Other sub-tabs ────────────────────────────────────────────────── */
-
-function HealthChecksBoard({ application }: { application: Application }) {
-  const checks = application.healthChecks ?? []
-  if (checks.length === 0) return null
-  const tone = worstTone(checks.map((c) => phaseTone(c.status)))
-  return (
-    <Blueprint>
-      <BoardHeader
-        title="Health checks"
-        meta={`${checks.length} · worst ${STATUS_TONES[tone].label.toLowerCase()}`}
-      />
-      <table className="w-full border-collapse text-chip">
-        <caption className="sr-only">CEL health check results</caption>
-        <thead>
-          <tr className="border-b border-rule-strong bg-muted text-left">
-            <Th>Check</Th>
-            <Th>Status</Th>
-            <Th>HTTP</Th>
-            <Th>Message</Th>
-            <Th>Checked</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {checks.map((check) => (
-            <tr key={check.name} className="border-b border-rule-soft">
-              <Td className="font-mono">{check.name}</Td>
-              <Td>
-                <StatusPill
-                  tone={phaseTone(check.status)}
-                  label={check.status || "Unknown"}
-                />
-              </Td>
-              <Td className="tabular-nums">
-                {check.httpStatusCode > 0 ? check.httpStatusCode : ""}
-              </Td>
-              <Td className="text-muted-foreground">{check.message}</Td>
-              <Td className="text-muted-foreground tabular-nums">
-                {formatSeconds(check.checkedAt)}
-              </Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Blueprint>
-  )
-}
 
 function PipelinesBoard({ application }: { application: Application }) {
   if (!application.pipelineRef) {

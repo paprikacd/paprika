@@ -1,5 +1,7 @@
 "use client"
 
+import { useQuery } from "@tanstack/react-query"
+import { applicationQueryKey } from "@/lib/use-application-data"
 import { createPromiseClient } from "@connectrpc/connect"
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react"
 
@@ -13,7 +15,6 @@ import { parseUnifiedDiff, summarizeUnifiedDiff } from "@/components/dashboard/s
 import { StatusGlyph } from "@/components/ui/status-chip"
 import { PaprikaService } from "@/gen/paprika/v1/api_connect"
 import type {
-  GetResourceResponse,
   KubernetesEvent,
   LogChunk,
 } from "@/gen/paprika/v1/api_pb"
@@ -64,48 +65,20 @@ export function ResourceDetailPanel({
   onClose: () => void
 }) {
   const [tab, setTab] = useState<Tab>("diff")
-  const [data, setData] = useState<GetResourceResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const query = useQuery({
+    queryKey: [...applicationQueryKey(applicationNamespace, applicationName), "resource", resource.namespace, resource.kind, resource.name],
+    staleTime: 15_000,
+    gcTime: 60_000,
+    queryFn: ({ signal }) => client.getResource({ applicationNamespace, applicationName,
+      resourceKind: resource.kind, resourceName: resource.name, resourceNamespace: resource.namespace }, { signal }),
+  })
+  const data = query.data
+  const loading = query.isPending
+  const error = query.error?.message ?? null
   const [investigationOpen, setInvestigationOpen] = useState(false)
   const titleId = useId()
   const drawerRef = useRef<HTMLElement | null>(null)
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    queueMicrotask(() => {
-      if (cancelled) return
-      setLoading(true)
-      setError(null)
-      client
-        .getResource({
-          applicationNamespace,
-          applicationName,
-          resourceKind: resource.kind,
-          resourceName: resource.name,
-          resourceNamespace: resource.namespace,
-        })
-        .then((res) => {
-          if (cancelled) return
-          setData(res)
-          // Nothing to diff against — land on the manifest instead of an
-          // empty frame.
-          if (!res.diff && !res.liveManifest) setTab("live")
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setError(err instanceof Error ? err.message : "Failed to load resource")
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false)
-        })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [applicationNamespace, applicationName, resource])
 
   useEffect(() => {
     drawerRef.current?.focus()

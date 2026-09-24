@@ -80,6 +80,10 @@ func (s *PaprikaServer) GetDataSources(
 		IndexGeneration: generation,
 	}
 	for _, source := range detailDataSources {
+		if source.class == paprikav1.DataClass_DATA_CLASS_OWNERSHIP {
+			response.Sources = append(response.Sources, s.operationsDataSource(ctx, req.Msg.Namespace))
+			continue
+		}
 		// Capacity is the one class with a collector behind it, so it reports
 		// what a real read produced rather than the stub's fixed answer. For
 		// every other class, provider, observation time, staleness budget and
@@ -116,9 +120,7 @@ func (s *PaprikaServer) GetRevisionInfo(
 	}), nil
 }
 
-// GetApplicationOwnership reports that no ownership metadata is configured.
-// Ownership carries no unavailable_reason field of its own; the actionable
-// sentence for DATA_CLASS_OWNERSHIP is served by GetDataSources.
+// GetApplicationOwnership reads the application's authorized operational links.
 func (s *PaprikaServer) GetApplicationOwnership(
 	ctx context.Context,
 	req *connect.Request[paprikav1.GetApplicationOwnershipRequest],
@@ -129,9 +131,11 @@ func (s *PaprikaServer) GetApplicationOwnership(
 	if err := s.beginObjectScopedStub(ctx, req.Msg.Namespace, req.Msg.Name, "name"); err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&paprikav1.GetApplicationOwnershipResponse{
-		Ownership: &paprikav1.Ownership{State: paprikav1.DataState_DATA_STATE_NOT_CONFIGURED},
-	}), nil
+	ownership, err := s.applicationOperations(ctx, req.Msg.Namespace, req.Msg.Name)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&paprikav1.GetApplicationOwnershipResponse{Ownership: ownership}), nil
 }
 
 // ListDriftDetails returns an empty page rather than an error: an unconfigured

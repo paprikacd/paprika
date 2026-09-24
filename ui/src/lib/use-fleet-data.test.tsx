@@ -20,6 +20,7 @@ import {
 } from "@/lib/fleet-query"
 import {
   type FleetDataClient,
+  type FleetApplicationsData,
   type FleetPresentationData,
   useFleetData,
 } from "@/lib/use-fleet-data"
@@ -564,12 +565,13 @@ describe("useFleetData application paging", () => {
     const current = queryClient.getQueryData<FleetPresentationData>(
       query.queryKey,
     )
-    if (current?.kind !== "applications") {
+    if (current?.kind !== "applications" || current.view !== "table") {
       throw new Error("expected cached application pages")
     }
     const changedPage = applicationsPage([changed])
-    queryClient.setQueryData<FleetPresentationData>(query.queryKey, {
+    queryClient.setQueryData<FleetApplicationsData>(query.queryKey, {
       ...current,
+      view: "table",
       pages: [changedPage],
       applications: [changed],
       facets: changedPage.facets,

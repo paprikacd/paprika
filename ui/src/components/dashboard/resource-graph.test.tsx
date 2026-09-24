@@ -22,7 +22,7 @@ vi.mock("@xyflow/react", () => ({
         (n) => {
           const NodeComp =
             typeof nodeTypes === "object" && nodeTypes !== null
-              ? (nodeTypes as Record<string, unknown>)[n.type]
+              ? (nodeTypes as Record<string, React.ComponentType<{data: Record<string, unknown>}>>)[n.type]
               : undefined
           return NodeComp ? (
             <div key={n.id}>

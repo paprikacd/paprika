@@ -92,6 +92,39 @@ message HealthCheck {
   string expression = 2;
   HTTPProbe http_probe = 3;
   string interval = 4;
+  AvailabilitySLO slo = 5;
+}
+
+message AvailabilitySLO {
+  double target_percentage = 1;
+  string window = 2;
+}
+
+message SLOBucket {
+  int64 started_at = 1;
+  int64 healthy = 2;
+  int64 unhealthy = 3;
+  int64 unknown = 4;
+}
+
+// Observation-based availability, with explicit coverage and startup state.
+message SLOSummary {
+  string state = 1;
+  double target_percentage = 2;
+  int64 window_seconds = 3;
+  int64 interval_seconds = 4;
+  double availability_percentage = 5;
+  double coverage_percentage = 6;
+  double window_coverage_percentage = 7;
+  double error_budget_remaining_percentage = 8;
+  double burn_rate = 9;
+  int64 healthy = 10;
+  int64 unhealthy = 11;
+  int64 unknown = 12;
+  int64 expected = 13;
+  int64 first_observed_at = 14;
+  int64 last_observed_at = 15;
+  repeated SLOBucket timeline = 16;
 }
 
 message HealthCheckResult {
@@ -102,6 +135,8 @@ message HealthCheckResult {
   optional int64 checked_at = 4;
   int32 http_status_code = 5;
   string http_body = 6;
+  int64 duration_millis = 7;
+  SLOSummary slo = 8;
 }
 
 message ResourceSync {
@@ -199,6 +234,10 @@ message Application {
   string project = 24;
   repeated Condition conditions = 25;
   repeated AnalysisResult analysis_results = 26;
+  // Configured checks; HTTP credentials, headers and bodies are omitted.
+  repeated HealthCheck health_check_definitions = 27;
+  Ownership operations = 28;
+  map<string, string> operational_metadata = 29;
 }
 
 message Pipeline {
@@ -247,6 +286,7 @@ message Release {
   int64 canary_step_started_at = 18;
   string rollout_ref = 19;
   repeated HookStatus hook_statuses = 20;
+  repeated VerificationCheck verification_checks = 21;
 }
 
 message Promotion {
@@ -2083,4 +2123,11 @@ service PaprikaService {
   rpc IgnoreDriftedField(IgnoreDriftedFieldRequest) returns (IgnoreDriftedFieldResponse);
   rpc ApplyResourcePatch(ApplyResourcePatchRequest) returns (ApplyResourcePatchResponse);
   rpc SyncResources(SyncResourcesRequest) returns (SyncResourcesResponse);
+}
+
+// Configuration only. Per-check execution results are not retained by the controller.
+message VerificationCheck {
+  string type = 1;
+  string endpoint = 2;
+  int32 timeout_seconds = 3;
 }

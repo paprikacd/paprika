@@ -5,6 +5,7 @@ import {
   type FleetQueryState,
   type NamespacedKey,
 } from "@/lib/fleet-query"
+import { applicationURL } from "@/lib/application-url"
 
 /**
  * Every link out of the overview keeps the operator's current scope. A reader
@@ -24,10 +25,7 @@ export function applicationHref(
   resource?: string
 ): string {
   if (!identity) return "/dashboard/applications/"
-  const base = `/dashboard/application/?namespace=${encodeURIComponent(identity.namespace)}&name=${encodeURIComponent(identity.name)}`
-  // `resource` is the "Kind/name" key the resource tree uses — it deep-links
-  // straight into that object's inspector.
-  return resource ? `${base}&resource=${encodeURIComponent(resource)}` : base
+  return applicationURL(identity, resource)
 }
 
 export function rolloutHref(namespace: string, name: string): string {

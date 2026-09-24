@@ -217,6 +217,8 @@ type RolloutTemplate struct {
 // PodTemplateSpec converts the rollout template to the core type ReplicaSets
 // consume. Only labels and annotations carry over — name, namespace, and the
 // other ObjectMeta fields have no meaning on a ReplicaSet pod template.
+//
+//nolint:gocritic // Value conversion intentionally keeps a copy of the source template.
 func (t RolloutTemplate) PodTemplateSpec() *corev1.PodTemplateSpec {
 	return &corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -229,11 +231,13 @@ func (t RolloutTemplate) PodTemplateSpec() *corev1.PodTemplateSpec {
 
 // RolloutTemplateFromPodTemplate converts a core PodTemplateSpec (e.g. adopted
 // from a target Deployment) to the rollout template type.
+//
+//nolint:gocritic // Value conversion keeps the public conversion API compatible.
 func RolloutTemplateFromPodTemplate(t corev1.PodTemplateSpec) RolloutTemplate {
 	return RolloutTemplate{
 		Metadata: RolloutTemplateMetadata{
-			Labels:      t.ObjectMeta.Labels,
-			Annotations: t.ObjectMeta.Annotations,
+			Labels:      t.Labels,
+			Annotations: t.Annotations,
 		},
 		Spec: t.Spec,
 	}

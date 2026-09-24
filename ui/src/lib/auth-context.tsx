@@ -1,5 +1,7 @@
 "use client"
 
+import { clearBrowserQueryCache } from "@/lib/query-provider"
+
 import {
   createContext,
   useCallback,
@@ -118,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    clearBrowserQueryCache()
     setIdToken(null)
     setUser(null)
     localStorage.removeItem(AUTH_TOKEN_KEY)
@@ -138,6 +141,7 @@ export function useAuth() {
 }
 
 export function persistAuth(idToken: string) {
+  clearBrowserQueryCache()
   const payload = parseJWT(idToken)
   if (!payload) return
   const user: AuthUser = {

@@ -26,12 +26,13 @@ const navigation = vi.hoisted(() => ({
   params: new URLSearchParams(),
   pathname: "/dashboard/applications",
   replace: vi.fn(),
+  push: vi.fn(),
 }))
 const mockUseFleetData = vi.hoisted(() => vi.fn())
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
-  useRouter: () => ({ replace: navigation.replace }),
+  useRouter: () => ({ replace: navigation.replace, push: navigation.push }),
   useSearchParams: () => navigation.params,
 }))
 
@@ -89,6 +90,7 @@ beforeEach(() => {
   navigation.params = new URLSearchParams()
   navigation.pathname = "/dashboard/applications"
   navigation.replace.mockReset()
+  navigation.push.mockReset()
   mockUseFleetData.mockReset()
   mockUseFleetData.mockImplementation((state: FleetQueryState) =>
     fleetResult(state, { status: "loading" }),
@@ -143,7 +145,7 @@ describe("FleetView URL state", () => {
     expect(navigation.replace).not.toHaveBeenCalled()
   })
 
-  it("updates row selection in URL state without taking ownership of zoom", () => {
+  it("opens the application from a table row", () => {
     navigation.params = new URLSearchParams("view=table&zoom=project%3Atenant%2Fpayments")
     const apps = applicationsData([application("apps", "checkout")])
     mockUseFleetData.mockImplementation((state: FleetQueryState) =>
@@ -153,9 +155,8 @@ describe("FleetView URL state", () => {
 
     fireEvent.click(screen.getByRole("row", { name: "apps/checkout" }))
 
-    expect(navigation.replace).toHaveBeenCalledWith(
-      "/dashboard/applications?view=table&zoom=project%3Atenant%2Fpayments&selected=apps%2Fcheckout",
-      { scroll: false },
+    expect(navigation.push).toHaveBeenCalledWith(
+      "/dashboard/application/?namespace=apps&name=checkout",
     )
   })
 

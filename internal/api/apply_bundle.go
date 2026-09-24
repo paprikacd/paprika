@@ -594,12 +594,12 @@ func (s *PaprikaServer) createOrUpdateApplication(
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("update application with retries: %w", err)
+		return nil, fmt.Errorf("update application after conflict retries: %w", err)
 	}
 	return &existing, nil
 }
 
-//nolint:cyclop // label update path is straightforward.
+//nolint:nestif,cyclop // create-or-repair path includes bounded conflict retries.
 func (s *PaprikaServer) ensureStage(
 	ctx context.Context,
 	app *pipelinesv1alpha1.Application,
@@ -627,7 +627,7 @@ func (s *PaprikaServer) ensureStage(
 		// The Stage controller writes status concurrently — re-read inside each
 		// attempt so an optimistic-concurrency conflict retries cleanly instead
 		// of failing the whole apply.
-		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var existing pipelinesv1alpha1.Stage
 			if getErr := s.client.Get(ctx, client.ObjectKey{Namespace: app.Namespace, Name: stageName}, &existing); getErr != nil {
 				return fmt.Errorf("get existing stage: %w", getErr)
@@ -653,8 +653,9 @@ func (s *PaprikaServer) ensureStage(
 				return fmt.Errorf("update stage labels: %w", updateErr)
 			}
 			return nil
-		}); err != nil {
-			return fmt.Errorf("update stage with retries: %w", err)
+		})
+		if retryErr != nil {
+			return fmt.Errorf("update stage after conflict retries: %w", retryErr)
 		}
 	}
 	return nil

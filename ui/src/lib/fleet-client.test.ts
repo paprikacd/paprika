@@ -44,7 +44,7 @@ describe("enterprise query client", () => {
     expect(defaults.queries).toMatchObject({
       staleTime: 30_000,
       gcTime: 10 * 60_000,
-      retry: 2,
+      retry: expect.any(Function),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     })
