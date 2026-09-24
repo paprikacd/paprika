@@ -295,7 +295,9 @@ touching manager.args.
 {{- end }}
 {{- end }}
 {{- with $r.rateLimit }}
-{{- if hasKey . "globalRate" }}
+{{- /* presence (hasKey) so an explicit 0 still renders, but null must not —
+an empty flag value crashes flag parsing on startup. */}}
+{{- if and (hasKey . "globalRate") (not (kindIs "invalid" .globalRate)) }}
 - --reconcile-global-rate={{ .globalRate }}
 {{- end }}
 {{- if .globalBurst }}
