@@ -10454,9 +10454,16 @@ type ApplicationSummary struct {
 	Ownership                    *OwnershipSummary      `protobuf:"bytes,24,opt,name=ownership,proto3" json:"ownership,omitempty"`
 	Commit                       *CommitSummary         `protobuf:"bytes,25,opt,name=commit,proto3" json:"commit,omitempty"`
 	// Release identifier for the current stage, e.g. "r241". Empty when none.
-	ReleaseId     string `protobuf:"bytes,26,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ReleaseId string `protobuf:"bytes,26,opt,name=release_id,json=releaseId,proto3" json:"release_id,omitempty"`
+	// Short reason the application needs attention, e.g. "deployment/web
+	// degraded" or "release retries exhausted". Empty when nothing needs
+	// attention.
+	AttentionLabel string `protobuf:"bytes,27,opt,name=attention_label,json=attentionLabel,proto3" json:"attention_label,omitempty"`
+	// Detail behind the label — the failing condition's or resource's message,
+	// bounded in length. Empty when there is nothing to explain.
+	AttentionDetail string `protobuf:"bytes,28,opt,name=attention_detail,json=attentionDetail,proto3" json:"attention_detail,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ApplicationSummary) Reset() {
@@ -10667,6 +10674,20 @@ func (x *ApplicationSummary) GetCommit() *CommitSummary {
 func (x *ApplicationSummary) GetReleaseId() string {
 	if x != nil {
 		return x.ReleaseId
+	}
+	return ""
+}
+
+func (x *ApplicationSummary) GetAttentionLabel() string {
+	if x != nil {
+		return x.AttentionLabel
+	}
+	return ""
+}
+
+func (x *ApplicationSummary) GetAttentionDetail() string {
+	if x != nil {
+		return x.AttentionDetail
 	}
 	return ""
 }
@@ -18576,7 +18597,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\rcluster_label\x18\x05 \x01(\tR\fclusterLabel\x12/\n" +
 	"\x06health\x18\x06 \x01(\x0e2\x17.paprika.v1.FleetHealthR\x06health\x12O\n" +
 	"\x12cluster_connection\x18\a \x01(\x0e2 .paprika.v1.FleetConnectionStateR\x11clusterConnection\x128\n" +
-	"\x18unmanaged_inline_cluster\x18\b \x01(\bR\x16unmanagedInlineCluster\"\xe9\v\n" +
+	"\x18unmanaged_inline_cluster\x18\b \x01(\bR\x16unmanagedInlineCluster\"\xbd\f\n" +
 	"\x12ApplicationSummary\x126\n" +
 	"\bidentity\x18\x01 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\bidentity\x124\n" +
 	"\aproject\x18\x02 \x01(\v2\x1a.paprika.v1.FleetObjectKeyR\aproject\x128\n" +
@@ -18609,7 +18630,9 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\townership\x18\x18 \x01(\v2\x1c.paprika.v1.OwnershipSummaryR\townership\x121\n" +
 	"\x06commit\x18\x19 \x01(\v2\x19.paprika.v1.CommitSummaryR\x06commit\x12\x1d\n" +
 	"\n" +
-	"release_id\x18\x1a \x01(\tR\treleaseId\"\xd2\x01\n" +
+	"release_id\x18\x1a \x01(\tR\treleaseId\x12'\n" +
+	"\x0fattention_label\x18\x1b \x01(\tR\x0eattentionLabel\x12)\n" +
+	"\x10attention_detail\x18\x1c \x01(\tR\x0fattentionDetail\"\xd2\x01\n" +
 	"\x10FleetFacetBucket\x12=\n" +
 	"\tdimension\x18\x01 \x01(\x0e2\x1f.paprika.v1.FleetFacetDimensionR\tdimension\x124\n" +
 	"\x06object\x18\x02 \x01(\v2\x1a.paprika.v1.FleetObjectKeyH\x00R\x06object\x12\x16\n" +

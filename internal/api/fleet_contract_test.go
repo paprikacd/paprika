@@ -329,6 +329,12 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 			referencedType: "paprika.v1.CommitSummary",
 		},
 		"release_id": {number: 26, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"attention_label": {
+			number: 27, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+		},
+		"attention_detail": {
+			number: 28, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+		},
 	},
 	"FleetFacetBucket": {
 		"dimension": {

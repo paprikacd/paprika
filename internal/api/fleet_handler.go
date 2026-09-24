@@ -571,6 +571,8 @@ func fleetApplicationResultToProto(result *fleet.ApplicationQueryResult) *paprik
 		ObservabilityConnection:      fleetConnectionToProto(summary.ObservabilityConnection),
 		BlockedGateCount:             summary.BlockedGateCount,
 		LastTransitionUnixMs:         summary.LastTransitionUnixMS,
+		AttentionLabel:               summary.AttentionLabel,
+		AttentionDetail:              summary.AttentionDetail,
 		Capabilities:                 make([]paprikav1.FleetCapability, 0, len(result.Capabilities)),
 	}
 	for i := range summary.Targets {

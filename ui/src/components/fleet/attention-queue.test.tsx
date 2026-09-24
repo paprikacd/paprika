@@ -28,6 +28,8 @@ function application(
     observabilityConnection: "healthy",
     blockedGateCount: 0,
     lastTransitionUnixMs: BigInt(1_725_000_000_000),
+    attentionLabel: "",
+    attentionDetail: "",
     capabilities: [],
     ...overrides,
   }
@@ -84,6 +86,25 @@ describe("AttentionQueue", () => {
     expect(screen.getByText("degraded · drifted")).toBeInTheDocument()
     expect(screen.getByText("rollout in progress")).toBeInTheDocument()
     expect(screen.getByText("gate blocked")).toBeInTheDocument()
+  })
+
+  it("says the specific reason when the fleet index supplies one", () => {
+    renderQueue([
+      application("checkout-api", {
+        health: "degraded",
+        attentionLabel: "deployment/web degraded",
+        attentionDetail: "0/3 replicas ready",
+      }),
+      application("ledger-worker", {
+        health: "failed",
+        attentionLabel: "release retries exhausted",
+      }),
+    ])
+
+    expect(screen.getByText("deployment/web degraded")).toBeInTheDocument()
+    expect(screen.getByText(/0\/3 replicas ready/)).toBeInTheDocument()
+    expect(screen.getByText("release retries exhausted")).toBeInTheDocument()
+    expect(screen.queryByText("workload failing")).not.toBeInTheDocument()
   })
 
   it("counts applications in the pagination contract, not loaded rows", () => {

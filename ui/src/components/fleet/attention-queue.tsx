@@ -12,6 +12,7 @@ import {
   type ApplicationCollectionProps,
 } from "@/components/fleet/application-collection"
 import {
+  attentionDetailOf,
   attentionReasonOf,
   healthLabelOf,
   healthToneOf,
@@ -188,9 +189,13 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
                 <span
                   role="cell"
                   aria-colindex={6}
+                  title={attentionDetailOf(application) || undefined}
                   className="truncate text-reason text-muted-foreground"
                 >
-                  {attentionReasonOf(application)}
+                  <span>{attentionReasonOf(application)}</span>
+                  {application.attentionDetail ? (
+                    <span className="text-neutral-600"> — {application.attentionDetail}</span>
+                  ) : null}
                 </span>
               </div>
             )

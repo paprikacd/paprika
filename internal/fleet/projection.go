@@ -1,10 +1,13 @@
 package fleet
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -120,7 +123,110 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 		}
 	}
 
+	summary.AttentionLabel, summary.AttentionDetail = attentionSignal(app, &summary)
+
 	return summary, result
+}
+
+// attentionConditionTypes lists Application condition types that explain why an
+// application needs attention, most actionable first. They mirror the failure
+// conditions the application controller clears on recovery.
+var attentionConditionTypes = []string{
+	"ReleaseRetriesExhausted",
+	"Failed",
+	"Degraded",
+	"RolledBack",
+	"Pending",
+}
+
+// attentionDetailRunes bounds the failure detail retained in the index so a
+// noisy controller message cannot grow the snapshot.
+const attentionDetailRunes = 200
+
+// attentionSignal derives a compact reason an application needs attention from
+// the signals the controllers already record. It reports the most actionable
+// signal present, in order: an active failure condition, an unhealthy managed
+// resource, missing resources, drift, then blocked gates. It never fabricates
+// a root cause — when only a status is known the label stays generic.
+func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSummary) (label, detail string) {
+	for _, condType := range attentionConditionTypes {
+		cond := meta.FindStatusCondition(app.Status.Conditions, condType)
+		if cond != nil && cond.Status == metav1.ConditionTrue {
+			return humanizeConditionType(condType), sanitizeAttentionDetail(cond.Message)
+		}
+	}
+	if worst := worstResourceHealth(app.Status.ResourceHealth); worst != nil {
+		return fmt.Sprintf("%s/%s %s", strings.ToLower(worst.Kind), worst.Name, strings.ToLower(worst.Health)),
+			sanitizeAttentionDetail(worst.Message)
+	}
+	if summary.MissingResourceCount > 0 {
+		return pluralizeAttention(summary.MissingResourceCount, "resource", "missing"), ""
+	}
+	if summary.DriftCount > 0 {
+		return pluralizeAttention(summary.DriftCount, "resource", "out of sync"), ""
+	}
+	if summary.BlockedGateCount > 0 {
+		return pluralizeAttention(summary.BlockedGateCount, "gate", "blocked"), ""
+	}
+	return "", ""
+}
+
+// worstResourceHealth returns the unhealthiest managed resource, or nil when
+// every resource is healthy or still progressing.
+func worstResourceHealth(resources []pipelinesv1alpha1.ResourceHealth) *pipelinesv1alpha1.ResourceHealth {
+	var worst *pipelinesv1alpha1.ResourceHealth
+	worstRank := -1
+	for i := range resources {
+		if rank := resourceHealthRank(resources[i].Health); rank > worstRank {
+			worstRank = rank
+			worst = &resources[i]
+		}
+	}
+	return worst
+}
+
+func resourceHealthRank(health string) int {
+	switch health {
+	case "Degraded":
+		return 3
+	case "Missing":
+		return 2
+	case "Unknown":
+		return 1
+	}
+	return -1
+}
+
+func pluralizeAttention(count uint32, noun, qualifier string) string {
+	if count != 1 {
+		noun += "s"
+	}
+	return fmt.Sprintf("%d %s %s", count, noun, qualifier)
+}
+
+// humanizeConditionType renders a PascalCase condition type as lowercase
+// words: "ReleaseRetriesExhausted" becomes "release retries exhausted".
+func humanizeConditionType(conditionType string) string {
+	var builder strings.Builder
+	builder.Grow(len(conditionType) + 4)
+	for i, r := range conditionType {
+		if i > 0 && unicode.IsUpper(r) {
+			builder.WriteByte(' ')
+		}
+		builder.WriteRune(unicode.ToLower(r))
+	}
+	return builder.String()
+}
+
+// sanitizeAttentionDetail collapses whitespace so the detail fits a single
+// line and bounds it so a noisy controller message cannot grow the snapshot.
+func sanitizeAttentionDetail(message string) string {
+	collapsed := strings.Join(strings.Fields(message), " ")
+	runes := []rune(collapsed)
+	if len(runes) > attentionDetailRunes {
+		return string(runes[:attentionDetailRunes-1]) + "…"
+	}
+	return collapsed
 }
 
 func sortProjectionStages(stages []*pipelinesv1alpha1.Stage) {

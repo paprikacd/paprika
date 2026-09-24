@@ -29,6 +29,8 @@ function application(
     rolloutState: FleetRolloutState.HEALTHY,
     resourceCount: 12,
     lastTransitionUnixMs: BigInt(0),
+    attentionLabel: "",
+    attentionDetail: "",
     ...overrides,
   })
 }

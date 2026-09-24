@@ -864,7 +864,12 @@ func mutateIDSetIndex[K comparable](
 }
 
 func (e *snapshotEditor) addSearchDocument(id types.NamespacedName) {
-	document := searchDocument{normalizedName: normalizeText(id.Name), trigrams: trigramSet(normalizeText(id.Name))}
+	normalizedName := normalizeText(id.Name)
+	document := searchDocument{
+		normalizedName: normalizedName,
+		normalizedFull: normalizeText(id.Namespace + "/" + id.Name),
+		trigrams:       trigramSet(normalizedName),
+	}
 	e.ensureSearchDocuments()
 	e.next.searchDocuments[id] = document
 	for trigram := range document.trigrams {

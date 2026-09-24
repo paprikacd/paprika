@@ -2141,6 +2141,8 @@ export const ApplicationSummary = /*@__PURE__*/ proto3.makeMessageType(
     { no: 24, name: "ownership", kind: "message", T: OwnershipSummary },
     { no: 25, name: "commit", kind: "message", T: CommitSummary },
     { no: 26, name: "release_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 27, name: "attention_label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 28, name: "attention_detail", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

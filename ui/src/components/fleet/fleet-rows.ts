@@ -71,10 +71,13 @@ export function targetLabelOf(application: FleetApplicationSummary): string {
 }
 
 /**
- * Why this application is in the attention queue, in the operator's words.
- * Every branch is backed by a field the fleet index actually returns.
+ * Why this application needs attention. The fleet index derives a specific
+ * label from the application's conditions and resource health; the generic
+ * branches below only run when the index has nothing to say (e.g. a healthy
+ * application an operator paged to anyway).
  */
 export function attentionReasonOf(application: FleetApplicationSummary): string {
+  if (application.attentionLabel) return application.attentionLabel
   const drifted = application.sync === "out_of_sync"
   switch (application.health) {
     case "failed":
@@ -89,6 +92,15 @@ export function attentionReasonOf(application: FleetApplicationSummary): string 
       if (drifted) return "drifted"
       return application.blockedGateCount > 0 ? "gate blocked" : "needs review"
   }
+}
+
+/**
+ * The condition or resource message behind `attentionReasonOf`, when the
+ * fleet index captured one — the text that answers "which thing, and what did
+ * it say".
+ */
+export function attentionDetailOf(application: FleetApplicationSummary): string {
+  return application.attentionDetail
 }
 
 export interface ApplicationGroup {

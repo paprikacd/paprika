@@ -57,6 +57,10 @@ type SearchMatch struct {
 
 type searchDocument struct {
 	normalizedName string
+	// normalizedFull is "<namespace> <name>" after normalization. It lets
+	// queries like "payments/api" or "payments api" match, and lets a bare
+	// namespace name surface that namespace's applications.
+	normalizedFull string
 	trigrams       map[string]struct{}
 }
 
@@ -93,11 +97,12 @@ func normalizeText(raw string) string {
 }
 
 func isSearchSeparator(r rune) bool {
-	return r == '-' || r == '_' || r == '.' || unicode.IsSpace(r)
+	return r == '-' || r == '_' || r == '.' || r == '/' || unicode.IsSpace(r)
 }
 
-// Search matches application names only and never broadens beyond candidates.
-// Its fuzzy tier uses set-Jaccard similarity over unique Unicode-rune trigrams.
+// Search matches application names, plus namespace-qualified forms like
+// "ns/name". It never broadens beyond candidates. Its fuzzy tier uses
+// set-Jaccard similarity over unique Unicode-rune trigrams of the name.
 func (s *Snapshot) Search(rawQuery string, candidates IDSet) ([]SearchMatch, error) {
 	query, err := NormalizeSearch(rawQuery)
 	if err != nil {
@@ -114,7 +119,11 @@ func (s *Snapshot) Search(rawQuery string, candidates IDSet) ([]SearchMatch, err
 	}
 
 	matches, ranked := s.directMatches(query, allowed)
-	matches = append(matches, s.trigramMatches(query, allowed, ranked)...)
+	// A namespace-qualified query ("ns/name") is precise by intent — fuzzy
+	// matching would only leak same-named applications in other namespaces.
+	if !strings.Contains(rawQuery, "/") {
+		matches = append(matches, s.trigramMatches(query, allowed, ranked)...)
+	}
 	sort.Slice(matches, func(i, j int) bool {
 		return searchMatchLess(matches[i], matches[j])
 	})
@@ -149,6 +158,9 @@ func (s *Snapshot) directMatches(query string, allowed IDSet) ([]SearchMatch, ID
 		}
 
 		tier, ok := directSearchTier(document.normalizedName, query)
+		if !ok {
+			tier, ok = directSearchTier(document.normalizedFull, query)
+		}
 		if !ok {
 			continue
 		}
@@ -202,6 +214,7 @@ func (s *Snapshot) rebuildSearchIndex() {
 		trigrams := trigramSet(normalizedName)
 		s.searchDocuments[id] = searchDocument{
 			normalizedName: normalizedName,
+			normalizedFull: normalizeText(id.Namespace + "/" + id.Name),
 			trigrams:       trigrams,
 		}
 		for trigram := range trigrams {

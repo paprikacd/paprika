@@ -172,6 +172,13 @@ type ApplicationSummary struct {
 	ObservabilityBindings []types.NamespacedName
 	BlockedGateCount      uint32
 	LastTransitionUnixMS  int64
+	// AttentionLabel is a short reason the application needs attention, e.g.
+	// "deployment/web degraded" or "release retries exhausted". Empty when
+	// nothing needs attention.
+	AttentionLabel string
+	// AttentionDetail carries the failing condition's or resource's message,
+	// bounded in length. Empty when there is nothing to explain.
+	AttentionDetail string
 }
 
 // ProjectSummary is the provider-neutral project metadata retained by a

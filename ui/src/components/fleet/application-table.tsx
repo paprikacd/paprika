@@ -28,6 +28,7 @@ import {
   type FleetLifecycleVector,
 } from "@/components/fleet/fleet-lifecycle"
 import {
+  attentionDetailOf,
   groupApplications,
   groupMetaOf,
   healthLabelOf,
@@ -470,8 +471,12 @@ function ApplicationRow({
             {identity?.name || "Unnamed application"}
           </span>
         </span>
-        <span className="block truncate pl-4.75 font-mono text-meta text-neutral-600">
+        <span
+          title={attentionDetailOf(application) || undefined}
+          className="block truncate pl-4.75 font-mono text-meta text-neutral-600"
+        >
           {identity ? identityKey(identity) : "Identity unavailable"}
+          {application.attentionLabel ? ` · ${application.attentionLabel}` : ""}
         </span>
       </span>
 
@@ -492,7 +497,15 @@ function ApplicationRow({
         </span>
       </span>
 
-      <span role="cell" aria-colindex={colIndex.get("health")}>
+      <span
+        role="cell"
+        aria-colindex={colIndex.get("health")}
+        title={
+          application.attentionLabel
+            ? `${application.attentionLabel}${application.attentionDetail ? ` — ${application.attentionDetail}` : ""}`
+            : undefined
+        }
+      >
         <StatusPill tone={healthTone} label={healthLabelOf(application.health)} />
       </span>
 

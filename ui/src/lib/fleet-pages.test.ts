@@ -33,6 +33,8 @@ function application(
     observabilityConnection: "unspecified",
     blockedGateCount: 0,
     lastTransitionUnixMs: BigInt(0),
+    attentionLabel: "",
+    attentionDetail: "",
     capabilities: [],
   }
 }
