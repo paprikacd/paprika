@@ -5,6 +5,7 @@ import { useState } from "react"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { StatusPill } from "@/components/ui/status-chip"
 import { ResourceKindIcon } from "@/components/dashboard/resource-kind-icon"
+import { ApplicationSLOs } from "@/components/dashboard/application-slos"
 import { resourceHealthTone, type FlatTreeNode } from "@/components/dashboard/resource-list-table"
 import type { InspectedResource } from "@/components/dashboard/resource-detail-panel"
 import type { Application, Condition, Release } from "@/gen/paprika/v1/api_pb"
@@ -50,6 +51,7 @@ export function ApplicationHealth({ application, release, resources, observedAt,
       <p className="font-mono text-meta text-muted-foreground">Fetched {time(observedAt)} · refreshes every 15s while visible</p>
     </div>
 
+    <ApplicationSLOs application={application} />
     <div className="grid min-w-0 gap-4 xl:grid-cols-2">
       <Blueprint>
         <BoardHeader title="Application checks" meta={`${checkNames.length} checks`} />
@@ -64,6 +66,7 @@ export function ApplicationHealth({ application, release, resources, observedAt,
                 {probe ? <p className="break-all font-mono text-meta">{probe.method || "GET"} {probe.url} · expected HTTP {probe.expectedStatus || 200} · timeout {probe.timeout || 5}s</p> : null}
                 {definition?.expression ? <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded border border-rule bg-inset p-2 text-meta">{definition.expression}</pre> : null}
                 <p className="text-note text-muted-foreground">{check?.message || "No result message reported."}</p>
+                {check?.checkedAt ? <p className="font-mono text-meta text-muted-foreground">Probe duration {(check.durationMillis ?? BigInt(0)).toString()}ms</p> : null}
                 <p className="font-mono text-meta text-muted-foreground">Checked {time(check?.checkedAt)}{check?.httpStatusCode ? ` · HTTP ${check.httpStatusCode}` : ""}{definition ? ` · interval ${definition.interval || "30s"}` : ""}</p>
               </li>
             })}

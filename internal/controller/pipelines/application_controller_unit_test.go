@@ -1339,6 +1339,8 @@ func TestApplicationReconciler_evaluateHealthRespectsCheckIntervals(t *testing.T
 		},
 	}
 
+	app.Status.HealthChecks[0].ConfigurationHash = health.MeasurementHash(app.Spec.HealthChecks[0])
+
 	r.evaluateHealth(context.Background(), app)
 	if got := probes.Load(); got != 0 {
 		t.Fatalf("fresh health result should be reused, got %d probes", got)

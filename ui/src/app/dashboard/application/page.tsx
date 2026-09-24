@@ -43,6 +43,8 @@ import { FOCUSED_REFRESH_INTERVAL_MS, useFocusedRefresh } from "@/lib/fleet-refr
 import { STATUS_TONES, type StatusTone } from "@/lib/status-tone"
 import { applicationClient as client, useApplicationData } from "@/lib/use-application-data"
 import { ApplicationHealth } from "@/components/dashboard/application-health"
+import { ApplicationSLOs } from "@/components/dashboard/application-slos"
+import { OperationalMetadata, safeOperationalLink } from "@/components/dashboard/application-operations"
 import { cn } from "@/lib/utils"
 
 
@@ -52,7 +54,7 @@ import { cn } from "@/lib/utils"
    the non-OK states. `gateFor` is the single place that decision is made.
    ──────────────────────────────────────────────────────────────────── */
 
-export interface SurfaceGate {
+interface SurfaceGate {
   /** False means the surface must not be drawn at all. */
   visible: boolean
   /** True means draw the frame and the reason, and no figures. */
@@ -70,7 +72,7 @@ const HIDDEN_GATE: SurfaceGate = {
   observedAtMs: 0,
 }
 
-export function gateFor(
+function gateFor(
   sources: readonly DataSourceStatus[] | undefined,
   dataClass: DataClass
 ): SurfaceGate {
@@ -253,7 +255,7 @@ function ApplicationDetail() {
   const releases = queries.releases.data?.releases
   const tree = queries.tree.data?.nodes
   const sources = queries.sources.data?.sources
-  const ownership = queries.ownership.data?.ownership
+  const ownership = application?.operations ?? queries.ownership.data?.ownership
   const lifecycle = queries.lifecycle.data?.lifecycle?.phases
   const commit = queries.commit.data?.commit
   const loading = queries.application.isPending
@@ -276,8 +278,8 @@ function ApplicationDetail() {
   })
 
   const ownershipGate = useMemo(
-    () => gateFor(sources, DataClass.OWNERSHIP),
-    [sources]
+    () => application?.operations ? { ...HIDDEN_GATE, visible: application.operations.state === DataState.OK } : gateFor(sources, DataClass.OWNERSHIP),
+    [application, sources]
   )
   const lifecycleGate = useMemo(
     () => gateFor(sources, DataClass.LIFECYCLE),
@@ -573,6 +575,8 @@ function ApplicationDetail() {
               />
               <div className="flex flex-col gap-3.5">
                 <DrilldownRail gate={ownershipGate} ownership={ownership} />
+                <OperationalMetadata metadata={application.operationalMetadata ?? {}} />
+                <ApplicationSLOs application={application} compact onOpenHealth={() => setTab("health")} />
                 <GatesBoard
                   application={application}
                   policyResults={currentRelease?.policyResults ?? []}
@@ -935,7 +939,7 @@ function DrilldownRail({
   if (!gate.visible) return null
 
   const links: DrilldownLink[] = ownership?.links ?? []
-  const ordered = [...links].sort(
+  const ordered = links.filter((link) => safeOperationalLink(link.url)).sort(
     (a, b) => DRILLDOWN_ORDER.indexOf(a.kind) - DRILLDOWN_ORDER.indexOf(b.kind)
   )
 

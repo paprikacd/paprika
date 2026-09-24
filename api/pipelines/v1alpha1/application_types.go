@@ -337,9 +337,11 @@ type HTTPProbe struct {
 }
 
 // HealthCheck defines a health check.
-// HealthCheck defines a health check.
+// +kubebuilder:validation:XValidation:rule="!has(self.slo) || has(self.httpProbe)",message="an availability SLO requires an HTTP probe"
 type HealthCheck struct {
 	// Name of the health check
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
 	Name string `json:"name"`
 	// CEL expression to evaluate. Available variables:
 	//   app (Application spec), status (Application status), http (HTTP probe results).
@@ -355,6 +357,10 @@ type HealthCheck struct {
 	// How often to run this check (default 30s)
 	// +kubebuilder:default="30s"
 	Interval string `json:"interval,omitempty"`
+	// SLO adds rolling availability analysis to this HTTP check. The interval
+	// must be a whole number of seconds from 10s to 1h; GET/HEAD only.
+	// +optional
+	SLO *AvailabilitySLO `json:"slo,omitempty"`
 }
 
 // ApprovalGateType values.
@@ -442,6 +448,11 @@ type HealthCheckResult struct {
 	// HTTP probe results
 	HTTPStatusCode int    `json:"httpStatusCode,omitempty"`
 	HTTPBody       string `json:"httpBody,omitempty"`
+	// ConfigurationHash invalidates cached results when a probe changes.
+	ConfigurationHash string `json:"configurationHash,omitempty"`
+	DurationMillis    int64  `json:"durationMillis,omitempty"`
+	// +optional
+	SLOHistory *SLOHistory `json:"sloHistory,omitempty"`
 }
 
 // ApplicationSpec defines the specification for an application.
@@ -492,7 +503,14 @@ type ApplicationSpec struct {
 
 	// HealthChecks define custom CEL-based health checks for the application.
 	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:XValidation:rule="self.filter(c, has(c.slo)).size() <= 4",message="at most four availability SLOs can retain history per application"
+	// +kubebuilder:validation:XValidation:rule="self.all(c, self.filter(other, other.name == c.name).size() == 1)",message="health check names must be unique"
 	HealthChecks []HealthCheck `json:"healthChecks,omitempty"`
+
+	// Operations contains public operational links and application context.
+	// +optional
+	Operations *ApplicationOperations `json:"operations,omitempty"`
 
 	// ApprovalGates define manual approval gates for stage transitions.
 	// +optional

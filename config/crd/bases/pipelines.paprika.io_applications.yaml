@@ -343,9 +343,7 @@ spec:
                 description: HealthChecks define custom CEL-based health checks for
                   the application.
                 items:
-                  description: |-
-                    HealthCheck defines a health check.
-                    HealthCheck defines a health check.
+                  description: HealthCheck defines a health check.
                   properties:
                     expression:
                       description: |-
@@ -392,12 +390,44 @@ spec:
                       type: string
                     name:
                       description: Name of the health check
+                      maxLength: 128
+                      minLength: 1
                       type: string
+                    slo:
+                      description: |-
+                        SLO adds rolling availability analysis to this HTTP check. The interval
+                        must be a whole number of seconds from 10s to 1h; GET/HEAD only.
+                      properties:
+                        targetPercentage:
+                          maximum: 99.9999
+                          minimum: 1
+                          type: number
+                        window:
+                          enum:
+                          - 1h
+                          - 24h
+                          - 7d
+                          - 30d
+                          type: string
+                      required:
+                      - targetPercentage
+                      - window
+                      type: object
                   required:
                   - expression
                   - name
                   type: object
+                  x-kubernetes-validations:
+                  - message: an availability SLO requires an HTTP probe
+                    rule: '!has(self.slo) || has(self.httpProbe)'
+                maxItems: 32
                 type: array
+                x-kubernetes-validations:
+                - message: at most four availability SLOs can retain history per application
+                  rule: self.filter(c, has(c.slo)).size() <= 4
+                - message: health check names must be unique
+                  rule: self.all(c, self.filter(other, other.name == c.name).size()
+                    == 1)
               ignoreDifferences:
                 description: IgnoreDifferences lists JSON pointer paths to exclude
                   from diff computation.
@@ -430,6 +460,65 @@ spec:
                     type: array
                 required:
                 - action
+                type: object
+              operations:
+                description: Operations contains public operational links and application
+                  context.
+                properties:
+                  links:
+                    items:
+                      description: OperationalLink is an operator-configured destination,
+                        never a fetched URL.
+                      properties:
+                        kind:
+                          enum:
+                          - dashboard
+                          - logs
+                          - traces
+                          - runbook
+                          - cost
+                          - repository
+                          - custom
+                          type: string
+                        label:
+                          maxLength: 100
+                          minLength: 1
+                          type: string
+                        url:
+                          maxLength: 2048
+                          pattern: ^https?://
+                          type: string
+                      required:
+                      - kind
+                      - label
+                      - url
+                      type: object
+                    maxItems: 20
+                    type: array
+                  metadata:
+                    additionalProperties:
+                      description: OperationalValue is public application metadata,
+                        not a place for credentials.
+                      maxLength: 256
+                      type: string
+                    description: Metadata is displayed verbatim; it must not contain
+                      secrets.
+                    maxProperties: 16
+                    type: object
+                  onCall:
+                    maxLength: 128
+                    type: string
+                  owner:
+                    maxLength: 128
+                    type: string
+                  ownerLabel:
+                    maxLength: 128
+                    type: string
+                  tier:
+                    format: int32
+                    maximum: 4
+                    minimum: 1
+                    type: integer
                 type: object
               parameters:
                 additionalProperties:
@@ -1494,6 +1583,13 @@ spec:
                     checkedAt:
                       format: date-time
                       type: string
+                    configurationHash:
+                      description: ConfigurationHash invalidates cached results when
+                        a probe changes.
+                      type: string
+                    durationMillis:
+                      format: int64
+                      type: integer
                     httpBody:
                       type: string
                     httpStatusCode:
@@ -1503,6 +1599,31 @@ spec:
                       type: string
                     name:
                       type: string
+                    sloHistory:
+                      description: |-
+                        SLOHistory is a bounded, durable ring of scheduled observations. Two bits per
+                        interval encode missed (0), healthy (1), unhealthy (2), or invalid (3). At the
+                        minimum 10-second interval, a 30-day ring uses 64,800 bytes (86,400 in JSON).
+                        It survives controller restarts and does not require an external metrics DB.
+                      properties:
+                        configurationHash:
+                          type: string
+                        firstObservedAt:
+                          format: date-time
+                          type: string
+                        lastSlot:
+                          format: int64
+                          type: integer
+                        samples:
+                          format: byte
+                          maxLength: 86400
+                          type: string
+                      required:
+                      - configurationHash
+                      - firstObservedAt
+                      - lastSlot
+                      - samples
+                      type: object
                     status:
                       description: HealthStatus represents the health status of an
                         application or resource.

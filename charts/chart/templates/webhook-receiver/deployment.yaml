@@ -171,12 +171,6 @@ spec:
             mountPath: /etc/paprika/tls
             readOnly: true
           {{- end }}
-      securityContext:
-        {{- if .Values.webhookReceiver.podSecurityContext }}
-        {{- toYaml .Values.webhookReceiver.podSecurityContext | nindent 8 }}
-        {{- else }}
-        {}
-        {{- end }}
       serviceAccountName: {{ include "paprika.serviceAccountName" . }}
       {{- $pc := .Values.webhookReceiver.priorityClassName | default .Values.priorityClassName }}
       {{- if $pc }}
