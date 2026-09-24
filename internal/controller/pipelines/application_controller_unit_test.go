@@ -2080,6 +2080,40 @@ func TestTransientRequeue(t *testing.T) {
 	}
 }
 
+func TestEffectivePollInterval(t *testing.T) {
+	t.Parallel()
+
+	r := &ApplicationReconciler{}
+	app := func(interval string) *pipelinesv1alpha1.Application {
+		return &pipelinesv1alpha1.Application{Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{PollInterval: interval},
+		}}
+	}
+	ctx := context.Background()
+
+	cases := []struct {
+		name     string
+		interval string
+		want     time.Duration
+	}{
+		{"empty falls back", "", defaultRequeue},
+		{"valid overrides", "45s", 45 * time.Second},
+		{"invalid falls back", "not-a-duration", defaultRequeue},
+		{"missing unit falls back", "30", defaultRequeue},
+		{"zero falls back", "0s", defaultRequeue},
+		{"negative falls back", "-5s", defaultRequeue},
+		{"sub-second falls back", "500ms", defaultRequeue},
+		{"at floor accepted", "1s", time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := r.effectivePollInterval(ctx, app(tc.interval)); got != tc.want {
+				t.Fatalf("effectivePollInterval(%q) = %s, want %s", tc.interval, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMaxConcurrentOr(t *testing.T) {
 	t.Parallel()
 

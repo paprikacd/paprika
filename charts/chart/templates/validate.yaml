@@ -1,1 +1,2 @@
 {{- include "paprika.validateOIDCSecret" . -}}
+{{- include "paprika.validateRequiredArgs" . -}}

@@ -25,7 +25,10 @@ deploy changes safely, and keep the shared `paprika-e2e` namespace healthy.
   `kind-deephost` for paprika work.
 - Prefer `Taskfile.yml` tasks and `Makefile` targets over ad hoc commands so
   workflows are repeatable.
-- Render Helm changes before applying them (`helm template`).
+- Render Helm changes before applying them (`helm template`). CI runs helm
+  v3.21.2 while local may be helm 4 — null/`hasKey`/`with` semantics differ
+  between them, so `task chart:validate` must pass under CI's version before
+  merging chart changes.
 - After a write, inspect the resulting object and status; API writes can race
   or be retried by controllers.
 - Never commit kubeconfigs, Cloudflare credentials, registry credentials,

@@ -356,6 +356,32 @@ will be reverted on next sync. The `restart_workload` MCP tool wraps this
 for rolling restarts (Deployment/StatefulSet/DaemonSet only), behind the
 write confirmation flow.
 
+## Values Validation
+
+The chart validates values at render/install time in two layers:
+
+- `values.schema.json` rejects type errors, bad enums (`deploymentMode`,
+  `mode`), out-of-range ports, malformed Go durations, and negative
+  rate-limit numbers before anything renders.
+- `templates/validate.yaml` fails the render on enabled-but-incomplete
+  features: `auth.basic.enabled` without username/passwordHash,
+  `auth.oidc.enabled` without issuerURL, and `mcp.enabled` without
+  `oauth.clientId`, `oauth.redirectUris`, or `publicURL`.
+
+The invariant both layers protect: **a rendered pod arg must never be a bare
+`--flag=`** — an empty value crashes typed flag parsing at container start.
+Run the matrix locally before changing arg templates:
+
+```sh
+task chart:validate
+```
+
+On the binary side, startup validation (`validateControllerTuning`,
+`validateCoordinatorConfig`, `validateMode`) rejects values that would wedge
+or silently weaken the process — e.g. `--api-max-conns=0` would disable the
+connection cap that exists to prevent OOM under connection floods, so it is
+rejected rather than tolerated.
+
 ## Verifying
 
 ### Application Health
