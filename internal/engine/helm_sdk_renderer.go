@@ -423,12 +423,24 @@ func (r *HelmSDKRenderer) buildValues(params map[string]string, baseContent stri
 	}
 
 	for k, v := range params {
-		if err := strvals.ParseInto(fmt.Sprintf("%s=%s", k, v), merged); err != nil {
+		line := fmt.Sprintf("%s=%s", k, escapeStrvalsValue(v))
+		if err := strvals.ParseInto(line, merged); err != nil {
 			return nil, fmt.Errorf("parse parameter %q: %w", k, err)
 		}
 	}
 
 	return merged, nil
+}
+
+// escapeStrvalsValue quotes a parameter value so strvals treats it as an
+// opaque scalar. Without this, PromQL exprs like
+// histogram_quantile(0.95, sum by (le) (rate(x[10m]))) > 30 break: strvals
+// reads "," as list syntax, re-parses the tail as a key path, and dies on
+// the range selector ([10m] is not an integer index). Backslashes must be
+// doubled first or strvals eats them ("path\to" → "pathtofile").
+func escapeStrvalsValue(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	return strings.ReplaceAll(v, `,`, `\,`)
 }
 
 // RenderAll renders a sequence of templates. When a Kustomize template requests
