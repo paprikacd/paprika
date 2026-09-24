@@ -5,7 +5,6 @@ import { applicationURL } from "@/lib/application-url"
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ChevronDown } from "lucide-react"
-import Link from "next/link"
 import { useCallback, useMemo, useRef, useState } from "react"
 
 import {
