@@ -75,6 +75,11 @@ manager:
     ## spec.source.pollInterval is unset.
     ##
     transientRequeue: ""
+    ## How long a source resolve (git fetch) result is reused by the
+    ## steady-state application poll. "0s" resolves on every poll; sync
+    ## triggers always bypass the cache.
+    ##
+    sourceResolveTTL: ""
     ## Full resync period for the manager's informer cache.
     ##
     cacheResyncPeriod: ""

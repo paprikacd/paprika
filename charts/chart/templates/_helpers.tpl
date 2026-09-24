@@ -274,6 +274,9 @@ touching manager.args.
 {{- if $r.transientRequeue }}
 - --application-transient-requeue={{ $r.transientRequeue }}
 {{- end }}
+{{- if $r.sourceResolveTTL }}
+- --application-source-resolve-ttl={{ $r.sourceResolveTTL }}
+{{- end }}
 {{- if $r.cacheResyncPeriod }}
 - --cache-resync-period={{ $r.cacheResyncPeriod }}
 {{- end }}
