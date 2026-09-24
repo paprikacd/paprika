@@ -1638,6 +1638,11 @@ export declare class HealthCheck extends Message<HealthCheck> {
    */
   interval: string;
 
+  /**
+   * @generated from field: paprika.v1.AvailabilitySLO slo = 5;
+   */
+  slo?: AvailabilitySLO;
+
   constructor(data?: PartialMessage<HealthCheck>);
 
   static readonly runtime: typeof proto3;
@@ -1651,6 +1656,175 @@ export declare class HealthCheck extends Message<HealthCheck> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): HealthCheck;
 
   static equals(a: HealthCheck | PlainMessage<HealthCheck> | undefined, b: HealthCheck | PlainMessage<HealthCheck> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.AvailabilitySLO
+ */
+export declare class AvailabilitySLO extends Message<AvailabilitySLO> {
+  /**
+   * @generated from field: double target_percentage = 1;
+   */
+  targetPercentage: number;
+
+  /**
+   * @generated from field: string window = 2;
+   */
+  window: string;
+
+  constructor(data?: PartialMessage<AvailabilitySLO>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.AvailabilitySLO";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): AvailabilitySLO;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): AvailabilitySLO;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): AvailabilitySLO;
+
+  static equals(a: AvailabilitySLO | PlainMessage<AvailabilitySLO> | undefined, b: AvailabilitySLO | PlainMessage<AvailabilitySLO> | undefined): boolean;
+}
+
+/**
+ * @generated from message paprika.v1.SLOBucket
+ */
+export declare class SLOBucket extends Message<SLOBucket> {
+  /**
+   * @generated from field: int64 started_at = 1;
+   */
+  startedAt: bigint;
+
+  /**
+   * @generated from field: int64 healthy = 2;
+   */
+  healthy: bigint;
+
+  /**
+   * @generated from field: int64 unhealthy = 3;
+   */
+  unhealthy: bigint;
+
+  /**
+   * @generated from field: int64 unknown = 4;
+   */
+  unknown: bigint;
+
+  constructor(data?: PartialMessage<SLOBucket>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SLOBucket";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SLOBucket;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SLOBucket;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SLOBucket;
+
+  static equals(a: SLOBucket | PlainMessage<SLOBucket> | undefined, b: SLOBucket | PlainMessage<SLOBucket> | undefined): boolean;
+}
+
+/**
+ * Observation-based availability, with explicit coverage and startup state.
+ *
+ * @generated from message paprika.v1.SLOSummary
+ */
+export declare class SLOSummary extends Message<SLOSummary> {
+  /**
+   * @generated from field: string state = 1;
+   */
+  state: string;
+
+  /**
+   * @generated from field: double target_percentage = 2;
+   */
+  targetPercentage: number;
+
+  /**
+   * @generated from field: int64 window_seconds = 3;
+   */
+  windowSeconds: bigint;
+
+  /**
+   * @generated from field: int64 interval_seconds = 4;
+   */
+  intervalSeconds: bigint;
+
+  /**
+   * @generated from field: double availability_percentage = 5;
+   */
+  availabilityPercentage: number;
+
+  /**
+   * @generated from field: double coverage_percentage = 6;
+   */
+  coveragePercentage: number;
+
+  /**
+   * @generated from field: double window_coverage_percentage = 7;
+   */
+  windowCoveragePercentage: number;
+
+  /**
+   * @generated from field: double error_budget_remaining_percentage = 8;
+   */
+  errorBudgetRemainingPercentage: number;
+
+  /**
+   * @generated from field: double burn_rate = 9;
+   */
+  burnRate: number;
+
+  /**
+   * @generated from field: int64 healthy = 10;
+   */
+  healthy: bigint;
+
+  /**
+   * @generated from field: int64 unhealthy = 11;
+   */
+  unhealthy: bigint;
+
+  /**
+   * @generated from field: int64 unknown = 12;
+   */
+  unknown: bigint;
+
+  /**
+   * @generated from field: int64 expected = 13;
+   */
+  expected: bigint;
+
+  /**
+   * @generated from field: int64 first_observed_at = 14;
+   */
+  firstObservedAt: bigint;
+
+  /**
+   * @generated from field: int64 last_observed_at = 15;
+   */
+  lastObservedAt: bigint;
+
+  /**
+   * @generated from field: repeated paprika.v1.SLOBucket timeline = 16;
+   */
+  timeline: SLOBucket[];
+
+  constructor(data?: PartialMessage<SLOSummary>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.SLOSummary";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SLOSummary;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SLOSummary;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SLOSummary;
+
+  static equals(a: SLOSummary | PlainMessage<SLOSummary> | undefined, b: SLOSummary | PlainMessage<SLOSummary> | undefined): boolean;
 }
 
 /**
@@ -1688,6 +1862,16 @@ export declare class HealthCheckResult extends Message<HealthCheckResult> {
    * @generated from field: string http_body = 6;
    */
   httpBody: string;
+
+  /**
+   * @generated from field: int64 duration_millis = 7;
+   */
+  durationMillis: bigint;
+
+  /**
+   * @generated from field: paprika.v1.SLOSummary slo = 8;
+   */
+  slo?: SLOSummary;
 
   constructor(data?: PartialMessage<HealthCheckResult>);
 
@@ -2208,6 +2392,16 @@ export declare class Application extends Message<Application> {
    * @generated from field: repeated paprika.v1.HealthCheck health_check_definitions = 27;
    */
   healthCheckDefinitions: HealthCheck[];
+
+  /**
+   * @generated from field: paprika.v1.Ownership operations = 28;
+   */
+  operations?: Ownership;
+
+  /**
+   * @generated from field: map<string, string> operational_metadata = 29;
+   */
+  operationalMetadata: { [key: string]: string };
 
   constructor(data?: PartialMessage<Application>);
 

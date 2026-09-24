@@ -102,7 +102,14 @@ func (e *CELEvaluator) doHTTPProbe(ctx context.Context, probe *paprikav1.HTTPPro
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // best-effort body close
 
-	respBody, err := io.ReadAll(resp.Body)
+	return readProbeResponse(resp)
+}
+
+func readProbeResponse(resp *http.Response) *HTTPResult {
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024+1))
+	if len(respBody) > 64*1024 {
+		return &HTTPResult{Body: "health response exceeds 64 KiB", Headers: map[string]string{}}
+	}
 	headers := make(map[string]string)
 	for k, v := range resp.Header {
 		if len(v) > 0 {

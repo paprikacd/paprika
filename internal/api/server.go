@@ -1551,8 +1551,10 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		SourceHash:             a.Status.SourceHash,
 		SourceRevision:         a.Status.SourceRevision,
 		Health:                 string(a.Status.Health),
-		HealthChecks:           convertHealthChecks(a.Status.HealthChecks),
+		HealthChecks:           convertApplicationHealthChecks(a, time.Now()),
 		HealthCheckDefinitions: convertHealthCheckDefinitions(a.Spec.HealthChecks),
+		Operations:             convertOperations(a.Spec.Operations),
+		OperationalMetadata:    convertOperationalMetadata(a.Spec.Operations),
 		Resources:              convertResourceSyncs(a.Status.Resources),
 		ResourceHealth:         convertResourceHealth(a.Status.ResourceHealth),
 		OutOfSync:              safeInt32(a.Status.OutOfSync),
@@ -1758,6 +1760,9 @@ func convertHealthCheckDefinitions(checks []pipelinesv1alpha1.HealthCheck) []*pa
 	out := make([]*paprikav1.HealthCheck, 0, len(checks))
 	for _, check := range checks {
 		converted := &paprikav1.HealthCheck{Name: check.Name, Expression: check.Expression, Interval: check.Interval}
+		if check.SLO != nil {
+			converted.Slo = &paprikav1.AvailabilitySLO{TargetPercentage: check.SLO.TargetPercentage, Window: check.SLO.Window}
+		}
 		if probe := check.HTTPProbe; probe != nil {
 			converted.HttpProbe = &paprikav1.HTTPProbe{Url: healthEndpoint(probe.URL), Method: probe.Method,
 				ExpectedStatus: safeInt32(probe.ExpectedStatus), Timeout: safeInt32(probe.Timeout)}

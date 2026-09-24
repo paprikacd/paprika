@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -170,6 +171,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			result = resultError
 			return ctrl.Result{}, fmt.Errorf("getting application: %w", k8sErr)
 		}
+		metrics.DeleteHealthMetrics(req.Namespace, req.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -189,7 +191,27 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	return r.reconcileApp(ctx, &app)
+	return r.reconcileObservedApplication(ctx, &app)
+}
+
+func (r *ApplicationReconciler) reconcileObservedApplication(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+	if !app.DeletionTimestamp.IsZero() {
+		metrics.DeleteHealthMetrics(app.Namespace, app.Name)
+		return ctrl.Result{}, nil
+	}
+	// Probe independently of release progress: deployments and failed releases
+	// must not hide downtime by preventing the uptime monitor from running.
+	if err := r.reconcileHealthStatus(ctx, app); err != nil {
+		return ctrl.Result{}, err
+	}
+	ctrlResult, err := r.reconcileApp(ctx, app)
+	if len(app.Spec.HealthChecks) > 0 {
+		delay := nextHealthObservation(app, r.currentTime())
+		if ctrlResult.RequeueAfter == 0 || ctrlResult.RequeueAfter > delay {
+			ctrlResult.RequeueAfter = delay
+		}
+	}
+	return ctrlResult, err
 }
 
 func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool {
@@ -1478,6 +1500,13 @@ func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprika
 	log := log.FromContext(ctx)
 
 	if len(app.Spec.HealthChecks) == 0 || r.HealthEval == nil {
+		if len(app.Spec.HealthChecks) == 0 {
+			if len(app.Status.HealthChecks) > 0 {
+				app.Status.Health = ""
+			}
+			app.Status.HealthChecks = nil
+		}
+		metrics.DeleteHealthMetrics(app.Namespace, app.Name)
 		return
 	}
 
@@ -1487,30 +1516,27 @@ func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprika
 
 	now := metav1.Time{Time: r.currentTime()}
 	for _, check := range app.Spec.HealthChecks {
-		if prev, ok := previous[check.Name]; ok && healthCheckResultFresh(prev, check.Interval, now.Time) {
+		prev := previous[check.Name]
+		fresh := configuredHealthResultFresh(check, prev, now.Time)
+		if fresh {
 			results = append(results, *prev)
 			evalResults = append(evalResults, evalResultFromHealthCheckResult(prev))
 			continue
 		}
 
-		result := r.HealthEval.Evaluate(ctx, check, app)
+		started := time.Now()
+		result := r.evaluateHealthCheck(ctx, check, app)
+		duration := time.Since(started)
+		metrics.RecordHealthObservation(ctx, app.Namespace, app.Name, check.Name, result.Status, duration)
 		evalResults = append(evalResults, result)
-		hcr := paprikav1.HealthCheckResult{
-			Name:      result.Name,
-			Status:    result.Status,
-			Message:   result.Message,
-			CheckedAt: &now,
-		}
-		if result.HTTPResult != nil {
-			hcr.HTTPStatusCode = result.HTTPResult.StatusCode
-			hcr.HTTPBody = result.HTTPResult.Body
-		}
+		hcr := observationResult(check, prev, result, now, duration)
 		results = append(results, hcr)
 		log.Info("Health check evaluated", "check", result.Name, "status", result.Status, "message", result.Message)
 	}
 
 	app.Status.HealthChecks = results
 	app.Status.Health = health.AggregateHealth(evalResults)
+	metrics.ReplaceHealthMetrics(app)
 }
 
 func healthResultsByName(results []paprikav1.HealthCheckResult) map[string]*paprikav1.HealthCheckResult {
@@ -1529,7 +1555,8 @@ func healthCheckResultFresh(result *paprikav1.HealthCheckResult, interval string
 	if result.CheckedAt == nil {
 		return false
 	}
-	return now.Sub(result.CheckedAt.Time) < applicationHealthCheckInterval(interval)
+	age := now.Sub(result.CheckedAt.Time)
+	return age >= 0 && age < applicationHealthCheckInterval(interval)
 }
 
 func applicationHealthCheckInterval(interval string) time.Duration {
@@ -2297,4 +2324,62 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}
 	return nil
+}
+
+func (r *ApplicationReconciler) evaluateHealthCheck(ctx context.Context, check paprikav1.HealthCheck, app *paprikav1.Application) health.EvalResult {
+	if check.SLO != nil {
+		if _, _, err := health.SLODurations(check); err != nil {
+			return health.EvalResult{Name: check.Name, Status: paprikav1.HealthUnknown, Message: err.Error()}
+		}
+	}
+	result := r.HealthEval.Evaluate(ctx, check, app)
+	if check.SLO == nil || result.HTTPResult == nil {
+		return result
+	}
+	expected := check.HTTPProbe.ExpectedStatus
+	if expected == 0 {
+		expected = http.StatusOK
+	}
+	if result.HTTPResult.StatusCode != expected {
+		result.Status = paprikav1.HealthDegraded
+		result.Message = "HTTP probe did not return its expected status"
+	}
+	return result
+}
+
+func configuredHealthResultFresh(check paprikav1.HealthCheck, previous *paprikav1.HealthCheckResult, now time.Time) bool {
+	if previous == nil || previous.ConfigurationHash != health.MeasurementHash(check) || previous.CheckedAt == nil || now.Before(previous.CheckedAt.Time) {
+		return false
+	}
+	if check.SLO == nil {
+		return healthCheckResultFresh(previous, check.Interval, now)
+	}
+	_, period, err := health.SLODurations(check)
+	return err == nil && now.Unix()/int64(period/time.Second) == previous.CheckedAt.Unix()/int64(period/time.Second)
+}
+
+func observationResult(check paprikav1.HealthCheck, prev *paprikav1.HealthCheckResult, result health.EvalResult, now metav1.Time, duration time.Duration) paprikav1.HealthCheckResult {
+	hcr := paprikav1.HealthCheckResult{
+		Name:              result.Name,
+		Status:            result.Status,
+		Message:           result.Message,
+		CheckedAt:         &now,
+		ConfigurationHash: health.MeasurementHash(check),
+		DurationMillis:    duration.Milliseconds(),
+	}
+	if result.HTTPResult != nil {
+		hcr.HTTPStatusCode = result.HTTPResult.StatusCode
+		hcr.HTTPBody = result.HTTPResult.Body
+		if len(hcr.HTTPBody) > 4096 {
+			hcr.HTTPBody = hcr.HTTPBody[:4096] + " [truncated]"
+		}
+	}
+	if check.SLO != nil {
+		var history *paprikav1.SLOHistory
+		if prev != nil {
+			history = prev.SLOHistory
+		}
+		hcr.SLOHistory = health.RecordSLO(check, history, result.Status, now.Time)
+	}
+	return hcr
 }
