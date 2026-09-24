@@ -206,7 +206,7 @@ test("preserves URL state through Treemap, Matrix, and Table with keyboard selec
     await activate(page, page.getByRole("tab", {name: "Health", exact: true}), testInfo)
   }
   await expect(page.getByRole("tab", {name: "Health", exact: true})).toHaveAttribute("aria-selected", "true")
-  await expect(page.getByRole("heading", {name: "Health evidence", exact: true})).toBeVisible()
+  await expect(page.getByRole("heading", {name: "Service health", exact: true})).toBeVisible()
 })
 
 test("loads the next cursor page without replacing existing applications", async ({
