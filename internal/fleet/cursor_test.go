@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -307,13 +308,17 @@ func TestCursorRejectsMalformedNonCanonicalAndMismatchedData(t *testing.T) {
 		"standard base64":    {cursor: base64.StdEncoding.EncodeToString(payload), query: query, reason: InvalidCursorMalformed},
 		"invalid alphabet":   {cursor: "***", query: query, reason: InvalidCursorMalformed},
 		"leading whitespace": {cursor: base64.RawURLEncoding.EncodeToString(append([]byte(" "), payload...)), query: query, reason: InvalidCursorNonCanonical},
-		"duplicate field":    {cursor: encodeCursorFixture(strings.Replace(string(payload), `{"v":1`, `{"v":1,"v":1`, 1)), query: query, reason: InvalidCursorNonCanonical},
-		"unknown field":      {cursor: encodeCursorFixture(strings.TrimSuffix(string(payload), "}") + `,"extra":true}`), query: query, reason: InvalidCursorMalformed},
-		"unknown version":    {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Version = 2 }), query: query, reason: InvalidCursorVersion},
-		"bad hash":           {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.QueryHash = strings.Repeat("g", 64) }), query: query, reason: InvalidCursorMalformed},
-		"query mismatch":     {cursor: valid, query: changedQuery, reason: InvalidCursorQueryMismatch},
-		"missing namespace":  {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Namespace = "" }), query: query, reason: InvalidCursorIdentity},
-		"missing name":       {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Name = "" }), query: query, reason: InvalidCursorIdentity},
+		"duplicate field": {cursor: encodeCursorFixture(strings.Replace(
+			string(payload),
+			fmt.Sprintf(`{"v":%d`, cursorSchemaVersion),
+			fmt.Sprintf(`{"v":%[1]d,"v":%[1]d`, cursorSchemaVersion), 1,
+		)), query: query, reason: InvalidCursorNonCanonical},
+		"unknown field":     {cursor: encodeCursorFixture(strings.TrimSuffix(string(payload), "}") + `,"extra":true}`), query: query, reason: InvalidCursorMalformed},
+		"unknown version":   {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Version = cursorSchemaVersion + 1 }), query: query, reason: InvalidCursorVersion},
+		"bad hash":          {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.QueryHash = strings.Repeat("g", 64) }), query: query, reason: InvalidCursorMalformed},
+		"query mismatch":    {cursor: valid, query: changedQuery, reason: InvalidCursorQueryMismatch},
+		"missing namespace": {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Namespace = "" }), query: query, reason: InvalidCursorIdentity},
+		"missing name":      {cursor: mutateCursorFixture(t, payload, func(value *cursorEnvelope) { value.Name = "" }), query: query, reason: InvalidCursorIdentity},
 	}
 	for name, test := range tests {
 		test := test

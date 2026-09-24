@@ -182,6 +182,12 @@ type ApplicationSummary struct {
 	// AttentionResource identifies the managed resource the signal points at,
 	// in "Kind/name" form. Set only when the signal names a specific resource.
 	AttentionResource string
+	// AttentionSeverity ranks how urgently the signal needs an operator —
+	// active failure conditions outrank resource-level and count-level
+	// signals, which outrank silence. Internal to the index; it feeds impact
+	// ordering so a failed release sorts above a healthy app whose certificate
+	// merely reports Unknown.
+	AttentionSeverity uint8
 }
 
 // ProjectSummary is the provider-neutral project metadata retained by a

@@ -299,6 +299,41 @@ func TestPageQueryApplicationsImpactIsLexicographic(t *testing.T) {
 	}, paginationPageNames(page))
 }
 
+func TestPageQueryApplicationsImpactRanksAttentionBeforeHealth(t *testing.T) {
+	t.Parallel()
+
+	project := ProjectKey{Namespace: "tenant", Name: "payments"}
+	// A rolled-back release whose resources are all healthy still reports
+	// HealthHealthy — without the attention term it would sink below a
+	// healthy app with a merely unknown resource.
+	exhausted := paginationApplication("tenant", "exhausted", project)
+	exhausted.Health = HealthHealthy
+	exhausted.AttentionSeverity = attentionSeverityStuck
+	exhausted.LastTransitionUnixMS = 10 // stale — recency must not win
+
+	degraded := paginationApplication("tenant", "degraded", project)
+	degraded.Health = HealthDegraded
+
+	unknown := paginationApplication("tenant", "unknown", project)
+	unknown.Health = HealthHealthy
+	unknown.AttentionSeverity = attentionSeverityResource
+	unknown.LastTransitionUnixMS = 999 // newest — recency must not win
+
+	quiet := paginationApplication("tenant", "quiet", project)
+	quiet.Health = HealthHealthy
+
+	snapshot := paginationSnapshot(1, quiet, unknown, degraded, exhausted)
+	scope := QueryScope{Projects: ProjectSet{project: {}}}
+
+	page, err := snapshot.QueryApplications(scope, ApplicationQuery{
+		Sort:      SortFieldImpact,
+		Direction: SortDirectionDesc,
+		PageSize:  10,
+	}, "")
+	require.NoError(t, err)
+	require.Equal(t, []string{"exhausted", "degraded", "unknown", "quiet"}, paginationPageNames(page))
+}
+
 func TestPageQueryApplicationsIdentityTieBreakerIsAlwaysAscending(t *testing.T) {
 	t.Parallel()
 

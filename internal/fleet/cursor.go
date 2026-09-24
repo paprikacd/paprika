@@ -24,8 +24,10 @@ const (
 	// its decoded JSON payload. The encoded bound is checked before allocation.
 	MaxCursorBytes = 4 * 1024
 
-	querySchemaVersion  = 1
-	cursorSchemaVersion = 1
+	querySchemaVersion = 1
+	// Version 2 folds attention severity into the impact tuple — a v1 cursor
+	// minted before failure conditions counted would resume mis-ordered.
+	cursorSchemaVersion = 2
 )
 
 // SortField is the provider-neutral application ordering requested by a

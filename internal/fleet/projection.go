@@ -143,6 +143,18 @@ var attentionConditionTypes = []string{
 // noisy controller message cannot grow the snapshot.
 const attentionDetailRunes = 200
 
+// Attention severities share the unhealthySeverity scale (0–6) so the impact
+// sort can take the worse of the two: an active failure condition scores like
+// failed health, an unverifiable resource like unknown health, and a bare
+// drift/gate count like a footnote.
+const (
+	attentionSeverityStuck    uint8 = 6 // retries exhausted or failed outright
+	attentionSeverityDegraded uint8 = 4 // degraded or rolled back
+	attentionSeverityPending  uint8 = 3 // a condition stuck pending
+	attentionSeverityResource uint8 = 2 // a resource reports unknown/missing
+	attentionSeverityCounts   uint8 = 1 // drift, missing count, blocked gates
+)
+
 // attentionSignal derives a compact reason an application needs attention from
 // the signals the controllers already record, writing it onto the summary. It
 // reports the most actionable signal present, in order: an active failure
@@ -156,6 +168,7 @@ func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSum
 		if cond != nil && cond.Status == metav1.ConditionTrue {
 			summary.AttentionLabel = humanizeConditionType(condType)
 			summary.AttentionDetail = sanitizeAttentionDetail(cond.Message)
+			summary.AttentionSeverity = conditionAttentionSeverity(condType)
 			return
 		}
 	}
@@ -165,15 +178,34 @@ func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSum
 		)
 		summary.AttentionDetail = sanitizeAttentionDetail(worst.Message)
 		summary.AttentionResource = fmt.Sprintf("%s/%s", worst.Kind, worst.Name)
+		summary.AttentionSeverity = attentionSeverityResource
 		return
 	}
 	switch {
 	case summary.MissingResourceCount > 0:
 		summary.AttentionLabel = pluralizeAttention(summary.MissingResourceCount, "resource", "missing")
+		summary.AttentionSeverity = attentionSeverityCounts
 	case summary.DriftCount > 0:
 		summary.AttentionLabel = pluralizeAttention(summary.DriftCount, "resource", "out of sync")
+		summary.AttentionSeverity = attentionSeverityCounts
 	case summary.BlockedGateCount > 0:
 		summary.AttentionLabel = pluralizeAttention(summary.BlockedGateCount, "gate", "blocked")
+		summary.AttentionSeverity = attentionSeverityCounts
+	}
+}
+
+// conditionAttentionSeverity mirrors the priority order of
+// attentionConditionTypes: a condition listed earlier is the more urgent one.
+func conditionAttentionSeverity(condType string) uint8 {
+	switch condType {
+	case "ReleaseRetriesExhausted", "Failed":
+		return attentionSeverityStuck
+	case "Degraded", "RolledBack":
+		return attentionSeverityDegraded
+	case "Pending":
+		return attentionSeverityPending
+	default:
+		return attentionSeverityResource
 	}
 }
 
