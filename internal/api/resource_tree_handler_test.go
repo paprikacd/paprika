@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -297,4 +298,46 @@ func TestGetResourceTreeDetailed_PodPhase(t *testing.T) {
 	require.Equal(t, "Running", node.Phase)
 	require.Equal(t, int32(1), node.Ready)
 	require.Equal(t, int32(1), node.Total)
+}
+
+func TestResourceTreeListsEachKindOnceAndKeepsLargeDescendantTrees(t *testing.T) {
+	srv := setupResourceTreeTest(t)
+	dyn, ok := srv.dynamicClient.(*dynamicfake.FakeDynamicClient)
+	require.True(t, ok)
+	var roots []*paprikav1.ResourceNode
+	for _, ns := range []string{"tenant-a", "tenant-b"} {
+		for i := 0; i < 105; i++ {
+			name := fmt.Sprintf("workload-%d", i)
+			roots = append(roots, &paprikav1.ResourceNode{Kind: "Deployment", Name: name, Namespace: ns})
+			for _, item := range []struct{ kind, name, ownerKind, ownerName string }{
+				{"ReplicaSet", name + "-rs", "Deployment", name},
+				{"Pod", name + "-pod", "ReplicaSet", name + "-rs"},
+			} {
+				obj := &unstructured.Unstructured{}
+				obj.SetAPIVersion("v1")
+				if item.kind == "ReplicaSet" {
+					obj.SetAPIVersion("apps/v1")
+				}
+				obj.SetKind(item.kind)
+				obj.SetName(item.name)
+				obj.SetNamespace(ns)
+				obj.SetOwnerReferences([]metav1.OwnerReference{{Kind: item.ownerKind, Name: item.ownerName}})
+				_, err := dyn.Resource(knownResourceGVRs[item.kind]).Namespace(ns).Create(context.Background(), obj, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+		}
+	}
+	dyn.ClearActions()
+	nodes := srv.discoverChildren(context.Background(), "test-ns", roots)
+	require.Len(t, nodes, 420, "must include grandchildren above the former 100-child limit in both namespaces")
+	actions := dyn.Actions()
+	require.Len(t, actions, 4, "one ReplicaSet and Pod list per target namespace")
+	for _, action := range actions {
+		require.Equal(t, "list", action.GetVerb())
+		require.Contains(t, []string{"tenant-a", "tenant-b"}, action.GetNamespace())
+	}
+	// A new request must observe changes, rather than reusing another app's tree.
+	dyn.ClearActions()
+	require.Empty(t, srv.discoverChildren(context.Background(), "tenant-a", []*paprikav1.ResourceNode{{Kind: "Deployment", Name: "unrelated", Namespace: "tenant-a"}}))
+	require.Len(t, dyn.Actions(), 1)
 }

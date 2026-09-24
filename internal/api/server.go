@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"sort"
 	"strconv"
 	"time"
@@ -1403,6 +1404,11 @@ func convertRelease(r *pipelinesv1alpha1.Release) *paprikav1.Release {
 			ConfigMapRef: r.Spec.ManifestSource.ConfigMapRef,
 		}
 	}
+	for _, check := range r.Spec.Verify {
+		rel.VerificationChecks = append(rel.VerificationChecks, &paprikav1.VerificationCheck{
+			Type: check.Type, Endpoint: healthEndpoint(check.Endpoint), TimeoutSeconds: safeInt32(check.Timeout),
+		})
+	}
 	rel.PolicyResults = make([]*paprikav1.PolicyResult, 0, len(r.Status.PolicyResults))
 	for _, pr := range r.Status.PolicyResults {
 		rel.PolicyResults = append(rel.PolicyResults, &paprikav1.PolicyResult{
@@ -1527,32 +1533,33 @@ func convertApplication(a *pipelinesv1alpha1.Application) *paprikav1.Application
 		}
 	}
 	return &paprikav1.Application{
-		Name:            a.Name,
-		Namespace:       a.Namespace,
-		Project:         a.Spec.Project,
-		Phase:           string(a.Status.Phase),
-		CurrentStage:    a.Status.CurrentStage,
-		Revision:        a.Status.Revision,
-		Synced:          a.Status.Synced,
-		TemplateRef:     a.Status.TemplateRef,
-		PipelineRef:     a.Status.PipelineRef,
-		ReleaseRef:      a.Status.ReleaseRef,
-		Stages:          stages,
-		Source:          source,
-		Strategy:        string(a.Spec.Strategy),
-		SyncPolicy:      string(a.Spec.SyncPolicy),
-		Parameters:      a.Spec.Parameters,
-		SourceHash:      a.Status.SourceHash,
-		SourceRevision:  a.Status.SourceRevision,
-		Health:          string(a.Status.Health),
-		HealthChecks:    convertHealthChecks(a.Status.HealthChecks),
-		Resources:       convertResourceSyncs(a.Status.Resources),
-		ResourceHealth:  convertResourceHealth(a.Status.ResourceHealth),
-		OutOfSync:       safeInt32(a.Status.OutOfSync),
-		PrunedResources: safeInt32(a.Status.PrunedResources),
-		Gates:           convertGateStatuses(a.Status.Gates),
-		Conditions:      convertConditions(a.Status.Conditions),
-		AnalysisResults: convertAnalysisResults(a.Status.AnalysisResults),
+		Name:                   a.Name,
+		Namespace:              a.Namespace,
+		Project:                a.Spec.Project,
+		Phase:                  string(a.Status.Phase),
+		CurrentStage:           a.Status.CurrentStage,
+		Revision:               a.Status.Revision,
+		Synced:                 a.Status.Synced,
+		TemplateRef:            a.Status.TemplateRef,
+		PipelineRef:            a.Status.PipelineRef,
+		ReleaseRef:             a.Status.ReleaseRef,
+		Stages:                 stages,
+		Source:                 source,
+		Strategy:               string(a.Spec.Strategy),
+		SyncPolicy:             string(a.Spec.SyncPolicy),
+		Parameters:             a.Spec.Parameters,
+		SourceHash:             a.Status.SourceHash,
+		SourceRevision:         a.Status.SourceRevision,
+		Health:                 string(a.Status.Health),
+		HealthChecks:           convertHealthChecks(a.Status.HealthChecks),
+		HealthCheckDefinitions: convertHealthCheckDefinitions(a.Spec.HealthChecks),
+		Resources:              convertResourceSyncs(a.Status.Resources),
+		ResourceHealth:         convertResourceHealth(a.Status.ResourceHealth),
+		OutOfSync:              safeInt32(a.Status.OutOfSync),
+		PrunedResources:        safeInt32(a.Status.PrunedResources),
+		Gates:                  convertGateStatuses(a.Status.Gates),
+		Conditions:             convertConditions(a.Status.Conditions),
+		AnalysisResults:        convertAnalysisResults(a.Status.AnalysisResults),
 	}
 }
 
@@ -1728,4 +1735,34 @@ func decodeValues(data []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("unmarshal values: %w", err)
 	}
 	return values, nil
+}
+
+// healthEndpoint deliberately omits credentials and query/fragment values.
+func healthEndpoint(endpoint string) string {
+	if endpoint == "" {
+		return ""
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "[invalid endpoint]"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
+}
+
+func convertHealthCheckDefinitions(checks []pipelinesv1alpha1.HealthCheck) []*paprikav1.HealthCheck {
+	out := make([]*paprikav1.HealthCheck, 0, len(checks))
+	for _, check := range checks {
+		converted := &paprikav1.HealthCheck{Name: check.Name, Expression: check.Expression, Interval: check.Interval}
+		if probe := check.HTTPProbe; probe != nil {
+			converted.HttpProbe = &paprikav1.HTTPProbe{Url: healthEndpoint(probe.URL), Method: probe.Method,
+				ExpectedStatus: safeInt32(probe.ExpectedStatus), Timeout: safeInt32(probe.Timeout)}
+		}
+		out = append(out, converted)
+	}
+	return out
 }

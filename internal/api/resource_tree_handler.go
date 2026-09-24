@@ -3,13 +3,13 @@ package apiserver
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"connectrpc.com/connect"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -48,8 +48,8 @@ func (s *PaprikaServer) GetResourceTree(
 	healthMap := make(map[string]string, len(app.Status.ResourceHealth))
 	msgMap := make(map[string]string, len(app.Status.ResourceHealth))
 	for _, h := range app.Status.ResourceHealth {
-		healthMap[h.Kind+"/"+h.Name] = h.Health
-		msgMap[h.Kind+"/"+h.Name] = h.Message
+		healthMap[h.Namespace+"/"+h.Kind+"/"+h.Name] = h.Health
+		msgMap[h.Namespace+"/"+h.Kind+"/"+h.Name] = h.Message
 	}
 
 	nodes := make([]*paprikav1.ResourceNode, 0, len(app.Status.Resources)*2)
@@ -61,8 +61,8 @@ func (s *PaprikaServer) GetResourceTree(
 			Name:          r.Name,
 			Namespace:     r.Namespace,
 			SyncStatus:    r.Status,
-			Health:        healthMap[r.Kind+"/"+r.Name],
-			HealthMessage: msgMap[r.Kind+"/"+r.Name],
+			Health:        healthMap[r.Namespace+"/"+r.Kind+"/"+r.Name],
+			HealthMessage: msgMap[r.Namespace+"/"+r.Kind+"/"+r.Name],
 			Managed:       true,
 		})
 	}
@@ -94,8 +94,8 @@ func (s *PaprikaServer) GetResourceTreeDetailed(
 	healthMap := make(map[string]string, len(app.Status.ResourceHealth))
 	msgMap := make(map[string]string, len(app.Status.ResourceHealth))
 	for _, h := range app.Status.ResourceHealth {
-		healthMap[h.Kind+"/"+h.Name] = h.Health
-		msgMap[h.Kind+"/"+h.Name] = h.Message
+		healthMap[h.Namespace+"/"+h.Kind+"/"+h.Name] = h.Health
+		msgMap[h.Namespace+"/"+h.Kind+"/"+h.Name] = h.Message
 	}
 
 	nodes := make([]*paprikav1.ResourceTreeNode, 0, len(app.Status.Resources)*2)
@@ -107,11 +107,10 @@ func (s *PaprikaServer) GetResourceTreeDetailed(
 			Name:          r.Name,
 			Namespace:     r.Namespace,
 			SyncStatus:    r.Status,
-			Health:        healthMap[r.Kind+"/"+r.Name],
-			HealthMessage: msgMap[r.Kind+"/"+r.Name],
+			Health:        healthMap[r.Namespace+"/"+r.Kind+"/"+r.Name],
+			HealthMessage: msgMap[r.Namespace+"/"+r.Kind+"/"+r.Name],
 			Managed:       true,
 		}
-		s.populateNodeDetail(ctx, n)
 		nodes = append(nodes, n)
 	}
 
@@ -134,12 +133,36 @@ func (s *PaprikaServer) GetResourceTreeDetailed(
 				Uid:        d.Uid,
 				Managed:    false,
 			}
-			s.populateNodeDetail(ctx, tree)
 			nodes = append(nodes, tree)
 		}
 	}
 
+	if err := s.populateTreeDetails(ctx, nodes); err != nil {
+		return nil, err
+	}
 	return connect.NewResponse(&paprikav1.GetResourceTreeDetailedResponse{Nodes: nodes}), nil
+}
+
+func (s *PaprikaServer) populateTreeDetails(ctx context.Context, nodes []*paprikav1.ResourceTreeNode) error {
+	// Keep Kubernetes reads bounded while allowing independent status reads to overlap.
+	var wg sync.WaitGroup
+	permits := make(chan struct{}, 8)
+	for _, node := range nodes {
+		select {
+		case permits <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return connect.NewError(connect.CodeCanceled, ctx.Err())
+		}
+		wg.Add(1)
+		go func(n *paprikav1.ResourceTreeNode) {
+			defer wg.Done()
+			defer func() { <-permits }()
+			s.populateNodeDetail(ctx, n)
+		}(node)
+	}
+	wg.Wait()
+	return nil
 }
 
 // populateNodeDetail fetches status-specific fields via the typed clientset
@@ -227,69 +250,49 @@ func boundedInt32(value int) int32 {
 // discoverChildren queries the cluster for child resources owned by any node
 // already in the tree. Returns newly discovered nodes with parent references set.
 func (s *PaprikaServer) discoverChildren(ctx context.Context, namespace string, existing []*paprikav1.ResourceNode) []*paprikav1.ResourceNode {
-	var discovered []*paprikav1.ResourceNode
-
-	// Track discovered keys to avoid duplicates.
+	// Request-local indexes avoid repeating namespace-wide lists for every parent.
+	// Nothing is shared across applications or authorization decisions.
+	indexes := make(map[string]map[string][]unstructured.Unstructured)
 	seen := make(map[string]bool, len(existing))
-	for _, n := range existing {
-		seen[n.Kind+"/"+n.Name] = true
-	}
 
-	// For each existing node, look for children based on the kind hierarchy.
-	for _, parent := range existing {
-		childKinds, ok := childDiscovery[parent.Kind]
-		if !ok {
-			continue
-		}
-		for _, childKind := range childKinds {
+	for _, n := range existing {
+		seen[treeNodeNamespace(namespace, n)+"/"+n.Kind+"/"+n.Name] = true
+	}
+	queue := append([]*paprikav1.ResourceNode(nil), existing...)
+	var discovered []*paprikav1.ResourceNode
+	for i := 0; i < len(queue) && ctx.Err() == nil; i++ {
+		parent := queue[i]
+		ns := treeNodeNamespace(namespace, parent)
+		for _, childKind := range childDiscovery[parent.Kind] {
 			gvr, ok := knownResourceGVRs[childKind]
 			if !ok {
 				continue
 			}
-			children := s.listChildren(ctx, gvr, namespace, childKind, parent.Name, parent.Kind, seen)
-			discovered = append(discovered, children...)
+			cacheKey := ns + "/" + childKind
+			index, loaded := indexes[cacheKey]
+			if !loaded {
+				index = make(map[string][]unstructured.Unstructured)
+				indexes[cacheKey] = index
+				list, err := s.dynamicClient.Resource(gvr).Namespace(ns).List(ctx, metav1.ListOptions{})
+				if err != nil {
+					continue
+				}
+				indexChildrenByOwner(index, list.Items)
+			}
+			for _, item := range index[parent.Kind+"/"+parent.Name] {
+				key := ns + "/" + childKind + "/" + item.GetName()
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				node := &paprikav1.ResourceNode{Kind: childKind, Name: item.GetName(), Namespace: ns,
+					ParentKind: parent.Kind, ParentName: parent.Name, Uid: string(item.GetUID())}
+				discovered = append(discovered, node)
+				queue = append(queue, node)
+			}
 		}
 	}
-
-	// Recursively discover grandchildren (one level deep — prevents runaway queries).
-	if len(discovered) > 0 && len(discovered) < 100 {
-		next := s.discoverChildren(ctx, namespace, discovered)
-		discovered = append(discovered, next...)
-	}
-
 	return discovered
-}
-
-// listChildren lists resources of a specific GVR in the namespace and filters
-// by ownerReferences pointing to parentName/parentKind.
-func (s *PaprikaServer) listChildren(ctx context.Context, gvr schema.GroupVersionResource, namespace, childKind, parentName, parentKind string, seen map[string]bool) []*paprikav1.ResourceNode {
-	list, err := s.dynamicClient.Resource(gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil
-	}
-
-	var nodes []*paprikav1.ResourceNode
-	for i := range list.Items {
-		item := &list.Items[i]
-		if !hasOwnerRef(item, parentKind, parentName) {
-			continue
-		}
-		key := item.GetKind() + "/" + item.GetName()
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		nodes = append(nodes, &paprikav1.ResourceNode{
-			Kind:       item.GetKind(),
-			Name:       item.GetName(),
-			Namespace:  item.GetNamespace(),
-			ParentKind: parentKind,
-			ParentName: parentName,
-			Uid:        string(item.GetUID()),
-			Managed:    false,
-		})
-	}
-	return nodes
 }
 
 // hasOwnerRef checks if obj has an ownerReference of the given apiVersion/kind/name.
@@ -301,4 +304,20 @@ func hasOwnerRef(obj *unstructured.Unstructured, kind, name string) bool {
 		}
 	}
 	return false
+}
+
+func indexChildrenByOwner(index map[string][]unstructured.Unstructured, items []unstructured.Unstructured) {
+	for _, item := range items {
+		for _, owner := range item.GetOwnerReferences() {
+			key := owner.Kind + "/" + owner.Name
+			index[key] = append(index[key], item)
+		}
+	}
+}
+
+func treeNodeNamespace(fallback string, node *paprikav1.ResourceNode) string {
+	if node.Namespace != "" {
+		return node.Namespace
+	}
+	return fallback
 }

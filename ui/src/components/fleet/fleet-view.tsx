@@ -15,6 +15,7 @@ import type { GroupDimension } from "@/components/fleet/fleet-rows"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
 import { Seg } from "@/components/ui/seg"
 import { useConnection } from "@/lib/connection-context"
+import { applicationURL } from "@/lib/application-url"
 import type { FleetFacetBucket } from "@/lib/fleet-client"
 import {
   createFleetFocusCoordinator,
@@ -199,8 +200,8 @@ export function FleetView() {
   }, [focusCoordinator, focusedApplications])
 
   const selectApplication = useCallback(
-    (identity: NamespacedKey) => patchState({ selected: identity }),
-    [patchState],
+    (identity: NamespacedKey) => router.push(applicationURL(identity)),
+    [router],
   )
   const trackApplicationFocus = useCallback(
     (identity: NamespacedKey | null) => focusCoordinator.trackFocusedApplication(identity),

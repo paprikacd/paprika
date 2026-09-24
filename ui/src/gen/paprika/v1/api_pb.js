@@ -799,6 +799,7 @@ export const Application = /*@__PURE__*/ proto3.makeMessageType(
     { no: 24, name: "project", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 25, name: "conditions", kind: "message", T: Condition, repeated: true },
     { no: 26, name: "analysis_results", kind: "message", T: AnalysisResult, repeated: true },
+    { no: 27, name: "health_check_definitions", kind: "message", T: HealthCheck, repeated: true },
   ],
 );
 
@@ -869,6 +870,7 @@ export const Release = /*@__PURE__*/ proto3.makeMessageType(
     { no: 18, name: "canary_step_started_at", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
     { no: 19, name: "rollout_ref", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 20, name: "hook_statuses", kind: "message", T: HookStatus, repeated: true },
+    { no: 21, name: "verification_checks", kind: "message", T: VerificationCheck, repeated: true },
   ],
 );
 
@@ -3405,6 +3407,20 @@ export const CommitSummary = /*@__PURE__*/ proto3.makeMessageType(
     { no: 2, name: "author_name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "message", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 4, name: "committed_at_unix_ms", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ],
+);
+
+/**
+ * Configuration only. Per-check execution results are not retained by the controller.
+ *
+ * @generated from message paprika.v1.VerificationCheck
+ */
+export const VerificationCheck = /*@__PURE__*/ proto3.makeMessageType(
+  "paprika.v1.VerificationCheck",
+  () => [
+    { no: 1, name: "type", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "endpoint", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "timeout_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ],
 );
 

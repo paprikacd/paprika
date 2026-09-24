@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
   distDir: "out",
   basePath,
+  env: { NEXT_PUBLIC_BASE_PATH: basePath },
 };
 
 export default nextConfig;

@@ -12,7 +12,7 @@ import {
   type Node,
   type NodeTypes,
 } from "@xyflow/react"
-import { useMemo } from "react"
+import { memo, useMemo } from "react"
 import "@xyflow/react/dist/style.css"
 
 import {
@@ -29,9 +29,10 @@ import {
   type StatusTone,
 } from "@/lib/status-tone"
 import { cn } from "@/lib/utils"
+import { ResourceKindIcon } from "@/components/dashboard/resource-kind-icon"
 
-const NODE_WIDTH = 176
-const NODE_HEIGHT = 40
+const NODE_WIDTH = 216
+const NODE_HEIGHT = 48
 
 /**
  * The graph draws one box per resource, so it is only safe while the resource
@@ -88,7 +89,7 @@ function nodeBadge(n: ResourceGraphNode): string {
   return ""
 }
 
-function ResourceFlowNode({ data }: { data: ResourceNodeData }) {
+const ResourceFlowNode = memo(function ResourceFlowNode({ data }: { data: ResourceNodeData }) {
   const spec = STATUS_TONES[data.tone]
   return (
     <div
@@ -117,7 +118,10 @@ function ResourceFlowNode({ data }: { data: ResourceNodeData }) {
         isConnectable={false}
         className="!size-1 !border-0 !bg-rule-strong"
       />
-      <StatusGlyph tone={data.tone} label={`${spec.label} health`} />
+      <span className="relative shrink-0">
+        <ResourceKindIcon kind={data.node.kind} />
+        <StatusGlyph tone={data.tone} label={`${spec.label} health`} className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-card" />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block font-mono text-meta tracking-[0.08em] text-neutral-600">
           {data.kind}
@@ -146,7 +150,7 @@ function ResourceFlowNode({ data }: { data: ResourceNodeData }) {
       />
     </div>
   )
-}
+})
 
 const nodeTypes: NodeTypes = { resourceNode: ResourceFlowNode }
 
@@ -157,77 +161,52 @@ export function ResourceGraph({
 }: ResourceGraphProps) {
   const overBudget = nodes.length > MAX_GRAPH_NODES
 
-  const { rfNodes, rfEdges } = useMemo(() => {
-    if (nodes.length === 0 || overBudget) {
-      return { rfNodes: [] as Node[], rfEdges: [] as Edge[] }
-    }
-
-    const ids = new Set(nodes.map((n) => resourceKey(n)))
-    const toneById = new Map(
-      nodes.map((n) => [resourceKey(n), resourceHealthTone(n.health)] as const)
-    )
-
-    const nodeList: Node[] = nodes.map((n) => {
-      const id = resourceKey(n)
-      const tone = resourceHealthTone(n.health)
-      return {
-        id,
-        type: "resourceNode",
-        position: { x: 0, y: 0 },
-        data: {
-          kind: n.kind.toUpperCase(),
-          name: n.name,
-          tone,
-          syncTone: resourceSyncTone(n.syncStatus),
-          syncLabel: resourceSyncLabel(n.syncStatus),
-          badge: nodeBadge(n),
-          selected: selectedId === id,
-          node: n,
-          onSelect: onSelectNode,
-        } satisfies ResourceNodeData,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        draggable: false,
-      }
-    })
-
-    const edgeList: Edge[] = []
-    for (const n of nodes) {
-      if (!n.parentKind || !n.parentName) continue
-      const parentId = `${n.parentKind}/${n.parentName}`
-      if (!ids.has(parentId)) continue
-      const childId = resourceKey(n)
-      // An edge landing on a failed object is the one line a reader should
-      // follow first, so it alone carries weight and a dash.
-      const failed = toneById.get(childId) === "failed"
-      edgeList.push({
-        id: `${parentId}->${childId}`,
-        source: parentId,
-        target: childId,
-        type: "smoothstep",
+  // Selection and inspector callbacks must not repeat the Dagre layout.
+  const { positions, rfEdges } = useMemo(() => {
+    const positions = new Map<string, { x: number; y: number }>()
+    if (nodes.length === 0 || overBudget) return { positions, rfEdges: [] as Edge[] }
+    const ids = new Set(nodes.map(resourceKey))
+    const edges: Edge[] = []
+    const graph = new graphlib.Graph()
+    graph.setDefaultEdgeLabel(() => ({}))
+    graph.setGraph({ rankdir: "LR", nodesep: 22, ranksep: 60, marginx: 16, marginy: 16 })
+    for (const node of nodes) graph.setNode(resourceKey(node), { width: NODE_WIDTH, height: NODE_HEIGHT })
+    for (const node of nodes) {
+      if (!node.parentKind || !node.parentName) continue
+      const parent = `${node.parentKind}/${node.parentName}`
+      if (!ids.has(parent)) continue
+      const child = resourceKey(node)
+      const failed = resourceHealthTone(node.health) === "failed"
+      edges.push({
+        id: `${parent}->${child}`, source: parent, target: child, type: "smoothstep",
         style: failed
-          ? {
-              stroke: STATUS_TONE_HEX.failed.text,
-              strokeWidth: 1.4,
-              strokeDasharray: "3 2",
-            }
+          ? { stroke: STATUS_TONE_HEX.failed.text, strokeWidth: 1.4, strokeDasharray: "3 2" }
           : { stroke: CANVAS_COLORS.rule, strokeWidth: 1 },
       })
+      graph.setEdge(parent, child)
     }
-
-    const g = new graphlib.Graph()
-    g.setDefaultEdgeLabel(() => ({}))
-    g.setGraph({ rankdir: "LR", nodesep: 22, ranksep: 60, marginx: 16, marginy: 16 })
-    for (const n of nodeList) g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
-    for (const e of edgeList) g.setEdge(e.source, e.target)
-    layout(g)
-    for (const n of nodeList) {
-      const pos = g.node(n.id)
-      n.position = { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 }
+    layout(graph)
+    for (const node of nodes) {
+      const id = resourceKey(node)
+      const position = graph.node(id)
+      positions.set(id, { x: position.x - NODE_WIDTH / 2, y: position.y - NODE_HEIGHT / 2 })
     }
+    return { positions, rfEdges: edges }
+  }, [nodes, overBudget])
 
-    return { rfNodes: nodeList, rfEdges: edgeList }
-  }, [nodes, onSelectNode, overBudget, selectedId])
+  const rfNodes = useMemo<Node[]>(() => overBudget ? [] : nodes.map((node) => {
+    const id = resourceKey(node)
+    return {
+      id, type: "resourceNode", position: positions.get(id) ?? { x: 0, y: 0 },
+      data: {
+        kind: node.kind.toUpperCase(), name: node.name,
+        tone: resourceHealthTone(node.health), syncTone: resourceSyncTone(node.syncStatus),
+        syncLabel: resourceSyncLabel(node.syncStatus), badge: nodeBadge(node),
+        selected: selectedId === id, node, onSelect: onSelectNode,
+      } satisfies ResourceNodeData,
+      width: NODE_WIDTH, height: NODE_HEIGHT, draggable: false,
+    }
+  }), [nodes, positions, overBudget, selectedId, onSelectNode])
 
   if (overBudget) {
     return (

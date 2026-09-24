@@ -1,8 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { render as rtlRender, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { ResourceDetailPanel } from "@/components/dashboard/resource-detail-panel"
-import type { LogChunk } from "@/gen/paprika/v1/api_pb"
+import { LogChunk } from "@/gen/paprika/v1/api_pb"
 
 // Mock the Connect RPC client.
 const mockClient = vi.hoisted(() => ({
@@ -188,8 +189,8 @@ describe("ResourceDetailPanel", () => {
       desiredManifest: "spec: {}",
       diff: "",
       events: [
-        { type: "Warning", reason: "FailedScheduling", message: "Insufficient cpu", lastTimestamp: "2024-01-01T00:00:00Z", count: 3, involvedObjectKind: "Deployment", involvedObjectName: "demo-deploy" },
-        { type: "Normal", reason: "Scheduled", message: "Successfully assigned", lastTimestamp: "2024-01-01T00:01:00Z", count: 1, involvedObjectKind: "Deployment", involvedObjectName: "demo-deploy" },
+        { type: "Warning", reason: "FailedScheduling", message: "Insufficient cpu", lastTimestamp: "2024-01-01T00:00:00Z", count: BigInt(3), involvedObjectKind: "Deployment", involvedObjectName: "demo-deploy" },
+        { type: "Normal", reason: "Scheduled", message: "Successfully assigned", lastTimestamp: "2024-01-01T00:01:00Z", count: BigInt(1), involvedObjectKind: "Deployment", involvedObjectName: "demo-deploy" },
       ],
     })
 
@@ -351,8 +352,8 @@ describe("ResourceDetailPanel", () => {
     it("renders each streamed chunk line", async () => {
       const user = userEvent.setup()
       const chunks: LogChunk[] = [
-        { podName: "demo-deploy-pod", containerName: "app", line: "starting up", timestampMs: 1 },
-        { podName: "demo-deploy-pod", containerName: "app", line: "ready", timestampMs: 2 },
+        new LogChunk({ podName: "demo-deploy-pod", containerName: "app", line: "starting up", timestampMs: BigInt(1) }),
+        new LogChunk({ podName: "demo-deploy-pod", containerName: "app", line: "ready", timestampMs: BigInt(2) }),
       ]
       mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
 
@@ -379,9 +380,9 @@ describe("ResourceDetailPanel", () => {
     it("filter input narrows visible lines", async () => {
       const user = userEvent.setup()
       const chunks: LogChunk[] = [
-        { podName: "p", containerName: "c", line: "hello", timestampMs: 1 },
-        { podName: "p", containerName: "c", line: "world", timestampMs: 2 },
-        { podName: "p", containerName: "c", line: "hello again", timestampMs: 3 },
+        new LogChunk({ podName: "p", containerName: "c", line: "hello", timestampMs: BigInt(1) }),
+        new LogChunk({ podName: "p", containerName: "c", line: "world", timestampMs: BigInt(2) }),
+        new LogChunk({ podName: "p", containerName: "c", line: "hello again", timestampMs: BigInt(3) }),
       ]
       mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
 
@@ -413,7 +414,7 @@ describe("ResourceDetailPanel", () => {
 
     it("pause toggle disables auto-scroll without interrupting stream", async () => {
       const user = userEvent.setup()
-      const chunks: LogChunk[] = [{ podName: "p", containerName: "c", line: "one", timestampMs: 1 }]
+      const chunks: LogChunk[] = [new LogChunk({ podName: "p", containerName: "c", line: "one", timestampMs: BigInt(1) })]
       mockClient.streamResourceLogs.mockReturnValue(asyncIter(chunks))
 
       render(
@@ -438,3 +439,8 @@ describe("ResourceDetailPanel", () => {
     })
   })
 })
+
+function render(ui: React.ReactElement) {
+ const client = new QueryClient({defaultOptions:{queries:{retry:false}}})
+ return rtlRender(ui, {wrapper: ({children}) => <QueryClientProvider client={client}>{children}</QueryClientProvider>})
+}

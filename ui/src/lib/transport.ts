@@ -1,5 +1,7 @@
 "use client"
 
+import { clearBrowserQueryCache } from "@/lib/query-provider"
+
 import { createConnectTransport } from "@connectrpc/connect-web"
 
 const AUTH_TOKEN_KEY = "paprika_id_token"
@@ -8,6 +10,7 @@ const AUTH_USER_KEY = "paprika_auth_user"
 let clearingAuth = false
 
 function clearStaleAuth() {
+  clearBrowserQueryCache()
   localStorage.removeItem(AUTH_TOKEN_KEY)
   localStorage.removeItem(AUTH_USER_KEY)
   if (!clearingAuth && window.location.pathname !== "/login/") {
