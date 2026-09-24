@@ -28,6 +28,8 @@ type StageReconciler struct {
 	Scheme      *runtime.Scheme
 	ShardFilter *sharding.Filter
 	Clock       clock.Clock
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=stages,verbs=get;list;watch;create;update;patch;delete
@@ -137,7 +139,7 @@ func (r *StageReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&pipelinesv1alpha1.Stage{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 3)}).
 		Named("stage").
 		Complete(r); err != nil {
 		return fmt.Errorf("unable to create stage controller: %w", err)

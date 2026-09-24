@@ -44,6 +44,8 @@ type PipelineReconciler struct {
 	ShardFilter    *sharding.Filter
 	Clock          clock.Clock
 	EventBroker    *events.Broker
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=pipelines,verbs=get;list;watch;create;update;patch;delete
@@ -558,7 +560,7 @@ func (r *PipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&pipelinesv1alpha1.Pipeline{}).
 		Owns(&pipelinesv1alpha1.Artifact{}).
 		Owns(&corev1.Pod{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 3)}).
 		Named("pipeline").
 		Complete(r); err != nil {
 		return fmt.Errorf("setting up pipeline controller: %w", err)

@@ -203,7 +203,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator governance: %w", err)
 	}
 
-	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.enableWebhooks, gov.capacityProviders); err != nil {
+	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.enableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
@@ -334,8 +334,16 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 		return operatorGovernance{}, fmt.Errorf("failed to create kubernetes clientset: %w", err)
 	}
 
-	rateLimiter := ratelimit.NewControllerRateLimit()
-	setupLog.Info("Rate limiting enabled", "globalRate", 100, "perAppRate", 10, "perSourceRate", 5)
+	rateLimiter := ratelimit.NewControllerRateLimitWithRates(
+		cfg.reconcileGlobalRate, cfg.reconcileGlobalBurst,
+		cfg.reconcileAppRate, cfg.reconcileAppBurst)
+	if rateLimiter == nil {
+		setupLog.Info("Reconcile rate limiting disabled", "reconcileGlobalRate", cfg.reconcileGlobalRate)
+	} else {
+		setupLog.Info("Rate limiting enabled",
+			"globalRate", cfg.reconcileGlobalRate, "globalBurst", cfg.reconcileGlobalBurst,
+			"perAppRate", cfg.reconcileAppRate, "perAppBurst", cfg.reconcileAppBurst)
+	}
 
 	capacityProviders, err := buildCapacityRegistry(mgr.GetClient())
 	if err != nil {
@@ -372,7 +380,7 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		LeaderElection:         leaderElect,
 		LeaderElectionID:       "paprika-operator.paprika.io",
 		Cache: crcache.Options{
-			SyncPeriod: ptr.To(time.Hour),
+			SyncPeriod: ptr.To(cfg.cacheResyncPeriod),
 		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{

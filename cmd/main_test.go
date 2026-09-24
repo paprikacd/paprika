@@ -885,3 +885,69 @@ func TestWithAPIRateLimits(t *testing.T) {
 	assert.Equal(t, float32(apiClientQPS), cfg.QPS)
 	assert.Equal(t, apiClientBurst, cfg.Burst)
 }
+
+func TestValidateControllerTuning(t *testing.T) {
+	valid := func() *cliConfig {
+		return &cliConfig{
+			appMaxConcurrentReconciles:      8,
+			releaseMaxConcurrentReconciles:  5,
+			stageMaxConcurrentReconciles:    3,
+			pipelineMaxConcurrentReconciles: 3,
+			appTransientRequeue:             5 * time.Second,
+			cacheResyncPeriod:               time.Hour,
+			reconcileGlobalRate:             100,
+			reconcileGlobalBurst:            200,
+			reconcileAppRate:                10,
+			reconcileAppBurst:               20,
+		}
+	}
+
+	t.Run("defaults pass", func(t *testing.T) {
+		require.NoError(t, validateControllerTuning(valid()))
+	})
+
+	t.Run("zero concurrency rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.appMaxConcurrentReconciles = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("sub-second transient requeue rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.appTransientRequeue = 100 * time.Millisecond
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("global rate <= 0 disables limiting and relaxes app rate", func(t *testing.T) {
+		cfg := valid()
+		cfg.reconcileGlobalRate = 0
+		cfg.reconcileAppRate = 0
+		require.NoError(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("app rate <= 0 with limiting enabled rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.reconcileAppRate = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("zero burst rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.reconcileGlobalBurst = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+}
+
+func TestControllerTuningFlags(t *testing.T) {
+	cfg, err := registerFlags([]string{
+		"--application-transient-requeue=15s",
+		"--application-max-concurrent-reconciles=16",
+		"--reconcile-global-rate=0",
+		"--cache-resync-period=30m",
+	}, func(string) string { return "" }, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 15*time.Second, cfg.appTransientRequeue)
+	assert.Equal(t, 16, cfg.appMaxConcurrentReconciles)
+	assert.Equal(t, 0.0, cfg.reconcileGlobalRate)
+	assert.Equal(t, 30*time.Minute, cfg.cacheResyncPeriod)
+}

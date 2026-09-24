@@ -92,6 +92,15 @@ const (
 	releaseResyncManual    releaseResyncOrigin = "manual"
 )
 
+// maxConcurrentOr resolves a configured worker count, falling back to the
+// controller's built-in default when unset or non-positive.
+func maxConcurrentOr(configured, fallback int) int {
+	if configured > 0 {
+		return configured
+	}
+	return fallback
+}
+
 // steadyStateRequeue spreads periodic reconciles over [base/2, base*3/2) so
 // applications created together do not requeue in lockstep and burst the
 // workqueue. The jitter is a deterministic hash of the application identity,
@@ -185,12 +194,27 @@ type ApplicationReconciler struct {
 	EventBroker         *events.Broker
 	SyncWindowEvaluator syncwindow.Evaluator
 	Clock               clock.Clock
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
+	// TransientRequeue is the interval used for in-flight states (pending,
+	// building, releasing) and as the steady-state poll fallback when
+	// spec.source.pollInterval is unset. <=0 uses defaultRequeue.
+	TransientRequeue time.Duration
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
 	// manifestCache memoizes parsed desired manifests keyed by content hash so
 	// a Healthy application's unchanged snapshot is not re-unmarshalled on
 	// every poll.
 	manifestCache *manifestParseCache
+}
+
+// transientRequeue resolves the configured in-flight requeue interval,
+// falling back to defaultRequeue when unset or non-positive.
+func (r *ApplicationReconciler) transientRequeue() time.Duration {
+	if r.TransientRequeue > 0 {
+		return r.TransientRequeue
+	}
+	return defaultRequeue
 }
 
 // NewApplicationReconciler returns an ApplicationReconciler initialized with the
@@ -252,12 +276,12 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	if r.RateLimiter != nil {
 		if !r.RateLimiter.AllowGlobal() {
-			log.Info("Global rate limit exceeded, requeueing", "app", app.Name)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			log.V(1).Info("Global rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 		}
 		if !r.RateLimiter.AllowApp(ratelimit.ReconcileKey(req.Namespace, req.Name)) {
-			log.Info("Per-application rate limit exceeded, requeueing", "app", app.Name)
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			log.V(1).Info("Per-application rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: 2 * r.transientRequeue()}, nil
 		}
 	}
 
@@ -479,7 +503,7 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 		log.Error(pruneErr, "Failed to prune release history")
 	}
 
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func syncTriggerPresent(annotations map[string]string) bool {
@@ -515,7 +539,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		sourceChanged, err := r.checkSourceChanged(ctx, app)
 		if err != nil {
 			log.Error(err, "Failed to refresh source after sync trigger")
-			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 		}
 		if sourceChanged {
 			return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
@@ -533,7 +557,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 			return ctrl.Result{}, fmt.Errorf("updating status after manual sync trigger: %w", err)
 		}
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
@@ -595,7 +619,7 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	switch pipelinePhase {
 	case paprikav1.PipelineRunning:
 		r.updatePhase(ctx, app, paprikav1.ApplicationBuilding, "PipelineRunning", fmt.Sprintf("pipeline phase: %s", pipelinePhase))
-		return &ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return &ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	case paprikav1.PipelineFailed, paprikav1.PipelineCancelled:
 		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "PipelineFailed", "pipeline failed")
 		return &ctrl.Result{}, nil
@@ -1041,7 +1065,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	targetStage := &app.Spec.Stages[0]
@@ -1056,7 +1080,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	if !manualOverride && app.Spec.SyncPolicy == paprikav1.SyncAuto && len(app.Spec.SyncWindows) > 0 {
@@ -1125,7 +1149,7 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	if release.Status.Phase != "" {
@@ -1136,7 +1160,7 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, phase paprikav1.ReleasePhase) (ctrl.Result, error) {
@@ -1157,7 +1181,7 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 
 	mapping, ok := phaseMap[phase]
 	if !ok {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	// Surface the deployed revision (the kubectl REVISION printer column reads
@@ -1175,7 +1199,7 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 	r.updatePhase(ctx, app, mapping.appPhase, mapping.reason, msg)
 
 	if mapping.requeue {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -1987,7 +2011,7 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		}
 	}
 
-	pollInterval := defaultRequeue
+	pollInterval := r.transientRequeue()
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
 			pollInterval = d
@@ -2040,7 +2064,7 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
 
-	pollInterval := defaultRequeue
+	pollInterval := r.transientRequeue()
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
 			pollInterval = d
@@ -2092,13 +2116,13 @@ func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *pa
 		return ctrl.Result{}, fmt.Errorf("supersede current release: %w", err)
 	}
 	if app.Status.ReleaseRef != "" {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 	r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, reason, message)
 	if err := r.patchAppStatusAllowingReleaseRefClear(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patch application status for new release: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context, app *paprikav1.Application) error {
@@ -2387,7 +2411,7 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			// Reconciles are dominated by cached reads and diff computation,
 			// not CPU; a wider worker pool drains bursts (fleet rollouts,
 			// resync storms) without piling up queue delay.
-			MaxConcurrentReconciles: 8,
+			MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 8),
 			RecoverPanic:            ptr(true),
 		}).
 		Named("application").

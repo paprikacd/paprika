@@ -140,6 +140,8 @@ type ReleaseReconciler struct {
 	ConftestEvaluator     ConftestEvaluator
 	EventBroker           *events.Broker
 	Clock                 clock.Clock
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
 }
 
 // NewReleaseReconciler returns a ReleaseReconciler initialized with the given
@@ -3094,7 +3096,7 @@ func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Release{}).
 		Owns(&corev1.ConfigMap{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 5)}).
 		Named("release").
 		Complete(r); err != nil {
 		return fmt.Errorf("unable to create release controller: %w", err)

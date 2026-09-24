@@ -1925,3 +1925,53 @@ func TestApplicationReconciler_requestReleaseResync_countsAutomaticResetsManual(
 		}
 	})
 }
+
+func TestTransientRequeue(t *testing.T) {
+	t.Parallel()
+
+	fallback := (&ApplicationReconciler{}).transientRequeue()
+	if fallback != defaultRequeue {
+		t.Fatalf("zero-value reconciler transientRequeue = %s, want %s", fallback, defaultRequeue)
+	}
+	if got := (&ApplicationReconciler{TransientRequeue: -time.Second}).transientRequeue(); got != defaultRequeue {
+		t.Fatalf("negative TransientRequeue = %s, want %s", got, defaultRequeue)
+	}
+	if got := (&ApplicationReconciler{TransientRequeue: 12 * time.Second}).transientRequeue(); got != 12*time.Second {
+		t.Fatalf("configured TransientRequeue = %s, want 12s", got)
+	}
+}
+
+func TestMaxConcurrentOr(t *testing.T) {
+	t.Parallel()
+
+	if got := maxConcurrentOr(0, 8); got != 8 {
+		t.Fatalf("maxConcurrentOr(0, 8) = %d, want 8", got)
+	}
+	if got := maxConcurrentOr(-3, 8); got != 8 {
+		t.Fatalf("maxConcurrentOr(-3, 8) = %d, want 8", got)
+	}
+	if got := maxConcurrentOr(16, 8); got != 16 {
+		t.Fatalf("maxConcurrentOr(16, 8) = %d, want 16", got)
+	}
+}
+
+func TestSteadyStateRequeue(t *testing.T) {
+	t.Parallel()
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "ns"},
+	}
+	base := 5 * time.Second
+
+	got := steadyStateRequeue(app, base)
+	if got < base/2 || got >= 3*base/2 {
+		t.Fatalf("steadyStateRequeue = %s, want within [%s, %s)", got, base/2, 3*base/2)
+	}
+	if again := steadyStateRequeue(app, base); again != got {
+		t.Fatalf("steadyStateRequeue not deterministic: %s then %s", got, again)
+	}
+	other := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"},
+	}
+	_ = steadyStateRequeue(other, base) // must not panic; spread is best-effort
+}

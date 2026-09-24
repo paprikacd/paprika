@@ -264,6 +264,51 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 {{- end }}
 
 {{/*
+Reconcile-rate tuning args shared by operator and api modes. Empty fields are
+omitted so the binary defaults apply; set them to tune a large fleet without
+touching manager.args.
+*/}}
+{{- define "paprika.reconcileArgs" -}}
+{{- $r := .Values.manager.reconcile -}}
+{{- if $r }}
+{{- if $r.transientRequeue }}
+- --application-transient-requeue={{ $r.transientRequeue }}
+{{- end }}
+{{- if $r.cacheResyncPeriod }}
+- --cache-resync-period={{ $r.cacheResyncPeriod }}
+{{- end }}
+{{- with $r.maxConcurrentReconciles }}
+{{- if .application }}
+- --application-max-concurrent-reconciles={{ .application }}
+{{- end }}
+{{- if .release }}
+- --release-max-concurrent-reconciles={{ .release }}
+{{- end }}
+{{- if .stage }}
+- --stage-max-concurrent-reconciles={{ .stage }}
+{{- end }}
+{{- if .pipeline }}
+- --pipeline-max-concurrent-reconciles={{ .pipeline }}
+{{- end }}
+{{- end }}
+{{- with $r.rateLimit }}
+{{- if hasKey . "globalRate" }}
+- --reconcile-global-rate={{ .globalRate }}
+{{- end }}
+{{- if .globalBurst }}
+- --reconcile-global-burst={{ .globalBurst }}
+{{- end }}
+{{- if .appRate }}
+- --reconcile-app-rate={{ .appRate }}
+{{- end }}
+{{- if .appBurst }}
+- --reconcile-app-burst={{ .appBurst }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Validate OIDC Secret configuration. Inline secrets are rejected to keep them
 out of Helm values and rendered process arguments. Public clients may leave
 both Secret reference fields empty.

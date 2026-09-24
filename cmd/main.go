@@ -168,6 +168,16 @@ type cliConfig struct {
 	githubActionsTokenExchangeTTL                                 time.Duration
 	coordinatorMode                                               bool
 	coordinatorHeartbeat, coordinatorTTL                          time.Duration
+	appMaxConcurrentReconciles                                    int
+	releaseMaxConcurrentReconciles                                int
+	stageMaxConcurrentReconciles                                  int
+	pipelineMaxConcurrentReconciles                               int
+	appTransientRequeue                                           time.Duration
+	cacheResyncPeriod                                             time.Duration
+	reconcileGlobalRate                                           float64
+	reconcileGlobalBurst                                          int
+	reconcileAppRate                                              float64
+	reconcileAppBurst                                             int
 	mcpEnabled                                                    bool
 	mcpBindAddress                                                string
 	mcpAccessTokenTTL, mcpRefreshTokenTTL                         time.Duration
@@ -211,6 +221,9 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 	if err := validateCoordinatorConfig(cfg); err != nil {
 		return err
 	}
+	if err := validateControllerTuning(cfg); err != nil {
+		return err
+	}
 
 	switch cfg.mode {
 	case "agent":
@@ -252,6 +265,87 @@ func validateMode(mode string) error {
 		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', or 'agent')", mode)
 	}
 	return nil
+}
+
+// registerControllerTuningFlags exposes reconcile-rate knobs: worker
+// concurrency per controller, the transient requeue used by in-flight
+// Application states, the informer full-resync period, and the reconcile
+// token-bucket limits. Steady-state polling stays per-application via
+// spec.source.pollInterval.
+func registerControllerTuningFlags(fs *flag.FlagSet, cfg *cliConfig) {
+	fs.IntVar(&cfg.appMaxConcurrentReconciles, "application-max-concurrent-reconciles", 8,
+		"Maximum parallel Application reconciles. Reconciles are cached-read and diff "+
+			"dominated; a wider pool drains burst resyncs without queue delay.")
+	fs.IntVar(&cfg.releaseMaxConcurrentReconciles, "release-max-concurrent-reconciles", 5,
+		"Maximum parallel Release reconciles.")
+	fs.IntVar(&cfg.stageMaxConcurrentReconciles, "stage-max-concurrent-reconciles", 3,
+		"Maximum parallel Stage reconciles.")
+	fs.IntVar(&cfg.pipelineMaxConcurrentReconciles, "pipeline-max-concurrent-reconciles", 3,
+		"Maximum parallel Pipeline reconciles.")
+	fs.DurationVar(&cfg.appTransientRequeue, "application-transient-requeue", 5*time.Second,
+		"Requeue interval for in-flight Application states (pending, building, releasing) "+
+			"and the steady-state poll fallback when spec.source.pollInterval is unset.")
+	fs.DurationVar(&cfg.cacheResyncPeriod, "cache-resync-period", time.Hour,
+		"Full resync period for the manager's informer cache.")
+	fs.Float64Var(&cfg.reconcileGlobalRate, "reconcile-global-rate", 100,
+		"Global reconcile token-bucket refill rate (reconciles/sec). <=0 disables "+
+			"reconcile rate limiting entirely.")
+	fs.IntVar(&cfg.reconcileGlobalBurst, "reconcile-global-burst", 200,
+		"Global reconcile token-bucket burst size.")
+	fs.Float64Var(&cfg.reconcileAppRate, "reconcile-app-rate", 10,
+		"Per-application reconcile token-bucket refill rate (reconciles/sec).")
+	fs.IntVar(&cfg.reconcileAppBurst, "reconcile-app-burst", 20,
+		"Per-application reconcile token-bucket burst size.")
+}
+
+// controllerTuning carries the reconcile-rate flags into the controller setup
+// chain without growing every setup signature.
+type controllerTuning struct {
+	appMaxConcurrent      int
+	releaseMaxConcurrent  int
+	stageMaxConcurrent    int
+	pipelineMaxConcurrent int
+	appTransientRequeue   time.Duration
+}
+
+// validateControllerTuning rejects values that would wedge or thrash the
+// reconcile loops: zero workers, a poll interval too tight to be sane, or a
+// rate limiter that can never refill.
+func validateControllerTuning(cfg *cliConfig) error {
+	concurrencies := map[string]int{
+		"application-max-concurrent-reconciles": cfg.appMaxConcurrentReconciles,
+		"release-max-concurrent-reconciles":     cfg.releaseMaxConcurrentReconciles,
+		"stage-max-concurrent-reconciles":       cfg.stageMaxConcurrentReconciles,
+		"pipeline-max-concurrent-reconciles":    cfg.pipelineMaxConcurrentReconciles,
+	}
+	for flag, v := range concurrencies {
+		if v < 1 {
+			return fmt.Errorf("--%s must be >= 1, got %d", flag, v)
+		}
+	}
+	if cfg.appTransientRequeue < time.Second || cfg.appTransientRequeue > 24*time.Hour {
+		return fmt.Errorf("--application-transient-requeue must be in [1s, 24h], got %s", cfg.appTransientRequeue)
+	}
+	if cfg.cacheResyncPeriod < time.Minute {
+		return fmt.Errorf("--cache-resync-period must be >= 1m, got %s", cfg.cacheResyncPeriod)
+	}
+	if cfg.reconcileGlobalBurst < 1 || cfg.reconcileAppBurst < 1 {
+		return fmt.Errorf("reconcile rate-limit bursts must be >= 1 (global=%d, app=%d)", cfg.reconcileGlobalBurst, cfg.reconcileAppBurst)
+	}
+	if cfg.reconcileGlobalRate > 0 && cfg.reconcileAppRate <= 0 {
+		return fmt.Errorf("--reconcile-app-rate must be > 0 when rate limiting is enabled, got %v", cfg.reconcileAppRate)
+	}
+	return nil
+}
+
+func (cfg *cliConfig) tuning() controllerTuning {
+	return controllerTuning{
+		appMaxConcurrent:      cfg.appMaxConcurrentReconciles,
+		releaseMaxConcurrent:  cfg.releaseMaxConcurrentReconciles,
+		stageMaxConcurrent:    cfg.stageMaxConcurrentReconciles,
+		pipelineMaxConcurrent: cfg.pipelineMaxConcurrentReconciles,
+		appTransientRequeue:   cfg.appTransientRequeue,
+	}
 }
 
 func registerCoordinatorFlags(fs *flag.FlagSet, cfg *cliConfig) {
@@ -317,6 +411,7 @@ func registerFlags(args []string, getenv func(string) string, stderr io.Writer) 
 		"Maximum number of concurrent TCP connections the UI/API server accepts. "+
 			"Bounds connection and in-flight request memory on small pods; excess "+
 			"connections wait in the kernel accept queue. 0 disables the limit.")
+	registerControllerTuningFlags(fs, &cfg)
 	fs.StringVar(&cfg.mode, "mode", "operator",
 		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent).")
 	fs.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
