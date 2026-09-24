@@ -165,6 +165,9 @@ jobs:
         with:
           version: v3.21.2
 
+      - name: Set up Task
+        uses: go-task/setup-task@70f2430ad412f838533de8c0515c749ffb2b8bd3 # v1
+
       - name: Verify OIDC Secret rendering
         run: bash hack/test-oidc-secret-rendering.sh
 
@@ -182,6 +185,9 @@ jobs:
 
       - name: Render VKE configuration
         run: helm template paprika charts/chart/ --values deploy/test-values.yaml
+
+      - name: Validate rendered args across value matrices
+        run: task chart:validate
 
   release-contract:
     name: CLI release contract

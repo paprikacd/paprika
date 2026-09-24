@@ -2235,12 +2235,7 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		}
 	}
 
-	pollInterval := r.transientRequeue()
-	if app.Spec.Source.PollInterval != "" {
-		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
-			pollInterval = d
-		}
-	}
+	pollInterval := r.effectivePollInterval(ctx, app)
 	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {
 		log.Error(err, "Failed to check source changes")
@@ -2277,6 +2272,34 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 	return ctrl.Result{RequeueAfter: steadyStateRequeue(app, pollInterval)}, nil
 }
 
+// minimumPollInterval is the floor for spec.source.pollInterval. Anything
+// smaller spins the workqueue with no dwell, so invalid or too-tight values
+// fall back to the transient requeue instead of hot-looping.
+const minimumPollInterval = time.Second
+
+// effectivePollInterval resolves spec.source.pollInterval, warning once per
+// reconcile on unparseable or sub-floor values rather than silently ignoring
+// the field or spinning.
+func (r *ApplicationReconciler) effectivePollInterval(ctx context.Context, app *paprikav1.Application) time.Duration {
+	fallback := r.transientRequeue()
+	raw := app.Spec.Source.PollInterval
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		log.FromContext(ctx).Info("Ignoring invalid spec.source.pollInterval",
+			"app", app.Name, "namespace", app.Namespace, "pollInterval", raw, "error", err.Error())
+		return fallback
+	}
+	if d < minimumPollInterval {
+		log.FromContext(ctx).Info("spec.source.pollInterval below minimum; using fallback",
+			"app", app.Name, "namespace", app.Namespace, "pollInterval", raw, "min", minimumPollInterval.String())
+		return fallback
+	}
+	return d
+}
+
 // holdExhaustedRelease is the rest state for an application whose active
 // release used up its automatic retry budget. It does not supersede or
 // resurrect the terminal release; it keeps polling the source so a new commit
@@ -2288,12 +2311,7 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
 
-	pollInterval := r.transientRequeue()
-	if app.Spec.Source.PollInterval != "" {
-		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
-			pollInterval = d
-		}
-	}
+	pollInterval := r.effectivePollInterval(ctx, app)
 
 	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {

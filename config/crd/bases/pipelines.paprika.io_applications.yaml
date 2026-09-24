@@ -617,6 +617,7 @@ spec:
                   pollInterval:
                     default: 30s
                     description: Poll interval for change detection (default 30s)
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   region:
                     description: S3 region (for type=s3)

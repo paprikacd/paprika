@@ -497,11 +497,22 @@ func validateControllerTuning(cfg *cliConfig) error {
 			return fmt.Errorf("--%s must be in [%s, %s], got %s", flag, bounds[0], bounds[1], v)
 		}
 	}
+	return validateServingLimits(cfg)
+}
+
+// validateServingLimits rejects values that silently remove throughput or
+// memory protections: zero bursts stall the token buckets, and a nonpositive
+// connection cap would silently disable it — that unbounded accept queue is
+// what OOM-killed a 96Mi api-server under a conn flood.
+func validateServingLimits(cfg *cliConfig) error {
 	if cfg.ReconcileGlobalBurst < 1 || cfg.ReconcileAppBurst < 1 {
 		return fmt.Errorf("reconcile rate-limit bursts must be >= 1 (global=%d, app=%d)", cfg.ReconcileGlobalBurst, cfg.ReconcileAppBurst)
 	}
 	if cfg.ReconcileGlobalRate > 0 && cfg.ReconcileAppRate <= 0 {
 		return fmt.Errorf("--reconcile-app-rate must be > 0 when rate limiting is enabled, got %v", cfg.ReconcileAppRate)
+	}
+	if cfg.APIMaxConns < 1 {
+		return fmt.Errorf("--api-max-conns must be >= 1, got %d", cfg.APIMaxConns)
 	}
 	return nil
 }

@@ -94,8 +94,8 @@ manager:
     ## limiting entirely.
     ##
     rateLimit:
-      # globalRate must render even at 0 (disables limiting), so the template
-      # keys on presence, not truthiness.
+      # globalRate renders even at 0 (disables limiting) — only null/absent
+      # leaves the flag off the command line.
       globalRate: null
       globalBurst: 0
       appRate: 0

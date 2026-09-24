@@ -255,7 +255,11 @@ Auth CLI args shared between manager (monolith) and api-server deployments.
 {{- end }}
 {{- if .Values.auth.oidc.enabled }}
 - --auth-oidc-issuer-url={{ .Values.auth.oidc.issuerURL }}
+{{- /* Empty values must not render as bare --flag= — fall through to the
+binary default instead of handing flag parsing an empty string. */}}
+{{- if .Values.auth.oidc.clientID }}
 - --auth-oidc-client-id={{ .Values.auth.oidc.clientID }}
+{{- end }}
 {{- if .Values.auth.oidc.redirectURL }}
 - --auth-oidc-redirect-url={{ .Values.auth.oidc.redirectURL }}
 {{- end }}
@@ -295,9 +299,9 @@ touching manager.args.
 {{- end }}
 {{- end }}
 {{- with $r.rateLimit }}
-{{- /* presence (hasKey) so an explicit 0 still renders, but null must not —
-an empty flag value crashes flag parsing on startup. */}}
-{{- if and (hasKey . "globalRate") (not (kindIs "invalid" .globalRate)) }}
+{{- /* null/absent must not render — an empty flag value crashes flag parsing
+on startup — but an explicit 0 (rate limiting off) must. */}}
+{{- if not (kindIs "invalid" .globalRate) }}
 - --reconcile-global-rate={{ .globalRate }}
 {{- end }}
 {{- if .globalBurst }}
@@ -325,7 +329,38 @@ both Secret reference fields empty.
 {{- if ne (empty .Values.auth.oidc.existingSecretName) (empty .Values.auth.oidc.existingSecretKey) -}}
 {{- fail "auth.oidc.existingSecretName and auth.oidc.existingSecretKey must both be set" -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Reject enabled-but-unset feature values that would render empty --flag= args
+(and crash typed flag parsing at pod start) or silently broken auth.
+*/}}
+{{- define "paprika.validateRequiredArgs" -}}
+{{- if and .Values.auth.enabled .Values.auth.basic.enabled }}
+{{- if not .Values.auth.basic.username }}
+{{- fail "auth.basic.username is required when auth.basic.enabled=true" }}
 {{- end }}
+{{- if not .Values.auth.basic.passwordHash }}
+{{- fail "auth.basic.passwordHash is required when auth.basic.enabled=true" }}
+{{- end }}
+{{- end }}
+{{- if and .Values.auth.enabled .Values.auth.oidc.enabled }}
+{{- if not .Values.auth.oidc.issuerURL }}
+{{- fail "auth.oidc.issuerURL is required when auth.oidc.enabled=true" }}
+{{- end }}
+{{- end }}
+{{- if .Values.mcp.enabled }}
+{{- if not .Values.mcp.oauth.clientId }}
+{{- fail "mcp.oauth.clientId is required when mcp.enabled=true" }}
+{{- end }}
+{{- if not .Values.mcp.oauth.redirectUris }}
+{{- fail "mcp.oauth.redirectUris is required when mcp.enabled=true" }}
+{{- end }}
+{{- if not .Values.mcp.publicURL }}
+{{- fail "mcp.publicURL is required when mcp.enabled=true" }}
+{{- end }}
+{{- end }}
+{{- end -}}
 
 {{/*
 OIDC client secret environment variable shared by authenticated API workloads.
