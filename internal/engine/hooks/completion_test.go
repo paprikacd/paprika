@@ -65,19 +65,16 @@ func TestJobCompletion_NotDone(t *testing.T) {
 	assert.False(t, done)
 }
 
-func TestJobCompletion_SucceededCount(t *testing.T) {
-	// No conditions but status.succeeded > 0.
-	job := &batchv1.Job{
-		TypeMeta:   metav1.TypeMeta{Kind: "Job", APIVersion: "batch/v1"},
-		ObjectMeta: metav1.ObjectMeta{Name: "ok", Namespace: "default"},
-		Status:     batchv1.JobStatus{Succeeded: 1},
+func TestJobCompletion_WaitsForTerminalCondition(t *testing.T) {
+	for _, status := range []batchv1.JobStatus{{Succeeded: 1}, {Failed: 1, Active: 1}, {Failed: 1}} {
+		job := &batchv1.Job{Status: status}
+		u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(job)
+		require.NoError(t, err)
+		done, succeeded, _, err := jobCompletionFromObject(&unstructured.Unstructured{Object: u})
+		require.NoError(t, err)
+		assert.False(t, done, "pod counters must not complete or fail a retrying/parallel Job")
+		assert.False(t, succeeded)
 	}
-	u, _ := runtime.DefaultUnstructuredConverter.ToUnstructured(job)
-	obj := &unstructured.Unstructured{Object: u}
-
-	done, succeeded, _, _ := jobCompletionFromObject(obj)
-	assert.True(t, done)
-	assert.True(t, succeeded)
 }
 
 func TestPodCompletion_Succeeded(t *testing.T) {

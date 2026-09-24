@@ -83,12 +83,8 @@ func jobCompletionFromObject(obj *unstructured.Unstructured) (done, succeeded bo
 			return true, false, msg, nil
 		}
 	}
-	if job.Status.Succeeded > 0 {
-		return true, true, "Job succeeded", nil
-	}
-	if job.Status.Failed > 0 {
-		return true, false, fmt.Sprintf("Job failed (%d pods failed)", job.Status.Failed), nil
-	}
+	// Pod counters are not terminal Job results: a failed pod may be retried,
+	// and a successful pod may be one of several required completions.
 	return false, false, "", nil
 }
 
