@@ -196,7 +196,16 @@ test("preserves URL state through Treemap, Matrix, and Table with keyboard selec
   await activate(page, applicationRow, testInfo)
   await expect(page).toHaveURL(/\/dashboard\/application\/?\?namespace=team-00&name=checkout-service/)
   await expect(page.getByRole("heading", {name: "checkout-service", exact: true})).toBeVisible()
-  await activate(page, page.getByRole("tab", {name: "Health", exact: true}), testInfo)
+  if (testInfo.project.name === keyboardProject) {
+    // Tabs use the standard roving tabindex pattern: Tab enters the active tab,
+    // then arrows move through the tablist without extra page tab stops.
+    await tabTo(page, page.getByRole("tab", {name: "Overview", exact: true}))
+    await page.keyboard.press("ArrowRight")
+    await page.keyboard.press("ArrowRight")
+  } else {
+    await activate(page, page.getByRole("tab", {name: "Health", exact: true}), testInfo)
+  }
+  await expect(page.getByRole("tab", {name: "Health", exact: true})).toHaveAttribute("aria-selected", "true")
   await expect(page.getByRole("heading", {name: "Health evidence", exact: true})).toBeVisible()
 })
 
