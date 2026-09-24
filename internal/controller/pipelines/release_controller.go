@@ -347,6 +347,12 @@ func (r *ReleaseReconciler) handleResyncAnnotation(ctx context.Context, release 
 		release.Status.CanaryWeight = 0
 		release.Status.CanaryStepIndex = 0
 		release.Status.CanaryStepStartedAt = nil
+		// A new attempt must run its hooks again. Carrying Succeeded skips
+		// migration; carrying Failed makes every explicit retry fail immediately.
+		release.Status.HookStatuses = nil
+		for _, condition := range []string{"Failed", "VerificationFailed", "CanaryFailed", "CanaryPromotionFailed", "CanaryAnalysis", "RolledBack"} {
+			meta.RemoveStatusCondition(&release.Status.Conditions, condition)
+		}
 		if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 			*result = resultError
 			return ctrl.Result{}, true, fmt.Errorf("resetting release phase to pending: %w", err)
@@ -1742,6 +1748,9 @@ func (r *ReleaseReconciler) executeHooks(
 	timeout := r.hookTimeout(release)
 	for _, res := range resources {
 		obj := res.Obj
+		if obj.GetNamespace() == "" && !isClusterScopedKind(obj.GetKind()) {
+			obj.SetNamespace(release.Namespace)
+		}
 		idx, hs := findHookStatus(release, obj, phase)
 
 		switch {
@@ -1781,8 +1790,8 @@ func (r *ReleaseReconciler) applyNewHook(
 	log := logf.FromContext(ctx)
 	obj := res.Obj
 
-	if res.DeletePolicy == "" || res.DeletePolicy == hookDeletePolicyBefore {
-		if err := r.deleteExistingHook(ctx, dynClient, obj); err != nil {
+	if beforeHookCreation(res.DeletePolicy) {
+		if err := r.deleteExistingHook(ctx, dynClient, obj, timeout); err != nil {
 			return fmt.Errorf("before-hook-creation delete %s/%s: %w",
 				obj.GetKind(), obj.GetName(), err)
 		}
@@ -1933,22 +1942,55 @@ func (r *ReleaseReconciler) pollHook(
 	return checker(ctx, dynClient, obj.GetNamespace(), obj.GetName())
 }
 
-// deleteExistingHook best-effort deletes an existing hook resource so the
-// subsequent apply creates it fresh. IsNotFound is OK.
-func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dynamic.Interface, obj *unstructured.Unstructured) error {
+// beforeHookCreation accepts a comma-separated policy list, including whitespace.
+// An absent policy defaults to replacing the prior hook.
+func beforeHookCreation(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return true
+	}
+	for _, policy := range strings.Split(value, ",") {
+		if strings.TrimSpace(policy) == hookDeletePolicyBefore {
+			return true
+		}
+	}
+	return false
+}
+
+// deleteExistingHook waits across reconciles for foreground deletion. Applying
+// after merely accepting DELETE races Job finalizers and can overlap migrations.
+func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dynamic.Interface, obj *unstructured.Unstructured, timeout time.Duration) error {
 	group, version := parseAPIVersion(obj.GetAPIVersion())
 	gvr, err := r.gvrFromKind(obj.GetKind(), group, version)
 	if err != nil {
 		return fmt.Errorf("resolve GVR: %w", err)
 	}
-	policy := metav1.DeletePropagationBackground
-	err = dynClient.Resource(gvr).Namespace(obj.GetNamespace()).Delete(ctx, obj.GetName(), metav1.DeleteOptions{
-		PropagationPolicy: &policy,
-	})
+	ri := dynClient.Resource(gvr).Namespace(obj.GetNamespace())
+	live, err := ri.Get(ctx, obj.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
-	return fmt.Errorf("delete hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	if err != nil {
+		return fmt.Errorf("get prior hook: %w", err)
+	}
+	if deletedAt := live.GetDeletionTimestamp(); deletedAt != nil {
+		if timeout <= 0 {
+			timeout = defaultHookTimeout
+		}
+		if r.Clock.Now().Sub(deletedAt.Time) > timeout {
+			return fmt.Errorf("prior hook %s/%s deletion timed out after %s; inspect finalizers", obj.GetKind(), obj.GetName(), timeout)
+		}
+		return errHookPhasePending
+	}
+	policy := metav1.DeletePropagationForeground
+	uid := live.GetUID()
+	err = ri.Delete(ctx, obj.GetName(), metav1.DeleteOptions{
+		PropagationPolicy: &policy,
+		Preconditions:     &metav1.Preconditions{UID: &uid},
+	})
+	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+		return fmt.Errorf("delete hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	}
+	return errHookPhasePending
 }
 
 // applyHookObject stamps paprika labels on the hook metadata and applies it

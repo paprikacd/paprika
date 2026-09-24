@@ -1287,11 +1287,26 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 	// the in-process admission webhooks.
 	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
 		Type:               string(phase),
+		ObservedGeneration: app.Generation,
 		Status:             metav1.ConditionTrue,
 		LastTransitionTime: metav1.Now(),
 		Reason:             reason,
 		Message:            message,
 	})
+
+	// Phase conditions describe the current state, not historical successes.
+	// In particular, Healthy=True must not survive a failed deployment.
+	for _, condType := range []string{"Pending", "Building", "Promoting", "Canarying", "Verifying", "Healthy", "Degraded", "Failed", "RolledBack"} {
+		if condType == string(phase) {
+			continue
+		}
+		if cond := meta.FindStatusCondition(app.Status.Conditions, condType); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type: condType, Status: metav1.ConditionFalse, ObservedGeneration: app.Generation,
+				Reason: "PhaseChanged", Message: "application is now " + string(phase),
+			})
+		}
+	}
 
 	// When the application recovers to Healthy, clear the failure conditions
 	// left behind by the previous failure cycle. Without this, Degraded,
