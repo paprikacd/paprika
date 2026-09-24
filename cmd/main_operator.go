@@ -122,7 +122,7 @@ func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog log
 		// forwarded to the configured OTLP backend alongside traces/metrics.
 		// The bridge is only wired when tracing is enabled; otherwise the global
 		// LoggerProvider is a no-op and bridging would add overhead for nothing.
-		raw := crzap.NewRaw(crzap.UseFlagOptions(&cfg.zapOptions))
+		raw := crzap.NewRaw(crzap.UseFlagOptions(&cfg.ZapOptions))
 		ctrl.SetLogger(zapr.NewLogger(bridgeZapWithOTel(raw, telemetry)))
 	}
 
@@ -141,7 +141,7 @@ func buildOperatorDependencies(ctx context.Context, cfg *cliConfig, setupLog log
 		telemetry:      telemetry,
 		shardFilter:    shardFilter,
 		broker:         broker,
-		repoServerAddr: cfg.repoServerAddr,
+		repoServerAddr: cfg.RepoServerAddr,
 	}, nil
 }
 
@@ -194,7 +194,7 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("start coordinator: %w", coordErr)
 	}
 
-	if err = registerDefaultProjectBootstrap(mgr, cfg.operatorNamespace); err != nil {
+	if err = registerDefaultProjectBootstrap(mgr, cfg.OperatorNamespace); err != nil {
 		return fmt.Errorf("register default project bootstrap: %w", err)
 	}
 
@@ -203,15 +203,15 @@ func runOperatorMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return fmt.Errorf("build operator governance: %w", err)
 	}
 
-	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.operatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.enableWebhooks, gov.capacityProviders); err != nil {
+	if err = setupOperatorControllers(opCtx, mgr, gov.k8sClient, cfg.OperatorNamespace, deps, gov.projectValidator, gov.policyEvaluator, gov.rateLimiter, cfg.tuning(), cfg.EnableWebhooks, gov.capacityProviders); err != nil {
 		return fmt.Errorf("setup operator controllers: %w", err)
 	}
 
-	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.auditLogEnabled, gov.capacityProviders, setupLog); err != nil {
+	if err := startOperatorUIServer(opCtx, mgr, cfg, gov.k8sClient, gov.authCfg, gov.projectValidator, gov.policyEvaluator, gov.authz, deps.broker, deps.fleetReader, cfg.AuditLogEnabled, gov.capacityProviders, setupLog); err != nil {
 		return fmt.Errorf("start UI server: %w", err)
 	}
 
-	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.webhookSecret, setupLog); err != nil {
+	if err := startInlineWebhookServer(opCtx, mgr.GetClient(), cfg.WebhookSecret, setupLog); err != nil {
 		return fmt.Errorf("start inline webhook server: %w", err)
 	}
 
@@ -257,19 +257,19 @@ func registerGauges(setupLog logr.Logger, c client.Client) {
 }
 
 func startCoordinatorIfMode(ctx context.Context, cfg *cliConfig, deps *operatorDependencies, mgr ctrl.Manager, setupLog logr.Logger) error {
-	if !cfg.coordinatorMode {
+	if !cfg.CoordinatorMode {
 		return nil
 	}
-	redisAddr := cfg.cacheRedisAddr
-	redisPassword := cfg.cacheRedisPassword
-	redisDB := cfg.cacheRedisDB
+	redisAddr := cfg.CacheRedisAddr
+	redisPassword := cfg.CacheRedisPassword
+	redisDB := cfg.CacheRedisDB
 
 	client := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 		DB:       redisDB,
 	})
-	podName := cfg.shardIDSource
+	podName := cfg.ShardIDSource
 	if podName == "" {
 		var hostErr error
 		podName, hostErr = os.Hostname()
@@ -279,8 +279,8 @@ func startCoordinatorIfMode(ctx context.Context, cfg *cliConfig, deps *operatorD
 	}
 
 	c := coordinator.NewCoordinator(client, podName,
-		coordinator.WithHeartbeatInterval(cfg.coordinatorHeartbeat),
-		coordinator.WithHeartbeatTTL(cfg.coordinatorTTL),
+		coordinator.WithHeartbeatInterval(cfg.CoordinatorHeartbeat),
+		coordinator.WithHeartbeatTTL(cfg.CoordinatorTTL),
 	)
 	if err := c.Join(ctx); err != nil {
 		return fmt.Errorf("coordinator join: %w", err)
@@ -297,23 +297,23 @@ func startCoordinatorIfMode(ctx context.Context, cfg *cliConfig, deps *operatorD
 	setupLog.Info("Coordinator started",
 		"pod", podName,
 		"redis", redisAddr,
-		"heartbeat", cfg.coordinatorHeartbeat,
-		"ttl", cfg.coordinatorTTL,
+		"heartbeat", cfg.CoordinatorHeartbeat,
+		"ttl", cfg.CoordinatorTTL,
 	)
 	return nil
 }
 
 func buildOperatorManagerAndServer(cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (ctrl.Manager, error) {
-	tlsOpts := buildOperatorTLSOptions(cfg.enableHTTP2, setupLog)
-	webhookServer := buildOperatorWebhookServer(tlsOpts, cfg.webhookCertPath, cfg.webhookCertName, cfg.webhookCertKey, setupLog)
-	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, cfg.metricsAddr, cfg.metricsCertPath, cfg.metricsCertName, cfg.metricsCertKey, cfg.secureMetrics, setupLog)
+	tlsOpts := buildOperatorTLSOptions(cfg.EnableHTTP2, setupLog)
+	webhookServer := buildOperatorWebhookServer(tlsOpts, cfg.WebhookCertPath, cfg.WebhookCertName, cfg.WebhookCertKey, setupLog)
+	metricsServerOptions := buildOperatorMetricsOptions(tlsOpts, cfg.MetricsAddr, cfg.MetricsCertPath, cfg.MetricsCertName, cfg.MetricsCertKey, cfg.SecureMetrics, setupLog)
 	return buildOperatorManager(cfg, scheme, &metricsServerOptions, webhookServer)
 }
 
 func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logger) (operatorGovernance, error) {
-	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
-		cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+	authCfg := buildAuthConfig(cfg.AuthEnabled, cfg.AuthBasicUsername, cfg.AuthBasicPassword, cfg.AuthBasicPasswordHash,
+		cfg.AuthOIDCIssuerURL, cfg.AuthOIDCClientID, cfg.AuthOIDCClientSecret, cfg.AuthOIDCRedirectURL,
+		cfg.AuthTokenSecret, cfg.AuthRBACRules, setupLog)
 
 	resolver := governance.NewProjectResolver(mgr.GetClient())
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(mgr.GetClient()), mgr.GetRESTMapper())
@@ -335,14 +335,14 @@ func newOperatorGovernance(mgr ctrl.Manager, cfg *cliConfig, setupLog logr.Logge
 	}
 
 	rateLimiter := ratelimit.NewControllerRateLimitWithRates(
-		cfg.reconcileGlobalRate, cfg.reconcileGlobalBurst,
-		cfg.reconcileAppRate, cfg.reconcileAppBurst)
+		cfg.ReconcileGlobalRate, cfg.ReconcileGlobalBurst,
+		cfg.ReconcileAppRate, cfg.ReconcileAppBurst)
 	if rateLimiter == nil {
-		setupLog.Info("Reconcile rate limiting disabled", "reconcileGlobalRate", cfg.reconcileGlobalRate)
+		setupLog.Info("Reconcile rate limiting disabled", "reconcileGlobalRate", cfg.ReconcileGlobalRate)
 	} else {
 		setupLog.Info("Rate limiting enabled",
-			"globalRate", cfg.reconcileGlobalRate, "globalBurst", cfg.reconcileGlobalBurst,
-			"perAppRate", cfg.reconcileAppRate, "perAppBurst", cfg.reconcileAppBurst)
+			"globalRate", cfg.ReconcileGlobalRate, "globalBurst", cfg.ReconcileGlobalBurst,
+			"perAppRate", cfg.ReconcileAppRate, "perAppBurst", cfg.ReconcileAppBurst)
 	}
 
 	capacityProviders, err := buildCapacityRegistry(mgr.GetClient())
@@ -366,8 +366,8 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 	restCfg.QPS = 50
 	restCfg.Burst = 100
 
-	leaderElect := cfg.enableLeaderElection
-	if cfg.coordinatorMode {
+	leaderElect := cfg.EnableLeaderElection
+	if cfg.CoordinatorMode {
 		leaderElect = false
 	}
 
@@ -375,12 +375,12 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 		Scheme:                 scheme,
 		Metrics:                *metricsOpts,
 		WebhookServer:          webhookSrv,
-		HealthProbeBindAddress: cfg.probeAddr,
-		PprofBindAddress:       cfg.pprofAddr,
+		HealthProbeBindAddress: cfg.ProbeAddr,
+		PprofBindAddress:       cfg.PprofAddr,
 		LeaderElection:         leaderElect,
 		LeaderElectionID:       "paprika-operator.paprika.io",
 		Cache: crcache.Options{
-			SyncPeriod: ptr.To(cfg.cacheResyncPeriod),
+			SyncPeriod: ptr.To(cfg.CacheResyncPeriod),
 		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{
@@ -394,7 +394,7 @@ func buildOperatorManager(cfg *cliConfig, scheme *runtime.Scheme, metricsOpts *m
 			},
 		},
 		Controller: config.Controller{
-			CacheSyncTimeout: cfg.cacheSyncTimeout,
+			CacheSyncTimeout: cfg.CacheSyncTimeout,
 		},
 	})
 	if err != nil {
@@ -489,7 +489,7 @@ func startOperatorUIServer(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig
 		return fmt.Errorf("build operator UI server: %w", err)
 	}
 	go func() {
-		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true, cfg.apiMaxConns); srvErr != nil {
+		if srvErr := runHTTPServer(ctx, uiServer, "UI server", setupLog, nil, true, cfg.APIMaxConns); srvErr != nil {
 			setupLog.Error(srvErr, "UI server exited with error")
 		}
 	}()
@@ -542,7 +542,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	opts = append(opts,
 		apiserver.WithRESTMapper(mgr.GetRESTMapper()),
 		apiserver.WithCapacityProviders(capacityRegistry),
-		apiserver.WithControlPlaneNamespace(cfg.operatorNamespace),
+		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(mgr.GetClient(), broker, opts...)
 
@@ -568,7 +568,7 @@ func buildOperatorUI(ctx context.Context, mgr ctrl.Manager, cfg *cliConfig, k8sC
 	uiMux := buildOperatorUIMux(connectHandler, uiHandler, fleetReader, setupLog, githubExchangeHandlers...)
 
 	return httpx.WithH2C(&http.Server{
-		Addr:              cfg.uiAddr,
+		Addr:              cfg.UIAddr,
 		Handler:           otelhttp.NewHandler(apiserver.MetricsMiddleware(uiMux), "paprika-http"),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       apiServerIdleTimeout,

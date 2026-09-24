@@ -189,6 +189,34 @@ kubectl -n paprika-e2e exec deploy/paprika-e2e-repo-server -- sh -c \
   'printf "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" | nc -w 5 localhost 8082 | od -t x1 | head -3'
 ```
 
+## Manager Configuration
+
+The manager binary is a cobra command tree: `manager <mode>` with
+subcommands `operator`, `api`, `webhook`, `repo-server`, `agent`. The
+`--mode=<mode>` flag is equivalent and kept for compatibility — existing
+manifests use it.
+
+Configuration is resolved by viper in this precedence order (highest
+first):
+
+1. **Explicit flag** — e.g. `--ui-bind-address=:4000`.
+2. **Environment variable** — every flag maps to `PAPRIKA_<FLAG_NAME>`
+   (`--ui-bind-address` → `PAPRIKA_UI_BIND_ADDRESS`). A few keys are
+   env-only or keep legacy env names: `ENABLE_WEBHOOKS`,
+   `PAPRIKA_OIDC_CLIENT_SECRET`, `PAPRIKA_OIDC_REDIRECT_URL`,
+   `PAPRIKA_WEBHOOK_SECRET`, `PAPRIKA_AUTH_RBAC_RULES`,
+   `PAPRIKA_REDIS_{ADDR,PASSWORD,DB}`, `PAPRIKA_SHARD_{ID,TOTAL}`,
+   `POD_NAME`, `PAPRIKA_MCP_PUBLIC_URL`, `PAPRIKA_AUDIT_ENABLED`,
+   `PAPRIKA_CACHE_BACKEND`, and the `PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_*`
+   family.
+3. **`--config` file** — a YAML file keyed by flag name, e.g.
+   `metrics-bind-address: ":9090"`.
+4. **Flag/viper defaults.**
+
+List-valued keys (`--mcp-oauth-redirect-uris`,
+`github-actions-token-exchange-allowed-*`) accept comma-separated strings
+in env vars and YAML lists in the config file.
+
 ## Tuning Reconcile Rates
 
 The manager exposes reconcile scheduling as flags (or `manager.reconcile.*`

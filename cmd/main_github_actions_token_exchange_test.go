@@ -1,14 +1,15 @@
 package main
 
 import (
-	"reflect"
+	"io"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfigureGitHubActionsTokenExchangeParsesTrustedWorkflowBoundary(t *testing.T) {
-	t.Parallel()
-
 	//nolint:gosec // Test-only configuration fixtures contain no credentials.
 	environment := map[string]string{
 		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED":                   "true",
@@ -24,58 +25,37 @@ func TestConfigureGitHubActionsTokenExchangeParsesTrustedWorkflowBoundary(t *tes
 		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME":      "github-actions-vke-deployer",
 		"PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_TOKEN_TTL":                 "10m",
 	}
-	getenv := func(name string) string { return environment[name] }
-
-	var cfg cliConfig
-	configureGitHubActionsTokenExchange(getenv, &cfg)
-
-	allowedEventNames := configStringSliceField(t, cfg, "githubActionsTokenExchangeAllowedEventNames")
-	if !reflect.DeepEqual(allowedEventNames, []string{"push", "repository_dispatch"}) {
-		t.Errorf("allowed event names = %v", allowedEventNames)
+	for key, value := range environment {
+		t.Setenv(key, value)
 	}
-	if ref := configStringField(t, cfg, "githubActionsTokenExchangeRef"); ref != "refs/heads/master" {
-		t.Errorf("ref = %q", ref)
-	}
-	wantWorkflowRefs := []string{
+
+	cfg, err := parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.GitHubActionsTokenExchangeEnabled)
+	assert.Equal(t, "paprika-vke-deploy", cfg.GitHubActionsTokenExchangeAudience)
+	assert.Equal(t, "paprikacd/paprika", cfg.GitHubActionsTokenExchangeRepository)
+	assert.Equal(t, "vke-production", cfg.GitHubActionsTokenExchangeEnvironment)
+	assert.Equal(t, "repo:paprikacd/paprika:environment:vke-production", cfg.GitHubActionsTokenExchangeSubject)
+	assert.Equal(t,
+		[]string{"push", "repository_dispatch"},
+		cfg.GitHubActionsTokenExchangeAllowedEventNames)
+	assert.Equal(t, "refs/heads/master", cfg.GitHubActionsTokenExchangeRef)
+	assert.Equal(t, []string{
 		"paprikacd/paprika/.github/workflows/ci.yml@refs/heads/master",
 		"paprikacd/paprika/.github/workflows/deploy-vke-manual.yml@refs/heads/master",
-	}
-	allowedWorkflowRefs := configStringSliceField(t, cfg, "githubActionsTokenExchangeAllowedWorkflowRefs")
-	if !reflect.DeepEqual(allowedWorkflowRefs, wantWorkflowRefs) {
-		t.Errorf("allowed workflow refs = %v", allowedWorkflowRefs)
-	}
-	if jobWorkflowRef := configStringField(t, cfg, "githubActionsTokenExchangeJobWorkflowRef"); jobWorkflowRef != "paprikacd/paprika/.github/workflows/deploy-vke.yml@refs/heads/master" {
-		t.Errorf("job workflow ref = %q", jobWorkflowRef)
-	}
-	if cfg.githubActionsTokenExchangeTTL != 10*time.Minute {
-		t.Errorf("token TTL = %s", cfg.githubActionsTokenExchangeTTL)
-	}
+	}, cfg.GitHubActionsTokenExchangeAllowedWorkflowRefs)
+	assert.Equal(t,
+		"paprikacd/paprika/.github/workflows/deploy-vke.yml@refs/heads/master",
+		cfg.GitHubActionsTokenExchangeJobWorkflowRef)
+	assert.Equal(t, "paprika-e2e", cfg.GitHubActionsTokenExchangeServiceAccountNamespace)
+	assert.Equal(t, "github-actions-vke-deployer", cfg.GitHubActionsTokenExchangeServiceAccountName)
+	assert.Equal(t, 10*time.Minute, cfg.GitHubActionsTokenExchangeTTL)
 }
 
-func configStringField(t *testing.T, cfg cliConfig, name string) string {
-	t.Helper()
-	field := reflect.ValueOf(cfg).FieldByName(name)
-	if !field.IsValid() {
-		t.Fatalf("cliConfig is missing field %s", name)
-	}
-	if field.Kind() != reflect.String {
-		t.Fatalf("cliConfig.%s kind = %s, want string", name, field.Kind())
-	}
-	return field.String()
-}
-
-func configStringSliceField(t *testing.T, cfg cliConfig, name string) []string {
-	t.Helper()
-	field := reflect.ValueOf(cfg).FieldByName(name)
-	if !field.IsValid() {
-		t.Fatalf("cliConfig is missing field %s", name)
-	}
-	if field.Kind() != reflect.Slice || field.Type().Elem().Kind() != reflect.String {
-		t.Fatalf("cliConfig.%s type = %s, want []string", name, field.Type())
-	}
-	values := make([]string, field.Len())
-	for index := range values {
-		values[index] = field.Index(index).String()
-	}
-	return values
+func TestGitHubActionsTokenExchangeDefaults(t *testing.T) {
+	cfg, err := parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+	assert.False(t, cfg.GitHubActionsTokenExchangeEnabled)
+	assert.Equal(t, 15*time.Minute, cfg.GitHubActionsTokenExchangeTTL)
 }
