@@ -1,10 +1,11 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import { Activity, CircleAlert, Gauge, Timer } from "lucide-react"
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { StatusPill } from "@/components/ui/status-chip"
-import { UptimeHistory } from "./uptime-history"
+import { durationSeconds, UptimeHistory } from "./uptime-history"
+import { useHealthClock } from "./use-health-clock"
 import type { Application, SLOSummary } from "@/gen/paprika/v1/api_pb"
 import type { StatusTone } from "@/lib/status-tone"
 import styles from "./application-health.module.css"
@@ -29,18 +30,19 @@ function explanation(state: string, window: string): string {
   return "The monitor configuration or clock needs attention before this target can be evaluated."
 }
 
-export function ApplicationSLOs({ application, compact = false, onOpenHealth, observedAt }: {
-  application: Application; compact?: boolean; onOpenHealth?: () => void; observedAt?: number
+export function ApplicationSLOs({ application, compact = false, onOpenHealth }: {
+  application: Application; compact?: boolean; onOpenHealth?: () => void
 }) {
-  const [mountedAt] = useState(() => Date.now())
-  const now = (observedAt ?? mountedAt) / 1000
+  const now = useHealthClock()
   const definitions = (application.healthCheckDefinitions ?? []).filter((check) => check.slo)
   if (!definitions.length) return null
   const objectives = definitions.map((definition) => {
     const check = application.healthChecks.find((check) => check.name === definition.name)
     const result = check?.slo
     const configured = definition.slo!
-    const state = result?.state || "Collecting"
+    const interval = Number(result?.intervalSeconds) || durationSeconds(definition.interval || "30s") || 30
+    const stale = result?.lastObservedAt && now - Number(result.lastObservedAt) > interval * 2
+    const state = stale && result?.state !== "Invalid" ? "Stale" : result?.state || "Collecting"
     const observed = Number(result?.healthy ?? 0) + Number(result?.unhealthy ?? 0)
     const availability = observed ? percentage(result!.availabilityPercentage) : "No observations yet"
     const header = <div className={styles.objectiveHeader}>

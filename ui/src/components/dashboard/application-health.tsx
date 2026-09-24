@@ -4,6 +4,7 @@ import { useState } from "react"
 import { CheckCircle2, CircleAlert, Clock3, ChevronRight } from "lucide-react"
 import { durationSeconds } from "./uptime-history"
 import styles from "./application-health.module.css"
+import { useHealthClock } from "./use-health-clock"
 
 import { Blueprint, BoardHeader } from "@/components/ui/blueprint"
 import { StatusPill } from "@/components/ui/status-chip"
@@ -37,7 +38,7 @@ export function ApplicationHealth({ application, release, resources, observedAt,
   onSelectResource: (resource: InspectedResource) => void
 }) {
   const [attentionOnly, setAttentionOnly] = useState(false)
-  const [mountedAt] = useState(() => Date.now())
+  const now = useHealthClock()
   const checks = application.healthChecks ?? []
   const definitions = application.healthCheckDefinitions ?? []
   const checkNames = [...new Set([...definitions.map((check) => check.name), ...checks.map((check) => check.name)])]
@@ -46,7 +47,6 @@ export function ApplicationHealth({ application, release, resources, observedAt,
   const visibleHealth = attentionOnly ? health.filter((resource) => resource.health !== "Healthy") : health
   const nodes = new Map(resources.map((node) => [`${node.namespace}/${node.kind}/${node.name}`, node]))
 
-  const now = (observedAt ?? mountedAt) / 1000
   const freshChecks = checkNames.filter((name) => {
     const check = checks.find((item) => item.name === name)
     const interval = durationSeconds(definitions.find((item) => item.name === name)?.interval || "30s") || 30
@@ -71,7 +71,7 @@ export function ApplicationHealth({ application, release, resources, observedAt,
       <div className={styles.statusIcon}><StatusIcon size={30} strokeWidth={1.6} aria-hidden="true" /><div><h3 className={styles.statusTitle}>{statusTitle}</h3><p>{checkNames.length ? `${passing} of ${checkNames.length} checks passing with fresh results` : "Configure an HTTP or CEL check to start monitoring availability."}</p></div></div>
       <span className={styles.statusMeta}>{healthy}/{health.length} resources healthy</span>
     </div>
-    <ApplicationSLOs application={application} observedAt={observedAt} />
+    <ApplicationSLOs application={application} />
     <div className="flex min-w-0 flex-col gap-4">
       <Blueprint>
         <BoardHeader title="Application checks" meta={`${checkNames.length} checks`} />
