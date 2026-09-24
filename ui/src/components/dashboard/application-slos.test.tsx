@@ -22,6 +22,7 @@ describe("availability objectives", () => {
     expect(screen.getByText("Stale")).toBeInTheDocument()
     expect(screen.getByText(/9 healthy · 1 failed · 2 missed/)).toBeInTheDocument()
     expect(screen.getByText(/stopped reporting fresh/)).toBeInTheDocument()
+    await userEvent.click(screen.getByText("Calculation & observation details"))
     await userEvent.click(screen.getByText("Uptime observation history"))
     expect(screen.getByRole("table",{name:"Availability observations grouped by time"})).toBeVisible()
   })
