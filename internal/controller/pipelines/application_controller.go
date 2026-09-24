@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -90,6 +92,67 @@ const (
 	releaseResyncManual    releaseResyncOrigin = "manual"
 )
 
+// steadyStateRequeue spreads periodic reconciles over [base/2, base*3/2) so
+// applications created together do not requeue in lockstep and burst the
+// workqueue. The jitter is a deterministic hash of the application identity,
+// stable across polls (random jitter would still cluster over time).
+func steadyStateRequeue(app *paprikav1.Application, base time.Duration) time.Duration {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(app.Namespace))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(app.Name))
+	return base/2 + time.Duration(h.Sum32()%uint32(base))
+}
+
+// manifestParseCache is a bounded content-addressed cache for
+// parseDesiredManifests results. Entries are immutable snapshots; callers get
+// deep copies because downstream diff code stamps management labels in place.
+type manifestParseCache struct {
+	mu      sync.Mutex
+	entries map[[32]byte][]unstructured.Unstructured
+}
+
+const manifestParseCacheMax = 4096
+
+func (c *manifestParseCache) get(manifests []byte, namespace string) ([]unstructured.Unstructured, bool) {
+	key := sha256.Sum256(append(append([]byte(namespace), 0), manifests...))
+	c.mu.Lock()
+	cached, ok := c.entries[key]
+	c.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
+	out := make([]unstructured.Unstructured, len(cached))
+	for i := range cached {
+		out[i] = *cached[i].DeepCopy()
+	}
+	return out, true
+}
+
+func (c *manifestParseCache) put(manifests []byte, namespace string, parsed []unstructured.Unstructured) {
+	key := sha256.Sum256(append(append([]byte(namespace), 0), manifests...))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= manifestParseCacheMax {
+		// Cheap reset: stale entries are rare and re-parsing is bounded.
+		c.entries = make(map[[32]byte][]unstructured.Unstructured, manifestParseCacheMax)
+	}
+	c.entries[key] = parsed
+}
+
+func (r *ApplicationReconciler) parsedManifests(manifests []byte, namespace string) []unstructured.Unstructured {
+	if r.manifestCache != nil {
+		if cached, ok := r.manifestCache.get(manifests, namespace); ok {
+			return cached
+		}
+	}
+	parsed := parseDesiredManifests(manifests, namespace)
+	if r.manifestCache != nil {
+		r.manifestCache.put(manifests, namespace, parsed)
+	}
+	return parsed
+}
+
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
 	if labels == nil {
 		labels = map[string]string{}
@@ -124,13 +187,20 @@ type ApplicationReconciler struct {
 	Clock               clock.Clock
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
+	// manifestCache memoizes parsed desired manifests keyed by content hash so
+	// a Healthy application's unchanged snapshot is not re-unmarshalled on
+	// every poll.
+	manifestCache *manifestParseCache
 }
 
 // NewApplicationReconciler returns an ApplicationReconciler initialized with the
 // given Kubernetes client. Callers should set the exported dependencies before
 // calling SetupWithManager.
 func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
-	return &ApplicationReconciler{client: c}
+	return &ApplicationReconciler{
+		client:        c,
+		manifestCache: &manifestParseCache{entries: make(map[[32]byte][]unstructured.Unstructured)},
+	}
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -163,7 +233,9 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}()
 
 	log := log.FromContext(ctx)
-	log.Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
+	// V(1): at fleet scale this fires for every app on every poll interval —
+	// at info level the zap allocation churn measurably feeds GC.
+	log.V(1).Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
 
 	if err := r.client.Get(ctx, req.NamespacedName, &app); err != nil {
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
@@ -1409,7 +1481,7 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 
 	if newHash == "" && newRevision == "" {
-		log.Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
+		log.V(1).Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
 		return false, nil
 	}
 
@@ -1436,7 +1508,7 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 		return false, fmt.Errorf("failed to update source hash: %w", err)
 	}
 
-	log.Info("Source identity checked",
+	log.V(1).Info("Source identity checked",
 		"namespace", app.Namespace,
 		"name", app.Name,
 		"oldHash", oldHash,
@@ -1595,7 +1667,7 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	if app.Spec.Source.TargetNamespace != "" {
 		targetNamespace = app.Spec.Source.TargetNamespace
 	}
-	desired := parseDesiredManifests(manifests, targetNamespace)
+	desired := r.parsedManifests(manifests, targetNamespace)
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
 	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
@@ -1954,7 +2026,7 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 		log.Error(err, "Failed to update application status in Healthy phase")
 	}
 
-	return ctrl.Result{RequeueAfter: pollInterval}, nil
+	return ctrl.Result{RequeueAfter: steadyStateRequeue(app, pollInterval)}, nil
 }
 
 // holdExhaustedRelease is the rest state for an application whose active
@@ -1998,7 +2070,7 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
 		logger.Error(patchErr, "Failed to patch application status while holding exhausted release")
 	}
-	return ctrl.Result{RequeueAfter: pollInterval}, nil
+	return ctrl.Result{RequeueAfter: steadyStateRequeue(app, pollInterval)}, nil
 }
 
 func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *paprikav1.Application, manual bool, reason, message string) (ctrl.Result, error) {
@@ -2300,6 +2372,9 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.SyncWindowEvaluator == nil {
 		r.SyncWindowEvaluator = syncwindow.NewEvaluator()
 	}
+	if r.manifestCache == nil {
+		r.manifestCache = &manifestParseCache{entries: make(map[[32]byte][]unstructured.Unstructured)}
+	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Application{}).
@@ -2309,7 +2384,10 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&paprikav1.Release{}).
 		Owns(&paprikav1.AnalysisRun{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 3,
+			// Reconciles are dominated by cached reads and diff computation,
+			// not CPU; a wider worker pool drains bursts (fleet rollouts,
+			// resync storms) without piling up queue delay.
+			MaxConcurrentReconciles: 8,
 			RecoverPanic:            ptr(true),
 		}).
 		Named("application").

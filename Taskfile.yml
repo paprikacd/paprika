@@ -340,6 +340,10 @@ tasks:
         deploy="$(kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deployment -l "$label" -o name | head -1)"
         [ -n "$deploy" ] || { echo "error: no deployment found for component '$component'" >&2; exit 1; }
         echo "==> port-forwarding $component pprof -> localhost:{{.PERF_PPROF_PORT}}"
+        # A stale listener (dead forward, other tool) would answer nc and the
+        # scrapes below would read the wrong endpoint — clear it first.
+        lsof -ti :'{{.PERF_PPROF_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
         kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward "$deploy" \
           '{{.PERF_PPROF_PORT}}:6060' >/dev/null 2>&1 &
         pf=$!
@@ -370,15 +374,22 @@ tasks:
         snap='{{.PERF_OUT_DIR}}/metrics-'"$(date +%s)"
         mkdir -p "$snap"
         echo "==> scraping controller-manager metrics -> $snap/manager.txt"
+        lsof -ti :'{{.PERF_MGR_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
         kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
           'svc/{{.PERF_RELEASE}}-controller-manager-metrics-service' '{{.PERF_MGR_PORT}}:8443' >/dev/null 2>&1 &
         pf=$!
         i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_MGR_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
         curl -sf 'http://localhost:{{.PERF_MGR_PORT}}/metrics' -o "$snap/manager.txt" || echo "manager scrape failed"
         kill $pf 2>/dev/null || true
+        if [ -f "$snap/manager.txt" ] && ! grep -q '^# HELP' "$snap/manager.txt"; then
+          echo "WARNING: manager.txt is not Prometheus output — port {{.PERF_MGR_PORT}} may be bound by another process (override with PERF_MGR_PORT)"
+        fi
         # The api-server serves /metrics on metrics.bindAddress (:8080), a
         # separate unauthenticated listener — not the API port.
         echo "==> scraping api-server metrics -> $snap/api-server.txt"
+        lsof -ti :'{{.PERF_API_METRICS_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
         kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
           'svc/{{.PERF_RELEASE}}-api-server' '{{.PERF_API_METRICS_PORT}}:8080' >/dev/null 2>&1 &
         pf=$!

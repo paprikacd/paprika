@@ -220,7 +220,9 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Reconciling Release",
+	// V(1): releases requeue continuously during promotion — at info level the
+	// zap allocation churn measurably feeds GC at fleet scale.
+	logger.V(1).Info("Reconciling Release",
 		"namespace", release.Namespace,
 		"name", release.Name,
 		"phase", release.Status.Phase,
