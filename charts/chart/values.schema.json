@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Paprika chart values",
+  "description": "Validates the value surface that renders into binary flags and listeners. Anything malformed here would otherwise ship as a crash-looping pod.",
+  "type": "object",
+  "$defs": {
+    "goDuration": {
+      "type": ["string", "null"],
+      "pattern": "^$|^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+    },
+    "bindAddress": {
+      "type": ["string", "null"],
+      "pattern": "^(:[0-9]{1,5}|[^:]*:[0-9]{1,5}|:0)$"
+    }
+  },
+  "properties": {
+    "deploymentMode": {
+      "type": "string",
+      "enum": ["monolith", "split"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["operator", "api", "webhook", "repo-server", "agent"]
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enable": {"type": "boolean"},
+        "secure": {"type": "boolean"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "bindAddress": {"$ref": "#/$defs/bindAddress"}
+      }
+    },
+    "manager": {
+      "type": "object",
+      "properties": {
+        "reconcile": {
+          "type": "object",
+          "properties": {
+            "transientRequeue": {"$ref": "#/$defs/goDuration"},
+            "sourceResolveTTL": {"$ref": "#/$defs/goDuration"},
+            "cacheResyncPeriod": {"$ref": "#/$defs/goDuration"},
+            "maxConcurrentReconciles": {
+              "type": "object",
+              "properties": {
+                "application": {"type": ["integer", "null"], "minimum": 0},
+                "release": {"type": ["integer", "null"], "minimum": 0},
+                "stage": {"type": ["integer", "null"], "minimum": 0},
+                "pipeline": {"type": ["integer", "null"], "minimum": 0}
+              }
+            },
+            "rateLimit": {
+              "type": "object",
+              "properties": {
+                "globalRate": {"type": ["number", "null"], "minimum": 0},
+                "globalBurst": {"type": ["integer", "null"], "minimum": 0},
+                "appRate": {"type": ["number", "null"], "minimum": 0},
+                "appBurst": {"type": ["integer", "null"], "minimum": 0}
+              }
+            }
+          }
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "bindAddress": {"$ref": "#/$defs/bindAddress"},
+        "accessTokenTTL": {"$ref": "#/$defs/goDuration"},
+        "refreshTokenTTL": {"$ref": "#/$defs/goDuration"},
+        "publicURL": {"type": ["string", "null"]},
+        "oauth": {
+          "type": "object",
+          "properties": {
+            "clientId": {"type": ["string", "null"]},
+            "redirectUris": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "tokenSecret": {"type": ["string", "null"]},
+        "basic": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "username": {"type": ["string", "null"]},
+            "passwordHash": {
+              "type": ["string", "null"],
+              "pattern": "^$|^\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}$"
+            }
+          }
+        },
+        "oidc": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "issuerURL": {"type": ["string", "null"], "pattern": "^$|^https?://"},
+            "clientID": {"type": ["string", "null"]},
+            "redirectURL": {"type": ["string", "null"], "pattern": "^$|^https?://"},
+            "existingSecretName": {"type": ["string", "null"]},
+            "existingSecretKey": {"type": ["string", "null"]}
+          }
+        }
+      }
+    }
+  }
+}

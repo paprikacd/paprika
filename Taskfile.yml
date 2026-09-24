@@ -462,3 +462,74 @@ tasks:
         for existing in "$out_dir"/*.yaml; do
           grep -qx "$(basename "$existing")" "$written" || { echo "removing stale chart CRD $existing"; rm "$existing"; }
         done
+
+  chart:validate:
+    desc: Render the chart across value matrices and assert no empty --flag= args, plus expected-fail/schema cases.
+    cmds:
+      - |
+        set -eu
+        rc=0
+        check_render() { # name, extra set-args...
+          name="$1"; shift
+          if ! out="$(helm template paprika charts/chart --namespace paprika-system "$@" 2>&1)"; then
+            echo "FAIL[$name]: render errored: $out"; rc=1; return
+          fi
+          if echo "$out" | grep -nE '^[[:space:]]*- --[A-Za-z0-9-]+=$'; then
+            echo "FAIL[$name]: empty --flag= args rendered"; rc=1
+          else
+            echo "ok[$name]"
+          fi
+        }
+        expect_fail() { # name, extra set-args...
+          name="$1"; shift
+          if helm template paprika charts/chart --namespace paprika-system "$@" >/dev/null 2>&1; then
+            echo "FAIL[$name]: expected render failure but succeeded"; rc=1
+          else
+            echo "ok[$name] (rejected as expected)"
+          fi
+        }
+
+        check_render defaults
+        check_render split \
+          --set deploymentMode=split --set apiServer.enabled=true \
+          --set repoServer.enabled=true --set webhookReceiver.enabled=true
+        check_render auth-basic \
+          --set auth.enabled=true --set auth.basic.enabled=true \
+          --set auth.basic.username=u \
+          --set 'auth.basic.passwordHash=$2a$10$gokrR1H67p0nl/1Q2k1qk.i9u4iJNm8Iy1PUBR9ScjdhlznxnAKq6'
+        check_render auth-oidc \
+          --set auth.enabled=true --set auth.oidc.enabled=true \
+          --set auth.oidc.issuerURL=https://issuer.example.com \
+          --set auth.oidc.clientID=cid
+        check_render mcp \
+          --set deploymentMode=split --set apiServer.enabled=true \
+          --set auth.enabled=true --set auth.basic.enabled=true \
+          --set auth.basic.username=u \
+          --set 'auth.basic.passwordHash=$2a$10$gokrR1H67p0nl/1Q2k1qk.i9u4iJNm8Iy1PUBR9ScjdhlznxnAKq6' \
+          --set mcp.enabled=true --set mcp.oauth.clientId=cid \
+          --set mcp.publicURL=https://api.example.com \
+          --set 'mcp.oauth.redirectUris[0]=https://api.example.com/cb' \
+          --set 'apiServer.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'apiServer.extraEnv[0].value=test-token-secret'
+        check_render reconcile-zero \
+          --set manager.reconcile.rateLimit.globalRate=0
+        check_render reconcile-tuning \
+          --set manager.reconcile.transientRequeue=10s \
+          --set manager.reconcile.sourceResolveTTL=45s \
+          --set manager.reconcile.rateLimit.appRate=25
+        check_render test-values -f deploy/test-values.yaml
+
+        expect_fail basic-missing-creds \
+          --set auth.enabled=true --set auth.basic.enabled=true
+        expect_fail oidc-missing-issuer \
+          --set auth.enabled=true --set auth.oidc.enabled=true
+        expect_fail mcp-missing-oauth \
+          --set mcp.enabled=true
+        expect_fail bad-duration \
+          --set manager.reconcile.transientRequeue=bogus
+        expect_fail bad-mode \
+          --set deploymentMode=weird
+        expect_fail bad-port \
+          --set metrics.port=99999
+
+        exit $rc

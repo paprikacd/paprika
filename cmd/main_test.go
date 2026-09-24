@@ -899,6 +899,7 @@ func TestValidateControllerTuning(t *testing.T) {
 			ReconcileGlobalBurst:            200,
 			ReconcileAppRate:                10,
 			ReconcileAppBurst:               20,
+			APIMaxConns:                     128,
 		}
 	}
 
@@ -923,6 +924,12 @@ func TestValidateControllerTuning(t *testing.T) {
 		cfg.ReconcileGlobalRate = 0
 		cfg.ReconcileAppRate = 0
 		require.NoError(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("api max conns <= 0 rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.APIMaxConns = 0
+		require.Error(t, validateControllerTuning(cfg))
 	})
 
 	t.Run("app rate <= 0 with limiting enabled rejected", func(t *testing.T) {
