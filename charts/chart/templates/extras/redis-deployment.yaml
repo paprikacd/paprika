@@ -101,12 +101,6 @@ spec:
           name: tmp
         - mountPath: /data
           name: data
-      securityContext:
-        fsGroup: 999
-        runAsNonRoot: true
-        runAsUser: 999
-        seccompProfile:
-          type: RuntimeDefault
       volumes:
       - configMap:
           name: {{ include "paprika.resourceName" (dict "suffix" "redis-config" "context" $) }}
