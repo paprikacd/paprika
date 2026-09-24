@@ -82,6 +82,7 @@ spec:
         {{- if eq .Values.deploymentMode "monolith" }}
         {{- include "paprika.authArgs" . | nindent 8 }}
         {{- end }}
+        {{- include "paprika.reconcileArgs" . | nindent 8 }}
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}

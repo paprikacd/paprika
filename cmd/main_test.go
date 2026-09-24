@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -39,78 +38,69 @@ import (
 )
 
 func TestRegisterFlagsOIDCSecret(t *testing.T) {
-	testRegisterFlagsEnvDefaultAndOverride(
+	testConfigEnvDefaultAndOverride(
 		t,
 		"PAPRIKA_OIDC_CLIENT_SECRET",
 		"environment-secret-marker",
 		"--auth-oidc-client-secret=flag-secret-marker",
 		"flag-secret-marker",
-		func(cfg *cliConfig) string { return cfg.authOIDCClientSecret },
+		func(cfg *cliConfig) string { return cfg.AuthOIDCClientSecret },
 	)
 
 	t.Run("explicit empty flag overrides environment", func(t *testing.T) {
-		cfg, err := registerFlags([]string{"--auth-oidc-client-secret="}, func(key string) string {
-			if key == "PAPRIKA_OIDC_CLIENT_SECRET" {
-				return "environment-secret-marker"
-			}
-			return ""
-		}, io.Discard)
+		t.Setenv("PAPRIKA_OIDC_CLIENT_SECRET", "environment-secret-marker")
+		cfg, err := parseManagerConfig([]string{"--auth-oidc-client-secret="}, io.Discard)
 		if err != nil {
-			t.Fatalf("register flags: %v", err)
+			t.Fatalf("parse config: %v", err)
 		}
-		if cfg.authOIDCClientSecret != "" {
-			t.Fatalf("authOIDCClientSecret = %q, want explicit empty value", cfg.authOIDCClientSecret)
+		if cfg.AuthOIDCClientSecret != "" {
+			t.Fatalf("authOIDCClientSecret = %q, want explicit empty value", cfg.AuthOIDCClientSecret)
 		}
 	})
 }
 
-func TestRegisterFlagsOIDCSecretHelpRedactsEnvironment(t *testing.T) {
+func TestManagerHelpDoesNotExposeSecrets(t *testing.T) {
 	const secretMarker = "help-secret-marker-do-not-print"
-	var stderr bytes.Buffer
+	t.Setenv("PAPRIKA_OIDC_CLIENT_SECRET", secretMarker)
 
-	_, err := registerFlags([]string{"--help"}, func(key string) string {
-		if key == "PAPRIKA_OIDC_CLIENT_SECRET" {
-			return secretMarker
-		}
-		return ""
-	}, &stderr)
-	if !errors.Is(err, flag.ErrHelp) {
-		t.Fatalf("register flags error = %v, want flag.ErrHelp", err)
-	}
-	if strings.Contains(stderr.String(), secretMarker) {
+	var out bytes.Buffer
+	cmd, _, _ := newManagerCommand(func(context.Context, *cliConfig) error {
+		t.Error("start must not run for --help")
+		return nil
+	})
+	cmd.SetArgs([]string{"--help"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+
+	require.NoError(t, cmd.Execute())
+	if strings.Contains(out.String(), secretMarker) {
 		t.Fatal("help output contains the OIDC client secret environment value")
 	}
 }
 
 func TestRegisterFlagsOIDCRedirect(t *testing.T) {
-	testRegisterFlagsEnvDefaultAndOverride(
+	testConfigEnvDefaultAndOverride(
 		t,
 		"PAPRIKA_OIDC_REDIRECT_URL",
 		"https://environment.example.com/auth/callback",
 		"--auth-oidc-redirect-url=https://flag.example.com/auth/callback",
 		"https://flag.example.com/auth/callback",
-		func(cfg *cliConfig) string { return cfg.authOIDCRedirectURL },
+		func(cfg *cliConfig) string { return cfg.AuthOIDCRedirectURL },
 	)
 }
 
-func testRegisterFlagsEnvDefaultAndOverride(
+func testConfigEnvDefaultAndOverride(
 	t *testing.T,
 	envKey, envValue, flagArg, flagValue string,
 	configValue func(*cliConfig) string,
 ) {
 	t.Helper()
 
-	getenv := func(key string) string {
-		if key == envKey {
-			return envValue
-		}
-		return ""
-	}
-
 	t.Run("defaults from environment", func(t *testing.T) {
-		cfg, err := registerFlags(nil, getenv, io.Discard)
+		t.Setenv(envKey, envValue)
+		cfg, err := parseManagerConfig(nil, io.Discard)
 		if err != nil {
-			t.Fatalf("register flags: %v", err)
+			t.Fatalf("parse config: %v", err)
 		}
 		if got := configValue(cfg); got != envValue {
 			t.Fatalf("config value = %q, want environment value %q", got, envValue)
@@ -118,9 +108,10 @@ func testRegisterFlagsEnvDefaultAndOverride(
 	})
 
 	t.Run("explicit flag overrides environment", func(t *testing.T) {
-		cfg, err := registerFlags([]string{flagArg}, getenv, io.Discard)
+		t.Setenv(envKey, envValue)
+		cfg, err := parseManagerConfig([]string{flagArg}, io.Discard)
 		if err != nil {
-			t.Fatalf("register flags: %v", err)
+			t.Fatalf("parse config: %v", err)
 		}
 		if got := configValue(cfg); got != flagValue {
 			t.Fatalf("config value = %q, want explicit flag value %q", got, flagValue)
@@ -206,12 +197,12 @@ func TestFleetCacheDisabled(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- runAPIMode(ctx, &cliConfig{
-			mode:            "api",
-			k8sAPIServer:    fakeK8s.URL,
-			k8sTokenFile:    tokenFile,
-			uiAddr:          ":0",
-			probeAddr:       ":0",
-			apiCacheEnabled: false,
+			Mode:            "api",
+			K8sAPIServer:    fakeK8s.URL,
+			K8sTokenFile:    tokenFile,
+			UIAddr:          ":0",
+			ProbeAddr:       ":0",
+			APICacheEnabled: false,
 		}, newScheme(), logr.Discard(), probeAddrCh)
 	}()
 
@@ -563,29 +554,42 @@ func waitForHTTPStatus(ctx context.Context, addr, path string, wantStatus int) (
 //     in the same file.
 
 func TestMCPDisabledByDefault(t *testing.T) {
-	cfg, err := registerFlags(nil, func(string) string { return "" }, io.Discard)
+	cfg, err := parseManagerConfig(nil, io.Discard)
 	require.NoError(t, err)
-	assert.False(t, cfg.mcpEnabled, "MCP must be opt-in")
+	assert.False(t, cfg.MCPEnabled, "MCP must be opt-in")
 }
 
 func TestMCPFlagsParse(t *testing.T) {
-	cfg, err := registerFlags(
+	cfg, err := parseManagerConfig(
 		[]string{"--mcp-enabled", "--mcp-bind-address=:9999", "--mcp-access-token-ttl=1h"},
-		func(string) string { return "" }, io.Discard)
+		io.Discard)
 	require.NoError(t, err)
-	assert.True(t, cfg.mcpEnabled)
-	assert.Equal(t, ":9999", cfg.mcpBindAddress)
-	assert.Equal(t, time.Hour, cfg.mcpAccessTokenTTL)
+	assert.True(t, cfg.MCPEnabled)
+	assert.Equal(t, ":9999", cfg.MCPBindAddress)
+	assert.Equal(t, time.Hour, cfg.MCPAccessTokenTTL)
+}
+
+func TestMCPRedirectURIsParseFromFlagAndEnv(t *testing.T) {
+	cfg, err := parseManagerConfig(
+		[]string{"--mcp-oauth-redirect-uris=https://a.example/cb,https://b.example/cb"},
+		io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://a.example/cb", "https://b.example/cb"}, cfg.MCPOAuthRedirectURIs)
+
+	t.Setenv("PAPRIKA_MCP_OAUTH_REDIRECT_URIS", "https://env.example/cb, https://env2.example/cb")
+	cfg, err = parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"https://env.example/cb", "https://env2.example/cb"}, cfg.MCPOAuthRedirectURIs)
 }
 
 func TestAPIMaxConnsFlag(t *testing.T) {
-	cfg, err := registerFlags([]string{}, func(string) string { return "" }, io.Discard)
+	cfg, err := parseManagerConfig(nil, io.Discard)
 	require.NoError(t, err)
-	assert.Equal(t, 128, cfg.apiMaxConns)
+	assert.Equal(t, 128, cfg.APIMaxConns)
 
-	cfg, err = registerFlags([]string{"--api-max-conns=0"}, func(string) string { return "" }, io.Discard)
+	cfg, err = parseManagerConfig([]string{"--api-max-conns=0"}, io.Discard)
 	require.NoError(t, err)
-	assert.Equal(t, 0, cfg.apiMaxConns)
+	assert.Equal(t, 0, cfg.APIMaxConns)
 }
 
 func TestRunHTTPServerMaxConns(t *testing.T) {
@@ -665,14 +669,14 @@ func TestRunHTTPServerMaxConns(t *testing.T) {
 
 func TestBuildMCPHandlersReturnsNothingWhenDisabled(t *testing.T) {
 	handlers, err := buildMCPHandlers(context.Background(),
-		&cliConfig{mcpEnabled: false}, nil, auth.Config{}, nil)
+		&cliConfig{MCPEnabled: false}, nil, auth.Config{}, nil)
 	require.NoError(t, err)
 	assert.Empty(t, handlers)
 }
 
 func TestBuildMCPHandlersRequiresAuthEnabled(t *testing.T) {
 	_, err := buildMCPHandlers(context.Background(),
-		&cliConfig{mcpEnabled: true}, http.NewServeMux(),
+		&cliConfig{MCPEnabled: true}, http.NewServeMux(),
 		auth.Config{Enabled: false}, nil)
 	require.Error(t, err,
 		"MCP must refuse to start without authentication")
@@ -688,9 +692,9 @@ func TestBuildMCPHandlersRequiresAuthEnabled(t *testing.T) {
 func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
 	_, err := buildMCPHandlers(context.Background(),
 		&cliConfig{
-			mcpEnabled:           true,
-			mcpOAuthClientID:     "test-client",
-			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			MCPEnabled:           true,
+			MCPOAuthClientID:     "test-client",
+			MCPOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
 		},
 		http.NewServeMux(),
 		auth.Config{Enabled: true, TokenSecret: nil},
@@ -700,29 +704,25 @@ func TestBuildMCPHandlersRequiresTokenSecret(t *testing.T) {
 		"MCP must refuse to start when auth is enabled but no token secret is configured")
 }
 
-// TestApplyMCPPostParseConfigDoesNotDefaultPublicURL guards Fix round 1,
-// Finding 2 (task-15-report.md): mcpPublicURL used to default to
+// TestMCPPublicURLHasNoDefault guards Fix round 1, Finding 2
+// (task-15-report.md): mcpPublicURL used to default to
 // "http://localhost"+bindAddress when PAPRIKA_MCP_PUBLIC_URL was unset, so
 // a misconfigured production deployment would silently advertise a
 // localhost authorization server in RFC 9728/8414 discovery metadata and
 // mint tokens claiming to be issued by it. There must be no default now —
 // an unset env var must leave mcpPublicURL empty, so validateMCPConfig can
 // fail closed instead.
-func TestApplyMCPPostParseConfigDoesNotDefaultPublicURL(t *testing.T) {
-	cfg := &cliConfig{mcpBindAddress: ":8090"}
-	applyMCPPostParseConfig(cfg, func(string) string { return "" })
-	assert.Empty(t, cfg.mcpPublicURL, "mcpPublicURL must not default to a loopback address")
+func TestMCPPublicURLHasNoDefault(t *testing.T) {
+	cfg, err := parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.MCPPublicURL, "mcpPublicURL must not default to a loopback address")
 }
 
-func TestApplyMCPPostParseConfigUsesConfiguredPublicURL(t *testing.T) {
-	cfg := &cliConfig{mcpBindAddress: ":8090"}
-	applyMCPPostParseConfig(cfg, func(key string) string {
-		if key == "PAPRIKA_MCP_PUBLIC_URL" {
-			return "https://paprika.example"
-		}
-		return ""
-	})
-	assert.Equal(t, "https://paprika.example", cfg.mcpPublicURL)
+func TestMCPPublicURLFromEnvironment(t *testing.T) {
+	t.Setenv("PAPRIKA_MCP_PUBLIC_URL", "https://paprika.example")
+	cfg, err := parseManagerConfig(nil, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, "https://paprika.example", cfg.MCPPublicURL)
 }
 
 // TestBuildMCPHandlersRequiresPublicURL guards Fix round 1, Finding 2
@@ -734,10 +734,10 @@ func TestBuildMCPHandlersRequiresPublicURL(t *testing.T) {
 	secret := []byte("test-token-secret-test-token-sec")
 	_, err := buildMCPHandlers(context.Background(),
 		&cliConfig{
-			mcpEnabled:           true,
-			mcpOAuthClientID:     "test-client",
-			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
-			mcpPublicURL:         "",
+			MCPEnabled:           true,
+			MCPOAuthClientID:     "test-client",
+			MCPOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			MCPPublicURL:         "",
 		},
 		http.NewServeMux(),
 		auth.Config{Enabled: true, TokenSecret: secret},
@@ -771,12 +771,12 @@ func TestBuildMCPHandlersWiresRealClient(t *testing.T) {
 
 	handlers, err := buildMCPHandlers(ctx,
 		&cliConfig{
-			mcpEnabled:           true,
-			mcpOAuthClientID:     "test-client",
-			mcpOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
-			mcpPublicURL:         "https://paprika.example",
-			mcpAccessTokenTTL:    time.Hour,
-			mcpRefreshTokenTTL:   24 * time.Hour,
+			MCPEnabled:           true,
+			MCPOAuthClientID:     "test-client",
+			MCPOAuthRedirectURIs: []string{"https://claude.ai/api/mcp/auth_callback"},
+			MCPPublicURL:         "https://paprika.example",
+			MCPAccessTokenTTL:    time.Hour,
+			MCPRefreshTokenTTL:   24 * time.Hour,
 		},
 		handler,
 		auth.Config{Enabled: true, TokenSecret: secret},
@@ -832,12 +832,12 @@ func TestBuildMCPHandlersAuthorizeAcceptsAConsoleToken(t *testing.T) {
 	const redirect = "https://claude.ai/api/mcp/auth_callback"
 	handlers, err := buildMCPHandlers(ctx,
 		&cliConfig{
-			mcpEnabled:           true,
-			mcpOAuthClientID:     "test-client",
-			mcpOAuthRedirectURIs: []string{redirect},
-			mcpPublicURL:         "https://paprika.example",
-			mcpAccessTokenTTL:    time.Hour,
-			mcpRefreshTokenTTL:   24 * time.Hour,
+			MCPEnabled:           true,
+			MCPOAuthClientID:     "test-client",
+			MCPOAuthRedirectURIs: []string{redirect},
+			MCPPublicURL:         "https://paprika.example",
+			MCPAccessTokenTTL:    time.Hour,
+			MCPRefreshTokenTTL:   24 * time.Hour,
 		},
 		handler,
 		auth.Config{Enabled: true, TokenSecret: secret},
@@ -884,4 +884,148 @@ func TestWithAPIRateLimits(t *testing.T) {
 	cfg := withAPIRateLimits(&rest.Config{})
 	assert.Equal(t, float32(apiClientQPS), cfg.QPS)
 	assert.Equal(t, apiClientBurst, cfg.Burst)
+}
+
+func TestValidateControllerTuning(t *testing.T) {
+	valid := func() *cliConfig {
+		return &cliConfig{
+			AppMaxConcurrentReconciles:      8,
+			ReleaseMaxConcurrentReconciles:  5,
+			StageMaxConcurrentReconciles:    3,
+			PipelineMaxConcurrentReconciles: 3,
+			AppTransientRequeue:             5 * time.Second,
+			CacheResyncPeriod:               time.Hour,
+			ReconcileGlobalRate:             100,
+			ReconcileGlobalBurst:            200,
+			ReconcileAppRate:                10,
+			ReconcileAppBurst:               20,
+		}
+	}
+
+	t.Run("defaults pass", func(t *testing.T) {
+		require.NoError(t, validateControllerTuning(valid()))
+	})
+
+	t.Run("zero concurrency rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.AppMaxConcurrentReconciles = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("sub-second transient requeue rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.AppTransientRequeue = 100 * time.Millisecond
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("global rate <= 0 disables limiting and relaxes app rate", func(t *testing.T) {
+		cfg := valid()
+		cfg.ReconcileGlobalRate = 0
+		cfg.ReconcileAppRate = 0
+		require.NoError(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("app rate <= 0 with limiting enabled rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.ReconcileAppRate = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+
+	t.Run("zero burst rejected", func(t *testing.T) {
+		cfg := valid()
+		cfg.ReconcileGlobalBurst = 0
+		require.Error(t, validateControllerTuning(cfg))
+	})
+}
+
+func TestControllerTuningFlags(t *testing.T) {
+	cfg, err := parseManagerConfig([]string{
+		"--application-transient-requeue=15s",
+		"--application-max-concurrent-reconciles=16",
+		"--reconcile-global-rate=0",
+		"--cache-resync-period=30m",
+	}, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, 15*time.Second, cfg.AppTransientRequeue)
+	assert.Equal(t, 16, cfg.AppMaxConcurrentReconciles)
+	assert.Equal(t, 0.0, cfg.ReconcileGlobalRate)
+	assert.Equal(t, 30*time.Minute, cfg.CacheResyncPeriod)
+}
+
+// TestManagerConfigFile covers the --config YAML path: file values apply
+// over defaults, env beats the file, and an explicit flag beats env.
+func TestManagerConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "manager.yaml")
+	require.NoError(t, os.WriteFile(configFile, []byte(`metrics-bind-address: :9090
+ui-bind-address: :4000
+application-transient-requeue: 30s
+mcp-oauth-redirect-uris:
+  - https://file.example/cb
+`), 0o600))
+
+	cfg, err := parseManagerConfig([]string{"--config", configFile}, io.Discard)
+	require.NoError(t, err)
+	assert.Equal(t, ":9090", cfg.MetricsAddr)
+	assert.Equal(t, ":4000", cfg.UIAddr)
+	assert.Equal(t, 30*time.Second, cfg.AppTransientRequeue)
+	assert.Equal(t, []string{"https://file.example/cb"}, cfg.MCPOAuthRedirectURIs)
+	assert.Equal(t, "operator", cfg.Mode, "unset keys keep their defaults")
+
+	t.Run("environment overrides file", func(t *testing.T) {
+		t.Setenv("PAPRIKA_UI_BIND_ADDRESS", ":5000")
+		cfg, err := parseManagerConfig([]string{"--config", configFile}, io.Discard)
+		require.NoError(t, err)
+		assert.Equal(t, ":5000", cfg.UIAddr)
+		assert.Equal(t, ":9090", cfg.MetricsAddr, "file value still applies to other keys")
+	})
+
+	t.Run("flag overrides environment and file", func(t *testing.T) {
+		t.Setenv("PAPRIKA_UI_BIND_ADDRESS", ":5000")
+		cfg, err := parseManagerConfig(
+			[]string{"--config", configFile, "--ui-bind-address=:6000"}, io.Discard)
+		require.NoError(t, err)
+		assert.Equal(t, ":6000", cfg.UIAddr)
+	})
+
+	t.Run("missing file errors", func(t *testing.T) {
+		_, err := parseManagerConfig(
+			[]string{"--config", filepath.Join(dir, "nope.yaml")}, io.Discard)
+		require.Error(t, err)
+	})
+}
+
+// TestModeSubcommands proves `manager <mode>` resolves cfg.Mode identically
+// to `manager --mode=<mode>` — the injected start func captures the config
+// the command tree would dispatch on.
+func TestModeSubcommands(t *testing.T) {
+	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent"} {
+		t.Run(mode, func(t *testing.T) {
+			var got *cliConfig
+			cmd, _, _ := newManagerCommand(func(_ context.Context, cfg *cliConfig) error {
+				got = cfg
+				return nil
+			})
+			cmd.SetArgs([]string{mode})
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			require.NoError(t, cmd.Execute())
+			require.NotNil(t, got)
+			assert.Equal(t, mode, got.Mode)
+		})
+	}
+
+	t.Run("--mode still works on the root command", func(t *testing.T) {
+		var got *cliConfig
+		cmd, _, _ := newManagerCommand(func(_ context.Context, cfg *cliConfig) error {
+			got = cfg
+			return nil
+		})
+		cmd.SetArgs([]string{"--mode=api"})
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		require.NoError(t, cmd.Execute())
+		require.NotNil(t, got)
+		assert.Equal(t, "api", got.Mode)
+	})
 }

@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -81,6 +84,21 @@ const (
 	releaseRetriesExhaustedCondition = "ReleaseRetriesExhausted"
 )
 
+// applicationPhaseConditionTypes is every ApplicationPhase value written as a
+// status condition by setApplicationPhase. They form a mutually exclusive set
+// — only the current phase may be True.
+var applicationPhaseConditionTypes = []string{
+	string(paprikav1.ApplicationPending),
+	string(paprikav1.ApplicationBuilding),
+	string(paprikav1.ApplicationPromoting),
+	string(paprikav1.ApplicationCanarying),
+	string(paprikav1.ApplicationVerifying),
+	string(paprikav1.ApplicationHealthy),
+	string(paprikav1.ApplicationDegraded),
+	string(paprikav1.ApplicationFailed),
+	string(paprikav1.ApplicationRolledBack),
+}
+
 // releaseResyncOrigin distinguishes automatic release resurrections (which
 // count toward the auto-retry cap) from operator-requested ones (which reset
 // it).
@@ -90,6 +108,135 @@ const (
 	releaseResyncAutomatic releaseResyncOrigin = "automatic"
 	releaseResyncManual    releaseResyncOrigin = "manual"
 )
+
+// maxConcurrentOr resolves a configured worker count, falling back to the
+// controller's built-in default when unset or non-positive.
+func maxConcurrentOr(configured, fallback int) int {
+	if configured > 0 {
+		return configured
+	}
+	return fallback
+}
+
+// steadyStateRequeue spreads periodic reconciles over [base/2, base*3/2) so
+// applications created together do not requeue in lockstep and burst the
+// workqueue. The jitter is a deterministic hash of the application identity,
+// stable across polls (random jitter would still cluster over time).
+func steadyStateRequeue(app *paprikav1.Application, base time.Duration) time.Duration {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(app.Namespace))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(app.Name))
+	// int64(uint32) is always safe; uint32(base) would truncate any base over
+	// ~4.29s of nanoseconds and silently collapse the jitter window.
+	return base/2 + time.Duration(int64(h.Sum32())%int64(base))
+}
+
+// manifestParseCache is a bounded content-addressed cache for
+// parseDesiredManifests results. Entries are immutable snapshots; callers get
+// deep copies because downstream diff code stamps management labels in place.
+type manifestParseCache struct {
+	mu      sync.Mutex
+	entries map[[32]byte][]unstructured.Unstructured
+}
+
+const manifestParseCacheMax = 4096
+
+func (c *manifestParseCache) get(manifests []byte, namespace string) ([]unstructured.Unstructured, bool) {
+	key := sha256.Sum256(append(append([]byte(namespace), 0), manifests...))
+	c.mu.Lock()
+	cached, ok := c.entries[key]
+	c.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
+	out := make([]unstructured.Unstructured, len(cached))
+	for i := range cached {
+		out[i] = *cached[i].DeepCopy()
+	}
+	return out, true
+}
+
+func (c *manifestParseCache) put(manifests []byte, namespace string, parsed []unstructured.Unstructured) {
+	key := sha256.Sum256(append(append([]byte(namespace), 0), manifests...))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= manifestParseCacheMax {
+		// Cheap reset: stale entries are rare and re-parsing is bounded.
+		c.entries = make(map[[32]byte][]unstructured.Unstructured, manifestParseCacheMax)
+	}
+	c.entries[key] = parsed
+}
+
+func (r *ApplicationReconciler) parsedManifests(manifests []byte, namespace string) []unstructured.Unstructured {
+	if r.manifestCache != nil {
+		if cached, ok := r.manifestCache.get(manifests, namespace); ok {
+			return cached
+		}
+	}
+	parsed := parseDesiredManifests(manifests, namespace)
+	if r.manifestCache != nil {
+		r.manifestCache.put(manifests, namespace, parsed)
+	}
+	return parsed
+}
+
+// sourceResolveCache memoizes ResolveSource results for the steady-state poll
+// path so a Healthy application's unchanged source does not git-fetch on every
+// reconcile. Keys fingerprint the template's source spec, so applications
+// pointing at the same repo share entries and a spec edit misses naturally.
+// Entries expire after the configured TTL; sync-triggered checks bypass it so
+// "sync now" always sees the latest commit. Resolve errors are never cached.
+type sourceResolveCache struct {
+	mu      sync.Mutex
+	entries map[[32]byte]sourceResolveEntry
+	now     func() time.Time
+}
+
+type sourceResolveEntry struct {
+	hash, revision string
+	expires        time.Time
+}
+
+const sourceResolveCacheMax = 1024
+
+func newSourceResolveCache(now func() time.Time) *sourceResolveCache {
+	return &sourceResolveCache{entries: make(map[[32]byte]sourceResolveEntry), now: now}
+}
+
+func sourceResolveKey(tmpl *paprikav1.Template) [32]byte {
+	// Spec-only fingerprint: ResolveSource reads nothing outside the spec, so
+	// applications sharing a repo+path share the cache entry. JSON marshalling
+	// dereferences pointers and sorts map keys, unlike %#v which prints pointer
+	// addresses and produces a different key on every call.
+	raw, err := json.Marshal(tmpl.Spec)
+	if err != nil {
+		raw = []byte(fmt.Sprintf("%+v", tmpl.Spec))
+	}
+	return sha256.Sum256(raw)
+}
+
+func (c *sourceResolveCache) get(key [32]byte) (hash, revision string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, found := c.entries[key]
+	if !found || !e.expires.After(c.now()) {
+		return "", "", false
+	}
+	return e.hash, e.revision, true
+}
+
+func (c *sourceResolveCache) put(key [32]byte, hash, revision string, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= sourceResolveCacheMax {
+		c.entries = make(map[[32]byte]sourceResolveEntry, sourceResolveCacheMax)
+	}
+	c.entries[key] = sourceResolveEntry{hash: hash, revision: revision, expires: c.now().Add(ttl)}
+}
 
 func withProjectLabels(app *paprikav1.Application, labels map[string]string) map[string]string {
 	if labels == nil {
@@ -104,6 +251,8 @@ func withProjectLabels(app *paprikav1.Application, labels map[string]string) map
 }
 
 // ApplicationReconciler reconciles Application resources.
+//
+//nolint:gocritic // typeDefFirst: free helpers intentionally precede the type.
 type ApplicationReconciler struct {
 	client              client.Client
 	Scheme              *runtime.Scheme
@@ -123,15 +272,52 @@ type ApplicationReconciler struct {
 	EventBroker         *events.Broker
 	SyncWindowEvaluator syncwindow.Evaluator
 	Clock               clock.Clock
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
+	// TransientRequeue is the interval used for in-flight states (pending,
+	// building, releasing) and as the steady-state poll fallback when
+	// spec.source.pollInterval is unset. <=0 uses defaultRequeue.
+	TransientRequeue time.Duration
+	// SourceResolveTTL bounds how long a source resolve (git fetch) result is
+	// reused by the steady-state poll. <=0 disables caching and resolves every
+	// poll. Sync-triggered checks always bypass the cache.
+	SourceResolveTTL time.Duration
 	// now returns the current time. Overridden in tests.
 	now func() time.Time
+	// manifestCache memoizes parsed desired manifests keyed by content hash so
+	// a Healthy application's unchanged snapshot is not re-unmarshalled on
+	// every poll.
+	manifestCache *manifestParseCache
+	// resolveCache memoizes ResolveSource results for the poll path; built
+	// lazily so zero-value reconcilers in tests still work.
+	resolveCache     *sourceResolveCache
+	resolveCacheOnce sync.Once
+}
+
+// sourceResolveCache lazily builds the poll-path resolve cache in a
+// race-free way for reconcilers constructed without NewApplicationReconciler.
+func (r *ApplicationReconciler) sourceResolveCache() *sourceResolveCache {
+	r.resolveCacheOnce.Do(func() { r.resolveCache = newSourceResolveCache(r.currentTime) })
+	return r.resolveCache
+}
+
+// transientRequeue resolves the configured in-flight requeue interval,
+// falling back to defaultRequeue when unset or non-positive.
+func (r *ApplicationReconciler) transientRequeue() time.Duration {
+	if r.TransientRequeue > 0 {
+		return r.TransientRequeue
+	}
+	return defaultRequeue
 }
 
 // NewApplicationReconciler returns an ApplicationReconciler initialized with the
 // given Kubernetes client. Callers should set the exported dependencies before
 // calling SetupWithManager.
 func NewApplicationReconciler(c client.Client) *ApplicationReconciler {
-	return &ApplicationReconciler{client: c}
+	return &ApplicationReconciler{
+		client:        c,
+		manifestCache: &manifestParseCache{entries: make(map[[32]byte][]unstructured.Unstructured)},
+	}
 }
 
 // +kubebuilder:rbac:groups=pipelines.paprika.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -164,7 +350,9 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}()
 
 	log := log.FromContext(ctx)
-	log.Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
+	// V(1): at fleet scale this fires for every app on every poll interval —
+	// at info level the zap allocation churn measurably feeds GC.
+	log.V(1).Info("Reconciling Application", "namespace", req.Namespace, "name", req.Name)
 
 	if err := r.client.Get(ctx, req.NamespacedName, &app); err != nil {
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
@@ -182,12 +370,12 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	if r.RateLimiter != nil {
 		if !r.RateLimiter.AllowGlobal() {
-			log.Info("Global rate limit exceeded, requeueing", "app", app.Name)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			log.V(1).Info("Global rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 		}
 		if !r.RateLimiter.AllowApp(ratelimit.ReconcileKey(req.Namespace, req.Name)) {
-			log.Info("Per-application rate limit exceeded, requeueing", "app", app.Name)
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+			log.V(1).Info("Per-application rate limit exceeded, requeueing", "app", app.Name)
+			return ctrl.Result{RequeueAfter: 2 * r.transientRequeue()}, nil
 		}
 	}
 
@@ -410,8 +598,8 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	}
 
 	r.evaluateHealth(ctx, app)
-	r.evaluateDiff(ctx, app)
-	r.evaluateResourceHealth(ctx, app)
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
 
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
@@ -429,7 +617,7 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 		log.Error(pruneErr, "Failed to prune release history")
 	}
 
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func syncTriggerPresent(annotations map[string]string) bool {
@@ -462,10 +650,12 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 	}
 
 	if app.Status.Phase == paprikav1.ApplicationHealthy && !r.isInlineSource(app) {
-		sourceChanged, err := r.checkSourceChanged(ctx, app)
+		// Bypass the resolve cache: a sync trigger means the operator wants the
+		// latest commit now, not a result up to SourceResolveTTL stale.
+		sourceChanged, err := r.checkSourceChanged(ctx, app, true)
 		if err != nil {
 			log.Error(err, "Failed to refresh source after sync trigger")
-			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+			return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 		}
 		if sourceChanged {
 			return r.startNewReleaseFlow(ctx, app, manualOverride, "SourceChanged", "source hash changed, creating a new release")
@@ -483,7 +673,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 			return ctrl.Result{}, fmt.Errorf("updating status after manual sync trigger: %w", err)
 		}
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
@@ -495,6 +685,10 @@ func (r *ApplicationReconciler) patchAppStatusAllowingReleaseRefClear(ctx contex
 }
 
 func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, app *paprikav1.Application, preserveReleaseRef bool) error {
+	// Backstop cleanup for stale phase conditions on apps parked in one phase
+	// (e.g. a held exhausted release): any status write converges conditions
+	// to the one true phase condition.
+	normalizePhaseConditions(app, "PhaseChanged", "phase "+string(app.Status.Phase)+" is active")
 	desiredStatus := app.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh paprikav1.Application
@@ -545,7 +739,7 @@ func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *p
 	switch pipelinePhase {
 	case paprikav1.PipelineRunning:
 		r.updatePhase(ctx, app, paprikav1.ApplicationBuilding, "PipelineRunning", fmt.Sprintf("pipeline phase: %s", pipelinePhase))
-		return &ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return &ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	case paprikav1.PipelineFailed, paprikav1.PipelineCancelled:
 		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "PipelineFailed", "pipeline failed")
 		return &ctrl.Result{}, nil
@@ -650,34 +844,71 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		return fmt.Errorf("failed to set controller reference on template: %w", err)
 	}
 
-	var existing paprikav1.Template
-	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
-	if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get template: %w", err)
-	}
-
-	if err != nil {
-		if err := r.client.Create(ctx, expected); err != nil {
-			return fmt.Errorf("failed to create template: %w", err)
-		}
-	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
-		// Skip no-op updates: every Update round-trips through the in-process
-		// admission webhooks, and doing it unconditionally on each reconcile
-		// starves the webhook server under load.
-		existing.Spec = expected.Spec
-		if len(existing.Labels) == 0 {
-			existing.Labels = make(map[string]string)
-		}
-		for k, v := range expected.Labels {
-			existing.Labels[k] = v
-		}
-		if err := r.client.Update(ctx, &existing); err != nil {
-			return fmt.Errorf("failed to update template: %w", err)
-		}
+	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
+		func() *paprikav1.Template { return &paprikav1.Template{} },
+		func(t *paprikav1.Template) paprikav1.TemplateSpec { return t.Spec },
+		func(t *paprikav1.Template, s paprikav1.TemplateSpec) { t.Spec = s },
+		"template"); err != nil {
+		return err
 	}
 
 	app.Status.TemplateRef = templateName
 	app.Status.Synced = true
+	return nil
+}
+
+// createOrConvergeSpecLabels creates expected when absent, otherwise converges
+// the existing object's spec and labels inside RetryOnConflict with a fresh
+// Get per attempt: the child controllers write status continuously, so an
+// update on a previously fetched object conflicts. No-op updates are skipped —
+// every Update round-trips through the in-process admission webhooks, and
+// doing it unconditionally on each reconcile starves the webhook server under
+// load.
+func createOrConvergeSpecLabels[O client.Object, S any](
+	ctx context.Context,
+	c client.Client,
+	expected O,
+	fresh func() O,
+	getSpec func(O) S,
+	setSpec func(O, S),
+	kind string,
+) error {
+	existing := fresh()
+	err := c.Get(ctx, client.ObjectKeyFromObject(expected), existing)
+	if client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("failed to get %s: %w", kind, err)
+	}
+	if err != nil {
+		if cerr := c.Create(ctx, expected); cerr != nil {
+			return fmt.Errorf("failed to create %s: %w", kind, cerr)
+		}
+		return nil
+	}
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := fresh()
+		if gerr := c.Get(ctx, client.ObjectKeyFromObject(expected), current); gerr != nil {
+			return fmt.Errorf("failed to get %s: %w", kind, gerr)
+		}
+		if !specOrLabelsChanged(getSpec(current), getSpec(expected), current.GetLabels(), expected.GetLabels()) {
+			return nil
+		}
+		setSpec(current, getSpec(expected))
+		labels := current.GetLabels()
+		if len(labels) == 0 {
+			labels = make(map[string]string)
+		}
+		for k, v := range expected.GetLabels() {
+			labels[k] = v
+		}
+		current.SetLabels(labels)
+		if uerr := c.Update(ctx, current); uerr != nil {
+			return fmt.Errorf("failed to update %s: %w", kind, uerr)
+		}
+		return nil
+	})
+	if retryErr != nil {
+		return fmt.Errorf("failed to converge %s: %w", kind, retryErr)
+	}
 	return nil
 }
 
@@ -731,27 +962,12 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		return fmt.Errorf("failed to set controller reference on pipeline: %w", err)
 	}
 
-	var existing paprikav1.Pipeline
-	err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &existing)
-	if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("failed to get pipeline: %w", err)
-	}
-
-	if err != nil {
-		if err := r.client.Create(ctx, expected); err != nil {
-			return fmt.Errorf("failed to create pipeline: %w", err)
-		}
-	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
-		existing.Spec = expected.Spec
-		if len(existing.Labels) == 0 {
-			existing.Labels = make(map[string]string)
-		}
-		for k, v := range expected.Labels {
-			existing.Labels[k] = v
-		}
-		if err := r.client.Update(ctx, &existing); err != nil {
-			return fmt.Errorf("failed to update pipeline: %w", err)
-		}
+	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
+		func() *paprikav1.Pipeline { return &paprikav1.Pipeline{} },
+		func(p *paprikav1.Pipeline) paprikav1.PipelineSpec { return p.Spec },
+		func(p *paprikav1.Pipeline, s paprikav1.PipelineSpec) { p.Spec = s },
+		"pipeline"); err != nil {
+		return err
 	}
 
 	app.Status.PipelineRef = pipelineName
@@ -792,7 +1008,7 @@ func (r *ApplicationReconciler) reconcileSingleStage(ctx context.Context, app *p
 	if err != nil {
 		return r.createStage(ctx, expected, stageName)
 	}
-	return r.updateStage(ctx, &existing, expected, stageName)
+	return r.updateStage(ctx, expected, stageName)
 }
 
 func (r *ApplicationReconciler) resolveStageStrategy(app *paprikav1.Application, promotionStage *paprikav1.ApplicationPromotionStage) paprikav1.DeliveryStrategy {
@@ -844,33 +1060,42 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 		}
 		// Created concurrently (e.g. by ApplyBundle's ensureStage) between the
 		// Get and Create above — adopt it via the update path.
-		var existing paprikav1.Stage
-		if getErr := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); getErr != nil {
-			return fmt.Errorf("failed to create stage %s: %w", stageName, err)
-		}
-		return r.updateStage(ctx, &existing, expected, stageName)
+		return r.updateStage(ctx, expected, stageName)
 	}
 	return nil
 }
 
-func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expected *paprikav1.Stage, stageName string) error {
-	ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
-	if err := updateStageApplicationOwner(existing, expected); err != nil {
-		return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
-	}
-	if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
-		equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+// updateStage converges the stage on expected. The whole compare-and-update
+// runs inside RetryOnConflict with a fresh Get: the Stage controller writes
+// status continuously, so an update on a previously fetched object conflicts.
+func (r *ApplicationReconciler) updateStage(ctx context.Context, expected *paprikav1.Stage, stageName string) error {
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var existing paprikav1.Stage
+		if err := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); err != nil {
+			return fmt.Errorf("failed to get stage %s: %w", stageName, err)
+		}
+		ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
+		if err := updateStageApplicationOwner(&existing, expected); err != nil {
+			return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
+		}
+		if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
+			equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+			return nil
+		}
+		existing.Spec = expected.Spec
+		if len(existing.Labels) == 0 {
+			existing.Labels = make(map[string]string)
+		}
+		for k, v := range expected.Labels {
+			existing.Labels[k] = v
+		}
+		if err := r.client.Update(ctx, &existing); err != nil {
+			return fmt.Errorf("failed to update stage %s: %w", stageName, err)
+		}
 		return nil
-	}
-	existing.Spec = expected.Spec
-	if len(existing.Labels) == 0 {
-		existing.Labels = make(map[string]string)
-	}
-	for k, v := range expected.Labels {
-		existing.Labels[k] = v
-	}
-	if err := r.client.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update stage %s: %w", stageName, err)
+	})
+	if retryErr != nil {
+		return fmt.Errorf("failed to converge stage %s: %w", stageName, retryErr)
 	}
 	return nil
 }
@@ -956,7 +1181,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	targetStage := &app.Spec.Stages[0]
@@ -971,7 +1196,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	if !manualOverride && app.Spec.SyncPolicy == paprikav1.SyncAuto && len(app.Spec.SyncWindows) > 0 {
@@ -1040,7 +1265,7 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
 		}
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	if release.Status.Phase != "" {
@@ -1051,7 +1276,7 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patch application status for existing release adoption: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, phase paprikav1.ReleasePhase) (ctrl.Result, error) {
@@ -1072,7 +1297,7 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 
 	mapping, ok := phaseMap[phase]
 	if !ok {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
 	// Surface the deployed revision (the kubectl REVISION printer column reads
@@ -1090,7 +1315,7 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 	r.updatePhase(ctx, app, mapping.appPhase, mapping.reason, msg)
 
 	if mapping.requeue {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -1292,60 +1517,43 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 	}
 }
 
-// collapsing them would hide which transitions are legal.
-//
-//nolint:cyclop // a phase transition table; the branches are the states.
+// setApplicationPhase transitions the application to the given phase, records
+// the phase as a status condition, and returns true when anything changed so
+// callers persist it. Callers pass the full target phase explicitly rather
+// than collapsing transitions — collapsing them would hide which transitions
+// are legal.
 func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) bool {
-	if app.Status.Phase == phase {
-		return false
-	}
-
 	previousPhase := app.Status.Phase
 	app.Status.Phase = phase
-	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
+
 	// Upsert by condition type (like every other controller here) instead of
 	// appending: a thrashing release once appended 3.7k conditions and grew
 	// the Application object to 641KB, slowing every status write and starving
 	// the in-process admission webhooks.
-	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-		Type:               string(phase),
-		ObservedGeneration: app.Generation,
-		Status:             metav1.ConditionTrue,
-		LastTransitionTime: metav1.Now(),
-		Reason:             reason,
-		Message:            message,
-	})
+	conditionsChanged := normalizePhaseConditions(app, reason, message)
 
-	// Phase conditions describe the current state, not historical successes.
-	// In particular, Healthy=True must not survive a failed deployment.
-	for _, condType := range []string{"Pending", "Building", "Promoting", "Canarying", "Verifying", "Healthy", "Degraded", "Failed", "RolledBack"} {
-		if condType == string(phase) {
-			continue
-		}
-		if cond := meta.FindStatusCondition(app.Status.Conditions, condType); cond != nil && cond.Status == metav1.ConditionTrue {
-			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-				Type: condType, Status: metav1.ConditionFalse, ObservedGeneration: app.Generation,
-				Reason: "PhaseChanged", Message: "application is now " + string(phase),
-			})
-		}
+	if previousPhase == phase {
+		// Phase unchanged — still report when stale conditions were retired so
+		// callers persist the cleanup.
+		return conditionsChanged
 	}
 
-	// When the application recovers to Healthy, clear the failure conditions
-	// left behind by the previous failure cycle. Without this, Degraded,
-	// RolledBack, Pending, and ReleaseRetriesExhausted stay True forever and
-	// mislead operators about the current state.
+	metrics.ApplicationPhaseTotal.WithLabelValues(app.Name, app.Namespace, string(phase)).Inc()
+
+	// ReleaseRetriesExhausted is a latch rather than a phase — it is cleared
+	// by clearReleaseRetriesExhaustedCondition when a new release flow starts
+	// and, as a backstop, on the transition into Healthy. It must NOT be
+	// cleared on every write while Healthy: a Healthy-phase app can hold an
+	// exhausted release (holdExhaustedRelease) and the latch is the signal.
 	if phase == paprikav1.ApplicationHealthy {
-		now := metav1.Now()
-		for _, condType := range []string{"Degraded", "RolledBack", "Pending", releaseRetriesExhaustedCondition} {
-			if cond := meta.FindStatusCondition(app.Status.Conditions, condType); cond != nil && cond.Status == metav1.ConditionTrue {
-				meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
-					Type:               condType,
-					Status:             metav1.ConditionFalse,
-					LastTransitionTime: now,
-					Reason:             "Recovered",
-					Message:            "recovered to Healthy",
-				})
-			}
+		if cond := meta.FindStatusCondition(app.Status.Conditions, releaseRetriesExhaustedCondition); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type:               releaseRetriesExhaustedCondition,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: metav1.Now(),
+				Reason:             "Recovered",
+				Message:            "recovered to Healthy",
+			})
 		}
 	}
 
@@ -1382,6 +1590,55 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 	return true
 }
 
+// normalizePhaseConditions makes the condition for app.Status.Phase the only
+// phase condition at True: every other phase condition left True by earlier
+// transitions is retired to False, and the current phase condition is created
+// or re-marked True when missing. Phase conditions are mutually exclusive —
+// without this, Promoting=True, Canarying=True, Verifying=True and even
+// Healthy=True survive forever alongside the current phase and mislead
+// anything reading conditions (fleet attention, kubectl, API consumers).
+// It deliberately does not touch the ReleaseRetriesExhausted latch — that is
+// not a phase and survives being held under any phase including Healthy.
+//
+// Returns true when it changed anything so callers can decide to persist.
+func normalizePhaseConditions(app *paprikav1.Application, reason, message string) bool {
+	phase := string(app.Status.Phase)
+	if phase == "" {
+		return false
+	}
+
+	changed := false
+	now := metav1.Now()
+	if cond := meta.FindStatusCondition(app.Status.Conditions, phase); cond == nil || cond.Status != metav1.ConditionTrue {
+		meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+			Type:               phase,
+			ObservedGeneration: app.Generation,
+			Status:             metav1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             reason,
+			Message:            message,
+		})
+		changed = true
+	}
+	for _, other := range applicationPhaseConditionTypes {
+		if other == phase {
+			continue
+		}
+		if cond := meta.FindStatusCondition(app.Status.Conditions, other); cond != nil && cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+				Type:               other,
+				ObservedGeneration: app.Generation,
+				Status:             metav1.ConditionFalse,
+				LastTransitionTime: now,
+				Reason:             "PhaseChanged",
+				Message:            "transitioned to " + phase,
+			})
+			changed = true
+		}
+	}
+	return changed
+}
+
 func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app *paprikav1.Application, reason string, previousPhase paprikav1.ApplicationPhase, message string) {
 	if r.EventBroker == nil {
 		return
@@ -1403,15 +1660,15 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 	r.EventBroker.Publish(ctx, events.TopicDashboard, evt)
 }
 
-func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application) (bool, error) {
+func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (bool, error) {
 	log := log.FromContext(ctx)
-	newHash, newRevision, err := r.resolveSourceHash(ctx, app)
+	newHash, newRevision, err := r.resolveSourceHash(ctx, app, forceRefresh)
 	if err != nil {
 		return false, err
 	}
 
 	if newHash == "" && newRevision == "" {
-		log.Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
+		log.V(1).Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
 		return false, nil
 	}
 
@@ -1438,7 +1695,7 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 		return false, fmt.Errorf("failed to update source hash: %w", err)
 	}
 
-	log.Info("Source identity checked",
+	log.V(1).Info("Source identity checked",
 		"namespace", app.Namespace,
 		"name", app.Name,
 		"oldHash", oldHash,
@@ -1464,36 +1721,61 @@ func sourceContentHash(hash string) string {
 	return hash
 }
 
-func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
+func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (hash, revision string, err error) {
 	if r.isInlineSource(app) {
 		return "", "", nil
 	}
 
-	if app.Spec.Source.Type == paprikav1.SourceTypeGit || app.Spec.Source.Type == paprikav1.SourceTypeS3 || app.Spec.Source.Type == paprikav1.SourceTypeKustomize || app.Spec.Source.Type == paprikav1.SourceTypeOCI {
-		renderer := r.TemplateRenderer
-		if renderer == nil {
-			renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
-		}
-
-		templateName := app.Name + "-template"
-		var tmpl paprikav1.Template
-		if getErr := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
-			return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
-		}
-
-		result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
-		if resolveErr != nil {
-			return "", "", fmt.Errorf("resolve source: %w", resolveErr)
-		}
-
-		if result != nil {
-			return result.Hash, result.Revision, nil
-		}
+	if isRemoteSourceType(app.Spec.Source.Type) {
+		return r.resolveTemplateSource(ctx, app, forceRefresh)
 	}
 
 	// For helm/local sources, compute a stable hash from the chart config.
 	h := sha256.Sum256([]byte(app.Spec.Source.Chart.Path + app.Spec.Source.Chart.Repo + app.Spec.Source.Chart.Name))
 	return hex.EncodeToString(h[:]), "", nil
+}
+
+func isRemoteSourceType(t string) bool {
+	switch t {
+	case paprikav1.SourceTypeGit, paprikav1.SourceTypeS3, paprikav1.SourceTypeKustomize, paprikav1.SourceTypeOCI:
+		return true
+	}
+	return false
+}
+
+// resolveTemplateSource resolves the app's template against the renderer,
+// reusing the cached result for the poll path while SourceResolveTTL is fresh.
+// forceRefresh (sync triggers) always performs a live resolve.
+func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (hash, revision string, err error) {
+	renderer := r.TemplateRenderer
+	if renderer == nil {
+		renderer = engine.NewHelmSDKRendererWithClient(r.WorkDir, r.client)
+	}
+
+	templateName := app.Name + "-template"
+	var tmpl paprikav1.Template
+	if getErr := r.client.Get(ctx, types.NamespacedName{Name: templateName, Namespace: app.Namespace}, &tmpl); getErr != nil {
+		return "", "", fmt.Errorf("failed to get template for source check: %w", getErr)
+	}
+
+	key := sourceResolveKey(&tmpl)
+	if !forceRefresh && r.SourceResolveTTL > 0 {
+		if cachedHash, cachedRevision, ok := r.sourceResolveCache().get(key); ok {
+			return cachedHash, cachedRevision, nil
+		}
+	}
+
+	result, resolveErr := renderer.ResolveSource(ctx, &tmpl)
+	if resolveErr != nil {
+		return "", "", fmt.Errorf("resolve source: %w", resolveErr)
+	}
+	if result == nil {
+		return "", "", nil
+	}
+	if r.SourceResolveTTL > 0 {
+		r.sourceResolveCache().put(key, result.Hash, result.Revision, r.SourceResolveTTL)
+	}
+	return result.Hash, result.Revision, nil
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
@@ -1585,24 +1867,24 @@ func evalResultFromHealthCheckResult(result *paprikav1.HealthCheckResult) health
 	return eval
 }
 
-func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) {
+func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) *engine.DiffResult {
 	log := log.FromContext(ctx)
 
 	if r.DiffEngine == nil {
-		return
+		return nil
 	}
 
 	manifests, err := r.desiredManifests(ctx, app)
 	if err != nil {
 		log.Error(err, "Failed to get desired manifests for diff")
-		return
+		return nil
 	}
 
 	targetNamespace := app.Namespace
 	if app.Spec.Source.TargetNamespace != "" {
 		targetNamespace = app.Spec.Source.TargetNamespace
 	}
-	desired := parseDesiredManifests(manifests, targetNamespace)
+	desired := r.parsedManifests(manifests, targetNamespace)
 
 	labelSelector := engine.ManagedByAppSelector(app.Name).String()
 	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
@@ -1612,7 +1894,7 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	})
 	if err != nil {
 		log.Error(err, "Failed to compute diff")
-		return
+		return nil
 	}
 
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
@@ -1636,6 +1918,8 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 			app.Status.HookStatuses = nil
 		}
 	}
+
+	return result
 }
 
 // parseDesiredManifests splits rendered YAML manifests into unstructured objects,
@@ -1803,8 +2087,23 @@ func resourceStatusSortKey(kind, namespace, name, status, message string) string
 	return strings.Join([]string{kind, namespace, name, status, message}, "\x00")
 }
 
-func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application) {
-	if r.ResHealth == nil {
+// evaluateResourceHealth assesses each managed resource against the live
+// objects the diff already fetched — same snapshot, no second pass through
+// the API. When there is no diff result (engine disabled or diff failed) it
+// falls back to per-resource reads through the health checker.
+func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application, result *engine.DiffResult) {
+	var liveIndex map[string]unstructured.Unstructured
+	if result != nil {
+		// An empty Live set is still authoritative: every desired resource is
+		// missing. Only a nil result (diff engine off or failed) falls back to
+		// per-resource reads.
+		liveIndex = make(map[string]unstructured.Unstructured, len(result.Live))
+		for i := range result.Live {
+			obj := &result.Live[i]
+			liveIndex[resourceHealthKey(obj.GetKind(), obj.GetNamespace(), obj.GetName())] = *obj
+		}
+	}
+	if liveIndex == nil && r.ResHealth == nil {
 		return
 	}
 
@@ -1815,12 +2114,26 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 		if rs.Status == "Pruned" {
 			continue
 		}
-		h := r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
+		var h paprikav1.ResourceHealth
+		switch {
+		case liveIndex != nil:
+			if obj, found := liveIndex[resourceHealthKey(rs.Kind, rs.Namespace, rs.Name)]; found {
+				h = health.AssessObject(&obj)
+			} else {
+				h = paprikav1.ResourceHealth{Kind: rs.Kind, Name: rs.Name, Namespace: rs.Namespace, Health: "Missing"}
+			}
+		default:
+			h = r.ResHealth.Check(ctx, rs.Kind, rs.Name, rs.Namespace)
+		}
 		healthResults = append(healthResults, h)
 	}
 
 	app.Status.ResourceHealth = healthResults
 	sortResourceHealth(app.Status.ResourceHealth)
+}
+
+func resourceHealthKey(kind, namespace, name string) string {
+	return kind + "\x00" + namespace + "\x00" + name
 }
 
 func (r *ApplicationReconciler) pruneReleaseHistory(ctx context.Context, app *paprikav1.Application) error {
@@ -1922,13 +2235,13 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 		}
 	}
 
-	pollInterval := defaultRequeue
+	pollInterval := r.transientRequeue()
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
 			pollInterval = d
 		}
 	}
-	sourceChanged, err := r.checkSourceChanged(ctx, app)
+	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {
 		log.Error(err, "Failed to check source changes")
 		return ctrl.Result{RequeueAfter: pollInterval}, nil
@@ -1949,8 +2262,8 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 	log := log.FromContext(ctx)
 
 	r.evaluateHealth(ctx, app)
-	r.evaluateDiff(ctx, app)
-	r.evaluateResourceHealth(ctx, app)
+	diff := r.evaluateDiff(ctx, app)
+	r.evaluateResourceHealth(ctx, app, diff)
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
 	}
@@ -1961,7 +2274,7 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 		log.Error(err, "Failed to update application status in Healthy phase")
 	}
 
-	return ctrl.Result{RequeueAfter: pollInterval}, nil
+	return ctrl.Result{RequeueAfter: steadyStateRequeue(app, pollInterval)}, nil
 }
 
 // holdExhaustedRelease is the rest state for an application whose active
@@ -1975,14 +2288,14 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
 
-	pollInterval := defaultRequeue
+	pollInterval := r.transientRequeue()
 	if app.Spec.Source.PollInterval != "" {
 		if d, err := time.ParseDuration(app.Spec.Source.PollInterval); err == nil {
 			pollInterval = d
 		}
 	}
 
-	sourceChanged, err := r.checkSourceChanged(ctx, app)
+	sourceChanged, err := r.checkSourceChanged(ctx, app, false)
 	if err != nil {
 		logger.Error(err, "Failed to check source changes while retry budget exhausted")
 	} else if sourceChanged {
@@ -2005,7 +2318,7 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
 		logger.Error(patchErr, "Failed to patch application status while holding exhausted release")
 	}
-	return ctrl.Result{RequeueAfter: pollInterval}, nil
+	return ctrl.Result{RequeueAfter: steadyStateRequeue(app, pollInterval)}, nil
 }
 
 func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *paprikav1.Application, manual bool, reason, message string) (ctrl.Result, error) {
@@ -2027,13 +2340,13 @@ func (r *ApplicationReconciler) startNewReleaseFlow(ctx context.Context, app *pa
 		return ctrl.Result{}, fmt.Errorf("supersede current release: %w", err)
 	}
 	if app.Status.ReleaseRef != "" {
-		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 	r.setApplicationPhase(ctx, app, paprikav1.ApplicationPending, reason, message)
 	if err := r.patchAppStatusAllowingReleaseRefClear(ctx, app); err != nil {
 		return ctrl.Result{}, fmt.Errorf("patch application status for new release: %w", err)
 	}
-	return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 }
 
 func (r *ApplicationReconciler) requestCurrentReleaseResync(ctx context.Context, app *paprikav1.Application) error {
@@ -2307,6 +2620,9 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.SyncWindowEvaluator == nil {
 		r.SyncWindowEvaluator = syncwindow.NewEvaluator()
 	}
+	if r.manifestCache == nil {
+		r.manifestCache = &manifestParseCache{entries: make(map[[32]byte][]unstructured.Unstructured)}
+	}
 
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Application{}).
@@ -2316,7 +2632,10 @@ func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&paprikav1.Release{}).
 		Owns(&paprikav1.AnalysisRun{}).
 		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 3,
+			// Reconciles are dominated by cached reads and diff computation,
+			// not CPU; a wider worker pool drains bursts (fleet rollouts,
+			// resync storms) without piling up queue delay.
+			MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 8),
 			RecoverPanic:            ptr(true),
 		}).
 		Named("application").

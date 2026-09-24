@@ -189,6 +189,67 @@ kubectl -n paprika-e2e exec deploy/paprika-e2e-repo-server -- sh -c \
   'printf "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" | nc -w 5 localhost 8082 | od -t x1 | head -3'
 ```
 
+## Manager Configuration
+
+The manager binary is a cobra command tree: `manager <mode>` with
+subcommands `operator`, `api`, `webhook`, `repo-server`, `agent`. The
+`--mode=<mode>` flag is equivalent and kept for compatibility — existing
+manifests use it.
+
+Configuration is resolved by viper in this precedence order (highest
+first):
+
+1. **Explicit flag** — e.g. `--ui-bind-address=:4000`.
+2. **Environment variable** — every flag maps to `PAPRIKA_<FLAG_NAME>`
+   (`--ui-bind-address` → `PAPRIKA_UI_BIND_ADDRESS`). A few keys are
+   env-only or keep legacy env names: `ENABLE_WEBHOOKS`,
+   `PAPRIKA_OIDC_CLIENT_SECRET`, `PAPRIKA_OIDC_REDIRECT_URL`,
+   `PAPRIKA_WEBHOOK_SECRET`, `PAPRIKA_AUTH_RBAC_RULES`,
+   `PAPRIKA_REDIS_{ADDR,PASSWORD,DB}`, `PAPRIKA_SHARD_{ID,TOTAL}`,
+   `POD_NAME`, `PAPRIKA_MCP_PUBLIC_URL`, `PAPRIKA_AUDIT_ENABLED`,
+   `PAPRIKA_CACHE_BACKEND`, and the `PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_*`
+   family.
+3. **`--config` file** — a YAML file keyed by flag name, e.g.
+   `metrics-bind-address: ":9090"`.
+4. **Flag/viper defaults.**
+
+List-valued keys (`--mcp-oauth-redirect-uris`,
+`github-actions-token-exchange-allowed-*`) accept comma-separated strings
+in env vars and YAML lists in the config file.
+
+## Tuning Reconcile Rates
+
+The manager exposes reconcile scheduling as flags (or `manager.reconcile.*`
+Helm values — the same names rendered as args). Defaults are tuned for a
+~100-app fleet; unset Helm values inherit the binary defaults.
+
+| Helm value (`manager.reconcile.*`) | Flag | Default | Effect |
+|---|---|---|---|
+| `transientRequeue` | `--application-transient-requeue` | `5s` | In-flight Application states (pending/building/releasing) and the steady-state poll fallback. |
+| `sourceResolveTTL` | `--application-source-resolve-ttl` | `1m` | How long a source resolve (git fetch) is reused by the steady-state poll. `0s` resolves every poll; sync triggers bypass the cache. |
+| `cacheResyncPeriod` | `--cache-resync-period` | `1h` | Full informer resync. Rarely worth lowering; explicit `RequeueAfter` values drive the real cadence. |
+| `maxConcurrentReconciles.application` | `--application-max-concurrent-reconciles` | `8` | Application worker pool. Raise when queue delay grows under a burst. |
+| `maxConcurrentReconciles.release` | `--release-max-concurrent-reconciles` | `5` | Release worker pool. |
+| `maxConcurrentReconciles.stage` | `--stage-max-concurrent-reconciles` | `3` | Stage worker pool. |
+| `maxConcurrentReconciles.pipeline` | `--pipeline-max-concurrent-reconciles` | `3` | Pipeline worker pool. |
+| `rateLimit.globalRate` / `globalBurst` | `--reconcile-global-rate` / `--reconcile-global-burst` | `100`/`200` | Fleet-wide reconcile token bucket. `globalRate <= 0` disables reconcile rate limiting entirely. |
+| `rateLimit.appRate` / `appBurst` | `--reconcile-app-rate` / `--reconcile-app-burst` | `10`/`20` | Per-application token bucket. |
+
+Precedence and behavior:
+
+- `spec.source.pollInterval` on an Application overrides
+  `transientRequeue` for that app's steady-state poll.
+- Healthy applications requeue with deterministic jitter in
+  `[interval/2, 3*interval/2)` so a fleet created together does not
+  requeue in lockstep.
+- Rate-limited reconciles requeue at `transientRequeue` (global bucket)
+  or `2 * transientRequeue` (per-app bucket).
+
+Watch `controller_runtime_workqueue_queue_duration_seconds` and
+`controller_runtime_reconcile_time_seconds` when tuning: sustained queue
+delay with idle CPU means raise concurrency; high reconcile latency means
+the loop itself is slow, not the pool.
+
 ## Verifying
 
 ### Application Health

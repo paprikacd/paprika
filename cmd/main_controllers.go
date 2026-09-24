@@ -96,12 +96,12 @@ type manifestCache interface {
 	cache.Setter
 }
 
-func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, enableWebhooks bool, capacityRegistry *dataprovider.Registry) error {
+func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, tuning controllerTuning, enableWebhooks bool, capacityRegistry *dataprovider.Registry) error {
 	if err := registerProjectLabelIndexers(ctx, mgr); err != nil {
 		return fmt.Errorf("register project label indexers: %w", err)
 	}
 
-	if err := setupPipelineControllers(ctx, mgr, k8sClient, operatorNamespace, deps, projectValidator, policyEvaluator, rateLimiter); err != nil {
+	if err := setupPipelineControllers(ctx, mgr, k8sClient, operatorNamespace, deps, projectValidator, policyEvaluator, rateLimiter, tuning); err != nil {
 		return fmt.Errorf("setup pipeline controllers: %w", err)
 	}
 
@@ -130,19 +130,19 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	return nil
 }
 
-func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit) error {
+func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, tuning controllerTuning) error {
 	controllers := []struct {
 		name  string
 		setup func() error
 	}{
 		{"analysisrun", func() error { return setupAnalysisRunController(mgr, k8sClient, operatorNamespace, deps.broker) }},
 		{"pipeline", func() error {
-			return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter, deps.broker)
+			return setupPipelineController(mgr, k8sClient, operatorNamespace, deps.shardFilter, deps.broker, tuning.pipelineMaxConcurrent)
 		}},
-		{"stage", func() error { return setupStageController(mgr, deps.shardFilter) }},
+		{"stage", func() error { return setupStageController(mgr, deps.shardFilter, tuning.stageMaxConcurrent) }},
 		{"conftestpolicy", func() error { return setupConftestPolicyController(mgr) }},
 		{"release", func() error {
-			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr)
+			return setupReleaseController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker, deps.repoServerAddr, tuning.releaseMaxConcurrent)
 		}},
 		{"rollout", func() error {
 			return setupRolloutController(mgr, k8sClient, operatorNamespace, deps.shardFilter, rateLimiter, projectValidator, policyEvaluator, deps.broker)
@@ -151,7 +151,7 @@ func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		{"applicationset", func() error { return setupApplicationSetController(mgr, deps.shardFilter) }},
 		{"artifact", func() error { return setupArtifactController(mgr, deps.shardFilter) }},
 		{"application", func() error {
-			return setupApplicationController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, deps.broker, deps.repoServerAddr)
+			return setupApplicationController(ctx, mgr, k8sClient, operatorNamespace, deps.cache, deps.shardFilter, rateLimiter, projectValidator, deps.broker, deps.repoServerAddr, tuning)
 		}},
 	}
 
@@ -170,14 +170,15 @@ func setupNotificationController(mgr ctrl.Manager, broker *events.Broker) error 
 	return nil
 }
 
-func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter, broker *events.Broker) error {
+func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter, broker *events.Broker, maxConcurrent int) error {
 	if err := (&controller.PipelineReconciler{
 		Scheme:    mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
-		WorkflowEngine: workflowRunnerAdapter{engine.NewWorkflowEngine(k8sClient, operatorNamespace)},
-		ShardFilter:    shardFilter,
-		Clock:          clock.Real{},
-		EventBroker:    broker,
+		WorkflowEngine:       workflowRunnerAdapter{engine.NewWorkflowEngine(k8sClient, operatorNamespace)},
+		ShardFilter:          shardFilter,
+		Clock:                clock.Real{},
+		EventBroker:          broker,
+		MaxConcurrentWorkers: maxConcurrent,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up pipeline controller: %w", err)
 	}
@@ -207,11 +208,12 @@ func (a workflowRunnerAdapter) RunPipeline(ctx context.Context, pipeline *pipeli
 	return statuses, nil
 }
 
-func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter) error {
+func setupStageController(mgr ctrl.Manager, shardFilter *sharding.Filter, maxConcurrent int) error {
 	if err := (&controller.StageReconciler{
-		Scheme:      mgr.GetScheme(),
-		ShardFilter: shardFilter,
-		Clock:       clock.Real{},
+		Scheme:               mgr.GetScheme(),
+		ShardFilter:          shardFilter,
+		Clock:                clock.Real{},
+		MaxConcurrentWorkers: maxConcurrent,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up stage controller: %w", err)
 	}
@@ -259,7 +261,7 @@ func clientsetFromInterface(k8sClient kubernetes.Interface) (*kubernetes.Clients
 	return cs, nil
 }
 
-func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, repoServerAddr string) error {
+func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, broker *events.Broker, repoServerAddr string, maxConcurrent int) error {
 	dynamicClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for release controller: %w", err)
@@ -290,6 +292,7 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	releaseRec.PolicyEvaluator = policyEvaluator
 	releaseRec.ConftestEvaluator = conftest.NewEvaluator(mgr.GetClient())
 	releaseRec.EventBroker = broker
+	releaseRec.MaxConcurrentWorkers = maxConcurrent
 	if err := releaseRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up release controller: %w", err)
 	}
@@ -359,7 +362,7 @@ func setupAnalysisRunController(mgr ctrl.Manager, k8sClient kubernetes.Interface
 	return nil
 }
 
-func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker, repoServerAddr string) error {
+func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, cacheClient manifestCache, shardFilter *sharding.Filter, rateLimiter *ratelimit.ControllerRateLimit, projectValidator *governance.ProjectValidator, broker *events.Broker, repoServerAddr string, tuning controllerTuning) error {
 	dynClient, err := newDynamicClientForManager(mgr)
 	if err != nil {
 		return fmt.Errorf("create dynamic client for application controller: %w", err)
@@ -400,6 +403,9 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 	appRec.EventBroker = broker
 	appRec.SyncWindowEvaluator = syncwindow.NewEvaluator()
 	appRec.Clock = clock.Real{}
+	appRec.MaxConcurrentWorkers = tuning.appMaxConcurrent
+	appRec.TransientRequeue = tuning.appTransientRequeue
+	appRec.SourceResolveTTL = tuning.appSourceResolveTTL
 	if err := appRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("setting up application controller: %w", err)
 	}

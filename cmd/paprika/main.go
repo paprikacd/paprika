@@ -161,6 +161,13 @@ func loadMergedConfig() (*Config, error) {
 	if globalToken != "" {
 		cfg.Token = globalToken
 	}
+	// Explicit basic-auth flags must take precedence over a stored token:
+	// newClient prefers cfg.Token when both are set, so a stale saved token
+	// would otherwise shadow --username/--password and fail signature checks
+	// against servers with a different token secret.
+	if globalUsername != "" || globalPassword != "" {
+		cfg.Token = ""
+	}
 
 	return cfg, nil
 }

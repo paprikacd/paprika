@@ -6433,6 +6433,32 @@ export declare class ApplicationSummary extends Message<ApplicationSummary> {
    */
   releaseId: string;
 
+  /**
+   * Short reason the application needs attention, e.g. "deployment/web
+   * degraded" or "release retries exhausted". Empty when nothing needs
+   * attention.
+   *
+   * @generated from field: string attention_label = 27;
+   */
+  attentionLabel: string;
+
+  /**
+   * Detail behind the label — the failing condition's or resource's message,
+   * bounded in length. Empty when there is nothing to explain.
+   *
+   * @generated from field: string attention_detail = 28;
+   */
+  attentionDetail: string;
+
+  /**
+   * Managed resource the attention signal points at, in "Kind/name" form —
+   * e.g. "Deployment/web". Set only when the signal names a specific resource;
+   * empty otherwise. Lets callers deep-link straight to the failing object.
+   *
+   * @generated from field: string attention_resource = 29;
+   */
+  attentionResource: string;
+
   constructor(data?: PartialMessage<ApplicationSummary>);
 
   static readonly runtime: typeof proto3;

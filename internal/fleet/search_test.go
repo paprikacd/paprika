@@ -202,7 +202,7 @@ func TestSearchEmptyNormalizedQueryIsCandidateScopedAndDeterministic(t *testing.
 	}, matches)
 }
 
-func TestSearchUsesNFKCNameDocumentsAndSearchesNameOnly(t *testing.T) {
+func TestSearchUsesNFKCNameDocumentsAndMatchesNamespaces(t *testing.T) {
 	t.Parallel()
 
 	compatibilityName := application("ordinary", "Ｆｏｏ")
@@ -211,10 +211,47 @@ func TestSearchUsesNFKCNameDocumentsAndSearchesNameOnly(t *testing.T) {
 
 	matches, err := snapshot.Search("foo", idSet(compatibilityName.Identity, namespaceOnly.Identity))
 	require.NoError(t, err)
-	require.Equal(t, []SearchMatch{{
-		Identity: compatibilityName.Identity,
-		Tier:     SearchTierExact,
-	}}, matches)
+	// The name document wins the exact tier; the namespace-only match lands on
+	// the "<namespace> <name>" document's prefix tier.
+	require.Equal(t, []SearchMatch{
+		{Identity: compatibilityName.Identity, Tier: SearchTierExact},
+		{Identity: namespaceOnly.Identity, Tier: SearchTierPrefix},
+	}, matches)
+}
+
+func TestSearchMatchesNamespaceQualifiedNames(t *testing.T) {
+	t.Parallel()
+
+	target := application("payments", "checkout-api")
+	sibling := application("payments", "checkout-web")
+	otherNamespace := application("staging", "checkout-api")
+	snapshot := searchSnapshot(t, target, sibling, otherNamespace)
+	candidates := idSet(target.Identity, sibling.Identity, otherNamespace.Identity)
+
+	// A qualified query is precise: no fuzzy leakage of same-named
+	// applications in other namespaces.
+	matches, err := snapshot.Search("payments/checkout-api", candidates)
+	require.NoError(t, err)
+	require.Equal(t, []SearchMatch{
+		{Identity: target.Identity, Tier: SearchTierExact},
+	}, matches)
+
+	// A namespace plus a name fragment narrows to that namespace's matches;
+	// the same-named application elsewhere may still surface as a fuzzy
+	// suggestion, ranked below every direct match.
+	matches, err = snapshot.Search("payments checkout", candidates)
+	require.NoError(t, err)
+	require.Equal(t, []SearchMatch{
+		{Identity: target.Identity, Tier: SearchTierPrefix},
+		{Identity: sibling.Identity, Tier: SearchTierPrefix},
+		{
+			Identity:       otherNamespace.Identity,
+			Tier:           SearchTierTrigram,
+			Similarity:     6.0 / 19.0,
+			SharedTrigrams: 6,
+			UnionTrigrams:  19,
+		},
+	}, matches)
 }
 
 func TestSearchRejectsOversizedRawQueryWithTypedError(t *testing.T) {

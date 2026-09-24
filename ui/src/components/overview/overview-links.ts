@@ -5,6 +5,7 @@ import {
   type FleetQueryState,
   type NamespacedKey,
 } from "@/lib/fleet-query"
+import { applicationURL } from "@/lib/application-url"
 
 /**
  * Every link out of the overview keeps the operator's current scope. A reader
@@ -19,9 +20,12 @@ export function inventoryHref(
   return query ? `/dashboard/applications/?${query}` : "/dashboard/applications/"
 }
 
-export function applicationHref(identity: NamespacedKey | undefined): string {
+export function applicationHref(
+  identity: NamespacedKey | undefined,
+  resource?: string
+): string {
   if (!identity) return "/dashboard/applications/"
-  return `/dashboard/application/?namespace=${encodeURIComponent(identity.namespace)}&name=${encodeURIComponent(identity.name)}`
+  return applicationURL(identity, resource)
 }
 
 export function rolloutHref(namespace: string, name: string): string {

@@ -29,16 +29,20 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
-	"strconv"
+	"reflect"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/otelconnect"
 	"github.com/go-logr/logr"
+	mapstructure "github.com/go-viper/mapstructure/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/net/netutil"
 	"golang.org/x/sync/errgroup"
@@ -133,53 +137,101 @@ func newScheme() *runtime.Scheme {
 	return scheme
 }
 
+// cliConfig is the app config consumed throughout the binary. Every field is
+// populated by the viper mapping in newManagerViper: mapstructure tags name
+// the viper key, which is the flag name for flag-backed settings and a
+// kebab-case key for env-only settings.
 type cliConfig struct {
-	metricsAddr, metricsCertPath, metricsCertName, metricsCertKey string
-	webhookCertPath, webhookCertName, webhookCertKey              string
-	probeAddr, uiAddr, webhookAddr, pprofAddr                     string
-	operatorNamespace, mode, k8sAPIServer, k8sTokenFile           string
-	repoServerAddr, repoWorkDir, agentClusterID                   string
-	webhookSecret, authRBACRules                                  string
-	cacheBackend, cacheRedisAddr, cacheRedisPassword              string
-	cacheRedisDB                                                  int
-	shardID, shardTotal                                           int
-	shardIDSource                                                 string
-	apiMaxConns                                                   int
-	auditLogEnabled                                               bool
-	enableLeaderElection, secureMetrics, enableHTTP2              bool
-	apiCacheEnabled                                               bool
-	cacheSyncTimeout                                              time.Duration
-	authEnabled, enableWebhooks                                   bool
-	authBasicUsername, authBasicPassword, authBasicPasswordHash   string
-	authOIDCIssuerURL, authOIDCClientID, authOIDCClientSecret     string
-	authOIDCRedirectURL                                           string
-	authTokenSecret                                               string
-	githubActionsTokenExchangeEnabled                             bool
-	githubActionsTokenExchangeAudience                            string
-	githubActionsTokenExchangeRepository                          string
-	githubActionsTokenExchangeEnvironment                         string
-	githubActionsTokenExchangeSubject                             string
-	githubActionsTokenExchangeAllowedEventNames                   []string
-	githubActionsTokenExchangeRef                                 string
-	githubActionsTokenExchangeAllowedWorkflowRefs                 []string
-	githubActionsTokenExchangeJobWorkflowRef                      string
-	githubActionsTokenExchangeServiceAccountNamespace             string
-	githubActionsTokenExchangeServiceAccountName                  string
-	githubActionsTokenExchangeTTL                                 time.Duration
-	coordinatorMode                                               bool
-	coordinatorHeartbeat, coordinatorTTL                          time.Duration
-	mcpEnabled                                                    bool
-	mcpBindAddress                                                string
-	mcpAccessTokenTTL, mcpRefreshTokenTTL                         time.Duration
-	mcpOAuthClientID                                              string
-	mcpOAuthRedirectURIsRaw                                       string
-	mcpOAuthRedirectURIs                                          []string
-	mcpPublicURL                                                  string
-	zapOptions                                                    zap.Options
+	MetricsAddr        string `mapstructure:"metrics-bind-address"`
+	MetricsCertPath    string `mapstructure:"metrics-cert-path"`
+	MetricsCertName    string `mapstructure:"metrics-cert-name"`
+	MetricsCertKey     string `mapstructure:"metrics-cert-key"`
+	WebhookCertPath    string `mapstructure:"webhook-cert-path"`
+	WebhookCertName    string `mapstructure:"webhook-cert-name"`
+	WebhookCertKey     string `mapstructure:"webhook-cert-key"`
+	ProbeAddr          string `mapstructure:"health-probe-bind-address"`
+	UIAddr             string `mapstructure:"ui-bind-address"`
+	WebhookAddr        string `mapstructure:"webhook-bind-address"`
+	PprofAddr          string `mapstructure:"pprof-bind-address"`
+	OperatorNamespace  string `mapstructure:"operator-namespace"`
+	Mode               string `mapstructure:"mode"`
+	K8sAPIServer       string `mapstructure:"k8s-api-server"`
+	K8sTokenFile       string `mapstructure:"k8s-token-file"`
+	RepoServerAddr     string `mapstructure:"repo-server-addr"`
+	RepoWorkDir        string `mapstructure:"repo-workdir"`
+	AgentClusterID     string `mapstructure:"agent-cluster-id"`
+	WebhookSecret      string `mapstructure:"webhook-secret"`
+	AuthRBACRules      string `mapstructure:"auth-rbac-rules"`
+	CacheBackend       string `mapstructure:"cache-backend"`
+	CacheRedisAddr     string `mapstructure:"cache-redis-addr"`
+	CacheRedisPassword string `mapstructure:"cache-redis-password"`
+	CacheRedisDB       int    `mapstructure:"cache-redis-db"`
+	ShardID            int    `mapstructure:"shard-id"`
+	ShardTotal         int    `mapstructure:"shard-total"`
+	ShardIDSource      string `mapstructure:"shard-id-source"`
+	APIMaxConns        int    `mapstructure:"api-max-conns"`
+	AuditLogEnabled    bool   `mapstructure:"audit-enabled"`
+
+	EnableLeaderElection bool `mapstructure:"leader-elect"`
+	SecureMetrics        bool `mapstructure:"metrics-secure"`
+	EnableHTTP2          bool `mapstructure:"enable-http2"`
+	APICacheEnabled      bool `mapstructure:"api-cache-enabled"`
+
+	CacheSyncTimeout      time.Duration `mapstructure:"cache-sync-timeout"`
+	AuthEnabled           bool          `mapstructure:"auth-enabled"`
+	EnableWebhooks        bool          `mapstructure:"enable-webhooks"`
+	AuthBasicUsername     string        `mapstructure:"auth-basic-username"`
+	AuthBasicPassword     string        `mapstructure:"auth-basic-password"`
+	AuthBasicPasswordHash string        `mapstructure:"auth-basic-password-hash"`
+	AuthOIDCIssuerURL     string        `mapstructure:"auth-oidc-issuer-url"`
+	AuthOIDCClientID      string        `mapstructure:"auth-oidc-client-id"`
+	AuthOIDCClientSecret  string        `mapstructure:"auth-oidc-client-secret"`
+	AuthOIDCRedirectURL   string        `mapstructure:"auth-oidc-redirect-url"`
+	AuthTokenSecret       string        `mapstructure:"auth-token-secret"`
+
+	GitHubActionsTokenExchangeEnabled                 bool          `mapstructure:"github-actions-token-exchange-enabled"`
+	GitHubActionsTokenExchangeAudience                string        `mapstructure:"github-actions-token-exchange-audience"`
+	GitHubActionsTokenExchangeRepository              string        `mapstructure:"github-actions-token-exchange-repository"`
+	GitHubActionsTokenExchangeEnvironment             string        `mapstructure:"github-actions-token-exchange-environment"`
+	GitHubActionsTokenExchangeSubject                 string        `mapstructure:"github-actions-token-exchange-subject"`
+	GitHubActionsTokenExchangeAllowedEventNames       []string      `mapstructure:"github-actions-token-exchange-allowed-event-names"`
+	GitHubActionsTokenExchangeRef                     string        `mapstructure:"github-actions-token-exchange-ref"`
+	GitHubActionsTokenExchangeAllowedWorkflowRefs     []string      `mapstructure:"github-actions-token-exchange-allowed-workflow-refs"`
+	GitHubActionsTokenExchangeJobWorkflowRef          string        `mapstructure:"github-actions-token-exchange-job-workflow-ref"`
+	GitHubActionsTokenExchangeServiceAccountNamespace string        `mapstructure:"github-actions-token-exchange-service-account-namespace"`
+	GitHubActionsTokenExchangeServiceAccountName      string        `mapstructure:"github-actions-token-exchange-service-account-name"`
+	GitHubActionsTokenExchangeTTL                     time.Duration `mapstructure:"github-actions-token-exchange-token-ttl"`
+
+	CoordinatorMode      bool          `mapstructure:"coordinator-mode"`
+	CoordinatorHeartbeat time.Duration `mapstructure:"coordinator-heartbeat"`
+	CoordinatorTTL       time.Duration `mapstructure:"coordinator-ttl"`
+
+	AppMaxConcurrentReconciles      int           `mapstructure:"application-max-concurrent-reconciles"`
+	ReleaseMaxConcurrentReconciles  int           `mapstructure:"release-max-concurrent-reconciles"`
+	StageMaxConcurrentReconciles    int           `mapstructure:"stage-max-concurrent-reconciles"`
+	PipelineMaxConcurrentReconciles int           `mapstructure:"pipeline-max-concurrent-reconciles"`
+	AppTransientRequeue             time.Duration `mapstructure:"application-transient-requeue"`
+	AppSourceResolveTTL             time.Duration `mapstructure:"application-source-resolve-ttl"`
+	CacheResyncPeriod               time.Duration `mapstructure:"cache-resync-period"`
+	ReconcileGlobalRate             float64       `mapstructure:"reconcile-global-rate"`
+	ReconcileGlobalBurst            int           `mapstructure:"reconcile-global-burst"`
+	ReconcileAppRate                float64       `mapstructure:"reconcile-app-rate"`
+	ReconcileAppBurst               int           `mapstructure:"reconcile-app-burst"`
+
+	MCPEnabled           bool          `mapstructure:"mcp-enabled"`
+	MCPBindAddress       string        `mapstructure:"mcp-bind-address"`
+	MCPAccessTokenTTL    time.Duration `mapstructure:"mcp-access-token-ttl"`
+	MCPRefreshTokenTTL   time.Duration `mapstructure:"mcp-refresh-token-ttl"`
+	MCPOAuthClientID     string        `mapstructure:"mcp-oauth-client-id"`
+	MCPOAuthRedirectURIs []string      `mapstructure:"mcp-oauth-redirect-uris"`
+	MCPPublicURL         string        `mapstructure:"mcp-public-url"`
+
+	// ZapOptions is bound directly by the zap flag set, not through viper.
+	ZapOptions zap.Options `mapstructure:"-"`
 }
 
 func main() {
-	if err := run(ctrl.SetupSignalHandler(), os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
+	if err := run(ctrl.SetupSignalHandler(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		if _, printErr := fmt.Fprintln(os.Stderr, "Failed to start:", err); printErr != nil {
 			os.Exit(2)
 		}
@@ -187,13 +239,66 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args []string, getenv func(string) string, _ io.Reader, _, stderr io.Writer) error {
-	cfg, err := registerFlags(args, getenv, stderr)
-	if err != nil {
-		return fmt.Errorf("register flags: %w", err)
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	//nolint:contextcheck // ctx reaches start via ExecuteContext -> cmd.Context()
+	cmd, _, _ := newManagerCommand(startManager)
+	cmd.SetArgs(args)
+	cmd.SetIn(stdin)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		return fmt.Errorf("execute command: %w", err)
+	}
+	return nil
+}
+
+// newManagerCommand builds the cobra command tree. The root command runs
+// --mode dispatch (backward compatible with the pre-cobra invocation); the
+// mode subcommands are the same modes expressed idiomatically. All flags are
+// persistent on the root so `manager api --metrics-...` parses identically to
+// `manager --mode=api --metrics-...`. start is the post-config bootstrap,
+// injected so tests can observe the resolved config without booting servers.
+func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Command, *cliConfig, *viper.Viper) {
+	cfg := &cliConfig{ZapOptions: zap.Options{Development: false}}
+	v := newManagerViper()
+
+	root := &cobra.Command{
+		Use:           "manager",
+		Short:         "Paprika manager — operator, API, webhook, repo-server and agent modes",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		Args:          cobra.NoArgs,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return loadManagerConfig(cmd, v, cfg)
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return start(cmd.Context(), cfg)
+		},
 	}
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cfg.zapOptions)))
+	registerManagerFlags(root.PersistentFlags(), &cfg.ZapOptions)
+	if err := v.BindPFlags(root.PersistentFlags()); err != nil {
+		panic(fmt.Errorf("bind flags: %w", err))
+	}
+
+	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent"} {
+		mode := mode
+		root.AddCommand(&cobra.Command{
+			Use:   mode,
+			Short: fmt.Sprintf("Run in %s mode (equivalent to --mode=%s)", mode, mode),
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				cfg.Mode = mode
+				return start(cmd.Context(), cfg)
+			},
+		})
+	}
+	return root, cfg, v
+}
+
+// startManager is the shared post-config bootstrap for every mode.
+func startManager(ctx context.Context, cfg *cliConfig) error {
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cfg.ZapOptions)))
 	setupLog := ctrl.Log.WithName("setup")
 	scheme := newScheme()
 
@@ -204,47 +309,109 @@ func run(ctx context.Context, args []string, getenv func(string) string, _ io.Re
 	return dispatchMode(ctx, cfg, scheme, setupLog)
 }
 
+// loadManagerConfig resolves the merged configuration onto cfg. Precedence
+// (highest first): explicit flag, environment variable, --config file,
+// flag/viper default.
+func loadManagerConfig(_ *cobra.Command, v *viper.Viper, cfg *cliConfig) error {
+	if configFile := v.GetString("config"); configFile != "" {
+		v.SetConfigFile(configFile)
+		if err := v.ReadInConfig(); err != nil {
+			return fmt.Errorf("read config file %q: %w", configFile, err)
+		}
+	}
+	if err := v.Unmarshal(cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		stringToTrimmedSliceHook(","),
+	))); err != nil {
+		return fmt.Errorf("decode config: %w", err)
+	}
+	return nil
+}
+
+// stringToTrimmedSliceHook decodes a comma-separated string (from env vars
+// or scalar YAML values) into []string, trimming whitespace and dropping
+// empty elements — matching the historical commaSeparatedValues behavior.
+func stringToTrimmedSliceHook(sep string) mapstructure.DecodeHookFunc {
+	return func(from, to reflect.Type, data interface{}) (interface{}, error) {
+		if from.Kind() != reflect.String ||
+			to.Kind() != reflect.Slice || to.Elem().Kind() != reflect.String {
+			return data, nil
+		}
+		raw, ok := data.(string)
+		if !ok {
+			return data, nil
+		}
+		if strings.TrimSpace(raw) == "" {
+			return []string{}, nil
+		}
+		var out []string
+		for part := range strings.SplitSeq(raw, sep) {
+			if part = strings.TrimSpace(part); part != "" {
+				out = append(out, part)
+			}
+		}
+		return out, nil
+	}
+}
+
+// parseManagerConfig is the test-only path: parse args and resolve config
+// without executing the command tree (which would start a server).
+func parseManagerConfig(args []string, stderr io.Writer) (*cliConfig, error) {
+	cmd, cfg, v := newManagerCommand(startManager)
+	cmd.SetErr(stderr)
+	if err := cmd.ParseFlags(args); err != nil {
+		return nil, fmt.Errorf("parse flags: %w", err)
+	}
+	if err := loadManagerConfig(cmd, v, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
 func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
-	if err := validateMode(cfg.mode); err != nil {
+	if err := validateMode(cfg.Mode); err != nil {
 		return fmt.Errorf("validate mode: %w", err)
 	}
 	if err := validateCoordinatorConfig(cfg); err != nil {
 		return err
 	}
+	if err := validateControllerTuning(cfg); err != nil {
+		return err
+	}
 
-	switch cfg.mode {
+	switch cfg.Mode {
 	case "agent":
-		return runAgentMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.agentClusterID, cfg.metricsAddr, cfg.pprofAddr, setupLog)
+		return runAgentMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.AgentClusterID, cfg.MetricsAddr, cfg.PprofAddr, setupLog)
 	case "repo-server":
-		return runRepoServerMode(ctx, cfg.uiAddr, cfg.probeAddr, cfg.repoWorkDir, cfg.metricsAddr, cfg.pprofAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
+		return runRepoServerMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.RepoWorkDir, cfg.MetricsAddr, cfg.PprofAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
 	case "api":
 		return runAPIMode(ctx, cfg, scheme, setupLog, nil)
 	case "webhook":
-		return runWebhookMode(ctx, cfg, cfg.webhookAddr, cfg.probeAddr, cfg.webhookSecret, scheme, setupLog, cfg.cacheConfig())
+		return runWebhookMode(ctx, cfg, cfg.WebhookAddr, cfg.ProbeAddr, cfg.WebhookSecret, scheme, setupLog, cfg.cacheConfig())
 	default:
 		return runOperatorMode(ctx, cfg, scheme, setupLog)
 	}
 }
 
 func (cfg *cliConfig) cacheConfig() cache.Config {
-	backend := cfg.cacheBackend
+	backend := cfg.CacheBackend
 	if backend == "" {
 		backend = cache.BackendMemory
 	}
-	addr := cfg.cacheRedisAddr
+	addr := cfg.CacheRedisAddr
 	if addr == "" {
 		addr = defaultRedisAddr
 	}
 	return cache.Config{
 		Backend:       backend,
 		RedisAddr:     addr,
-		RedisPassword: cfg.cacheRedisPassword,
-		RedisDB:       cfg.cacheRedisDB,
+		RedisPassword: cfg.CacheRedisPassword,
+		RedisDB:       cfg.CacheRedisDB,
 	}
 }
 
 func (cfg *cliConfig) shardFilter() *sharding.Filter {
-	return sharding.NewFilter(cfg.shardID, cfg.shardTotal)
+	return sharding.NewFilter(cfg.ShardID, cfg.ShardTotal)
 }
 
 func validateMode(mode string) error {
@@ -254,244 +421,312 @@ func validateMode(mode string) error {
 	return nil
 }
 
-func registerCoordinatorFlags(fs *flag.FlagSet, cfg *cliConfig) {
-	fs.BoolVar(&cfg.coordinatorMode, "coordinator-mode", false,
+// registerControllerTuningFlags exposes reconcile-rate knobs: worker
+// concurrency per controller, the transient requeue used by in-flight
+// Application states, the informer full-resync period, and the reconcile
+// token-bucket limits. Steady-state polling stays per-application via
+// spec.source.pollInterval.
+func registerControllerTuningFlags(fs *pflag.FlagSet) {
+	fs.Int("application-max-concurrent-reconciles", 8,
+		"Maximum parallel Application reconciles. Reconciles are cached-read and diff "+
+			"dominated; a wider pool drains burst resyncs without queue delay.")
+	fs.Int("release-max-concurrent-reconciles", 5,
+		"Maximum parallel Release reconciles.")
+	fs.Int("stage-max-concurrent-reconciles", 3,
+		"Maximum parallel Stage reconciles.")
+	fs.Int("pipeline-max-concurrent-reconciles", 3,
+		"Maximum parallel Pipeline reconciles.")
+	fs.Duration("application-transient-requeue", 5*time.Second,
+		"Requeue interval for in-flight Application states (pending, building, releasing) "+
+			"and the steady-state poll fallback when spec.source.pollInterval is unset.")
+	fs.Duration("application-source-resolve-ttl", time.Minute,
+		"How long a source resolve (git fetch) result is reused by the steady-state "+
+			"application poll. 0 resolves the source on every poll. Sync triggers "+
+			"always bypass the cache.")
+	fs.Duration("cache-resync-period", time.Hour,
+		"Full resync period for the manager's informer cache.")
+	fs.Float64("reconcile-global-rate", 100,
+		"Global reconcile token-bucket refill rate (reconciles/sec). <=0 disables "+
+			"reconcile rate limiting entirely.")
+	fs.Int("reconcile-global-burst", 200,
+		"Global reconcile token-bucket burst size.")
+	fs.Float64("reconcile-app-rate", 10,
+		"Per-application reconcile token-bucket refill rate (reconciles/sec).")
+	fs.Int("reconcile-app-burst", 20,
+		"Per-application reconcile token-bucket burst size.")
+}
+
+// controllerTuning carries the reconcile-rate flags into the controller setup
+// chain without growing every setup signature.
+type controllerTuning struct {
+	appMaxConcurrent      int
+	releaseMaxConcurrent  int
+	stageMaxConcurrent    int
+	pipelineMaxConcurrent int
+	appTransientRequeue   time.Duration
+	appSourceResolveTTL   time.Duration
+}
+
+// validateControllerTuning rejects values that would wedge or thrash the
+// reconcile loops: zero workers, a poll interval too tight to be sane, or a
+// rate limiter that can never refill.
+func validateControllerTuning(cfg *cliConfig) error {
+	concurrencies := map[string]int{
+		"application-max-concurrent-reconciles": cfg.AppMaxConcurrentReconciles,
+		"release-max-concurrent-reconciles":     cfg.ReleaseMaxConcurrentReconciles,
+		"stage-max-concurrent-reconciles":       cfg.StageMaxConcurrentReconciles,
+		"pipeline-max-concurrent-reconciles":    cfg.PipelineMaxConcurrentReconciles,
+	}
+	for flag, v := range concurrencies {
+		if v < 1 {
+			return fmt.Errorf("--%s must be >= 1, got %d", flag, v)
+		}
+	}
+	durations := map[string][2]time.Duration{
+		"application-transient-requeue":  {time.Second, 24 * time.Hour},
+		"application-source-resolve-ttl": {0, 24 * time.Hour},
+		"cache-resync-period":            {time.Minute, 1<<63 - 1},
+	}
+	values := map[string]time.Duration{
+		"application-transient-requeue":  cfg.AppTransientRequeue,
+		"application-source-resolve-ttl": cfg.AppSourceResolveTTL,
+		"cache-resync-period":            cfg.CacheResyncPeriod,
+	}
+	for flag, bounds := range durations {
+		if v := values[flag]; v < bounds[0] || v > bounds[1] {
+			return fmt.Errorf("--%s must be in [%s, %s], got %s", flag, bounds[0], bounds[1], v)
+		}
+	}
+	if cfg.ReconcileGlobalBurst < 1 || cfg.ReconcileAppBurst < 1 {
+		return fmt.Errorf("reconcile rate-limit bursts must be >= 1 (global=%d, app=%d)", cfg.ReconcileGlobalBurst, cfg.ReconcileAppBurst)
+	}
+	if cfg.ReconcileGlobalRate > 0 && cfg.ReconcileAppRate <= 0 {
+		return fmt.Errorf("--reconcile-app-rate must be > 0 when rate limiting is enabled, got %v", cfg.ReconcileAppRate)
+	}
+	return nil
+}
+
+func (cfg *cliConfig) tuning() controllerTuning {
+	return controllerTuning{
+		appMaxConcurrent:      cfg.AppMaxConcurrentReconciles,
+		releaseMaxConcurrent:  cfg.ReleaseMaxConcurrentReconciles,
+		stageMaxConcurrent:    cfg.StageMaxConcurrentReconciles,
+		pipelineMaxConcurrent: cfg.PipelineMaxConcurrentReconciles,
+		appTransientRequeue:   cfg.AppTransientRequeue,
+		appSourceResolveTTL:   cfg.AppSourceResolveTTL,
+	}
+}
+
+func registerCoordinatorFlags(fs *pflag.FlagSet) {
+	fs.Bool("coordinator-mode", false,
 		"Enable Redis-backed coordinator for active-active sharding (requires PAPRIKA_REDIS_ADDR). "+
 			"Each replica processes a subset of namespaces via consistent hash ring.")
-	fs.DurationVar(&cfg.coordinatorHeartbeat, "coordinator-heartbeat", 15*time.Second,
+	fs.Duration("coordinator-heartbeat", 15*time.Second,
 		"Coordinator heartbeat interval. How often replicas refresh their registration.")
-	fs.DurationVar(&cfg.coordinatorTTL, "coordinator-ttl", 30*time.Second,
+	fs.Duration("coordinator-ttl", 30*time.Second,
 		"Coordinator heartbeat TTL. Must be greater than --coordinator-heartbeat. "+
 			"Stale replicas are removed after this duration.")
 }
 
 func validateCoordinatorConfig(cfg *cliConfig) error {
-	if !cfg.coordinatorMode {
+	if !cfg.CoordinatorMode {
 		return nil
 	}
-	if cfg.cacheRedisAddr == "" {
+	if cfg.CacheRedisAddr == "" {
 		return errors.New("--coordinator-mode requires PAPRIKA_REDIS_ADDR environment variable")
 	}
-	if cfg.coordinatorHeartbeat >= cfg.coordinatorTTL {
-		return fmt.Errorf("--coordinator-heartbeat (%v) must be less than --coordinator-ttl (%v)", cfg.coordinatorHeartbeat, cfg.coordinatorTTL)
+	if cfg.CoordinatorHeartbeat >= cfg.CoordinatorTTL {
+		return fmt.Errorf("--coordinator-heartbeat (%v) must be less than --coordinator-ttl (%v)", cfg.CoordinatorHeartbeat, cfg.CoordinatorTTL)
 	}
 	return nil
 }
 
-func registerFlags(args []string, getenv func(string) string, stderr io.Writer) (*cliConfig, error) {
-	var cfg cliConfig
-	fs := flag.NewFlagSet("paprika", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.StringVar(&cfg.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+// newManagerViper wires the config resolution for cliConfig. Flag names are
+// the viper keys; every flag automatically answers to the conventional
+// PAPRIKA_<FLAG_NAME> env var via AutomaticEnv, and env-only keys (no flag
+// equivalent) plus env vars whose names predate that convention are bound
+// explicitly below.
+func newManagerViper() *viper.Viper {
+	v := viper.New()
+	v.SetEnvPrefix("PAPRIKA")
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	// Env-only keys whose PAPRIKA_<key> env name matches the convention —
+	// a bare BindEnv resolves them via the prefix.
+	for _, key := range []string{
+		"webhook-secret",
+		"auth-rbac-rules",
+		"cache-backend",
+		"audit-enabled",
+		"shard-id",
+		"shard-total",
+		"mcp-public-url",
+		"github-actions-token-exchange-enabled",
+		"github-actions-token-exchange-audience",
+		"github-actions-token-exchange-repository",
+		"github-actions-token-exchange-environment",
+		"github-actions-token-exchange-subject",
+		"github-actions-token-exchange-allowed-event-names",
+		"github-actions-token-exchange-ref",
+		"github-actions-token-exchange-allowed-workflow-refs",
+		"github-actions-token-exchange-job-workflow-ref",
+		"github-actions-token-exchange-service-account-namespace",
+		"github-actions-token-exchange-service-account-name",
+		"github-actions-token-exchange-token-ttl",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			panic(fmt.Errorf("bind env %s: %w", key, err))
+		}
+	}
+
+	// Keys whose legacy env names deviate from the convention. Each binding
+	// lists the legacy name first, then the conventional name, so both work.
+	for key, envs := range map[string][]string{
+		"auth-oidc-client-secret": {"PAPRIKA_OIDC_CLIENT_SECRET", "PAPRIKA_AUTH_OIDC_CLIENT_SECRET"},
+		"auth-oidc-redirect-url":  {"PAPRIKA_OIDC_REDIRECT_URL", "PAPRIKA_AUTH_OIDC_REDIRECT_URL"},
+		"enable-webhooks":         {"ENABLE_WEBHOOKS", "PAPRIKA_ENABLE_WEBHOOKS"},
+		"cache-redis-addr":        {"PAPRIKA_REDIS_ADDR", "PAPRIKA_CACHE_REDIS_ADDR"},
+		"cache-redis-password":    {"PAPRIKA_REDIS_PASSWORD", "PAPRIKA_CACHE_REDIS_PASSWORD"},
+		"cache-redis-db":          {"PAPRIKA_REDIS_DB", "PAPRIKA_CACHE_REDIS_DB"},
+		// shard-id-source is the pod's shard identity label: the explicit
+		// PAPRIKA_SHARD_ID assignment wins, then the pod name.
+		"shard-id-source": {"PAPRIKA_SHARD_ID", "POD_NAME", "PAPRIKA_SHARD_ID_SOURCE"},
+	} {
+		if err := v.BindEnv(append([]string{key}, envs...)...); err != nil {
+			panic(fmt.Errorf("bind env %s: %w", key, err))
+		}
+	}
+
+	v.SetDefault("enable-webhooks", true)
+	v.SetDefault("cache-backend", cache.BackendMemory)
+	v.SetDefault("github-actions-token-exchange-token-ttl", 15*time.Minute)
+	return v
+}
+
+// registerManagerFlags defines every manager flag on the cobra flag set.
+// Values are not bound into cliConfig here — viper resolves the merged
+// flag/env/config-file value per key and Unmarshal maps it onto cliConfig.
+func registerManagerFlags(fs *pflag.FlagSet, zapOpts *zap.Options) {
+	fs.String("config", "",
+		"Path to an optional YAML config file using flag-name keys (e.g. metrics-bind-address: :8443). "+
+			"Explicit flags and environment variables override the file.")
+	fs.String("metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	fs.StringVar(&cfg.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	fs.StringVar(&cfg.pprofAddr, "pprof-bind-address", "", "The address the pprof debug endpoint binds to "+
+	fs.String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	fs.String("pprof-bind-address", "", "The address the pprof debug endpoint binds to "+
 		"(e.g. :6060 serves /debug/pprof/*). Empty disables it. Off by default because it "+
 		"exposes heap, goroutine and execution-trace internals; enable only for profiling.")
-	fs.BoolVar(&cfg.enableLeaderElection, "leader-elect", false,
+	fs.Bool("leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	fs.DurationVar(&cfg.cacheSyncTimeout, "cache-sync-timeout", 2*time.Minute,
+	fs.Duration("cache-sync-timeout", 2*time.Minute,
 		"Maximum time to wait for caches to sync on startup before exiting. "+
 			"Default 2m; raise this for large clusters or many CRDs (e.g. 5m) to avoid "+
 			"CrashLoopBackOff due to slow initial list calls on small API servers.")
-	fs.BoolVar(&cfg.apiCacheEnabled, "api-cache-enabled", getenv("PAPRIKA_API_CACHE_ENABLED") != "false",
+	fs.Bool("api-cache-enabled", true,
 		"Enable the informer-backed API client cache. Set false only for local tests or emergency debugging.")
-	registerCoordinatorFlags(fs, &cfg)
-	fs.BoolVar(&cfg.secureMetrics, "metrics-secure", true,
+	registerCoordinatorFlags(fs)
+	fs.Bool("metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
-	fs.StringVar(&cfg.webhookCertPath, "webhook-cert-path", "", "The directory that contains the webhook certificate.")
-	fs.StringVar(&cfg.webhookCertName, "webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
-	fs.StringVar(&cfg.webhookCertKey, "webhook-cert-key", "tls.key", "The name of the webhook key file.")
-	fs.StringVar(&cfg.metricsCertPath, "metrics-cert-path", "",
+	fs.String("webhook-cert-path", "", "The directory that contains the webhook certificate.")
+	fs.String("webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
+	fs.String("webhook-cert-key", "tls.key", "The name of the webhook key file.")
+	fs.String("metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
-	fs.StringVar(&cfg.metricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	fs.StringVar(&cfg.metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
-	fs.BoolVar(&cfg.enableHTTP2, "enable-http2", false,
+	fs.String("metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
+	fs.String("metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+	fs.Bool("enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	fs.StringVar(&cfg.operatorNamespace, "operator-namespace", "paprika-system",
+	fs.String("operator-namespace", "paprika-system",
 		"The namespace where the operator runs (used for manifest snapshots and step jobs).")
-	fs.StringVar(&cfg.uiAddr, "ui-bind-address", ":3000",
+	fs.String("ui-bind-address", ":3000",
 		"The address the UI dashboard server binds to.")
-	fs.IntVar(&cfg.apiMaxConns, "api-max-conns", 128,
+	fs.Int("api-max-conns", 128,
 		"Maximum number of concurrent TCP connections the UI/API server accepts. "+
 			"Bounds connection and in-flight request memory on small pods; excess "+
 			"connections wait in the kernel accept queue. 0 disables the limit.")
-	fs.StringVar(&cfg.mode, "mode", "operator",
-		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent).")
-	fs.StringVar(&cfg.k8sAPIServer, "k8s-api-server", "",
+	registerControllerTuningFlags(fs)
+	fs.String("mode", "operator",
+		"Running mode: 'operator' (controllers + API), 'api' (API server only), 'webhook' (webhook receiver only), 'repo-server' (repo server only), or 'agent' (in-cluster agent). "+
+			"The mode subcommands are equivalent: 'manager api' == 'manager --mode=api'.")
+	fs.String("k8s-api-server", "",
 		"Kubernetes API server URL. Only used in 'api' mode.")
-	fs.StringVar(&cfg.k8sTokenFile, "k8s-token-file", "",
+	fs.String("k8s-token-file", "",
 		"Path to Kubernetes service account token. Only used in 'api' mode.")
-	fs.StringVar(&cfg.webhookAddr, "webhook-bind-address", ":8080",
+	fs.String("webhook-bind-address", ":8080",
 		"The address the webhook receiver binds to. Only used in 'webhook' mode.")
-	registerRepoServerFlags(fs, &cfg, getenv)
-	fs.StringVar(&cfg.agentClusterID, "agent-cluster-id", getenv("PAPRIKA_AGENT_CLUSTER_ID"),
+	registerRepoServerFlags(fs)
+	fs.String("agent-cluster-id", "",
 		"Cluster ID for the in-cluster agent. Only used in 'agent' mode.")
-	fs.BoolVar(&cfg.authEnabled, "auth-enabled", false,
+	fs.Bool("auth-enabled", false,
 		"Enable authentication and authorization for the API server.")
-	fs.StringVar(&cfg.authBasicUsername, "auth-basic-username", "",
+	fs.String("auth-basic-username", "",
 		"Basic auth username. Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authBasicPassword, "auth-basic-password", "",
+	fs.String("auth-basic-password", "",
 		"Basic auth plain-text password (deprecated: use --auth-basic-password-hash instead).")
-	fs.StringVar(&cfg.authBasicPasswordHash, "auth-basic-password-hash", "",
+	fs.String("auth-basic-password-hash", "",
 		"Basic auth SHA-256 password hash (hex). Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authOIDCIssuerURL, "auth-oidc-issuer-url", "",
+	fs.String("auth-oidc-issuer-url", "",
 		"OIDC issuer URL. Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authOIDCClientID, "auth-oidc-client-id", "",
+	fs.String("auth-oidc-client-id", "",
 		"OIDC client ID. Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authOIDCClientSecret, "auth-oidc-client-secret", "",
+	fs.String("auth-oidc-client-secret", "",
 		"OIDC client secret. Prefer setting via PAPRIKA_OIDC_CLIENT_SECRET env var to avoid process-list exposure.")
-	fs.StringVar(&cfg.authOIDCRedirectURL, "auth-oidc-redirect-url", getenv("PAPRIKA_OIDC_REDIRECT_URL"),
+	fs.String("auth-oidc-redirect-url", "",
 		"OIDC redirect URL. Only used when --auth-enabled=true.")
-	fs.StringVar(&cfg.authTokenSecret, "auth-token-secret", "",
+	fs.String("auth-token-secret", "",
 		"Secret key for signing self-issued auth tokens. Required for basic auth login flow. "+
 			"Prefer setting via PAPRIKA_AUTH_TOKEN_SECRET env var.")
-	registerMCPFlags(fs, &cfg)
+	registerMCPFlags(fs)
 
-	cfg.webhookSecret = getenv("PAPRIKA_WEBHOOK_SECRET")
-	cfg.authRBACRules = getenv("PAPRIKA_AUTH_RBAC_RULES")
-	cfg.authTokenSecret = getenv("PAPRIKA_AUTH_TOKEN_SECRET")
-	cfg.enableWebhooks = getenv("ENABLE_WEBHOOKS") != "false"
-	configureGitHubActionsTokenExchange(getenv, &cfg)
-
-	cfg.cacheBackend = getenv("PAPRIKA_CACHE_BACKEND")
-	cfg.cacheRedisAddr = getenv("PAPRIKA_REDIS_ADDR")
-	cfg.cacheRedisPassword = getenv("PAPRIKA_REDIS_PASSWORD")
-	if dbStr := getenv("PAPRIKA_REDIS_DB"); dbStr != "" {
-		if db, err := strconv.Atoi(dbStr); err == nil {
-			cfg.cacheRedisDB = db
-		}
-	}
-
-	applyShardConfig(&cfg, getenv)
-
-	cfg.auditLogEnabled = getenv("PAPRIKA_AUDIT_ENABLED") == "true"
-
-	cfg.zapOptions = zap.Options{Development: false}
-	cfg.zapOptions.BindFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return nil, fmt.Errorf("parse flags: %w", err)
-	}
-	applyMCPPostParseConfig(&cfg, getenv)
-	return setOIDCClientSecretEnvFallback(fs, &cfg, getenv), nil
+	zapFlags := flag.NewFlagSet("zap", flag.ContinueOnError)
+	zapOpts.BindFlags(zapFlags)
+	fs.AddGoFlagSet(zapFlags)
 }
 
-// applyShardConfig reads the sharding env vars, split out of registerFlags
-// to keep that function under the repo's funlen budget.
-func applyShardConfig(cfg *cliConfig, getenv func(string) string) {
-	cfg.shardIDSource = getenv("PAPRIKA_SHARD_ID")
-	if cfg.shardIDSource == "" {
-		cfg.shardIDSource = getenv("POD_NAME")
-	}
-	if totalStr := getenv("PAPRIKA_SHARD_TOTAL"); totalStr != "" {
-		if total, err := strconv.Atoi(totalStr); err == nil {
-			cfg.shardTotal = total
-		}
-	}
-	if idStr := getenv("PAPRIKA_SHARD_ID"); idStr != "" {
-		if id, err := strconv.Atoi(idStr); err == nil {
-			cfg.shardID = id
-		}
-	}
-}
-
-// applyMCPPostParseConfig finishes MCP config that depends on flags having
-// already been parsed (the redirect URI list) or that has no dedicated flag
-// at all. Split out of registerFlags to keep that function under the repo's
-// funlen budget.
+// registerMCPFlags registers the six --mcp-* flags.
 //
 // mcpPublicURL is deliberately not a --mcp-* flag: the design spec's
 // configuration table lists exactly six, none of them a public/external base
 // URL. It is still required (NewServer validates it as an absolute URL,
 // embedded verbatim in RFC 9728/8414 discovery metadata, and used as the
-// minted token's "iss" claim), so it is sourced the same way
-// authOIDCRedirectURL is when no dedicated flag exists for a value that
-// varies by deployment — via an env var. Unlike authOIDCRedirectURL, it has
-// deliberately been given NO default: a loopback fallback here would let a
-// misconfigured production deployment silently advertise
-// "http://localhost:..." as its authorization server to every MCP client
-// and mint tokens claiming to be issued by it, which is exactly the kind of
+// minted token's "iss" claim), so it is sourced as the env-only
+// PAPRIKA_MCP_PUBLIC_URL config key. It deliberately has NO default: a
+// loopback fallback would let a misconfigured production deployment silently
+// advertise "http://localhost:..." as its authorization server to every MCP
+// client and mint tokens claiming to be issued by it — exactly the kind of
 // fail-open behavior the rest of this MCP config (--mcp-enabled without
 // auth, empty TokenSecret, empty ClientID) refuses to allow. Callers MUST
 // set PAPRIKA_MCP_PUBLIC_URL to the real externally-reachable URL (behind
 // TLS/ingress); validateMCPConfig rejects --mcp-enabled=true when it is
 // unset.
-func applyMCPPostParseConfig(cfg *cliConfig, getenv func(string) string) {
-	cfg.mcpOAuthRedirectURIs = commaSeparatedValues(cfg.mcpOAuthRedirectURIsRaw)
-	cfg.mcpPublicURL = getenv("PAPRIKA_MCP_PUBLIC_URL")
-}
-
-func setOIDCClientSecretEnvFallback(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) *cliConfig {
-	explicit := false
-	fs.Visit(func(f *flag.Flag) {
-		explicit = explicit || f.Name == "auth-oidc-client-secret"
-	})
-	if !explicit {
-		cfg.authOIDCClientSecret = getenv("PAPRIKA_OIDC_CLIENT_SECRET")
-	}
-	return cfg
-}
-
-// registerMCPFlags registers the six --mcp-* flags, split out of
-// registerFlags to keep that function under the repo's funlen budget
-// (mirroring registerCoordinatorFlags/registerRepoServerFlags below).
-func registerMCPFlags(fs *flag.FlagSet, cfg *cliConfig) {
-	fs.BoolVar(&cfg.mcpEnabled, "mcp-enabled", false,
+func registerMCPFlags(fs *pflag.FlagSet) {
+	fs.Bool("mcp-enabled", false,
 		"Enable the MCP (Model Context Protocol) server, exposing fleet tools to MCP clients. "+
 			"Off by default: this is the first surface that lets a language model mutate fleet state, "+
 			"and it refuses to start unless --auth-enabled=true.")
-	fs.StringVar(&cfg.mcpBindAddress, "mcp-bind-address", ":8090",
+	fs.String("mcp-bind-address", ":8090",
 		"Address advertised for the MCP server. Routes are mounted on the same shared API mux as "+
 			"the rest of the API server, not a separate listener; this flag is retained for the "+
 			"deployment-facing address it documents.")
-	fs.DurationVar(&cfg.mcpAccessTokenTTL, "mcp-access-token-ttl", 24*time.Hour,
+	fs.Duration("mcp-access-token-ttl", 24*time.Hour,
 		"MCP OAuth access token lifetime.")
-	fs.DurationVar(&cfg.mcpRefreshTokenTTL, "mcp-refresh-token-ttl", 720*time.Hour,
+	fs.Duration("mcp-refresh-token-ttl", 720*time.Hour,
 		"MCP OAuth refresh token lifetime.")
-	fs.StringVar(&cfg.mcpOAuthClientID, "mcp-oauth-client-id", "",
+	fs.String("mcp-oauth-client-id", "",
 		"Statically registered OAuth client ID accepted by the MCP authorization server. Required "+
 			"when --mcp-enabled=true.")
-	fs.StringVar(&cfg.mcpOAuthRedirectURIsRaw, "mcp-oauth-redirect-uris", "",
+	fs.StringSlice("mcp-oauth-redirect-uris", nil,
 		"Comma-separated exact-match allowlist of OAuth redirect URIs accepted by the MCP "+
 			"authorization server. Required when --mcp-enabled=true.")
 }
 
-func registerRepoServerFlags(fs *flag.FlagSet, cfg *cliConfig, getenv func(string) string) {
-	fs.StringVar(&cfg.repoServerAddr, "repo-server-addr", getenv("PAPRIKA_REPO_SERVER_ADDR"),
+func registerRepoServerFlags(fs *pflag.FlagSet) {
+	fs.String("repo-server-addr", "",
 		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
-	fs.StringVar(&cfg.repoWorkDir, "repo-workdir", getenv("PAPRIKA_REPO_WORKDIR"),
+	fs.String("repo-workdir", "",
 		"Working directory for the repo server. Only used in 'repo-server' mode.")
-}
-
-func configureGitHubActionsTokenExchange(getenv func(string) string, cfg *cliConfig) {
-	cfg.githubActionsTokenExchangeEnabled = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENABLED") == "true"
-	cfg.githubActionsTokenExchangeAudience = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_AUDIENCE")
-	cfg.githubActionsTokenExchangeRepository = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REPOSITORY")
-	cfg.githubActionsTokenExchangeEnvironment = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ENVIRONMENT")
-	cfg.githubActionsTokenExchangeSubject = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SUBJECT")
-	cfg.githubActionsTokenExchangeAllowedEventNames = commaSeparatedValues(getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_EVENT_NAMES"))
-	cfg.githubActionsTokenExchangeRef = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_REF")
-	cfg.githubActionsTokenExchangeAllowedWorkflowRefs = commaSeparatedValues(getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_ALLOWED_WORKFLOW_REFS"))
-	cfg.githubActionsTokenExchangeJobWorkflowRef = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_JOB_WORKFLOW_REF")
-	cfg.githubActionsTokenExchangeServiceAccountNamespace = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAMESPACE")
-	cfg.githubActionsTokenExchangeServiceAccountName = getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_SERVICE_ACCOUNT_NAME")
-	cfg.githubActionsTokenExchangeTTL = 15 * time.Minute
-	if ttl := getenv("PAPRIKA_GITHUB_ACTIONS_TOKEN_EXCHANGE_TOKEN_TTL"); ttl != "" {
-		if parsed, err := time.ParseDuration(ttl); err == nil {
-			cfg.githubActionsTokenExchangeTTL = parsed
-		}
-	}
-}
-
-func commaSeparatedValues(raw string) []string {
-	var values []string
-	for value := range strings.SplitSeq(raw, ",") {
-		if value = strings.TrimSpace(value); value != "" {
-			values = append(values, value)
-		}
-	}
-	return values
 }
 
 func buildAPIServerOptions(
@@ -645,27 +880,27 @@ func runAPIMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, set
 	wrappedHandler := otelhttp.NewHandler(apiserver.MetricsMiddleware(mux), "paprika-http")
 	healthMux := buildHealthMux(setupLog, ready)
 
-	healthSrv := buildHealthProbeServer(healthMux, cfg.probeAddr)
+	healthSrv := buildHealthProbeServer(healthMux, cfg.ProbeAddr)
 	go func() {
 		if srvErr := runHTTPServer(apiCtx, healthSrv, "health probe server", setupLog, probeAddrCh, false, 0); srvErr != nil {
 			setupLog.Error(srvErr, "Health probe server exited with error")
 		}
 	}()
 
-	startMetricsServer(apiCtx, cfg.metricsAddr, setupLog)
-	startPprofServer(apiCtx, cfg.pprofAddr, setupLog)
+	startMetricsServer(apiCtx, cfg.MetricsAddr, setupLog)
+	startPprofServer(apiCtx, cfg.PprofAddr, setupLog)
 
 	if clients.cacheBundle == nil {
-		return startAPIServer(apiCtx, wrappedHandler, cfg.uiAddr, cfg.apiMaxConns, setupLog)
+		return startAPIServer(apiCtx, wrappedHandler, cfg.UIAddr, cfg.APIMaxConns, setupLog)
 	}
 	return runFleetCacheLifecycle(
 		apiCtx,
 		clients.cacheBundle.Cache,
 		fleetRuntime,
-		cfg.cacheSyncTimeout,
+		cfg.CacheSyncTimeout,
 		func(ctx context.Context) error {
 			setupLog.Info("API informer cache and fleet index ready")
-			return startAPIServer(ctx, wrappedHandler, cfg.uiAddr, cfg.apiMaxConns, setupLog)
+			return startAPIServer(ctx, wrappedHandler, cfg.UIAddr, cfg.APIMaxConns, setupLog)
 		},
 	)
 }
@@ -697,7 +932,7 @@ func buildAPIExtraMuxHandlers(
 	extraMuxHandlers = append(extraMuxHandlers, githubExchangeHandlers...)
 
 	var mcpCache *cache.Cache
-	if cfg.mcpEnabled {
+	if cfg.MCPEnabled {
 		mcpCache, err = newCacheFromConfig(apiCtx, cfg.cacheConfig(), setupLog)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create MCP cache: %w", err)
@@ -758,7 +993,7 @@ type apiClients struct {
 }
 
 func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) (*apiClients, error) {
-	config, err := buildAPIConfig(cfg.k8sAPIServer, cfg.k8sTokenFile)
+	config, err := buildAPIConfig(cfg.K8sAPIServer, cfg.K8sTokenFile)
 	if err != nil {
 		return nil, fmt.Errorf("build API config: %w", err)
 	}
@@ -768,7 +1003,7 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		cacheBundle *apiCacheBundle
 		fleetReader fleet.Reader
 	)
-	if cfg.apiCacheEnabled {
+	if cfg.APICacheEnabled {
 		cacheBundle, err = createAPICacheBundle(ctx, config, scheme)
 		if cacheBundle != nil {
 			apiClient = cacheBundle.Client
@@ -787,9 +1022,9 @@ func buildAPIClients(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme
 		return nil, err
 	}
 
-	authCfg := buildAuthConfig(cfg.authEnabled, cfg.authBasicUsername, cfg.authBasicPassword, cfg.authBasicPasswordHash,
-		cfg.authOIDCIssuerURL, cfg.authOIDCClientID, cfg.authOIDCClientSecret, cfg.authOIDCRedirectURL,
-		cfg.authTokenSecret, cfg.authRBACRules, setupLog)
+	authCfg := buildAuthConfig(cfg.AuthEnabled, cfg.AuthBasicUsername, cfg.AuthBasicPassword, cfg.AuthBasicPasswordHash,
+		cfg.AuthOIDCIssuerURL, cfg.AuthOIDCClientID, cfg.AuthOIDCClientSecret, cfg.AuthOIDCRedirectURL,
+		cfg.AuthTokenSecret, cfg.AuthRBACRules, setupLog)
 	// Prefer the informer cache for authorization reads so ProjectAuthorizer
 	// can resolve AppProjects straight from the informer store instead of a
 	// deep copy per check — this lookup runs per candidate per request.
@@ -819,7 +1054,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	projectValidator := governance.NewProjectValidator(resolver, governance.NewClusterResolver(apiClient), nil)
 	policyEvaluator := governance.NewPolicyEvaluator(apiClient)
 
-	opts, err := buildAPIServerOptions(authCfg, authzReader, k8sClient, cfg.auditLogEnabled, projectValidator, policyEvaluator, restConfig)
+	opts, err := buildAPIServerOptions(authCfg, authzReader, k8sClient, cfg.AuditLogEnabled, projectValidator, policyEvaluator, restConfig)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -830,7 +1065,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	}
 	opts = append(opts,
 		apiserver.WithCapacityProviders(capacityRegistry),
-		apiserver.WithControlPlaneNamespace(cfg.operatorNamespace),
+		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
@@ -899,25 +1134,25 @@ func buildAuthHandlers(ctx context.Context, authCfg auth.Config) ([]func(*http.S
 }
 
 func buildGitHubActionsTokenExchangeHandlers(ctx context.Context, cfg *cliConfig, k8sClient kubernetes.Interface) ([]func(*http.ServeMux), error) {
-	if !cfg.githubActionsTokenExchangeEnabled {
+	if !cfg.GitHubActionsTokenExchangeEnabled {
 		return nil, nil
 	}
-	verifier, err := apiserver.NewGitHubActionsTokenVerifier(ctx, cfg.githubActionsTokenExchangeAudience)
+	verifier, err := apiserver.NewGitHubActionsTokenVerifier(ctx, cfg.GitHubActionsTokenExchangeAudience)
 	if err != nil {
 		return nil, fmt.Errorf("create GitHub Actions token verifier: %w", err)
 	}
 	handler := apiserver.NewGitHubActionsTokenExchangeHandler(&apiserver.GitHubActionsTokenExchangeConfig{
-		Audience:                cfg.githubActionsTokenExchangeAudience,
-		Repository:              cfg.githubActionsTokenExchangeRepository,
-		Environment:             cfg.githubActionsTokenExchangeEnvironment,
-		Subject:                 cfg.githubActionsTokenExchangeSubject,
-		AllowedEventNames:       cfg.githubActionsTokenExchangeAllowedEventNames,
-		Ref:                     cfg.githubActionsTokenExchangeRef,
-		AllowedWorkflowRefs:     cfg.githubActionsTokenExchangeAllowedWorkflowRefs,
-		JobWorkflowRef:          cfg.githubActionsTokenExchangeJobWorkflowRef,
-		ServiceAccountNamespace: cfg.githubActionsTokenExchangeServiceAccountNamespace,
-		ServiceAccountName:      cfg.githubActionsTokenExchangeServiceAccountName,
-		ServiceAccountTokenTTL:  cfg.githubActionsTokenExchangeTTL,
+		Audience:                cfg.GitHubActionsTokenExchangeAudience,
+		Repository:              cfg.GitHubActionsTokenExchangeRepository,
+		Environment:             cfg.GitHubActionsTokenExchangeEnvironment,
+		Subject:                 cfg.GitHubActionsTokenExchangeSubject,
+		AllowedEventNames:       cfg.GitHubActionsTokenExchangeAllowedEventNames,
+		Ref:                     cfg.GitHubActionsTokenExchangeRef,
+		AllowedWorkflowRefs:     cfg.GitHubActionsTokenExchangeAllowedWorkflowRefs,
+		JobWorkflowRef:          cfg.GitHubActionsTokenExchangeJobWorkflowRef,
+		ServiceAccountNamespace: cfg.GitHubActionsTokenExchangeServiceAccountNamespace,
+		ServiceAccountName:      cfg.GitHubActionsTokenExchangeServiceAccountName,
+		ServiceAccountTokenTTL:  cfg.GitHubActionsTokenExchangeTTL,
 	}, verifier, apiserver.NewKubernetesServiceAccountTokenIssuer(k8sClient))
 
 	return []func(*http.ServeMux){
@@ -973,13 +1208,13 @@ func validateMCPConfig(cfg *cliConfig, authCfg auth.Config, mcpCache *cache.Cach
 			"(--auth-token-secret / PAPRIKA_AUTH_TOKEN_SECRET); the MCP server signs and verifies " +
 			"tokens with the same secret the console API's self-signed authenticator uses")
 	}
-	if cfg.mcpOAuthClientID == "" {
+	if cfg.MCPOAuthClientID == "" {
 		return errors.New("mcp: --mcp-oauth-client-id is required when --mcp-enabled=true")
 	}
-	if len(cfg.mcpOAuthRedirectURIs) == 0 {
+	if len(cfg.MCPOAuthRedirectURIs) == 0 {
 		return errors.New("mcp: --mcp-oauth-redirect-uris is required when --mcp-enabled=true")
 	}
-	if cfg.mcpPublicURL == "" {
+	if cfg.MCPPublicURL == "" {
 		return errors.New("mcp: PAPRIKA_MCP_PUBLIC_URL is required when --mcp-enabled=true; " +
 			"it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's " +
 			"issuer, so it must be set explicitly to the real externally-reachable URL rather than " +
@@ -999,7 +1234,7 @@ func buildMCPHandlers(
 	authCfg auth.Config,
 	mcpCache *cache.Cache,
 ) ([]func(*http.ServeMux), error) {
-	if !cfg.mcpEnabled {
+	if !cfg.MCPEnabled {
 		return nil, nil
 	}
 	if err := validateMCPConfig(cfg, authCfg, mcpCache); err != nil {
@@ -1043,7 +1278,7 @@ func buildMCPHandlers(
 	)
 
 	var auditor audit.Auditor = audit.NoopAuditor{}
-	if cfg.auditLogEnabled {
+	if cfg.AuditLogEnabled {
 		auditor = audit.NewLogAuditor()
 	}
 
@@ -1055,11 +1290,11 @@ func buildMCPHandlers(
 		Auditor:              auditor,
 		Cache:                mcpCache,
 		Secret:               authCfg.TokenSecret,
-		PublicURL:            cfg.mcpPublicURL,
-		ClientID:             cfg.mcpOAuthClientID,
-		RedirectURIs:         cfg.mcpOAuthRedirectURIs,
-		AccessTTL:            cfg.mcpAccessTokenTTL,
-		RefreshTTL:           cfg.mcpRefreshTokenTTL,
+		PublicURL:            cfg.MCPPublicURL,
+		ClientID:             cfg.MCPOAuthClientID,
+		RedirectURIs:         cfg.MCPOAuthRedirectURIs,
+		AccessTTL:            cfg.MCPAccessTokenTTL,
+		RefreshTTL:           cfg.MCPRefreshTokenTTL,
 		Client:               mcpClient,
 	})
 	if err != nil {
@@ -1113,8 +1348,8 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 	inv := buildWebhookCacheInvalidator(whCtx, cacheCfg, setupLog)
 
 	var repoClient *reposerverclient.Client
-	if cfg.repoServerAddr != "" {
-		repoClient = reposerverclient.New(cfg.repoServerAddr)
+	if cfg.RepoServerAddr != "" {
+		repoClient = reposerverclient.New(cfg.RepoServerAddr)
 	}
 	handler := webhookreceiver.NewHandlerWithCacheAndRepo(apiClient, webhookSecret, inv, repoClient)
 
@@ -1131,8 +1366,8 @@ func runWebhookMode(ctx context.Context, cfg *cliConfig, webhookAddr, probeAddr,
 		}
 	}()
 
-	startMetricsServer(ctx, cfg.metricsAddr, setupLog)
-	startPprofServer(ctx, cfg.pprofAddr, setupLog)
+	startMetricsServer(ctx, cfg.MetricsAddr, setupLog)
+	startPprofServer(ctx, cfg.PprofAddr, setupLog)
 
 	server := &http.Server{
 		Addr:              webhookAddr,

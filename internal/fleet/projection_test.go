@@ -3,6 +3,7 @@ package fleet
 import (
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -646,4 +647,140 @@ func cluster(namespace, name, displayName string, phase clustersv1alpha1.Cluster
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func TestProjectApplicationAttentionSignal(t *testing.T) {
+	t.Parallel()
+
+	activeCondition := func(conditionType, message string) metav1.Condition {
+		return metav1.Condition{
+			Type:               conditionType,
+			Status:             metav1.ConditionTrue,
+			Reason:             "Test",
+			Message:            message,
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+
+	tests := []struct {
+		name         string
+		mutate       func(app *pipelinesv1alpha1.Application)
+		wantLabel    string
+		wantDetail   string
+		wantResource string
+	}{
+		{
+			name: "healthy application has no attention signal",
+		},
+		{
+			name: "active failure condition beats every other signal",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.OutOfSync = 3
+				app.Status.ResourceHealth = []pipelinesv1alpha1.ResourceHealth{
+					{Kind: "Deployment", Name: "web", Health: "Degraded", Message: "0/3 replicas"},
+				}
+				app.Status.Conditions = []metav1.Condition{
+					activeCondition("ReleaseRetriesExhausted", "release r9 failed 4 retries"),
+				}
+			},
+			wantLabel:  "release retries exhausted",
+			wantDetail: "release r9 failed 4 retries",
+		},
+		{
+			name: "most actionable condition wins",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.Conditions = []metav1.Condition{
+					activeCondition("Pending", "awaiting source"),
+					activeCondition("Degraded", "probe failures on web"),
+				}
+			},
+			wantLabel:  "degraded",
+			wantDetail: "probe failures on web",
+		},
+		{
+			name: "cleared conditions fall through to resource health",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.Conditions = []metav1.Condition{{
+					Type: "Degraded", Status: metav1.ConditionFalse, Reason: "Recovered",
+				}}
+				app.Status.ResourceHealth = []pipelinesv1alpha1.ResourceHealth{
+					{Kind: "Deployment", Name: "web", Health: "Degraded", Message: "0/3 replicas ready"},
+					{Kind: "Service", Name: "web", Health: "Healthy"},
+				}
+			},
+			wantLabel:    "deployment/web degraded",
+			wantDetail:   "0/3 replicas ready",
+			wantResource: "Deployment/web",
+		},
+		{
+			name: "worst resource health wins over less severe entries",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.ResourceHealth = []pipelinesv1alpha1.ResourceHealth{
+					{Kind: "ConfigMap", Name: "flags", Health: "Missing"},
+					{Kind: "Deployment", Name: "api", Health: "Degraded", Message: "crash loop"},
+					{Kind: "Job", Name: "migrate", Health: "Unknown"},
+				}
+			},
+			wantLabel:    "deployment/api degraded",
+			wantDetail:   "crash loop",
+			wantResource: "Deployment/api",
+		},
+		{
+			name: "missing resources counted when no resource is unhealthy",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.Resources = []pipelinesv1alpha1.ResourceSync{
+					{Status: "Missing"},
+					{Status: "Missing"},
+					{Status: "Synced"},
+				}
+			},
+			wantLabel: "2 resources missing",
+		},
+		{
+			name: "drift counted when nothing worse exists",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.OutOfSync = 2
+				app.Status.Resources = []pipelinesv1alpha1.ResourceSync{{Status: "Synced"}}
+			},
+			wantLabel: "2 resources out of sync",
+		},
+		{
+			name: "blocked gates counted when nothing worse exists",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.Gates = []pipelinesv1alpha1.GateStatus{
+					{Status: pipelinesv1alpha1.GateStatusPending},
+				}
+			},
+			wantLabel: "1 gate blocked",
+		},
+		{
+			name: "condition detail is flattened and bounded",
+			mutate: func(app *pipelinesv1alpha1.Application) {
+				app.Status.Conditions = []metav1.Condition{
+					activeCondition("Failed", "  line one\n\n  "+strings.Repeat("x", 300)),
+				}
+			},
+			wantLabel:  "failed",
+			wantDetail: "line one " + strings.Repeat("x", attentionDetailRunes-len("line one ")-1) + "…",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := projectionApplication("team-a", "checkout", "checkout-uid")
+			app.Status.Health = pipelinesv1alpha1.HealthHealthy
+			app.Status.Synced = true
+			if test.mutate != nil {
+				test.mutate(app)
+			}
+
+			summary, result := projectApplication(&projectionInput{application: app})
+			require.Zero(t, result.ProjectionErrorCount)
+			require.Equal(t, test.wantLabel, summary.AttentionLabel)
+			require.Equal(t, test.wantDetail, summary.AttentionDetail)
+			require.Equal(t, test.wantResource, summary.AttentionResource)
+		})
+	}
 }

@@ -164,8 +164,8 @@ func TestResyncStartsFreshHookAttemptOnlyForTerminalRelease(t *testing.T) {
 func TestApplicationPhaseConditionsDoNotContradictRecovery(t *testing.T) {
 	r := &ApplicationReconciler{}
 	app := &paprikav1.Application{ObjectMeta: metav1.ObjectMeta{Name: "sfh", Generation: 7}}
-	for _, phase := range []paprikav1.ApplicationPhase{paprikav1.ApplicationHealthy, paprikav1.ApplicationDegraded, paprikav1.ApplicationPromoting, paprikav1.ApplicationHealthy} {
-		require.True(t, r.setApplicationPhase(context.Background(), app, phase, "Transition", "test"))
+	assertExclusivePhase := func(phase paprikav1.ApplicationPhase) {
+		t.Helper()
 		for _, condition := range app.Status.Conditions {
 			require.Equal(t, app.Generation, condition.ObservedGeneration)
 			if condition.Type == string(phase) {
@@ -175,4 +175,12 @@ func TestApplicationPhaseConditionsDoNotContradictRecovery(t *testing.T) {
 			}
 		}
 	}
+	for _, phase := range []paprikav1.ApplicationPhase{paprikav1.ApplicationHealthy, paprikav1.ApplicationDegraded, paprikav1.ApplicationPromoting, paprikav1.ApplicationHealthy} {
+		require.True(t, r.setApplicationPhase(context.Background(), app, phase, "Transition", "test"))
+		assertExclusivePhase(phase)
+	}
+	// A same-phase write is a no-op for callers (nothing new to persist) but
+	// must still leave exactly one phase condition at True.
+	require.False(t, r.setApplicationPhase(context.Background(), app, paprikav1.ApplicationHealthy, "Transition", "test"))
+	assertExclusivePhase(paprikav1.ApplicationHealthy)
 }

@@ -31,6 +31,9 @@ function application(
     observabilityConnection: "healthy",
     blockedGateCount: 0,
     lastTransitionUnixMs: BigInt(1_720_000_000_000),
+    attentionLabel: "",
+    attentionDetail: "",
+    attentionResource: "",
     capabilities: [],
     ...overrides,
   }

@@ -167,6 +167,34 @@ export function resourceSummary(n: FlatTreeNode): string {
   return parts.join(" · ")
 }
 
+/**
+ * Whether a resource is worth an operator's attention: unhealthy, or drifted
+ * / missing / pruned out from under the rendered manifest. Progressing and
+ * unknown states are deliberately not "issues" — one is transient and the
+ * other is unmeasured.
+ */
+export function resourceNeedsAttention(n: FlatTreeNode): boolean {
+  const health = resourceHealthTone(n.health)
+  if (health === "failed" || health === "degraded" || health === "missing") {
+    return true
+  }
+  const sync = resourceSyncTone(n.syncStatus)
+  return sync === "degraded" || sync === "missing"
+}
+
+/**
+ * Keep nodes that need attention plus their ancestors, so a failing pod still
+ * reads as belonging to its Deployment instead of floating as an orphan root.
+ * Mutates `subRows` in place — safe because `buildTree` produces fresh nodes.
+ */
+export function filterAttention(nodes: readonly TreeNode[]): TreeNode[] {
+  const keep = (node: TreeNode): boolean => {
+    node.subRows = node.subRows?.filter(keep)
+    return resourceNeedsAttention(node) || (node.subRows?.length ?? 0) > 0
+  }
+  return nodes.filter(keep)
+}
+
 interface VisibleRow {
   id: string
   node: TreeNode
@@ -229,11 +257,15 @@ export function collapsibleIds(flat: readonly FlatTreeNode[]): Set<string> {
 
 export const MAX_TREE_ROWS = 500
 
+const NO_COLLAPSED: ReadonlySet<string> = new Set()
+
 interface ResourceTreeProps {
   nodes: FlatTreeNode[]
   /** Ids of nodes whose children are hidden. Controlled by the board header. */
   collapsed: ReadonlySet<string>
   onCollapsedChange: (next: Set<string>) => void
+  /** Restrict rows to resources needing attention, keeping their ancestors. */
+  attentionOnly?: boolean
   onSelect: (n: MergedResource) => void
   selectedId?: string | null
   emptyLabel?: string
@@ -251,14 +283,22 @@ export function ResourceTree({
   nodes,
   collapsed,
   onCollapsedChange,
+  attentionOnly = false,
   onSelect,
   selectedId,
   emptyLabel = "No managed resources reported for this application.",
 }: ResourceTreeProps) {
   const roots = useMemo(() => buildTree(nodes), [nodes])
+  const visibleRoots = useMemo(
+    () => (attentionOnly ? filterAttention(roots) : roots),
+    [roots, attentionOnly]
+  )
+  // Under the filter every kept node is force-expanded — a collapsed subtree
+  // would hide exactly the failures the operator is looking for.
+  const effectiveCollapsed = attentionOnly ? NO_COLLAPSED : collapsed
   const { rows, truncated } = useMemo(
-    () => flattenTree(roots, collapsed),
-    [roots, collapsed]
+    () => flattenTree(visibleRoots, effectiveCollapsed),
+    [visibleRoots, effectiveCollapsed]
   )
   const [activeIndex, setActiveIndex] = useState(0)
   const rowRefs = useRef<(HTMLDivElement | null)[]>([])
@@ -325,7 +365,9 @@ export function ResourceTree({
   if (rows.length === 0) {
     return (
       <p className="px-3.5 py-8 text-center text-chip text-muted-foreground">
-        {emptyLabel}
+        {attentionOnly
+          ? "No failing or drifted resources — everything reported is healthy and in sync."
+          : emptyLabel}
       </p>
     )
   }

@@ -28,12 +28,19 @@ import {
  * Why an application is in the queue, said only in terms the fleet row can
  * substantiate.
  *
- * The design writes prose — "p99 latency 41% over baseline". The fleet index
- * carries no message field, and fetching one per row would be an N+1 across a
- * queue, so the reason is composed from the states that are actually on the
- * row. A shorter true sentence beats a longer invented one.
+ * The fleet index derives a specific label from the application's conditions
+ * and resource health, with the controller's own message as detail — that is
+ * the most actionable thing to say. When the index has nothing to explain the
+ * reason is composed from the states that are actually on the row. A shorter
+ * true sentence beats a longer invented one.
  */
 export function attentionReason(application: ApplicationSummary): string {
+  if (application.attentionLabel) {
+    return application.attentionDetail
+      ? `${application.attentionLabel} — ${application.attentionDetail}`
+      : application.attentionLabel
+  }
+
   const parts: string[] = []
 
   if (application.repositoryConnection === FleetConnectionState.UNHEALTHY) {
@@ -124,7 +131,12 @@ export function attentionAction(
     return { label: "Review", href: applicationHref(identity) }
   }
   void state
-  return { label: "View", href: applicationHref(identity) }
+  // When the fleet index names the failing resource, "View" lands on its
+  // inspector rather than the application's front door.
+  return {
+    label: "View",
+    href: applicationHref(identity, application.attentionResource || undefined),
+  }
 }
 
 /**

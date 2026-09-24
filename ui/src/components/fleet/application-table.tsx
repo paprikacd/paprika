@@ -31,6 +31,7 @@ import {
   type FleetLifecycleVector,
 } from "@/components/fleet/fleet-lifecycle"
 import {
+  attentionDetailOf,
   groupApplications,
   groupMetaOf,
   healthLabelOf,
@@ -469,10 +470,25 @@ function ApplicationRow({
       <span role="cell" aria-colindex={colIndex.get("application")} className="min-w-0">
         <span className="flex items-center gap-1.75">
           <StatusGlyph tone={healthTone} label={healthLabelOf(application.health)} />
-          {identity ? <Link href={applicationURL(identity)} tabIndex={-1} onClick={(event) => event.stopPropagation()} className="truncate font-cond text-name font-semibold tracking-[0.02em] hover:underline">{identity.name}</Link> : <span>Unnamed application</span>}
+          {identity ? (
+            <Link
+              href={applicationURL(identity, application.attentionResource || undefined)}
+              tabIndex={-1}
+              onClick={(event) => event.stopPropagation()}
+              className="truncate font-cond text-name font-semibold tracking-[0.02em] hover:underline"
+            >
+              {identity.name}
+            </Link>
+          ) : (
+            <span>Unnamed application</span>
+          )}
         </span>
-        <span className="block truncate pl-4.75 font-mono text-meta text-neutral-600">
+        <span
+          title={attentionDetailOf(application) || undefined}
+          className="block truncate pl-4.75 font-mono text-meta text-neutral-600"
+        >
           {identity ? identityKey(identity) : "Identity unavailable"}
+          {application.attentionLabel ? ` · ${application.attentionLabel}` : ""}
         </span>
       </span>
 
@@ -493,7 +509,15 @@ function ApplicationRow({
         </span>
       </span>
 
-      <span role="cell" aria-colindex={colIndex.get("health")}>
+      <span
+        role="cell"
+        aria-colindex={colIndex.get("health")}
+        title={
+          application.attentionLabel
+            ? `${application.attentionLabel}${application.attentionDetail ? ` — ${application.attentionDetail}` : ""}`
+            : undefined
+        }
+      >
         <StatusPill tone={healthTone} label={healthLabelOf(application.health)} />
       </span>
 

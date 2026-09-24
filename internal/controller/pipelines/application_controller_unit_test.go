@@ -2,6 +2,7 @@ package pipelines
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -557,7 +559,7 @@ func TestApplicationReconciler_checkSourceChanged_contentSegment(t *testing.T) {
 				}},
 			}
 
-			changed, err := r.checkSourceChanged(ctx, app)
+			changed, err := r.checkSourceChanged(ctx, app, false)
 			if err != nil {
 				t.Fatalf("checkSourceChanged failed: %v", err)
 			}
@@ -577,6 +579,141 @@ func TestApplicationReconciler_checkSourceChanged_contentSegment(t *testing.T) {
 			}
 		})
 	}
+}
+
+// countingSourceRenderer records ResolveSource calls so tests can observe when
+// the poll path hits the source (git fetch) versus the resolve cache.
+type countingSourceRenderer struct {
+	calls  int
+	result *source.ResolveResult
+	err    error
+}
+
+func (r *countingSourceRenderer) ResolveSource(context.Context, *pipelinesv1alpha1.Template) (*source.ResolveResult, error) {
+	r.calls++
+	return r.result, r.err
+}
+
+func (r *countingSourceRenderer) Render(context.Context, *pipelinesv1alpha1.Template, map[string]string) ([]byte, error) {
+	return []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: rendered\n"), nil
+}
+
+func newSourceChangeFixture(t *testing.T, renderer SourceResolvingRenderer, ttl time.Duration, now *time.Time) (*ApplicationReconciler, *pipelinesv1alpha1.Application) {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, pipelinesv1alpha1.AddToScheme(scheme))
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app", Namespace: "default"},
+		Spec: pipelinesv1alpha1.ApplicationSpec{
+			Source: pipelinesv1alpha1.ApplicationSource{
+				Type:     pipelinesv1alpha1.SourceTypeGit,
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+		},
+		Status: pipelinesv1alpha1.ApplicationStatus{
+			Phase:          pipelinesv1alpha1.ApplicationHealthy,
+			SourceHash:     "commit0:content0",
+			SourceRevision: "commit-0",
+		},
+	}
+	template := &pipelinesv1alpha1.Template{
+		ObjectMeta: metav1.ObjectMeta{Name: "git-app-template", Namespace: "default"},
+		Spec: pipelinesv1alpha1.TemplateSpec{
+			Type: pipelinesv1alpha1.SourceTypeGit,
+			Git: &pipelinesv1alpha1.GitSourceSpec{
+				RepoURL:  "https://github.com/org/repo.git",
+				Revision: "main",
+				Path:     "charts/app",
+			},
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(app, template).
+		WithStatusSubresource(&pipelinesv1alpha1.Application{}).
+		Build()
+	r := &ApplicationReconciler{client: c, TemplateRenderer: renderer, SourceResolveTTL: ttl}
+	if now != nil {
+		r.now = func() time.Time { return *now }
+	}
+	return r, app
+}
+
+func TestApplicationReconciler_checkSourceChanged_resolveCache(t *testing.T) {
+	ctx := context.Background()
+	fresh := &source.ResolveResult{Hash: "commit0:content0", Revision: "commit-0"}
+
+	t.Run("steady-state polls share one resolve within the TTL", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		for i := 0; i < 3; i++ {
+			changed, err := r.checkSourceChanged(ctx, app, false)
+			require.NoError(t, err)
+			require.False(t, changed)
+		}
+		require.Equal(t, 1, renderer.calls)
+	})
+
+	t.Run("sync trigger bypasses the cache", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		_, err = r.checkSourceChanged(ctx, app, true)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("entries expire after the TTL", func(t *testing.T) {
+		now := time.Now()
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, &now)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		now = now.Add(2 * time.Minute)
+		_, err = r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("zero TTL resolves every poll", func(t *testing.T) {
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, 0, nil)
+		for i := 0; i < 2; i++ {
+			_, err := r.checkSourceChanged(ctx, app, false)
+			require.NoError(t, err)
+		}
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("resolve errors are never cached", func(t *testing.T) {
+		renderer := &countingSourceRenderer{err: errors.New("fetch failed")}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, nil)
+		for i := 0; i < 2; i++ {
+			_, err := r.checkSourceChanged(ctx, app, false)
+			require.Error(t, err)
+		}
+		require.Equal(t, 2, renderer.calls)
+	})
+
+	t.Run("spec edits miss the cache", func(t *testing.T) {
+		now := time.Now()
+		renderer := &countingSourceRenderer{result: fresh}
+		r, app := newSourceChangeFixture(t, renderer, time.Minute, &now)
+		_, err := r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+
+		var tmpl pipelinesv1alpha1.Template
+		require.NoError(t, r.client.Get(ctx, client.ObjectKey{Name: "git-app-template", Namespace: "default"}, &tmpl))
+		tmpl.Spec.Git.Revision = "release-branch"
+		require.NoError(t, r.client.Update(ctx, &tmpl))
+
+		_, err = r.checkSourceChanged(ctx, app, false)
+		require.NoError(t, err)
+		require.Equal(t, 2, renderer.calls)
+	})
 }
 
 func TestApplicationReconciler_hasSyncTrigger(t *testing.T) {
@@ -1586,7 +1723,7 @@ func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
 	rvBefore := existing.ResourceVersion
 
 	expected := stage.DeepCopy()
-	if err := r.updateStage(ctx, &existing, expected, stage.Name); err != nil {
+	if err := r.updateStage(ctx, expected, stage.Name); err != nil {
 		t.Fatalf("updateStage (no-op) returned error: %v", err)
 	}
 	var after pipelinesv1alpha1.Stage
@@ -1598,7 +1735,7 @@ func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
 	}
 
 	expected.Spec.Ring = 2
-	if err := r.updateStage(ctx, &after, expected, stage.Name); err != nil {
+	if err := r.updateStage(ctx, expected, stage.Name); err != nil {
 		t.Fatalf("updateStage (real change) returned error: %v", err)
 	}
 	var changed pipelinesv1alpha1.Stage
@@ -1926,4 +2063,54 @@ func TestApplicationReconciler_requestReleaseResync_countsAutomaticResetsManual(
 			t.Fatalf("count annotation still present after manual sync: %q", got.Annotations[autoRetryCountAnnotation])
 		}
 	})
+}
+
+func TestTransientRequeue(t *testing.T) {
+	t.Parallel()
+
+	fallback := (&ApplicationReconciler{}).transientRequeue()
+	if fallback != defaultRequeue {
+		t.Fatalf("zero-value reconciler transientRequeue = %s, want %s", fallback, defaultRequeue)
+	}
+	if got := (&ApplicationReconciler{TransientRequeue: -time.Second}).transientRequeue(); got != defaultRequeue {
+		t.Fatalf("negative TransientRequeue = %s, want %s", got, defaultRequeue)
+	}
+	if got := (&ApplicationReconciler{TransientRequeue: 12 * time.Second}).transientRequeue(); got != 12*time.Second {
+		t.Fatalf("configured TransientRequeue = %s, want 12s", got)
+	}
+}
+
+func TestMaxConcurrentOr(t *testing.T) {
+	t.Parallel()
+
+	if got := maxConcurrentOr(0, 8); got != 8 {
+		t.Fatalf("maxConcurrentOr(0, 8) = %d, want 8", got)
+	}
+	if got := maxConcurrentOr(-3, 8); got != 8 {
+		t.Fatalf("maxConcurrentOr(-3, 8) = %d, want 8", got)
+	}
+	if got := maxConcurrentOr(16, 8); got != 16 {
+		t.Fatalf("maxConcurrentOr(16, 8) = %d, want 16", got)
+	}
+}
+
+func TestSteadyStateRequeue(t *testing.T) {
+	t.Parallel()
+
+	app := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "ns"},
+	}
+	base := 5 * time.Second
+
+	got := steadyStateRequeue(app, base)
+	if got < base/2 || got >= 3*base/2 {
+		t.Fatalf("steadyStateRequeue = %s, want within [%s, %s)", got, base/2, 3*base/2)
+	}
+	if again := steadyStateRequeue(app, base); again != got {
+		t.Fatalf("steadyStateRequeue not deterministic: %s then %s", got, again)
+	}
+	other := &pipelinesv1alpha1.Application{
+		ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"},
+	}
+	_ = steadyStateRequeue(other, base) // must not panic; spread is best-effort
 }

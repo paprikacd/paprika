@@ -291,6 +291,20 @@ func NewControllerRateLimit() *ControllerRateLimit {
 	return NewControllerRateLimitWithClock(clock.Real{})
 }
 
+// NewControllerRateLimitWithRates creates a controller rate limiter with
+// explicit token-bucket settings. A non-positive globalRate disables the
+// limiter (returns nil) — reconcilers treat a nil RateLimiter as unthrottled.
+func NewControllerRateLimitWithRates(globalRate float64, globalBurst int, appRate float64, appBurst int) *ControllerRateLimit {
+	if globalRate <= 0 {
+		return nil
+	}
+	return &ControllerRateLimit{
+		global:    NewGlobalLimiterWithClock(globalRate, globalBurst, clock.Real{}),
+		perApp:    NewManagerWithClock(appRate, appBurst, clock.Real{}),
+		perSource: NewManagerWithClock(5, 10, clock.Real{}),
+	}
+}
+
 // NewControllerRateLimitWithClock creates a controller rate limiter using the
 // provided clock. A nil clock falls back to the real clock.
 func NewControllerRateLimitWithClock(c clock.Clock) *ControllerRateLimit {

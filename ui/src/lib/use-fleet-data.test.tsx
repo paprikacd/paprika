@@ -68,6 +68,9 @@ function application(
     observabilityConnection: "healthy",
     blockedGateCount: 0,
     lastTransitionUnixMs: BigInt(0),
+    attentionLabel: "",
+    attentionDetail: "",
+    attentionResource: "",
     capabilities: [],
   }
 }

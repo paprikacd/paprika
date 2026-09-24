@@ -140,6 +140,8 @@ type ReleaseReconciler struct {
 	ConftestEvaluator     ConftestEvaluator
 	EventBroker           *events.Broker
 	Clock                 clock.Clock
+	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
+	MaxConcurrentWorkers int
 }
 
 // NewReleaseReconciler returns a ReleaseReconciler initialized with the given
@@ -220,7 +222,9 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Reconciling Release",
+	// V(1): releases requeue continuously during promotion — at info level the
+	// zap allocation churn measurably feeds GC at fleet scale.
+	logger.V(1).Info("Reconciling Release",
 		"namespace", release.Namespace,
 		"name", release.Name,
 		"phase", release.Status.Phase,
@@ -304,9 +308,25 @@ func (r *ReleaseReconciler) ensureReleaseFinalizer(ctx context.Context, release 
 	if controllerutil.ContainsFinalizer(release, releaseFinalizer) {
 		return nil
 	}
-	controllerutil.AddFinalizer(release, releaseFinalizer)
-	if err := r.client.Update(ctx, release); err != nil {
-		return fmt.Errorf("adding release finalizer: %w", err)
+	// RetryOnConflict with a fresh Get: status writers (and the initial
+	// status update racing the create reconcile) bump resourceVersion
+	// constantly, so updating the reconcile-fetched object conflicts.
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current paprikav1.Release
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(release), &current); err != nil {
+			return fmt.Errorf("getting release for finalizer: %w", err)
+		}
+		if controllerutil.ContainsFinalizer(&current, releaseFinalizer) {
+			return nil
+		}
+		controllerutil.AddFinalizer(&current, releaseFinalizer)
+		if err := r.client.Update(ctx, &current); err != nil {
+			return fmt.Errorf("adding release finalizer: %w", err)
+		}
+		return nil
+	})
+	if retryErr != nil {
+		return fmt.Errorf("adding release finalizer after conflict retries: %w", retryErr)
 	}
 	return nil
 }
@@ -318,9 +338,28 @@ func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *
 	if err := r.cleanup(ctx, release); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cleaning up release: %w", err)
 	}
-	controllerutil.RemoveFinalizer(release, releaseFinalizer)
-	if err := r.client.Update(ctx, release); err != nil {
-		return ctrl.Result{}, fmt.Errorf("removing release finalizer: %w", err)
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current paprikav1.Release
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(release), &current); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Already gone — nothing left to unfinalize.
+				return nil
+			}
+			return fmt.Errorf("getting release for finalizer removal: %w", err)
+		}
+		if !controllerutil.ContainsFinalizer(&current, releaseFinalizer) {
+			return nil
+		}
+		controllerutil.RemoveFinalizer(&current, releaseFinalizer)
+		if err := r.client.Update(ctx, &current); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("removing release finalizer: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("removing release finalizer after conflict retries: %w", err)
 	}
 	return ctrl.Result{}, nil
 }
@@ -1206,8 +1245,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts)
 	}
 
-	elapsed := time.Since(start).Milliseconds()
-	metrics.SyncDuration.Record(ctx, elapsed, metric.WithAttributes(
+	metrics.SyncDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
 		attribute.String("app", appName),
 	))
 	if err != nil {
@@ -3103,7 +3141,7 @@ func (r *ReleaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&paprikav1.Release{}).
 		Owns(&corev1.ConfigMap{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: maxConcurrentOr(r.MaxConcurrentWorkers, 5)}).
 		Named("release").
 		Complete(r); err != nil {
 		return fmt.Errorf("unable to create release controller: %w", err)

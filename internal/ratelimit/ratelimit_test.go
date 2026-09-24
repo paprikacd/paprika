@@ -186,3 +186,32 @@ func TestReconcileKey(t *testing.T) {
 func TestSourceKey(t *testing.T) {
 	assert.Equal(t, "git:https://github.com/org/repo", SourceKey("git", "https://github.com/org/repo"))
 }
+
+func TestNewControllerRateLimitWithRates(t *testing.T) {
+	// Non-positive global rate disables the limiter entirely — reconcilers
+	// treat a nil RateLimiter as unthrottled.
+	if c := NewControllerRateLimitWithRates(0, 10, 5, 10); c != nil {
+		t.Fatal("global rate 0 should return nil limiter")
+	}
+	if c := NewControllerRateLimitWithRates(-1, 10, 5, 10); c != nil {
+		t.Fatal("negative global rate should return nil limiter")
+	}
+
+	// Configured burst applies: 3-token per-app burst exhausts on the 4th call.
+	c := NewControllerRateLimitWithRates(100, 200, 0.001, 3)
+	if c == nil {
+		t.Fatal("expected non-nil limiter")
+	}
+	for i := 0; i < 3; i++ {
+		if !c.AllowApp("app1") {
+			t.Fatalf("call %d within burst should be allowed", i+1)
+		}
+	}
+	if c.AllowApp("app1") {
+		t.Fatal("call beyond configured burst should be rejected")
+	}
+	// A different app has its own bucket.
+	if !c.AllowApp("app2") {
+		t.Fatal("per-app buckets must be independent")
+	}
+}

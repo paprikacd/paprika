@@ -3,6 +3,25 @@ version: '3'
 vars:
   DEFAULT_IMG: ghcr.io/paprikacd/paprika:latest
 
+  # Local perf/profiling stack (task perf:*). All overridable via env or
+  # CLI vars; PERF_* names avoid colliding with the e2e suite's KIND_CLUSTER.
+  PERF_CLUSTER: '{{.PERF_CLUSTER | default "paprika-perf"}}'
+  PERF_NS: '{{.PERF_NS | default "paprika-perf"}}'
+  PERF_RELEASE: '{{.PERF_RELEASE | default "paprika"}}'
+  PERF_IMG: '{{.PERF_IMG | default "localhost/paprika-perf:latest"}}'
+  PERF_PORT: '{{.PERF_PORT | default "13100"}}'
+  PERF_MGR_PORT: '{{.PERF_MGR_PORT | default "18443"}}'
+  PERF_API_METRICS_PORT: '{{.PERF_API_METRICS_PORT | default "18444"}}'
+  PERF_PPROF_PORT: '{{.PERF_PPROF_PORT | default "16060"}}'
+  PERF_TOKEN_FILE: '{{.PERF_TOKEN_FILE | default "/tmp/paprika-perf-token"}}'
+  PERF_OUT_DIR: '{{.PERF_OUT_DIR | default "/tmp/paprika-perf"}}'
+  PERF_MS_VERSION: '{{.METRICS_SERVER_VERSION | default "v0.8.0"}}'
+
+  # Literal template-brace emitters for tasks that write Helm template
+  # syntax (Task interpolates {{ }} in cmds, so braces must be built).
+  TLO: '{{"{{"}}'
+  TLC: '{{"}}"}}'
+
 tasks:
   default:
     silent: true
@@ -99,3 +118,347 @@ tasks:
           fi
         done
         rm -rf bin/paprika cover.out coverage.out .goreleaser-dist ui/out ui/coverage
+
+  # --- Local perf / profiling stack (kind) ---
+  #
+  # Full split-mode deploy on an isolated kind cluster: controller-manager,
+  # api-server (MCP + basic auth admin/admin123, pprof on :6060),
+  # repo-server, webhook-receiver, redis, metrics-server. Ports are
+  # deliberately distinct from the e2e suite.
+  #
+  #   task perf:up                        # create cluster, build+load image, helm install
+  #   task perf:token                     # mint MCP OAuth token -> $PERF_TOKEN_FILE
+  #   task perf:load SECS=120             # MCP read-tool loadgen for 120s
+  #   task perf:profile SECS=30 COMPONENT=api   # pprof capture (api|manager) -> $PERF_OUT_DIR
+  #   task perf:metrics                   # snapshot paprika_* metrics -> $PERF_OUT_DIR
+  #   task perf:status                    # fleet_status + list_clusters via MCP
+  #   task perf:down                      # delete the kind cluster
+  #
+  # Knobs (env or CLI vars): PERF_CLUSTER, PERF_NS, PERF_RELEASE, PERF_IMG,
+  # PERF_PORT, PERF_MGR_PORT, PERF_API_METRICS_PORT, PERF_PPROF_PORT,
+  # PERF_TOKEN_FILE, PERF_OUT_DIR, METRICS_SERVER_VERSION, SKIP_BUILD=1,
+  # SKIP_METRICS_SERVER=1.
+
+  perf:up:
+    desc: Bring up the local perf stack on kind (full chart + MCP + metrics-server + pprof).
+    cmds:
+      - |
+        set -eu
+        if kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'; then
+          echo "==> kind cluster {{.PERF_CLUSTER}} already exists"
+        else
+          # kind create switches the global kubectl context to the new
+          # cluster — restore the caller's context so a concurrently
+          # running e2e suite is not hijacked onto this cluster.
+          prev_ctx="$(kubectl config current-context 2>/dev/null || true)"
+          echo "==> creating kind cluster {{.PERF_CLUSTER}}"
+          kind create cluster --name '{{.PERF_CLUSTER}}'
+          if [ -n "$prev_ctx" ] && [ "$prev_ctx" != 'kind-{{.PERF_CLUSTER}}' ]; then
+            kubectl config use-context "$prev_ctx" >/dev/null
+          fi
+        fi
+      - |
+        set -eu
+        if [ "${SKIP_METRICS_SERVER:-0}" != "1" ]; then
+          echo "==> installing metrics-server (kind requires --kubelet-insecure-tls)"
+          kubectl --context 'kind-{{.PERF_CLUSTER}}' apply -f \
+            "https://github.com/kubernetes-sigs/metrics-server/releases/download/{{.PERF_MS_VERSION}}/components.yaml"
+          kubectl --context 'kind-{{.PERF_CLUSTER}}' -n kube-system patch deployment metrics-server \
+            --type=json -p '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          kubectl --context 'kind-{{.PERF_CLUSTER}}' -n kube-system rollout status \
+            deployment/metrics-server --timeout=120s
+        fi
+      - |
+        set -eu
+        if [ "${SKIP_BUILD:-0}" != "1" ]; then
+          echo "==> building {{.PERF_IMG}} (native arch for the local kind node)"
+          docker build -f Dockerfile.fast -t '{{.PERF_IMG}}' .
+          kind load docker-image '{{.PERF_IMG}}' --name '{{.PERF_CLUSTER}}'
+        fi
+      - |
+        set -eu
+        echo "==> installing CRDs"
+        bin/kustomize build config/crd | kubectl --context 'kind-{{.PERF_CLUSTER}}' apply --server-side -f -
+      - |
+        set -eu
+        echo "==> helm installing {{.PERF_RELEASE}} (full split stack + MCP + pprof)"
+        repo='{{.PERF_IMG}}'; repo="${repo%:*}"
+        tag='{{.PERF_IMG}}'; tag="${tag##*:}"
+        helm upgrade --install '{{.PERF_RELEASE}}' charts/chart \
+          --kube-context 'kind-{{.PERF_CLUSTER}}' \
+          --namespace '{{.PERF_NS}}' --create-namespace \
+          --set deploymentMode=split \
+          --set crd.enable=false \
+          --set manager.image.repository="$repo" \
+          --set manager.image.tag="$tag" \
+          --set manager.image.pullPolicy=Never \
+          --set apiServer.image.repository="$repo" \
+          --set apiServer.image.tag="$tag" \
+          --set apiServer.image.pullPolicy=Never \
+          --set apiServer.automountServiceAccountToken=true \
+          --set webhookReceiver.automountServiceAccountToken=true \
+          --set webhookReceiver.image.repository="$repo" \
+          --set webhookReceiver.image.tag="$tag" \
+          --set webhookReceiver.image.pullPolicy=Never \
+          --set repoServer.image.repository="$repo" \
+          --set repoServer.image.tag="$tag" \
+          --set repoServer.image.pullPolicy=Never \
+          --set metrics.enable=true \
+          --set metrics.secure=false \
+          --set metrics.bindAddress=:8080 \
+          --set 'manager.args[0]=--pprof-bind-address=:6060' \
+          --set 'apiServer.args[0]=--pprof-bind-address=:6060' \
+          --set 'apiServer.extraEnv[0].name=PAPRIKA_AUTH_TOKEN_SECRET' \
+          --set 'apiServer.extraEnv[0].value=perf-token-secret' \
+          --set auth.enabled=true \
+          --set auth.basic.enabled=true \
+          --set auth.basic.username=admin \
+          --set 'auth.basic.passwordHash=$2a$10$gokrR1H67p0nl/1Q2k1qk.i9u4iJNm8Iy1PUBR9ScjdhlznxnAKq6' \
+          --set 'auth.rbac[0].subjects[0]=*' \
+          --set 'auth.rbac[0].actions[0]=*' \
+          --set 'auth.rbac[0].resources[0]=*' \
+          --set 'auth.rbac[0].namespaces[0]=*' \
+          --set mcp.enabled=true \
+          --set mcp.oauth.clientId=perf-mcp \
+          --set 'mcp.oauth.redirectUris[0]=http://localhost:8791/callback' \
+          --set 'mcp.publicURL=http://localhost:{{.PERF_PORT}}' \
+          --wait --timeout 5m
+      - |
+        echo ""
+        echo "==> {{.PERF_RELEASE}} is up on kind cluster {{.PERF_CLUSTER}}"
+        echo ""
+        echo "Next:"
+        echo "  task perf:token            # mint an MCP OAuth token (admin/admin123)"
+        echo "  task perf:load SECS=120    # run MCP loadgen for 120s"
+        echo "  task perf:profile SECS=30  # capture pprof profiles -> {{.PERF_OUT_DIR}}"
+        echo "  task perf:metrics          # snapshot paprika_* metrics -> {{.PERF_OUT_DIR}}"
+        echo "  task perf:down             # tear down"
+        echo ""
+        echo "api-server:  http://localhost:{{.PERF_PORT}} (after 'task perf:token' starts the forward)"
+
+  perf:down:
+    desc: Tear down the local perf kind cluster.
+    cmds:
+      - |
+        set -eu
+        if kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'; then
+          echo "==> deleting kind cluster {{.PERF_CLUSTER}}"
+          kind delete cluster --name '{{.PERF_CLUSTER}}'
+        else
+          echo "==> cluster {{.PERF_CLUSTER}} does not exist"
+        fi
+
+  perf:token:
+    desc: Mint an MCP OAuth token for the local perf stack.
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        # A bare healthz check is not enough — a stale forward to a
+        # different release would answer it and then reject the perf OAuth
+        # client. Verify the discovery issuer matches this environment
+        # (mcp.publicURL pins it to this port).
+        issuer_ok() {
+          curl -sf 'http://localhost:{{.PERF_PORT}}/.well-known/oauth-authorization-server' 2>/dev/null \
+            | grep -q '"issuer":"http://localhost:{{.PERF_PORT}}"'
+        }
+        if ! issuer_ok; then
+          echo "==> port-forwarding api-server -> localhost:{{.PERF_PORT}}"
+          deploy="$(kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deployment \
+            -l app.kubernetes.io/component=api-server -o name | head -1)"
+          # nohup + </dev/null detaches the forward — a plain & child is
+          # reaped when the task's shell exits, and later tasks rely on
+          # this listener staying up.
+          nohup kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward "$deploy" \
+            '{{.PERF_PORT}}:3000' >/dev/null 2>&1 </dev/null &
+          i=0; while [ "$i" -lt 30 ]; do issuer_ok && break; i=$((i+1)); sleep 1; done
+        fi
+        issuer_ok || { echo "error: api-server on :{{.PERF_PORT}} does not report issuer http://localhost:{{.PERF_PORT}} — stale port-forward?" >&2; exit 1; }
+      - |
+        set -eu
+        echo "==> minting MCP token (consent -> code -> token)"
+        verifier="$(openssl rand -base64 48 | tr '/+' '_-' | tr -d '=')"
+        challenge="$(printf %s "$verifier" | openssl dgst -sha256 -binary | openssl base64 | tr '/+' '_-' | tr -d '=')"
+        # The consent response is JSON — parse it rather than regexing
+        # (& arrives \u0026-escaped).
+        code="$(curl -sf -u 'admin:admin123' -X POST 'http://localhost:{{.PERF_PORT}}/mcp/authorize/consent' \
+          -H 'Content-Type: application/json' \
+          -d "{\"client_id\":\"perf-mcp\",\"redirect_uri\":\"http://localhost:8791/callback\",\"code_challenge\":\"${challenge}\",\"code_challenge_method\":\"S256\",\"state\":\"perf\",\"scopes\":[\"paprika:read\",\"paprika:write\"],\"decision\":\"approve\"}" \
+          | python3 -c 'import json,sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(json.load(sys.stdin)["redirectTo"]).query)["code"][0])')"
+        [ -n "$code" ] || { echo "error: consent did not return an authorization code" >&2; exit 1; }
+        token_json="$(curl -sf -X POST 'http://localhost:{{.PERF_PORT}}/mcp/token' \
+          -d "grant_type=authorization_code&code=${code}&code_verifier=${verifier}&client_id=perf-mcp&redirect_uri=http://localhost:8791/callback")"
+        echo "$token_json" | grep -q access_token || { echo "error: token exchange failed: $token_json" >&2; exit 1; }
+        echo "$token_json" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p' > '{{.PERF_TOKEN_FILE}}'
+        chmod 600 '{{.PERF_TOKEN_FILE}}'
+        echo "==> token written to {{.PERF_TOKEN_FILE}}"
+
+  perf:load:
+    desc: Run MCP read-tool loadgen against the local stack (default 60s).
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+      - sh: test -f '{{.PERF_TOKEN_FILE}}'
+        msg: 'no token — run: task perf:token'
+    cmds:
+      - |
+        set -eu
+        secs='{{.SECS | default "60"}}'
+        token="$(cat '{{.PERF_TOKEN_FILE}}')"
+        end=$(( $(date +%s) + secs )); calls=0; fails=0; start=$(date +%s%N)
+        while [ "$(date +%s)" -lt "$end" ]; do
+          for tool in fleet_status list_applications fleet_map; do
+            if curl -sf -o /dev/null -X POST 'http://localhost:{{.PERF_PORT}}/mcp' \
+              -H "Authorization: Bearer $token" \
+              -H 'Content-Type: application/json' \
+              -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":{}}}"; then
+              calls=$((calls + 1))
+            else
+              fails=$((fails + 1))
+            fi
+          done
+        done
+        elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+        echo "loadgen: ${calls} ok, ${fails} failed in ${elapsed}ms -> $(( calls * 1000 / elapsed )) calls/s" >&2
+
+  perf:profile:
+    desc: 'Capture pprof CPU/heap/allocs/goroutines (args: [seconds] [api|manager]).'
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        secs='{{.SECS | default "30"}}'; component='{{.COMPONENT | default "api"}}'
+        case "$component" in
+          api|api-server)      label='app.kubernetes.io/component=api-server' ;;
+          manager|controller)  label='control-plane=controller-manager' ;;
+          *) echo "error: unknown component '$component' — use api or manager" >&2; exit 1 ;;
+        esac
+        deploy="$(kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' get deployment -l "$label" -o name | head -1)"
+        [ -n "$deploy" ] || { echo "error: no deployment found for component '$component'" >&2; exit 1; }
+        echo "==> port-forwarding $component pprof -> localhost:{{.PERF_PPROF_PORT}}"
+        # A stale listener (dead forward, other tool) would answer nc and the
+        # scrapes below would read the wrong endpoint — clear it first.
+        lsof -ti :'{{.PERF_PPROF_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward "$deploy" \
+          '{{.PERF_PPROF_PORT}}:6060' >/dev/null 2>&1 &
+        pf=$!
+        trap 'kill $pf 2>/dev/null || true' EXIT
+        i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_PPROF_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
+        out='{{.PERF_OUT_DIR}}/capture-'"$component"'-'"$(date +%s)"
+        mkdir -p "$out"
+        echo "==> capturing heap + goroutine + ${secs}s cpu + allocs -> $out"
+        curl -sf 'http://localhost:{{.PERF_PPROF_PORT}}/debug/pprof/heap' -o "$out/heap.pprof"
+        curl -sf 'http://localhost:{{.PERF_PPROF_PORT}}/debug/pprof/goroutine?debug=1' -o "$out/goroutine.txt"
+        curl -sf "http://localhost:{{.PERF_PPROF_PORT}}/debug/pprof/profile?seconds=$secs" -o "$out/cpu.pprof"
+        curl -sf 'http://localhost:{{.PERF_PPROF_PORT}}/debug/pprof/allocs' -o "$out/allocs.pprof"
+        echo "=== top CPU ==="
+        go tool pprof -top -nodecount=20 "$out/cpu.pprof" 2>&1 | tail -25
+        echo "=== top heap (inuse) ==="
+        go tool pprof -top -inuse_space -nodecount=15 "$out/heap.pprof" 2>&1 | tail -20
+        echo "=== top allocs (cumulative) ==="
+        go tool pprof -top -alloc_space -nodecount=15 "$out/allocs.pprof" 2>&1 | tail -20
+
+  perf:metrics:
+    desc: Snapshot paprika_* metrics from manager and api-server into $PERF_OUT_DIR.
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+    cmds:
+      - |
+        set -eu
+        snap='{{.PERF_OUT_DIR}}/metrics-'"$(date +%s)"
+        mkdir -p "$snap"
+        echo "==> scraping controller-manager metrics -> $snap/manager.txt"
+        lsof -ti :'{{.PERF_MGR_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+          'svc/{{.PERF_RELEASE}}-controller-manager-metrics-service' '{{.PERF_MGR_PORT}}:8443' >/dev/null 2>&1 &
+        pf=$!
+        i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_MGR_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
+        curl -sf 'http://localhost:{{.PERF_MGR_PORT}}/metrics' -o "$snap/manager.txt" || echo "manager scrape failed"
+        kill $pf 2>/dev/null || true
+        if [ -f "$snap/manager.txt" ] && ! grep -q '^# HELP' "$snap/manager.txt"; then
+          echo "WARNING: manager.txt is not Prometheus output — port {{.PERF_MGR_PORT}} may be bound by another process (override with PERF_MGR_PORT)"
+        fi
+        # The api-server serves /metrics on metrics.bindAddress (:8080), a
+        # separate unauthenticated listener — not the API port.
+        echo "==> scraping api-server metrics -> $snap/api-server.txt"
+        lsof -ti :'{{.PERF_API_METRICS_PORT}}' 2>/dev/null | xargs kill 2>/dev/null || true
+        sleep 1
+        kubectl --context 'kind-{{.PERF_CLUSTER}}' -n '{{.PERF_NS}}' port-forward \
+          'svc/{{.PERF_RELEASE}}-api-server' '{{.PERF_API_METRICS_PORT}}:8080' >/dev/null 2>&1 &
+        pf=$!
+        i=0; while [ "$i" -lt 30 ]; do nc -z localhost '{{.PERF_API_METRICS_PORT}}' 2>/dev/null && break; i=$((i+1)); sleep 1; done
+        curl -sf 'http://localhost:{{.PERF_API_METRICS_PORT}}/metrics' -o "$snap/api-server.txt" || echo "api-server scrape failed"
+        kill $pf 2>/dev/null || true
+        # A colliding listener on the metrics port answers before our
+        # forward binds; Prometheus exposition starts with "# HELP".
+        if [ -f "$snap/api-server.txt" ] && ! grep -q '^# HELP' "$snap/api-server.txt"; then
+          echo "WARNING: api-server.txt is not Prometheus output — port {{.PERF_API_METRICS_PORT}} may be bound by another process (override with PERF_API_METRICS_PORT)"
+        fi
+        echo "==> snapshot written to $snap"
+        grep -c '^paprika_' "$snap"/*.txt 2>/dev/null || true
+
+  perf:status:
+    desc: Print fleet/cluster health via the local MCP endpoint.
+    preconditions:
+      - sh: kind get clusters 2>/dev/null | grep -qx '{{.PERF_CLUSTER}}'
+        msg: 'kind cluster {{.PERF_CLUSTER}} not found — run: task perf:up'
+      - sh: test -f '{{.PERF_TOKEN_FILE}}'
+        msg: 'no token — run: task perf:token'
+    cmds:
+      - |
+        set -eu
+        token="$(cat '{{.PERF_TOKEN_FILE}}')"
+        for tool in fleet_status list_clusters; do
+          echo "=== $tool ==="
+          curl -sf -X POST 'http://localhost:{{.PERF_PORT}}/mcp' \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":{}}}" \
+            | python3 -m json.tool 2>/dev/null || echo "(call failed)"
+        done
+
+  chart:crds:
+    desc: Copy regenerated config/crd/bases into chart templates with crd.enable/keep wrappers.
+    cmds:
+      - |
+        set -eu
+        out_dir='charts/chart/templates/crd'
+        written="$(mktemp)"
+        trap 'rm -f "$written"' EXIT
+        for base in config/crd/bases/*.yaml; do
+          crd_name="$(sed -n 's/^  name: \(.*\)/\1/p' "$base" | head -1)"
+          [ -n "$crd_name" ] || { echo "error: no metadata.name in $base" >&2; exit 1; }
+          echo "$crd_name.yaml" >> "$written"
+          {
+            echo '{{.TLO}}- if .Values.crd.enable {{.TLC}}'
+            awk '
+              NR == 1 && /^---$/ { next }
+              /^  annotations:$/ && !done {
+                print
+                print "    {{.TLO}}- if .Values.crd.keep {{.TLC}}"
+                print "    \"helm.sh/resource-policy\": keep"
+                print "    {{.TLO}}- end {{.TLC}}"
+                done = 1
+                next
+              }
+              { print }
+              END {
+                if (!done) {
+                  print "error: no metadata.annotations block in input" > "/dev/stderr"
+                  exit 1
+                }
+              }
+            ' "$base"
+            echo '{{.TLO}}- end {{.TLC}}'
+          } > "$out_dir/$crd_name.yaml"
+          echo "wrote $out_dir/$crd_name.yaml"
+        done
+        for existing in "$out_dir"/*.yaml; do
+          grep -qx "$(basename "$existing")" "$written" || { echo "removing stale chart CRD $existing"; rm "$existing"; }
+        done

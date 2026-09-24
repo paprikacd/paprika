@@ -94,19 +94,12 @@ func runApply(ctx context.Context, opts *applyOptions) error {
 		return fmt.Errorf("parse policy overrides: %w", err)
 	}
 
-	configPath := globalConfigPath
-	if configPath == "" {
-		configPath = defaultConfigPath()
-	}
-	cfg, cfgErr := loadConfig(configPath)
+	cfg, cfgErr := loadMergedConfig()
 	if cfgErr != nil {
 		return fmt.Errorf("load config: %w", cfgErr)
 	}
 	if opts.server != "" {
 		cfg.Server = opts.server
-	}
-	if globalToken != "" {
-		cfg.Token = globalToken
 	}
 	client, clientErr := newClient(cfg)
 	if clientErr != nil {

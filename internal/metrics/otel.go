@@ -11,7 +11,7 @@ var meter = otel.Meter(meterName)
 
 // Render metrics
 var (
-	RenderDuration = mustHistogram(meter, "paprika.render.duration", "s",
+	RenderDuration = mustFloatHistogram(meter, "paprika.render.duration", "s",
 		"Duration of template rendering", metric.WithExplicitBucketBoundaries(defBuckets...))
 
 	RenderErrors = mustCounter(meter, "paprika.render.errors",
@@ -29,7 +29,7 @@ var (
 	SyncErrors = mustCounter(meter, "paprika.sync.errors",
 		"Number of sync errors")
 
-	SyncDuration = mustHistogram(meter, "paprika.sync.duration", "s",
+	SyncDuration = mustFloatHistogram(meter, "paprika.sync.duration", "s",
 		"Duration of sync operations", metric.WithExplicitBucketBoundaries(defBuckets...))
 
 	LastSyncTimestamp = mustGauge(meter, "paprika.sync.last_timestamp", "s",
@@ -74,7 +74,7 @@ var (
 	GitErrors = mustCounter(meter, "paprika.git.errors",
 		"Number of git operation errors")
 
-	GitDuration = mustHistogram(meter, "paprika.git.duration", "s",
+	GitDuration = mustFloatHistogram(meter, "paprika.git.duration", "s",
 		"Duration of git operations", metric.WithExplicitBucketBoundaries(defBuckets...))
 
 	SourceResolveTotal = mustCounter(meter, "paprika.source.resolve.total",
@@ -135,6 +135,15 @@ func mustCounter(m metric.Meter, name, desc string) metric.Int64Counter {
 		panic(err)
 	}
 	return c
+}
+
+func mustFloatHistogram(m metric.Meter, name, unit, desc string, opts ...metric.Float64HistogramOption) metric.Float64Histogram {
+	allOpts := append([]metric.Float64HistogramOption{metric.WithDescription(desc), metric.WithUnit(unit)}, opts...)
+	h, err := m.Float64Histogram(name, allOpts...)
+	if err != nil {
+		panic(err)
+	}
+	return h
 }
 
 func mustHistogram(m metric.Meter, name, unit, desc string, opts ...metric.Int64HistogramOption) metric.Int64Histogram {

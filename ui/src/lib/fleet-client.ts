@@ -107,6 +107,10 @@ export interface FleetApplicationSummary {
   observabilityConnection: FleetConnectionStatus
   blockedGateCount: number
   lastTransitionUnixMs: bigint
+  attentionLabel: string
+  attentionDetail: string
+  /** "Kind/name" of the managed resource the attention signal points at. */
+  attentionResource: string
   capabilities: FleetCapability[]
 }
 
@@ -481,6 +485,9 @@ function fromApplicationSummary(message: ApplicationSummaryMessage): FleetApplic
     observabilityConnection: fromConnection(message.observabilityConnection),
     blockedGateCount: message.blockedGateCount,
     lastTransitionUnixMs: message.lastTransitionUnixMs,
+    attentionLabel: message.attentionLabel,
+    attentionDetail: message.attentionDetail,
+    attentionResource: message.attentionResource,
     capabilities: message.capabilities.map(fromCapability),
   }
 }

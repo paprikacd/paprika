@@ -60,7 +60,9 @@ func repoLock(key string) *sync.Mutex {
 func (g *GitSource) Resolve(ctx context.Context) (*ResolveResult, error) {
 	start := time.Now()
 	result, err := g.resolve(ctx)
-	elapsed := time.Since(start).Milliseconds()
+	// The histogram unit is seconds — recording raw milliseconds put every
+	// observation in the +Inf bucket and made the histogram useless.
+	elapsed := time.Since(start).Seconds()
 
 	op := "fetch"
 	if result == nil || result.LocalPath == "" {

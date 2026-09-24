@@ -172,6 +172,22 @@ type ApplicationSummary struct {
 	ObservabilityBindings []types.NamespacedName
 	BlockedGateCount      uint32
 	LastTransitionUnixMS  int64
+	// AttentionLabel is a short reason the application needs attention, e.g.
+	// "deployment/web degraded" or "release retries exhausted". Empty when
+	// nothing needs attention.
+	AttentionLabel string
+	// AttentionDetail carries the failing condition's or resource's message,
+	// bounded in length. Empty when there is nothing to explain.
+	AttentionDetail string
+	// AttentionResource identifies the managed resource the signal points at,
+	// in "Kind/name" form. Set only when the signal names a specific resource.
+	AttentionResource string
+	// AttentionSeverity ranks how urgently the signal needs an operator —
+	// active failure conditions outrank resource-level and count-level
+	// signals, which outrank silence. Internal to the index; it feeds impact
+	// ordering so a failed release sorts above a healthy app whose certificate
+	// merely reports Unknown.
+	AttentionSeverity uint8
 }
 
 // ProjectSummary is the provider-neutral project metadata retained by a

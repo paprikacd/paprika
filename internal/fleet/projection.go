@@ -1,10 +1,13 @@
 package fleet
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -120,7 +123,148 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 		}
 	}
 
+	attentionSignal(app, &summary)
+
 	return summary, result
+}
+
+// attentionConditionTypes lists Application condition types that explain why an
+// application needs attention, most actionable first. They mirror the failure
+// conditions the application controller clears on recovery.
+var attentionConditionTypes = []string{
+	"ReleaseRetriesExhausted",
+	"Failed",
+	"Degraded",
+	"RolledBack",
+	"Pending",
+}
+
+// attentionDetailRunes bounds the failure detail retained in the index so a
+// noisy controller message cannot grow the snapshot.
+const attentionDetailRunes = 200
+
+// Attention severities share the unhealthySeverity scale (0–6) so the impact
+// sort can take the worse of the two: an active failure condition scores like
+// failed health, an unverifiable resource like unknown health, and a bare
+// drift/gate count like a footnote.
+const (
+	attentionSeverityStuck    uint8 = 6 // retries exhausted or failed outright
+	attentionSeverityDegraded uint8 = 4 // degraded or rolled back
+	attentionSeverityPending  uint8 = 3 // a condition stuck pending
+	attentionSeverityResource uint8 = 2 // a resource reports unknown/missing
+	attentionSeverityCounts   uint8 = 1 // drift, missing count, blocked gates
+)
+
+// attentionSignal derives a compact reason an application needs attention from
+// the signals the controllers already record, writing it onto the summary. It
+// reports the most actionable signal present, in order: an active failure
+// condition, an unhealthy managed resource, missing resources, drift, then
+// blocked gates. It never fabricates a root cause — when only a status is
+// known the label stays generic, and AttentionResource is only set when the
+// signal names a specific managed resource.
+func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSummary) {
+	for _, condType := range attentionConditionTypes {
+		cond := meta.FindStatusCondition(app.Status.Conditions, condType)
+		if cond != nil && cond.Status == metav1.ConditionTrue {
+			summary.AttentionLabel = humanizeConditionType(condType)
+			summary.AttentionDetail = sanitizeAttentionDetail(cond.Message)
+			summary.AttentionSeverity = conditionAttentionSeverity(condType)
+			return
+		}
+	}
+	if worst := worstResourceHealth(app.Status.ResourceHealth); worst != nil {
+		summary.AttentionLabel = fmt.Sprintf(
+			"%s/%s %s", strings.ToLower(worst.Kind), worst.Name, strings.ToLower(worst.Health),
+		)
+		summary.AttentionDetail = sanitizeAttentionDetail(worst.Message)
+		summary.AttentionResource = fmt.Sprintf("%s/%s", worst.Kind, worst.Name)
+		summary.AttentionSeverity = attentionSeverityResource
+		return
+	}
+	switch {
+	case summary.MissingResourceCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.MissingResourceCount, "resource", "missing")
+		summary.AttentionSeverity = attentionSeverityCounts
+	case summary.DriftCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.DriftCount, "resource", "out of sync")
+		summary.AttentionSeverity = attentionSeverityCounts
+	case summary.BlockedGateCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.BlockedGateCount, "gate", "blocked")
+		summary.AttentionSeverity = attentionSeverityCounts
+	}
+}
+
+// conditionAttentionSeverity mirrors the priority order of
+// attentionConditionTypes: a condition listed earlier is the more urgent one.
+func conditionAttentionSeverity(condType string) uint8 {
+	switch condType {
+	case "ReleaseRetriesExhausted", "Failed":
+		return attentionSeverityStuck
+	case "Degraded", "RolledBack":
+		return attentionSeverityDegraded
+	case "Pending":
+		return attentionSeverityPending
+	default:
+		return attentionSeverityResource
+	}
+}
+
+// worstResourceHealth returns the unhealthiest managed resource, or nil when
+// every resource is healthy or still progressing.
+func worstResourceHealth(resources []pipelinesv1alpha1.ResourceHealth) *pipelinesv1alpha1.ResourceHealth {
+	var worst *pipelinesv1alpha1.ResourceHealth
+	worstRank := -1
+	for i := range resources {
+		if rank := resourceHealthRank(resources[i].Health); rank > worstRank {
+			worstRank = rank
+			worst = &resources[i]
+		}
+	}
+	return worst
+}
+
+func resourceHealthRank(health string) int {
+	switch health {
+	case "Degraded":
+		return 3
+	case "Missing":
+		return 2
+	case "Unknown":
+		return 1
+	}
+	return -1
+}
+
+func pluralizeAttention(count uint32, noun, qualifier string) string {
+	if count != 1 {
+		noun += "s"
+	}
+	return fmt.Sprintf("%d %s %s", count, noun, qualifier)
+}
+
+// humanizeConditionType renders a PascalCase condition type as lowercase
+// words: "ReleaseRetriesExhausted" becomes "release retries exhausted".
+func humanizeConditionType(conditionType string) string {
+	var builder strings.Builder
+	builder.Grow(len(conditionType) + 4)
+	for i, r := range conditionType {
+		if i > 0 && unicode.IsUpper(r) {
+			builder.WriteByte(' ')
+		}
+		builder.WriteRune(unicode.ToLower(r))
+	}
+	return builder.String()
+}
+
+// sanitizeAttentionDetail collapses whitespace so the detail fits a single
+// line and bounds it so a noisy controller message cannot grow the snapshot.
+func sanitizeAttentionDetail(message string) string {
+	collapsed := strings.Join(strings.Fields(message), " ")
+	runes := []rune(collapsed)
+	if len(runes) > attentionDetailRunes {
+		return string(runes[:attentionDetailRunes-1]) + "…"
+	}
+	return collapsed
 }
 
 func sortProjectionStages(stages []*pipelinesv1alpha1.Stage) {

@@ -194,13 +194,12 @@ func (r *HelmSDKRenderer) resolveS3Source(ctx context.Context, tmpl *paprika.Tem
 func (r *HelmSDKRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
 	start := time.Now()
 	result, err := r.render(ctx, tmpl, params)
-	elapsed := time.Since(start).Milliseconds()
 
 	metrics.RenderTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
 	if err != nil {
 		metrics.RenderErrors.Add(ctx, 1, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
 	} else {
-		metrics.RenderDuration.Record(ctx, elapsed, metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
+		metrics.RenderDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(attribute.String("type", tmpl.Spec.Type)))
 	}
 	return result, err
 }

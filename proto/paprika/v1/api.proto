@@ -1069,6 +1069,17 @@ message ApplicationSummary {
   CommitSummary commit = 25;
   // Release identifier for the current stage, e.g. "r241". Empty when none.
   string release_id = 26;
+  // Short reason the application needs attention, e.g. "deployment/web
+  // degraded" or "release retries exhausted". Empty when nothing needs
+  // attention.
+  string attention_label = 27;
+  // Detail behind the label — the failing condition's or resource's message,
+  // bounded in length. Empty when there is nothing to explain.
+  string attention_detail = 28;
+  // Managed resource the attention signal points at, in "Kind/name" form —
+  // e.g. "Deployment/web". Set only when the signal names a specific resource;
+  // empty otherwise. Lets callers deep-link straight to the failing object.
+  string attention_resource = 29;
 }
 
 message FleetFacetBucket {

@@ -609,6 +609,72 @@ func TestResourceEqual_RequiresDesiredMetadata(t *testing.T) {
 	assert.False(t, resourceEqual(desired, *changedAnnotation))
 }
 
+func TestResourceEqual_ConfigMapDataDrift(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]interface{}{
+			"name":      "app-config",
+			"namespace": "default",
+		},
+		"data": map[string]interface{}{
+			"greeting": "hello",
+		},
+	}}
+
+	live := desired.DeepCopy()
+	assert.True(t, resourceEqual(desired, *live))
+
+	// ConfigMap has no spec — tampered data must still report drift.
+	tampered := desired.DeepCopy()
+	_ = unstructured.SetNestedField(tampered.Object, "tampered", "data", "greeting")
+	assert.False(t, resourceEqual(desired, *tampered))
+
+	// Extra live-only keys (e.g. controller-injected) are tolerated.
+	extra := desired.DeepCopy()
+	_ = unstructured.SetNestedField(extra.Object, "server-added", "data", "injected")
+	assert.True(t, resourceEqual(desired, *extra))
+}
+
+func TestResourceEqual_SecretStringDataNormalization(t *testing.T) {
+	t.Parallel()
+
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      "app-secret",
+			"namespace": "default",
+		},
+		"stringData": map[string]interface{}{
+			"password": "s3cret",
+		},
+	}}
+
+	// The API server stores stringData as base64 under data — the live form
+	// must compare equal so secrets don't report permanent drift.
+	live := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Secret",
+		"metadata": map[string]interface{}{
+			"name":      "app-secret",
+			"namespace": "default",
+		},
+		"data": map[string]interface{}{
+			// #nosec G101 -- base64 test fixture, not a real credential.
+			"password": "czNjcmV0",
+		},
+	}}
+	assert.True(t, resourceEqual(desired, live))
+
+	// A tampered secret value still reports drift.
+	liveTampered := live.DeepCopy()
+	_ = unstructured.SetNestedField(liveTampered.Object, "b3RoZXItdmFsdWU=", "data", "password")
+	assert.False(t, resourceEqual(desired, *liveTampered))
+}
+
 func TestResourceEqual_IgnoresOmittedProbeInitialDelayDefault(t *testing.T) {
 	t.Parallel()
 

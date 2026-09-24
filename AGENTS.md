@@ -57,7 +57,7 @@ go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
 # Then copy CRDs to the chart (wraps each with the crd.enable gate and the
 # helm.sh/resource-policy: keep annotation — do NOT hand-copy bases, that
 # drops the gate and breaks crd.enable=false installs):
-hack/chart-crds.sh
+task chart:crds
 ```
 
 For deployed image changes, build an immutable tag, push it to the registry,
@@ -123,9 +123,18 @@ helm upgrade paprika-e2e charts/chart/ \
   `SyncOptions.PruneClusterScopedKinds`.
 - The release controller sets `app.paprika.io/release` on every applied
   resource so `cleanupManagedResources` can find them on release deletion.
-- Failure conditions (`Degraded`, `RolledBack`, `Pending`,
-  `ReleaseRetriesExhausted`) are cleared when the Application transitions to
-  Healthy.
+- Phase conditions (`Pending`…`RolledBack`) are mutually exclusive:
+  `setApplicationPhase` and the status-patch path retire every other phase
+  condition to False, even when the phase itself does not change (apps parked
+  in `holdExhaustedRelease` still converge). `ReleaseRetriesExhausted` is a
+  latch, not a phase — it clears when a new release flow starts and on the
+  transition into Healthy, but NOT on every write while Healthy (a
+  Healthy-phase app can hold an exhausted release).
+- Resource health is assessed from the live objects the diff engine already
+  fetched (`DiffResult.Live` → `health.AssessObject`), not a second pass
+  through the API. Unsupported kinds are assessed generically — conditions,
+  replica counters, `status.phase` — and existence-only kinds (ServiceAccount,
+  RBAC, PDB, …) are Healthy when present instead of Unknown.
 - A stage with no `cluster` ref resolves to the registered `mode: in-cluster`
   Cluster CR (the chart installs `<release>-in-cluster` by default). The
   cluster controller fills `status.inventory` (nodes/pods/namespaces/
@@ -237,14 +246,16 @@ E2E_SKIP_IMAGE_BUILD=true E2E_SKIP_IMAGE_LOAD=true \
   go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m
 
 # Local perf/profiling stack (kind paprika-perf: full split chart,
-# MCP + basic auth admin/admin123, pprof on :6060, metrics-server):
-make perf-up        # build image (native arch), kind load, helm install
-make perf-token     # mint MCP OAuth token -> /tmp/paprika-perf-token
-make perf-load      # MCP read-tool loadgen (SECONDS=60)
-make perf-profile   # pprof CPU/heap/allocs/goroutines -> /tmp/paprika-perf
-make perf-metrics   # snapshot paprika_* metrics -> /tmp/paprika-perf
-make perf-status    # fleet_status + list_clusters via MCP
-make perf-down      # delete the cluster
+# MCP + basic auth admin/admin123, pprof on :6060, metrics-server).
+# All knobs are env/CLI vars (PERF_CLUSTER, PERF_PORT, PERF_IMG, ... —
+# see the perf:* section of Taskfile.yml):
+task perf:up        # build image (native arch), kind load, helm install
+task perf:token     # mint MCP OAuth token -> /tmp/paprika-perf-token
+task perf:load SECS=120   # MCP read-tool loadgen for 120s
+task perf:profile SECS=30 COMPONENT=api  # pprof CPU/heap/allocs -> /tmp/paprika-perf
+task perf:metrics   # snapshot paprika_* metrics -> /tmp/paprika-perf
+task perf:status    # fleet_status + list_clusters via MCP
+task perf:down      # delete the cluster
 ```
 
 E2E coverage notes: `test/e2e/cluster_test.go` covers Cluster registration
@@ -263,11 +274,14 @@ skip with `E2E_SKIP_METRICS_SERVER=true`.
 # patched into paprika-e2e api-server + controller-manager args). Reach it
 # only through port-forward — no Service/Ingress exposes 6060.
 kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 16060:6060 &
-hack/pprof-capture.sh http://localhost:16060 30 /tmp/paprika-perf/api
+mkdir -p /tmp/paprika-perf/vke
+curl -sf http://localhost:16060/debug/pprof/heap -o /tmp/paprika-perf/vke/heap.pprof
+curl -sf 'http://localhost:16060/debug/pprof/profile?seconds=30' -o /tmp/paprika-perf/vke/cpu.pprof
+go tool pprof -top /tmp/paprika-perf/vke/cpu.pprof
 
-# Load gen (needs an MCP bearer token in MCP_TOKEN or MCP_TOKEN_FILE):
+# Load gen (needs an MCP bearer token): POST tools/call to /mcp in a loop —
+# see the perf:load task in Taskfile.yml for the exact request shape.
 kubectl -n paprika-e2e port-forward deployment/paprika-e2e-api-server 13000:3000 &
-MCP_TOKEN=... BASE=http://localhost:13000 hack/mcp-loadgen.sh 60
 
 # Caveat: kubectl port-forward adds hundreds of ms per connection and can
 # degrade to >1s/conn when the VKE control plane is slow — it dominates
@@ -309,7 +323,7 @@ go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.1 \
 
 # Copy to chart templates (handles all groups, adds the crd.enable gate +
 # keep annotation):
-hack/chart-crds.sh
+task chart:crds
 
 # Apply to cluster:
 kubectl apply -f config/crd/bases/pipelines.paprika.io_applications.yaml

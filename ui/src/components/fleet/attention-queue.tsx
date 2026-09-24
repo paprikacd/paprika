@@ -1,6 +1,7 @@
 "use client"
 
 import { useVirtualizer } from "@tanstack/react-virtual"
+import Link from "next/link"
 import { useCallback, useRef } from "react"
 
 import {
@@ -12,12 +13,14 @@ import {
   type ApplicationCollectionProps,
 } from "@/components/fleet/application-collection"
 import {
+  attentionDetailOf,
   attentionReasonOf,
   healthLabelOf,
   healthToneOf,
   projectLabelOf,
   targetLabelOf,
 } from "@/components/fleet/fleet-rows"
+import { applicationHref } from "@/components/overview/overview-links"
 import { StatusGlyph } from "@/components/ui/status-chip"
 import { STATUS_TONES } from "@/lib/status-tone"
 import { cn } from "@/lib/utils"
@@ -164,9 +167,22 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
                   <StatusGlyph tone={tone} label={healthLabelOf(application.health)} />
                 </span>
                 <span role="cell" aria-colindex={3} className="min-w-0">
-                  <span className="block truncate font-cond text-name font-semibold tracking-[0.02em]">
-                    {identity?.name || "Unnamed application"}
-                  </span>
+                  {identity ? (
+                    <Link
+                      href={applicationHref(
+                        identity,
+                        application.attentionResource || undefined,
+                      )}
+                      onClick={(event) => event.stopPropagation()}
+                      className="block truncate font-cond text-name font-semibold tracking-[0.02em] text-foreground no-underline hover:underline"
+                    >
+                      {identity.name}
+                    </Link>
+                  ) : (
+                    <span className="block truncate font-cond text-name font-semibold tracking-[0.02em]">
+                      Unnamed application
+                    </span>
+                  )}
                   <span className="block truncate font-mono text-meta text-neutral-600">
                     {identity ? identityKey(identity) : "Identity unavailable"}
                   </span>
@@ -188,9 +204,13 @@ export function AttentionQueue(props: ApplicationCollectionProps) {
                 <span
                   role="cell"
                   aria-colindex={6}
+                  title={attentionDetailOf(application) || undefined}
                   className="truncate text-reason text-muted-foreground"
                 >
-                  {attentionReasonOf(application)}
+                  <span>{attentionReasonOf(application)}</span>
+                  {application.attentionDetail ? (
+                    <span className="text-neutral-600"> — {application.attentionDetail}</span>
+                  ) : null}
                 </span>
               </div>
             )

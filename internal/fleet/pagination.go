@@ -138,7 +138,7 @@ func applicationPageKey(summary *ApplicationSummary, match SearchMatch) PageKey 
 		ResourceCount:        summary.ResourceCount,
 		LastTransitionUnixMS: summary.LastTransitionUnixMS,
 		Impact: ImpactKey{
-			UnhealthySeverity:    unhealthySeverity(summary.Health),
+			UnhealthySeverity:    impactSeverity(summary),
 			BlockedGates:         summary.BlockedGateCount,
 			ActiveChange:         hasActiveChange(summary),
 			ResourceCount:        summary.ResourceCount,
@@ -296,6 +296,18 @@ func compareRelevance(left, right RelevanceKey) int {
 	rightProduct := uint64(right.Shared) * uint64(left.Union)
 	// Greater trigram similarity is more relevant and therefore sorts first.
 	return -compareOrdered(leftProduct, rightProduct)
+}
+
+// impactSeverity is the worse of resource-health severity and the attention
+// signal's severity — both share the 0–6 scale, so a rolled-back release
+// whose resources are healthy still ranks like a failure, while a healthy
+// app whose certificate merely reports Unknown stays below real unhealth.
+func impactSeverity(summary *ApplicationSummary) uint8 {
+	health := unhealthySeverity(summary.Health)
+	if summary.AttentionSeverity > health {
+		return summary.AttentionSeverity
+	}
+	return health
 }
 
 func compareImpact(left, right ImpactKey) int {

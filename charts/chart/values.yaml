@@ -63,6 +63,44 @@ manager:
     # tag: ""
     pullPolicy: IfNotPresent
 
+  ## Reconcile-rate tuning (rendered as args in both operator and api modes).
+  ## Empty fields fall back to the binary defaults; set only what you need to
+  ## tune. Per-application steady-state polling stays on
+  ## spec.source.pollInterval — these values control the fallback and the
+  ## in-flight/work-queue behavior.
+  ##
+  reconcile:
+    ## Requeue interval for in-flight Application states (pending, building,
+    ## releasing) and the steady-state poll fallback when
+    ## spec.source.pollInterval is unset.
+    ##
+    transientRequeue: ""
+    ## How long a source resolve (git fetch) result is reused by the
+    ## steady-state application poll. "0s" resolves on every poll; sync
+    ## triggers always bypass the cache.
+    ##
+    sourceResolveTTL: ""
+    ## Full resync period for the manager's informer cache.
+    ##
+    cacheResyncPeriod: ""
+    ## Parallel reconcile workers per controller.
+    ##
+    maxConcurrentReconciles:
+      application: 0
+      release: 0
+      stage: 0
+      pipeline: 0
+    ## Reconcile token-bucket limits. globalRate <= 0 disables reconcile rate
+    ## limiting entirely.
+    ##
+    rateLimit:
+      # globalRate must render even at 0 (disables limiting), so the template
+      # keys on presence, not truthiness.
+      globalRate: null
+      globalBurst: 0
+      appRate: 0
+      appBurst: 0
+
   ## Arguments (added in both operator and api modes)
   ##
   args:

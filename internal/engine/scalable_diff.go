@@ -128,6 +128,7 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 	result = classifyDiffs(result, desiredMap, liveMap)
 
 	result.Summary = fmt.Sprintf("+%d ~%d -%d", len(result.Added), len(result.Modified), len(result.Deleted))
+	result.Live = liveObjects(liveMap)
 	return result, nil
 }
 
