@@ -1584,7 +1584,7 @@ func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
 	rvBefore := existing.ResourceVersion
 
 	expected := stage.DeepCopy()
-	if err := r.updateStage(ctx, &existing, expected, stage.Name); err != nil {
+	if err := r.updateStage(ctx, expected, stage.Name); err != nil {
 		t.Fatalf("updateStage (no-op) returned error: %v", err)
 	}
 	var after pipelinesv1alpha1.Stage
@@ -1596,7 +1596,7 @@ func TestApplicationReconciler_updateStage_SkipsNoOpUpdates(t *testing.T) {
 	}
 
 	expected.Spec.Ring = 2
-	if err := r.updateStage(ctx, &after, expected, stage.Name); err != nil {
+	if err := r.updateStage(ctx, expected, stage.Name); err != nil {
 		t.Fatalf("updateStage (real change) returned error: %v", err)
 	}
 	var changed pipelinesv1alpha1.Stage

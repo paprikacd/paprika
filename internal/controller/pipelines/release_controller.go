@@ -304,11 +304,23 @@ func (r *ReleaseReconciler) ensureReleaseFinalizer(ctx context.Context, release 
 	if controllerutil.ContainsFinalizer(release, releaseFinalizer) {
 		return nil
 	}
-	controllerutil.AddFinalizer(release, releaseFinalizer)
-	if err := r.client.Update(ctx, release); err != nil {
-		return fmt.Errorf("adding release finalizer: %w", err)
-	}
-	return nil
+	// RetryOnConflict with a fresh Get: status writers (and the initial
+	// status update racing the create reconcile) bump resourceVersion
+	// constantly, so updating the reconcile-fetched object conflicts.
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current paprikav1.Release
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(release), &current); err != nil {
+			return fmt.Errorf("getting release for finalizer: %w", err)
+		}
+		if controllerutil.ContainsFinalizer(&current, releaseFinalizer) {
+			return nil
+		}
+		controllerutil.AddFinalizer(&current, releaseFinalizer)
+		if err := r.client.Update(ctx, &current); err != nil {
+			return fmt.Errorf("adding release finalizer: %w", err)
+		}
+		return nil
+	})
 }
 
 func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *paprikav1.Release) (ctrl.Result, error) {
@@ -318,9 +330,28 @@ func (r *ReleaseReconciler) handleReleaseDeletion(ctx context.Context, release *
 	if err := r.cleanup(ctx, release); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cleaning up release: %w", err)
 	}
-	controllerutil.RemoveFinalizer(release, releaseFinalizer)
-	if err := r.client.Update(ctx, release); err != nil {
-		return ctrl.Result{}, fmt.Errorf("removing release finalizer: %w", err)
+	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var current paprikav1.Release
+		if err := r.client.Get(ctx, client.ObjectKeyFromObject(release), &current); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Already gone — nothing left to unfinalize.
+				return nil
+			}
+			return fmt.Errorf("getting release for finalizer removal: %w", err)
+		}
+		if !controllerutil.ContainsFinalizer(&current, releaseFinalizer) {
+			return nil
+		}
+		controllerutil.RemoveFinalizer(&current, releaseFinalizer)
+		if err := r.client.Update(ctx, &current); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("removing release finalizer: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }

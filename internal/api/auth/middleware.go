@@ -16,6 +16,12 @@ import (
 	"github.com/benebsworth/paprika/internal/metrics"
 )
 
+// DefaultProjectName is the project requests resolve to when a
+// project-aware RPC leaves its project field empty — handlers and the
+// authorization interceptor must agree on it or empty project becomes an
+// authorization bypass.
+const DefaultProjectName = "default"
+
 // Config combines authentication and authorization configuration.
 type Config struct {
 	Enabled     bool
@@ -240,7 +246,14 @@ func projectFromRequest(req connect.AnyRequest) string {
 	}
 	msg := req.Any()
 	if g, ok := msg.(projectGetter); ok {
-		return g.GetProject()
+		// Project-aware RPCs default an empty project to the default
+		// project — the handlers do the same, and without it a caller could
+		// omit project to skip the AppProject check entirely (the authorizer
+		// treats "" as "no project constraint").
+		if p := g.GetProject(); p != "" {
+			return p
+		}
+		return DefaultProjectName
 	}
 	return ""
 }

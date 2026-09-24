@@ -638,19 +638,34 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
 		}
-	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
-		// Skip no-op updates: every Update round-trips through the in-process
-		// admission webhooks, and doing it unconditionally on each reconcile
-		// starves the webhook server under load.
-		existing.Spec = expected.Spec
-		if len(existing.Labels) == 0 {
-			existing.Labels = make(map[string]string)
-		}
-		for k, v := range expected.Labels {
-			existing.Labels[k] = v
-		}
-		if err := r.client.Update(ctx, &existing); err != nil {
-			return fmt.Errorf("failed to update template: %w", err)
+	} else {
+		// The compare-and-update runs inside RetryOnConflict with a fresh Get:
+		// the Template controller writes status continuously, so an update on
+		// a previously fetched object conflicts. Skip no-op updates: every
+		// Update round-trips through the in-process admission webhooks, and
+		// doing it unconditionally on each reconcile starves the webhook
+		// server under load.
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			var current paprikav1.Template
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
+				return fmt.Errorf("failed to get template: %w", err)
+			}
+			if !specOrLabelsChanged(&current.Spec, &expected.Spec, current.Labels, expected.Labels) {
+				return nil
+			}
+			current.Spec = expected.Spec
+			if len(current.Labels) == 0 {
+				current.Labels = make(map[string]string)
+			}
+			for k, v := range expected.Labels {
+				current.Labels[k] = v
+			}
+			if err := r.client.Update(ctx, &current); err != nil {
+				return fmt.Errorf("failed to update template: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -719,16 +734,31 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 		if err := r.client.Create(ctx, expected); err != nil {
 			return fmt.Errorf("failed to create pipeline: %w", err)
 		}
-	} else if specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) {
-		existing.Spec = expected.Spec
-		if len(existing.Labels) == 0 {
-			existing.Labels = make(map[string]string)
-		}
-		for k, v := range expected.Labels {
-			existing.Labels[k] = v
-		}
-		if err := r.client.Update(ctx, &existing); err != nil {
-			return fmt.Errorf("failed to update pipeline: %w", err)
+	} else {
+		// RetryOnConflict with a fresh Get: the Pipeline controller writes
+		// status continuously, so an update on a previously fetched object
+		// conflicts.
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			var current paprikav1.Pipeline
+			if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
+				return fmt.Errorf("failed to get pipeline: %w", err)
+			}
+			if !specOrLabelsChanged(&current.Spec, &expected.Spec, current.Labels, expected.Labels) {
+				return nil
+			}
+			current.Spec = expected.Spec
+			if len(current.Labels) == 0 {
+				current.Labels = make(map[string]string)
+			}
+			for k, v := range expected.Labels {
+				current.Labels[k] = v
+			}
+			if err := r.client.Update(ctx, &current); err != nil {
+				return fmt.Errorf("failed to update pipeline: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
@@ -770,7 +800,7 @@ func (r *ApplicationReconciler) reconcileSingleStage(ctx context.Context, app *p
 	if err != nil {
 		return r.createStage(ctx, expected, stageName)
 	}
-	return r.updateStage(ctx, &existing, expected, stageName)
+	return r.updateStage(ctx, expected, stageName)
 }
 
 func (r *ApplicationReconciler) resolveStageStrategy(app *paprikav1.Application, promotionStage *paprikav1.ApplicationPromotionStage) paprikav1.DeliveryStrategy {
@@ -822,35 +852,40 @@ func (r *ApplicationReconciler) createStage(ctx context.Context, expected *papri
 		}
 		// Created concurrently (e.g. by ApplyBundle's ensureStage) between the
 		// Get and Create above — adopt it via the update path.
-		var existing paprikav1.Stage
-		if getErr := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); getErr != nil {
-			return fmt.Errorf("failed to create stage %s: %w", stageName, err)
-		}
-		return r.updateStage(ctx, &existing, expected, stageName)
+		return r.updateStage(ctx, expected, stageName)
 	}
 	return nil
 }
 
-func (r *ApplicationReconciler) updateStage(ctx context.Context, existing, expected *paprikav1.Stage, stageName string) error {
-	ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
-	if err := updateStageApplicationOwner(existing, expected); err != nil {
-		return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
-	}
-	if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
-		equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+// updateStage converges the stage on expected. The whole compare-and-update
+// runs inside RetryOnConflict with a fresh Get: the Stage controller writes
+// status continuously, so an update on a previously fetched object conflicts.
+func (r *ApplicationReconciler) updateStage(ctx context.Context, expected *paprikav1.Stage, stageName string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var existing paprikav1.Stage
+		if err := r.client.Get(ctx, types.NamespacedName{Name: stageName, Namespace: expected.Namespace}, &existing); err != nil {
+			return fmt.Errorf("failed to get stage %s: %w", stageName, err)
+		}
+		ownersBefore := append([]metav1.OwnerReference(nil), existing.OwnerReferences...)
+		if err := updateStageApplicationOwner(&existing, expected); err != nil {
+			return fmt.Errorf("failed to update stage %s owner: %w", stageName, err)
+		}
+		if !specOrLabelsChanged(&existing.Spec, &expected.Spec, existing.Labels, expected.Labels) &&
+			equality.Semantic.DeepEqual(ownersBefore, existing.OwnerReferences) {
+			return nil
+		}
+		existing.Spec = expected.Spec
+		if len(existing.Labels) == 0 {
+			existing.Labels = make(map[string]string)
+		}
+		for k, v := range expected.Labels {
+			existing.Labels[k] = v
+		}
+		if err := r.client.Update(ctx, &existing); err != nil {
+			return fmt.Errorf("failed to update stage %s: %w", stageName, err)
+		}
 		return nil
-	}
-	existing.Spec = expected.Spec
-	if len(existing.Labels) == 0 {
-		existing.Labels = make(map[string]string)
-	}
-	for k, v := range expected.Labels {
-		existing.Labels[k] = v
-	}
-	if err := r.client.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update stage %s: %w", stageName, err)
-	}
-	return nil
+	})
 }
 
 //nolint:cyclop // owner reconciliation explicitly preserves unrelated non-controller references.

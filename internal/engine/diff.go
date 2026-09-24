@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strconv"
@@ -218,7 +219,68 @@ func resourceEqual(desired, live unstructured.Unstructured) bool {
 	if !metaEqual(desired, live) {
 		return false
 	}
-	return specContains(desired.Object["spec"], live.Object["spec"])
+	return payloadContains(desired.Object, live.Object)
+}
+
+// payloadExcludedKeys are the top-level keys payloadContains never compares:
+// apiVersion/kind are identity, metadata is covered by metaEqual, and status
+// is server-owned.
+var payloadExcludedKeys = map[string]bool{
+	"apiVersion": true,
+	"kind":       true,
+	"metadata":   true,
+	"status":     true,
+}
+
+// payloadContains compares every desired top-level payload key against live —
+// spec plus the data-carrying fields of kinds that have no spec (ConfigMap
+// data/binaryData/immutable, Secret data/type, RBAC rules/roleRef, Service
+// type handled under spec anyway, etc.). Live-only keys are tolerated, so
+// server-populated fields never report drift.
+func payloadContains(desired, live map[string]interface{}) bool {
+	if desired["stringData"] != nil {
+		// Secret stringData is write-only — the API server stores it as
+		// base64 under data. Fold it into a normalized desired data map so
+		// secrets declared via stringData don't report permanent drift.
+		desired = normalizeSecretStringData(desired)
+	}
+	for k, dv := range desired {
+		if payloadExcludedKeys[k] {
+			continue
+		}
+		if !specContainsAt([]string{k}, dv, live[k]) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeSecretStringData returns a copy of the desired Secret object with
+// stringData merged into data as base64 values, matching the live
+// representation.
+func normalizeSecretStringData(desired map[string]interface{}) map[string]interface{} {
+	stringData, ok := desired["stringData"].(map[string]interface{})
+	if !ok {
+		return desired
+	}
+	out := make(map[string]interface{}, len(desired))
+	for k, v := range desired {
+		out[k] = v
+	}
+	delete(out, "stringData")
+	data := map[string]interface{}{}
+	if existing, ok := desired["data"].(map[string]interface{}); ok {
+		for k, v := range existing {
+			data[k] = v
+		}
+	}
+	for k, v := range stringData {
+		if s, ok := v.(string); ok {
+			data[k] = base64.StdEncoding.EncodeToString([]byte(s))
+		}
+	}
+	out["data"] = data
+	return out
 }
 
 // metaEqual compares name, namespace, labels, and annotations after stripping
@@ -298,19 +360,12 @@ func isPaprikaInternalResource(obj *unstructured.Unstructured) bool {
 	return false
 }
 
-// specContains performs a desired-centric comparison: every key-value pair in
-// desired must be present and equal in live. Extra keys in live (Kubernetes
-// defaults such as progressDeadlineSeconds, strategy, clusterIP) are allowed.
-// Lists are compared element-by-element: each desired element must match at
-// least one live element (by name if available, allowing live to carry extra
-// defaulted fields on list items like containers and ports).
-func specContains(desired, live interface{}) bool {
-	if desired == nil {
-		return true
-	}
-	return specContainsAt(nil, desired, live)
-}
-
+// specContainsAt performs a desired-centric comparison: every key-value pair
+// in desired must be present and equal in live. Extra keys in live
+// (Kubernetes defaults such as progressDeadlineSeconds, strategy, clusterIP)
+// are allowed. Lists are compared element-by-element: each desired element
+// must match at least one live element (by name if available, allowing live
+// to carry extra defaulted fields on list items like containers and ports).
 func specContainsAt(path []string, desired, live interface{}) bool {
 	dMap, dOK := desired.(map[string]interface{})
 	lMap, lOK := live.(map[string]interface{})

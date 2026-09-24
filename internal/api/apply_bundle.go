@@ -23,6 +23,7 @@ import (
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
+	"github.com/benebsworth/paprika/internal/api/auth"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/governance"
@@ -44,7 +45,7 @@ const (
 	releaseLabel        = "app.paprika.io/release"
 	historyLabel        = "app.paprika.io/history"
 	projectLabelKey     = "app.paprika.io/project"
-	defaultProjectName  = "default"
+	defaultProjectName  = auth.DefaultProjectName
 	rollbackAnnotation  = "paprika.io/rollback-requested"
 	bundleSHAAnnotation = "paprika.io/bundle-sha"
 )
