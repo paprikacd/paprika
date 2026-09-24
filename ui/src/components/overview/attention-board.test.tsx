@@ -31,6 +31,7 @@ function application(
     lastTransitionUnixMs: BigInt(0),
     attentionLabel: "",
     attentionDetail: "",
+    attentionResource: "",
     ...overrides,
   })
 }

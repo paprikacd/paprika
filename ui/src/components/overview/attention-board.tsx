@@ -131,7 +131,12 @@ export function attentionAction(
     return { label: "Review", href: applicationHref(identity) }
   }
   void state
-  return { label: "View", href: applicationHref(identity) }
+  // When the fleet index names the failing resource, "View" lands on its
+  // inspector rather than the application's front door.
+  return {
+    label: "View",
+    href: applicationHref(identity, application.attentionResource || undefined),
+  }
 }
 
 /**

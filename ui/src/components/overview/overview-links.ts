@@ -19,9 +19,15 @@ export function inventoryHref(
   return query ? `/dashboard/applications/?${query}` : "/dashboard/applications/"
 }
 
-export function applicationHref(identity: NamespacedKey | undefined): string {
+export function applicationHref(
+  identity: NamespacedKey | undefined,
+  resource?: string
+): string {
   if (!identity) return "/dashboard/applications/"
-  return `/dashboard/application/?namespace=${encodeURIComponent(identity.namespace)}&name=${encodeURIComponent(identity.name)}`
+  const base = `/dashboard/application/?namespace=${encodeURIComponent(identity.namespace)}&name=${encodeURIComponent(identity.name)}`
+  // `resource` is the "Kind/name" key the resource tree uses — it deep-links
+  // straight into that object's inspector.
+  return resource ? `${base}&resource=${encodeURIComponent(resource)}` : base
 }
 
 export function rolloutHref(namespace: string, name: string): string {

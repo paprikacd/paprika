@@ -179,6 +179,9 @@ type ApplicationSummary struct {
 	// AttentionDetail carries the failing condition's or resource's message,
 	// bounded in length. Empty when there is nothing to explain.
 	AttentionDetail string
+	// AttentionResource identifies the managed resource the signal points at,
+	// in "Kind/name" form. Set only when the signal names a specific resource.
+	AttentionResource string
 }
 
 // ProjectSummary is the provider-neutral project metadata retained by a

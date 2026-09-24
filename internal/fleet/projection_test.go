@@ -663,10 +663,11 @@ func TestProjectApplicationAttentionSignal(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		mutate     func(app *pipelinesv1alpha1.Application)
-		wantLabel  string
-		wantDetail string
+		name         string
+		mutate       func(app *pipelinesv1alpha1.Application)
+		wantLabel    string
+		wantDetail   string
+		wantResource string
 	}{
 		{
 			name: "healthy application has no attention signal",
@@ -707,8 +708,9 @@ func TestProjectApplicationAttentionSignal(t *testing.T) {
 					{Kind: "Service", Name: "web", Health: "Healthy"},
 				}
 			},
-			wantLabel:  "deployment/web degraded",
-			wantDetail: "0/3 replicas ready",
+			wantLabel:    "deployment/web degraded",
+			wantDetail:   "0/3 replicas ready",
+			wantResource: "Deployment/web",
 		},
 		{
 			name: "worst resource health wins over less severe entries",
@@ -719,8 +721,9 @@ func TestProjectApplicationAttentionSignal(t *testing.T) {
 					{Kind: "Job", Name: "migrate", Health: "Unknown"},
 				}
 			},
-			wantLabel:  "deployment/api degraded",
-			wantDetail: "crash loop",
+			wantLabel:    "deployment/api degraded",
+			wantDetail:   "crash loop",
+			wantResource: "Deployment/api",
 		},
 		{
 			name: "missing resources counted when no resource is unhealthy",
@@ -777,6 +780,7 @@ func TestProjectApplicationAttentionSignal(t *testing.T) {
 			require.Zero(t, result.ProjectionErrorCount)
 			require.Equal(t, test.wantLabel, summary.AttentionLabel)
 			require.Equal(t, test.wantDetail, summary.AttentionDetail)
+			require.Equal(t, test.wantResource, summary.AttentionResource)
 		})
 	}
 }

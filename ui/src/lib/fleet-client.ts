@@ -109,6 +109,8 @@ export interface FleetApplicationSummary {
   lastTransitionUnixMs: bigint
   attentionLabel: string
   attentionDetail: string
+  /** "Kind/name" of the managed resource the attention signal points at. */
+  attentionResource: string
   capabilities: FleetCapability[]
 }
 
@@ -485,6 +487,7 @@ function fromApplicationSummary(message: ApplicationSummaryMessage): FleetApplic
     lastTransitionUnixMs: message.lastTransitionUnixMs,
     attentionLabel: message.attentionLabel,
     attentionDetail: message.attentionDetail,
+    attentionResource: message.attentionResource,
     capabilities: message.capabilities.map(fromCapability),
   }
 }

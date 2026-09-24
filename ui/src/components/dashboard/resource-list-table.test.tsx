@@ -48,15 +48,28 @@ const flat: FlatTreeNode[] = [
   },
 ]
 
+const healthyService: FlatTreeNode = {
+  kind: "Service",
+  name: "demo-svc",
+  namespace: "test-ns",
+  syncStatus: "Synced",
+  health: "Healthy",
+  parentKind: "",
+  parentName: "",
+  managed: true,
+}
+
 /** The board owns collapse state, so the harness stands in for it. */
 function Harness({
   nodes = flat,
   onSelect = vi.fn(),
   initialCollapsed = new Set<string>(),
+  attentionOnly = false,
 }: {
   nodes?: FlatTreeNode[]
   onSelect?: (n: { kind: string; name: string }) => void
   initialCollapsed?: Set<string>
+  attentionOnly?: boolean
 }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(initialCollapsed)
   return (
@@ -64,6 +77,7 @@ function Harness({
       nodes={nodes}
       collapsed={collapsed}
       onCollapsedChange={setCollapsed}
+      attentionOnly={attentionOnly}
       onSelect={onSelect}
     />
   )
@@ -191,6 +205,52 @@ describe("ResourceTree", () => {
   it("says the tree is empty rather than drawing a header over nothing", () => {
     render(<Harness nodes={[]} />)
     expect(screen.getByText(/No managed resources reported/i)).toBeInTheDocument()
+    expect(screen.queryByRole("treegrid")).not.toBeInTheDocument()
+  })
+
+  it("filters to resources needing attention and keeps their ancestors", () => {
+    render(<Harness nodes={[...flat, healthyService]} attentionOnly />)
+
+    // The failing pod, its healthy-but-ancestor ReplicaSet, and the degraded
+    // Deployment all stay; the healthy Service is filtered out.
+    expect(screen.getByTestId("row-Pod-demo-deploy-abc12-xyz34")).toBeInTheDocument()
+    expect(screen.getByTestId("row-ReplicaSet-demo-deploy-abc12")).toBeInTheDocument()
+    expect(screen.getByTestId("row-Deployment-demo-deploy")).toBeInTheDocument()
+    expect(screen.queryByTestId("row-Service-demo-svc")).not.toBeInTheDocument()
+  })
+
+  it("drops drifted resources only when nothing about them needs attention", () => {
+    const driftedOnly: FlatTreeNode = {
+      kind: "ConfigMap",
+      name: "flags",
+      namespace: "test-ns",
+      syncStatus: "OutOfSync",
+      health: "Healthy",
+      managed: true,
+    }
+    render(<Harness nodes={[healthyService, driftedOnly]} attentionOnly />)
+
+    // Healthy + drifted is an issue; healthy + synced is not.
+    expect(screen.getByTestId("row-ConfigMap-flags")).toBeInTheDocument()
+    expect(screen.queryByTestId("row-Service-demo-svc")).not.toBeInTheDocument()
+  })
+
+  it("ignores collapsed state while filtering so failures stay visible", () => {
+    render(
+      <Harness
+        nodes={flat}
+        attentionOnly
+        initialCollapsed={new Set(["ReplicaSet/demo-deploy-abc12"])}
+      />
+    )
+
+    expect(screen.getByTestId("row-Pod-demo-deploy-abc12-xyz34")).toBeInTheDocument()
+  })
+
+  it("says when nothing needs attention instead of drawing an empty grid", () => {
+    render(<Harness nodes={[healthyService]} attentionOnly />)
+
+    expect(screen.getByText(/No failing or drifted resources/i)).toBeInTheDocument()
     expect(screen.queryByRole("treegrid")).not.toBeInTheDocument()
   })
 })

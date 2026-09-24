@@ -10,6 +10,7 @@ const mockClient = vi.hoisted(() => ({
   getApplicationOwnership: vi.fn(),
   getApplicationLifecycle: vi.fn(),
   getRevisionInfo: vi.fn(),
+  getResource: vi.fn(),
   syncApplication: vi.fn(),
   rollbackRelease: vi.fn(),
   approveGate: vi.fn(),
@@ -19,8 +20,12 @@ const mockClient = vi.hoisted(() => ({
 
 const reportRequestOutcome = vi.hoisted(() => vi.fn())
 
+const mockSearch = vi.hoisted(() => ({
+  value: "namespace=payments&name=checkout-api",
+}))
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams("namespace=payments&name=checkout-api"),
+  useSearchParams: () => new URLSearchParams(mockSearch.value),
 }))
 
 vi.mock("@connectrpc/connect", () => ({
@@ -107,6 +112,7 @@ function lifecyclePhases() {
 describe("ApplicationDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSearch.value = "namespace=payments&name=checkout-api"
     mockClient.getApplication.mockResolvedValue({ application: { ...APPLICATION } })
     mockClient.listReleases.mockResolvedValue({ releases: [] })
     mockClient.getResourceTreeDetailed.mockResolvedValue({ nodes: [] })
@@ -117,6 +123,7 @@ describe("ApplicationDetailPage", () => {
     mockClient.getApplicationOwnership.mockResolvedValue({ ownership: undefined })
     mockClient.getApplicationLifecycle.mockResolvedValue({ lifecycle: undefined })
     mockClient.getRevisionInfo.mockResolvedValue({ commit: undefined })
+    mockClient.getResource.mockResolvedValue({})
     mockClient.syncApplication.mockResolvedValue({})
   })
 
@@ -314,6 +321,42 @@ describe("ApplicationDetailPage", () => {
     await user.click(screen.getByRole("button", { name: "Tree" }))
     expect(await screen.findByRole("treegrid", { name: "Resource tree" })).toBeInTheDocument()
     expect(screen.getByTestId("row-Deployment-checkout-api")).toHaveTextContent("1/3 ready")
+  })
+
+  it("opens the inspector on the resource a ?resource= link names", async () => {
+    mockSearch.value =
+      "namespace=payments&name=checkout-api&resource=Deployment%2Fcheckout-api"
+    mockClient.getResourceTreeDetailed.mockResolvedValue({
+      nodes: [
+        {
+          kind: "Deployment",
+          name: "checkout-api",
+          namespace: "payments",
+          syncStatus: "OutOfSync",
+          health: "Degraded",
+          healthMessage: "0/3 replicas ready",
+          parentKind: "",
+          parentName: "",
+          managed: true,
+        },
+      ],
+    })
+
+    render(<ApplicationDetailPage />)
+
+    expect(
+      await screen.findByRole("dialog", { name: /checkout-api/i })
+    ).toBeInTheDocument()
+  })
+
+  it("leaves the inspector closed when ?resource= names nothing the tree holds", async () => {
+    mockSearch.value = "namespace=payments&name=checkout-api&resource=Pod%2Fgone"
+    mockClient.getResourceTreeDetailed.mockResolvedValue({ nodes: [] })
+
+    render(<ApplicationDetailPage />)
+    await screen.findByRole("heading", { level: 1, name: "checkout-api" })
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 
   it("asks the server to sync and reports the outcome", async () => {

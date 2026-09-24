@@ -335,6 +335,9 @@ var fleetMessageDescriptorContracts = map[string]map[string]fleetFieldDescriptor
 		"attention_detail": {
 			number: 28, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
 		},
+		"attention_resource": {
+			number: 29, kind: protoreflect.StringKind, cardinality: protoreflect.Optional,
+		},
 	},
 	"FleetFacetBucket": {
 		"dimension": {

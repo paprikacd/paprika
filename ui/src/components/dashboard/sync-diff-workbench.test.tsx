@@ -245,6 +245,7 @@ function applicationsPage(): FleetApplicationsPage {
         lastTransitionUnixMs: BigInt(0),
         attentionLabel: "",
         attentionDetail: "",
+        attentionResource: "",
         capabilities: [],
       },
     ],

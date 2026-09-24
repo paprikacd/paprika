@@ -6229,6 +6229,15 @@ export declare class ApplicationSummary extends Message<ApplicationSummary> {
    */
   attentionDetail: string;
 
+  /**
+   * Managed resource the attention signal points at, in "Kind/name" form —
+   * e.g. "Deployment/web". Set only when the signal names a specific resource;
+   * empty otherwise. Lets callers deep-link straight to the failing object.
+   *
+   * @generated from field: string attention_resource = 29;
+   */
+  attentionResource: string;
+
   constructor(data?: PartialMessage<ApplicationSummary>);
 
   static readonly runtime: typeof proto3;

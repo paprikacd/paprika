@@ -20,6 +20,7 @@ import {
   collapsibleIds,
   mergeResourcesFromApplication,
   resourceKey,
+  resourceNeedsAttention,
   type FlatTreeNode,
 } from "@/components/dashboard/resource-list-table"
 import { usePublishConsoleScope } from "@/components/layout/console-header"
@@ -417,6 +418,27 @@ function ApplicationDetail() {
   )
 
   const driftedCount = application?.outOfSync ?? 0
+
+  // A `?resource=Kind/name` link lands directly on that resource's inspector
+  // — the attention queue's "deployment/web degraded" should open web, not
+  // just the application that owns it. The param is honoured once, then the
+  // inspector belongs to the operator.
+  const resourceParam = searchParams.get("resource")
+  const [appliedResourceParam, setAppliedResourceParam] = useState<string | null>(null)
+  if (resourceParam && appliedResourceParam !== resourceParam && treeNodes.length > 0) {
+    const node = treeNodes.find((n) => resourceKey(n) === resourceParam)
+    if (node) {
+      setAppliedResourceParam(resourceParam)
+      setSelected({
+        kind: node.kind,
+        name: node.name,
+        namespace: node.namespace,
+        syncStatus: node.syncStatus ?? "",
+        health: node.health ?? "",
+        healthMessage: node.healthMessage ?? "",
+      })
+    }
+  }
   const selectedId = selected ? resourceKey(selected) : null
 
   const runAction = useCallback(
@@ -910,15 +932,26 @@ function ResourceBoard({
   driftedCount: number
 }) {
   const managed = nodes.length
+  const [attentionOnly, setAttentionOnly] = useState(false)
+  const issueCount = useMemo(
+    () => nodes.filter(resourceNeedsAttention).length,
+    [nodes]
+  )
   return (
     <Blueprint>
       <BoardHeader
         title="Resource graph"
-        meta={`${managed} managed · ${driftedCount} drifted`}
+        meta={`${managed} managed · ${issueCount} ${issueCount === 1 ? "issue" : "issues"} · ${driftedCount} drifted`}
         actions={
           <span className="flex items-center gap-2.5">
             {view === "tree" ? (
               <span className="flex gap-1">
+                <MicroButton
+                  pressed={attentionOnly}
+                  onClick={() => setAttentionOnly((current) => !current)}
+                >
+                  Issues only
+                </MicroButton>
                 <MicroButton onClick={() => onCollapsedChange(new Set())}>
                   Expand all
                 </MicroButton>
@@ -959,6 +992,7 @@ function ResourceBoard({
           nodes={nodes}
           collapsed={collapsed}
           onCollapsedChange={onCollapsedChange}
+          attentionOnly={attentionOnly}
           onSelect={onSelect}
           selectedId={selectedId}
         />
@@ -970,15 +1004,21 @@ function ResourceBoard({
 function MicroButton({
   children,
   onClick,
+  pressed,
 }: {
   children: React.ReactNode
   onClick: () => void
+  pressed?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[2px] border border-rule bg-card px-[7px] py-px font-mono text-meta whitespace-nowrap text-muted-foreground hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      aria-pressed={pressed}
+      className={cn(
+        "rounded-[2px] border border-rule px-[7px] py-px font-mono text-meta whitespace-nowrap hover:bg-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        pressed ? "bg-inset text-foreground" : "bg-card text-muted-foreground",
+      )}
     >
       {children}
     </button>

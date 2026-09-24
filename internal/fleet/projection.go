@@ -123,7 +123,7 @@ func projectApplication(input *projectionInput) (ApplicationSummary, ProjectionR
 		}
 	}
 
-	summary.AttentionLabel, summary.AttentionDetail = attentionSignal(app, &summary)
+	attentionSignal(app, &summary)
 
 	return summary, result
 }
@@ -144,31 +144,37 @@ var attentionConditionTypes = []string{
 const attentionDetailRunes = 200
 
 // attentionSignal derives a compact reason an application needs attention from
-// the signals the controllers already record. It reports the most actionable
-// signal present, in order: an active failure condition, an unhealthy managed
-// resource, missing resources, drift, then blocked gates. It never fabricates
-// a root cause — when only a status is known the label stays generic.
-func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSummary) (label, detail string) {
+// the signals the controllers already record, writing it onto the summary. It
+// reports the most actionable signal present, in order: an active failure
+// condition, an unhealthy managed resource, missing resources, drift, then
+// blocked gates. It never fabricates a root cause — when only a status is
+// known the label stays generic, and AttentionResource is only set when the
+// signal names a specific managed resource.
+func attentionSignal(app *pipelinesv1alpha1.Application, summary *ApplicationSummary) {
 	for _, condType := range attentionConditionTypes {
 		cond := meta.FindStatusCondition(app.Status.Conditions, condType)
 		if cond != nil && cond.Status == metav1.ConditionTrue {
-			return humanizeConditionType(condType), sanitizeAttentionDetail(cond.Message)
+			summary.AttentionLabel = humanizeConditionType(condType)
+			summary.AttentionDetail = sanitizeAttentionDetail(cond.Message)
+			return
 		}
 	}
 	if worst := worstResourceHealth(app.Status.ResourceHealth); worst != nil {
-		return fmt.Sprintf("%s/%s %s", strings.ToLower(worst.Kind), worst.Name, strings.ToLower(worst.Health)),
-			sanitizeAttentionDetail(worst.Message)
+		summary.AttentionLabel = fmt.Sprintf(
+			"%s/%s %s", strings.ToLower(worst.Kind), worst.Name, strings.ToLower(worst.Health),
+		)
+		summary.AttentionDetail = sanitizeAttentionDetail(worst.Message)
+		summary.AttentionResource = fmt.Sprintf("%s/%s", worst.Kind, worst.Name)
+		return
 	}
-	if summary.MissingResourceCount > 0 {
-		return pluralizeAttention(summary.MissingResourceCount, "resource", "missing"), ""
+	switch {
+	case summary.MissingResourceCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.MissingResourceCount, "resource", "missing")
+	case summary.DriftCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.DriftCount, "resource", "out of sync")
+	case summary.BlockedGateCount > 0:
+		summary.AttentionLabel = pluralizeAttention(summary.BlockedGateCount, "gate", "blocked")
 	}
-	if summary.DriftCount > 0 {
-		return pluralizeAttention(summary.DriftCount, "resource", "out of sync"), ""
-	}
-	if summary.BlockedGateCount > 0 {
-		return pluralizeAttention(summary.BlockedGateCount, "gate", "blocked"), ""
-	}
-	return "", ""
 }
 
 // worstResourceHealth returns the unhealthiest managed resource, or nil when

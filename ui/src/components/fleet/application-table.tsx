@@ -2,6 +2,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { ChevronDown } from "lucide-react"
+import Link from "next/link"
 import { useCallback, useMemo, useRef, useState } from "react"
 
 import {
@@ -39,6 +40,7 @@ import {
   type ApplicationGroup,
   type GroupDimension,
 } from "@/components/fleet/fleet-rows"
+import { applicationHref } from "@/components/overview/overview-links"
 import { StatusGlyph, StatusPill } from "@/components/ui/status-chip"
 import type { FleetApplicationSummary } from "@/lib/fleet-client"
 import { STATUS_TONES } from "@/lib/status-tone"
@@ -467,9 +469,19 @@ function ApplicationRow({
       <span role="cell" aria-colindex={colIndex.get("application")} className="min-w-0">
         <span className="flex items-center gap-1.75">
           <StatusGlyph tone={healthTone} label={healthLabelOf(application.health)} />
-          <span className="truncate font-cond text-name font-semibold tracking-[0.02em]">
-            {identity?.name || "Unnamed application"}
-          </span>
+          {identity ? (
+            <Link
+              href={applicationHref(identity, application.attentionResource || undefined)}
+              onClick={(event) => event.stopPropagation()}
+              className="truncate font-cond text-name font-semibold tracking-[0.02em] text-foreground no-underline hover:underline"
+            >
+              {identity.name}
+            </Link>
+          ) : (
+            <span className="truncate font-cond text-name font-semibold tracking-[0.02em]">
+              Unnamed application
+            </span>
+          )}
         </span>
         <span
           title={attentionDetailOf(application) || undefined}

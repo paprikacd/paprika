@@ -1033,6 +1033,10 @@ message ApplicationSummary {
   // Detail behind the label — the failing condition's or resource's message,
   // bounded in length. Empty when there is nothing to explain.
   string attention_detail = 28;
+  // Managed resource the attention signal points at, in "Kind/name" form —
+  // e.g. "Deployment/web". Set only when the signal names a specific resource;
+  // empty otherwise. Lets callers deep-link straight to the failing object.
+  string attention_resource = 29;
 }
 
 message FleetFacetBucket {

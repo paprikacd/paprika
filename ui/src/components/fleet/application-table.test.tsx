@@ -93,6 +93,7 @@ function application(
     lastTransitionUnixMs: BigInt(1_725_000_000_000),
     attentionLabel: "",
     attentionDetail: "",
+    attentionResource: "",
     capabilities: [],
     ...overrides,
   }

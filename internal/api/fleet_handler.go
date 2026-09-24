@@ -573,6 +573,7 @@ func fleetApplicationResultToProto(result *fleet.ApplicationQueryResult) *paprik
 		LastTransitionUnixMs:         summary.LastTransitionUnixMS,
 		AttentionLabel:               summary.AttentionLabel,
 		AttentionDetail:              summary.AttentionDetail,
+		AttentionResource:            summary.AttentionResource,
 		Capabilities:                 make([]paprikav1.FleetCapability, 0, len(result.Capabilities)),
 	}
 	for i := range summary.Targets {
