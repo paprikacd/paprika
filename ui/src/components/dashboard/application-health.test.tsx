@@ -30,3 +30,16 @@ describe("application health evidence", () => {
     expect(select).toHaveBeenCalledWith(expect.objectContaining({name: "api", healthMessage: "1 of 2 replicas ready"}))
   })
 })
+
+it("does not present an old successful probe as currently passing", () => {
+  render(<ApplicationHealth application={new Application({healthCheckDefinitions:[{name:"deepcheck",interval:"30s"}],healthChecks:[{name:"deepcheck",status:"Healthy",checkedAt:1800000000n}]})} observedAt={1800000070000} release={null} resources={[]} releaseLoading={false} onSelectResource={vi.fn()} />)
+  expect(screen.getByText("Waiting for fresh checks")).toBeVisible()
+  expect(screen.getByText("Stale")).toBeVisible()
+  expect(screen.queryByText("All checks passing")).not.toBeInTheDocument()
+})
+it("shows current success independently of failed historical SLO observations", () => {
+  render(<ApplicationHealth application={new Application({healthCheckDefinitions:[{name:"deepcheck",interval:"30s",slo:{targetPercentage:99.9,window:"30d"}}],healthChecks:[{name:"deepcheck",status:"Healthy",checkedAt:1800000000n,slo:{state:"Collecting",healthy:38n,unhealthy:1n}}]})} observedAt={1800000010000} release={null} resources={[]} releaseLoading={false} onSelectResource={vi.fn()} />)
+  expect(screen.getByText("All checks passing")).toBeVisible()
+  expect(screen.getByText("Failed probes")).toBeVisible()
+  expect(screen.getByText("1")).toBeVisible()
+})
