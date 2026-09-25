@@ -31,15 +31,39 @@ func desiredApp(name, wave, image string) pipelinesv1alpha1.Application {
 		},
 		Spec: pipelinesv1alpha1.ApplicationSpec{
 			Source: pipelinesv1alpha1.ApplicationSource{Image: image},
+			Stages: []pipelinesv1alpha1.ApplicationPromotionStage{
+				{Name: "dev", Ring: 1},
+			},
 		},
 	}
 }
 
+// existingApp fakes a live Application at the given resource-health state.
+// resourceHealth entries are the gate signal: status.phase lands Healthy as
+// soon as a release applies and status.health is only the health-check
+// aggregate, so the fixture mirrors real status shape.
 func existingApp(name, wave, image, health string) *pipelinesv1alpha1.Application {
 	app := desiredApp(name, wave, image)
-	app.Status.Health = pipelinesv1alpha1.HealthStatus(health)
 	app.Status.Phase = pipelinesv1alpha1.ApplicationPhase(health)
+	app.Generation = 1
+	app.Status.ObservedGeneration = 1
+	app.Status.ResourceHealth = []pipelinesv1alpha1.ResourceHealth{
+		{Kind: "Deployment", Name: name + "-deploy", Namespace: "default", Health: health},
+	}
+	// Model the release pipeline state the convergence gate reads: the
+	// spec-derived release name plus a Complete stage phase.
+	app.Status.ReleaseRef = applicationReleaseName(&app, &app.Spec.Stages[0])
+	app.Status.Stages = []pipelinesv1alpha1.ApplicationStageStatus{
+		{Name: "dev", Ring: 1, Phase: healthToStagePhase(health)},
+	}
 	return &app
+}
+
+func healthToStagePhase(health string) string {
+	if health == "Healthy" {
+		return "Complete"
+	}
+	return "Deploying"
 }
 
 func rollingSyncSet(steps ...pipelinesv1alpha1.RollingSyncStep) *pipelinesv1alpha1.ApplicationSet {
@@ -173,6 +197,47 @@ func TestRollingSync_MaxUpdateBatches(t *testing.T) {
 	}
 	if updated != 1 {
 		t.Fatalf("maxUpdate=1 should update exactly one app, got %d", updated)
+	}
+}
+
+func TestRollingSync_UpdatedPriorStepStillGatesSamePass(t *testing.T) {
+	// Canary is Healthy but stale (v1 -> v2 update pending). Its update is
+	// applied this pass, but the health assessment is pre-update — prod must
+	// still wait for the next pass before consuming its own update.
+	canary := existingApp("set-canary", "canary", "v1", "Healthy")
+	prod := existingApp("set-prod", "prod", "v1", "Healthy")
+
+	c := fake.NewClientBuilder().WithScheme(rollingSyncScheme(t)).
+		WithObjects(canary, prod).Build()
+	r := &ApplicationSetReconciler{client: c}
+
+	desired := map[string]pipelinesv1alpha1.Application{
+		"set-canary": desiredApp("set-canary", "canary", "v2"),
+		"set-prod":   desiredApp("set-prod", "prod", "v2"),
+	}
+	existing := map[string]pipelinesv1alpha1.Application{
+		"set-canary": *canary,
+		"set-prod":   *prod,
+	}
+
+	gated, progress, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
+		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "canary"}},
+		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "prod"}},
+	), desired, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !gated {
+		t.Fatal("an updated same-pass prior step must still gate later steps")
+	}
+	if progress == nil || progress.Step != 2 || progress.WaitingFor != "set-canary" {
+		t.Fatalf("progress = %+v, want step=2 waitingFor=set-canary", progress)
+	}
+	if got := getSpecImage(t, c, "set-canary"); got != "v2" {
+		t.Fatalf("canary should have updated: image=%s", got)
+	}
+	if got := getSpecImage(t, c, "set-prod"); got != "v1" {
+		t.Fatalf("prod updated behind an in-flight canary update: image=%s", got)
 	}
 }
 
