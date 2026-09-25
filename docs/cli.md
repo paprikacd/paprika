@@ -144,6 +144,40 @@ successful zero-valued view.
 
 For the equivalent Connect JSON request, see the [API reference](api.md#getsystemstatus).
 
+## `paprika apps`
+
+```sh
+paprika apps list                     # table of applications in the namespace
+paprika apps get NAME                 # detail: phase, stages, resources, gates
+paprika apps sync NAME [-w]           # trigger a full sync; -w watches to terminal phase
+paprika apps sync NAME --resource apps:Deployment:prod:web --yes
+paprika apps sync NAME --resource deployment/web --resource apps:StatefulSet:db --prune --yes
+paprika apps restart NAME deployment/web        # dry-run diff of the restart patch
+paprika apps restart NAME deployment/web --yes  # apply the rolling restart
+paprika apps rollback NAME --yes      # roll back to the previous release revision
+paprika apps ignore-diff add NAME --kind Deployment --field /spec/replicas
+paprika apps ignore-diff remove NAME --kind Deployment --field /spec/replicas
+```
+
+`sync --resource` performs a **selective sync**: only the named resources
+re-apply, never a full prune (unselected resources aren't in the desired set
+for that pass). Selectors take `KIND/NAME`, `GROUP:KIND:NAME`, or
+`GROUP:KIND:NAMESPACE:NAME` forms; `--resource-namespace` fills the namespace
+for selectors without one. Without `--yes` the call is a dry-run — the
+server validates each selector against the app's live resource list and
+reports which matched.
+
+`restart` wraps `ApplyResourcePatch` with the kubectl-standard
+`kubectl.kubernetes.io/restartedAt` merge patch for Deployment,
+StatefulSet, and DaemonSet workloads. The server always dry-runs first; the
+diff is printed whether or not `--yes` applies it. Only resources managed
+by the named application can be restarted.
+
+`rollback` requires `--yes`. `ignore-diff` manages scoped
+`spec.ignoreDifferences` rules — scope by `--group`, `--kind`,
+`--resource-name`, `--resource-namespace` (empty = wildcard), with
+repeatable `--field` JSON pointers.
+
 ## `paprika apply`
 
 Apply raw Kubernetes manifests through Paprika so they are versioned, governed by policy, and tracked in the dashboard.

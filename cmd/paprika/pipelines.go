@@ -48,7 +48,7 @@ func newPipelinesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServ
 				Namespace: stringPtr(nsFn()),
 			}))
 			if err != nil {
-				return fmt.Errorf("list pipelines: %w", err)
+				return fmt.Errorf("list pipelines: %w", friendlyError(err))
 			}
 			return writePipelines(cmd.OutOrStdout(), *output, res.Msg.Pipelines)
 		},
