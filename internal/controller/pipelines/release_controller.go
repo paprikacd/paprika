@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,7 @@ import (
 	"github.com/benebsworth/paprika/internal/engine/hooks"
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
+	"github.com/benebsworth/paprika/internal/health"
 	"github.com/benebsworth/paprika/internal/metrics"
 	"github.com/benebsworth/paprika/internal/observability"
 	"github.com/benebsworth/paprika/internal/policy"
@@ -79,6 +81,22 @@ const (
 // still Running. Callers must persist status and requeue without advancing
 // the release phase.
 var errHookPhasePending = errors.New("hook phase still in progress")
+
+// errSyncWavePending is returned when a sync wave's resources exist but have
+// not reached Healthy yet. Like errHookPhasePending it must not mark the
+// release failed — the caller requeues and the apply is re-run idempotently.
+var errSyncWavePending = errors.New("sync wave waiting for resources to become healthy")
+
+const (
+	// syncWaveAnnotation orders sync-phase resources into waves applied in
+	// ascending order; each wave is health-gated before the next applies.
+	syncWaveAnnotation = "paprika.io/sync-wave"
+	// argoSyncWaveAnnotation is honored for Argo CD manifest portability.
+	argoSyncWaveAnnotation = "argocd.argoproj.io/sync-wave"
+	// waveGateStampAnnotation records when the release first parked on a wave
+	// gate so the wait is bounded by the hook timeout budget.
+	waveGateStampAnnotation = "paprika.io/wave-gate-started"
+)
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
@@ -556,7 +574,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 	}
 
 	if err := r.promote(ctx, release); err != nil {
-		if errors.Is(err, errHookPhasePending) {
+		if errors.Is(err, errHookPhasePending) || errors.Is(err, errSyncWavePending) {
 			return r.requeueForHooks(ctx, release, oldPhase, result)
 		}
 		if errors.Is(err, errConftestBlocked) {
@@ -962,6 +980,9 @@ func (r *ReleaseReconciler) executeHookPhases(
 
 	syncDocs := bucket.SyncDocs()
 	if err := r.applyPromotedManifests(ctx, release, stage, syncDocs); err != nil {
+		if errors.Is(err, errHookPhasePending) || errors.Is(err, errSyncWavePending) {
+			return err
+		}
 		r.runSyncFailHooks(ctx, release, dynClient, bucket)
 		return fmt.Errorf("apply promoted manifests: %w", err)
 	}
@@ -1330,21 +1351,242 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 }
 
 func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (int, error) {
-	applied := 0
+	objs := make([]map[string]interface{}, 0, len(docs))
 	for _, doc := range docs {
-		obj, ok := r.parseManifest(doc)
-		if !ok {
-			continue
+		if obj, ok := r.parseManifest(doc); ok {
+			objs = append(objs, obj)
 		}
-		ok, err := r.applyDocument(ctx, log, dynClient, obj, namespace, appName, releaseName, opts)
-		if err != nil {
-			return applied, fmt.Errorf("apply document: %w", err)
+	}
+
+	// Fast path: no wave annotations → identical to pre-wave behavior.
+	if !hasSyncWaveAnnotation(objs) {
+		applied := 0
+		for _, obj := range objs {
+			ok, err := r.applyDocument(ctx, log, dynClient, obj, namespace, appName, releaseName, opts)
+			if err != nil {
+				return applied, fmt.Errorf("apply document: %w", err)
+			}
+			if ok {
+				applied++
+			}
 		}
-		if ok {
-			applied++
+		return applied, nil
+	}
+
+	return r.applyBySyncWaves(ctx, log, dynClient, objs, namespace, appName, releaseName, opts)
+}
+
+// applyBySyncWaves applies parsed objects in ascending sync-wave order
+// (paprika.io/sync-wave, default 0). Between waves, the reconciler waits for
+// the just-applied resources to report Healthy via AssessObject; a wave still
+// converging returns errSyncWavePending so the release requeues and the apply
+// resumes idempotently. The gate is bounded by the release's hook timeout —
+// measured from a wave-gate stamp annotation — so a permanently unhealthy
+// wave fails the release instead of parking it forever.
+func (r *ReleaseReconciler) applyBySyncWaves(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, objs []map[string]interface{}, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (int, error) {
+	waves, err := groupBySyncWave(objs)
+	if err != nil {
+		return 0, err
+	}
+
+	applied := 0
+	for i, waveObjs := range waves {
+		for _, obj := range waveObjs {
+			ok, err := r.applyDocument(ctx, log, dynClient, obj, namespace, appName, releaseName, opts)
+			if err != nil {
+				return applied, fmt.Errorf("apply document: %w", err)
+			}
+			if ok {
+				applied++
+			}
+		}
+		if i == len(waves)-1 {
+			break // no gate after the final wave — health is tracked async
+		}
+		if err := r.gateSyncWave(ctx, log, dynClient, waveObjs, namespace, releaseName); err != nil {
+			return applied, err
 		}
 	}
 	return applied, nil
+}
+
+// groupBySyncWave buckets objects by ascending wave index, preserving
+// document order within each wave. A malformed wave value fails the release —
+// silently defaulting would hide a config error.
+func groupBySyncWave(objs []map[string]interface{}) ([][]map[string]interface{}, error) {
+	seen := map[int]bool{}
+	waves := []int{}
+	byWave := map[int][]map[string]interface{}{}
+	for _, obj := range objs {
+		u := &unstructured.Unstructured{Object: obj}
+		w, err := syncWaveOf(u)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[w] {
+			seen[w] = true
+			waves = append(waves, w)
+		}
+		byWave[w] = append(byWave[w], obj)
+	}
+	sort.Ints(waves)
+	out := make([][]map[string]interface{}, len(waves))
+	for i, w := range waves {
+		out[i] = byWave[w]
+	}
+	return out, nil
+}
+
+func hasSyncWaveAnnotation(objs []map[string]interface{}) bool {
+	for _, obj := range objs {
+		u := &unstructured.Unstructured{Object: obj}
+		if _, ok := u.GetAnnotations()[syncWaveAnnotation]; ok {
+			return true
+		}
+		if _, ok := u.GetAnnotations()[argoSyncWaveAnnotation]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func syncWaveOf(u *unstructured.Unstructured) (int, error) {
+	raw := u.GetAnnotations()[syncWaveAnnotation]
+	if raw == "" {
+		raw = u.GetAnnotations()[argoSyncWaveAnnotation]
+	}
+	if raw == "" {
+		return 0, nil
+	}
+	w, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, fmt.Errorf("invalid sync-wave value %q on %s/%s: %w", raw, u.GetKind(), u.GetName(), err)
+	}
+	return w, nil
+}
+
+// gateSyncWave blocks the next wave until every resource in the current wave
+// reports Healthy via the shared assessor. Degraded fails the release;
+// anything not yet Healthy returns errSyncWavePending, bounded by
+// waveGateDeadline.
+func (r *ReleaseReconciler) gateSyncWave(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, objs []map[string]interface{}, namespace, releaseName string) error {
+	var pending []string
+	for _, obj := range objs {
+		u := &unstructured.Unstructured{Object: obj}
+		ns := u.GetNamespace()
+		if ns == "" && !isClusterScopedKind(u.GetKind()) {
+			ns = namespace
+		}
+		live, err := r.getLiveObject(ctx, dynClient, u, ns)
+		if err != nil {
+			return err
+		}
+		if live == nil {
+			pending = append(pending, u.GetKind()+"/"+u.GetName())
+			continue
+		}
+		h := health.AssessObject(live)
+		switch paprikav1.HealthStatus(h.Health) {
+		case paprikav1.HealthHealthy:
+		case paprikav1.HealthDegraded:
+			return fmt.Errorf("sync wave resource %s/%s is Degraded: %s", u.GetKind(), u.GetName(), h.Message)
+		default:
+			pending = append(pending, fmt.Sprintf("%s/%s (%s)", u.GetKind(), u.GetName(), h.Health))
+		}
+	}
+	if len(pending) == 0 {
+		r.clearWaveGateStamp(ctx, namespace, releaseName)
+		return nil
+	}
+	log.Info("Sync wave resources not yet healthy; waiting", "pending", pending, "release", releaseName)
+	return r.syncWavePendingOrTimeout(ctx, namespace, releaseName)
+}
+
+// getLiveObject fetches the live object for a desired manifest object.
+// Returns (nil, nil) when the resource does not exist.
+func (r *ReleaseReconciler) getLiveObject(ctx context.Context, dynClient dynamic.Interface, u *unstructured.Unstructured, namespace string) (*unstructured.Unstructured, error) {
+	group, version := parseAPIVersion(u.GetAPIVersion())
+	gvr, err := r.gvrFromKind(u.GetKind(), group, version)
+	if err != nil {
+		return nil, fmt.Errorf("resolve GVR for %s/%s: %w", u.GetKind(), u.GetName(), err)
+	}
+	var ri dynamic.ResourceInterface = dynClient.Resource(gvr)
+	if !isClusterScopedKind(u.GetKind()) {
+		ri = dynClient.Resource(gvr).Namespace(namespace)
+	}
+	live, err := ri.Get(ctx, u.GetName(), metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get %s/%s: %w", u.GetKind(), u.GetName(), err)
+	}
+	return live, nil
+}
+
+// clearWaveGateStamp removes the gate-start stamp once a wave passes so a
+// later wave's timeout doesn't measure from a stale early stamp.
+func (r *ReleaseReconciler) clearWaveGateStamp(ctx context.Context, namespace, releaseName string) {
+	release, err := r.getReleaseForWaveGate(ctx, namespace, releaseName)
+	if err != nil || release.GetAnnotations()[waveGateStampAnnotation] == "" {
+		return
+	}
+	patch := client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(
+		`{"metadata":{"annotations":{%q:null}}}`, waveGateStampAnnotation)))
+	if err := r.client.Patch(ctx, release, patch); err != nil {
+		logf.FromContext(ctx).Error(err, "wave gate: failed to clear stamp", "release", release.Name)
+	}
+}
+
+// syncWavePendingOrTimeout bounds the wave wait: the first pending reconcile
+// stamps paprika.io/wave-gate-started on the Release; a wave pending past the
+// hook-timeout budget fails instead of parking forever. The stamp clears on
+// gate success via clearWaveGateStamp.
+func (r *ReleaseReconciler) syncWavePendingOrTimeout(ctx context.Context, namespace, releaseName string) error {
+	release, err := r.getReleaseForWaveGate(ctx, namespace, releaseName)
+	if err != nil {
+		// Can't bound the wait without the release — still prefer the safe
+		// pending path over a spurious failure.
+		logf.FromContext(ctx).Error(err, "wave gate: release lookup failed; treating as pending", "release", releaseName)
+		return errSyncWavePending
+	}
+	timeout := r.hookTimeout(release)
+	if timeout == 0 {
+		return errSyncWavePending // fire-and-forget: no gate bound
+	}
+	raw := release.GetAnnotations()[waveGateStampAnnotation]
+	if raw == "" {
+		r.stampWaveGate(ctx, release)
+		return errSyncWavePending
+	}
+	since, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		r.stampWaveGate(ctx, release) // malformed stamp: restart the clock
+		return errSyncWavePending
+	}
+	if time.Since(since) > timeout {
+		return fmt.Errorf("sync wave did not become healthy within %s", timeout)
+	}
+	return errSyncWavePending
+}
+
+func (r *ReleaseReconciler) getReleaseForWaveGate(ctx context.Context, namespace, releaseName string) (*paprikav1.Release, error) {
+	var release paprikav1.Release
+	if err := r.client.Get(ctx, types.NamespacedName{Name: releaseName, Namespace: namespace}, &release); err != nil {
+		return nil, fmt.Errorf("get release %s/%s: %w", namespace, releaseName, err)
+	}
+	return &release, nil
+}
+
+// stampWaveGate records the wave-gate start on the Release (merge patch; a
+// conflict is harmless — the next pending reconcile retries the stamp).
+func (r *ReleaseReconciler) stampWaveGate(ctx context.Context, release *paprikav1.Release) {
+	patch := client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(
+		`{"metadata":{"annotations":{%q:%q}}}`,
+		waveGateStampAnnotation, time.Now().UTC().Format(time.RFC3339))))
+	if err := r.client.Patch(ctx, release, patch); err != nil {
+		logf.FromContext(ctx).Error(err, "wave gate: failed to stamp release", "release", release.Name)
+	}
 }
 
 func (r *ReleaseReconciler) parseManifest(doc []byte) (map[string]interface{}, bool) {

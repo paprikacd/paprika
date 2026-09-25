@@ -530,6 +530,18 @@ spec:
                                 AnalysisCheck defines a check for canary analysis.
                                 AnalysisCheck defines a check for canary analysis.
                               properties:
+                                address:
+                                  description: |-
+                                    Address is the Prometheus server base URL (for type=prometheus), e.g.
+                                    "http://prometheus-operated.monitoring:9090". Required for
+                                    type=prometheus.
+                                  type: string
+                                failureCondition:
+                                  description: |-
+                                    FailureCondition is a CEL expression evaluated over `result` that fails
+                                    the check when true, e.g. `result[0].value > 0.05`. Evaluated before
+                                    SuccessCondition.
+                                  type: string
                                 httpHeaders:
                                   additionalProperties:
                                     type: string
@@ -552,10 +564,22 @@ spec:
                                     "app.kubernetes.io/name=my-api"). Pods are listed in the namespace of
                                     the resource under analysis. Required for type=podMetrics.
                                   type: string
+                                query:
+                                  description: |-
+                                    Query is the PromQL instant query evaluated each analysis cycle (for
+                                    type=prometheus).
+                                  type: string
                                 requestCount:
                                   description: Number of requests to make per analysis
                                     cycle
                                   type: integer
+                                successCondition:
+                                  description: |-
+                                    SuccessCondition is a CEL expression evaluated over the query result —
+                                    `result` is a list of {metric: map[string]string, value: float}. The
+                                    check passes when the expression is true, e.g.
+                                    `result[0].value < 0.01`. When empty, a non-empty result passes.
+                                  type: string
                                 successThreshold:
                                   description: Fraction of requests that must succeed
                                     as a percentage string (e.g. "99" = 99%)
@@ -572,6 +596,7 @@ spec:
                                   enum:
                                   - http
                                   - podMetrics
+                                  - prometheus
                                   type: string
                                 url:
                                   description: URL to probe (for type=http)
@@ -1042,6 +1067,18 @@ spec:
                                       AnalysisCheck defines a check for canary analysis.
                                       AnalysisCheck defines a check for canary analysis.
                                     properties:
+                                      address:
+                                        description: |-
+                                          Address is the Prometheus server base URL (for type=prometheus), e.g.
+                                          "http://prometheus-operated.monitoring:9090". Required for
+                                          type=prometheus.
+                                        type: string
+                                      failureCondition:
+                                        description: |-
+                                          FailureCondition is a CEL expression evaluated over `result` that fails
+                                          the check when true, e.g. `result[0].value > 0.05`. Evaluated before
+                                          SuccessCondition.
+                                        type: string
                                       httpHeaders:
                                         additionalProperties:
                                           type: string
@@ -1065,10 +1102,22 @@ spec:
                                           "app.kubernetes.io/name=my-api"). Pods are listed in the namespace of
                                           the resource under analysis. Required for type=podMetrics.
                                         type: string
+                                      query:
+                                        description: |-
+                                          Query is the PromQL instant query evaluated each analysis cycle (for
+                                          type=prometheus).
+                                        type: string
                                       requestCount:
                                         description: Number of requests to make per
                                           analysis cycle
                                         type: integer
+                                      successCondition:
+                                        description: |-
+                                          SuccessCondition is a CEL expression evaluated over the query result —
+                                          `result` is a list of {metric: map[string]string, value: float}. The
+                                          check passes when the expression is true, e.g.
+                                          `result[0].value < 0.01`. When empty, a non-empty result passes.
+                                        type: string
                                       successThreshold:
                                         description: Fraction of requests that must
                                           succeed as a percentage string (e.g. "99"
@@ -1086,6 +1135,7 @@ spec:
                                         enum:
                                         - http
                                         - podMetrics
+                                        - prometheus
                                         type: string
                                       url:
                                         description: URL to probe (for type=http)
@@ -1196,6 +1246,15 @@ spec:
                                         description: AnalysisCheck defines a single
                                           analysis check.
                                         properties:
+                                          address:
+                                            description: Address is the Prometheus
+                                              server base URL (for type=prometheus).
+                                            type: string
+                                          failureCondition:
+                                            description: |-
+                                              FailureCondition is a CEL expression over `result` that fails the check
+                                              when true. Evaluated before SuccessCondition.
+                                            type: string
                                           httpHeaders:
                                             additionalProperties:
                                               type: string
@@ -1215,10 +1274,21 @@ spec:
                                               Label selector for pods evaluated by podMetrics checks. Pods are listed
                                               in the Rollout's namespace. Required for type=podMetrics.
                                             type: string
+                                          query:
+                                            description: |-
+                                              Query is the PromQL instant query evaluated each analysis cycle (for
+                                              type=prometheus).
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
                                             type: integer
+                                          successCondition:
+                                            description: |-
+                                              SuccessCondition is a CEL expression over `result` (a list of
+                                              {metric, value}); the check passes when true. When empty, a non-empty
+                                              result passes.
+                                            type: string
                                           successThreshold:
                                             description: Fraction of requests that
                                               must succeed as a percentage string
@@ -1233,6 +1303,7 @@ spec:
                                             enum:
                                             - http
                                             - podMetrics
+                                            - prometheus
                                             type: string
                                           url:
                                             description: URL to probe (for type=http)
@@ -1296,6 +1367,15 @@ spec:
                                         description: AnalysisCheck defines a single
                                           analysis check.
                                         properties:
+                                          address:
+                                            description: Address is the Prometheus
+                                              server base URL (for type=prometheus).
+                                            type: string
+                                          failureCondition:
+                                            description: |-
+                                              FailureCondition is a CEL expression over `result` that fails the check
+                                              when true. Evaluated before SuccessCondition.
+                                            type: string
                                           httpHeaders:
                                             additionalProperties:
                                               type: string
@@ -1315,10 +1395,21 @@ spec:
                                               Label selector for pods evaluated by podMetrics checks. Pods are listed
                                               in the Rollout's namespace. Required for type=podMetrics.
                                             type: string
+                                          query:
+                                            description: |-
+                                              Query is the PromQL instant query evaluated each analysis cycle (for
+                                              type=prometheus).
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
                                             type: integer
+                                          successCondition:
+                                            description: |-
+                                              SuccessCondition is a CEL expression over `result` (a list of
+                                              {metric, value}); the check passes when true. When empty, a non-empty
+                                              result passes.
+                                            type: string
                                           successThreshold:
                                             description: Fraction of requests that
                                               must succeed as a percentage string
@@ -1333,6 +1424,7 @@ spec:
                                             enum:
                                             - http
                                             - podMetrics
+                                            - prometheus
                                             type: string
                                           url:
                                             description: URL to probe (for type=http)
@@ -1381,6 +1473,15 @@ spec:
                                         description: AnalysisCheck defines a single
                                           analysis check.
                                         properties:
+                                          address:
+                                            description: Address is the Prometheus
+                                              server base URL (for type=prometheus).
+                                            type: string
+                                          failureCondition:
+                                            description: |-
+                                              FailureCondition is a CEL expression over `result` that fails the check
+                                              when true. Evaluated before SuccessCondition.
+                                            type: string
                                           httpHeaders:
                                             additionalProperties:
                                               type: string
@@ -1400,10 +1501,21 @@ spec:
                                               Label selector for pods evaluated by podMetrics checks. Pods are listed
                                               in the Rollout's namespace. Required for type=podMetrics.
                                             type: string
+                                          query:
+                                            description: |-
+                                              Query is the PromQL instant query evaluated each analysis cycle (for
+                                              type=prometheus).
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
                                             type: integer
+                                          successCondition:
+                                            description: |-
+                                              SuccessCondition is a CEL expression over `result` (a list of
+                                              {metric, value}); the check passes when true. When empty, a non-empty
+                                              result passes.
+                                            type: string
                                           successThreshold:
                                             description: Fraction of requests that
                                               must succeed as a percentage string
@@ -1418,6 +1530,7 @@ spec:
                                             enum:
                                             - http
                                             - podMetrics
+                                            - prometheus
                                             type: string
                                           url:
                                             description: URL to probe (for type=http)
@@ -1457,6 +1570,15 @@ spec:
                                               description: AnalysisCheck defines a
                                                 single analysis check.
                                               properties:
+                                                address:
+                                                  description: Address is the Prometheus
+                                                    server base URL (for type=prometheus).
+                                                  type: string
+                                                failureCondition:
+                                                  description: |-
+                                                    FailureCondition is a CEL expression over `result` that fails the check
+                                                    when true. Evaluated before SuccessCondition.
+                                                  type: string
                                                 httpHeaders:
                                                   additionalProperties:
                                                     type: string
@@ -1476,10 +1598,21 @@ spec:
                                                     Label selector for pods evaluated by podMetrics checks. Pods are listed
                                                     in the Rollout's namespace. Required for type=podMetrics.
                                                   type: string
+                                                query:
+                                                  description: |-
+                                                    Query is the PromQL instant query evaluated each analysis cycle (for
+                                                    type=prometheus).
+                                                  type: string
                                                 requestCount:
                                                   description: Number of requests
                                                     to make per analysis cycle
                                                   type: integer
+                                                successCondition:
+                                                  description: |-
+                                                    SuccessCondition is a CEL expression over `result` (a list of
+                                                    {metric, value}); the check passes when true. When empty, a non-empty
+                                                    result passes.
+                                                  type: string
                                                 successThreshold:
                                                   description: Fraction of requests
                                                     that must succeed as a percentage
@@ -1496,6 +1629,7 @@ spec:
                                                   enum:
                                                   - http
                                                   - podMetrics
+                                                  - prometheus
                                                   type: string
                                                 url:
                                                   description: URL to probe (for type=http)
@@ -1542,6 +1676,15 @@ spec:
                                         description: AnalysisCheck defines a single
                                           analysis check.
                                         properties:
+                                          address:
+                                            description: Address is the Prometheus
+                                              server base URL (for type=prometheus).
+                                            type: string
+                                          failureCondition:
+                                            description: |-
+                                              FailureCondition is a CEL expression over `result` that fails the check
+                                              when true. Evaluated before SuccessCondition.
+                                            type: string
                                           httpHeaders:
                                             additionalProperties:
                                               type: string
@@ -1561,10 +1704,21 @@ spec:
                                               Label selector for pods evaluated by podMetrics checks. Pods are listed
                                               in the Rollout's namespace. Required for type=podMetrics.
                                             type: string
+                                          query:
+                                            description: |-
+                                              Query is the PromQL instant query evaluated each analysis cycle (for
+                                              type=prometheus).
+                                            type: string
                                           requestCount:
                                             description: Number of requests to make
                                               per analysis cycle
                                             type: integer
+                                          successCondition:
+                                            description: |-
+                                              SuccessCondition is a CEL expression over `result` (a list of
+                                              {metric, value}); the check passes when true. When empty, a non-empty
+                                              result passes.
+                                            type: string
                                           successThreshold:
                                             description: Fraction of requests that
                                               must succeed as a percentage string
@@ -1579,6 +1733,7 @@ spec:
                                             enum:
                                             - http
                                             - podMetrics
+                                            - prometheus
                                             type: string
                                           url:
                                             description: URL to probe (for type=http)
@@ -1673,8 +1828,9 @@ spec:
                       hookTimeoutSeconds:
                         description: |-
                           HookTimeoutSeconds is the max time to wait for any single hook to reach
-                          a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
-                          (skip the per-hook poll entirely).
+                          a terminal state, and the bound for a sync wave waiting for its
+                          resources to become Healthy. Default 300 (5 minutes). 0 means
+                          fire-and-forget (skip the per-hook/wave poll entirely).
                         format: int32
                         type: integer
                       prune:

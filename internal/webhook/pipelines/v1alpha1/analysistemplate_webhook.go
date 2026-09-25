@@ -109,11 +109,19 @@ func validateAnalysisTemplate(template *pipelinesv1alpha1.AnalysisTemplate) erro
 //nolint:cyclop // analysis check validation has sequential guard branches.
 func validateAnalysisCheck(check *pipelinesv1alpha1.AnalysisCheck, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
-	if check.Type != "http" && check.Type != "podMetrics" {
-		errs = append(errs, field.NotSupported(path.Child("type"), check.Type, []string{"http", "podMetrics"}))
+	if check.Type != "http" && check.Type != "podMetrics" && check.Type != "prometheus" {
+		errs = append(errs, field.NotSupported(path.Child("type"), check.Type, []string{"http", "podMetrics", "prometheus"}))
 	}
 	if check.Type == "http" && check.URL == "" {
 		errs = append(errs, field.Required(path.Child("url"), "url is required for http checks"))
+	}
+	if check.Type == "prometheus" {
+		if check.Address == "" {
+			errs = append(errs, field.Required(path.Child("address"), "address is required for prometheus checks"))
+		}
+		if check.Query == "" {
+			errs = append(errs, field.Required(path.Child("query"), "query is required for prometheus checks"))
+		}
 	}
 	if check.Type == "podMetrics" {
 		if check.Metric == "" {

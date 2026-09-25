@@ -250,6 +250,17 @@ Watch `controller_runtime_workqueue_queue_duration_seconds` and
 delay with idle CPU means raise concurrency; high reconcile latency means
 the loop itself is slow, not the pool.
 
+## Sync Waves
+
+Annotate manifests with `paprika.io/sync-wave: "<int>"` (Argo CD's
+`argocd.argoproj.io/sync-wave` is also honored) to order sync-phase resources
+into waves applied lowest-first. After each wave applies, the controller
+waits for its resources to report Healthy before applying the next — a
+Deployment must roll out before a later-wave dependent applies. A wave that
+never converges fails the release after `hookTimeoutSeconds` (default 300s).
+Resources without the annotation apply in wave 0; a malformed wave value
+fails the release with a naming error.
+
 ## Verifying
 
 ### Application Health

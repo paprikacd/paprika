@@ -3029,6 +3029,28 @@ export declare class RolloutAnalysisCheck extends Message<RolloutAnalysisCheck> 
    */
   windowSeconds: number;
 
+  /**
+   * Prometheus provider fields (type=prometheus).
+   *
+   * @generated from field: string address = 10;
+   */
+  address: string;
+
+  /**
+   * @generated from field: string query = 11;
+   */
+  query: string;
+
+  /**
+   * @generated from field: string success_condition = 12;
+   */
+  successCondition: string;
+
+  /**
+   * @generated from field: string failure_condition = 13;
+   */
+  failureCondition: string;
+
   constructor(data?: PartialMessage<RolloutAnalysisCheck>);
 
   static readonly runtime: typeof proto3;

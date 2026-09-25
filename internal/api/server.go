@@ -1129,6 +1129,10 @@ func convertRolloutAnalysisChecks(strategy *rolloutsv1alpha1.RolloutStrategy) []
 			Metric:           check.Metric,
 			Threshold:        check.Threshold,
 			WindowSeconds:    safeInt32(check.WindowSeconds),
+			Address:          check.Address,
+			Query:            check.Query,
+			SuccessCondition: check.SuccessCondition,
+			FailureCondition: check.FailureCondition,
 		})
 	}
 	return out

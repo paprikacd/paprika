@@ -356,6 +356,11 @@ message RolloutAnalysisCheck {
   string metric = 7;
   string threshold = 8;
   int32 window_seconds = 9;
+  // Prometheus provider fields (type=prometheus).
+  string address = 10;
+  string query = 11;
+  string success_condition = 12;
+  string failure_condition = 13;
 }
 
 message RolloutABRoute {

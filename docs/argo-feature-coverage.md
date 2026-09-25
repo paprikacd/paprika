@@ -26,7 +26,9 @@ Primary references:
 | Auto sync | Argo CD can automatically sync on drift. | `syncPolicy: Auto` and self-heal config exist. UI now makes drift visible at app scope. |
 | Sync options | Argo CD supports prune, replace, force, and apply out-of-sync only. | `SyncOptions` covers prune propagation, replace, force, and apply out-of-sync only. UI should expose these in source/sync detail. |
 | Resource health | Argo CD rolls resource health into app health. | Resource health and custom CEL health checks exist. E2E demo now uses real pod probes plus HTTP-backed app health. |
+| Sync waves | Argo CD orders sync-phase resources by `argocd.argoproj.io/sync-wave` and health-gates each wave before the next. | `paprika.io/sync-wave` (plus the Argo annotation for portability) orders sync-phase docs and health-gates each wave via `AssessObject`; pending waves requeue, Degraded fails, and the wait is bounded by `HookTimeoutSeconds`. |
 | Progressive delivery | Argo Rollouts canary and analysis gate promotion. | Paprika stages support canary steps and analysis checks. E2E demo now runs a canary promotion path. |
+| Analysis metric providers | Argo Rollouts supports Prometheus, Datadog, and other metric providers for analysis. | Analysis checks support `http`, `podMetrics`, and `prometheus` (PromQL instant query + CEL `successCondition`/`failureCondition` over `result` samples). |
 | Rollout operations | Argo Rollouts exposes promote and abort operations. | UI has rollout detail/debug surfaces and RPCs for promote/abort. |
 | Workflow templates | Argo Workflows reuses cluster WorkflowTemplates. | Paprika Templates and Pipeline steps cover the build/release execution model. |
 | Artifacts | Argo Workflows supports artifact repositories for step outputs. | Paprika has artifact RPCs and UI cards. Artifact repository abstraction is still lighter than Argo Workflows. |
@@ -37,7 +39,7 @@ Primary references:
 | --- | --- | --- |
 | 1 | Server-side dry-run diff option | Argo CD's stable server-side diff catches admission failures before sync and better reflects webhook mutation behavior. |
 | 2 | Diff ignore UI and explanations | Operators need to know whether drift is real or intentionally ignored. |
-| 3 | Sync waves and hook timeline | Paprika has stage and gate concepts, but users need an Argo-like ordered timeline for pre-sync, sync, post-sync, and failure hooks. |
+| 3 | Hook timeline UI | Hooks (PreSync/Sync/PostSync/SyncFail) and sync waves now exist controller-side; the remaining gap is an Argo-like ordered timeline view in the UI. |
 | 4 | Resource action catalog | Argo CD resource actions are useful for operational repairs. Paprika should expose curated restart, scale, retry, promote, abort, and rollback actions with RBAC checks. |
 | 5 | ApplicationSet progressive sync controls | Paprika ApplicationSets should show rollout batches and block on health before moving to the next batch. |
 | 6 | Artifact repository refs | Move artifact storage config out of pipeline definitions, matching the Argo Workflows pattern of reusable repository refs. |

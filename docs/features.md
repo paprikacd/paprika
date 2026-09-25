@@ -29,6 +29,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | **Drift Detection** | Label-selector diff engine comparing desired manifests against live state with API-group-aware resource keys and Kubernetes-default omission. | [Drift and Prune](guides/drift-and-prune.md) |
 | **Pruning** | Opt-in garbage collection of stale resources after apply, with prune protection annotations and cluster-scoped kind allowlists. | [Drift and Prune](guides/drift-and-prune.md) |
 | **Prune Preview** | `status.prunableResources` lists what would be pruned before enabling prune. | [Drift and Prune](guides/drift-and-prune.md) |
+| **Sync Waves** | `paprika.io/sync-wave` (or Argo CD's `argocd.argoproj.io/sync-wave`) orders sync-phase resources into waves; each wave is health-gated before the next applies, bounded by `hookTimeoutSeconds`. | [Operations](guides/operations.md) |
 
 ## Observability
 

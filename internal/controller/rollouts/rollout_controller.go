@@ -976,6 +976,10 @@ func convertAnalysisChecks(checks []rolloutsv1alpha1.AnalysisCheck) []pipelinesv
 			PodSelector:      c.PodSelector,
 			Threshold:        c.Threshold,
 			WindowSeconds:    c.WindowSeconds,
+			Address:          c.Address,
+			Query:            c.Query,
+			SuccessCondition: c.SuccessCondition,
+			FailureCondition: c.FailureCondition,
 		}
 	}
 	return out

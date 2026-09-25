@@ -1042,6 +1042,10 @@ export const RolloutAnalysisCheck = /*@__PURE__*/ proto3.makeMessageType(
     { no: 7, name: "metric", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 8, name: "threshold", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 9, name: "window_seconds", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 10, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 11, name: "query", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 12, name: "success_condition", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 13, name: "failure_condition", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

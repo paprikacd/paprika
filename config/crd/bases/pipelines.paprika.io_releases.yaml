@@ -88,8 +88,9 @@ spec:
                   hookTimeoutSeconds:
                     description: |-
                       HookTimeoutSeconds is the max time to wait for any single hook to reach
-                      a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
-                      (skip the per-hook poll entirely).
+                      a terminal state, and the bound for a sync wave waiting for its
+                      resources to become Healthy. Default 300 (5 minutes). 0 means
+                      fire-and-forget (skip the per-hook/wave poll entirely).
                     format: int32
                     type: integer
                   prune:
