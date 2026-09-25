@@ -77,7 +77,7 @@ type MatrixGenerator struct {
 // parameter fields can be templated.
 type ApplicationTemplateSpec struct {
 	// Metadata sets labels and annotations on generated Applications.
-	// Generator params interpolate ("{{region}}") — labels are what
+	// Generator params interpolate via Go-template syntax — labels are what
 	// rollingSync step matchLabels select on.
 	// +optional
 	Metadata        *ApplicationTemplateMetadata `json:"metadata,omitempty"`
