@@ -33,6 +33,7 @@ type workflowRunStep struct {
 
 var pinnedActionRevisions = map[string]string{
 	"actions/checkout":                   "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+	"anchore/sbom-action/download-syft":  "a930d0ac434e3182448fe678398ba5713717112a",
 	"actions/upload-artifact":            "bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
 	"actions/setup-go":                   "4a3601121dd01d1626a1e23e37211e3254c1c06c",
 	"actions/setup-node":                 "249970729cb0ef3589644e2896645e5dc5ba9c38",
