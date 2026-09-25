@@ -462,8 +462,21 @@ spec:
                 items:
                   description: |-
                     IgnoreDiff specifies JSON pointer paths to ignore during diff computation,
-                    analogous to ArgoCD's ignoreDifferences.
+                    analogous to ArgoCD's ignoreDifferences. Group, Kind, Name, and Namespace
+                    scope the rule to matching resources; empty fields match everything.
                   properties:
+                    createdAt:
+                      description: CreatedAt records when the rule was added.
+                      format: date-time
+                      type: string
+                    createdBy:
+                      description: CreatedBy records the principal that added the
+                        rule.
+                      type: string
+                    group:
+                      description: Group limits the rule to an API group ("" matches
+                        core and any group).
+                      type: string
                     jsonPointers:
                       description: |-
                         JSONPointers lists JSON paths to ignore during diff computation.
@@ -471,6 +484,18 @@ spec:
                       items:
                         type: string
                       type: array
+                    kind:
+                      description: Kind limits the rule to a resource kind.
+                      type: string
+                    name:
+                      description: Name limits the rule to a resource name.
+                      type: string
+                    namespace:
+                      description: Namespace limits the rule to a resource namespace.
+                      type: string
+                    reason:
+                      description: Reason records why the rule exists (set by IgnoreDriftedField).
+                      type: string
                   type: object
                 type: array
               onFailure:
@@ -1557,6 +1582,13 @@ spec:
                     type: string
                   replace:
                     description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                  serverSideValidate:
+                    description: |-
+                      ServerSideValidate dry-run applies every sync-phase document before any
+                      real mutation, so admission webhooks and schema violations fail the
+                      release before the cluster is touched rather than midway through apply.
+                      Costs one extra API round trip per document per sync. Default false.
                     type: boolean
                 type: object
               syncPolicy:

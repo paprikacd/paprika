@@ -568,7 +568,7 @@ func TestReleaseReconciler_applyManifestsForCluster_routesToAgent(t *testing.T) 
 		AgentAddress: "http://agent.example:8083",
 	}
 
-	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", "my-release", []byte("k: v\n"), nil); err != nil {
+	if err := r.applyManifestsForCluster(context.Background(), "default", &cluster, "my-app", "my-release", []byte("k: v\n"), nil, nil); err != nil {
 		t.Fatalf("applyManifestsForCluster returned error: %v", err)
 	}
 }
@@ -632,6 +632,7 @@ spec:
 		"telesis-api",
 		"telesis-api-release",
 		&pipelinesv1alpha1.SyncOptions{Replace: true},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("applyAllDocuments returned error: %v", err)

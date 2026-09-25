@@ -261,6 +261,40 @@ never converges fails the release after `hookTimeoutSeconds` (default 300s).
 Resources without the annotation apply in wave 0; a malformed wave value
 fails the release with a naming error.
 
+## Server-Side Validate
+
+Set `syncOptions.serverSideValidate: true` on a target stage to dry-run
+apply every sync-phase document through the apiserver's admission chain
+before any real mutation. Webhook rejections and schema violations then fail
+the release atomically instead of leaving a half-applied set. It costs one
+extra API round trip per document per sync, so it is opt-in. Known
+limitation: a CRD and its CRs in the same release cannot validate together
+(the CRD must exist for the CR's dry-run to type-check).
+
+## Selective Sync
+
+`SyncResources` re-applies only the named resources of an app's current
+release — Argo CD's per-resource sync. `confirm: false` previews: it
+validates each selector against `status.resources` and reports `unmatched`
+selectors instead of silently narrowing. With `confirm: true` the release
+gets `paprika.io/resync` plus a selector payload the release controller
+consumes; the apply filters to the selected resources, never full-prunes
+(unselected resources aren't in the pass's desired set), and `prune: true`
+deletes selected resources that are absent from the desired set. The
+selector annotation clears after a successful filtered apply.
+
+## Resource Patching
+
+`ApplyResourcePatch` patches one live resource owned by an application
+(`app.paprika.io/managed-by=paprika` + `app.paprika.io/name=<app>` guard —
+unmanaged resources are refused). The server always dry-runs the patch first
+and returns the resulting manifest plus a unified diff; `confirm: true`
+executes the real patch. JSON Patch, merge patch, and strategic merge are
+supported. The response `warning` reminds that the change is outside Git and
+will be reverted on next sync. The `restart_workload` MCP tool wraps this
+for rolling restarts (Deployment/StatefulSet/DaemonSet only), behind the
+write confirmation flow.
+
 ## Verifying
 
 ### Application Health

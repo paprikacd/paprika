@@ -260,31 +260,6 @@ func TestConsoleMutationStubsRefuseInsteadOfReportingSuccess(t *testing.T) {
 				)))
 			},
 		},
-		"IgnoreDriftedField": {
-			call: func(ctx context.Context, server *PaprikaServer) (proto.Message, error) {
-				return consoleStubMessage(server.IgnoreDriftedField(ctx, connect.NewRequest(
-					&paprikav1.IgnoreDriftedFieldRequest{
-						Namespace: "tenant", Name: "checkout", JsonPointers: []string{"/spec/replicas"},
-					},
-				)))
-			},
-		},
-		"ApplyResourcePatch": {
-			call: func(ctx context.Context, server *PaprikaServer) (proto.Message, error) {
-				return consoleStubMessage(server.ApplyResourcePatch(ctx, connect.NewRequest(
-					&paprikav1.ApplyResourcePatchRequest{
-						Namespace: "tenant", Name: "checkout", Patch: "{}", Confirm: true,
-					},
-				)))
-			},
-		},
-		"SyncResources": {
-			call: func(ctx context.Context, server *PaprikaServer) (proto.Message, error) {
-				return consoleStubMessage(server.SyncResources(ctx, connect.NewRequest(
-					&paprikav1.SyncResourcesRequest{Namespace: "tenant", Name: "checkout", Confirm: true},
-				)))
-			},
-		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

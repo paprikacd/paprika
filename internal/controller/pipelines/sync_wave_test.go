@@ -207,3 +207,33 @@ func TestGateSyncWave(t *testing.T) {
 		}
 	})
 }
+
+func TestMatchesAnySelector(t *testing.T) {
+	t.Parallel()
+	obj := map[string]interface{}{
+		"apiVersion": "apps/v1", "kind": "Deployment",
+		"metadata": map[string]interface{}{"name": "web"},
+	}
+	cases := []struct {
+		name string
+		sel  syncResourceSelector
+		want bool
+	}{
+		{"kind+name match", syncResourceSelector{Kind: "Deployment", Name: "web"}, true},
+		{"kind mismatch", syncResourceSelector{Kind: "Service", Name: "web"}, false},
+		{"name mismatch", syncResourceSelector{Kind: "Deployment", Name: "api"}, false},
+		{"ns default match", syncResourceSelector{Kind: "Deployment", Name: "web", Namespace: "paprika-e2e"}, true},
+		{"ns mismatch", syncResourceSelector{Kind: "Deployment", Name: "web", Namespace: "other"}, false},
+		{"group match", syncResourceSelector{Group: "apps", Kind: "Deployment", Name: "web"}, true},
+		{"group mismatch", syncResourceSelector{Group: "batch", Kind: "Deployment", Name: "web"}, false},
+		{"version match", syncResourceSelector{Group: "apps", Version: "v1", Kind: "Deployment", Name: "web"}, true},
+		{"version mismatch", syncResourceSelector{Group: "apps", Version: "v1beta1", Kind: "Deployment", Name: "web"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := matchesAnySelector(obj, []syncResourceSelector{tc.sel}, "paprika-e2e"); got != tc.want {
+				t.Fatalf("matchesAnySelector = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

@@ -14,7 +14,7 @@ func TestRegisterWriteToolsMatchesSpecTable(t *testing.T) {
 
 	wantDestructive := map[string]bool{
 		"rollback_release": true, "promote_rollout": true, "abort_rollout": true,
-		"cancel_pipeline": true, "skip_step": true,
+		"cancel_pipeline": true, "skip_step": true, "restart_workload": true,
 		"sync_application": false, "approve_gate": false, "reject_gate": false,
 		"hold_rollout": false, "resume_rollout": false, "retry_step": false,
 	}

@@ -3,6 +3,7 @@ package pipelines
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -96,7 +97,29 @@ const (
 	// waveGateStampAnnotation records when the release first parked on a wave
 	// gate so the wait is bounded by the hook timeout budget.
 	waveGateStampAnnotation = "paprika.io/wave-gate-started"
+	// syncResourcesAnnotation carries the SyncResources RPC's selector payload
+	// on the Release; the apply filters to those resources and the annotation
+	// clears on a successful filtered apply.
+	syncResourcesAnnotation = "paprika.io/sync-resources"
 )
+
+// syncResourceSelector identifies one resource in a selective sync.
+type syncResourceSelector struct {
+	Group     string `json:"group"`
+	Version   string `json:"version"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+// syncResourcesPayload is the JSON body of paprika.io/sync-resources.
+type syncResourcesPayload struct {
+	Resources []syncResourceSelector `json:"resources"`
+	// Prune additionally deletes the selected resources that are absent from
+	// the desired set — Argo's "sync these, and remove them if unmanaged".
+	Prune  bool   `json:"prune"`
+	Reason string `json:"reason"`
+}
 
 var managedGVRs = []schema.GroupVersionResource{
 	{Group: "apps", Version: "v1", Resource: "deployments"},
@@ -1178,7 +1201,7 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 	return app, nil
 }
 
-func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions) error {
+func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
 	log := logf.FromContext(ctx)
 
 	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, namespace)
@@ -1187,11 +1210,26 @@ func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte
 	}
 
 	docs := engine.SplitYAMLDocuments(manifests)
-	applied, err := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName, releaseName, opts)
+	selective := sel != nil && len(sel.Resources) > 0
+	applied, err := r.applyAllDocuments(ctx, log, dynClient, docs, namespace, appName, releaseName, opts, sel)
 	if err != nil {
 		return fmt.Errorf("apply all documents: %w", err)
 	}
-	log.Info("Successfully applied manifests", "count", applied)
+	log.Info("Successfully applied manifests", "count", applied, "selective", selective)
+
+	if selective {
+		// A filtered apply can never full-prune — unselected resources aren't
+		// in this pass's desired set and would all be deleted. Selective
+		// prune instead removes the selected resources that are absent from
+		// the desired manifests (surgical removal).
+		if sel.Prune {
+			if err := r.pruneSelectedResources(ctx, log, dynClient, sel.Resources, docs, namespace, appName); err != nil {
+				return fmt.Errorf("selective prune: %w", err)
+			}
+		}
+		r.clearSyncResourcesAnnotation(ctx, namespace, releaseName)
+		return nil
+	}
 
 	if opts != nil && opts.Prune {
 		pruned, pruneErr := r.pruneStaleResources(ctx, log, dynClient, docs, namespace, appName, opts)
@@ -1248,11 +1286,28 @@ func (r *ReleaseReconciler) applyPromotedManifests(ctx context.Context, release 
 	if err != nil {
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
+	sel, err := parseSyncResourcesPayload(release.GetAnnotations()[syncResourcesAnnotation])
+	if err != nil {
+		return fmt.Errorf("invalid %s annotation: %w", syncResourcesAnnotation, err)
+	}
 	appName := release.Labels["app.paprika.io/name"]
-	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions)
+	return r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, sel)
 }
 
-func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions) error {
+// parseSyncResourcesPayload decodes the selective-sync annotation; absent or
+// empty means a full sync (nil payload).
+func parseSyncResourcesPayload(raw string) (*syncResourcesPayload, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var p syncResourcesPayload
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w", err)
+	}
+	return &p, nil
+}
+
+func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
 	start := time.Now()
 	var err error
 
@@ -1263,7 +1318,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		if cluster.KubeconfigSecret != "" {
 			kubeconfigSecret = cluster.KubeconfigSecret
 		}
-		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts)
+		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts, sel)
 	}
 
 	metrics.SyncDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
@@ -1350,11 +1405,30 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	return out, nil
 }
 
-func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions) (int, error) {
+func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) (int, error) {
 	objs := make([]map[string]interface{}, 0, len(docs))
 	for _, doc := range docs {
 		if obj, ok := r.parseManifest(doc); ok {
 			objs = append(objs, obj)
+		}
+	}
+	if sel != nil && len(sel.Resources) > 0 {
+		filtered := objs[:0]
+		for _, obj := range objs {
+			if matchesAnySelector(obj, sel.Resources, namespace) {
+				filtered = append(filtered, obj)
+			}
+		}
+		log.Info("Selective sync: filtered documents", "total", len(objs), "selected", len(filtered), "reason", sel.Reason)
+		objs = filtered
+	}
+
+	// Pre-flight: dry-run every document through the apiserver's admission
+	// chain before mutating anything, so a bad manifest fails the release
+	// atomically instead of leaving a half-applied set.
+	if opts != nil && opts.ServerSideValidate {
+		if err := r.dryRunValidateDocuments(ctx, log, dynClient, objs, namespace, appName, releaseName); err != nil {
+			return 0, err
 		}
 	}
 
@@ -1374,6 +1448,188 @@ func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logg
 	}
 
 	return r.applyBySyncWaves(ctx, log, dynClient, objs, namespace, appName, releaseName, opts)
+}
+
+// matchesAnySelector reports whether a parsed manifest object is named by any
+// selector. Selector group/version fields are optional — when set they must
+// match the object's apiVersion; kind and name always match; namespace falls
+// back to the release namespace like apply does.
+func matchesAnySelector(obj map[string]interface{}, sels []syncResourceSelector, defaultNS string) bool {
+	u := &unstructured.Unstructured{Object: obj}
+	objGroup, objVersion := parseAPIVersion(u.GetAPIVersion())
+	objNS := u.GetNamespace()
+	if objNS == "" {
+		objNS = defaultNS
+	}
+	for _, s := range sels {
+		if s.Kind != "" && s.Kind != u.GetKind() {
+			continue
+		}
+		if s.Name != "" && s.Name != u.GetName() {
+			continue
+		}
+		if s.Group != "" && s.Group != objGroup {
+			continue
+		}
+		if s.Version != "" && s.Version != objVersion {
+			continue
+		}
+		if s.Namespace != "" && s.Namespace != objNS {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// clearSyncResourcesAnnotation removes the selector payload once a filtered
+// apply has succeeded — pending/error paths keep it so the next reconcile
+// still applies the same subset.
+func (r *ReleaseReconciler) clearSyncResourcesAnnotation(ctx context.Context, namespace, releaseName string) {
+	patch := client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(
+		`{"metadata":{"annotations":{%q:null}}}`, syncResourcesAnnotation)))
+	rel := &paprikav1.Release{ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: namespace}}
+	if err := r.client.Patch(ctx, rel, patch); err != nil {
+		logf.FromContext(ctx).Error(err, "selective sync: failed to clear annotation", "release", releaseName)
+	}
+}
+
+// pruneSelectedResources deletes managed resources named by the selectors
+// that are absent from the desired manifest set — selective-sync prune.
+func (r *ReleaseReconciler) pruneSelectedResources(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, sels []syncResourceSelector, docs [][]byte, namespace, appName string) error {
+	desired := map[string]bool{}
+	for _, doc := range docs {
+		obj, ok := r.parseManifest(doc)
+		if !ok {
+			continue
+		}
+		u := &unstructured.Unstructured{Object: obj}
+		ns := u.GetNamespace()
+		if ns == "" {
+			ns = namespace
+		}
+		desired[u.GetAPIVersion()+"/"+u.GetKind()+"/"+ns+"/"+u.GetName()] = true
+	}
+	for _, sel := range sels {
+		u := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": sel.Group + "/" + sel.Version,
+			"kind":       sel.Kind,
+			"metadata":   map[string]interface{}{"name": sel.Name, "namespace": sel.Namespace},
+		}}
+		if sel.Group == "" {
+			u.SetAPIVersion(sel.Version)
+		}
+		ns := sel.Namespace
+		if ns == "" {
+			ns = namespace
+		}
+		if desired[u.GetAPIVersion()+"/"+u.GetKind()+"/"+ns+"/"+u.GetName()] {
+			continue // selected and still desired — applied, not pruned
+		}
+		if err := r.deleteSelectedResource(ctx, log, dynClient, u, ns, appName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// deleteSelectedResource removes one managed resource by selector identity,
+// refusing when the live object lacks the app's management labels.
+func (r *ReleaseReconciler) deleteSelectedResource(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, u *unstructured.Unstructured, namespace, appName string) error {
+	live, err := r.getLiveObject(ctx, dynClient, u, namespace)
+	if err != nil {
+		return err
+	}
+	if live == nil {
+		return nil
+	}
+	lbl := live.GetLabels()
+	if lbl[engine.ManagedByLabelKey] != engine.ManagedByLabelValue || lbl[engine.ApplicationNameLabelKey] != appName {
+		return fmt.Errorf("refusing to prune %s/%s: not managed by app %s", u.GetKind(), u.GetName(), appName)
+	}
+	group, version := parseAPIVersion(u.GetAPIVersion())
+	gvr, err := r.gvrFromKind(u.GetKind(), group, version)
+	if err != nil {
+		return err
+	}
+	if err := dynClient.Resource(gvr).Namespace(namespace).Delete(ctx, u.GetName(), metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("prune %s/%s: %w", u.GetKind(), u.GetName(), err)
+	}
+	log.Info("Selective pruned resource", "kind", u.GetKind(), "name", u.GetName(), "namespace", namespace)
+	metrics.PruneTotal.WithLabelValues(appName, namespace, u.GetKind()).Inc()
+	return nil
+}
+
+// dryRunValidateDocuments server-side-apply dry-runs every parsed document so
+// admission webhooks, schema validation, and quota-style rejections surface
+// before the first real mutation. All violations are collected — the release
+// error names every offending resource rather than only the first.
+//
+// Known limitation (shared with Argo CD): a CRD and its CRs in the same
+// release can't validate together — the CRD must exist for the CR's dry-run
+// to type-check.
+func (r *ReleaseReconciler) dryRunValidateDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, objs []map[string]interface{}, namespace, appName, releaseName string) error {
+	var violations []string
+	for _, obj := range objs {
+		if err := r.dryRunApplyDocument(ctx, dynClient, obj, namespace, appName, releaseName); err != nil {
+			violations = append(violations, err.Error())
+		}
+	}
+	if len(violations) > 0 {
+		const maxReport = 5
+		shown := violations
+		if len(violations) > maxReport {
+			shown = violations[:maxReport]
+		}
+		return fmt.Errorf("server-side validation failed for %d resource(s): %s",
+			len(violations), strings.Join(shown, "; "))
+	}
+	log.Info("Server-side validation passed", "documents", len(objs))
+	return nil
+}
+
+// dryRunApplyDocument prepares the object exactly like applyDocument (labels,
+// target namespace, GVR) then issues a DryRun:All apply — the same admission
+// path the real apply takes, without persisting.
+func (r *ReleaseReconciler) dryRunApplyDocument(ctx context.Context, dynClient dynamic.Interface, obj map[string]interface{}, namespace, appName, releaseName string) error {
+	kind, ok := obj["kind"].(string)
+	if !ok || kind == "" {
+		return errors.New("manifest has missing or invalid kind")
+	}
+	metadata, ok := obj["metadata"].(map[string]interface{})
+	if !ok || metadata == nil {
+		return errors.New("manifest metadata is not an object")
+	}
+	name, ok := metadata["name"].(string)
+	if !ok || name == "" {
+		return errors.New("manifest metadata.name is not a string")
+	}
+
+	setPaprikaLabels(metadata, appName, releaseName)
+	targetNamespace := ""
+	if isClusterScopedKind(kind) {
+		delete(metadata, "namespace")
+		obj["metadata"] = metadata
+	} else {
+		targetNamespace = setTargetNamespace(obj, metadata, namespace)
+	}
+	group, version := parseAPIVersion(fmt.Sprintf("%v", obj["apiVersion"]))
+	gvr, err := r.gvrFromKind(kind, group, version)
+	if err != nil {
+		return fmt.Errorf("%s %s/%s: unknown resource type: %w", kind, targetNamespace, name, err)
+	}
+
+	var ri dynamic.ResourceInterface = dynClient.Resource(gvr)
+	if targetNamespace != "" {
+		ri = dynClient.Resource(gvr).Namespace(targetNamespace)
+	}
+	u := &unstructured.Unstructured{Object: obj}
+	if _, err := ri.Apply(ctx, name, u, metav1.ApplyOptions{
+		FieldManager: "paprika", DryRun: []string{metav1.DryRunAll},
+	}); err != nil {
+		return fmt.Errorf("%s %s/%s: %w", kind, targetNamespace, name, err)
+	}
+	return nil
 }
 
 // applyBySyncWaves applies parsed objects in ascending sync-wave order
@@ -3071,7 +3327,7 @@ func (r *ReleaseReconciler) applyCanaryWeight(ctx context.Context, release *papr
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil); err != nil {
 		return fmt.Errorf("failed to apply canary manifests: %w", err)
 	}
 
@@ -3120,7 +3376,7 @@ func (r *ReleaseReconciler) promoteCanary(ctx context.Context, release *paprikav
 		return fmt.Errorf("failed to resolve cluster ref: %w", err)
 	}
 	appName := release.Labels["app.paprika.io/name"]
-	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions); err != nil {
+	if err := r.applyManifestsForCluster(ctx, release.Namespace, &resolvedCluster, appName, release.Name, manifests, release.Spec.SyncOptions, nil); err != nil {
 		return fmt.Errorf("failed to apply promoted manifests: %w", err)
 	}
 
