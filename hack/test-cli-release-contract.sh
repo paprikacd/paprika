@@ -145,8 +145,11 @@ func main() {
 
 	dockerfile, err := os.ReadFile("Dockerfile.goreleaser")
 	if err != nil { fail("read Dockerfile.goreleaser: %v", err) }
-	if !strings.Contains(string(dockerfile), "COPY paprika-server /paprika") {
-		fail("Dockerfile.goreleaser must copy paprika-server to /paprika")
+	if !strings.Contains(string(dockerfile), "COPY paprika-server /manager") {
+		fail("Dockerfile.goreleaser must copy paprika-server to /manager (the chart's entrypoint path)")
+	}
+	if !strings.Contains(string(dockerfile), `ENTRYPOINT ["/manager"]`) {
+		fail("Dockerfile.goreleaser must set ENTRYPOINT [\"/manager\"] to match the Helm deployments")
 	}
 	for _, base := range []string{
 		"alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",

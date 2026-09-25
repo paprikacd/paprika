@@ -414,6 +414,11 @@ jobs:
           docker pull --platform linux/amd64 "${IMAGE_DIGEST_REF}" >/dev/null
           test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${IMAGE_DIGEST_REF}")" = "linux/amd64"
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${IMAGE_DIGEST_REF}")" = "${GITHUB_SHA}"
+          # Entrypoint smoke: the chart hardcodes /manager as the container
+          # command for every mode; a wrong path or missing binary fails here
+          # instead of crash-looping deployed pods (as v0.2.0 did).
+          docker run --rm --platform linux/amd64 --entrypoint /manager \
+            "${IMAGE_DIGEST_REF}" --version | grep -F "${VERSION}"
 
           CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
           if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then

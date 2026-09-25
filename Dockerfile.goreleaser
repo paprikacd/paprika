@@ -19,10 +19,12 @@ RUN apk add --no-cache curl && \
 
 FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
 WORKDIR /
-COPY paprika-server /paprika
+# /manager matches the full Dockerfile's entrypoint — the Helm chart's
+# deployments hardcode that path for every component mode.
+COPY paprika-server /manager
 COPY --from=helm-builder /helm /usr/local/bin/helm
 ENV HELM_CACHE_HOME=/tmp/helm/cache \
     HELM_CONFIG_HOME=/tmp/helm/config \
     HELM_DATA_HOME=/tmp/helm/data
 USER 65532:65532
-ENTRYPOINT ["/paprika"]
+ENTRYPOINT ["/manager"]
