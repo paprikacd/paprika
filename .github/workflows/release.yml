@@ -246,20 +246,28 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p .dist
+          mkdir -p .dist .dist/remote
+          helm package charts/chart \
+            --destination .dist \
+            --version "${VERSION}" \
+            --app-version "${VERSION}"
           collision_error="$(mktemp)"
           trap 'rm -f -- "${collision_error}"' EXIT
-          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist 2>"${collision_error}"; then
-            printf 'chart %s appeared after preflight; refusing to overwrite it\n' "${VERSION}" >&2
+          if helm pull "oci://ghcr.io/paprikacd/charts/paprika" --version "${VERSION}" --destination .dist/remote 2>"${collision_error}"; then
+            # Another job (e.g. the chart-bump publish on master) pushed the
+            # same version after preflight — reuse it when the contents match.
+            if bash hack/compare-helm-chart.sh \
+                ".dist/paprika-${VERSION}.tgz" \
+                ".dist/remote/paprika-${VERSION}.tgz"; then
+              printf 'chart %s published concurrently with matching contents; reusing\n' "${VERSION}"
+              exit 0
+            fi
+            printf 'chart %s appeared after preflight with different contents; refusing to overwrite it\n' "${VERSION}" >&2
             exit 1
           elif ! grep -Eiq '(not found|manifest unknown)' "${collision_error}"; then
             cat "${collision_error}" >&2
             exit 1
           fi
-          helm package charts/chart \
-            --destination .dist \
-            --version "${VERSION}" \
-            --app-version "${VERSION}"
           helm push ".dist/paprika-${VERSION}.tgz" \
             oci://ghcr.io/paprikacd/charts
 
