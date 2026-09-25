@@ -153,9 +153,17 @@ func main() {
 	}
 	for _, base := range []string{
 		"alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b",
-		"gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6",
 	} {
 		if !strings.Contains(string(dockerfile), "FROM "+base) { fail("Dockerfile.goreleaser base %q must retain its verified digest", base) }
+	}
+	// Every component mode can exec git (repo-server fetches; manager and
+	// api-server fall back to the local renderer) and can serve local-path
+	// charts — a distroless runtime silently broke git sources in 0.2.x.
+	for _, need := range []string{
+		"apk add --no-cache ca-certificates git",
+		"COPY charts /charts",
+	} {
+		if !strings.Contains(string(dockerfile), need) { fail("Dockerfile.goreleaser must contain %q", need) }
 	}
 	for architecture, checksum := range map[string]string{
 		"amd64": "e57e826410269d72be3113333dbfaac0d8dfdd1b0cc4e9cb08bdf97722731ca9",

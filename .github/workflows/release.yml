@@ -427,6 +427,10 @@ jobs:
           # instead of crash-looping deployed pods (as v0.2.0 did).
           docker run --rm --platform linux/amd64 --entrypoint /manager \
             "${IMAGE_DIGEST_REF}" --version | grep -F "${VERSION}"
+          # Git-backed sources exec `git`; the bundled charts serve
+          # local-path sources — distroless runtimes silently break both.
+          docker run --rm --platform linux/amd64 --entrypoint /bin/sh \
+            "${IMAGE_DIGEST_REF}" -c 'git --version && test -d /charts' | grep -F "git version"
 
           CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
           if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
