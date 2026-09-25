@@ -4975,6 +4975,11 @@ type RolloutAnalysisCheck struct {
 	Metric           string                 `protobuf:"bytes,7,opt,name=metric,proto3" json:"metric,omitempty"`
 	Threshold        string                 `protobuf:"bytes,8,opt,name=threshold,proto3" json:"threshold,omitempty"`
 	WindowSeconds    int32                  `protobuf:"varint,9,opt,name=window_seconds,json=windowSeconds,proto3" json:"window_seconds,omitempty"`
+	// Prometheus provider fields (type=prometheus).
+	Address          string `protobuf:"bytes,10,opt,name=address,proto3" json:"address,omitempty"`
+	Query            string `protobuf:"bytes,11,opt,name=query,proto3" json:"query,omitempty"`
+	SuccessCondition string `protobuf:"bytes,12,opt,name=success_condition,json=successCondition,proto3" json:"success_condition,omitempty"`
+	FailureCondition string `protobuf:"bytes,13,opt,name=failure_condition,json=failureCondition,proto3" json:"failure_condition,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -5070,6 +5075,34 @@ func (x *RolloutAnalysisCheck) GetWindowSeconds() int32 {
 		return x.WindowSeconds
 	}
 	return 0
+}
+
+func (x *RolloutAnalysisCheck) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *RolloutAnalysisCheck) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *RolloutAnalysisCheck) GetSuccessCondition() string {
+	if x != nil {
+		return x.SuccessCondition
+	}
+	return ""
+}
+
+func (x *RolloutAnalysisCheck) GetFailureCondition() string {
+	if x != nil {
+		return x.FailureCondition
+	}
+	return ""
 }
 
 type RolloutABRoute struct {
@@ -18706,7 +18739,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\vRolloutStep\x12\x1d\n" +
 	"\n" +
 	"set_weight\x18\x01 \x01(\x05R\tsetWeight\x12\x1a\n" +
-	"\bduration\x18\x02 \x01(\tR\bduration\"\xaa\x03\n" +
+	"\bduration\x18\x02 \x01(\tR\bduration\"\xb4\x04\n" +
 	"\x14RolloutAnalysisCheck\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12T\n" +
@@ -18716,7 +18749,12 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\rrequest_count\x18\x06 \x01(\x05R\frequestCount\x12\x16\n" +
 	"\x06metric\x18\a \x01(\tR\x06metric\x12\x1c\n" +
 	"\tthreshold\x18\b \x01(\tR\tthreshold\x12%\n" +
-	"\x0ewindow_seconds\x18\t \x01(\x05R\rwindowSeconds\x1a>\n" +
+	"\x0ewindow_seconds\x18\t \x01(\x05R\rwindowSeconds\x12\x18\n" +
+	"\aaddress\x18\n" +
+	" \x01(\tR\aaddress\x12\x14\n" +
+	"\x05query\x18\v \x01(\tR\x05query\x12+\n" +
+	"\x11success_condition\x18\f \x01(\tR\x10successCondition\x12+\n" +
+	"\x11failure_condition\x18\r \x01(\tR\x10failureCondition\x1a>\n" +
 	"\x10HttpHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"h\n" +

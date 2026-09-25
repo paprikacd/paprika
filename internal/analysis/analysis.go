@@ -67,6 +67,8 @@ func (a *CELAnalyzer) RunChecks(ctx context.Context, namespace string, checks []
 					r = a.runHTTPCheck(gCtx, c)
 				case "podMetrics":
 					r = a.runPodMetricsCheck(gCtx, c, namespace)
+				case "prometheus":
+					r = a.runPrometheusCheck(gCtx, c)
 				default:
 					r = Result{Passed: false, Message: "unknown check type: " + c.Type}
 				}

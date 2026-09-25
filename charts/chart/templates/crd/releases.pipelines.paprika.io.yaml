@@ -91,8 +91,9 @@ spec:
                   hookTimeoutSeconds:
                     description: |-
                       HookTimeoutSeconds is the max time to wait for any single hook to reach
-                      a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
-                      (skip the per-hook poll entirely).
+                      a terminal state, and the bound for a sync wave waiting for its
+                      resources to become Healthy. Default 300 (5 minutes). 0 means
+                      fire-and-forget (skip the per-hook/wave poll entirely).
                     format: int32
                     type: integer
                   prune:
@@ -120,6 +121,13 @@ spec:
                     type: string
                   replace:
                     description: Replace uses Update instead of server-side apply.
+                    type: boolean
+                  serverSideValidate:
+                    description: |-
+                      ServerSideValidate dry-run applies every sync-phase document before any
+                      real mutation, so admission webhooks and schema violations fail the
+                      release before the cluster is touched rather than midway through apply.
+                      Costs one extra API round trip per document per sync. Default false.
                     type: boolean
                 type: object
               target:

@@ -10,21 +10,57 @@ import (
 
 // ApplyIgnoreDifferences strips fields matching the specified JSON pointers
 // from both desired and live objects in-place, so they are excluded from diff
-// computation.
+// computation. Rules with a group/kind/name/namespace scope only apply to
+// matching objects; empty scope fields are wildcards.
 func ApplyIgnoreDifferences(desired, live map[string]unstructured.Unstructured, ignoreDiffs []pipelinesv1alpha1.IgnoreDiff) {
 	if len(ignoreDiffs) == 0 {
 		return
 	}
-	for _, id := range ignoreDiffs {
+	for i := range ignoreDiffs {
+		id := &ignoreDiffs[i]
 		for _, pointer := range id.JSONPointers {
 			for _, obj := range desired {
-				removeField(obj.Object, pointer)
+				if ignoreDiffMatches(id, obj) {
+					removeField(obj.Object, pointer)
+				}
 			}
 			for _, obj := range live {
-				removeField(obj.Object, pointer)
+				if ignoreDiffMatches(id, obj) {
+					removeField(obj.Object, pointer)
+				}
 			}
 		}
 	}
+}
+
+// ignoreDiffMatches reports whether a rule's group/kind/name/namespace scope
+// selects the object. Empty scope fields are wildcards — a rule with no scope
+// applies to every object, preserving pre-scoping behavior.
+func ignoreDiffMatches(id *pipelinesv1alpha1.IgnoreDiff, obj unstructured.Unstructured) bool {
+	if id.Group != "" {
+		group, _ := parseGroupVersion(obj.GetAPIVersion())
+		if group != id.Group {
+			return false
+		}
+	}
+	if id.Kind != "" && obj.GetKind() != id.Kind {
+		return false
+	}
+	if id.Name != "" && obj.GetName() != id.Name {
+		return false
+	}
+	if id.Namespace != "" && obj.GetNamespace() != id.Namespace {
+		return false
+	}
+	return true
+}
+
+// parseGroupVersion splits apiVersion into group and version.
+func parseGroupVersion(apiVersion string) (group, version string) {
+	if i := strings.LastIndex(apiVersion, "/"); i >= 0 {
+		return apiVersion[:i], apiVersion[i+1:]
+	}
+	return "", apiVersion
 }
 
 // removeField removes a field from a nested map at the given JSON Pointer path.

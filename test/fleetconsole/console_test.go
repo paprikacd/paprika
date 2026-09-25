@@ -200,8 +200,10 @@ func TestGetPipelineRunRefusesUnknownAndCrossNamespaceNames(t *testing.T) {
 }
 
 // TestMutationsStayRefusedInEveryMode: --data-sources selects what is readable
-// and must never grant a write. An e2e test that could hold a rollout against
-// the fixture would be asserting behaviour production refuses.
+// and must never grant a write. The RPCs that are still stubs keep refusing
+// with CodeUnimplemented in every mode; the implemented mutations must behave
+// exactly like production (validation/authz errors, never a fabricated
+// refusal) so the fixture can't drift from the real contract.
 func TestMutationsStayRefusedInEveryMode(t *testing.T) {
 	t.Parallel()
 
@@ -212,20 +214,28 @@ func TestMutationsStayRefusedInEveryMode(t *testing.T) {
 			service := newTestService(t, mode, 12)
 			namespace := fixtureNamespace(0)
 			name := fixtureApplicationName(0)
-			mutations := map[string]error{}
-			_, mutations["HoldRollout"] = service.HoldRollout(t.Context(),
+			stubbed := map[string]error{}
+			_, stubbed["HoldRollout"] = service.HoldRollout(t.Context(),
 				connect.NewRequest(&paprikav1.HoldRolloutRequest{Namespace: namespace, Name: name}))
-			_, mutations["ResumeRollout"] = service.ResumeRollout(t.Context(),
+			_, stubbed["ResumeRollout"] = service.ResumeRollout(t.Context(),
 				connect.NewRequest(&paprikav1.ResumeRolloutRequest{Namespace: namespace, Name: name}))
-			_, mutations["IgnoreDriftedField"] = service.IgnoreDriftedField(t.Context(),
-				connect.NewRequest(&paprikav1.IgnoreDriftedFieldRequest{Namespace: namespace, Name: name}))
-			_, mutations["ApplyResourcePatch"] = service.ApplyResourcePatch(t.Context(),
-				connect.NewRequest(&paprikav1.ApplyResourcePatchRequest{Namespace: namespace, Name: name}))
-			_, mutations["SyncResources"] = service.SyncResources(t.Context(),
-				connect.NewRequest(&paprikav1.SyncResourcesRequest{Namespace: namespace, Name: name}))
-			for rpc, err := range mutations {
+			for rpc, err := range stubbed {
 				require.Error(t, err, rpc)
 				require.Equal(t, connect.CodeUnimplemented, connect.CodeOf(err), rpc)
+			}
+
+			// Implemented mutations are live now — the fixture must answer
+			// like production, i.e. validation/authz errors, not refusal.
+			implemented := map[string]error{}
+			_, implemented["IgnoreDriftedField"] = service.IgnoreDriftedField(t.Context(),
+				connect.NewRequest(&paprikav1.IgnoreDriftedFieldRequest{Namespace: namespace, Name: name}))
+			_, implemented["ApplyResourcePatch"] = service.ApplyResourcePatch(t.Context(),
+				connect.NewRequest(&paprikav1.ApplyResourcePatchRequest{Namespace: namespace, Name: name}))
+			_, implemented["SyncResources"] = service.SyncResources(t.Context(),
+				connect.NewRequest(&paprikav1.SyncResourcesRequest{Namespace: namespace, Name: name}))
+			for rpc, err := range implemented {
+				require.NotEqual(t, connect.CodeUnimplemented, connect.CodeOf(err),
+					"%s is implemented in production; the fixture must not pretend it is not", rpc)
 			}
 		})
 	}

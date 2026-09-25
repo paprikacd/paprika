@@ -50,6 +50,20 @@ The same `AnalysisCheck` type used by canary analysis is reused:
 
 - `http` — probe a URL and compare the success rate against `successThreshold`.
 - `podMetrics` — evaluate `errorRate`, `latencyP99`, or `restartRate` against a threshold.
+- `prometheus` — run a PromQL instant query against `address` and evaluate
+  CEL conditions over the samples. `result` is a list of
+  `{metric: map, value: float}`; `failureCondition` (evaluated first) fails
+  the check when true, `successCondition` must be true to pass. With no
+  conditions, a non-empty result passes. `httpHeaders` are forwarded (e.g.
+  bearer auth). Example:
+
+  ```yaml
+  - type: prometheus
+    address: http://prometheus-operated.monitoring:9090
+    query: sum(rate(http_requests_total{job="{{ .application }}",code=~"5.."}[5m])) / sum(rate(http_requests_total{job="{{ .application }}"}[5m]))
+    failureCondition: result[0].value > 0.05
+    successCondition: result[0].value < 0.01
+  ```
 
 ## Placeholder substitution
 

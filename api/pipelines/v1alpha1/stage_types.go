@@ -41,7 +41,7 @@ type AnalysisCheck struct {
 	// Name of the check.
 	// +optional
 	Name string `json:"name,omitempty"`
-	// +kubebuilder:validation:Enum=http;podMetrics
+	// +kubebuilder:validation:Enum=http;podMetrics;prometheus
 	Type string `json:"type"`
 	// URL to probe (for type=http)
 	URL string `json:"url,omitempty"`
@@ -64,6 +64,27 @@ type AnalysisCheck struct {
 	Threshold string `json:"threshold,omitempty"`
 	// Time window in seconds to evaluate the metric
 	WindowSeconds int `json:"windowSeconds,omitempty"`
+
+	// Address is the Prometheus server base URL (for type=prometheus), e.g.
+	// "http://prometheus-operated.monitoring:9090". Required for
+	// type=prometheus.
+	// +optional
+	Address string `json:"address,omitempty"`
+	// Query is the PromQL instant query evaluated each analysis cycle (for
+	// type=prometheus).
+	// +optional
+	Query string `json:"query,omitempty"`
+	// SuccessCondition is a CEL expression evaluated over the query result —
+	// `result` is a list of {metric: map[string]string, value: float}. The
+	// check passes when the expression is true, e.g.
+	// `result[0].value < 0.01`. When empty, a non-empty result passes.
+	// +optional
+	SuccessCondition string `json:"successCondition,omitempty"`
+	// FailureCondition is a CEL expression evaluated over `result` that fails
+	// the check when true, e.g. `result[0].value > 0.05`. Evaluated before
+	// SuccessCondition.
+	// +optional
+	FailureCondition string `json:"failureCondition,omitempty"`
 }
 
 // AnalysisConfig defines the configuration for canary analysis.

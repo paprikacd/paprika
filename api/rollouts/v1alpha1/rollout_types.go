@@ -130,7 +130,7 @@ type RolloutAnalysis struct {
 
 // AnalysisCheck defines a single analysis check.
 type AnalysisCheck struct {
-	// +kubebuilder:validation:Enum=http;podMetrics
+	// +kubebuilder:validation:Enum=http;podMetrics;prometheus
 	Type string `json:"type"`
 	// URL to probe (for type=http)
 	URL string `json:"url,omitempty"`
@@ -152,6 +152,23 @@ type AnalysisCheck struct {
 	Threshold string `json:"threshold,omitempty"`
 	// Time window in seconds to evaluate the metric
 	WindowSeconds int `json:"windowSeconds,omitempty"`
+
+	// Address is the Prometheus server base URL (for type=prometheus).
+	// +optional
+	Address string `json:"address,omitempty"`
+	// Query is the PromQL instant query evaluated each analysis cycle (for
+	// type=prometheus).
+	// +optional
+	Query string `json:"query,omitempty"`
+	// SuccessCondition is a CEL expression over `result` (a list of
+	// {metric, value}); the check passes when true. When empty, a non-empty
+	// result passes.
+	// +optional
+	SuccessCondition string `json:"successCondition,omitempty"`
+	// FailureCondition is a CEL expression over `result` that fails the check
+	// when true. Evaluated before SuccessCondition.
+	// +optional
+	FailureCondition string `json:"failureCondition,omitempty"`
 }
 
 // RollbackPolicy controls automatic rollback behaviour.

@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // ApplicationSetGenerator is a union of supported generator types.
@@ -75,7 +76,20 @@ type MatrixGenerator struct {
 // It embeds ApplicationSpec so that all source, strategy, stage, sync and
 // parameter fields can be templated.
 type ApplicationTemplateSpec struct {
+	// Metadata sets labels and annotations on generated Applications.
+	// Generator params interpolate via Go-template syntax — labels are what
+	// rollingSync step matchLabels select on.
+	// +optional
+	Metadata        *ApplicationTemplateMetadata `json:"metadata,omitempty"`
 	ApplicationSpec `json:",inline"`
+}
+
+// ApplicationTemplateMetadata carries labels/annotations for generated apps.
+type ApplicationTemplateMetadata struct {
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // ApplicationSetSpec defines the desired state of an ApplicationSet.
@@ -84,6 +98,43 @@ type ApplicationSetSpec struct {
 	Generators []ApplicationSetGenerator `json:"generators"`
 	// Template is the Application template to render for each parameter set.
 	Template ApplicationTemplateSpec `json:"template"`
+	// Strategy controls how template changes roll out across generated
+	// Applications. Absent or type "All" updates every app immediately;
+	// "RollingSync" batches updates by step, health-gated between steps
+	// (Argo CD ApplicationSet progressive sync semantics).
+	// +optional
+	Strategy *ApplicationSetStrategy `json:"strategy,omitempty"`
+}
+
+// ApplicationSetStrategy selects the application update strategy.
+type ApplicationSetStrategy struct {
+	// +kubebuilder:validation:Enum=All;RollingSync
+	// +optional
+	Type string `json:"type,omitempty"`
+	// +optional
+	RollingSync *RollingSyncStrategy `json:"rollingSync,omitempty"`
+}
+
+// RollingSyncStrategy updates generated Applications in ordered batches.
+// Each step matches generated apps by labels (template labels may interpolate
+// generator params) and applies at most maxUpdate spec updates. A step starts
+// only once every app matched by earlier steps is at desired state and
+// Healthy. Apps matched by no step update last, after all steps pass.
+type RollingSyncStrategy struct {
+	// +kubebuilder:validation:MinItems=1
+	Steps []RollingSyncStep `json:"steps"`
+}
+
+// RollingSyncStep is one batch in a rolling sync.
+type RollingSyncStep struct {
+	// MatchLabels selects generated Applications by label equality.
+	// +optional
+	MatchLabels map[string]string `json:"matchLabels,omitempty"`
+	// MaxUpdate caps how many apps in this step may be updated per reconcile
+	// pass. Accepts an int or a percentage of matched apps ("25%").
+	// Default (unset) is 100% — the step is a pure ordering/health gate.
+	// +optional
+	MaxUpdate *intstr.IntOrString `json:"maxUpdate,omitempty"`
 }
 
 // ApplicationSetStatus defines the observed state of an ApplicationSet.

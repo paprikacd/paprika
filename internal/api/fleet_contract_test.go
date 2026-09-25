@@ -676,7 +676,7 @@ var legacyFleetMessageDescriptorHashes = map[string]string{
 	"IstioRouterConfig":               "8897f3564c8e560430072603a866313fea6511b5a5cdfb8096189ce89825b8e0",
 	"GatewayAPIRouterConfig":          "e6246ee9360ce144341be06611b44ccd6989197eb4e6d3e7866e17b4c1fc30d9",
 	"RolloutStep":                     "a5a2864b238d3b2fc74493f212d6bd9794dc187c7bf77ece7be39a5c7fe43d78",
-	"RolloutAnalysisCheck":            "e41fa8353b44936d92b71515ea214cb611249440bed2c3604191ab2b631c60d0",
+	"RolloutAnalysisCheck":            "1cf2ad10d8b7106eec920d82e13fb4442b46922f9505c77ed4b7b36153369c79",
 	"RolloutABRoute":                  "cf654c36ce9821a02249dd46223ca99ca5d5669bc3c9e9e36e1e5c16bfb02f5b",
 	"ListPipelinesRequest":            "1bbca9f24c2f250c576d3f45ac2e6ab22c6ac2d3eb49340b41ab61e043af59dd",
 	"ListPipelinesResponse":           "b213a20ce972ea4e9e9069b3eefc32681484e6f7620e2b88b9f1e48425fb6221",

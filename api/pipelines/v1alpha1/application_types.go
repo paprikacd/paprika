@@ -82,9 +82,16 @@ type SyncOptions struct {
 	// matches the desired manifest.
 	// +optional
 	ApplyOutOfSyncOnly bool `json:"applyOutOfSyncOnly,omitempty"`
+	// ServerSideValidate dry-run applies every sync-phase document before any
+	// real mutation, so admission webhooks and schema violations fail the
+	// release before the cluster is touched rather than midway through apply.
+	// Costs one extra API round trip per document per sync. Default false.
+	// +optional
+	ServerSideValidate bool `json:"serverSideValidate,omitempty"`
 	// HookTimeoutSeconds is the max time to wait for any single hook to reach
-	// a terminal state. Default 300 (5 minutes). 0 means fire-and-forget
-	// (skip the per-hook poll entirely).
+	// a terminal state, and the bound for a sync wave waiting for its
+	// resources to become Healthy. Default 300 (5 minutes). 0 means
+	// fire-and-forget (skip the per-hook/wave poll entirely).
 	// +optional
 	HookTimeoutSeconds int32 `json:"hookTimeoutSeconds,omitempty"`
 }
@@ -141,12 +148,34 @@ const (
 )
 
 // IgnoreDiff specifies JSON pointer paths to ignore during diff computation,
-// analogous to ArgoCD's ignoreDifferences.
+// analogous to ArgoCD's ignoreDifferences. Group, Kind, Name, and Namespace
+// scope the rule to matching resources; empty fields match everything.
 type IgnoreDiff struct {
 	// JSONPointers lists JSON paths to ignore during diff computation.
 	// Each path follows RFC 6901 JSON Pointer format (e.g., "/spec/replicas").
 	// +optional
 	JSONPointers []string `json:"jsonPointers,omitempty"`
+	// Group limits the rule to an API group ("" matches core and any group).
+	// +optional
+	Group string `json:"group,omitempty"`
+	// Kind limits the rule to a resource kind.
+	// +optional
+	Kind string `json:"kind,omitempty"`
+	// Name limits the rule to a resource name.
+	// +optional
+	Name string `json:"name,omitempty"`
+	// Namespace limits the rule to a resource namespace.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+	// Reason records why the rule exists (set by IgnoreDriftedField).
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// CreatedBy records the principal that added the rule.
+	// +optional
+	CreatedBy string `json:"createdBy,omitempty"`
+	// CreatedAt records when the rule was added.
+	// +optional
+	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
 }
 
 // SyncWindow defines a cron-based time window that controls automatic sync.

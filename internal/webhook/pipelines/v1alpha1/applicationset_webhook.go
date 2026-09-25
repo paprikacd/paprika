@@ -86,6 +86,14 @@ func validateApplicationSet(appSet *pipelinesv1alpha1.ApplicationSet) error {
 		allErrs = append(allErrs, validateApplicationSetGenerator(g, genPath)...)
 	}
 
+	if st := appSet.Spec.Strategy; st != nil {
+		if st.Type == "RollingSync" && (st.RollingSync == nil || len(st.RollingSync.Steps) == 0) {
+			allErrs = append(allErrs, field.Required(
+				specPath.Child("strategy").Child("rollingSync").Child("steps"),
+				"rollingSync.steps is required when strategy.type=RollingSync"))
+		}
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}

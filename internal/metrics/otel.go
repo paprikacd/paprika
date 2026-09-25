@@ -34,6 +34,25 @@ var (
 
 	LastSyncTimestamp = mustGauge(meter, "paprika.sync.last_timestamp", "s",
 		"Unix timestamp of the last successful sync")
+
+	// SelectiveSyncTotal counts SyncResources-triggered filtered applies.
+	SelectiveSyncTotal = mustCounter(meter, "paprika.sync.selective.total",
+		"Number of selective (resource-filtered) sync applies")
+
+	// SyncWaveWaitDuration records how long a wave gate waited for its
+	// resources to become Healthy before the next wave applied.
+	SyncWaveWaitDuration = mustFloatHistogram(meter, "paprika.sync.wave.wait.duration", "s",
+		"Duration of sync-wave health gates", metric.WithExplicitBucketBoundaries(defBuckets...))
+
+	// DryRunValidationTotal counts ServerSideValidate pre-flight runs by
+	// outcome (result=pass|fail).
+	DryRunValidationTotal = mustCounter(meter, "paprika.sync.validate.total",
+		"Number of server-side validation pre-flights")
+
+	// ResourcePatchTotal counts ApplyResourcePatch calls by outcome
+	// (result=dry_run|applied|refused).
+	ResourcePatchTotal = mustCounter(meter, "paprika.resource.patch.total",
+		"Number of resource patch operations")
 )
 
 // Auth metrics

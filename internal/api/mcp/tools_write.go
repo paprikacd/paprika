@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -27,6 +28,7 @@ var writeToolRPCs = map[string][]string{
 	"cancel_pipeline":  {"CancelPipeline"},
 	"hold_rollout":     {"HoldRollout"},
 	"resume_rollout":   {"ResumeRollout"},
+	"restart_workload": {"ApplyResourcePatch"},
 }
 
 // confirmationTokenProperty is the schema fragment every destructive write
@@ -54,6 +56,7 @@ func RegisterWriteTools(r *Registry) error {
 		writeCancelPipelineTool(),
 		writeHoldRolloutTool(),
 		writeResumeRolloutTool(),
+		writeRestartWorkloadTool(),
 	}
 	for _, t := range tools {
 		if err := r.Register(t); err != nil {
@@ -437,6 +440,68 @@ func writeResumeRolloutTool() Tool {
 			}))
 			if err != nil {
 				return nil, fmt.Errorf("resume_rollout: %w", err)
+			}
+			return resp.Msg, nil
+		},
+	}
+}
+
+// writeRestartWorkloadTool restarts an app-managed workload by patching the
+// pod-template restartedAt annotation — kubectl rollout restart semantics via
+// the curated ApplyResourcePatch RPC. Only Deployment/StatefulSet/DaemonSet
+// are restartable, and the server refuses resources not managed by the named
+// application. Destructive: pods are recycled.
+func writeRestartWorkloadTool() Tool {
+	return Tool{
+		Name:        "restart_workload",
+		Description: "Rolling-restart an application-managed Deployment, StatefulSet, or DaemonSet. Destructive: requires confirmation.",
+		Scope:       ScopeWrite,
+		Destructive: true,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"namespace":{"type":"string","description":"Application namespace"},
+				"name":{"type":"string","description":"Application name"},
+				"kind":{"type":"string","description":"Deployment, StatefulSet, or DaemonSet"},
+				"resource_name":{"type":"string"},
+				"resource_namespace":{"type":"string","description":"Namespace the workload lives in (defaults to the app namespace)"},
+				` + confirmationTokenProperty + `
+			},
+			"required":["namespace","name","kind","resource_name"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, c v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			kind := in.string("kind")
+			// Reject only when the caller named a kind that can't restart;
+			// an absent kind falls through to the RPC (which fails mapping)
+			// so the audit interceptor still records the attempt — the
+			// audit test relies on every write tool reaching Connect.
+			switch kind {
+			case "", "Deployment", "StatefulSet", "DaemonSet":
+			default:
+				return nil, connect.NewError(connect.CodeInvalidArgument,
+					fmt.Errorf("kind %q is not restartable (Deployment, StatefulSet, DaemonSet only)", kind))
+			}
+			patch := fmt.Sprintf(`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":%q}}}}}`,
+				time.Now().UTC().Format(time.RFC3339Nano))
+			resp, err := c.ApplyResourcePatch(ctx, connect.NewRequest(&v1.ApplyResourcePatchRequest{
+				Namespace:         in.string("namespace"),
+				Name:              in.string("name"),
+				Group:             "apps",
+				Version:           "v1",
+				Kind:              kind,
+				ResourceName:      in.string("resource_name"),
+				ResourceNamespace: in.string("resource_namespace"),
+				PatchType:         v1.PatchType_PATCH_TYPE_MERGE_PATCH,
+				Patch:             patch,
+				Confirm:           true,
+			}))
+			if err != nil {
+				return nil, fmt.Errorf("restart_workload: %w", err)
 			}
 			return resp.Msg, nil
 		},
