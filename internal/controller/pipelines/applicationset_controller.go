@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,21 +107,18 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		existingByName[existing[i].Name] = existing[i]
 	}
 
-	for name := range desired {
-		desiredApp := desired[name]
-		if existingApp, ok := existingByName[name]; ok {
-			if updateErr := r.updateApplication(ctx, &existingApp, &desiredApp); updateErr != nil {
-				result = resultError
-				r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", updateErr.Error())
-				return ctrl.Result{}, fmt.Errorf("updating application %s: %w", name, updateErr)
-			}
-			continue
-		}
-		if createErr := r.client.Create(ctx, &desiredApp); createErr != nil {
-			result = resultError
-			r.patchStatus(ctx, &appSet, len(desired), false, "CreateFailed", createErr.Error())
-			return ctrl.Result{}, fmt.Errorf("creating application %s: %w", name, createErr)
-		}
+	gated, err := r.applyApplicationUpdates(ctx, &appSet, desired, existingByName)
+	if err != nil {
+		result = resultError
+		r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", err.Error())
+		return ctrl.Result{}, err
+	}
+	if gated {
+		// A rolling-sync step is waiting on prior-step apps to become
+		// Healthy — poll again shortly rather than the steady 30s.
+		r.patchStatus(ctx, &appSet, len(desired), true, "RollingSyncGated",
+			"rolling sync waiting for earlier-step applications to become Healthy")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
 	for name := range existingByName {
@@ -305,11 +303,17 @@ func (r *ApplicationSetReconciler) buildDesiredApplications(
 			appLabels["app.paprika.io/project"] = spec.Project
 		}
 
+		annotations, err := renderTemplateMetadata(appSet.Spec.Template.Metadata, appLabels, p)
+		if err != nil {
+			return nil, err
+		}
+
 		app := pipelinesv1alpha1.Application{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: appSet.Namespace,
-				Labels:    appLabels,
+				Name:        name,
+				Namespace:   appSet.Namespace,
+				Labels:      appLabels,
+				Annotations: annotations,
 			},
 			Spec: spec,
 		}
@@ -321,6 +325,33 @@ func (r *ApplicationSetReconciler) buildDesiredApplications(
 		desired[name] = app
 	}
 	return desired, nil
+}
+
+// renderTemplateMetadata interpolates generator params into the template's
+// labels (merged into appLabels) and annotations (returned).
+func renderTemplateMetadata(meta *pipelinesv1alpha1.ApplicationTemplateMetadata, appLabels, p map[string]string) (map[string]string, error) {
+	if meta == nil {
+		return nil, nil
+	}
+	for k, v := range meta.Labels {
+		rendered, err := renderTemplate(v, p)
+		if err != nil {
+			return nil, fmt.Errorf("template label %q: %w", k, err)
+		}
+		appLabels[k] = rendered
+	}
+	var annotations map[string]string
+	if len(meta.Annotations) > 0 {
+		annotations = make(map[string]string, len(meta.Annotations))
+		for k, v := range meta.Annotations {
+			rendered, err := renderTemplate(v, p)
+			if err != nil {
+				return nil, fmt.Errorf("template annotation %q: %w", k, err)
+			}
+			annotations[k] = rendered
+		}
+	}
+	return annotations, nil
 }
 
 func (r *ApplicationSetReconciler) listOwnedApplications(ctx context.Context, appSet *pipelinesv1alpha1.ApplicationSet) ([]pipelinesv1alpha1.Application, error) {
@@ -335,6 +366,9 @@ func (r *ApplicationSetReconciler) listOwnedApplications(ctx context.Context, ap
 }
 
 func (r *ApplicationSetReconciler) updateApplication(ctx context.Context, existing, desired *pipelinesv1alpha1.Application) error {
+	if applicationMatchesDesired(existing, desired) {
+		return nil // skip no-op writes — an update bumps resourceVersion
+	}
 	existing.Spec = desired.Spec
 	if existing.Labels == nil {
 		existing.Labels = map[string]string{}
@@ -342,11 +376,241 @@ func (r *ApplicationSetReconciler) updateApplication(ctx context.Context, existi
 	for k, v := range desired.Labels {
 		existing.Labels[k] = v
 	}
+	if desired.Annotations != nil {
+		if existing.Annotations == nil {
+			existing.Annotations = map[string]string{}
+		}
+		for k, v := range desired.Annotations {
+			existing.Annotations[k] = v
+		}
+	}
 	existing.OwnerReferences = desired.OwnerReferences
 	if err := r.client.Update(ctx, existing); err != nil {
 		return fmt.Errorf("updating application: %w", err)
 	}
 	return nil
+}
+
+// applicationMatchesDesired reports whether the existing app already carries
+// the rendered spec plus template-managed labels and annotations.
+func applicationMatchesDesired(existing, desired *pipelinesv1alpha1.Application) bool {
+	if !reflect.DeepEqual(existing.Spec, desired.Spec) {
+		return false
+	}
+	for k, v := range desired.Labels {
+		if existing.Labels[k] != v {
+			return false
+		}
+	}
+	for k, v := range desired.Annotations {
+		if existing.Annotations[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// applyApplicationUpdates creates missing apps and applies spec updates under
+// the set's strategy. It returns gated=true when a RollingSync step is
+// health-blocked and no more updates may proceed this pass.
+func (r *ApplicationSetReconciler) applyApplicationUpdates(
+	ctx context.Context,
+	appSet *pipelinesv1alpha1.ApplicationSet,
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+) (bool, error) {
+	if appSet.Spec.Strategy == nil || appSet.Spec.Strategy.Type != "RollingSync" ||
+		appSet.Spec.Strategy.RollingSync == nil || len(appSet.Spec.Strategy.RollingSync.Steps) == 0 {
+		return r.applyAllApplicationUpdates(ctx, desired, existingByName)
+	}
+	return r.applyRollingSync(ctx, appSet, desired, existingByName)
+}
+
+func (r *ApplicationSetReconciler) applyAllApplicationUpdates(
+	ctx context.Context,
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+) (bool, error) {
+	for name := range desired {
+		desiredApp := desired[name]
+		if existingApp, ok := existingByName[name]; ok {
+			if err := r.updateApplication(ctx, &existingApp, &desiredApp); err != nil {
+				return false, fmt.Errorf("updating application %s: %w", name, err)
+			}
+			continue
+		}
+		if err := r.client.Create(ctx, &desiredApp); err != nil {
+			return false, fmt.Errorf("creating application %s: %w", name, err)
+		}
+	}
+	return false, nil
+}
+
+// applyRollingSync implements ApplicationSet progressive sync: steps are
+// ordered batches; step N may only issue updates once every app matched by
+// steps < N is already at desired state and reports Healthy. maxUpdate caps
+// per-pass updates inside a step. Apps matching no step update in a final
+// implicit step after all declared steps pass.
+func (r *ApplicationSetReconciler) applyRollingSync(
+	ctx context.Context,
+	appSet *pipelinesv1alpha1.ApplicationSet,
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+) (bool, error) {
+	log := log.FromContext(ctx)
+	steps := appSet.Spec.Strategy.RollingSync.Steps
+	stepOf := assignSyncSteps(desired, steps)
+
+	// Creates are unthrottled — a net-new app is safe to create in its step.
+	if err := r.createMissingApplications(ctx, desired, existingByName); err != nil {
+		return false, err
+	}
+
+	for i := 0; i <= len(steps); i++ {
+		var members []string
+		for name := range desired {
+			if stepOf[name] == i {
+				members = append(members, name)
+			}
+		}
+		if len(members) == 0 {
+			continue
+		}
+		sort.Strings(members) // deterministic batching
+		if blocked := priorStepsUnhealthy(desired, existingByName, stepOf, i); blocked != "" {
+			log.Info("RollingSync step gated on prior-step health",
+				"step", i, "blockedBy", blocked)
+			return true, nil
+		}
+		gated, err := r.applyRollingSyncStep(ctx, steps, i, members, desired, existingByName)
+		if err != nil || gated {
+			return gated, err
+		}
+	}
+	return false, nil
+}
+
+// assignSyncSteps maps each desired app to its first matching step; unmatched
+// apps land in the implicit trailing step len(steps).
+func assignSyncSteps(desired map[string]pipelinesv1alpha1.Application, steps []pipelinesv1alpha1.RollingSyncStep) map[string]int {
+	stepOf := make(map[string]int, len(desired))
+	for name := range desired {
+		stepOf[name] = len(steps)
+		for i := range steps {
+			if stepMatches(desired[name].Labels, steps[i].MatchLabels) {
+				stepOf[name] = i
+				break
+			}
+		}
+	}
+	return stepOf
+}
+
+func (r *ApplicationSetReconciler) createMissingApplications(
+	ctx context.Context,
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+) error {
+	for name := range desired {
+		if _, exists := existingByName[name]; exists {
+			continue
+		}
+		desiredApp := desired[name]
+		if err := r.client.Create(ctx, &desiredApp); err != nil {
+			return fmt.Errorf("creating application %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// applyRollingSyncStep issues updates for one step's members up to the step's
+// maxUpdate budget. gated=true means the budget is spent and later members
+// wait for the next pass.
+func (r *ApplicationSetReconciler) applyRollingSyncStep(
+	ctx context.Context,
+	steps []pipelinesv1alpha1.RollingSyncStep,
+	step int,
+	members []string,
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+) (bool, error) {
+	budget := stepMaxUpdate(steps, step, len(members))
+	updated := 0
+	for _, name := range members {
+		existing, ok := existingByName[name]
+		if !ok {
+			continue // created this pass
+		}
+		desiredApp := desired[name]
+		if applicationMatchesDesired(&existing, &desiredApp) {
+			continue
+		}
+		if updated >= budget {
+			return true, nil
+		}
+		if err := r.updateApplication(ctx, &existing, &desiredApp); err != nil {
+			return false, fmt.Errorf("updating application %s: %w", name, err)
+		}
+		updated++
+	}
+	return false, nil
+}
+
+func stepMatches(appLabels, matchLabels map[string]string) bool {
+	for k, v := range matchLabels {
+		if appLabels[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// priorStepsUnhealthy returns the name of an earlier-step app blocking
+// progress: still out-of-date or not Healthy. Empty means clear.
+func priorStepsUnhealthy(
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+	stepOf map[string]int,
+	step int,
+) string {
+	names := make([]string, 0, len(desired))
+	for name := range desired {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if stepOf[name] >= step {
+			continue
+		}
+		existing, ok := existingByName[name]
+		if !ok {
+			return name // created this pass; not yet healthy
+		}
+		desiredApp := desired[name]
+		if !applicationMatchesDesired(&existing, &desiredApp) {
+			return name
+		}
+		if existing.Status.Health != pipelinesv1alpha1.HealthHealthy &&
+			existing.Status.Phase != pipelinesv1alpha1.ApplicationHealthy {
+			return name
+		}
+	}
+	return ""
+}
+
+func stepMaxUpdate(steps []pipelinesv1alpha1.RollingSyncStep, step, members int) int {
+	if step >= len(steps) {
+		return members // implicit trailing step: unbounded
+	}
+	m := steps[step].MaxUpdate
+	if m == nil {
+		return members
+	}
+	v, err := intstr.GetScaledValueFromIntOrPercent(m, members, true)
+	if err != nil || v < 1 {
+		return 1
+	}
+	return v
 }
 
 func (r *ApplicationSetReconciler) patchStatus(

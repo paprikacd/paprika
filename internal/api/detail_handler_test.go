@@ -122,6 +122,14 @@ func TestIgnoreDriftedField_RequiresPointers(t *testing.T) {
 
 func patchTestServer(t *testing.T, live *unstructured.Unstructured) *PaprikaServer {
 	t.Helper()
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-app-release", Namespace: "test-ns"},
+		Spec:       pipelinesv1alpha1.ReleaseSpec{Target: "prod"},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "test-ns"},
+		// Empty ClusterRef resolves in-cluster — the dynamic client can reach it.
+	}
 	dynScheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(dynScheme))
 	dyn := dynamicfake.NewSimpleDynamicClient(dynScheme, live)
@@ -132,7 +140,7 @@ func patchTestServer(t *testing.T, live *unstructured.Unstructured) *PaprikaServ
 		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployment"},
 		meta.RESTScopeNamespace,
 	)
-	return NewPaprikaServer(detailTestClient(t, detailTestApp()), nil,
+	return NewPaprikaServer(detailTestClient(t, detailTestApp(), release, stage), nil,
 		WithDynamicClient(dyn), WithRESTMapper(mapper))
 }
 
@@ -188,6 +196,42 @@ func TestApplyResourcePatch_RefusesUnmanagedResource(t *testing.T) {
 	unmanaged := managedDeployment()
 	unmanaged.SetLabels(map[string]string{"app.kubernetes.io/name": "someone-else"})
 	srv := patchTestServer(t, unmanaged)
+	_, err := srv.ApplyResourcePatch(context.Background(), connect.NewRequest(&paprikav1.ApplyResourcePatchRequest{
+		Namespace: "test-ns", Name: "demo-app",
+		Group: "apps", Version: "v1", Kind: "Deployment",
+		ResourceName: "web", ResourceNamespace: "test-ns",
+		PatchType: paprikav1.PatchType_PATCH_TYPE_MERGE_PATCH,
+		Patch:     `{"spec":{"replicas":5}}`,
+		Confirm:   true,
+	}))
+	require.Error(t, err)
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+}
+
+func TestApplyResourcePatch_RefusesRemoteTarget(t *testing.T) {
+	release := &pipelinesv1alpha1.Release{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-app-release", Namespace: "test-ns"},
+		Spec:       pipelinesv1alpha1.ReleaseSpec{Target: "remote-stage"},
+	}
+	stage := &pipelinesv1alpha1.Stage{
+		ObjectMeta: metav1.ObjectMeta{Name: "remote-stage", Namespace: "test-ns"},
+		Spec: pipelinesv1alpha1.StageSpec{
+			Cluster: pipelinesv1alpha1.ClusterRef{Mode: pipelinesv1alpha1.ClusterModeAgent},
+		},
+	}
+	dynScheme := runtime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(dynScheme))
+	dyn := dynamicfake.NewSimpleDynamicClient(dynScheme, managedDeployment())
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{{Group: "apps", Version: "v1"}})
+	mapper.AddSpecific(
+		schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
+		schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployment"},
+		meta.RESTScopeNamespace,
+	)
+	srv := NewPaprikaServer(detailTestClient(t, detailTestApp(), release, stage), nil,
+		WithDynamicClient(dyn), WithRESTMapper(mapper))
+
 	_, err := srv.ApplyResourcePatch(context.Background(), connect.NewRequest(&paprikav1.ApplyResourcePatchRequest{
 		Namespace: "test-ns", Name: "demo-app",
 		Group: "apps", Version: "v1", Kind: "Deployment",

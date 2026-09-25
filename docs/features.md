@@ -32,6 +32,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | **Sync Waves** | `paprika.io/sync-wave` (or Argo CD's `argocd.argoproj.io/sync-wave`) orders sync-phase resources into waves; each wave is health-gated before the next applies, bounded by `hookTimeoutSeconds`. | [Operations](guides/operations.md) |
 | **Server-Side Validate** | `syncOptions.serverSideValidate` dry-run applies every manifest through admission before mutating, so bad resources fail the release atomically. | [Operations](guides/operations.md) |
 | **Selective Sync** | `SyncResources` re-applies only named resources of the current release, with dry-run selector validation and selective prune. | [Operations](guides/operations.md) |
+| **ApplicationSet Rolling Sync** | `strategy.type: RollingSync` rolls template changes across generated apps in labeled, health-gated batches with `maxUpdate` budgets. | [Operations](guides/operations.md) |
 | **Resource Patching** | `ApplyResourcePatch` patches app-managed resources with mandatory dry-run preview + unified diff; `restart_workload` MCP tool wraps it for rolling restarts. `IgnoreDriftedField` manages scoped ignore-difference rules. | [Operations](guides/operations.md) |
 
 ## Observability

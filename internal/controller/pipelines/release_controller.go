@@ -1309,16 +1309,30 @@ func parseSyncResourcesPayload(raw string) (*syncResourcesPayload, error) {
 
 func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namespace string, cluster *paprikav1.ClusterRef, appName, releaseName string, manifests []byte, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
 	start := time.Now()
+	selective := sel != nil && len(sel.Resources) > 0
 	var err error
 
 	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
-		err = r.applyViaAgent(ctx, cluster, namespace, appName, manifests)
+		filteredManifests, fErr := selectiveAgentManifests(manifests, sel, namespace)
+		if fErr != nil {
+			return fErr
+		}
+		err = r.applyViaAgent(ctx, cluster, namespace, appName, filteredManifests)
 	} else {
 		kubeconfigSecret := ""
 		if cluster.KubeconfigSecret != "" {
 			kubeconfigSecret = cluster.KubeconfigSecret
 		}
 		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts, sel)
+	}
+	if selective {
+		metrics.SelectiveSyncTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("app", appName),
+			attribute.String("result", map[bool]string{true: "ok", false: "error"}[err == nil]),
+		))
+	}
+	if err == nil && selective {
+		r.clearSyncResourcesAnnotation(ctx, namespace, releaseName)
 	}
 
 	metrics.SyncDuration.Record(ctx, time.Since(start).Seconds(), metric.WithAttributes(
@@ -1329,6 +1343,23 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 	}
 
 	return err
+}
+
+// selectiveAgentManifests trims the manifest set to the selected documents
+// for agent dispatch. Selective prune is refused — the agent apply path has
+// no live-state reads, so there is nothing to diff the deletion against.
+func selectiveAgentManifests(manifests []byte, sel *syncResourcesPayload, namespace string) ([]byte, error) {
+	if sel == nil || len(sel.Resources) == 0 {
+		return manifests, nil
+	}
+	if sel.Prune {
+		return nil, errors.New("selective prune is not supported on agent-mode clusters")
+	}
+	filtered, err := filterDocsBySelectors(engine.SplitYAMLDocuments(manifests), sel.Resources, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("selective sync filter: %w", err)
+	}
+	return bytes.Join(filtered, []byte("\n---\n")), nil
 }
 
 func (r *ReleaseReconciler) applyViaAgent(ctx context.Context, cluster *paprikav1.ClusterRef, namespace, appName string, manifests []byte) error {
@@ -1448,6 +1479,26 @@ func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logg
 	}
 
 	return r.applyBySyncWaves(ctx, log, dynClient, objs, namespace, appName, releaseName, opts)
+}
+
+// filterDocsBySelectors keeps only the raw documents whose parsed object
+// matches a selector — used to trim the manifest set before dispatching to an
+// agent-mode cluster. Unparseable documents can't match and are dropped.
+func filterDocsBySelectors(docs [][]byte, sels []syncResourceSelector, defaultNS string) ([][]byte, error) {
+	out := make([][]byte, 0, len(docs))
+	for _, doc := range docs {
+		var obj map[string]interface{}
+		if err := k8syaml.Unmarshal(doc, &obj); err != nil {
+			return nil, fmt.Errorf("parse manifest for selective filter: %w", err)
+		}
+		if obj == nil {
+			continue
+		}
+		if matchesAnySelector(obj, sels, defaultNS) {
+			out = append(out, doc)
+		}
+	}
+	return out, nil
 }
 
 // matchesAnySelector reports whether a parsed manifest object is named by any
@@ -1575,15 +1626,23 @@ func (r *ReleaseReconciler) dryRunValidateDocuments(ctx context.Context, log log
 			violations = append(violations, err.Error())
 		}
 	}
+	result := "pass"
 	if len(violations) > 0 {
+		result = "fail"
 		const maxReport = 5
 		shown := violations
 		if len(violations) > maxReport {
 			shown = violations[:maxReport]
 		}
+		metrics.DryRunValidationTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("app", appName), attribute.String("result", result),
+		))
 		return fmt.Errorf("server-side validation failed for %d resource(s): %s",
 			len(violations), strings.Join(shown, "; "))
 	}
+	metrics.DryRunValidationTotal.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("app", appName), attribute.String("result", result),
+	))
 	log.Info("Server-side validation passed", "documents", len(objs))
 	return nil
 }
@@ -1659,7 +1718,7 @@ func (r *ReleaseReconciler) applyBySyncWaves(ctx context.Context, log logr.Logge
 		if i == len(waves)-1 {
 			break // no gate after the final wave — health is tracked async
 		}
-		if err := r.gateSyncWave(ctx, log, dynClient, waveObjs, namespace, releaseName); err != nil {
+		if err := r.gateSyncWave(ctx, log, dynClient, waveObjs, namespace, releaseName, appName); err != nil {
 			return applied, err
 		}
 	}
@@ -1725,7 +1784,7 @@ func syncWaveOf(u *unstructured.Unstructured) (int, error) {
 // reports Healthy via the shared assessor. Degraded fails the release;
 // anything not yet Healthy returns errSyncWavePending, bounded by
 // waveGateDeadline.
-func (r *ReleaseReconciler) gateSyncWave(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, objs []map[string]interface{}, namespace, releaseName string) error {
+func (r *ReleaseReconciler) gateSyncWave(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, objs []map[string]interface{}, namespace, releaseName, appName string) error {
 	var pending []string
 	for _, obj := range objs {
 		u := &unstructured.Unstructured{Object: obj}
@@ -1751,7 +1810,12 @@ func (r *ReleaseReconciler) gateSyncWave(ctx context.Context, log logr.Logger, d
 		}
 	}
 	if len(pending) == 0 {
-		r.clearWaveGateStamp(ctx, namespace, releaseName)
+		waited := r.clearWaveGateStamp(ctx, namespace, releaseName)
+		if waited > 0 {
+			metrics.SyncWaveWaitDuration.Record(ctx, waited.Seconds(), metric.WithAttributes(
+				attribute.String("app", appName),
+			))
+		}
 		return nil
 	}
 	log.Info("Sync wave resources not yet healthy; waiting", "pending", pending, "release", releaseName)
@@ -1781,17 +1845,27 @@ func (r *ReleaseReconciler) getLiveObject(ctx context.Context, dynClient dynamic
 }
 
 // clearWaveGateStamp removes the gate-start stamp once a wave passes so a
-// later wave's timeout doesn't measure from a stale early stamp.
-func (r *ReleaseReconciler) clearWaveGateStamp(ctx context.Context, namespace, releaseName string) {
+// later wave's timeout doesn't measure from a stale early stamp. It returns
+// how long the gate was parked (zero when no stamp was present).
+func (r *ReleaseReconciler) clearWaveGateStamp(ctx context.Context, namespace, releaseName string) time.Duration {
 	release, err := r.getReleaseForWaveGate(ctx, namespace, releaseName)
-	if err != nil || release.GetAnnotations()[waveGateStampAnnotation] == "" {
-		return
+	if err != nil {
+		return 0
+	}
+	raw := release.GetAnnotations()[waveGateStampAnnotation]
+	if raw == "" {
+		return 0
+	}
+	waited := time.Duration(0)
+	if since, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
+		waited = time.Since(since)
 	}
 	patch := client.RawPatch(types.MergePatchType, []byte(fmt.Sprintf(
 		`{"metadata":{"annotations":{%q:null}}}`, waveGateStampAnnotation)))
 	if err := r.client.Patch(ctx, release, patch); err != nil {
 		logf.FromContext(ctx).Error(err, "wave gate: failed to clear stamp", "release", release.Name)
 	}
+	return waited
 }
 
 // syncWavePendingOrTimeout bounds the wave wait: the first pending reconcile

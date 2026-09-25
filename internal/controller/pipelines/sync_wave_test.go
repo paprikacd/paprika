@@ -166,7 +166,7 @@ func TestGateSyncWave(t *testing.T) {
 		rel := newRelease()
 		rel.SetAnnotations(map[string]string{waveGateStampAnnotation: time.Now().UTC().Format(time.RFC3339)})
 		r, dyn := waveGateReconciler(t, rel, liveDeployment("web", "ns", true))
-		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1")
+		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1", "my-app")
 		if err != nil {
 			t.Fatalf("healthy wave should pass: %v", err)
 		}
@@ -181,7 +181,7 @@ func TestGateSyncWave(t *testing.T) {
 
 	t.Run("progressing returns pending sentinel", func(t *testing.T) {
 		r, dyn := waveGateReconciler(t, newRelease(), liveDeployment("web", "ns", false))
-		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1")
+		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1", "my-app")
 		if !errors.Is(err, errSyncWavePending) {
 			t.Fatalf("got %v, want errSyncWavePending", err)
 		}
@@ -189,7 +189,7 @@ func TestGateSyncWave(t *testing.T) {
 
 	t.Run("missing resource returns pending", func(t *testing.T) {
 		r, dyn := waveGateReconciler(t, newRelease(), nil)
-		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1")
+		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1", "my-app")
 		if !errors.Is(err, errSyncWavePending) {
 			t.Fatalf("got %v, want errSyncWavePending", err)
 		}
@@ -201,7 +201,7 @@ func TestGateSyncWave(t *testing.T) {
 			waveGateStampAnnotation: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
 		})
 		r, dyn := waveGateReconciler(t, rel, liveDeployment("web", "ns", false))
-		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1")
+		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1", "my-app")
 		if err == nil || errors.Is(err, errSyncWavePending) {
 			t.Fatalf("stale gate should time out, got %v", err)
 		}

@@ -340,6 +340,52 @@ spec:
                       type: object
                   type: object
                 type: array
+              strategy:
+                description: |-
+                  Strategy controls how template changes roll out across generated
+                  Applications. Absent or type "All" updates every app immediately;
+                  "RollingSync" batches updates by step, health-gated between steps
+                  (Argo CD ApplicationSet progressive sync semantics).
+                properties:
+                  rollingSync:
+                    description: |-
+                      RollingSyncStrategy updates generated Applications in ordered batches.
+                      Each step matches generated apps by labels (template labels may interpolate
+                      generator params) and applies at most maxUpdate spec updates. A step starts
+                      only once every app matched by earlier steps is at desired state and
+                      Healthy. Apps matched by no step update last, after all steps pass.
+                    properties:
+                      steps:
+                        items:
+                          description: RollingSyncStep is one batch in a rolling sync.
+                          properties:
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: MatchLabels selects generated Applications
+                                by label equality.
+                              type: object
+                            maxUpdate:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: |-
+                                MaxUpdate caps how many apps in this step may be updated per reconcile
+                                pass. Accepts an int or a percentage of matched apps ("25%").
+                                Default (unset) is 100% — the step is a pure ordering/health gate.
+                              x-kubernetes-int-or-string: true
+                          type: object
+                        minItems: 1
+                        type: array
+                    required:
+                    - steps
+                    type: object
+                  type:
+                    enum:
+                    - All
+                    - RollingSync
+                    type: string
+                type: object
               template:
                 description: Template is the Application template to render for each
                   parameter set.
@@ -786,6 +832,21 @@ spec:
                           type: string
                       type: object
                     type: array
+                  metadata:
+                    description: |-
+                      Metadata sets labels and annotations on generated Applications.
+                      Generator params interpolate ("{{region}}") — labels are what
+                      rollingSync step matchLabels select on.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                    type: object
                   onFailure:
                     description: OnFailure defines the action when a promotion fails.
                     properties:

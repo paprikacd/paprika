@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,9 +22,11 @@ import (
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/api/auth"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/metrics"
 )
 
 // Phase 0 of the console redesign lands the wire contract ahead of every
@@ -374,19 +378,7 @@ func (s *PaprikaServer) ApplyResourcePatch(
 	ctx context.Context,
 	req *connect.Request[paprikav1.ApplyResourcePatchRequest],
 ) (*connect.Response[paprikav1.ApplyResourcePatchResponse], error) {
-	var app pipelinesv1alpha1.Application
-	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Msg.Namespace, Name: req.Msg.Name}, &app); err != nil {
-		return nil, fmt.Errorf("getting application: %w", err)
-	}
-	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
-		return nil, connect.NewError(connect.CodePermissionDenied, err)
-	}
-	ri, patchType, err := s.resolvePatchTarget(req.Msg)
-	if err != nil {
-		return nil, err
-	}
-
-	live, err := getManagedLiveObject(ctx, ri, req.Msg)
+	ri, patchType, live, err := s.prepareResourcePatch(ctx, req.Msg)
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +396,8 @@ func (s *PaprikaServer) ApplyResourcePatch(
 		return nil, err
 	}
 	if !req.Msg.Confirm {
+		metrics.ResourcePatchTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("kind", req.Msg.Kind), attribute.String("result", "dry_run")))
 		return connect.NewResponse(resp), nil
 	}
 
@@ -418,7 +412,80 @@ func (s *PaprikaServer) ApplyResourcePatch(
 	final.Applied = true
 	final.DryRun = false
 	final.AppliedAtUnixMs = s.now().UnixMilli()
+	metrics.ResourcePatchTotal.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("kind", req.Msg.Kind), attribute.String("result", "applied")))
 	return connect.NewResponse(final), nil
+}
+
+// prepareResourcePatch runs the shared prologue: app lookup, write authz,
+// request validation, GVR resolution, the remote-cluster refusal, and the
+// managed-label guard. It returns the resource interface, patch type, and
+// verified-managed live object.
+func (s *PaprikaServer) prepareResourcePatch(ctx context.Context, req *paprikav1.ApplyResourcePatchRequest) (dynamic.ResourceInterface, types.PatchType, *unstructured.Unstructured, error) {
+	var app pipelinesv1alpha1.Application
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: req.Namespace, Name: req.Name}, &app); err != nil {
+		return nil, "", nil, fmt.Errorf("getting application: %w", err)
+	}
+	if err := s.authorizeApplication(ctx, auth.ActionWrite, &app); err != nil {
+		return nil, "", nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	ri, patchType, err := s.resolvePatchTarget(req)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	remote, err := s.appTargetsRemoteCluster(ctx, &app)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("resolve app target cluster: %w", err)
+	}
+	if remote {
+		return nil, "", nil, connect.NewError(connect.CodeFailedPrecondition, errors.New(
+			"resource patching is not supported for agent or remote-cluster targets yet"))
+	}
+	live, err := getManagedLiveObject(ctx, ri, req)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return ri, patchType, live, nil
+}
+
+// appTargetsRemoteCluster reports whether the app's active release targets an
+// agent-mode or kubeconfig-based cluster — the API server's dynamic client
+// only reaches the host cluster, so patches must refuse rather than silently
+// hit the wrong cluster.
+func (s *PaprikaServer) appTargetsRemoteCluster(ctx context.Context, app *pipelinesv1alpha1.Application) (bool, error) {
+	if app.Status.ReleaseRef == "" {
+		return false, nil // no release yet; nothing live to patch anyway
+	}
+	var release pipelinesv1alpha1.Release
+	if err := s.client.Get(ctx, client.ObjectKey{
+		Namespace: app.Namespace, Name: app.Status.ReleaseRef,
+	}, &release); err != nil {
+		return false, fmt.Errorf("get release %s: %w", app.Status.ReleaseRef, err)
+	}
+	var stage pipelinesv1alpha1.Stage
+	if err := s.client.Get(ctx, client.ObjectKey{
+		Namespace: release.Namespace, Name: release.Spec.Target,
+	}, &stage); err != nil {
+		return false, fmt.Errorf("get stage %s: %w", release.Spec.Target, err)
+	}
+	ref := stage.Spec.Cluster
+	if ref.Mode == "agent" || ref.AgentAddress != "" || ref.KubeconfigSecret != "" {
+		return true, nil
+	}
+	return s.namedClusterIsRemote(ctx, app.Namespace, ref.Name)
+}
+
+// namedClusterIsRemote checks a Cluster CR for remote connectivity fields.
+func (s *PaprikaServer) namedClusterIsRemote(ctx context.Context, namespace, name string) (bool, error) {
+	if name == "" {
+		return false, nil
+	}
+	var cluster clustersv1alpha1.Cluster
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &cluster); err != nil {
+		return false, fmt.Errorf("get cluster %s: %w", name, err)
+	}
+	return cluster.Spec.Server != "" ||
+		(cluster.Spec.KubeconfigSecretRef != nil && cluster.Spec.KubeconfigSecretRef.Name != ""), nil
 }
 
 // getManagedLiveObject fetches the target resource and refuses when it is
@@ -430,6 +497,8 @@ func getManagedLiveObject(ctx context.Context, ri dynamic.ResourceInterface, req
 		return nil, fmt.Errorf("get %s/%s: %w", req.Kind, req.ResourceName, err)
 	}
 	if !isAppManagedResource(live, req.Name) {
+		metrics.ResourcePatchTotal.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("kind", req.Kind), attribute.String("result", "refused")))
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf(
 			"%s/%s is not managed by application %s — refusing to patch unmanaged resources",
 			req.Kind, req.ResourceName, req.Name))

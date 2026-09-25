@@ -261,6 +261,33 @@ never converges fails the release after `hookTimeoutSeconds` (default 300s).
 Resources without the annotation apply in wave 0; a malformed wave value
 fails the release with a naming error.
 
+## ApplicationSet Rolling Sync
+
+`spec.strategy: {type: RollingSync, rollingSync: {steps: [...]}}` rolls a
+template change across generated Applications in ordered, health-gated
+batches — Argo CD ApplicationSet progressive sync semantics:
+
+```yaml
+spec:
+  strategy:
+    type: RollingSync
+    rollingSync:
+      steps:
+        - matchLabels: {wave: canary}
+          maxUpdate: 1
+        - matchLabels: {wave: prod}
+          maxUpdate: 25%
+```
+
+Each step selects generated apps by `matchLabels` — put
+`{{param}}`-interpolated labels in `spec.template.metadata.labels` so steps
+can discriminate. A step may only issue updates once every app matched by
+earlier steps is at desired state and Healthy. `maxUpdate` accepts an int or
+a percentage of matched apps (default 100%). Apps matching no step update in
+an implicit trailing step. While a step is gated the set reports a
+`RollingSyncGated` condition and requeues on a 10s poll. `type: All` or an
+absent strategy keeps the immediate-update default.
+
 ## Server-Side Validate
 
 Set `syncOptions.serverSideValidate: true` on a target stage to dry-run
