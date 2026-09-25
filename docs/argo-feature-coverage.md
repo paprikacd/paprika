@@ -41,7 +41,7 @@ Primary references:
 | 1 | Diff ignore UI and explanations | `IgnoreDriftedField` manages scoped rules via API, but the UI must show which drift is intentionally ignored — otherwise operators can't distinguish real drift. |
 | 2 | Hook timeline UI | Hooks (PreSync/Sync/PostSync/SyncFail) and sync waves now exist controller-side; the remaining gap is an Argo-like ordered timeline view in the UI. |
 | 3 | Broader resource action catalog | `ApplyResourcePatch` + `restart_workload` cover restart; scale and rollback-per-resource would follow the same pattern. A UI action menu on the resource view is the missing surface. |
-| 4 | ApplicationSet progressive sync UI | `strategy.type: RollingSync` now batches generated-app updates by labeled steps with health gates; the UI surface for batch progress remains. |
+| 4 | ApplicationSet progressive sync UI | `strategy.type: RollingSync` batches generated-app updates by labeled, health-gated steps; `status.rollingSync` (step, pending apps, waitingFor) is now queryable via kubectl and `ApplicationSet.rolling_sync` in the API — the UI surface for batch progress remains. |
 | 5 | Artifact repository refs | Move artifact storage config out of pipeline definitions, matching the Argo Workflows pattern of reusable repository refs. |
 | 6 | Blue-green preview service workflow | Paprika supports BlueGreen as a strategy enum, but needs a first-class preview service, pre-promotion analysis, and fast rollback UX. |
 | 7 | Notification subscriptions | Argo CD notifications are a major operator workflow. Paprika has notification configs, but app detail should show subscriptions and recent sends. |

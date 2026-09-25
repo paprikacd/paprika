@@ -1595,12 +1595,20 @@ func convertApplicationSet(set *pipelinesv1alpha1.ApplicationSet) *paprikav1.App
 			break
 		}
 	}
-	return &paprikav1.ApplicationSet{
+	out := &paprikav1.ApplicationSet{
 		Name:         set.Name,
 		Namespace:    set.Namespace,
 		Applications: safeInt32(int(set.Status.Applications)),
 		Phase:        phase,
 	}
+	if p := set.Status.RollingSync; p != nil {
+		out.RollingSync = &paprikav1.RollingSyncProgress{
+			Step:       safeInt32(p.Step),
+			Pending:    p.Pending,
+			WaitingFor: p.WaitingFor,
+		}
+	}
+	return out
 }
 
 func convertResourceSyncs(syncs []pipelinesv1alpha1.ResourceSync) []*paprikav1.ResourceSync {

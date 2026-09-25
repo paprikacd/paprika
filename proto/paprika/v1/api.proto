@@ -439,6 +439,17 @@ message ApplicationSet {
   string namespace = 2;
   int32 applications = 3;
   string phase = 4;
+  // Progressive-sync state while a RollingSync rollout is active.
+  RollingSyncProgress rolling_sync = 5;
+}
+
+// RollingSyncProgress mirrors the ApplicationSet status field: the active
+// 1-based step (len(steps)+1 = implicit trailing step), apps not yet at
+// desired state, and the app gating progress when a step is health-blocked.
+message RollingSyncProgress {
+  int32 step = 1;
+  repeated string pending = 2;
+  string waiting_for = 3;
 }
 
 message ListApplicationSetsRequest {

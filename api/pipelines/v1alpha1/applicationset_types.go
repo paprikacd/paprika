@@ -137,6 +137,22 @@ type RollingSyncStep struct {
 	MaxUpdate *intstr.IntOrString `json:"maxUpdate,omitempty"`
 }
 
+// RollingSyncProgress reports progressive-sync rollout state.
+type RollingSyncProgress struct {
+	// Step is the 1-based index of the step currently applying;
+	// len(steps)+1 means the implicit trailing step for unmatched apps.
+	// 0 means every generated app is at desired state.
+	Step int `json:"step"`
+	// Pending lists generated apps not yet at desired state, sorted by name.
+	// +optional
+	Pending []string `json:"pending,omitempty"`
+	// WaitingFor names the earlier-step application gating progress —
+	// still out-of-date or not yet Healthy. Empty when the active step is
+	// updating rather than gated.
+	// +optional
+	WaitingFor string `json:"waitingFor,omitempty"`
+}
+
 // ApplicationSetStatus defines the observed state of an ApplicationSet.
 type ApplicationSetStatus struct {
 	// ObservedGeneration is the last observed generation of the spec.
@@ -145,6 +161,10 @@ type ApplicationSetStatus struct {
 	// Applications is the number of Applications currently owned by this set.
 	// +optional
 	Applications int `json:"applications,omitempty"`
+	// RollingSync reports progressive-sync progress while a RollingSync
+	// rollout is active; cleared (nil) once all apps are at desired state.
+	// +optional
+	RollingSync *RollingSyncProgress `json:"rollingSync,omitempty"`
 	// Conditions represent the current state of the ApplicationSet.
 	// +listType=map
 	// +listMapKey=type

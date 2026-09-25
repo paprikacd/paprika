@@ -3501,6 +3501,13 @@ export declare class ApplicationSet extends Message<ApplicationSet> {
    */
   phase: string;
 
+  /**
+   * Progressive-sync state while a RollingSync rollout is active.
+   *
+   * @generated from field: paprika.v1.RollingSyncProgress rolling_sync = 5;
+   */
+  rollingSync?: RollingSyncProgress;
+
   constructor(data?: PartialMessage<ApplicationSet>);
 
   static readonly runtime: typeof proto3;
@@ -3514,6 +3521,44 @@ export declare class ApplicationSet extends Message<ApplicationSet> {
   static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ApplicationSet;
 
   static equals(a: ApplicationSet | PlainMessage<ApplicationSet> | undefined, b: ApplicationSet | PlainMessage<ApplicationSet> | undefined): boolean;
+}
+
+/**
+ * RollingSyncProgress mirrors the ApplicationSet status field: the active
+ * 1-based step (len(steps)+1 = implicit trailing step), apps not yet at
+ * desired state, and the app gating progress when a step is health-blocked.
+ *
+ * @generated from message paprika.v1.RollingSyncProgress
+ */
+export declare class RollingSyncProgress extends Message<RollingSyncProgress> {
+  /**
+   * @generated from field: int32 step = 1;
+   */
+  step: number;
+
+  /**
+   * @generated from field: repeated string pending = 2;
+   */
+  pending: string[];
+
+  /**
+   * @generated from field: string waiting_for = 3;
+   */
+  waitingFor: string;
+
+  constructor(data?: PartialMessage<RollingSyncProgress>);
+
+  static readonly runtime: typeof proto3;
+  static readonly typeName = "paprika.v1.RollingSyncProgress";
+  static readonly fields: FieldList;
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RollingSyncProgress;
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RollingSyncProgress;
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RollingSyncProgress;
+
+  static equals(a: RollingSyncProgress | PlainMessage<RollingSyncProgress> | undefined, b: RollingSyncProgress | PlainMessage<RollingSyncProgress> | undefined): boolean;
 }
 
 /**

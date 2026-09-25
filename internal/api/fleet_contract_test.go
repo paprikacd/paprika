@@ -694,7 +694,7 @@ var legacyFleetMessageDescriptorHashes = map[string]string{
 	"Policy":                          "1db15bbec53108466837281c61cddb1e9b15a6e9d4ee53461cc3d83626842ab4",
 	"GetApplicationRequest":           "967ec3e79b1d2529aa06658ec8e9628134ca78ccc7afe5fd8f3a362b463ab4af",
 	"GetApplicationResponse":          "60930e4dbd755feb6a2a0a0450eef27ddd1ad5119fef5a52e58818ed82426d01",
-	"ApplicationSet":                  "09e98385b6d5a98a102cf1fb8945b1c3176d13889fc921b41e7aaa7696c1877f",
+	"ApplicationSet":                  "df3e067bbb94d210c30d77fb4b26799ef5c192469f170519179442c9db411b4c",
 	"ListApplicationSetsRequest":      "dbf97ea26f0e3e58409b9ba91a2f6f7b0389f128246400568826ce6d5b6219a6",
 	"ListApplicationSetsResponse":     "655f2c0beff03f930cb680054469a778a3426c01f73db19fcb1e8ede929cbe4c",
 	"GetApplicationSetRequest":        "9e4ed4ad447d7854aff637d79b3373f053d95c00dddde1d3969da8bb658fe743",

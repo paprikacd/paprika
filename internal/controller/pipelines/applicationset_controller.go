@@ -85,14 +85,14 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	params, err := r.generateParams(ctx, &appSet)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, 0, false, "GenerationFailed", err.Error())
+		r.patchStatus(ctx, &appSet, 0, false, "GenerationFailed", err.Error(), nil)
 		return ctrl.Result{}, fmt.Errorf("generating parameters: %w", err)
 	}
 
 	desired, err := r.buildDesiredApplications(&appSet, params)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, 0, false, "RenderFailed", err.Error())
+		r.patchStatus(ctx, &appSet, 0, false, "RenderFailed", err.Error(), nil)
 		return ctrl.Result{}, fmt.Errorf("rendering applications: %w", err)
 	}
 
@@ -107,17 +107,17 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		existingByName[existing[i].Name] = existing[i]
 	}
 
-	gated, err := r.applyApplicationUpdates(ctx, &appSet, desired, existingByName)
+	gated, progress, err := r.applyApplicationUpdates(ctx, &appSet, desired, existingByName)
 	if err != nil {
 		result = resultError
-		r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", err.Error())
+		r.patchStatus(ctx, &appSet, len(desired), false, "UpdateFailed", err.Error(), nil)
 		return ctrl.Result{}, err
 	}
 	if gated {
 		// A rolling-sync step is waiting on prior-step apps to become
 		// Healthy — poll again shortly rather than the steady 30s.
 		r.patchStatus(ctx, &appSet, len(desired), true, "RollingSyncGated",
-			"rolling sync waiting for earlier-step applications to become Healthy")
+			"rolling sync waiting for earlier-step applications to become Healthy", progress)
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
@@ -128,13 +128,13 @@ func (r *ApplicationSetReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		if deleteErr := r.client.Delete(ctx, &existingApp); deleteErr != nil {
 			result = resultError
-			r.patchStatus(ctx, &appSet, len(desired), false, "DeleteFailed", deleteErr.Error())
+			r.patchStatus(ctx, &appSet, len(desired), false, "DeleteFailed", deleteErr.Error(), nil)
 			return ctrl.Result{}, fmt.Errorf("deleting application %s: %w", name, deleteErr)
 		}
 	}
 
 	r.patchStatus(ctx, &appSet, len(desired), true, "ApplicationsGenerated",
-		fmt.Sprintf("Generated %d applications", len(desired)))
+		fmt.Sprintf("Generated %d applications", len(desired)), progress)
 
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
@@ -418,10 +418,11 @@ func (r *ApplicationSetReconciler) applyApplicationUpdates(
 	appSet *pipelinesv1alpha1.ApplicationSet,
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
-) (bool, error) {
+) (bool, *pipelinesv1alpha1.RollingSyncProgress, error) {
 	if appSet.Spec.Strategy == nil || appSet.Spec.Strategy.Type != "RollingSync" ||
 		appSet.Spec.Strategy.RollingSync == nil || len(appSet.Spec.Strategy.RollingSync.Steps) == 0 {
-		return r.applyAllApplicationUpdates(ctx, desired, existingByName)
+		gated, err := r.applyAllApplicationUpdates(ctx, desired, existingByName)
+		return gated, nil, err
 	}
 	return r.applyRollingSync(ctx, appSet, desired, existingByName)
 }
@@ -456,14 +457,15 @@ func (r *ApplicationSetReconciler) applyRollingSync(
 	appSet *pipelinesv1alpha1.ApplicationSet,
 	desired map[string]pipelinesv1alpha1.Application,
 	existingByName map[string]pipelinesv1alpha1.Application,
-) (bool, error) {
+) (bool, *pipelinesv1alpha1.RollingSyncProgress, error) {
 	log := log.FromContext(ctx)
 	steps := appSet.Spec.Strategy.RollingSync.Steps
 	stepOf := assignSyncSteps(desired, steps)
+	progress := rollingSyncProgress(desired, existingByName, stepOf, len(steps))
 
 	// Creates are unthrottled — a net-new app is safe to create in its step.
 	if err := r.createMissingApplications(ctx, desired, existingByName); err != nil {
-		return false, err
+		return false, progress, err
 	}
 
 	for i := 0; i <= len(steps); i++ {
@@ -480,14 +482,46 @@ func (r *ApplicationSetReconciler) applyRollingSync(
 		if blocked := priorStepsUnhealthy(desired, existingByName, stepOf, i); blocked != "" {
 			log.Info("RollingSync step gated on prior-step health",
 				"step", i, "blockedBy", blocked)
-			return true, nil
+			progress.Step = i + 1
+			progress.WaitingFor = blocked
+			return true, progress, nil
 		}
 		gated, err := r.applyRollingSyncStep(ctx, steps, i, members, desired, existingByName)
 		if err != nil || gated {
-			return gated, err
+			progress.Step = i + 1
+			return gated, progress, err
 		}
 	}
-	return false, nil
+	return false, progress, nil
+}
+
+// rollingSyncProgress summarizes rollout state for status: the 1-based
+// active step, pending (not-yet-desired) app names, and the blocking app
+// when a step is health-gated.
+func rollingSyncProgress(
+	desired map[string]pipelinesv1alpha1.Application,
+	existingByName map[string]pipelinesv1alpha1.Application,
+	stepOf map[string]int,
+	stepCount int,
+) *pipelinesv1alpha1.RollingSyncProgress {
+	pending := make([]string, 0)
+	firstPendingStep := stepCount + 1
+	for name := range desired {
+		existing, ok := existingByName[name]
+		desiredApp := desired[name]
+		if ok && applicationMatchesDesired(&existing, &desiredApp) {
+			continue
+		}
+		pending = append(pending, name)
+		if stepOf[name]+1 < firstPendingStep {
+			firstPendingStep = stepOf[name] + 1
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	sort.Strings(pending)
+	return &pipelinesv1alpha1.RollingSyncProgress{Step: firstPendingStep, Pending: pending}
 }
 
 // assignSyncSteps maps each desired app to its first matching step; unmatched
@@ -619,6 +653,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 	count int,
 	ready bool,
 	reason, message string,
+	progress *pipelinesv1alpha1.RollingSyncProgress,
 ) {
 	log := log.FromContext(ctx)
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -629,6 +664,7 @@ func (r *ApplicationSetReconciler) patchStatus(
 
 		fresh.Status.ObservedGeneration = fresh.Generation
 		fresh.Status.Applications = count
+		fresh.Status.RollingSync = progress
 
 		status := metav1.ConditionTrue
 		if !ready {

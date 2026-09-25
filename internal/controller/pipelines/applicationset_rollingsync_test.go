@@ -80,7 +80,7 @@ func TestRollingSync_HealthGateBlocksLaterSteps(t *testing.T) {
 		"set-prod":   *prod,
 	}
 
-	gated, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
+	gated, progress, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "canary"}},
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "prod"}},
 	), desired, existing)
@@ -89,6 +89,10 @@ func TestRollingSync_HealthGateBlocksLaterSteps(t *testing.T) {
 	}
 	if !gated {
 		t.Fatal("expected the prod step to be gated by the unhealthy canary")
+	}
+	if progress == nil || progress.Step != 2 || progress.WaitingFor != "set-canary" ||
+		len(progress.Pending) != 1 || progress.Pending[0] != "set-prod" {
+		t.Fatalf("progress = %+v, want step=2 waitingFor=set-canary pending=[set-prod]", progress)
 	}
 	if got := getSpecImage(t, c, "set-prod"); got != "v1" {
 		t.Fatalf("prod was updated behind a gated step: image=%s", got)
@@ -112,7 +116,7 @@ func TestRollingSync_HealthyPriorStepUnblocks(t *testing.T) {
 		"set-prod":   *prod,
 	}
 
-	gated, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
+	gated, progress, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "canary"}},
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "prod"}},
 	), desired, existing)
@@ -121,6 +125,10 @@ func TestRollingSync_HealthyPriorStepUnblocks(t *testing.T) {
 	}
 	if gated {
 		t.Fatal("healthy prior step should not gate")
+	}
+	if progress == nil || progress.Step != 2 || progress.WaitingFor != "" ||
+		len(progress.Pending) != 1 || progress.Pending[0] != "set-prod" {
+		t.Fatalf("progress = %+v, want step=2 pending=[set-prod]", progress)
 	}
 	if got := getSpecImage(t, c, "set-prod"); got != "v2" {
 		t.Fatalf("prod should have updated: image=%s", got)
@@ -145,7 +153,7 @@ func TestRollingSync_MaxUpdateBatches(t *testing.T) {
 		existing[a.Name] = *a
 	}
 
-	gated, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
+	gated, progress, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "prod"}, MaxUpdate: &one},
 	), desired, existing)
 	if err != nil {
@@ -153,6 +161,9 @@ func TestRollingSync_MaxUpdateBatches(t *testing.T) {
 	}
 	if !gated {
 		t.Fatal("budget spent mid-step should report gated")
+	}
+	if progress == nil || progress.Step != 1 || progress.WaitingFor != "" || len(progress.Pending) != 3 {
+		t.Fatalf("progress = %+v, want step=1 pending=3 apps", progress)
 	}
 	updated := 0
 	for _, name := range []string{"set-a", "set-b", "set-c"} {
@@ -185,11 +196,14 @@ func TestRollingSync_UnmatchedAppsUpdateLast(t *testing.T) {
 
 	// Step 0 canary is outdated AND unhealthy — canary may update (step 0
 	// has no priors), misc must wait for step 0 to pass.
-	gated, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
+	gated, progress, err := r.applyApplicationUpdates(context.Background(), rollingSyncSet(
 		pipelinesv1alpha1.RollingSyncStep{MatchLabels: map[string]string{"wave": "canary"}},
 	), desired, existing)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if progress == nil || progress.Step != 2 {
+		t.Fatalf("trailing-step progress = %+v, want step=2 (implicit)", progress)
 	}
 	if !gated {
 		t.Fatal("trailing step should gate on an outdated canary step")
