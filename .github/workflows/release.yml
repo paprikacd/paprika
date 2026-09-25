@@ -358,6 +358,10 @@ jobs:
             "paprika_${VERSION}_darwin_arm64.tar.gz"
             "paprika_${VERSION}_linux_amd64.tar.gz"
             "paprika_${VERSION}_linux_arm64.tar.gz"
+            "paprika_${VERSION}_darwin_amd64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_darwin_arm64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_linux_amd64.tar.gz.sbom.spdx.json"
+            "paprika_${VERSION}_linux_arm64.tar.gz.sbom.spdx.json"
             "checksums.txt"
           )
           mapfile -t actual_assets < <(jq -r '.assets[].name' <<<"${release_json}" | sort)
@@ -394,7 +398,7 @@ jobs:
           tar -xzf "paprika_${VERSION}_linux_amd64.tar.gz" -C linux-amd64
           cd linux-amd64
           version_output="$(./paprika version)"
-          grep -Fx "paprika ${VERSION}" <<<"${version_output}"
+          grep -F "paprika client: v${VERSION}" <<<"${version_output}"
           ./paprika login --help >/dev/null
           ./paprika status --help >/dev/null
           ./paprika version --help >/dev/null
