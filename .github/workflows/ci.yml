@@ -461,6 +461,13 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          build-args: |
+            # CI images aren't release builds — stamp a dev semver plus the
+            # commit so GetSystemStatus/paprika_build_info still answer
+            # "which build is this" unambiguously.
+            VERSION=0.0.0-dev+sha.${{ github.sha }}
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
           tags: |
             ghcr.io/paprikacd/paprika:latest
             ghcr.io/paprikacd/paprika:sha-${{ github.sha }}

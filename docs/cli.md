@@ -144,6 +144,20 @@ successful zero-valued view.
 
 For the equivalent Connect JSON request, see the [API reference](api.md#getsystemstatus).
 
+## `paprika version`
+
+```text
+paprika client: v0.4.0  (commit=abc1234 built=2026-09-25T12:00:00Z)
+paprika server: v0.4.0  (commit=abc1234 built=2026-09-25T12:00:00Z)
+```
+
+Prints the CLI's build identity, then queries `GetSystemStatus` for the
+server's. An unreachable or unconfigured server degrades to
+`paprika server: unavailable (...)` without failing the command — the client
+version always prints. The same server identity is visible in
+`paprika status` (SERVER line), the `paprika_build_info` Prometheus metric,
+and the MCP `initialize` handshake's `serverInfo.version`.
+
 ## `paprika apps`
 
 ```sh

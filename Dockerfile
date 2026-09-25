@@ -15,6 +15,11 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+# Build identity — stamped into every served endpoint (GetSystemStatus,
+# paprika_build_info, MCP initialize). Release builds pass the tag.
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+ARG BUILD_DATE=unknown
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -33,7 +38,7 @@ COPY --from=ui-builder /ui/out/ internal/api/uistatic/
 # Build
 # Docker buildx supplies TARGETARCH in CI. The amd64 fallback keeps local builds
 # compatible with the current VKE node architecture.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w" -a -o manager ./cmd
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -a -o manager ./cmd
 
 # Install helm in a separate stage
 FROM alpine:3.24 AS helm-builder

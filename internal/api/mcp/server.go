@@ -24,6 +24,7 @@ import (
 	"github.com/benebsworth/paprika/internal/audit"
 	"github.com/benebsworth/paprika/internal/cache"
 	paprikametrics "github.com/benebsworth/paprika/internal/metrics"
+	"github.com/benebsworth/paprika/internal/version"
 )
 
 // codeScopeDenied is the JSON-RPC application error code returned for
@@ -34,11 +35,10 @@ import (
 // with a spec-defined one.
 const codeScopeDenied int64 = -32001
 
-// implementationName and implementationVersion identify this server during
-// the MCP initialize handshake.
+// implementationName identifies this server during the MCP initialize
+// handshake; the version comes from the ldflags-stamped build identity.
 const (
-	implementationName    = "paprika"
-	implementationVersion = "0.1.0"
+	implementationName = "paprika"
 )
 
 // ServerConfig configures a Server. NewServer validates Registry,
@@ -195,7 +195,7 @@ func validatePublicURL(publicURL string) error {
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
 		Name:    implementationName,
-		Version: implementationVersion,
+		Version: version.Version,
 	}, nil)
 
 	for _, tool := range r.All() {

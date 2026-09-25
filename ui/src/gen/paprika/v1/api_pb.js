@@ -2272,6 +2272,9 @@ export const GetSystemStatusResponse = /*@__PURE__*/ proto3.makeMessageType(
     { no: 5, name: "attention_total", kind: "scalar", T: 4 /* ScalarType.UINT64 */ },
     { no: 6, name: "attention", kind: "message", T: ApplicationSummary, repeated: true },
     { no: 7, name: "has_more_attention", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 8, name: "server_version", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 9, name: "server_git_commit", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 10, name: "server_build_date", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ],
 );
 

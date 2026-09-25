@@ -4,6 +4,10 @@
 FROM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+# Build identity stamped into the binary (see Dockerfile).
+ARG VERSION=dev
+ARG GIT_COMMIT=none
+ARG BUILD_DATE=unknown
 
 WORKDIR /workspace
 
@@ -21,7 +25,7 @@ RUN mkdir -p internal/api/uistatic && \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
-    go build -trimpath -ldflags="-s -w" -o manager ./cmd
+    go build -trimpath -ldflags="-s -w -X github.com/benebsworth/paprika/internal/version.Version=${VERSION} -X github.com/benebsworth/paprika/internal/version.Commit=${GIT_COMMIT} -X github.com/benebsworth/paprika/internal/version.Date=${BUILD_DATE}" -o manager ./cmd
 
 FROM alpine:3.24
 RUN apk add --no-cache ca-certificates git && \

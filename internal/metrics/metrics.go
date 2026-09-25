@@ -4,10 +4,13 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	"github.com/benebsworth/paprika/internal/version"
 
 	"github.com/benebsworth/paprika/internal/clock"
 )
@@ -40,6 +43,16 @@ var (
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"release", "namespace", "target_stage"},
+	)
+
+	// BuildInfo is a constant 1 gauge carrying the binary's build identity —
+	// join it onto any metric family to answer "which version emitted this".
+	BuildInfo = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "paprika_build_info",
+			Help: "Build identity of the running paprika binary (version, commit, go toolchain)",
+		},
+		[]string{"version", "commit", "go_version"},
 	)
 
 	// ReleasePhaseTotal tracks the number of release phase transitions.
@@ -226,6 +239,7 @@ var allCollectors = []prometheus.Collector{
 	CoordinatorReplicas,
 	CoordinatorHeartbeatSeconds,
 	CoordinatorHeartbeatFailuresTotal,
+	BuildInfo,
 	RolloutCanaryStepTotal,
 	RolloutCanaryWeightGauge,
 	RolloutPhaseTotal,
@@ -243,6 +257,7 @@ func RegisterCollectors(reg prometheus.Registerer) error {
 			errs = append(errs, fmt.Errorf("register collector: %w", err))
 		}
 	}
+	BuildInfo.WithLabelValues(version.Version, version.Commit, runtime.Version()).Set(1)
 	return errors.Join(errs...)
 }
 

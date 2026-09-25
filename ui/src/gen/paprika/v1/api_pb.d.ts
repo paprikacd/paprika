@@ -6673,6 +6673,25 @@ export declare class GetSystemStatusResponse extends Message<GetSystemStatusResp
    */
   hasMoreAttention: boolean;
 
+  /**
+   * Server build identity — the semver baked in at build time, "dev" for
+   * unversioned local builds. Also surfaced in the MCP initialize handshake
+   * and the paprika_build_info metric.
+   *
+   * @generated from field: string server_version = 8;
+   */
+  serverVersion: string;
+
+  /**
+   * @generated from field: string server_git_commit = 9;
+   */
+  serverGitCommit: string;
+
+  /**
+   * @generated from field: string server_build_date = 10;
+   */
+  serverBuildDate: string;
+
   constructor(data?: PartialMessage<GetSystemStatusResponse>);
 
   static readonly runtime: typeof proto3;

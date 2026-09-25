@@ -184,7 +184,10 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: override IMG := $(value IMG)
 docker-build: ## Build docker image with the manager.
 	go run ./hack/validate-image-ref.go
-	$(CONTAINER_TOOL) build -t "$${IMG}" .
+	$(CONTAINER_TOOL) build -t "$${IMG}" \
+	  --build-arg VERSION="$$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+	  --build-arg GIT_COMMIT="$$(git rev-parse HEAD 2>/dev/null || echo none)" \
+	  --build-arg BUILD_DATE="$$(date -u +%Y-%m-%dT%H:%M:%SZ)" .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -193,7 +196,10 @@ docker-push: ## Push docker image with the manager.
 .PHONY: docker-build-fast
 docker-build-fast: override IMG := $(value IMG)
 docker-build-fast: ## Build Go-only docker image (skips UI, uses cache mounts).
-	$(CONTAINER_TOOL) buildx build -f Dockerfile.fast --platform linux/amd64 -t "$${IMG}" --push .
+	$(CONTAINER_TOOL) buildx build -f Dockerfile.fast --platform linux/amd64 -t "$${IMG}" \
+	  --build-arg VERSION="$$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+	  --build-arg GIT_COMMIT="$$(git rev-parse HEAD 2>/dev/null || echo none)" \
+	  --build-arg BUILD_DATE="$$(date -u +%Y-%m-%dT%H:%M:%SZ)" --push .
 
 # ko settings — fast native Go cross-compilation (no QEMU emulation)
 # ko 0.19: the image repo is KO_DOCKER_REPO (no --image-repo flag), base

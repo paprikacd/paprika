@@ -11373,8 +11373,14 @@ type GetSystemStatusResponse struct {
 	AttentionTotal   uint64                 `protobuf:"varint,5,opt,name=attention_total,json=attentionTotal,proto3" json:"attention_total,omitempty"`
 	Attention        []*ApplicationSummary  `protobuf:"bytes,6,rep,name=attention,proto3" json:"attention,omitempty"`
 	HasMoreAttention bool                   `protobuf:"varint,7,opt,name=has_more_attention,json=hasMoreAttention,proto3" json:"has_more_attention,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Server build identity — the semver baked in at build time, "dev" for
+	// unversioned local builds. Also surfaced in the MCP initialize handshake
+	// and the paprika_build_info metric.
+	ServerVersion   string `protobuf:"bytes,8,opt,name=server_version,json=serverVersion,proto3" json:"server_version,omitempty"`
+	ServerGitCommit string `protobuf:"bytes,9,opt,name=server_git_commit,json=serverGitCommit,proto3" json:"server_git_commit,omitempty"`
+	ServerBuildDate string `protobuf:"bytes,10,opt,name=server_build_date,json=serverBuildDate,proto3" json:"server_build_date,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetSystemStatusResponse) Reset() {
@@ -11454,6 +11460,27 @@ func (x *GetSystemStatusResponse) GetHasMoreAttention() bool {
 		return x.HasMoreAttention
 	}
 	return false
+}
+
+func (x *GetSystemStatusResponse) GetServerVersion() string {
+	if x != nil {
+		return x.ServerVersion
+	}
+	return ""
+}
+
+func (x *GetSystemStatusResponse) GetServerGitCommit() string {
+	if x != nil {
+		return x.ServerGitCommit
+	}
+	return ""
+}
+
+func (x *GetSystemStatusResponse) GetServerBuildDate() string {
+	if x != nil {
+		return x.ServerBuildDate
+	}
+	return ""
 }
 
 type QueryApplicationsRequest struct {
@@ -19271,7 +19298,7 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\tnamespace\x18\x01 \x01(\tH\x00R\tnamespace\x88\x01\x01\x12'\n" +
 	"\x0fattention_limit\x18\x02 \x01(\rR\x0eattentionLimitB\f\n" +
 	"\n" +
-	"_namespace\"\xd7\x02\n" +
+	"_namespace\"\xd6\x03\n" +
 	"\x17GetSystemStatusResponse\x12)\n" +
 	"\x10index_generation\x18\x01 \x01(\x04R\x0findexGeneration\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x04R\x05total\x125\n" +
@@ -19279,7 +19306,11 @@ const file_paprika_v1_api_proto_rawDesc = "" +
 	"\x04sync\x18\x04 \x03(\v2\x1b.paprika.v1.FleetSyncBucketR\x04sync\x12'\n" +
 	"\x0fattention_total\x18\x05 \x01(\x04R\x0eattentionTotal\x12<\n" +
 	"\tattention\x18\x06 \x03(\v2\x1e.paprika.v1.ApplicationSummaryR\tattention\x12,\n" +
-	"\x12has_more_attention\x18\a \x01(\bR\x10hasMoreAttention\"\x86\x02\n" +
+	"\x12has_more_attention\x18\a \x01(\bR\x10hasMoreAttention\x12%\n" +
+	"\x0eserver_version\x18\b \x01(\tR\rserverVersion\x12*\n" +
+	"\x11server_git_commit\x18\t \x01(\tR\x0fserverGitCommit\x12*\n" +
+	"\x11server_build_date\x18\n" +
+	" \x01(\tR\x0fserverBuildDate\"\x86\x02\n" +
 	"\x18QueryApplicationsRequest\x12/\n" +
 	"\x06filter\x18\x01 \x01(\v2\x17.paprika.v1.FleetFilterR\x06filter\x12\x16\n" +
 	"\x06search\x18\x02 \x01(\tR\x06search\x12.\n" +

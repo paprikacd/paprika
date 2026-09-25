@@ -151,6 +151,18 @@ helm upgrade paprika-e2e charts/chart/ \
   x/oauth2 deprecation guidance); aks = service-principal JSON or
   federated-token-file WI.
 
+## Releases & Versioning
+
+- Releases are tag-driven: `git tag vX.Y.Z && git push --tags` runs
+  `.github/workflows/release.yml` (preflight guard → GoReleaser artifacts →
+  OCI chart publish). Never hand-push a chart/image under a release version.
+- Build identity stamps via `-X .../internal/version.{Version,Commit,Date}`.
+  Visible via `paprika version` (client+server), `manager --version`,
+  `paprika status` SERVER line, `GetSystemStatus.server_*`,
+  `paprika_build_info{...}` metric, and MCP `serverInfo.version`.
+- CI master images stamp `0.0.0-dev+sha.<sha>`; `make docker-build*` stamps
+  `git describe` automatically.
+
 ## Current State
 
 - All 14 apps in `paprika-e2e` are Healthy with outOfSync=0.
