@@ -244,9 +244,10 @@ auth:
   oidc:
     enabled: true
     issuerURL: "https://accounts.google.com"
-    # The deployment path overrides the client ID and creates the referenced
-    # Kubernetes Secret before installing the chart.
-    clientID: ""
+    # Public OAuth client identifier (appears in authorize URLs) — committed
+    # so `helm upgrade -f test-values.yaml` works without extra --set. The
+    # sensitive client secret stays in the referenced Kubernetes Secret.
+    clientID: "478142966285-8ve2h5tn79b2f5g45mdqqrdl4c1bfr5e.apps.googleusercontent.com"
     existingSecretName: paprika-oidc
     existingSecretKey: client-secret
     redirectURL: "https://paprika.benebsworth.com/auth/callback"
