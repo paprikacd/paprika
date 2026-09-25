@@ -845,6 +845,10 @@ func fleetCapabilityToProto(value fleet.Capability) paprikav1.FleetCapability {
 		return paprikav1.FleetCapability_FLEET_CAPABILITY_GATE_APPROVE
 	case fleet.CapabilityPipelineRetry:
 		return paprikav1.FleetCapability_FLEET_CAPABILITY_PIPELINE_RETRY
+	case fleet.CapabilityResourcePatch:
+		return paprikav1.FleetCapability_FLEET_CAPABILITY_RESOURCE_PATCH
+	case fleet.CapabilityDriftIgnore:
+		return paprikav1.FleetCapability_FLEET_CAPABILITY_DRIFT_IGNORE
 	case fleet.CapabilityUnspecified:
 		return paprikav1.FleetCapability_FLEET_CAPABILITY_UNSPECIFIED
 	default:

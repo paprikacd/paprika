@@ -19,6 +19,10 @@ const (
 	CapabilityReleaseRollback Capability = 2
 	CapabilityGateApprove     Capability = 3
 	CapabilityPipelineRetry   Capability = 4
+	// 5 is reserved for ROLLOUT_HOLD — HoldRollout/ResumeRollout are still
+	// unimplemented, so it is deliberately not granted anywhere.
+	CapabilityResourcePatch Capability = 6
+	CapabilityDriftIgnore   Capability = 7
 )
 
 // CapabilitySet contains actions authorized within one project.

@@ -31,14 +31,16 @@ import (
 // and index_generation all come from the handler under test, so the fixture can
 // never accept a request production would reject, nor answer one production
 // would refuse.
-// Mutations are deliberately not overridden. HoldRollout, ResumeRollout,
-// IgnoreDriftedField, ApplyResourcePatch and SyncResources keep the real
-// server's CodeUnimplemented refusal in every mode, including
-// --data-sources=all. A fixture that accepted them would let an e2e test pass
-// against an affordance production refuses, and the console gates all five on
-// FleetCapability values this control plane does not advertise, so the button
-// should not be reachable in the first place. The flag selects which data
-// classes are readable; it does not grant write capabilities.
+// Mutations are deliberately not overridden. HoldRollout and ResumeRollout
+// keep the real server's CodeUnimplemented refusal in every mode, including
+// --data-sources=all — a fixture that accepted them would let an e2e test
+// pass against an affordance production refuses. IgnoreDriftedField,
+// ApplyResourcePatch and SyncResources are implemented now: the fixture
+// delegates to the real handlers, which validate and authorize exactly as
+// production does, so their affordances are gated by the advertised
+// FLEET_CAPABILITY_RESOURCE_PATCH / DRIFT_IGNORE bits rather than refusal.
+// The flag selects which data classes are readable; it does not grant write
+// capabilities.
 type consoleServer struct {
 	*apiserver.PaprikaServer
 

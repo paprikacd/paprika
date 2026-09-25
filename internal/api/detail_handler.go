@@ -526,7 +526,11 @@ func (s *PaprikaServer) SyncResources(
 	resp := &paprikav1.SyncResourcesResponse{Accepted: true, DryRun: true}
 	if len(req.Msg.Resources) == 0 {
 		// Empty selector = whole app, identical to SyncApplication.
-		resp.SelectedCount = uint32(min(len(app.Status.Resources), math.MaxUint32))
+		n := len(app.Status.Resources)
+		if n > math.MaxUint32 {
+			n = math.MaxUint32
+		}
+		resp.SelectedCount = uint32(n)
 	} else {
 		resp.SelectedCount, resp.Unmatched = matchResourceSelectors(req.Msg.Resources, app.Status.Resources)
 		if len(resp.Unmatched) > 0 {

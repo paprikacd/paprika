@@ -20,9 +20,16 @@ type fleetCapabilityGrant struct {
 
 var fleetCapabilityGrants = [...]fleetCapabilityGrant{
 	{
-		action:       auth.ActionWrite,
-		resource:     auth.ResourceApplications,
-		capabilities: []fleet.Capability{fleet.CapabilityApplicationSync},
+		action:   auth.ActionWrite,
+		resource: auth.ResourceApplications,
+		capabilities: []fleet.Capability{
+			fleet.CapabilityApplicationSync,
+			// ApplyResourcePatch, SyncResources, and IgnoreDriftedField all
+			// authorize write on the application — the same grant covers the
+			// affordance bits the console gates their buttons on.
+			fleet.CapabilityResourcePatch,
+			fleet.CapabilityDriftIgnore,
+		},
 	},
 	{
 		action:   auth.ActionWrite,

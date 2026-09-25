@@ -38,6 +38,8 @@ func TestFleetCapabilitiesNilAuthorizerAcceptsActualCandidates(t *testing.T) {
 		fleet.CapabilityReleaseRollback,
 		fleet.CapabilityGateApprove,
 		fleet.CapabilityPipelineRetry,
+		fleet.CapabilityResourcePatch,
+		fleet.CapabilityDriftIgnore,
 	}
 	for _, project := range projects {
 		require.Equal(t, wantCapabilities, scope.SortedCapabilities(project))
@@ -89,6 +91,8 @@ func TestFleetCapabilitiesIntersectsAuthorizedProjectsByFullIdentity(t *testing.
 		fleet.CapabilityApplicationSync,
 		fleet.CapabilityReleaseRollback,
 		fleet.CapabilityGateApprove,
+		fleet.CapabilityResourcePatch,
+		fleet.CapabilityDriftIgnore,
 	}, scope.SortedCapabilities(projects[1]))
 	require.Equal(t, []fleetPermissionCall{
 		{principal: principal, action: auth.ActionWrite, resource: auth.ResourceApplications, project: auth.ProjectRef{Namespace: "tenant-b", Name: "payments"}},
@@ -134,6 +138,8 @@ func TestFleetCapabilitiesRemainNamespacedAcrossMixedGrants(t *testing.T) {
 	require.Equal(t, []fleet.Capability{
 		fleet.CapabilityApplicationSync,
 		fleet.CapabilityPipelineRetry,
+		fleet.CapabilityResourcePatch,
+		fleet.CapabilityDriftIgnore,
 	}, scope.SortedCapabilities(projectA))
 	require.Equal(t, []fleet.Capability{
 		fleet.CapabilityReleaseRollback,
