@@ -100,7 +100,7 @@ func statusRPCError(err error) error {
 	case connect.CodeUnavailable:
 		return errors.New("paprika is warming up or unavailable; retry shortly")
 	default:
-		return fmt.Errorf("get system status: %w", err)
+		return fmt.Errorf("get system status: %w", friendlyError(err))
 	}
 }
 

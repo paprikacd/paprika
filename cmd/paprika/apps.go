@@ -39,6 +39,9 @@ func newAppsCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceCl
 	cmd.AddCommand(listAppsCmd(ctx, clientFn, nsFn, output))
 	cmd.AddCommand(getAppCmd(ctx, clientFn, nsFn, output))
 	cmd.AddCommand(syncAppCmd(ctx, clientFn, nsFn, output))
+	cmd.AddCommand(restartAppCmd(ctx, clientFn, nsFn, output))
+	cmd.AddCommand(rollbackAppCmd(ctx, clientFn, nsFn, output))
+	cmd.AddCommand(ignoreDiffAppCmd(ctx, clientFn, nsFn, output))
 	return cmd
 }
 
@@ -55,7 +58,7 @@ func listAppsCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceC
 				Namespace: stringPtr(nsFn()),
 			}))
 			if err != nil {
-				return fmt.Errorf("list applications: %w", err)
+				return fmt.Errorf("list applications: %w", friendlyError(err))
 			}
 			return writeApplications(cmd.OutOrStdout(), *output, res.Msg.Applications)
 		},
@@ -77,7 +80,7 @@ func getAppCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceCli
 				Namespace: nsFn(),
 			}))
 			if err != nil {
-				return fmt.Errorf("get application: %w", err)
+				return fmt.Errorf("get application: %w", friendlyError(err))
 			}
 			return writeApplication(cmd.OutOrStdout(), *output, res.Msg.Application)
 		},
@@ -87,6 +90,9 @@ func getAppCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceCli
 func syncAppCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceClient, error), nsFn func() string, output *string) *cobra.Command {
 	var watch bool
 	var timeoutSeconds int
+	var resources []string
+	var prune, yes bool
+	var resourceNamespace string
 	cmd := &cobra.Command{
 		Use:   "sync NAME",
 		Short: "Trigger a sync for an application",
@@ -96,12 +102,35 @@ func syncAppCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceCl
 			if err != nil {
 				return fmt.Errorf("create client: %w", err)
 			}
+
+			// Selective sync path: --resource/--prune routes to SyncResources.
+			// Without --yes the server validates selectors and reports what
+			// would sync without mutating; --yes executes.
+			if len(resources) > 0 || prune {
+				selectors, selErr := parseResourceSelectors(resources, resourceNamespace)
+				if selErr != nil {
+					return selErr
+				}
+				res, syncErr := client.SyncResources(ctx, connect.NewRequest(&paprikav1.SyncResourcesRequest{
+					Name:      args[0],
+					Namespace: nsFn(),
+					Resources: selectors,
+					Prune:     prune,
+					Confirm:   yes,
+					Reason:    "paprika-cli",
+				}))
+				if syncErr != nil {
+					return fmt.Errorf("sync resources: %w", friendlyError(syncErr))
+				}
+				return writeSyncResourcesResult(cmd.OutOrStdout(), *output, res.Msg, yes)
+			}
+
 			res, err := client.SyncApplication(ctx, connect.NewRequest(&paprikav1.SyncApplicationRequest{
 				Name:      args[0],
 				Namespace: nsFn(),
 			}))
 			if err != nil {
-				return fmt.Errorf("sync application: %w", err)
+				return fmt.Errorf("sync application: %w", friendlyError(err))
 			}
 
 			if watch {
@@ -112,6 +141,13 @@ func syncAppCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceCl
 	}
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Watch the application until it reaches a terminal phase")
 	cmd.Flags().IntVar(&timeoutSeconds, "timeout", 300, "Timeout in seconds when watching")
+	cmd.Flags().StringArrayVar(&resources, "resource", nil,
+		"Sync only this resource (repeatable). Formats: KIND/NAME, GROUP:KIND:NAME, GROUP:KIND:NAMESPACE:NAME")
+	cmd.Flags().StringVar(&resourceNamespace, "resource-namespace", "",
+		"Namespace applied to --resource selectors that don't carry one")
+	cmd.Flags().BoolVar(&prune, "prune", false,
+		"With --resource: delete selected resources absent from desired manifests (selective prune)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "Execute a selective sync (without it, the call is a dry-run preview)")
 	return cmd
 }
 
@@ -129,7 +165,7 @@ func watchApplicationLoop(ctx context.Context, cmd *cobra.Command, client v1conn
 			Namespace: namespace,
 		}))
 		if err != nil {
-			return fmt.Errorf("watch application: %w", err)
+			return fmt.Errorf("watch application: %w", friendlyError(err))
 		}
 
 		app := res.Msg.Application

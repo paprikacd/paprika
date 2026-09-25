@@ -107,6 +107,9 @@ type Server struct {
 	// this field: they are deliberately two distinct authenticators for two
 	// distinct surfaces.
 	authorizeAuthenticator auth.Authenticator
+
+	// rateLimit bounds /mcp protocol requests per authenticated subject.
+	rateLimit *principalRateLimiter
 }
 
 // NewServer validates cfg and builds a Server. Registry, Authenticator,
@@ -158,6 +161,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		secret:                 cfg.Secret,
 		accessTTL:              defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:             defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
+		rateLimit:              newPrincipalRateLimiter(),
 	}
 	if cfg.Client != nil {
 		s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
@@ -295,6 +299,11 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = auth.WithPrincipal(ctx, principal)
 
+	if !s.rateLimit.Allow(principal.Subject) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
+
 	credential, err := s.mintConsoleCredential(principal)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "mcp: mint internal console credential failed")
@@ -303,6 +312,10 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx = withInternalCredential(ctx, credential)
 	r = r.WithContext(ctx)
+	// Bound the JSON-RPC body — tool args are small JSON payloads and no
+	// legitimate call needs more than a megabyte; an unbounded body is a
+	// memory-DoS vector on an authenticated-but-untrusted surface.
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	r = ensureStreamableAccept(r)
 	s.streamable.ServeHTTP(w, r)
 }

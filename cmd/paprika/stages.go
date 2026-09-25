@@ -48,7 +48,7 @@ func newStagesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaService
 				Namespace: stringPtr(nsFn()),
 			}))
 			if err != nil {
-				return fmt.Errorf("list stages: %w", err)
+				return fmt.Errorf("list stages: %w", friendlyError(err))
 			}
 			return writeStages(cmd.OutOrStdout(), *output, res.Msg.Stages)
 		},

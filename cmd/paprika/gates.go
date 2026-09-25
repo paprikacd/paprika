@@ -73,7 +73,7 @@ func newGatesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceC
 				Gate:      args[1],
 			}))
 			if err != nil {
-				return fmt.Errorf("approve gate: %w", err)
+				return fmt.Errorf("approve gate: %w", friendlyError(err))
 			}
 			return writeApplication(cmd.OutOrStdout(), *output, res.Msg.Application)
 		},
@@ -94,7 +94,7 @@ func newGatesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceC
 				Gate:      args[1],
 			}))
 			if err != nil {
-				return fmt.Errorf("reject gate: %w", err)
+				return fmt.Errorf("reject gate: %w", friendlyError(err))
 			}
 			return writeApplication(cmd.OutOrStdout(), *output, res.Msg.Application)
 		},
@@ -114,7 +114,7 @@ func newGatesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceC
 				Namespace: nsFn(),
 			}))
 			if err != nil {
-				return fmt.Errorf("list gate status: %w", err)
+				return fmt.Errorf("list gate status: %w", friendlyError(err))
 			}
 			return writeGateStatuses(cmd.OutOrStdout(), *output, res.Msg.Gates)
 		},

@@ -168,6 +168,10 @@ helm upgrade paprika-e2e charts/chart/ \
 - `/mcp` and embedded UI responses are gzip-compressed when the client
   sends Accept-Encoding: gzip — a 20KB fleet_map result is ~2KB on the
   wire (the structuredContent/text duplication compresses away).
+- `/mcp` requests are rate-limited per authenticated subject (50 rps,
+  burst 100) and bodies are capped at 1 MiB — perf:load drives one token,
+  so keep the loadgen under ~50 calls/s per token or spread load across
+  tokens when measuring saturation.
 - Per-tool MCP metrics exist: `paprika.mcp.tool.calls`,
   `paprika.mcp.tool.duration`, `paprika.mcp.tool.response_bytes` with
   tool+outcome attributes.

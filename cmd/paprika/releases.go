@@ -48,7 +48,7 @@ func newReleasesCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServi
 				Namespace: stringPtr(nsFn()),
 			}))
 			if err != nil {
-				return fmt.Errorf("list releases: %w", err)
+				return fmt.Errorf("list releases: %w", friendlyError(err))
 			}
 			return writeReleases(cmd.OutOrStdout(), *output, res.Msg.Releases)
 		},
