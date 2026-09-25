@@ -95,15 +95,20 @@ func main() {
 	if !reflect.DeepEqual(cli.Goarch, []string{"amd64", "arm64"}) {
 		fail("cli goarch = %v, want [amd64 arm64]", cli.Goarch)
 	}
-	for _, target := range []string{"main.version", "main.commit", "main.date"} {
+	for _, target := range []string{"internal/version.Version", "internal/version.Commit", "internal/version.Date"} {
 		found := false
-		for _, flag := range cli.Ldflags { found = found || strings.Contains(flag, "-X "+target+"=") }
+		for _, flag := range cli.Ldflags { found = found || strings.Contains(flag, "-X github.com/benebsworth/paprika/"+target+"=") }
 		if !found { fail("cli ldflags missing %s", target) }
 	}
 
 	server := findBuild(cfg.Builds, "server")
 	if server.Main != "./cmd" || server.Binary != "paprika-server" {
 		fail("server build main/binary = %q/%q", server.Main, server.Binary)
+	}
+	for _, target := range []string{"internal/version.Version", "internal/version.Commit", "internal/version.Date"} {
+		found := false
+		for _, flag := range server.Ldflags { found = found || strings.Contains(flag, "-X github.com/benebsworth/paprika/"+target+"=") }
+		if !found { fail("server ldflags missing %s — release images must stamp the version package", target) }
 	}
 	if !reflect.DeepEqual(server.Goos, []string{"linux"}) || !reflect.DeepEqual(server.Goarch, []string{"amd64"}) {
 		fail("server targets = %v/%v, want linux/amd64", server.Goos, server.Goarch)

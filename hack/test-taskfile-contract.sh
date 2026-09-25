@@ -167,9 +167,17 @@ for valid_img in \
   : >"$container_log"
   CONTRACT_CONTAINER_LOG=$container_log "$real_make" --silent -C "$repo_root" docker-build \
     CONTAINER_TOOL="$container_tool" IMG="$valid_img"
+  # docker-build stamps version/commit/date via --build-arg; strip those
+  # argv entries to compare the IMG-bearing argv exactly, then assert the
+  # stamped args are present and well-formed.
+  stripped=$(grep -vE '^<(--build-arg|VERSION=|GIT_COMMIT=|BUILD_DATE=)' "$container_log")
   expected_container_log=$(printf '<build>\n<-t>\n<%s>\n<.>' "$valid_img")
-  [[ $(cat "$container_log") == "$expected_container_log" ]] ||
+  [[ $stripped == "$expected_container_log" ]] ||
     fail "make docker-build did not preserve valid IMG argv: $valid_img"
+  for want_arg in '<VERSION=' '<GIT_COMMIT=' '<BUILD_DATE='; do
+    grep -qF -- "$want_arg" "$container_log" ||
+      fail "make docker-build missing $want_arg build arg"
+  done
 done
 
 make_injection_one=$temp_dir/make-injected-one
