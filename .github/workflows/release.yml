@@ -382,7 +382,9 @@ jobs:
           done
           cd assets
 
-          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | sort)
+          # checksums.txt covers every artifact (archives + SBOMs); the
+          # tarball-only check asserts each archive is checksummed.
+          mapfile -t checksummed_assets < <(awk '{sub(/^\*/, "", $2); print $2}' checksums.txt | grep '\.tar\.gz$' | sort)
           mapfile -t archive_assets < <(printf '%s\n' "${expected_assets[@]}" | grep '\.tar\.gz$' | sort)
           diff --unified \
             <(printf '%s\n' "${archive_assets[@]}") \
