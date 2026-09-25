@@ -23,16 +23,15 @@ import (
 	"io"
 	"os"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
+	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/version"
 )
 
 var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-
 	globalConfigPath string
 	globalServer     string
 	globalNamespace  string
@@ -104,7 +103,7 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newLoginCmd(ctx))
 	root.AddCommand(newStatusCmd(ctx, clientFn, nsFn, &globalOutput))
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(ctx, clientFn))
 	root.AddCommand(newAppsCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newPipelinesCmd(ctx, clientFn, nsFn, &globalOutput))
 	root.AddCommand(newReleasesCmd(ctx, clientFn, nsFn, &globalOutput))
@@ -116,19 +115,34 @@ triggers syncs, approves gates, and renders templates against the Paprika API.`,
 	return root
 }
 
-func newVersionCmd() *cobra.Command {
+func newVersionCmd(ctx context.Context, clientFn func() (v1connect.PaprikaServiceClient, error)) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the Paprika CLI version",
+		Short: "Print the Paprika CLI and server versions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "paprika %s\n", version); err != nil {
+			out := cmd.OutOrStdout()
+			if _, err := fmt.Fprintf(out, "paprika client: %s  (commit=%s built=%s)\n",
+				version.Version, version.Commit, version.Date); err != nil {
 				return fmt.Errorf("write version: %w", err)
 			}
-			if commit != "none" || date != "unknown" {
-				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "commit=%s date=%s\n", commit, date); err != nil {
-					return fmt.Errorf("write build metadata: %w", err)
+			client, err := clientFn()
+			if err != nil {
+				if _, werr := fmt.Fprintf(out, "paprika server: unavailable (%v)\n", err); werr != nil {
+					return fmt.Errorf("write version: %w", werr)
 				}
+				return nil
+			}
+			res, err := client.GetSystemStatus(ctx, connect.NewRequest(&paprikav1.GetSystemStatusRequest{}))
+			if err != nil {
+				if _, werr := fmt.Fprintf(out, "paprika server: unavailable (%v)\n", friendlyError(err)); werr != nil {
+					return fmt.Errorf("write version: %w", werr)
+				}
+				return nil
+			}
+			if _, err := fmt.Fprintf(out, "paprika server: %s  (commit=%s built=%s)\n",
+				res.Msg.ServerVersion, res.Msg.ServerGitCommit, res.Msg.ServerBuildDate); err != nil {
+				return fmt.Errorf("write version: %w", err)
 			}
 			return nil
 		},

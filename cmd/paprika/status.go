@@ -117,6 +117,9 @@ func writeSystemStatus(w io.Writer, output string, status *paprikav1.GetSystemSt
 
 func writeSystemStatusTable(w io.Writer, status *paprikav1.GetSystemStatusResponse, now time.Time) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	if err := writeServerVersionLine(tw, status); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintln(tw, "APPLICATIONS\tHEALTHY\tPROGRESSING\tDEGRADED\tFAILED\tOUT-OF-SYNC\tATTENTION"); err != nil {
 		return fmt.Errorf("write status header: %w", err)
 	}
@@ -158,6 +161,24 @@ func writeSystemStatusTable(w io.Writer, status *paprikav1.GetSystemStatusRespon
 		return fmt.Errorf("flush status table: %w", err)
 	}
 	return nil
+}
+
+func writeServerVersionLine(tw *tabwriter.Writer, status *paprikav1.GetSystemStatusResponse) error {
+	if status.GetServerVersion() == "" {
+		return nil
+	}
+	if _, err := fmt.Fprintf(tw, "SERVER\t%s (commit %s)\n\n",
+		status.GetServerVersion(), shortCommit(status.GetServerGitCommit())); err != nil {
+		return fmt.Errorf("write server version: %w", err)
+	}
+	return nil
+}
+
+func shortCommit(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
 }
 
 func statusTableField(value string) string {

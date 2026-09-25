@@ -81,6 +81,40 @@ Always build for `linux/amd64`. The build host is Apple Silicon (arm64) but
 VKE nodes are amd64. `docker buildx --platform linux/amd64` handles
 cross-compilation via QEMU.
 
+## Releases and Versioning
+
+Paprika versions are semantic release tags (`v<major>.<minor>.<patch>`). Pushing
+a tag runs `.github/workflows/release.yml`, which:
+
+1. **Preflight** — validates the tag is exact semver, refuses to overwrite a
+   published release, and decides whether the OCI chart needs publishing.
+2. **Artifacts (GoReleaser)** — builds `paprika` CLI archives for darwin+linux,
+   amd64+arm64; builds the `paprika-server` image and pushes
+   `ghcr.io/paprikacd/paprika:<version>`; publishes the draft GitHub release
+   with archives, `checksums.txt`, and per-archive SPDX SBOMs.
+3. **Chart** — packages and pushes
+   `oci://ghcr.io/paprikacd/charts/paprika:<version>` with matching
+   `--app-version`, or verifies byte-parity with an already-published chart of
+   the same version before reusing it.
+
+Every binary stamps its identity at build time via
+`-X .../internal/version.{Version,Commit,Date}` ldflags. Where it surfaces:
+
+| Where | How |
+| --- | --- |
+| CLI | `paprika version` prints client + server build identity |
+| Server startup | `setup` log line: `version`, `commit`, `built`, `mode` |
+| `manager --version` | cobra's built-in flag prints the release string |
+| API | `GetSystemStatus.server_version/server_git_commit/server_build_date` |
+| `paprika status` | `SERVER` line at the top of the table output |
+| Metrics | `paprika_build_info{version,commit,go_version} = 1` |
+| MCP | `initialize` → `serverInfo.version` |
+
+CI images (per-commit `master` builds) stamp `0.0.0-dev+sha.<sha>` plus the
+commit and date, so deployed non-release builds still identify themselves
+exactly. `make docker-build`/`docker-build-fast` stamp `git describe` +
+commit + timestamp automatically.
+
 ## Deploying
 
 ### GitHub Actions promotion gate

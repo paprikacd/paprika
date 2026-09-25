@@ -92,6 +92,7 @@ import (
 	"github.com/benebsworth/paprika/internal/reposerver"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
+	buildinfo "github.com/benebsworth/paprika/internal/version"
 	webhookreceiver "github.com/benebsworth/paprika/internal/webhook/receiver"
 )
 
@@ -265,6 +266,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 	root := &cobra.Command{
 		Use:           "manager",
 		Short:         "Paprika manager — operator, API, webhook, repo-server and agent modes",
+		Version:       buildinfo.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
@@ -300,6 +302,8 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 func startManager(ctx context.Context, cfg *cliConfig) error {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cfg.ZapOptions)))
 	setupLog := ctrl.Log.WithName("setup")
+	setupLog.Info("starting paprika", "version", buildinfo.Version,
+		"commit", buildinfo.Commit, "built", buildinfo.Date, "mode", cfg.Mode)
 	scheme := newScheme()
 
 	if err := metrics.RegisterCollectors(crmetrics.Registry); err != nil {

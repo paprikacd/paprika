@@ -171,6 +171,9 @@ func TestSystemStatusContract(t *testing.T) {
 			referencedType: "paprika.v1.ApplicationSummary",
 		},
 		"has_more_attention": {number: 7, kind: protoreflect.BoolKind, cardinality: protoreflect.Optional},
+		"server_version":     {number: 8, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"server_git_commit":  {number: 9, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
+		"server_build_date":  {number: 10, kind: protoreflect.StringKind, cardinality: protoreflect.Optional},
 	})
 
 	service := file.Services().ByName("PaprikaService")

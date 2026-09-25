@@ -2,12 +2,15 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/benebsworth/paprika/internal/version"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,4 +84,23 @@ func TestServeHTTP_RejectsOversizedBody(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 
 	assert.NotEqual(t, http.StatusOK, rec.Code, "oversized body must not reach tool dispatch")
+}
+
+func TestInitializeAdvertisesBuildVersion(t *testing.T) {
+	srv := newTestServer(t)
+	resp := doJSONRPC(t, srv, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`,
+		bearerFor(t, ScopeRead))
+
+	var out struct {
+		Result struct {
+			ServerInfo struct {
+				Name    string `json:"name"`
+				Version string `json:"version"`
+			} `json:"serverInfo"`
+		} `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal(resp, &out))
+	assert.Equal(t, "paprika", out.Result.ServerInfo.Name)
+	// The advertised version is the build identity, not a hardcoded constant.
+	assert.Equal(t, version.Version, out.Result.ServerInfo.Version)
 }

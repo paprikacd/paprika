@@ -9,6 +9,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
 	"github.com/benebsworth/paprika/internal/fleet"
+	"github.com/benebsworth/paprika/internal/version"
 )
 
 const maxSystemStatusAttentionLimit uint32 = 100
@@ -86,6 +87,9 @@ func fleetSystemStatusToProto(status *fleet.Status) *paprikav1.GetSystemStatusRe
 		fleet.SyncStateUnknown,
 	}
 	response := &paprikav1.GetSystemStatusResponse{
+		ServerVersion:    version.Version,
+		ServerGitCommit:  version.Commit,
+		ServerBuildDate:  version.Date,
 		IndexGeneration:  status.Generation,
 		Total:            status.Total,
 		Health:           make([]*paprikav1.FleetHealthBucket, 0, len(healthOrder)),

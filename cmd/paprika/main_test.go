@@ -21,24 +21,29 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/benebsworth/paprika/internal/version"
 )
 
 func TestVersionReportsDevelopmentDefault(t *testing.T) {
 	stdout := executeRootCommand(t, "version")
 
-	if stdout != "paprika dev\n" {
-		t.Fatalf("version output = %q, want %q", stdout, "paprika dev\n")
+	if !strings.Contains(stdout, "paprika client: dev") {
+		t.Fatalf("version output = %q, want client dev line", stdout)
+	}
+	if !strings.Contains(stdout, "paprika server: unavailable") {
+		t.Fatalf("version output = %q, want a server line (no server configured in test)", stdout)
 	}
 }
 
 func TestVersionReportsInjectedBuildMetadata(t *testing.T) {
-	setBuildMetadata(t, "v1.2.3", "abc123", "2026-08-13T04:05:06Z")
+	setBuildMetadata(t, "v1.2.3", "abc1234def", "2026-08-13T04:05:06Z")
 
 	stdout := executeRootCommand(t, "version")
 
-	want := "paprika v1.2.3\ncommit=abc123 date=2026-08-13T04:05:06Z\n"
-	if stdout != want {
-		t.Fatalf("version output = %q, want %q", stdout, want)
+	want := "paprika client: v1.2.3  (commit=abc1234def built=2026-08-13T04:05:06Z)"
+	if !strings.Contains(stdout, want) {
+		t.Fatalf("version output = %q, want substring %q", stdout, want)
 	}
 }
 
@@ -79,23 +84,28 @@ func TestRootCommandExecutionRestoresGlobalFlagState(t *testing.T) {
 	}
 }
 
-func TestVersionDoesNotLoadConfig(t *testing.T) {
+// version contacts the server to print its build identity too, but an
+// unreachable or unconfigured server must degrade gracefully — never fail
+// or hide the client version.
+func TestVersionDegradesGracefullyWithoutConfig(t *testing.T) {
 	invalidConfigPath := t.TempDir()
 	if _, err := loadConfig(invalidConfigPath); err == nil {
 		t.Fatalf("loadConfig(%q) unexpectedly succeeded; test requires an invalid config path", invalidConfigPath)
 	}
 
-	if got := executeRootCommand(t, "--config", invalidConfigPath, "version"); got != "paprika dev\n" {
-		t.Fatalf("version output = %q, want %q", got, "paprika dev\n")
+	got := executeRootCommand(t, "--config", invalidConfigPath, "version")
+	if !strings.Contains(got, "paprika client: dev") {
+		t.Fatalf("version output = %q, want client line", got)
+	}
+	if !strings.Contains(got, "paprika server: unavailable") {
+		t.Fatalf("version output = %q, want graceful server line", got)
 	}
 }
 
-func TestVersionDoesNotLoadEnvironment(t *testing.T) {
+func TestVersionDegradesGracefullyWithoutEnvironment(t *testing.T) {
 	preserveCLIFlagState(t)
 	var stdout bytes.Buffer
-	root := newRootCmdWithEnv(context.Background(), func(name string) string {
-		panic("version unexpectedly read environment variable " + name)
-	})
+	root := newRootCmdWithEnv(context.Background(), func(string) string { return "" })
 	root.SetArgs([]string{"version"})
 	root.SetOut(&stdout)
 	root.SetErr(&bytes.Buffer{})
@@ -103,8 +113,8 @@ func TestVersionDoesNotLoadEnvironment(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("execute paprika version: %v", err)
 	}
-	if got := stdout.String(); got != "paprika dev\n" {
-		t.Fatalf("version output = %q, want %q", got, "paprika dev\n")
+	if got := stdout.String(); !strings.Contains(got, "paprika client:") {
+		t.Fatalf("version output = %q, want client line", got)
 	}
 }
 
@@ -124,10 +134,10 @@ func executeRootCommand(t *testing.T, args ...string) string {
 
 func setBuildMetadata(t *testing.T, buildVersion, buildCommit, buildDate string) {
 	t.Helper()
-	previousVersion, previousCommit, previousDate := version, commit, date
-	version, commit, date = buildVersion, buildCommit, buildDate
+	previousVersion, previousCommit, previousDate := version.Version, version.Commit, version.Date
+	version.Version, version.Commit, version.Date = buildVersion, buildCommit, buildDate
 	t.Cleanup(func() {
-		version, commit, date = previousVersion, previousCommit, previousDate
+		version.Version, version.Commit, version.Date = previousVersion, previousCommit, previousDate
 	})
 }
 
