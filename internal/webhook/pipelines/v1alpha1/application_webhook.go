@@ -123,17 +123,28 @@ func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Appli
 			allErrs = append(allErrs, field.Required(sourcePath.Child("inline").Child("configMapRef"), "configMapRef is required for inline source"))
 		}
 	case pipelinesv1alpha1.SourceTypeGit:
-		if app.Spec.Source.RepoURL == "" && app.Spec.Source.RepoRef == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "repoUrl or repoRef is required for git sources"))
-		}
+		allErrs = append(allErrs, v.validateGitSource(app, sourcePath)...)
 	case pipelinesv1alpha1.SourceTypeOCI:
-		if app.Spec.Source.RepoRef == "" {
-			if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
-				allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url or repoRef is required for oci sources"))
-			}
-		}
+		allErrs = append(allErrs, v.validateOCISource(app, sourcePath)...)
 	}
 	return allErrs
+}
+
+func (v *ApplicationCustomValidator) validateGitSource(app *pipelinesv1alpha1.Application, sourcePath *field.Path) field.ErrorList {
+	if app.Spec.Source.RepoURL == "" && app.Spec.Source.RepoRef == "" {
+		return field.ErrorList{field.Required(sourcePath.Child("repoUrl"), "repoUrl or repoRef is required for git sources")}
+	}
+	return nil
+}
+
+func (v *ApplicationCustomValidator) validateOCISource(app *pipelinesv1alpha1.Application, sourcePath *field.Path) field.ErrorList {
+	if app.Spec.Source.RepoRef != "" {
+		return nil
+	}
+	if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
+		return field.ErrorList{field.Required(sourcePath.Child("oci").Child("url"), "oci.url or repoRef is required for oci sources")}
+	}
+	return nil
 }
 
 func (v *ApplicationCustomValidator) validateProject(ctx context.Context, app *pipelinesv1alpha1.Application) field.ErrorList {

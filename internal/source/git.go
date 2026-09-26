@@ -357,28 +357,9 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 		}
 	}
 
-	commit, err := object.GetCommit(repo.Storer, *hash)
+	tree, dest, err := g.checkoutScope(repo, hash, worktreeDir)
 	if err != nil {
-		return fmt.Errorf("checkout tree: read commit %s: %w", *hash, err)
-	}
-	root, err := commit.Tree()
-	if err != nil {
-		return fmt.Errorf("checkout tree: read root tree: %w", err)
-	}
-
-	dest := worktreeDir
-	tree := root
-	if g.Path != "" {
-		entry, findErr := root.FindEntry(g.Path)
-		if findErr != nil || entry.Mode != filemode.Dir {
-			return fmt.Errorf("checkout tree: path %q is not a directory in %s", g.Path, *hash)
-		}
-		subtree, treeErr := root.Tree(g.Path)
-		if treeErr != nil {
-			return fmt.Errorf("checkout tree: read subtree %s: %w", g.Path, treeErr)
-		}
-		tree = subtree
-		dest = filepath.Join(worktreeDir, g.Path)
+		return err
 	}
 
 	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
@@ -388,55 +369,94 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 		return fmt.Errorf("checkout tree: create worktree dir: %w", mkErr)
 	}
 
-	walker := object.NewTreeWalker(tree, true, nil)
-	defer walker.Close()
-	for {
-		name, entry, walkErr := walker.Next()
-		if errors.Is(walkErr, io.EOF) {
-			break
-		}
-		if walkErr != nil {
-			return fmt.Errorf("checkout tree: walk tree: %w", walkErr)
-		}
-		target := filepath.Join(dest, name)
-		mode := entry.Mode
-		switch {
-		case mode.IsRegular():
-			blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
-			if blobErr != nil {
-				return fmt.Errorf("checkout tree: read blob %s: %w", name, blobErr)
-			}
-			perm := 0o640
-			if mode == filemode.Executable {
-				perm = 0o750
-			}
-			if writeErr := writeBlob(target, blob, os.FileMode(perm)); writeErr != nil {
-				return writeErr
-			}
-		case mode == filemode.Symlink:
-			blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
-			if blobErr != nil {
-				return fmt.Errorf("checkout tree: read symlink %s: %w", name, blobErr)
-			}
-			targetContent, readErr := blobReaderString(blob)
-			if readErr != nil {
-				return readErr
-			}
-			if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
-				return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
-			}
-			if linkErr := os.Symlink(targetContent, target); linkErr != nil {
-				return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
-			}
-		default:
-			// Submodules, empty entries: nothing to materialize.
-		}
+	if err := g.materializeTree(repo, tree, dest); err != nil {
+		return err
 	}
 
 	if err := os.WriteFile(marker, []byte(hash.String()), 0o600); err != nil {
 		return fmt.Errorf("checkout tree: write revision marker: %w", err)
 	}
 	return nil
+}
+
+// checkoutScope resolves the commit's tree and, when Path is set, scopes to
+// that subtree — returning the tree to walk and the destination dir.
+func (g *GitSource) checkoutScope(repo *git.Repository, hash *plumbing.Hash, worktreeDir string) (*object.Tree, string, error) {
+	commit, err := object.GetCommit(repo.Storer, *hash)
+	if err != nil {
+		return nil, "", fmt.Errorf("checkout tree: read commit %s: %w", *hash, err)
+	}
+	root, err := commit.Tree()
+	if err != nil {
+		return nil, "", fmt.Errorf("checkout tree: read root tree: %w", err)
+	}
+	if g.Path == "" {
+		return root, worktreeDir, nil
+	}
+	entry, findErr := root.FindEntry(g.Path)
+	if findErr != nil || entry.Mode != filemode.Dir {
+		return nil, "", fmt.Errorf("checkout tree: path %q is not a directory in %s", g.Path, *hash)
+	}
+	subtree, treeErr := root.Tree(g.Path)
+	if treeErr != nil {
+		return nil, "", fmt.Errorf("checkout tree: read subtree %s: %w", g.Path, treeErr)
+	}
+	return subtree, filepath.Join(worktreeDir, g.Path), nil
+}
+
+// materializeTree walks every entry in tree and writes it under dest.
+func (g *GitSource) materializeTree(repo *git.Repository, tree *object.Tree, dest string) error {
+	walker := object.NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+	for {
+		name, entry, walkErr := walker.Next()
+		if errors.Is(walkErr, io.EOF) {
+			return nil
+		}
+		if walkErr != nil {
+			return fmt.Errorf("checkout tree: walk tree: %w", walkErr)
+		}
+		if err := g.materializeEntry(repo, name, entry, dest); err != nil {
+			return err
+		}
+	}
+}
+
+// materializeEntry writes one tree entry under dest.
+func (g *GitSource) materializeEntry(repo *git.Repository, name string, entry object.TreeEntry, dest string) error {
+	target := filepath.Join(dest, name)
+	mode := entry.Mode
+	switch {
+	case mode.IsRegular():
+		blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
+		if blobErr != nil {
+			return fmt.Errorf("checkout tree: read blob %s: %w", name, blobErr)
+		}
+		perm := 0o640
+		if mode == filemode.Executable {
+			perm = 0o750
+		}
+		return writeBlob(target, blob, os.FileMode(perm))
+	case mode == filemode.Symlink:
+		blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
+		if blobErr != nil {
+			return fmt.Errorf("checkout tree: read symlink %s: %w", name, blobErr)
+		}
+		targetContent, readErr := blobReaderString(blob)
+		if readErr != nil {
+			return readErr
+		}
+		if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
+			return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
+		}
+		if linkErr := os.Symlink(targetContent, target); linkErr != nil {
+			return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
+		}
+		return nil
+	default:
+		// Submodules, empty entries: nothing to materialize.
+		return nil
+	}
 }
 
 func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
@@ -447,17 +467,20 @@ func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("checkout tree: read blob: %w", err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close() //nolint:errcheck // safe to ignore close error
 	// #nosec G304 -- path is under our controlled worktree dir.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 	if err != nil {
 		return fmt.Errorf("checkout tree: open %s: %w", path, err)
 	}
 	if _, err := io.Copy(f, reader); err != nil {
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // cleanup after failed write
 		return fmt.Errorf("checkout tree: write %s: %w", path, err)
 	}
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("checkout tree: close %s: %w", path, err)
+	}
+	return nil
 }
 
 func blobReaderString(blob *object.Blob) (string, error) {
@@ -465,7 +488,7 @@ func blobReaderString(blob *object.Blob) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("checkout tree: read blob: %w", err)
 	}
-	defer func() { _ = reader.Close() }()
+	defer reader.Close() //nolint:errcheck // safe to ignore close error
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return "", fmt.Errorf("checkout tree: read blob content: %w", err)
@@ -596,22 +619,6 @@ func (g *GitSource) depth() int {
 		return 1
 	}
 	return 0
-}
-
-func (g *GitSource) branchReference() string {
-	if g.isBranchReference() {
-		rev := strings.TrimSpace(g.Revision)
-		if rev == "" {
-			return "refs/heads/main"
-		}
-		if strings.HasPrefix(rev, "refs/heads/") {
-			return rev
-		}
-		if !strings.HasPrefix(rev, "refs/") {
-			return "refs/heads/" + rev
-		}
-	}
-	return ""
 }
 
 func (g *GitSource) isBranchReference() bool {

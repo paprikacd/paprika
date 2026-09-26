@@ -553,36 +553,6 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	return string(bytes.TrimSpace(out))
 }
 
-func corruptGitObject(t *testing.T, objectsDir string) {
-	t.Helper()
-
-	var target string
-	err := filepath.WalkDir(objectsDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || target != "" {
-			return nil
-		}
-		if d.Type().IsRegular() {
-			target = path
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk git objects: %v", err)
-	}
-	if target == "" {
-		t.Fatalf("no git object found under %s", objectsDir)
-	}
-	if err := os.Chmod(target, 0o600); err != nil {
-		t.Fatalf("chmod git object %s: %v", target, err)
-	}
-	if err := os.WriteFile(target, []byte("corrupt"), 0o600); err != nil {
-		t.Fatalf("corrupt git object %s: %v", target, err)
-	}
-}
-
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 

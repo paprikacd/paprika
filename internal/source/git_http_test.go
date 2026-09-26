@@ -25,6 +25,12 @@ const (
 	gitHTTPRepo     = "test-repo"
 )
 
+// #nosec G204 -- test helper runs docker with test-controlled args.
+func dockerCmd(docker string, args ...string) *exec.Cmd {
+	ctx := context.Background()
+	return exec.CommandContext(ctx, docker, args...)
+}
+
 type httpGitServer struct {
 	url string
 }
@@ -39,13 +45,13 @@ func startHTTPGitServer(t *testing.T) *httpGitServer {
 	if err != nil {
 		t.Skip("docker CLI not available")
 	}
-	if out, err := exec.Command(docker, "info", "--format", "{{.ServerVersion}}").CombinedOutput(); err != nil {
+	if out, err := dockerCmd(docker, "info", "--format", "{{.ServerVersion}}").CombinedOutput(); err != nil {
 		t.Skipf("docker daemon not available: %v (%s)", err, out)
 	}
 
 	name := fmt.Sprintf("paprika-git-http-%d", time.Now().UnixNano())
 	port := freeTCPPort(t)
-	cmd := exec.Command(docker, "run", "-d", "--rm",
+	cmd := dockerCmd(docker, "run", "-d", "--rm",
 		"-p", fmt.Sprintf("127.0.0.1:%d:3000", port),
 		"--name", name,
 		gitHTTPImage)
@@ -53,7 +59,7 @@ func startHTTPGitServer(t *testing.T) *httpGitServer {
 		t.Fatalf("start git-http-backend: %v\n%s", err, out)
 	}
 	t.Cleanup(func() {
-		_ = exec.Command(docker, "rm", "-f", name).Run()
+		_ = dockerCmd(docker, "rm", "-f", name).Run()
 	})
 
 	srv := &httpGitServer{url: fmt.Sprintf("http://127.0.0.1:%d/%s.git", port, gitHTTPRepo)}
@@ -62,11 +68,11 @@ func startHTTPGitServer(t *testing.T) *httpGitServer {
 	// also prove the server is up.
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest(http.MethodGet, srv.url+"/info/refs?service=git-upload-pack", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.url+"/info/refs?service=git-upload-pack", nil)
 		req.SetBasicAuth(gitHTTPUser, gitHTTPPassword)
 		resp, reqErr := http.DefaultClient.Do(req)
 		if reqErr == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return srv
 			}
@@ -79,12 +85,16 @@ func startHTTPGitServer(t *testing.T) *httpGitServer {
 
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("allocate port: %v", err)
 	}
 	defer lis.Close()
-	return lis.Addr().(*net.TCPAddr).Port
+	addr, ok := lis.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("unexpected listener addr %T", lis.Addr())
+	}
+	return addr.Port
 }
 
 func httpGitSource(t *testing.T, srv *httpGitServer, revision string) *GitSource {
@@ -124,10 +134,10 @@ func gitHTTPPush(t *testing.T, workDir, ref string) {
 
 func gitHTTPCommitFile(t *testing.T, workDir, name, content string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(filepath.Join(workDir, name)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(workDir, name)), 0o750); err != nil {
 		t.Fatalf("mkdir %s: %v", name, err)
 	}
-	if err := os.WriteFile(filepath.Join(workDir, name), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, name), []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
 	gitOutput(t, workDir, "add", name)
