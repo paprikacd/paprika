@@ -3,6 +3,8 @@ package source
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -148,9 +150,13 @@ func resetGitCache(paths ...string) error {
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("remove git cache %s: %w", path, err)
 		}
-		// The materialization marker lives next to the worktree dir.
-		if err := os.Remove(path + ".rev"); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove git cache marker %s: %w", path, err)
+		// The materialization markers live next to the worktree dir.
+		if matches, globErr := filepath.Glob(path + ".rev*"); globErr == nil {
+			for _, m := range matches {
+				if err := os.Remove(m); err != nil && !os.IsNotExist(err) {
+					return fmt.Errorf("remove git cache marker %s: %w", m, err)
+				}
+			}
 		}
 	}
 	return nil
@@ -346,23 +352,28 @@ const defaultMirrorRef = "refs/paprika-default/HEAD"
 // no second repository and no file transport. When Path is set only that
 // subtree is written (sparse materialization): the mirror carries the whole
 // history, but a monorepo caller pays only for the subtree it renders.
-// A sibling marker file records the materialized hash so re-resolves of the
-// same revision are near-free.
+//
+// worktreeDir is shared by all resolves of the same repo+credentials — each
+// requested path scope gets its own sibling marker recording the hash it
+// materialized, so templates with different paths never shadow each other.
 func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, worktreeDir string) error {
-	marker := worktreeDir + ".rev"
-	// #nosec G304 -- marker path is derived from our own WorkDir.
-	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == hash.String() {
-		if info, statErr := os.Stat(worktreeDir); statErr == nil && info.IsDir() {
-			return nil
-		}
-	}
+	marker := checkoutMarker(worktreeDir, g.Path)
 
 	tree, dest, err := g.checkoutScope(repo, hash, worktreeDir)
 	if err != nil {
 		return err
 	}
 
-	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
+	// #nosec G304 -- marker path is derived from our own WorkDir.
+	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == hash.String() {
+		if info, statErr := os.Stat(dest); statErr == nil && info.IsDir() {
+			return nil
+		}
+	}
+
+	// Only the requested scope is replaced — other subtrees in worktreeDir
+	// may have been materialized for other callers.
+	if rmErr := os.RemoveAll(dest); rmErr != nil {
 		return fmt.Errorf("checkout tree: clear stale worktree: %w", rmErr)
 	}
 	if mkErr := os.MkdirAll(dest, 0o750); mkErr != nil {
@@ -377,6 +388,16 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 		return fmt.Errorf("checkout tree: write revision marker: %w", err)
 	}
 	return nil
+}
+
+// checkoutMarker names the per-scope revision marker next to the worktree
+// dir — ".rev" for a full-tree checkout, ".rev-<path>" for a subtree.
+func checkoutMarker(worktreeDir, path string) string {
+	if path == "" {
+		return worktreeDir + ".rev"
+	}
+	sum := sha256.Sum256([]byte(path))
+	return fmt.Sprintf("%s.rev-%s", worktreeDir, hex.EncodeToString(sum[:])[:8])
 }
 
 // checkoutScope resolves the commit's tree and, when Path is set, scopes to

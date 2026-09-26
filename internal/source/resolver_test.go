@@ -579,3 +579,55 @@ func writeChartFile(t *testing.T, dir, version string) {
 		t.Fatal(err)
 	}
 }
+
+// Regression: templates sharing a repo+credential cache key but requesting
+// different paths must each get their subtree materialized — the per-scope
+// marker must not suppress a path it never wrote.
+func TestGitSourceResolve_DifferentPathsShareMirror(t *testing.T) {
+	root := t.TempDir()
+	origin, work := filepath.Join(root, "origin.git"), filepath.Join(root, "work")
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	for _, dir := range []string{"charts/app-a", "charts/app-b"} {
+		full := filepath.Join(work, dir)
+		if err := os.MkdirAll(full, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(full, "values.yaml"), []byte("app: "+dir+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, work, "add", ".")
+	runGit(t, work, "-c", "user.email=e2e@test", "-c", "user.name=e2e", "commit", "-m", "two charts")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	workDir := filepath.Join(root, "resolver")
+	resolvePath := func(path string) string {
+		src := &GitSource{RepoURL: origin, Revision: "main", Path: path, WorkDir: workDir, Shallow: true}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := src.Resolve(ctx)
+		if err != nil {
+			t.Fatalf("resolve path %s: %v", path, err)
+		}
+		return res.LocalPath
+	}
+
+	paths := map[string]string{
+		resolvePath("charts/app-a"): "app: charts/app-a\n",
+		resolvePath("charts/app-b"): "app: charts/app-b\n",
+	}
+	for localPath, want := range paths {
+		//nolint:gosec // test reads its own fixture files
+		content, err := os.ReadFile(filepath.Join(localPath, "values.yaml"))
+		if err != nil {
+			t.Fatalf("read materialized path %s: %v", localPath, err)
+		}
+		if string(content) != want {
+			t.Fatalf("content at %s = %q, want %q", localPath, content, want)
+		}
+	}
+}
