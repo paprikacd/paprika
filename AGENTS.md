@@ -115,6 +115,17 @@ helm upgrade paprika-e2e charts/chart/ \
   (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
   commits a release has pinned; upstream-unreachable SHAs permanently fail
   that release's renders.
+- Git resolve is pure go-git — no `git` binary and no second worktree repo:
+  the mirror fetches the minimal refspec for the revision (`+HEAD:` for
+  default, `+refs/heads/<rev>` for branches, `+<sha>:refs/paprika-pinned/`
+  for pinned commits with an all-heads fallback when the server lacks
+  allowAnySHA1InWant), and `checkoutTree` materializes files straight from
+  mirror objects into `git-clones/` (subtree-scoped when `path` is set —
+  sparse for monorepos — plus a sibling `.rev` marker that skips
+  re-materialization on re-resolve). Knobs on `source.git`:
+  `shallow` (default true), `depth`, `fetchAllRefs`. Mirror corruption
+  discovered during object reads triggers the protected rebuild (see
+  `isRecoverableGitCacheError` — errors naming the remote URL never reset).
 - Prune is opt-in via `SyncOptions.Prune` (default false). When enabled,
   `pruneStaleResources` deletes live resources that are paprika-labelled,
   ownerless, and not in the desired manifest set. Resources annotated

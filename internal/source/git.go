@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,6 +16,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 
@@ -40,6 +43,14 @@ type GitSource struct {
 	WorkDir  string
 	Auth     GitAuth
 	Shallow  bool
+	// Depth is an explicit fetch depth; when >0 it overrides Shallow's
+	// implicit depth-1 for branch refs. For pinned commits the fetch is
+	// already depth-1 regardless.
+	Depth int
+	// FetchAllRefs restores the legacy behaviour of fetching every branch
+	// head (+refs/heads/*:refs/heads/*). Default is a targeted single-ref
+	// fetch — dramatically cheaper on large monorepos.
+	FetchAllRefs bool
 }
 
 var (
@@ -89,7 +100,7 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	defer lock.Unlock()
 
 	result, err := g.resolveLocked(ctx, mirrorDir, worktreeDir)
-	if err == nil || (!isRecoverableGitCacheError(err) && !g.isStalePinnedRevisionError(err)) {
+	if err == nil || (!g.isRecoverableGitCacheError(err) && !g.isStalePinnedRevisionError(err)) {
 		return result, err
 	}
 
@@ -137,26 +148,31 @@ func resetGitCache(paths ...string) error {
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("remove git cache %s: %w", path, err)
 		}
+		// The materialization marker lives next to the worktree dir.
+		if err := os.Remove(path + ".rev"); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove git cache marker %s: %w", path, err)
+		}
 	}
 	return nil
 }
 
-func isRecoverableGitCacheError(err error) bool {
+func (g *GitSource) isRecoverableGitCacheError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	// Native upload-pack describes the local mirror as the "remote side" when
-	// it cannot read a damaged object. Only the worktree fetch uses that local
-	// mirror; do not reset caches for the same message from the real upstream.
-	if strings.Contains(msg, "aborting due to possible repository corruption on the remote side") &&
-		containsAny(msg, "fetch worktree:", "fetch worktree from mirror:") {
-		return true
-	}
-	if !containsAny(msg, "unexpected eof", "object not found", "invalid checksum", "malformed", "packfile") {
+	// Corruption signatures from object reads or pack handling.
+	if !containsAny(msg, "unexpected eof", "object not found", "invalid checksum", "malformed", "packfile",
+		"repository corruption", "zlib") {
 		return false
 	}
-	return containsAny(msg, "checkout revision", "open mirror", "open worktree", "fetch worktree", "fetch repo")
+	// A failure naming the remote URL came from the upstream fetch —
+	// wiping the local mirror can't repair a remote-side problem.
+	if g.RepoURL != "" && strings.Contains(msg, strings.ToLower(g.RepoURL)) {
+		return false
+	}
+	return containsAny(msg, "checkout tree:", "checkout revision", "open mirror", "open worktree",
+		"fetch worktree", "fetch repo")
 }
 
 func containsAny(s string, needles ...string) bool {
@@ -179,7 +195,7 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 		if fetchErr := g.fetchMirror(ctx, repo, auth); fetchErr != nil {
 			return nil, fetchErr
 		}
-		if headErr := g.setMirrorHEAD(repo); headErr != nil {
+		if headErr := g.refreshMirrorHEAD(repo); headErr != nil {
 			return nil, headErr
 		}
 		return repo, nil
@@ -196,12 +212,62 @@ func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth 
 		Auth:     auth,
 		Progress: nil,
 		Depth:    g.depth(),
-		RefSpecs: []config.RefSpec{"+refs/heads/*:refs/heads/*"},
+		RefSpecs: g.mirrorRefSpecs(),
 	})
+	// Fallbacks: a short revision may name a tag rather than a branch, and
+	// servers without uploadpack.allowAnySHA1InWant reject exact-SHA
+	// refspecs — the commit may still be reachable from a branch head.
+	if (isRefNotFoundError(fetchErr) || errors.Is(fetchErr, git.ErrExactSHA1NotSupported)) && !g.FetchAllRefs {
+		rev := strings.TrimSpace(g.Revision)
+		var retry []config.RefSpec
+		switch {
+		case rev == "" || isHexSHA(rev):
+			retry = []config.RefSpec{"+refs/heads/*:refs/heads/*"}
+		case !strings.HasPrefix(rev, "refs/"):
+			retry = []config.RefSpec{config.RefSpec("+refs/tags/" + rev + ":refs/tags/" + rev)}
+		}
+		if retry != nil {
+			fetchErr = repo.FetchContext(ctx, &git.FetchOptions{
+				Auth: auth, Depth: g.depth(), RefSpecs: retry,
+			})
+		}
+	}
 	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("fetch repo %s: %w", g.RepoURL, fetchErr)
 	}
 	return nil
+}
+
+func isRefNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "couldn't find remote ref") ||
+		strings.Contains(msg, "no such ref was advertised")
+}
+
+// mirrorRefSpecs returns the minimal refspec needed for the requested
+// revision. Fetching only the required ref (instead of every branch head)
+// is the main efficiency win on repos with many branches and tags; pinned
+// commits and HEAD both route through namespace-local refs.
+func (g *GitSource) mirrorRefSpecs() []config.RefSpec {
+	if g.FetchAllRefs {
+		return []config.RefSpec{"+refs/heads/*:refs/heads/*"}
+	}
+	rev := strings.TrimSpace(g.Revision)
+	switch {
+	case rev == "":
+		// Fetch the server's HEAD symref — resolves the remote's default
+		// branch without pulling every head.
+		return []config.RefSpec{"+HEAD:" + defaultMirrorRef}
+	case isHexSHA(rev):
+		return []config.RefSpec{config.RefSpec(rev + ":" + pinnedCommitRefPrefix + rev)}
+	case strings.HasPrefix(rev, "refs/"):
+		return []config.RefSpec{config.RefSpec("+" + rev + ":" + rev)}
+	default:
+		return []config.RefSpec{config.RefSpec("+refs/heads/" + rev + ":refs/heads/" + rev)}
+	}
 }
 
 func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth transport.AuthMethod) (*git.Repository, error) {
@@ -219,17 +285,33 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 	if err := g.fetchMirror(ctx, repo, auth); err != nil {
 		return nil, err
 	}
-	if err := g.setMirrorHEAD(repo); err != nil {
+	if err := g.refreshMirrorHEAD(repo); err != nil {
 		return nil, err
 	}
 	return repo, nil
 }
 
-func (g *GitSource) setMirrorHEAD(repo *git.Repository) error {
-	if branch := g.branchReference(); branch != "" {
-		if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(branch))); err != nil {
-			return fmt.Errorf("set mirror HEAD: %w", err)
+// refreshMirrorHEAD points the mirror's HEAD at the fetched ref so
+// resolveRevision("") can answer via repo.Head(). Pinned-commit fetches
+// skip HEAD entirely — the revision resolves from refs/paprika-pinned/.
+func (g *GitSource) refreshMirrorHEAD(repo *git.Repository) error {
+	rev := strings.TrimSpace(g.Revision)
+	var target plumbing.ReferenceName
+	switch {
+	case rev == "" && !g.FetchAllRefs:
+		target = plumbing.ReferenceName(defaultMirrorRef)
+	default:
+		ref, ok, err := firstCloneableMirrorRef(repo)
+		if err != nil {
+			return err
 		}
+		if !ok {
+			return nil
+		}
+		target = ref
+	}
+	if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, target)); err != nil {
+		return fmt.Errorf("set mirror HEAD: %w", err)
 	}
 	return nil
 }
@@ -249,50 +331,146 @@ func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repo
 	if err != nil {
 		return "", err
 	}
-	if headErr := g.setCloneableMirrorHEAD(mirrorRepo, hash); headErr != nil {
-		return "", headErr
-	}
 
-	worktreeRepo, err := g.openOrCloneWorktree(ctx, mirrorDir, worktreeDir)
-	if err != nil {
+	if err := g.checkoutTree(mirrorRepo, hash, worktreeDir); err != nil {
 		return "", err
-	}
-
-	wt, err := worktreeRepo.Worktree()
-	if err != nil {
-		return "", fmt.Errorf("get worktree: %w", err)
-	}
-
-	if checkoutErr := wt.Checkout(&git.CheckoutOptions{Hash: *hash, Force: true}); checkoutErr != nil {
-		return "", fmt.Errorf("checkout revision %s: %w", g.Revision, checkoutErr)
 	}
 	return hash.String(), nil
 }
 
-func (g *GitSource) setCloneableMirrorHEAD(repo *git.Repository, hash *plumbing.Hash) error {
-	if branch := g.branchReference(); branch != "" {
-		if _, err := repo.Reference(plumbing.ReferenceName(branch), true); err == nil {
-			if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName(branch))); err != nil {
-				return fmt.Errorf("set mirror HEAD to branch: %w", err)
-			}
+// defaultMirrorRef names the mirror-local ref that records the remote's
+// HEAD symref when Revision is empty.
+const defaultMirrorRef = "refs/paprika-default/HEAD"
+
+// checkoutTree materializes the commit's tree directly from mirror objects —
+// no second repository and no file transport. When Path is set only that
+// subtree is written (sparse materialization): the mirror carries the whole
+// history, but a monorepo caller pays only for the subtree it renders.
+// A sibling marker file records the materialized hash so re-resolves of the
+// same revision are near-free.
+func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, worktreeDir string) error {
+	marker := worktreeDir + ".rev"
+	// #nosec G304 -- marker path is derived from our own WorkDir.
+	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == hash.String() {
+		if info, statErr := os.Stat(worktreeDir); statErr == nil && info.IsDir() {
 			return nil
 		}
 	}
-	if ref, ok, err := firstCloneableMirrorRef(repo); err != nil {
-		return err
-	} else if ok {
-		if err := repo.Storer.SetReference(plumbing.NewSymbolicReference(plumbing.HEAD, ref)); err != nil {
-			return fmt.Errorf("set mirror HEAD to existing ref: %w", err)
+
+	commit, err := object.GetCommit(repo.Storer, *hash)
+	if err != nil {
+		return fmt.Errorf("checkout tree: read commit %s: %w", *hash, err)
+	}
+	root, err := commit.Tree()
+	if err != nil {
+		return fmt.Errorf("checkout tree: read root tree: %w", err)
+	}
+
+	dest := worktreeDir
+	tree := root
+	if g.Path != "" {
+		entry, findErr := root.FindEntry(g.Path)
+		if findErr != nil || entry.Mode != filemode.Dir {
+			return fmt.Errorf("checkout tree: path %q is not a directory in %s", g.Path, *hash)
 		}
-		return nil
+		subtree, treeErr := root.Tree(g.Path)
+		if treeErr != nil {
+			return fmt.Errorf("checkout tree: read subtree %s: %w", g.Path, treeErr)
+		}
+		tree = subtree
+		dest = filepath.Join(worktreeDir, g.Path)
 	}
-	if hash == nil {
-		return nil
+
+	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
+		return fmt.Errorf("checkout tree: clear stale worktree: %w", rmErr)
 	}
-	if err := repo.Storer.SetReference(plumbing.NewHashReference(plumbing.HEAD, *hash)); err != nil {
-		return fmt.Errorf("set mirror HEAD to revision: %w", err)
+	if mkErr := os.MkdirAll(dest, 0o750); mkErr != nil {
+		return fmt.Errorf("checkout tree: create worktree dir: %w", mkErr)
+	}
+
+	walker := object.NewTreeWalker(tree, true, nil)
+	defer walker.Close()
+	for {
+		name, entry, walkErr := walker.Next()
+		if errors.Is(walkErr, io.EOF) {
+			break
+		}
+		if walkErr != nil {
+			return fmt.Errorf("checkout tree: walk tree: %w", walkErr)
+		}
+		target := filepath.Join(dest, name)
+		mode := entry.Mode
+		switch {
+		case mode.IsRegular():
+			blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
+			if blobErr != nil {
+				return fmt.Errorf("checkout tree: read blob %s: %w", name, blobErr)
+			}
+			perm := 0o640
+			if mode == filemode.Executable {
+				perm = 0o750
+			}
+			if writeErr := writeBlob(target, blob, os.FileMode(perm)); writeErr != nil {
+				return writeErr
+			}
+		case mode == filemode.Symlink:
+			blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
+			if blobErr != nil {
+				return fmt.Errorf("checkout tree: read symlink %s: %w", name, blobErr)
+			}
+			targetContent, readErr := blobReaderString(blob)
+			if readErr != nil {
+				return readErr
+			}
+			if mkErr := os.MkdirAll(filepath.Dir(target), 0o750); mkErr != nil {
+				return fmt.Errorf("checkout tree: create dir for %s: %w", name, mkErr)
+			}
+			if linkErr := os.Symlink(targetContent, target); linkErr != nil {
+				return fmt.Errorf("checkout tree: create symlink %s: %w", name, linkErr)
+			}
+		default:
+			// Submodules, empty entries: nothing to materialize.
+		}
+	}
+
+	if err := os.WriteFile(marker, []byte(hash.String()), 0o600); err != nil {
+		return fmt.Errorf("checkout tree: write revision marker: %w", err)
 	}
 	return nil
+}
+
+func writeBlob(path string, blob *object.Blob, perm os.FileMode) error {
+	if mkErr := os.MkdirAll(filepath.Dir(path), 0o750); mkErr != nil {
+		return fmt.Errorf("checkout tree: create dir for %s: %w", path, mkErr)
+	}
+	reader, err := blob.Reader()
+	if err != nil {
+		return fmt.Errorf("checkout tree: read blob: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+	// #nosec G304 -- path is under our controlled worktree dir.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("checkout tree: open %s: %w", path, err)
+	}
+	if _, err := io.Copy(f, reader); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("checkout tree: write %s: %w", path, err)
+	}
+	return f.Close()
+}
+
+func blobReaderString(blob *object.Blob) (string, error) {
+	reader, err := blob.Reader()
+	if err != nil {
+		return "", fmt.Errorf("checkout tree: read blob: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("checkout tree: read blob content: %w", err)
+	}
+	return string(data), nil
 }
 
 func firstCloneableMirrorRef(repo *git.Repository) (plumbing.ReferenceName, bool, error) {
@@ -339,62 +517,6 @@ func mirrorRefPriority(name string) int {
 	default:
 		return -1
 	}
-}
-
-func (g *GitSource) openOrCloneWorktree(ctx context.Context, mirrorDir, worktreeDir string) (*git.Repository, error) {
-	if _, statErr := os.Stat(filepath.Join(worktreeDir, ".git")); statErr == nil {
-		return g.openExistingWorktree(ctx, worktreeDir)
-	}
-	return g.cloneWorktree(ctx, mirrorDir, worktreeDir)
-}
-
-func (g *GitSource) openExistingWorktree(ctx context.Context, worktreeDir string) (*git.Repository, error) {
-	worktreeRepo, err := git.PlainOpen(worktreeDir)
-	if err != nil {
-		return nil, fmt.Errorf("open worktree: %w", err)
-	}
-	if err := worktreeRepo.FetchContext(ctx, &git.FetchOptions{
-		Progress: nil,
-		RefSpecs: []config.RefSpec{
-			"+refs/heads/*:refs/remotes/origin/*",
-			"+refs/tags/*:refs/tags/*",
-			"+" + pinnedCommitRefPrefix + "*:refs/paprika-pinned/*",
-		},
-	}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return nil, fmt.Errorf("fetch worktree: %w", err)
-	}
-	return worktreeRepo, nil
-}
-
-func (g *GitSource) cloneWorktree(ctx context.Context, mirrorDir, worktreeDir string) (*git.Repository, error) {
-	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
-		return nil, fmt.Errorf("remove stale worktree dir: %w", rmErr)
-	}
-	if mkErr := os.MkdirAll(filepath.Dir(worktreeDir), 0o750); mkErr != nil {
-		return nil, fmt.Errorf("create worktree parent dir: %w", mkErr)
-	}
-	worktreeRepo, err := git.PlainInit(worktreeDir, false)
-	if err != nil {
-		return nil, fmt.Errorf("init worktree repo: %w", err)
-	}
-	if _, remoteErr := worktreeRepo.CreateRemote(&config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{mirrorDir},
-	}); remoteErr != nil {
-		return nil, fmt.Errorf("create worktree remote: %w", remoteErr)
-	}
-	err = worktreeRepo.FetchContext(ctx, &git.FetchOptions{
-		Progress: nil,
-		RefSpecs: []config.RefSpec{
-			"+refs/heads/*:refs/remotes/origin/*",
-			"+refs/tags/*:refs/tags/*",
-			"+" + pinnedCommitRefPrefix + "*:refs/paprika-pinned/*",
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("fetch worktree from mirror: %w", err)
-	}
-	return worktreeRepo, nil
 }
 
 // pinnedCommitRefPrefix namespaces exact-commit fetches in the mirror so the

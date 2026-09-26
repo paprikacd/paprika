@@ -59,6 +59,17 @@ spec:
               git:
                 description: GitSourceSpec defines a git source specification.
                 properties:
+                  depth:
+                    description: Depth is an explicit fetch depth; when >0 it overrides
+                      Shallow.
+                    format: int32
+                    type: integer
+                  fetchAllRefs:
+                    description: |-
+                      FetchAllRefs restores the legacy +refs/heads/* mirror fetch instead
+                      of the default targeted single-ref fetch. Rarely needed — mainly for
+                      revisions that reference refs outside heads/tags.
+                    type: boolean
                   path:
                     type: string
                   repoUrl:
@@ -67,6 +78,11 @@ spec:
                     type: string
                   secretRef:
                     type: string
+                  shallow:
+                    description: |-
+                      Shallow limits the mirror fetch to depth-1 for branch revisions
+                      (default true — set false for full-history use cases).
+                    type: boolean
                 required:
                 - repoUrl
                 type: object

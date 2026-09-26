@@ -46,12 +46,18 @@ func (r *TemplateRenderer) ResolveSource(ctx context.Context, tmpl *paprika.Temp
 		if gitSrc == nil {
 			return nil, errors.New("git source spec is required for type=git")
 		}
+		shallow := true
+		if gitSrc.Shallow != nil {
+			shallow = *gitSrc.Shallow
+		}
 		result, err := (&source.GitSource{
-			RepoURL:  gitSrc.RepoURL,
-			Revision: gitSrc.Revision,
-			Path:     gitSrc.Path,
-			WorkDir:  r.WorkDir,
-			Shallow:  true,
+			RepoURL:      gitSrc.RepoURL,
+			Revision:     gitSrc.Revision,
+			Path:         gitSrc.Path,
+			WorkDir:      r.WorkDir,
+			Shallow:      shallow,
+			Depth:        int(gitSrc.Depth),
+			FetchAllRefs: gitSrc.FetchAllRefs,
 		}).Resolve(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("resolve git source: %w", err)

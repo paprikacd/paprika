@@ -44,10 +44,9 @@ func TestGitSourceResolve_RepairsLocalUploadPackCorruption(t *testing.T) {
 	src, mirror, worktree, revision := cacheRecoveryFixture(t)
 	src.Revision = revision // Release rendering must retain its exact pinned commit.
 	// Corrupt one loose blob while retaining the mirror's valid commit/ref
-	// graph. Native git-upload-pack, used for file remotes, emits the same
-	// remote-side corruption error seen when fetching the local mirror.
-	// Rebuild the tiny synthetic mirror with loose objects so corruption is
-	// not masked by native Git reusing a still-valid packed copy of the blob.
+	// graph — the checkout's object read then trips on the damage. Rebuild
+	// the tiny synthetic mirror with loose objects so corruption is not
+	// masked by a still-valid packed copy of the blob.
 	if err := os.RemoveAll(mirror); err != nil {
 		t.Fatal(err)
 	}
@@ -66,15 +65,11 @@ func TestGitSourceResolve_RepairsLocalUploadPackCorruption(t *testing.T) {
 	if err := os.RemoveAll(worktree); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, filepath.Dir(worktree), "init", "--initial-branch=main", worktree)
-	runGit(t, worktree, "remote", "add", "origin", mirror)
+	if err := os.Remove(worktree + ".rev"); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	_, err := src.openExistingWorktree(ctx, worktree)
-	if err == nil || !strings.Contains(err.Error(), "fetch worktree:") || !strings.Contains(err.Error(), localUploadPackCorruption) {
-		t.Fatalf("native local upload-pack did not reproduce the observed error: %v", err)
-	}
-	t.Log("native local mirror error reproduced:", err)
 	sibling := filepath.Join(src.WorkDir, "git-mirrors", "sibling-cache", "sentinel")
 	if mkdirErr := os.MkdirAll(filepath.Dir(sibling), 0o700); mkdirErr != nil {
 		t.Fatal(mkdirErr)
@@ -169,10 +164,12 @@ type failingCacheTransport struct {
 func (f *failingCacheTransport) NewUploadPackSession(ep *transport.Endpoint, auth transport.AuthMethod) (transport.UploadPackSession, error) {
 	if filepath.Clean(ep.Path) == filepath.Clean(f.target) {
 		f.attempts++
-		if f.attempts > 2 {
-			return nil, errors.New("test stops an unbounded repair loop")
+		if f.err != nil {
+			if f.attempts > 2 {
+				return nil, errors.New("test stops an unbounded repair loop")
+			}
+			return nil, f.err
 		}
-		return nil, f.err
 	}
 	return f.Transport.NewUploadPackSession(ep, auth)
 }
@@ -186,17 +183,39 @@ func installFailingCacheTransport(t *testing.T, target string, err error) *faili
 	return failing
 }
 
-func TestGitSourceResolve_LocalCorruptionRetryIsBounded(t *testing.T) {
-	src, mirror, _, _ := cacheRecoveryFixture(t)
-	failing := installFailingCacheTransport(t, mirror, errors.New(localUploadPackCorruption))
+func TestGitSourceResolve_LocalCorruptionRepairRefetchesOnce(t *testing.T) {
+	src, mirror, worktree, _ := cacheRecoveryFixture(t)
+	// Corrupt the checkout's materialized content by damaging the mirror
+	// objects — the protected repair path must rebuild the mirror with a
+	// single upstream refetch, not loop.
+	if err := os.RemoveAll(mirror); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, filepath.Dir(mirror), "clone", "--bare", "--no-hardlinks", src.RepoURL, mirror)
+	blob := gitOutput(t, mirror, "rev-parse", "HEAD:chart/values.yaml")
+	object := filepath.Join(mirror, "objects", blob[:2], blob[2:])
+	if err := os.MkdirAll(filepath.Dir(object), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(object, []byte("corrupt synthetic blob"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(worktree); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(worktree + ".rev"); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	counting := installFailingCacheTransport(t, src.RepoURL, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := src.Resolve(ctx)
-	if err == nil || !strings.Contains(err.Error(), localUploadPackCorruption) {
-		t.Fatalf("expected persistent local corruption: %v", err)
+	if _, err := src.Resolve(ctx); err != nil {
+		t.Fatalf("expected one protected repair: %v", err)
 	}
-	if failing.attempts != 2 {
-		t.Fatalf("want initial local fetch plus one repair, got %d attempts", failing.attempts)
+	// One protected rebuild — the file transport can cost a second session
+	// when the "+HEAD:" refspec isn't served (GitHub/HTTP serve it).
+	if counting.attempts < 1 || counting.attempts > 2 {
+		t.Fatalf("want a bounded single rebuild fetch, got %d attempts", counting.attempts)
 	}
 }
 
@@ -243,16 +262,20 @@ func TestRecoverableGitCacheError_LocalRemoteDistinction(t *testing.T) {
 		message string
 		want    bool
 	}{
+		{"checkout tree: read blob a.txt: zlib reading error: zlib: invalid header", true},
+		{"checkout tree: read commit: object not found", true},
 		{"fetch worktree: unexpected error: " + localUploadPackCorruption, true},
 		{"fetch worktree from mirror: unexpected error: " + localUploadPackCorruption, true},
 		{"fetch repo https://example.test/repo: " + localUploadPackCorruption, false},
+		{"checkout tree: read blob: " + localUploadPackCorruption, true},
 		{"clone remote: " + localUploadPackCorruption, false},
-		{"fetch worktree: authentication required", false},
-		{"fetch worktree: context deadline exceeded", false},
-		{"fetch worktree: context canceled", false},
+		{"checkout tree: read blob: authentication required", false},
+		{"checkout tree: read blob: context deadline exceeded", false},
+		{"checkout tree: read blob: context canceled", false},
 	} {
 		t.Run(tc.message, func(t *testing.T) {
-			if got := isRecoverableGitCacheError(errors.New(tc.message)); got != tc.want {
+			src := &GitSource{RepoURL: "https://example.test/repo"}
+			if got := src.isRecoverableGitCacheError(errors.New(tc.message)); got != tc.want {
 				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
@@ -276,10 +299,13 @@ func (s *serializedCacheTransport) NewUploadPackSession(ep *transport.Endpoint, 
 }
 
 func TestGitSourceResolve_SerializesSeparateInstancesForSameCache(t *testing.T) {
-	first, mirror, _, revision := cacheRecoveryFixture(t)
+	first, _, _, revision := cacheRecoveryFixture(t)
 	second := *first
 	original := gitclient.Protocols["file"]
-	blocked := &serializedCacheTransport{Transport: original, target: mirror, entered: make(chan struct{}, 2), release: make(chan struct{})}
+	// Block on the upstream fetch — every resolve updates the mirror, so a
+	// concurrent instance can only enter this transport when it bypasses
+	// the per-repo key lock.
+	blocked := &serializedCacheTransport{Transport: original, target: first.RepoURL, entered: make(chan struct{}, 2), release: make(chan struct{})}
 	gitclient.InstallProtocol("file", blocked)
 	t.Cleanup(func() { gitclient.InstallProtocol("file", original) })
 	var releaseOnce sync.Once

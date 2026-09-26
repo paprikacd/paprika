@@ -434,8 +434,29 @@ func TestGitSourceResolve_RecoversCorruptWorktreeCache(t *testing.T) {
 		t.Fatalf("first Resolve() error: %v", err)
 	}
 
+	// Corrupt one loose blob in the disposable mirror — the checkout's
+	// object read must trip and trigger the protected rebuild. Rebuild the
+	// mirror with loose objects so the damage is not masked by pack data.
+	mirrorDir := filepath.Join(resolverWorkDir, "git-mirrors", RepoCacheKey(origin, ""))
+	if rmErr := os.RemoveAll(mirrorDir); rmErr != nil {
+		t.Fatalf("remove mirror: %v", rmErr)
+	}
+	runGit(t, filepath.Dir(mirrorDir), "clone", "--bare", "--no-hardlinks", origin, mirrorDir)
+	blob := gitOutput(t, mirrorDir, "rev-parse", "HEAD:chart/values.yaml")
+	looseObject := filepath.Join(mirrorDir, "objects", blob[:2], blob[2:])
+	if mkErr := os.MkdirAll(filepath.Dir(looseObject), 0o700); mkErr != nil {
+		t.Fatal(mkErr)
+	}
+	if wrErr := os.WriteFile(looseObject, []byte("corrupt synthetic blob"), 0o600); wrErr != nil {
+		t.Fatal(wrErr)
+	}
 	worktreeDir := filepath.Join(resolverWorkDir, "git-clones", RepoCacheKey(origin, ""))
-	corruptGitObject(t, filepath.Join(worktreeDir, ".git", "objects"))
+	if rmErr := os.RemoveAll(worktreeDir); rmErr != nil {
+		t.Fatalf("remove worktree: %v", rmErr)
+	}
+	if rmErr := os.Remove(worktreeDir + ".rev"); rmErr != nil && !os.IsNotExist(rmErr) {
+		t.Fatal(rmErr)
+	}
 
 	second, err := src.Resolve(ctx)
 	if err != nil {

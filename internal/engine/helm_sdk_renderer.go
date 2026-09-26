@@ -125,13 +125,19 @@ func (r *HelmSDKRenderer) resolveGitSource(ctx context.Context, tmpl *paprika.Te
 		return nil, fmt.Errorf("resolve git auth: %w", err)
 	}
 
+	shallow := true
+	if gitSrc.Shallow != nil {
+		shallow = *gitSrc.Shallow
+	}
 	result, err := (&source.GitSource{
-		RepoURL:  gitSrc.RepoURL,
-		Revision: gitSrc.Revision,
-		Path:     gitSrc.Path,
-		WorkDir:  r.WorkDir,
-		Auth:     auth,
-		Shallow:  true,
+		RepoURL:      gitSrc.RepoURL,
+		Revision:     gitSrc.Revision,
+		Path:         gitSrc.Path,
+		WorkDir:      r.WorkDir,
+		Auth:         auth,
+		Shallow:      shallow,
+		Depth:        int(gitSrc.Depth),
+		FetchAllRefs: gitSrc.FetchAllRefs,
 	}).Resolve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git source: %w", err)

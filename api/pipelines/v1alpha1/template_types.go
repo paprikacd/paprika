@@ -33,6 +33,18 @@ type GitSourceSpec struct {
 	Revision  string `json:"revision,omitempty"`
 	Path      string `json:"path,omitempty"`
 	SecretRef string `json:"secretRef,omitempty"`
+	// Shallow limits the mirror fetch to depth-1 for branch revisions
+	// (default true — set false for full-history use cases).
+	// +optional
+	Shallow *bool `json:"shallow,omitempty"`
+	// Depth is an explicit fetch depth; when >0 it overrides Shallow.
+	// +optional
+	Depth int32 `json:"depth,omitempty"`
+	// FetchAllRefs restores the legacy +refs/heads/* mirror fetch instead
+	// of the default targeted single-ref fetch. Rarely needed — mainly for
+	// revisions that reference refs outside heads/tags.
+	// +optional
+	FetchAllRefs bool `json:"fetchAllRefs,omitempty"`
 }
 
 // S3SourceSpec defines an S3 source specification.
