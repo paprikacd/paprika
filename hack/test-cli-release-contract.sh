@@ -156,24 +156,18 @@ func main() {
 	} {
 		if !strings.Contains(string(dockerfile), "FROM "+base) { fail("Dockerfile.goreleaser base %q must retain its verified digest", base) }
 	}
-	// Every component mode can exec git (repo-server fetches; manager and
-	// api-server fall back to the local renderer) and can serve local-path
-	// charts — a distroless runtime silently broke git sources in 0.2.x.
+	// Every component mode renders in-process (go-git object reads, Helm
+	// SDK) and can serve local-path charts — a distroless runtime silently
+	// broke git sources in 0.2.x, so the alpine runtime and /charts stay
+	// pinned. No git/helm binaries are required at runtime.
 	for _, need := range []string{
-		"apk add --no-cache ca-certificates git",
+		"apk add --no-cache ca-certificates",
 		"COPY charts /charts",
 	} {
 		if !strings.Contains(string(dockerfile), need) { fail("Dockerfile.goreleaser must contain %q", need) }
 	}
-	for architecture, checksum := range map[string]string{
-		"amd64": "e57e826410269d72be3113333dbfaac0d8dfdd1b0cc4e9cb08bdf97722731ca9",
-		"arm64": "780b5b86f0db5546769b3e9f0204713bbdd2f6696dfdaac122fbe7f2f31541d2",
-	} {
-		if !strings.Contains(string(dockerfile), "HELM_SHA256_"+architecture+"="+checksum) { fail("Dockerfile.goreleaser missing verified Helm checksum for %s", architecture) }
-	}
-	if !strings.Contains(string(dockerfile), "sha256sum -c -") { fail("Dockerfile.goreleaser must verify Helm before extraction") }
-	if strings.Index(string(dockerfile), "sha256sum -c -") > strings.Index(string(dockerfile), "tar -xzf") {
-		fail("Dockerfile.goreleaser must verify Helm before extracting it")
+	if strings.Contains(string(dockerfile), "/usr/local/bin/helm") || strings.Contains(string(dockerfile), "apk add --no-cache ca-certificates git") {
+		fail("Dockerfile.goreleaser must not ship the helm or git binaries — runtime is fully in-process")
 	}
 }
 EOF

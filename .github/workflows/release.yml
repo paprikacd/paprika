@@ -427,10 +427,11 @@ jobs:
           # instead of crash-looping deployed pods (as v0.2.0 did).
           docker run --rm --platform linux/amd64 --entrypoint /manager \
             "${IMAGE_DIGEST_REF}" --version | grep -F "${VERSION}"
-          # Git-backed sources exec `git`; the bundled charts serve
-          # local-path sources — distroless runtimes silently break both.
+          # Git/helm work is fully in-process (go-git, Helm SDK); the
+          # runtime only needs TLS roots and the bundled charts for
+          # local-path sources.
           docker run --rm --platform linux/amd64 --entrypoint /bin/sh \
-            "${IMAGE_DIGEST_REF}" -c 'git --version && test -d /charts' | grep -F "git version"
+            "${IMAGE_DIGEST_REF}" -c 'test -d /charts && ! command -v git >/dev/null'
 
           CHART_DIGEST_REF="${{ needs.helm.outputs.chart_digest_ref }}"
           if [[ ! "${CHART_DIGEST_REF}" =~ ^ghcr.io/paprikacd/charts/paprika@sha256:[0-9a-f]{64}$ ]]; then
