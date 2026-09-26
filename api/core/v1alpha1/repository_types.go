@@ -126,7 +126,8 @@ type Repository struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitzero"`
 
-	Spec   RepositorySpec   `json:"spec"`
+	Spec RepositorySpec `json:"spec"`
+	// +optional
 	Status RepositoryStatus `json:"status,omitzero"`
 }
 

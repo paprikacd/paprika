@@ -108,9 +108,15 @@ func (r *RepositoryReconciler) testConnection(ctx context.Context, repo *corev1a
 // testHTTP issues a HEAD/GET request to the repository URL to verify reachability.
 func (r *RepositoryReconciler) testHTTP(ctx context.Context, repo *corev1alpha1.Repository) error {
 	url := repo.Spec.URL
-	if repo.Spec.Type == corev1alpha1.RepositoryTypeHelm {
+	switch repo.Spec.Type {
+	case corev1alpha1.RepositoryTypeHelm:
 		// Helm repos serve index.yaml at the root.
 		url = trimSlash(url) + "/index.yaml"
+	case corev1alpha1.RepositoryTypeGit:
+		// A bare .git URL is a CGI prefix, not a browseable resource —
+		// git-http-backend servers 404 on it. Probe the smart-HTTP ref
+		// advertisement instead, the same endpoint a real fetch negotiates.
+		url = trimSlash(url) + "/info/refs?service=git-upload-pack"
 	}
 	client := &http.Client{Timeout: repositoryHealthCheckTimeout}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)

@@ -123,12 +123,14 @@ func (v *ApplicationCustomValidator) validateSource(app *pipelinesv1alpha1.Appli
 			allErrs = append(allErrs, field.Required(sourcePath.Child("inline").Child("configMapRef"), "configMapRef is required for inline source"))
 		}
 	case pipelinesv1alpha1.SourceTypeGit:
-		if app.Spec.Source.RepoURL == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "Repo URL is required for git sources"))
+		if app.Spec.Source.RepoURL == "" && app.Spec.Source.RepoRef == "" {
+			allErrs = append(allErrs, field.Required(sourcePath.Child("repoUrl"), "repoUrl or repoRef is required for git sources"))
 		}
 	case pipelinesv1alpha1.SourceTypeOCI:
-		if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
-			allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url is required for oci sources"))
+		if app.Spec.Source.RepoRef == "" {
+			if oci := app.Spec.Source.EffectiveOCI(); oci == nil || oci.URL == "" {
+				allErrs = append(allErrs, field.Required(sourcePath.Child("oci").Child("url"), "oci.url or repoRef is required for oci sources"))
+			}
 		}
 	}
 	return allErrs
