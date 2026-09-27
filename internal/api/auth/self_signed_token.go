@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,11 +48,27 @@ type SelfSignedAuthenticator struct {
 	secret   []byte
 	audience string // when non-empty, aud must match exactly
 	issuer   string // when non-empty, iss must match exactly
+
+	// Verified principals are cached by token hash until the token's exp —
+	// the per-request unmarshal + claims-map build dominated request allocs
+	// under MCP load. Tokens are bearer secrets, so the map key is a SHA-256
+	// digest, not the raw token.
+	mu    sync.Mutex
+	cache map[[32]byte]cachedPrincipal
 }
+
+// cachedPrincipal is a verified principal plus the token expiry it was
+// verified under. Principals are treated as read-only downstream.
+type cachedPrincipal struct {
+	principal *Principal
+	exp       int64
+}
+
+const principalCacheCap = 4096
 
 // NewSelfSignedAuthenticator creates an authenticator for self-signed tokens.
 func NewSelfSignedAuthenticator(secret []byte) *SelfSignedAuthenticator {
-	return &SelfSignedAuthenticator{secret: secret}
+	return &SelfSignedAuthenticator{secret: secret, cache: map[[32]byte]cachedPrincipal{}}
 }
 
 // NewSelfSignedAuthenticatorForAudience requires an exact aud match. An empty
@@ -64,7 +81,7 @@ func NewSelfSignedAuthenticatorForAudience(secret []byte, audience, issuer strin
 	if audience == "" {
 		return nil, errors.New("self-signed authenticator: audience is required")
 	}
-	return &SelfSignedAuthenticator{secret: secret, audience: audience, issuer: issuer}, nil
+	return &SelfSignedAuthenticator{secret: secret, audience: audience, issuer: issuer, cache: map[[32]byte]cachedPrincipal{}}, nil
 }
 
 // Authenticate validates a Bearer token signed with the server's secret.
@@ -85,6 +102,11 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 	}
 
 	rawToken := parts[1]
+	key := sha256.Sum256([]byte(rawToken))
+	if p := s.cachedPrincipal(key); p != nil {
+		return p, nil
+	}
+
 	claims, err := verifySelfSigned(rawToken, s.secret)
 	if err != nil {
 		return nil, errors.Join(err, ErrUnauthenticated)
@@ -98,7 +120,7 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 		return nil, fmt.Errorf("%w: issuer mismatch", ErrUnauthenticated)
 	}
 
-	return &Principal{
+	p := &Principal{
 		Subject: claims.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
@@ -110,7 +132,44 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 			"name":   claims.Name,
 			"method": "self-signed",
 		},
-	}, nil
+	}
+	s.storePrincipal(key, p, claims.Exp)
+	return p, nil
+}
+
+// cachedPrincipal returns a verified principal for a previously-seen token
+// or nil when the entry is absent or past the token's own expiry.
+func (s *SelfSignedAuthenticator) cachedPrincipal(key [32]byte) *Principal {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.cache[key]
+	if !ok || entry.exp <= time.Now().Unix() {
+		return nil
+	}
+	return entry.principal
+}
+
+// storePrincipal caches a verified principal under the token hash. When the
+// cache is full it drops expired entries first, then oldest-observed.
+func (s *SelfSignedAuthenticator) storePrincipal(key [32]byte, p *Principal, exp int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.cache) >= principalCacheCap {
+		now := time.Now().Unix()
+		for k, v := range s.cache {
+			if v.exp <= now {
+				delete(s.cache, k)
+			}
+		}
+		if len(s.cache) >= principalCacheCap {
+			// Still full after expiry sweep — drop an arbitrary entry.
+			for k := range s.cache {
+				delete(s.cache, k)
+				break
+			}
+		}
+	}
+	s.cache[key] = cachedPrincipal{principal: p, exp: exp}
 }
 
 // issueLegacyAudlessToken mints a self-signed token with no "aud" claim —

@@ -134,3 +134,41 @@ func TestNewSelfSignedAuthenticatorForAudienceRejectsEmptyAudience(t *testing.T)
 	_, err := NewSelfSignedAuthenticatorForAudience(secret, "", "")
 	require.Error(t, err, "an empty audience must not silently disable the strict check")
 }
+
+func TestSelfSignedAuthenticateCachesVerifiedPrincipal(t *testing.T) {
+	secret := []byte("test-secret-value")
+	token, err := IssueTokenWithOptions(TokenOptions{
+		Subject: "user-1", Email: "a@b.c", Name: "A",
+		TTL: time.Hour, Secret: secret,
+	})
+	require.NoError(t, err)
+
+	a := NewSelfSignedAuthenticator(secret)
+	ctx := ctxWithBearer(token)
+	p1, err := a.Authenticate(ctx)
+	require.NoError(t, err)
+
+	allocs := testing.AllocsPerRun(50, func() {
+		p, err := a.Authenticate(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "user-1", p.Subject)
+	})
+	require.Less(t, allocs, 6.0, "cache hit should allocate ~nothing; got %.0f", allocs)
+
+	p2, err := a.Authenticate(ctxWithBearer(token))
+	require.NoError(t, err)
+	require.Same(t, p1, p2, "cache hit must return the verified principal")
+}
+
+func TestSelfSignedAuthenticateCacheExpiresWithToken(t *testing.T) {
+	secret := []byte("test-secret-value")
+	token, err := IssueTokenWithOptions(TokenOptions{
+		Subject: "user-1", Email: "a@b.c", Name: "A",
+		TTL: -time.Hour, Secret: secret, // already expired
+	})
+	require.NoError(t, err)
+
+	a := NewSelfSignedAuthenticator(secret)
+	_, err = a.Authenticate(ctxWithBearer(token))
+	require.Error(t, err, "expired token must not be served from a stale cache entry")
+}
