@@ -39,7 +39,7 @@ const (
 	gitE2ESecretName = "e2e-git-creds"
 )
 
-const gitBackendManifest = `{
+const gitBackendDeployManifest = `{
 	"apiVersion": "apps/v1", "kind": "Deployment",
 	"metadata": {"name": "%s", "namespace": "paprika-system"},
 	"spec": {
@@ -70,9 +70,9 @@ const gitBackendManifest = `{
 			}
 		}
 	}
-}
----
-{
+}`
+
+const gitBackendSvcManifest = `{
 	"apiVersion": "v1", "kind": "Service",
 	"metadata": {"name": "%s", "namespace": "paprika-system"},
 	"spec": {
@@ -81,13 +81,14 @@ const gitBackendManifest = `{
 	}
 }`
 
-var gitPortForward *exec.Cmd
-
 var _ = Describe("GitSourceHTTP", Ordered, func() {
 	SetDefaultEventuallyTimeout(3 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
-	var workDir string
+	var (
+		workDir string
+		fx      Fixture
+	)
 
 	BeforeAll(func() {
 		By("loading the git backend image into kind")
@@ -111,45 +112,38 @@ var _ = Describe("GitSourceHTTP", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "kind load: %s", out)
 
 		By("deploying the in-cluster HTTP git backend")
-		manifest := fmt.Sprintf(gitBackendManifest,
-			gitBackendName, gitBackendName, gitBackendName, gitBackendImage,
-			gitBackendName, gitBackendName)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		fx.Apply(
+			fmt.Sprintf(gitBackendDeployManifest,
+				gitBackendName, gitBackendName, gitBackendName, gitBackendImage),
+			fmt.Sprintf(gitBackendSvcManifest, gitBackendName, gitBackendName),
+		)
 
 		// Pod-level wait (not rollout status) so failure diagnostics include
 		// the container state — the import can lag on fresh kind nodes.
 		Eventually(func(g Gomega) {
-			out, err := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+			out, err := utils.Kubectl("-n", "paprika-system",
 				"get", "pod", "-l", "app="+gitBackendName,
-				"-o", "jsonpath={.items[0].status.containerStatuses[0].ready}"))
+				"-o", "jsonpath={.items[0].status.containerStatuses[0].ready}")
 			if err == nil && out == "true" {
 				return
 			}
-			desc, _ := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
-				"describe", "pod", "-l", "app="+gitBackendName))
-			deployDesc, _ := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
-				"describe", "deploy", gitBackendName))
-			rsDesc, _ := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
-				"describe", "rs", "-l", "app="+gitBackendName))
+			desc, _ := utils.Kubectl("-n", "paprika-system",
+				"describe", "pod", "-l", "app="+gitBackendName)
+			deployDesc, _ := utils.Kubectl("-n", "paprika-system",
+				"describe", "deploy", gitBackendName)
+			rsDesc, _ := utils.Kubectl("-n", "paprika-system",
+				"describe", "rs", "-l", "app="+gitBackendName)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(out).To(Equal("true"),
 				"backend pod not ready:\nPODS: %s\nDEPLOY: %s\nRS: %s", desc, deployDesc, rsDesc)
 		}, 4*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("starting a port-forward to push test content")
-		gitPortForward = exec.Command("kubectl", "port-forward",
-			"-n", "paprika-system", "svc/"+gitBackendName,
-			gitBackendPFPort+":3000")
-		pfLog, logErr := os.CreateTemp("", "git-pf-*.log")
-		Expect(logErr).NotTo(HaveOccurred())
-		gitPortForward.Stdout, gitPortForward.Stderr = pfLog, pfLog
-		Expect(gitPortForward.Start()).To(Succeed())
+		pf, err := utils.StartPortForward("paprika-system",
+			"svc/"+gitBackendName, gitBackendPFPort+":3000")
+		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			out, _ := os.ReadFile(pfLog.Name())
-			GinkgoWriter.Printf("port-forward log: %s\n", out)
+			GinkgoWriter.Printf("port-forward log: %s\n", pf.Stop())
 		})
 
 		By("pushing a helm chart to the backend")
@@ -201,32 +195,14 @@ var _ = Describe("GitSourceHTTP", Ordered, func() {
 				}
 			}`, gitE2EAppName, gitE2ERepoName),
 		}
-		for _, obj := range objects {
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(obj)
-			out, applyErr := utils.Run(cmd)
-			Expect(applyErr).NotTo(HaveOccurred(), "apply: %s", out)
-		}
+		fx.Apply(objects...)
 	})
 
 	AfterAll(func() {
 		By("cleaning up git source e2e resources")
-		for _, del := range []string{
-			fmt.Sprintf("application %s", gitE2EAppName),
-			fmt.Sprintf("repository %s", gitE2ERepoName),
-			fmt.Sprintf("secret %s", gitE2ESecretName),
-			fmt.Sprintf("deployment %s", gitBackendName),
-			fmt.Sprintf("service %s", gitBackendName),
-			"releases -l app.paprika.io/application=" + gitE2EAppName,
-			"configmaps -l e2e=git-source",
-		} {
-			args := append([]string{"-n", "paprika-system", "delete"}, strings.Fields(del)...)
-			cmd := exec.Command("kubectl", args...)
-			_, _ = utils.Run(cmd)
-		}
-		if gitPortForward != nil && gitPortForward.Process != nil {
-			_ = gitPortForward.Process.Kill()
-		}
+		DeleteByLabel("paprika-system", "app.paprika.io/application="+gitE2EAppName, "releases")
+		DeleteByLabel("paprika-system", "e2e=git-source", "configmaps")
+		fx.Teardown()
 	})
 
 	It("converges the git-source application through the full pipeline", func() {

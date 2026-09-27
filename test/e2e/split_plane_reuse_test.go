@@ -42,10 +42,8 @@ func splitPlanePost(method, reqBody string) (body []byte, statusCode int, err er
 
 var _ = Describe("Split-plane API mirrors controller state", Ordered, func() {
 	afterEachCleanup := func() {
-		for _, r := range []string{"application", "release", "stage", "template", "pipeline"} {
-			cmd := exec.Command("kubectl", "delete", r, "-n", splitNamespace, "-l", "e2e-split-test=true", "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-		}
+		utils.DeleteByLabel(splitNamespace, "e2e-split-test=true",
+			"applications", "releases", "stages", "templates", "pipelines")
 	}
 
 	AfterEach(afterEachCleanup)
@@ -71,9 +69,7 @@ var _ = Describe("Split-plane API mirrors controller state", Ordered, func() {
 					}
 				}
 			}`, splitNamespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
 
 			By("waiting for the controller to create owned resources")
@@ -133,9 +129,7 @@ var _ = Describe("Split-plane API mirrors controller state", Ordered, func() {
 				"metadata": {"name": "split-api-template", "namespace": "%s", "labels": {"e2e-split-test": "true"}},
 				"spec": {"type": "helm", "chart": {"path": "/charts/demo-app"}}
 			}`, splitNamespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(template)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(template)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Template")
 
 			stage := fmt.Sprintf(`{
@@ -144,9 +138,7 @@ var _ = Describe("Split-plane API mirrors controller state", Ordered, func() {
 				"metadata": {"name": "split-api-stage", "namespace": "%s", "labels": {"e2e-split-test": "true"}},
 				"spec": {"name": "split-api-stage", "ring": 1, "templates": ["split-api-template"]}
 			}`, splitNamespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(stage)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(stage)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Stage")
 
 			release := fmt.Sprintf(`{
@@ -164,9 +156,7 @@ var _ = Describe("Split-plane API mirrors controller state", Ordered, func() {
 					}
 				}
 			}`, splitNamespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(release)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(release)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Release")
 
 			By("listing releases via the cloud-run API")

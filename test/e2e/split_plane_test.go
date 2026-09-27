@@ -24,9 +24,7 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 
 	AfterAll(func() {
 		By("cleaning up test resources")
-		cmd := exec.Command("kubectl", "delete", "pipeline", "split-e2e-pipeline",
-			"-n", splitNamespace, "--ignore-not-found", "--timeout=10s")
-		_, _ = utils.Run(cmd)
+		_ = utils.DeleteNamed(utils.ManifestID{Kind: "Pipeline", Namespace: splitNamespace, Name: "split-e2e-pipeline"})
 	})
 
 	Context("Health and readiness", func() {
@@ -118,9 +116,7 @@ var _ = Describe("Split-plane cloud-run API", Ordered, func() {
 					"steps": [{"name": "greet", "image": "alpine:3.19", "script": "echo hello-split"}]
 				}
 			}`, splitNamespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(pipeline)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(pipeline)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create pipeline")
 
 			By("waiting for the controller to reconcile the pipeline")

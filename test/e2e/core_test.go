@@ -22,7 +22,6 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,11 +35,8 @@ var _ = Describe("Core", Ordered, func() {
 
 	AfterAll(func() {
 		By("cleaning up core pipeline")
-		cmd := exec.Command("kubectl", "delete", "pipeline", "e2e-core-hello", "-n", coreNamespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "jobs", "-n", coreNamespace,
-			"-l", "paprika.io/pipeline=e2e-core-hello", "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		_ = utils.DeleteNamed(utils.ManifestID{Kind: "Pipeline", Namespace: coreNamespace, Name: "e2e-core-hello"})
+		DeleteByLabel(coreNamespace, "paprika.io/pipeline=e2e-core-hello", "jobs")
 	})
 
 	AfterEach(func() {
@@ -107,9 +103,7 @@ var _ = Describe("Core", Ordered, func() {
 				"steps": [{"name": "greet", "image": "alpine:3.19", "script": "echo hello-from-paprika"}]
 			}
 		}`, coreNamespace)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(pipeline)
-		_, err := utils.Run(cmd)
+		_, err := utils.ApplyManifest(pipeline)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create pipeline")
 
 		By("waiting for the pipeline to succeed")

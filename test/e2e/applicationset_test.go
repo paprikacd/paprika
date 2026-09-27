@@ -119,30 +119,19 @@ func generatedAppJSONPath(g Gomega, wave, path string) string {
 }
 
 var _ = Context("ApplicationSetRollingSync", Ordered, func() {
+	var fx Fixture
+
 	AfterAll(func() {
 		By("cleaning up rollingsync e2e resources")
-		cmd := exec.Command("kubectl", "delete", "applicationset", "e2e-rollingsync",
-			"-n", namespace, "--ignore-not-found", "--timeout=30s")
-		_, _ = utils.Run(cmd)
-		for _, resource := range []string{"releases", "stages", "pipelines", "templates", "applications"} {
-			cmd := exec.Command("kubectl", "delete", resource, "-n", namespace,
-				"-l", "applicationset.paprika.io/name=e2e-rollingsync",
-				"--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-		}
-		for _, resource := range []string{"deployments", "services", "configmaps", "pods"} {
-			cmd := exec.Command("kubectl", "delete", resource, "-n", namespace,
-				"-l", "app.kubernetes.io/name=demo-app",
-				"--ignore-not-found", "--timeout=15s")
-			_, _ = utils.Run(cmd)
-		}
+		DeleteByLabel(namespace, "applicationset.paprika.io/name=e2e-rollingsync",
+			"releases", "stages", "pipelines", "templates", "applications")
+		DeleteByLabel(namespace, "app.kubernetes.io/name=demo-app",
+			"deployments", "services", "configmaps", "pods")
+		fx.Teardown()
 	})
 
 	It("generates one healthy Application per list item with wave labels", func() {
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(fmt.Sprintf(rollingSyncSetFmt, namespace, rollSyncPhase1Ns, rollSyncPhase1Tag))
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create ApplicationSet")
+		fx.Apply(fmt.Sprintf(rollingSyncSetFmt, namespace, rollSyncPhase1Ns, rollSyncPhase1Tag))
 
 		By("waiting for both generated Applications to reach Healthy")
 		verifyHealthy := func(g Gomega) {
@@ -163,10 +152,7 @@ var _ = Context("ApplicationSetRollingSync", Ordered, func() {
 
 	It("gates the prod update behind the unhealthy canary and reports progress", func() {
 		By("applying the phase-2 template (canary targets a missing namespace)")
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(fmt.Sprintf(rollingSyncSetFmt, namespace, rollSyncPhase2Ns, rollSyncPhase2Tag))
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		fx.Apply(fmt.Sprintf(rollingSyncSetFmt, namespace, rollSyncPhase2Ns, rollSyncPhase2Tag))
 
 		By("confirming the canary consumed its update and went non-Healthy")
 		Eventually(func(g Gomega) {

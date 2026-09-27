@@ -22,7 +22,6 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,17 +33,18 @@ import (
 const governanceNamespace = "e2e-governance"
 
 var _ = Describe("Governance", Ordered, func() {
+	var fx Fixture
+
 	BeforeAll(func() {
 		By(fmt.Sprintf("creating governance namespace %q", governanceNamespace))
-		cmd := exec.Command("kubectl", "create", "ns", governanceNamespace)
-		_, err := utils.Run(cmd)
+		_, err := utils.Kubectl("create", "ns", governanceNamespace)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create governance namespace")
 	})
 
 	AfterAll(func() {
 		By("cleaning up governance test resources")
-		cmd := exec.Command("kubectl", "delete", "ns", governanceNamespace, "--ignore-not-found", "--timeout=60s")
-		_, _ = utils.Run(cmd)
+		fx.Teardown()
+		_, _ = utils.Kubectl("delete", "ns", governanceNamespace, "--ignore-not-found", "--timeout=60s")
 	})
 
 	It("should block an Application that violates its AppProject namespace constraint", func() {
@@ -59,10 +59,7 @@ var _ = Describe("Governance", Ordered, func() {
 				"kinds": ["*"]
 			}
 		}`, governanceNamespace)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(project)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create AppProject")
+		fx.Apply(project)
 		app := fmt.Sprintf(`{
 			"apiVersion": "pipelines.paprika.io/v1alpha1",
 			"kind": "Application",
@@ -83,14 +80,12 @@ var _ = Describe("Governance", Ordered, func() {
 		}`, governanceNamespace)
 
 		By("creating an Application in a non-allowed namespace")
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(app)
-		out, err := utils.Run(cmd)
+		out, err := utils.ApplyManifest(app)
 		Expect(err).To(HaveOccurred(), "Application should be rejected by the validating webhook")
 		Expect(out).To(ContainSubstring("Forbidden"), "Expected a project boundary Forbidden error")
 
 		By("verifying no deployment was created in the governed namespace")
-		cmd = exec.Command("kubectl", "get", "deployments", "-n", governanceNamespace,
+		cmd := exec.Command("kubectl", "get", "deployments", "-n", governanceNamespace,
 			"-l", "app.paprika.io/name=e2e-governance-app", "-o", "jsonpath={.items}")
 		out, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
@@ -103,10 +98,7 @@ var _ = Describe("Governance", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to patch AppProject")
 
 		By("creating the Application again after the project boundary is relaxed")
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(app)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Application should be admitted after relaxing the project")
+		fx.Apply(app)
 
 		By("waiting for the Application to reach Healthy")
 		Eventually(func(g Gomega) {

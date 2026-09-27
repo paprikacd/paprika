@@ -98,9 +98,7 @@ func waitForWebhookCA() {
 	By("probing the AppProject webhook until it is reachable")
 	Eventually(func(g Gomega) {
 		probe := fmt.Sprintf(`{"apiVersion":"core.paprika.io/v1alpha1","kind":"AppProject","metadata":{"name":"webhook-probe","namespace":"%s"},"spec":{}}`, namespace)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(probe)
-		out, err := utils.Run(cmd)
+		out, err := utils.ApplyManifest(probe)
 		if err == nil {
 			del := exec.Command("kubectl", "delete", "appproject", "webhook-probe", "-n", namespace, "--ignore-not-found")
 			_, _ = utils.Run(del)
@@ -116,13 +114,11 @@ func waitForWebhookCA() {
 func deployManager() {
 	By("creating manager namespace")
 	nsManifest := fmt.Sprintf(`{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"%s"}}`, namespace)
-	cmd := exec.Command("kubectl", "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(nsManifest)
-	_, err := utils.Run(cmd)
+	_, err := utils.ApplyManifest(nsManifest)
 	Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
 	By("labeling the namespace to enforce the restricted security policy")
-	cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+	cmd := exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
 		"pod-security.kubernetes.io/enforce=restricted")
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to label namespace")
@@ -183,7 +179,7 @@ func teardownManager() {
 	// while the manager was still draining also orphans here, so this must
 	// run AFTER undeploy but BEFORE `make uninstall` removes the CRDs the
 	// patch targets.
-	for _, rsrc := range []string{
+	utils.StripFinalizers(
 		"releases.pipelines.paprika.io",
 		"stages.pipelines.paprika.io",
 		"applications.pipelines.paprika.io",
@@ -195,21 +191,7 @@ func teardownManager() {
 		"rollouts.rollouts.paprika.io",
 		"capacityproviders.providers.paprika.io",
 		"dataproviderbindings.providers.paprika.io",
-	} {
-		out, err := exec.Command("kubectl", "get", rsrc, "-A",
-			"-o", "jsonpath={range .items[*]}{.metadata.namespace} {.metadata.name}{\"\\n\"}{end}").Output()
-		if err != nil {
-			continue
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			parts := strings.Fields(line)
-			if len(parts) != 2 {
-				continue
-			}
-			_ = exec.Command("kubectl", "patch", rsrc, parts[1], "-n", parts[0],
-				"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`).Run()
-		}
-	}
+	)
 
 	By("uninstalling CRDs")
 	cmd = exec.Command("make", "uninstall", "ignore-not-found=true")
@@ -254,9 +236,7 @@ var _ = Describe("Manager", Ordered, func() {
 				}
 			}
 		}`, namespace, serviceAccountName, demoImage)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(demoApp)
-		_, err := utils.Run(cmd)
+		_, err := utils.ApplyManifest(demoApp)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the demo app")
 
 		demoSvc := fmt.Sprintf(`{
@@ -269,13 +249,11 @@ var _ = Describe("Manager", Ordered, func() {
 				"type": "ClusterIP"
 			}
 		}`, namespace)
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(demoSvc)
-		_, err = utils.Run(cmd)
+		_, err = utils.ApplyManifest(demoSvc)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create demo app service")
 
 		By("waiting for the operator deployment to be ready")
-		cmd = exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
+		cmd := exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
 			"deployment/paprika-controller-manager", "--timeout=120s")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Operator deployment not available")
@@ -356,9 +334,7 @@ var _ = Describe("Manager", Ordered, func() {
 					"steps": [{"name": "greet", "image": "alpine:3.19", "script": "echo hello-from-paprika"}]
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(pipeline)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(pipeline)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create pipeline")
 
 			By("waiting for the pipeline to complete")
@@ -373,7 +349,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyPhase, 3*time.Minute, time.Second).Should(Succeed())
 
 			By("checking that pipeline status shows Succeeded")
-			cmd = exec.Command("kubectl", "get", "pipeline", "e2e-hello",
+			cmd := exec.Command("kubectl", "get", "pipeline", "e2e-hello",
 				"-n", namespace, "-o", "jsonpath={.status.phase}")
 			finalPhase, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -408,9 +384,7 @@ var _ = Describe("Manager", Ordered, func() {
 					]
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(pipeline)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(pipeline)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create DAG pipeline")
 
 			By("waiting for the DAG pipeline to complete")
@@ -424,7 +398,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyPhase, 3*time.Minute, time.Second).Should(Succeed())
 
 			By("verifying all step statuses")
-			cmd = exec.Command("kubectl", "get", "pipeline", "e2e-dag",
+			cmd := exec.Command("kubectl", "get", "pipeline", "e2e-dag",
 				"-n", namespace, "-o", "jsonpath={range .status.stepStatuses[*]}{.name}={.phase}{\"\\n\"}{end}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -442,9 +416,7 @@ var _ = Describe("Manager", Ordered, func() {
 					"steps": [{"name": "fail-step", "image": "this-image-does-not-exist-12345", "script": "echo never", "timeout": 30}]
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(pipeline)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(pipeline)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create bad-image pipeline")
 
 			By("waiting for the pipeline to fail")
@@ -470,9 +442,7 @@ var _ = Describe("Manager", Ordered, func() {
 					"artifacts": [{"name": "image", "path": "oci://e2e-registry.io/app:v1"}]
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(pipeline)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(pipeline)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create artifact pipeline")
 
 			By("waiting for the pipeline to succeed")
@@ -486,7 +456,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyPhase, 3*time.Minute, time.Second).Should(Succeed())
 
 			By("checking that an Artifact CR was created")
-			cmd = exec.Command("kubectl", "get", "artifacts", "-n", namespace,
+			cmd := exec.Command("kubectl", "get", "artifacts", "-n", namespace,
 				"-l", "paprika.io/pipeline=e2e-artifact",
 				"-o", "jsonpath={.items[*].metadata.name}")
 			out, err := utils.Run(cmd)
@@ -537,9 +507,7 @@ var _ = Describe("Manager", Ordered, func() {
 			)
 			manifest, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to generate ClusterRoleBinding manifest")
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(manifest)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(manifest)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
 
 			By("validating that the metrics service is available")
@@ -709,8 +677,7 @@ var _ = Describe("Manager", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up all Paprika CRDs")
 			for _, resource := range []string{"releases", "stages", "templates", "pipelines", "artifacts"} {
-				cmd := exec.Command("kubectl", "delete", resource, "--all", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-				_, _ = utils.Run(cmd)
+				_, _ = utils.Kubectl("delete", resource, "--all", "-n", namespace, "--ignore-not-found", "--timeout=30s")
 			}
 
 			By("cleaning up all derived resources created by releases")
@@ -720,19 +687,9 @@ var _ = Describe("Manager", Ordered, func() {
 				"track=stable",
 				"paprika.io/pipeline",
 			} {
-				for _, resource := range []string{"deployments", "services", "ingresses", "configmaps"} {
-					cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", label, "--ignore-not-found", "--timeout=10s")
-					_, _ = utils.Run(cmd)
-				}
+				utils.DeleteByLabel(namespace, label, "deployments", "services", "ingresses", "configmaps")
 			}
-
-			By("cleaning up step jobs")
-			cmd := exec.Command("kubectl", "delete", "jobs", "-n", namespace, "-l", "paprika.io/pipeline", "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-
-			By("cleaning up step pods")
-			cmd = exec.Command("kubectl", "delete", "pods", "-n", namespace, "-l", "paprika.io/pipeline", "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
+			utils.DeleteByLabel(namespace, "paprika.io/pipeline", "jobs", "pods")
 
 			By("verifying cleanup is complete")
 			for _, resource := range []string{"releases", "stages", "templates"} {
@@ -755,9 +712,7 @@ var _ = Describe("Manager", Ordered, func() {
 					"chart": {"path": "/charts/demo-app"}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(template)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(template)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create template")
 
 			By("creating a Stage resource")
@@ -771,9 +726,7 @@ var _ = Describe("Manager", Ordered, func() {
 					"templates": ["e2e-template"]
 				}
 			}`, namespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(stage)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(stage)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create stage")
 
 			By("creating a Release resource")
@@ -792,9 +745,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(release)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(release)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create release")
 
 			By("waiting for the release to reach Complete phase")
@@ -841,9 +792,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(canaryStage)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(canaryStage)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create canary stage")
 
 			By("creating a Release targeting the canary Stage")
@@ -863,9 +812,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(release)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(release)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create canary release")
 
 			By("waiting for the release to reach Canarying phase")
@@ -949,9 +896,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(gatewayStage)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(gatewayStage)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create gateway canary stage")
 
 			By("creating a Release targeting the gateway canary Stage")
@@ -970,9 +915,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(release)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(release)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create gateway release")
 
 			By("waiting for the release to reach Canarying phase (traffic router error expected)")
@@ -997,10 +940,8 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyCanaryDeployment, 30*time.Second, 2*time.Second).Should(Succeed())
 
 			By("cleaning up gateway canary resources")
-			cmd = exec.Command("kubectl", "delete", "release", "e2e-gateway-release", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-			cmd = exec.Command("kubectl", "delete", "stage", "e2e-gateway-stage", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
+			_ = utils.DeleteNamed(utils.ManifestID{Kind: "Release", Namespace: namespace, Name: "e2e-gateway-release"})
+			_ = utils.DeleteNamed(utils.ManifestID{Kind: "Stage", Namespace: namespace, Name: "e2e-gateway-stage"})
 		})
 
 		It("should fail and roll back canary when PDV analysis fails", func() {
@@ -1026,9 +967,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(failingStage)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(failingStage)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create failing canary stage")
 
 			By("creating a Release targeting the failing canary Stage")
@@ -1047,9 +986,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(release)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(release)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create failing release")
 
 			By("waiting for the release to fail due to analysis")
@@ -1063,7 +1000,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Eventually(verifyFailed, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying the canary failure condition is recorded")
-			cmd = exec.Command("kubectl", "get", "release", "e2e-failing-release",
+			cmd := exec.Command("kubectl", "get", "release", "e2e-failing-release",
 				"-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type==\"CanaryFailed\")].message}")
 			out, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
@@ -1074,16 +1011,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("Application", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up all Application and derived resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-app", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-app", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-app", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-app")
 		})
 
 		It("should create Template, Stage, and Release from Application spec and reach Healthy", func() {
@@ -1107,9 +1035,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
 
 			By("verifying owned Template was created")
@@ -1157,16 +1083,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("ApplicationHealthCheck", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up Application health check resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-health", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-health", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-health", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-health")
 		})
 
 		It("should evaluate CEL health checks and populate health status", func() {
@@ -1200,9 +1117,7 @@ var _ = Describe("Manager", Ordered, func() {
 					]
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Application with health checks")
 
 			By("waiting for the Application to reach Healthy phase")
@@ -1248,16 +1163,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("ApplicationSyncAndResync", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up sync Application resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-sync", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-sync", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-sync", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-sync")
 		})
 
 		It("should sync application and detect source hash changes", func() {
@@ -1281,9 +1187,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Application")
 
 			By("waiting for the Application to reach Healthy phase")
@@ -1326,16 +1230,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("FullCICDFlow", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up full CI/CD resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-cicd", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-cicd", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-cicd", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-cicd")
 		})
 
 		It("should complete the full CI/CD lifecycle: create, build, promote, canary, verify, and reach Healthy", func() {
@@ -1377,9 +1272,7 @@ var _ = Describe("Manager", Ordered, func() {
 					]
 				}
 			}`, namespace, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create full CI/CD Application")
 
 			By("verifying owned Pipeline is created from build spec")
@@ -1473,16 +1366,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("ApplicationDiff", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up diff Application resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-diff", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-diff", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-diff", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-diff")
 		})
 
 		It("should detect diff and populate resource sync status", func() {
@@ -1506,9 +1390,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Application for diff")
 
 			By("waiting for the Application to reach Healthy phase")
@@ -1540,16 +1422,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("ApplicationSelfHeal", Ordered, func() {
 		AfterAll(func() {
 			By("cleaning up self-heal Application resources")
-			cmd := exec.Command("kubectl", "delete", "application", "e2e-self-heal", "-n", namespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-			for _, resource := range []string{"releases", "stages", "pipelines", "templates"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-l", "app.paprika.io/name=e2e-self-heal", "-n", namespace, "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
-			for _, resource := range []string{"deployments", "services", "ingresses", "configmaps", "jobs", "pods"} {
-				cmd := exec.Command("kubectl", "delete", resource, "-n", namespace, "-l", "app.paprika.io/name=e2e-self-heal", "--ignore-not-found", "--timeout=10s")
-				_, _ = utils.Run(cmd)
-			}
+			TeardownApp(namespace, "e2e-self-heal")
 		})
 
 		It("should auto-sync when managed resources drift and selfHeal is enabled", func() {
@@ -1577,9 +1450,7 @@ var _ = Describe("Manager", Ordered, func() {
 					}
 				}
 			}`, namespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create self-heal Application")
 
 			By("waiting for the Application to reach Healthy phase")
@@ -1620,7 +1491,7 @@ var _ = Describe("Manager", Ordered, func() {
 			By("introducing drift by scaling the Deployment")
 			// Diff is desired-subset: extra live labels are not drift, so drift
 			// must change a desired spec field — replicas is the simplest.
-			cmd = exec.Command("kubectl", "scale", "deployment", deploymentName, "-n", namespace, "--replicas=2")
+			cmd := exec.Command("kubectl", "scale", "deployment", deploymentName, "-n", namespace, "--replicas=2")
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to scale deployment for drift")
 			out, err := utils.Run(exec.Command("kubectl", "get", "deployment", deploymentName, "-n", namespace, "-o", "jsonpath={.spec.replicas}"))
@@ -1860,9 +1731,7 @@ subjects:
   name: %s
   namespace: %s
 `, saName, apiNamespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(rbacYAML)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(rbacYAML)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create api RBAC")
 
 			By("starting port-forward for the api server (port 3000)")
@@ -1894,18 +1763,14 @@ subjects:
 			}
 
 			By("deleting the api RBAC")
-			cmd := exec.Command("kubectl", "delete", "clusterrolebinding", "paprika-api-list-pipelines", "--ignore-not-found")
-			_, _ = utils.Run(cmd)
-			cmd = exec.Command("kubectl", "delete", "clusterrole", "paprika-api-list-pipelines", "--ignore-not-found")
-			_, _ = utils.Run(cmd)
+			_ = utils.DeleteNamed(utils.ManifestID{Kind: "ClusterRoleBinding", Name: "paprika-api-list-pipelines"})
+			_ = utils.DeleteNamed(utils.ManifestID{Kind: "ClusterRole", Name: "paprika-api-list-pipelines"})
 
 			By("uninstalling the api-mode Helm release")
-			cmd = exec.Command("helm", "uninstall", "paprika-api", "--namespace", apiNamespace)
-			_, _ = utils.Run(cmd)
+			_, _ = utils.Run(exec.Command("helm", "uninstall", "paprika-api", "--namespace", apiNamespace))
 
 			By("removing api namespace")
-			cmd = exec.Command("kubectl", "delete", "ns", apiNamespace, "--ignore-not-found")
-			_, _ = utils.Run(cmd)
+			_, _ = utils.Kubectl("delete", "ns", apiNamespace, "--ignore-not-found")
 		})
 
 		It("should respond to health checks", func() {
@@ -1955,13 +1820,10 @@ subjects:
 					"syncPolicy": "Auto"
 				}
 			}`, apiNamespace)
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(app)
-			_, err := utils.Run(cmd)
+			_, err := utils.ApplyManifest(app)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create API test Application")
 			defer func() {
-				cmd := exec.Command("kubectl", "delete", "application", "e2e-api-app", "-n", apiNamespace, "--ignore-not-found", "--timeout=30s")
-				_, _ = utils.Run(cmd)
+				_ = utils.DeleteNamed(utils.ManifestID{Kind: "Application", Namespace: apiNamespace, Name: "e2e-api-app"})
 			}()
 
 			By("calling ListApplications RPC")
@@ -2021,9 +1883,7 @@ subjects:
 					"roles": [{"name": "default", "subjects": ["*"], "actions": ["read", "write"]}]
 				}
 			}`, applyTestNamespace)
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(defaultProject)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(defaultProject)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create default AppProject in apply namespace")
 
 			By("creating a temporary directory for apply manifests")
@@ -2111,9 +1971,7 @@ data:
 					"roles": [{"name": "default", "subjects": ["*"], "actions": ["read", "write"]}]
 				}
 			}`
-			cmd = exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(defaultProject)
-			_, err = utils.Run(cmd)
+			_, err = utils.ApplyManifest(defaultProject)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create default AppProject")
 
 			By("creating a temporary directory for apply manifests")
@@ -2126,21 +1984,15 @@ data:
 				_ = os.RemoveAll(manifestDir)
 			}
 
-			By("cleaning up the apply-e2e application")
-			cmd := exec.Command("kubectl", "delete", "application", "apply-e2e", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=30s")
-			_, _ = utils.Run(cmd)
-
-			By("cleaning up the apply-e2e stage")
-			cmd = exec.Command("kubectl", "delete", "stage", "apply-e2e-default", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-
-			By("cleaning up the applied ConfigMap")
-			cmd = exec.Command("kubectl", "delete", "configmap", "apply-e2e-configmap", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
-
-			By("cleaning up the default AppProject")
-			cmd = exec.Command("kubectl", "delete", "appproject", "default", "-n", applyCLINamespace, "--ignore-not-found", "--timeout=10s")
-			_, _ = utils.Run(cmd)
+			By("cleaning up the apply-e2e resources")
+			for _, id := range []utils.ManifestID{
+				{Kind: "Application", Namespace: applyCLINamespace, Name: "apply-e2e"},
+				{Kind: "Stage", Namespace: applyCLINamespace, Name: "apply-e2e-default"},
+				{Kind: "ConfigMap", Namespace: applyCLINamespace, Name: "apply-e2e-configmap"},
+				{Kind: "AppProject", Namespace: applyCLINamespace, Name: "default"},
+			} {
+				_ = utils.DeleteNamed(id)
+			}
 		})
 
 		It("should apply a raw manifest bundle via the CLI and reach a terminal phase", func() {

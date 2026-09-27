@@ -59,6 +59,7 @@ var _ = Describe("Cluster", Ordered, func() {
 		inClusterName = "e2e-in-cluster"
 		badDirectName = "e2e-bad-direct"
 	)
+	var fx Fixture
 
 	BeforeAll(func() {
 		By("creating an in-cluster Cluster registration")
@@ -72,10 +73,7 @@ var _ = Describe("Cluster", Ordered, func() {
 				"healthCheck": {"interval": "5s", "timeout": "5s"}
 			}
 		}`, inClusterName, namespace)
-		cmd := exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create in-cluster Cluster")
+		fx.Apply(manifest)
 
 		By("creating a direct Cluster with an unresolvable kubeconfig reference")
 		manifest = fmt.Sprintf(`{
@@ -88,17 +86,12 @@ var _ = Describe("Cluster", Ordered, func() {
 				"kubeconfigSecretRef": {"name": "e2e-missing-kubeconfig", "key": "kubeconfig"}
 			}
 		}`, badDirectName, namespace)
-		cmd = exec.Command("kubectl", "apply", "-f", "-")
-		cmd.Stdin = strings.NewReader(manifest)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create direct Cluster")
+		fx.Apply(manifest)
 	})
 
 	AfterAll(func() {
 		By("cleaning up Cluster registrations")
-		cmd := exec.Command("kubectl", "delete", "cluster", inClusterName, badDirectName,
-			"-n", namespace, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
+		fx.Teardown()
 	})
 
 	It("should reach Healthy for the in-cluster registration", func() {
