@@ -94,7 +94,7 @@ jobs:
           if [ -n "${GINKGO_FOCUS}" ]; then
             focus_args+=("-ginkgo.focus=${GINKGO_FOCUS}")
           fi
-          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout=30m "${focus_args[@]}"
+          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -ginkgo.fail-on-empty -timeout=30m "${focus_args[@]}"
 
       - name: Cleanup kind cluster
         if: always() && inputs.retain_cluster != 'true'
