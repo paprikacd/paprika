@@ -161,6 +161,14 @@ func teardownManager() {
 	cmd = exec.Command("make", "undeploy")
 	_, _ = utils.Run(cmd)
 
+	By("requesting deletion of the manager namespace")
+	// Issue the namespace delete BEFORE stripping finalizers: marked-for-
+	// deletion CRs then finish dying the moment the strip runs, instead of
+	// gaining a finalizer between the strip and the delete and parking the
+	// namespace (and the CRD uninstall) forever.
+	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found")
+	_, _ = utils.Run(cmd)
+
 	By("clearing finalizers on leftover Paprika resources")
 	// A spec that fails mid-reconcile leaves CRs whose finalizers only the
 	// controller can clear — and undeploy just removed it. Any CR deleted
@@ -185,9 +193,12 @@ func teardownManager() {
 	cmd = exec.Command("make", "uninstall", "ignore-not-found=true")
 	_, _ = utils.Run(cmd)
 
-	By("removing manager namespace")
-	cmd = exec.Command("kubectl", "delete", "ns", namespace, "--ignore-not-found")
-	_, _ = utils.Run(cmd)
+	By("waiting for the manager namespace to terminate")
+	Eventually(func() string {
+		out, _ := utils.Run(exec.Command("kubectl", "get", "ns", namespace,
+			"--ignore-not-found", "-o", "jsonpath={.status.phase}"))
+		return strings.TrimSpace(out)
+	}, 2*time.Minute, 5*time.Second).Should(BeEmpty(), "manager namespace should be fully terminated")
 }
 
 var _ = Describe("Manager", Ordered, func() {

@@ -200,7 +200,7 @@ var _ = Describe("GitSourceHTTP", Ordered, func() {
 
 	AfterAll(func() {
 		By("cleaning up git source e2e resources")
-		DeleteByLabel("paprika-system", "app.paprika.io/application="+gitE2EAppName, "releases")
+		DeleteByLabel("paprika-system", "app.paprika.io/name="+gitE2EAppName, "releases")
 		DeleteByLabel("paprika-system", "e2e=git-source", "configmaps")
 		fx.Teardown()
 	})
