@@ -1511,11 +1511,15 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(out).To(Equal("2"), "drift should be visible before healing")
 
 			By("waiting for self-heal to trigger on the drift")
-			// status.outOfSync, the paprika.io/resync annotation, and the
-			// DriftDetected condition reason are all transient — auto-sync
-			// consumes them within one reconcile pass. The durable markers are
-			// status.lastSelfHealTime and the reverted replica count.
+			// The active release's own reconcile loop re-applies desired
+			// manifests on its periodic pass and reverts the drift in ~1s —
+			// well inside the app's ~18s diff poll. Keep re-asserting the
+			// drift on every poll attempt so one app reconcile lands while
+			// replicas is still 2; that's the pass that registers outOfSync>0
+			// and stamps status.lastSelfHealTime.
 			Eventually(func(g Gomega) {
+				_, _ = utils.Run(exec.Command("kubectl", "scale", "deployment", deploymentName,
+					"-n", namespace, "--replicas=2"))
 				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.lastSelfHealTime}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
