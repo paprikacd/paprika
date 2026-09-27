@@ -5,7 +5,7 @@ COPY ui/ .
 RUN npm ci && npm run build
 
 # Build the Cloud Run binary
-FROM golang:1.26 AS builder
+FROM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
