@@ -123,9 +123,18 @@ helm upgrade paprika-e2e charts/chart/ \
   mirror objects into `git-clones/` (subtree-scoped when `path` is set —
   sparse for monorepos — plus a sibling `.rev` marker that skips
   re-materialization on re-resolve). Knobs on `source.git`:
-  `shallow` (default true), `depth`, `fetchAllRefs`. Mirror corruption
-  discovered during object reads triggers the protected rebuild (see
-  `isRecoverableGitCacheError` — errors naming the remote URL never reset).
+  `shallow` (default true), `depth`, `fetchAllRefs`, `fetchTtl` (e.g. "30s" —
+  warm mirrors skip the remote inside the TTL; a `.lastfetch` sibling file
+  is the clock, go-git writes no FETCH_HEAD). Pinned SHA resolves skip the
+  remote entirely once the object is mirrored — commits are immutable.
+  Mirror corruption discovered during object reads triggers the protected
+  rebuild (see `isRecoverableGitCacheError` — errors naming the remote URL
+  never reset).
+- All Kubernetes clients share `negotiateProtobuf` (cmd/protobuf.go), which
+  composes `kube.WithProtobufResponses` + `kube.WithRetryTransport`: GET/
+  HEAD/OPTIONS retry up to 3 attempts on connection resets / mid-response
+  EOF (VKE HTTP/2 stream kills on large LISTs). Mutations are never
+  retried — a post-commit reset would double-apply.
 - Prune is opt-in via `SyncOptions.Prune` (default false). When enabled,
   `pruneStaleResources` deletes live resources that are paprika-labelled,
   ownerless, and not in the desired manifest set. Resources annotated

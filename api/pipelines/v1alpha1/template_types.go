@@ -45,6 +45,13 @@ type GitSourceSpec struct {
 	// revisions that reference refs outside heads/tags.
 	// +optional
 	FetchAllRefs bool `json:"fetchAllRefs,omitempty"`
+	// FetchTTL bounds how often a warm mirror consults the remote for
+	// branch/tag revisions — e.g. "30s". Within the TTL the previous refs
+	// are reused; poll loops stop issuing a fetch per resolve. Empty or 0
+	// always fetches (previous behaviour). Pinned SHAs always skip the
+	// remote once mirrored — commits are immutable.
+	// +optional
+	FetchTTL string `json:"fetchTtl,omitempty"`
 }
 
 // S3SourceSpec defines an S3 source specification.

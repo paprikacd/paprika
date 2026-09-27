@@ -15,5 +15,5 @@ import (
 // 415. See internal/kube for the full reasoning; this wrapper exists only
 // because the binary's several modes all reach for the same defaults.
 func negotiateProtobuf(cfg *rest.Config) *rest.Config {
-	return kube.WithProtobufResponses(cfg)
+	return kube.WithRetryTransport(kube.WithProtobufResponses(cfg))
 }

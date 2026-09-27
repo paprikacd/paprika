@@ -30,7 +30,9 @@ const (
 
 // benchMonorepo builds an origin with benchBranches branches and ~1000 files
 // across benchDirs directories, returning the bare origin path.
-func benchMonorepo(b *testing.B) string {
+func benchMonorepo(b *testing.B) string { return benchMonorepoN(b, benchDirs) }
+
+func benchMonorepoN(b *testing.B, dirs int) string {
 	b.Helper()
 	root := b.TempDir()
 	work := filepath.Join(root, "work")
@@ -39,7 +41,7 @@ func benchMonorepo(b *testing.B) string {
 	}
 	runGitBench(b, work, "init", "--initial-branch=main")
 	runGitBench(b, work, "-c", "user.email=bench@test", "-c", "user.name=bench", "commit", "--allow-empty", "-m", "init")
-	for d := 0; d < benchDirs; d++ {
+	for d := 0; d < dirs; d++ {
 		var sub string
 		if d%4 == 0 {
 			sub = filepath.Join("services", fmt.Sprintf("service-%02d", d), "deploy")
@@ -164,4 +166,47 @@ func gitOutputBench(b *testing.B, dir string, args ...string) string {
 		b.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// Fleet: many repos' mirrors side by side in one WorkDir, warm resolves —
+// models the repo-server polling a fleet of git-backed apps each cycle.
+func BenchmarkGitSourceResolve_Fleet(b *testing.B) {
+	const repos = 8
+	ctx := context.Background()
+	workDir := b.TempDir()
+	srcs := make([]*GitSource, repos)
+	for i := 0; i < repos; i++ {
+		origin := benchMonorepoN(b, 100)
+		srcs[i] = &GitSource{RepoURL: origin, Revision: "main", Path: benchSparseDir, WorkDir: workDir, Shallow: true}
+		if _, err := srcs[i].Resolve(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := srcs[i%repos].Resolve(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// WarmTTL: the poll-loop fast path — a fresh mirror within FetchTTL skips
+// the remote entirely; a matching .rev marker skips materialization.
+func BenchmarkGitSourceResolve_WarmTTL(b *testing.B) {
+	origin := benchMonorepo(b)
+	workDir := b.TempDir()
+	src := &GitSource{
+		RepoURL: origin, Revision: "main", Path: benchSparseDir,
+		WorkDir: workDir, Shallow: true, FetchTTL: time.Hour,
+	}
+	ctx := context.Background()
+	if _, err := src.Resolve(ctx); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := src.Resolve(ctx); err != nil {
+			b.Fatal(err)
+		}
+	}
 }

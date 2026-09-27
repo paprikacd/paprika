@@ -631,3 +631,95 @@ func TestGitSourceResolve_DifferentPathsShareMirror(t *testing.T) {
 		}
 	}
 }
+
+// Pinned commit SHAs are immutable — once mirrored, resolving must not
+// touch the remote at all. Simulates upstream unavailability.
+func TestGitSourceResolve_PinnedSHASkipsRemoteOnceMirrored(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	writeChartFile(t, work, "first")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "first")
+	runGit(t, work, "push", "-u", "origin", "main")
+	pinned := gitOutput(t, work, "rev-parse", "HEAD")
+
+	src := &GitSource{RepoURL: origin, Revision: pinned, Path: "chart", WorkDir: resolverWorkDir, Shallow: true}
+	if _, err := src.Resolve(ctx); err != nil {
+		t.Fatalf("initial pinned Resolve() error: %v", err)
+	}
+
+	// Remote vanishes — a warm pinned mirror must still resolve.
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	got, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("pinned Resolve() after remote loss: %v", err)
+	}
+	if got.Revision != pinned {
+		t.Fatalf("revision changed: %s", got.Revision)
+	}
+}
+
+// FetchTTL bounds remote chatter for moving refs: within the window the
+// previous fetch result is reused, past it the next push lands.
+func TestGitSourceResolve_FetchTTLBoundsRemoteFetches(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin.git")
+	work := filepath.Join(root, "work")
+	resolverWorkDir := filepath.Join(root, "resolver")
+
+	runGit(t, root, "init", "--bare", "--initial-branch=main", origin)
+	runGit(t, root, "init", "--initial-branch=main", work)
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test User")
+	runGit(t, work, "remote", "add", "origin", origin)
+	writeChartFile(t, work, "v1")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "v1")
+	runGit(t, work, "push", "-u", "origin", "main")
+
+	src := &GitSource{RepoURL: origin, Revision: "main", Path: "chart", WorkDir: resolverWorkDir, Shallow: true, FetchTTL: time.Hour}
+	first, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("first Resolve() error: %v", err)
+	}
+
+	// Push a new commit — the warm mirror must NOT see it inside the TTL.
+	writeChartFile(t, work, "v2")
+	runGit(t, work, "add", ".")
+	runGit(t, work, "commit", "-m", "v2")
+	runGit(t, work, "push", "origin", "main")
+
+	second, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("in-TTL Resolve() error: %v", err)
+	}
+	if second.Revision != first.Revision {
+		t.Fatalf("in-TTL resolve saw pushed commit %s — mirror should be fresh-skipped", second.Revision)
+	}
+
+	// Expire the TTL by aging the fetch clock, then the push must land.
+	mirrorDir := filepath.Join(resolverWorkDir, "git-mirrors", RepoCacheKey(origin, ""))
+	old := time.Now().Add(-2 * time.Hour)
+	if chtErr := os.Chtimes(fetchClockFile(mirrorDir), old, old); chtErr != nil {
+		t.Fatal(chtErr)
+	}
+	third, err := src.Resolve(ctx)
+	if err != nil {
+		t.Fatalf("post-TTL Resolve() error: %v", err)
+	}
+	if third.Revision == first.Revision {
+		t.Fatal("post-TTL resolve did not see the pushed commit")
+	}
+}

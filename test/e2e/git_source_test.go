@@ -273,6 +273,76 @@ var _ = Describe("GitSourceHTTP", Ordered, func() {
 			g.Expect(out).To(Equal("Healthy"))
 		}).Should(Succeed())
 	})
+
+	It("reconverges cleanly after the manager is killed mid-apply", func() {
+		repoDir := filepath.Join(workDir, "repo")
+
+		By("recording the current manager pod")
+		out, err := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+			"get", "pods", "-l", "control-plane=controller-manager",
+			"-o", "jsonpath={.items[0].metadata.name}"))
+		Expect(err).NotTo(HaveOccurred())
+		oldPod := strings.TrimSpace(out)
+		Expect(oldPod).NotTo(BeEmpty(), "no manager pod found")
+
+		By("pushing a third revision to trigger a new release")
+		pushGitChart(repoDir, "v3")
+		cmd := exec.Command("git", "-C", repoDir, "push", "origin", "main")
+		out, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "push: %s", out)
+
+		By("killing the manager the moment the new release flow starts")
+		// The apply itself is ms-scale — force-killing the pod as soon as the
+		// app leaves Healthy is the practical approximation of a mid-apply
+		// crash. The assertion is what matters: nothing may corrupt.
+		deadline := time.Now().Add(2 * time.Minute)
+		for time.Now().Before(deadline) {
+			out, _ := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+				"get", "application", gitE2EAppName,
+				"-o", "jsonpath={.status.phase}"))
+			if strings.TrimSpace(out) != "Healthy" {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		cmd = exec.Command("kubectl", "-n", "paprika-system", "delete", "pod", oldPod,
+			"--force", "--grace-period=0")
+		out, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "kill manager pod: %s", out)
+
+		By("waiting for the manager to come back")
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+				"get", "deployment", "paprika-controller-manager",
+				"-o", "jsonpath={.status.availableReplicas}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(strings.TrimSpace(out)).To(Equal("1"))
+		}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+		By("verifying the app converges Healthy with the new marker")
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+				"get", "configmap", "e2e-git-marker",
+				"-o", "jsonpath={.data.marker}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(Equal("v3"))
+		}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			out, err := utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+				"get", "application", gitE2EAppName,
+				"-o", "jsonpath={.status.phase}"))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(out).To(Equal("Healthy"))
+		}).WithTimeout(2 * time.Minute).Should(Succeed())
+
+		By("verifying no resources were duplicated or orphaned")
+		out, err = utils.Run(exec.Command("kubectl", "-n", "paprika-system",
+			"get", "configmaps", "-l", "e2e=git-source",
+			"-o", "jsonpath={.items[*].metadata.name}"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.Fields(out)).To(HaveLen(1), "expected exactly one marker configmap, got: %s", out)
+	})
 })
 
 // pushGitChart writes a minimal chart whose ConfigMap carries a version

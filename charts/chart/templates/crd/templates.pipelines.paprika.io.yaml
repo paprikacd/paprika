@@ -70,6 +70,14 @@ spec:
                       of the default targeted single-ref fetch. Rarely needed — mainly for
                       revisions that reference refs outside heads/tags.
                     type: boolean
+                  fetchTtl:
+                    description: |-
+                      FetchTTL bounds how often a warm mirror consults the remote for
+                      branch/tag revisions — e.g. "30s". Within the TTL the previous refs
+                      are reused; poll loops stop issuing a fetch per resolve. Empty or 0
+                      always fetches (previous behaviour). Pinned SHAs always skip the
+                      remote once mirrored — commits are immutable.
+                    type: string
                   path:
                     type: string
                   repoUrl:

@@ -173,10 +173,16 @@ func teardownManager() {
 	cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName, "--ignore-not-found")
 	_, _ = utils.Run(cmd)
 
+	By("undeploying the controller-manager")
+	cmd = exec.Command("make", "undeploy")
+	_, _ = utils.Run(cmd)
+
 	By("clearing finalizers on leftover Paprika resources")
 	// A spec that fails mid-reconcile leaves CRs whose finalizers only the
-	// controller can clear — and undeploy is about to delete it. Strip the
-	// finalizers first so namespace/CRD deletion cannot deadlock teardown.
+	// controller can clear — and undeploy just removed it. Any CR deleted
+	// while the manager was still draining also orphans here, so this must
+	// run AFTER undeploy but BEFORE `make uninstall` removes the CRDs the
+	// patch targets.
 	for _, rsrc := range []string{
 		"releases.pipelines.paprika.io",
 		"stages.pipelines.paprika.io",
@@ -204,10 +210,6 @@ func teardownManager() {
 				"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`).Run()
 		}
 	}
-
-	By("undeploying the controller-manager")
-	cmd = exec.Command("make", "undeploy")
-	_, _ = utils.Run(cmd)
 
 	By("uninstalling CRDs")
 	cmd = exec.Command("make", "uninstall", "ignore-not-found=true")

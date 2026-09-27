@@ -53,6 +53,11 @@ type GitSource struct {
 	// head (+refs/heads/*:refs/heads/*). Default is a targeted single-ref
 	// fetch — dramatically cheaper on large monorepos.
 	FetchAllRefs bool
+	// FetchTTL bounds how stale a warm mirror can go for branch/tag
+	// revisions before a remote fetch runs — the mirror's FETCH_HEAD mtime
+	// is the clock. 0 always fetches (previous behaviour). Pinned commit
+	// SHAs are immutable and always skip the remote once mirrored.
+	FetchTTL time.Duration
 }
 
 var (
@@ -198,12 +203,16 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 
 	repo, err := git.PlainOpen(mirrorDir)
 	if err == nil {
+		if g.mirrorFresh(repo, mirrorDir) {
+			return repo, nil
+		}
 		if fetchErr := g.fetchMirror(ctx, repo, auth); fetchErr != nil {
 			return nil, fetchErr
 		}
 		if headErr := g.refreshMirrorHEAD(repo); headErr != nil {
 			return nil, headErr
 		}
+		touchFetchClock(mirrorDir)
 		return repo, nil
 	}
 	if !errors.Is(err, git.ErrRepositoryNotExists) {
@@ -253,6 +262,47 @@ func isRefNotFoundError(err error) bool {
 		strings.Contains(msg, "no such ref was advertised")
 }
 
+// mirrorFresh reports whether the mirror can answer this resolve without a
+// remote round trip:
+//
+//   - pinned commit SHAs are immutable — once refs/paprika-pinned/<sha> (or
+//     the object) exists locally, the remote can't teach us anything new
+//   - branches/tags honor FetchTTL — the mirror's fetch-clock file bounds
+//     staleness, so poll loops don't issue a fetch per resolve
+//
+// A zero FetchTTL preserves the previous always-fetch semantics.
+func (g *GitSource) mirrorFresh(repo *git.Repository, mirrorDir string) bool {
+	if isHexSHA(strings.TrimSpace(g.Revision)) {
+		if ref, err := repo.Reference(plumbing.ReferenceName(pinnedCommitRefPrefix+g.Revision), true); err == nil && ref.Hash().String() == g.Revision {
+			return true
+		}
+		// The commit may sit under a head after an all-heads fetch.
+		if _, err := object.GetCommit(repo.Storer, plumbing.NewHash(g.Revision)); err == nil {
+			return true
+		}
+	}
+	if g.FetchTTL <= 0 {
+		return false
+	}
+	info, err := os.Stat(fetchClockFile(mirrorDir))
+	if err != nil {
+		return false
+	}
+	return time.Since(info.ModTime()) < g.FetchTTL
+}
+
+// fetchClockFile is the freshness clock — go-git doesn't write FETCH_HEAD,
+// so we stamp our own after every successful fetch.
+func fetchClockFile(mirrorDir string) string { return mirrorDir + ".lastfetch" }
+
+func touchFetchClock(mirrorDir string) {
+	// Best-effort: a failed touch just means the next resolve re-fetches.
+	if err := os.WriteFile(fetchClockFile(mirrorDir),
+		[]byte(time.Now().UTC().Format(time.RFC3339)), 0o600); err != nil {
+		return
+	}
+}
+
 // mirrorRefSpecs returns the minimal refspec needed for the requested
 // revision. Fetching only the required ref (instead of every branch head)
 // is the main efficiency win on repos with many branches and tags; pinned
@@ -294,6 +344,7 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 	if err := g.refreshMirrorHEAD(repo); err != nil {
 		return nil, err
 	}
+	touchFetchClock(mirrorDir)
 	return repo, nil
 }
 

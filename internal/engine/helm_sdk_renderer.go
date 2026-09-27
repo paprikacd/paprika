@@ -125,24 +125,43 @@ func (r *HelmSDKRenderer) resolveGitSource(ctx context.Context, tmpl *paprika.Te
 		return nil, fmt.Errorf("resolve git auth: %w", err)
 	}
 
-	shallow := true
-	if gitSrc.Shallow != nil {
-		shallow = *gitSrc.Shallow
+	gitSource, err := gitSourceFromSpec(r.WorkDir, gitSrc, auth)
+	if err != nil {
+		return nil, err
 	}
-	result, err := (&source.GitSource{
-		RepoURL:      gitSrc.RepoURL,
-		Revision:     gitSrc.Revision,
-		Path:         gitSrc.Path,
-		WorkDir:      r.WorkDir,
-		Auth:         auth,
-		Shallow:      shallow,
-		Depth:        int(gitSrc.Depth),
-		FetchAllRefs: gitSrc.FetchAllRefs,
-	}).Resolve(ctx)
+	result, err := gitSource.Resolve(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("resolve git source: %w", err)
 	}
 	return result, nil
+}
+
+// gitSourceFromSpec builds a GitSource with the fetch knobs resolved —
+// FetchTTL parses a duration string like "30s" and fails fast on garbage.
+func gitSourceFromSpec(workDir string, gitSrc *paprika.GitSourceSpec, auth source.GitAuth) (*source.GitSource, error) {
+	shallow := true
+	if gitSrc.Shallow != nil {
+		shallow = *gitSrc.Shallow
+	}
+	var fetchTTL time.Duration
+	if gitSrc.FetchTTL != "" {
+		d, err := time.ParseDuration(gitSrc.FetchTTL)
+		if err != nil {
+			return nil, fmt.Errorf("git fetchTTL %q: %w", gitSrc.FetchTTL, err)
+		}
+		fetchTTL = d
+	}
+	return &source.GitSource{
+		RepoURL:      gitSrc.RepoURL,
+		Revision:     gitSrc.Revision,
+		Path:         gitSrc.Path,
+		WorkDir:      workDir,
+		Auth:         auth,
+		Shallow:      shallow,
+		Depth:        int(gitSrc.Depth),
+		FetchAllRefs: gitSrc.FetchAllRefs,
+		FetchTTL:     fetchTTL,
+	}, nil
 }
 
 func (r *HelmSDKRenderer) resolveGitAuth(ctx context.Context, tmpl *paprika.Template) (source.GitAuth, error) {
