@@ -771,6 +771,7 @@ func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 			Revision:  app.Spec.Source.Revision,
 			Path:      app.Spec.Source.Path,
 			SecretRef: app.Spec.Source.SecretRef,
+			FetchTTL:  app.Spec.Source.FetchTTL,
 		}
 	case paprikav1.SourceTypeS3:
 		spec.S3 = &paprikav1.S3SourceSpec{

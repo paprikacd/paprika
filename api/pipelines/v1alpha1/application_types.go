@@ -259,6 +259,13 @@ type ApplicationSource struct {
 	// Poll interval for change detection (default 30s)
 	// +kubebuilder:default="30s"
 	PollInterval string `json:"pollInterval,omitempty"`
+	// FetchTTL bounds how often a warm git mirror consults the remote for
+	// branch/tag revisions (type=git), e.g. "45s". Within the TTL the
+	// previous refs are reused — poll loops stop paying a remote fetch per
+	// resolve. Empty always fetches (previous behaviour). Pinned SHAs
+	// always skip the remote once mirrored — commits are immutable.
+	// +optional
+	FetchTTL string `json:"fetchTtl,omitempty"`
 	// TargetNamespace is the namespace passed to Helm for rendered resources.
 	// Defaults to the Application namespace.
 	// +optional
