@@ -24,6 +24,7 @@ limitations under the License.
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -84,6 +85,25 @@ func TeardownApp(namespace, app string) {
 	utils.DeleteByLabel(namespace, "app.paprika.io/name="+app,
 		"releases", "stages", "pipelines", "templates",
 		"deployments", "services", "ingresses", "configmaps", "jobs", "pods")
+}
+
+// WaitForWebhook probes the AppProject admission webhook until an apply
+// succeeds — required after the manager pod is replaced (endpoint updates
+// lag the pod restart, so webhooks transiently dead-end).
+func WaitForWebhook(namespace string) {
+	Eventually(func(g Gomega) {
+		probe := fmt.Sprintf(`{"apiVersion":"core.paprika.io/v1alpha1","kind":"AppProject","metadata":{"name":"webhook-probe","namespace":"%s"},"spec":{}}`, namespace)
+		out, err := utils.ApplyManifest(probe)
+		if err == nil {
+			_ = utils.DeleteNamed(utils.ManifestID{Kind: "AppProject", Namespace: namespace, Name: "webhook-probe"})
+			return
+		}
+		lowered := strings.ToLower(out)
+		if strings.Contains(lowered, "connection refused") || strings.Contains(lowered, "timeout") ||
+			strings.Contains(lowered, "no route to host") || strings.Contains(lowered, "deadline exceeded") {
+			g.Expect(lowered).To(Equal(""), "webhook is not reachable yet: %s", out)
+		}
+	}, 2*time.Minute, 5*time.Second).Should(Succeed())
 }
 
 // ExpectPhaseEventually asserts a resource reaches an exact jsonpath value.

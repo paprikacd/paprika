@@ -34,12 +34,23 @@ func Kubectl(args ...string) (string, error) {
 	return Run(exec.CommandContext(context.Background(), "kubectl", args...)) //nolint:gosec // test-controlled args
 }
 
-// ApplyManifest applies a single-object manifest (JSON or YAML) via stdin.
-// Multi-object streams are rejected: apply each object separately so a parse
-// failure names the object, not the whole document.
+// ApplyManifest applies a manifest (JSON or YAML) via stdin. Multi-document
+// YAML separated by "---" is allowed — kubectl parses it natively. The one
+// shape rejected is unseparated JSON documents: kubectl treats a "{"-led
+// stream as a single JSON doc and fails on trailing content, which produced
+// opaque parse errors before. Split those into separate ApplyManifest calls.
 func ApplyManifest(manifest string) (string, error) {
-	if strings.Contains(manifest, "\n---") {
-		return "", errors.New("multi-document manifest — apply each object separately")
+	for i, doc := range strings.Split(manifest, "\n---") {
+		doc = strings.TrimSpace(strings.TrimPrefix(doc, "---"))
+		if doc == "" {
+			continue
+		}
+		if doc[0] == '{' {
+			var v any
+			if err := json.Unmarshal([]byte(doc), &v); err != nil {
+				return "", fmt.Errorf("doc %d is not single-object JSON (unseparated JSON docs are rejected — split the applies): %w", i, err)
+			}
+		}
 	}
 	cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

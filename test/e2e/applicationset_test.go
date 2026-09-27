@@ -145,9 +145,11 @@ var _ = Context("ApplicationSetRollingSync", Ordered, func() {
 		Eventually(verifyHealthy, 4*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("confirming rollingSync status is cleared once converged")
+		// 60s window: the clearing pass rides the next reconcile cycle, which
+		// is slower while a freshly restarted manager is warming informers.
 		Eventually(func(g Gomega) {
 			g.Expect(appsetJSONPath(g, "{.status.rollingSync}")).To(BeEmpty())
-		}, 30*time.Second, 3*time.Second).Should(Succeed())
+		}, 60*time.Second, 3*time.Second).Should(Succeed())
 	})
 
 	It("gates the prod update behind the unhealthy canary and reports progress", func() {

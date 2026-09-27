@@ -96,19 +96,7 @@ func waitForWebhookCA() {
 	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 	By("probing the AppProject webhook until it is reachable")
-	Eventually(func(g Gomega) {
-		probe := fmt.Sprintf(`{"apiVersion":"core.paprika.io/v1alpha1","kind":"AppProject","metadata":{"name":"webhook-probe","namespace":"%s"},"spec":{}}`, namespace)
-		out, err := utils.ApplyManifest(probe)
-		if err == nil {
-			del := exec.Command("kubectl", "delete", "appproject", "webhook-probe", "-n", namespace, "--ignore-not-found")
-			_, _ = utils.Run(del)
-			return
-		}
-		outStr := strings.ToLower(out)
-		if strings.Contains(outStr, "connection refused") || strings.Contains(outStr, "timeout") || strings.Contains(outStr, "no route to host") {
-			g.Expect(outStr).NotTo(ContainSubstring("connection refused"), "webhook is not reachable yet")
-		}
-	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+	WaitForWebhook(namespace)
 }
 
 func deployManager() {

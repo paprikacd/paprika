@@ -318,6 +318,12 @@ var _ = Describe("GitSourceHTTP", Ordered, func() {
 			"-o", "jsonpath={.items[*].metadata.name}"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.Fields(out)).To(HaveLen(1), "expected exactly one marker configmap, got: %s", out)
+
+		By("waiting for the webhook endpoint to track the replacement pod")
+		// Killing the manager leaves webhook endpoints pointing at the dead
+		// pod for a few seconds — without this probe the *next* Ordered suite
+		// can race a mutating-webhook timeout on its first apply.
+		WaitForWebhook("paprika-system")
 	})
 })
 
