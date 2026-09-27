@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -258,20 +259,32 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Operator deployment not available")
 
 		By("starting port-forward for the operator UI (port 3000)")
-		pfCmd := exec.Command("kubectl", "port-forward", "-n", namespace,
-			"deployment/paprika-controller-manager", "4000:3000")
-		err = pfCmd.Start()
-		Expect(err).NotTo(HaveOccurred(), "Failed to start port-forward for operator UI")
-		portForwardCmd = pfCmd
+		// pf binds to whichever pod is current when it starts — a rollout
+		// restart or mid-apply kill swaps the pod and the pf process exits
+		// silently. Restart it inside the poll so the probe self-heals.
+		var pfAlive atomic.Bool
+		startPF := func() {
+			pfCmd := exec.Command("kubectl", "port-forward", "-n", namespace,
+				"deployment/paprika-controller-manager", "4000:3000")
+			if err := pfCmd.Start(); err == nil {
+				portForwardCmd = pfCmd
+				pfAlive.Store(true)
+				go func() { _ = pfCmd.Wait(); pfAlive.Store(false) }()
+			}
+		}
+		startPF()
 
 		By("waiting for the port-forward to be ready")
 		verifyPortForward := func(g Gomega) {
+			if !pfAlive.Load() {
+				startPF() // previous pf died (pod replaced) — restart
+			}
 			resp, err := http.Get("http://localhost:4000/")
 			g.Expect(err).NotTo(HaveOccurred(), "Port-forward not yet ready")
 			defer resp.Body.Close()
 			g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		}
-		Eventually(verifyPortForward, 30*time.Second, time.Second).Should(Succeed())
+		Eventually(verifyPortForward, 90*time.Second, time.Second).Should(Succeed())
 
 		By("waiting for webhook CA bundles to be injected")
 		waitForWebhookCA()
@@ -1474,31 +1487,36 @@ var _ = Describe("Manager", Ordered, func() {
 				deploymentName = out
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-			By("waiting for the active Release to reach Complete and stay stable")
-			// While a release is non-terminal its own reconcile re-applies
-			// manifests and silently reverts drift before the app's diff can
-			// observe it. Admission defaulting can shift the release identity
-			// after the first release is created, producing a second release
-			// right behind it — so the releaseRef must be both Complete AND
-			// stable across a few polls before injecting drift, or the newer
-			// release's apply loop eats the drift and self-heal never fires.
-			var releaseName string
-			Eventually(func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.releaseRef}")
-				releaseName, err = utils.Run(cmd)
+			By("waiting for the active Release to reach Complete and no sibling release to be in flight")
+			// While ANY release is non-terminal its own reconcile re-applies
+			// manifests and reverts drift before the app's diff can observe it.
+			// Admission defaulting can shift the release identity after the
+			// first release is created, producing a second release that promotes
+			// while releaseRef still points at the first — so gate on "every
+			// release for this app is terminal AND releaseRef is Complete",
+			// not releaseRef stability alone (the ref only flips at the end).
+			allReleasesTerminal := func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "get", "releases",
+					"-n", namespace, "-l", "app.paprika.io/name=e2e-self-heal",
+					"-o", "jsonpath={.items[*].status.phase}"))
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(releaseName).NotTo(BeEmpty())
-
-				cmd = exec.Command("kubectl", "get", "release", releaseName, "-n", namespace, "-o", "jsonpath={.status.phase}")
-				out, err := utils.Run(cmd)
+				g.Expect(strings.Fields(out)).NotTo(BeEmpty(), "expected at least one release")
+				// Terminal = Complete | Failed | RolledBack | Superseded
+				// (isReleaseTerminal) — a superseded sibling never re-applies.
+				for _, phase := range strings.Fields(out) {
+					g.Expect(phase).To(BeElementOf("Complete", "Failed", "RolledBack", "Superseded"),
+						"release still non-terminal: %s", out)
+				}
+				ref, err := utils.Run(exec.Command("kubectl", "get", "application", "e2e-self-heal",
+					"-n", namespace, "-o", "jsonpath={.status.releaseRef}"))
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal("Complete"), "active release should be Complete before injecting drift")
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
-			Consistently(func(g Gomega) {
-				out, err := utils.Run(exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.releaseRef}"))
+				refPhase, err := utils.Run(exec.Command("kubectl", "get", "release", ref,
+					"-n", namespace, "-o", "jsonpath={.status.phase}"))
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(out).To(Equal(releaseName), "releaseRef must stop moving — a second release is still in flight")
-			}, 15*time.Second, 2*time.Second).Should(Succeed())
+				g.Expect(refPhase).To(Equal("Complete"), "releaseRef's release must be Complete")
+			}
+			Eventually(allReleasesTerminal, 2*time.Minute, 2*time.Second).Should(Succeed())
+			Consistently(allReleasesTerminal, 10*time.Second, 2*time.Second).Should(Succeed())
 
 			By("introducing drift by scaling the Deployment")
 			// Diff is desired-subset: extra live labels are not drift, so drift
@@ -1511,15 +1529,11 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(out).To(Equal("2"), "drift should be visible before healing")
 
 			By("waiting for self-heal to trigger on the drift")
-			// The active release's own reconcile loop re-applies desired
-			// manifests on its periodic pass and reverts the drift in ~1s —
-			// well inside the app's ~18s diff poll. Keep re-asserting the
-			// drift on every poll attempt so one app reconcile lands while
-			// replicas is still 2; that's the pass that registers outOfSync>0
-			// and stamps status.lastSelfHealTime.
+			// status.outOfSync, the paprika.io/resync annotation, and the
+			// DriftDetected condition reason are all transient — auto-sync
+			// consumes them within one reconcile pass. The durable markers are
+			// status.lastSelfHealTime and the reverted replica count.
 			Eventually(func(g Gomega) {
-				_, _ = utils.Run(exec.Command("kubectl", "scale", "deployment", deploymentName,
-					"-n", namespace, "--replicas=2"))
 				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.lastSelfHealTime}")
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
