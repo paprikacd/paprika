@@ -209,10 +209,16 @@ helm upgrade paprika-e2e charts/chart/ \
   tool+outcome attributes.
 - MCP read tools over port-forward: ~180ms/call sequential, ~14.8 calls/s
   aggregate under 3 concurrent workers (post authz-informer optimization).
-- Profiling baseline (MCP read load): ~50% of cumulative allocs is upstream
-  MCP SDK JSON decode; paprika-controlled hotspots after the AppProject
-  informer fix are `fleet.Snapshot` queries, `mcp.toolResult` (payload is
-  emitted twice: structured + text), and `auth.verifySelfSigned`.
+- Profiling baseline (MCP read load, api-server, kind): segmentio
+  `json.(*Decoder).readValue` = ~85% cumulative allocs inside the MCP SDK's
+  servePOST/DecodeMessage (~180KB per call — upstream transport, can't fix
+  in-tree); paprika-controlled hotspots are `fleet.Snapshot` queries,
+  `mcp.toolResult` duplication, `auth.verifySelfSigned`. At ~50 calls/s on
+  one token the per-subject limiter returns ~20% 429s — that's intended.
+- `source.fetchTtl` (e.g. "45s") on git Applications bounds warm-mirror
+  remote fetches — apps sharing one repo+secret collapse to ~1 fetch per
+  TTL window (measured: greenveil 5-pack ~0.7 fetches/min vs ~5/min).
+
 
 ## Key Metrics
 
