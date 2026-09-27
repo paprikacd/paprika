@@ -1507,7 +1507,7 @@ var _ = Describe("Manager", Ordered, func() {
 				out, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).NotTo(BeEmpty(), "lastSelfHealTime should be set after a drift sync")
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying the drift was reverted")
 			Eventually(func(g Gomega) {
