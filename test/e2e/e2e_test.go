@@ -1470,14 +1470,18 @@ var _ = Describe("Manager", Ordered, func() {
 				deploymentName = out
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
-			By("waiting for the active Release to reach Complete")
-			// While the release is non-terminal its own reconcile re-applies
+			By("waiting for the active Release to reach Complete and stay stable")
+			// While a release is non-terminal its own reconcile re-applies
 			// manifests and silently reverts drift before the app's diff can
-			// observe it. Only once Complete does drift persist for the app
-			// self-heal loop to act on.
+			// observe it. Admission defaulting can shift the release identity
+			// after the first release is created, producing a second release
+			// right behind it — so the releaseRef must be both Complete AND
+			// stable across a few polls before injecting drift, or the newer
+			// release's apply loop eats the drift and self-heal never fires.
+			var releaseName string
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.releaseRef}")
-				releaseName, err := utils.Run(cmd)
+				releaseName, err = utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(releaseName).NotTo(BeEmpty())
 
@@ -1486,6 +1490,11 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("Complete"), "active release should be Complete before injecting drift")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			Consistently(func(g Gomega) {
+				out, err := utils.Run(exec.Command("kubectl", "get", "application", "e2e-self-heal", "-n", namespace, "-o", "jsonpath={.status.releaseRef}"))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal(releaseName), "releaseRef must stop moving — a second release is still in flight")
+			}, 15*time.Second, 2*time.Second).Should(Succeed())
 
 			By("introducing drift by scaling the Deployment")
 			// Diff is desired-subset: extra live labels are not drift, so drift
