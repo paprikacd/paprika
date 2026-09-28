@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 
 	"connectrpc.com/connect"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +21,8 @@ func K8sErrorInterceptor() connect.UnaryInterceptorFunc {
 			if err == nil {
 				return resp, nil
 			}
-			if _, isConnect := err.(*connect.Error); isConnect {
+			var ce *connect.Error
+			if errors.As(err, &ce) {
 				return resp, err // already classified at the handler
 			}
 			switch {

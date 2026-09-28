@@ -1557,7 +1557,9 @@ func TestToolErrorResultMapsDomainErrors(t *testing.T) {
 	r := toolErrorResult(fmt.Errorf("investigate: %w", notFound))
 	require.NotNil(t, r)
 	require.True(t, r.IsError)
-	require.Contains(t, r.Content[0].(*sdkmcp.TextContent).Text, "not found")
+	tc, ok := r.Content[0].(*sdkmcp.TextContent)
+	require.True(t, ok)
+	require.Contains(t, tc.Text, "not found")
 
 	require.Nil(t, toolErrorResult(errors.New("plain go error")),
 		"non-connect errors keep the internal-error path")

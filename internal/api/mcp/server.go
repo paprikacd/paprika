@@ -511,10 +511,7 @@ func toolErrorResult(err error) *sdkmcp.CallToolResult {
 	if !errors.As(err, &ce) {
 		return nil
 	}
-	switch ce.Code() {
-	case connect.CodeNotFound, connect.CodeInvalidArgument, connect.CodeAlreadyExists,
-		connect.CodeFailedPrecondition, connect.CodePermissionDenied:
-	default:
+	if !toolActionableCode(ce.Code()) {
 		return nil
 	}
 	text := ce.Error()
@@ -527,6 +524,21 @@ func toolErrorResult(err error) *sdkmcp.CallToolResult {
 			&sdkmcp.TextContent{Text: text},
 		},
 	}
+}
+
+// toolActionableCode reports whether a Connect error code carries a
+// caller-facing fix (missing entity, bad input) rather than a server fault.
+func toolActionableCode(c connect.Code) bool {
+	_, ok := actionableCodes[c]
+	return ok
+}
+
+var actionableCodes = map[connect.Code]struct{}{
+	connect.CodeNotFound:           {},
+	connect.CodeInvalidArgument:    {},
+	connect.CodeAlreadyExists:      {},
+	connect.CodeFailedPrecondition: {},
+	connect.CodePermissionDenied:   {},
 }
 
 // scopeDeniedMessage names the scope a tool requires, for the -32001 error
