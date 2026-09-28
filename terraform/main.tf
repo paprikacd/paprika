@@ -221,10 +221,11 @@ resource "vultr_kubernetes" "omega" {
     node_quantity = var.vke_node_count
     plan          = var.vke_node_plan
     label         = "core"
-    # Live pool (verified 2026-09-08): 4 nodes, autoscaler on, pinned 4..4. A
-    # read-only plan showed the previous defaults would have SHRUNK it; keep the
-    # count and max in step with what Vultr runs.
-    auto_scaler = true
+    # Live pool (Vultr API, re-verified 2026-09-29): 4 nodes, autoscaler OFF,
+    # min=max=4. It was on and pinned 4..4 on 2026-09-08; keep this in step with
+    # what Vultr runs so an untargeted apply does not flip it. (omega-ha's core
+    # pool in omega_ha.tf is live autoscaler ON, pinned 4..4.)
+    auto_scaler = false
     min_nodes   = var.vke_node_count
     max_nodes   = var.vke_core_max_nodes
   }
