@@ -200,6 +200,16 @@ helm upgrade paprika-e2e charts/chart/ \
 - `/mcp` and embedded UI responses are gzip-compressed when the client
   sends Accept-Encoding: gzip — a 20KB fleet_map result is ~2KB on the
   wire (the structuredContent/text duplication compresses away).
+- `/mcp` is ENABLED on VKE at https://paprika.benebsworth.com/mcp (RFC
+  8414/9728 discovery + OAuth 2.1/PKCE). Real connectors (Claude, Codex)
+  self-register via POST /mcp/register (RFC 7591 DCR, `paprika-<rand>` ids
+  bound to their own redirect URIs — loopback http(s) or https only).
+  Static `mcp.oauth.clientId`/`redirectUris` remain for first-party
+  clients (perf:token uses http://localhost:8791/callback).
+- `plugins/paprika/` is the claude/codex connector plugin (manifests +
+  .mcp.json + skill + README). Brand assets live in `assets/brand/`
+  (capsicum mark + wordmark + lockups), served in the UI from
+  `/brand/paprika-mark.png`, `src/app/icon.png`, `src/app/favicon.ico`.
 - `/mcp` requests are rate-limited per authenticated subject (50 rps,
   burst 100) and bodies are capped at 1 MiB — perf:load drives one token,
   so keep the loadgen under ~50 calls/s per token or spread load across
