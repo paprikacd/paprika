@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"connectrpc.com/connect"
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1546,4 +1550,17 @@ func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
 	}
 	require.False(t, srv.clientIDAllowed("paprika-never"))
+}
+
+func TestToolErrorResultMapsDomainErrors(t *testing.T) {
+	notFound := connect.NewError(connect.CodeNotFound, errors.New("getting application: Application \"x\" not found"))
+	r := toolErrorResult(fmt.Errorf("investigate: %w", notFound))
+	require.NotNil(t, r)
+	require.True(t, r.IsError)
+	require.Contains(t, r.Content[0].(*sdkmcp.TextContent).Text, "not found")
+
+	require.Nil(t, toolErrorResult(errors.New("plain go error")),
+		"non-connect errors keep the internal-error path")
+	require.Nil(t, toolErrorResult(connect.NewError(connect.CodeInternal, errors.New("boom"))),
+		"internal connect codes stay internal")
 }

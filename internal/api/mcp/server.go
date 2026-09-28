@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/NYTimes/gziphandler"
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -492,9 +493,39 @@ func (s *Server) mapInvokeError(ctx context.Context, name string, err error) (*s
 		return nil, &sdkjsonrpc.Error{Code: codeScopeDenied, Message: s.scopeDeniedMessage(name)}
 	case errors.Is(err, ErrToolNotFound):
 		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeMethodNotFound, Message: err.Error()}
+	}
+	if r := toolErrorResult(err); r != nil {
+		return r, nil
+	}
+	log.FromContext(ctx).Error(err, "mcp: tool call failed", "tool", name)
+	return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
+}
+
+// toolErrorResult renders domain-level failures (entity missing, bad
+// arguments, conflicts) as a CallToolResult with IsError=true and the real
+// message — the model gets "application X not found", not an opaque
+// -32603. Only Connect codes that carry caller-actionable detail map;
+// anything else still falls to the internal-error path.
+func toolErrorResult(err error) *sdkmcp.CallToolResult {
+	var ce *connect.Error
+	if !errors.As(err, &ce) {
+		return nil
+	}
+	switch ce.Code() {
+	case connect.CodeNotFound, connect.CodeInvalidArgument, connect.CodeAlreadyExists,
+		connect.CodeFailedPrecondition, connect.CodePermissionDenied:
 	default:
-		log.FromContext(ctx).Error(err, "mcp: tool call failed", "tool", name)
-		return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInternalError, Message: "mcp: internal error"}
+		return nil
+	}
+	text := ce.Error()
+	if inner := ce.Unwrap(); inner != nil {
+		text = inner.Error()
+	}
+	return &sdkmcp.CallToolResult{
+		IsError: true,
+		Content: []sdkmcp.Content{
+			&sdkmcp.TextContent{Text: text},
+		},
 	}
 }
 
