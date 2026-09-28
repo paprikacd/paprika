@@ -135,7 +135,7 @@ variable "cloudflare_zone_id" {
 variable "paprika_lb_ip" {
   description = "Paprika Envoy Gateway LoadBalancer IP"
   type        = string
-  default     = "104.156.233.70"
+  default     = "139.180.161.184" # omega-ha envoy gateway LB (was 104.156.233.70 on omega)
 }
 
 # Versions
