@@ -257,6 +257,18 @@ auth:
       resources: ["*"]
       namespaces: ["*"]
 
+# MCP connector endpoint for Claude/Codex/curious agents. Static client pair
+# covers first-party harnesses (perf:token uses the 8791 callback); real
+# connectors self-register via RFC 7591 /mcp/register.
+mcp:
+  enabled: true
+  publicURL: "https://paprika.benebsworth.com"
+  oauth:
+    clientId: "paprika-mcp"
+    redirectUris:
+      - "http://localhost:8791/callback"
+      - "http://127.0.0.1:8791/callback"
+
 githubActionsTokenExchange:
   enabled: true
   audience: "paprika-vke-deploy"
