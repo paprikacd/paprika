@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"sync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NYTimes/gziphandler"
@@ -105,10 +105,10 @@ type Server struct {
 	dynMu      sync.Mutex
 	dynClients map[string][]string
 
-	secret        []byte
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
-	streamable    http.Handler
+	secret     []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
+	streamable http.Handler
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The

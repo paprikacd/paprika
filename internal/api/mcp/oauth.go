@@ -116,35 +116,19 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 // with, and each URI must be a loopback (localhost/127.0.0.1/[::1], any
 // port) or an https:// URL, so a registered client can never mint a code
 // that lands on plain-HTTP off-box infrastructure.
-//
-//nolint:tagliatelle // RFC 7591 mandates snake_case field names.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST only")
 		return
 	}
-	var req struct {
-		RedirectURIs            []string `json:"redirect_uris"`
-		ClientName              string   `json:"client_name,omitempty"`
-		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
-	}
+	var req registrationRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "malformed registration request")
 		return
 	}
-	if len(req.RedirectURIs) == 0 {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "redirect_uris is required")
+	if errText := req.validate(); errText != "" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", errText)
 		return
-	}
-	if req.TokenEndpointAuthMethod != "" && req.TokenEndpointAuthMethod != "none" {
-		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "only public clients (token_endpoint_auth_method=none) are supported")
-		return
-	}
-	for _, uri := range req.RedirectURIs {
-		if !redirectURIAllowedForRegistration(uri) {
-			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "redirect_uris must be loopback http(s) or https")
-			return
-		}
 	}
 
 	raw := make([]byte, 16)
@@ -174,6 +158,34 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		"response_types":             []string{"code"},
 		"token_endpoint_auth_method": "none",
 	})
+}
+
+// registrationRequest is the RFC 7591 client metadata document posted to
+// /mcp/register.
+//
+//nolint:tagliatelle // RFC 7591 mandates snake_case field names.
+type registrationRequest struct {
+	RedirectURIs            []string `json:"redirect_uris"`
+	ClientName              string   `json:"client_name,omitempty"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+}
+
+// validate returns a human-readable rejection or empty when the request is
+// acceptable: at least one redirect URI, all loopback/http(s)-safe, and a
+// public (secret-less) client.
+func (r registrationRequest) validate() string {
+	if len(r.RedirectURIs) == 0 {
+		return "redirect_uris is required"
+	}
+	if r.TokenEndpointAuthMethod != "" && r.TokenEndpointAuthMethod != "none" {
+		return "only public clients (token_endpoint_auth_method=none) are supported"
+	}
+	for _, uri := range r.RedirectURIs {
+		if !redirectURIAllowedForRegistration(uri) {
+			return "redirect_uris must be loopback http(s) or https"
+		}
+	}
+	return ""
 }
 
 // dynClientCap bounds registered dynamic clients — registration is

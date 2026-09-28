@@ -91,17 +91,10 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 		return nil, errors.Join(err, ErrUnauthenticated)
 	}
 
-	auth := req.Header().Get("Authorization")
-	if auth == "" {
-		return nil, ErrUnauthenticated
+	rawToken, err := bearerToken(req)
+	if err != nil {
+		return nil, err
 	}
-
-	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return nil, fmt.Errorf("invalid authorization header: %w", ErrUnauthenticated)
-	}
-
-	rawToken := parts[1]
 	key := sha256.Sum256([]byte(rawToken))
 	if p := s.cachedPrincipal(key); p != nil {
 		return p, nil
@@ -120,7 +113,15 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 		return nil, fmt.Errorf("%w: issuer mismatch", ErrUnauthenticated)
 	}
 
-	p := &Principal{
+	p := principalFromClaims(claims)
+	s.storePrincipal(key, p, claims.Exp)
+	return p, nil
+}
+
+// principalFromClaims materializes the immutable Principal cached on a
+// verified token.
+func principalFromClaims(claims *selfSignedClaims) *Principal {
+	return &Principal{
 		Subject: claims.Subject,
 		Email:   claims.Email,
 		Name:    claims.Name,
@@ -133,8 +134,19 @@ func (s *SelfSignedAuthenticator) Authenticate(ctx context.Context) (*Principal,
 			"method": "self-signed",
 		},
 	}
-	s.storePrincipal(key, p, claims.Exp)
-	return p, nil
+}
+
+// bearerToken extracts the token from a Bearer Authorization header.
+func bearerToken(req HTTPRequest) (string, error) {
+	auth := req.Header().Get("Authorization")
+	if auth == "" {
+		return "", ErrUnauthenticated
+	}
+	parts := strings.SplitN(auth, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return "", fmt.Errorf("invalid authorization header: %w", ErrUnauthenticated)
+	}
+	return parts[1], nil
 }
 
 // cachedPrincipal returns a verified principal for a previously-seen token

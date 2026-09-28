@@ -149,9 +149,9 @@ func TestSelfSignedAuthenticateCachesVerifiedPrincipal(t *testing.T) {
 	require.NoError(t, err)
 
 	allocs := testing.AllocsPerRun(50, func() {
-		p, err := a.Authenticate(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "user-1", p.Subject)
+		principal, authErr := a.Authenticate(ctx)
+		require.NoError(t, authErr)
+		require.Equal(t, "user-1", principal.Subject)
 	})
 	require.Less(t, allocs, 6.0, "cache hit should allocate ~nothing; got %.0f", allocs)
 
