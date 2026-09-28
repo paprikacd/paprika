@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"sync"
 	"context"
 	"encoding/json"
 	"errors"
@@ -96,6 +97,14 @@ type Server struct {
 	publicURL     string
 	clientID      string
 	redirectURIs  []string
+
+	// dynClients holds OAuth clients created by POST /mcp/register (RFC 7591
+	// dynamic registration). Real connectors (Claude, Codex) each register
+	// their own client_id + redirect URIs at connect time; the static
+	// clientID/redirectURIs pair remains for first-party clients.
+	dynMu      sync.Mutex
+	dynClients map[string][]string
+
 	secret        []byte
 	accessTTL     time.Duration
 	refreshTTL    time.Duration
@@ -158,6 +167,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		publicURL:              cfg.PublicURL,
 		clientID:               cfg.ClientID,
 		redirectURIs:           cfg.RedirectURIs,
+		dynClients:             map[string][]string{},
 		secret:                 cfg.Secret,
 		accessTTL:              defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:             defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),

@@ -1504,3 +1504,46 @@ func TestAuthorizeRejectsPartiallyUnrecognisedScopeMix(t *testing.T) {
 		assert.Equal(t, "invalid_scope", oerr.Error)
 	}
 }
+
+func TestRegisterMintsDynamicClientWithSafeRedirects(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := newTestServer(t)
+	srv.RegisterOAuthRoutes(mux)
+
+	body := strings.NewReader(`{"redirect_uris":["http://localhost:1455/auth/callback","https://claude.ai/api/mcp/auth_callback"],"client_name":"codex-cli"}`)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp/register", body))
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	//nolint:tagliatelle // RFC 7591 wire field names.
+	var resp struct {
+		ClientID     string   `json:"client_id"`
+		RedirectURIs []string `json:"redirect_uris"`
+	}
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+	require.True(t, strings.HasPrefix(resp.ClientID, "paprika-"))
+	require.True(t, srv.clientIDAllowed(resp.ClientID), "registered client must pass the authorize check")
+	require.True(t, srv.isRegisteredRedirect(resp.ClientID, "http://localhost:1455/auth/callback"))
+	require.False(t, srv.isRegisteredRedirect(resp.ClientID, "https://attacker.example/cb"),
+		"redirects are bound to the registered client, not global")
+}
+
+func TestRegisterRejectsUnsafeRedirects(t *testing.T) {
+	mux := http.NewServeMux()
+	srv := newTestServer(t)
+	srv.RegisterOAuthRoutes(mux)
+
+	for _, uris := range [][]string{
+		{`"http://evil.example.com/cb"`},
+		{`"http://169.254.169.254/cb"`},
+		{`"javascript:alert(1)"`},
+		{`"ftp://x/`},
+		{},
+	} {
+		body := strings.NewReader(`{"redirect_uris":[` + strings.Join(uris, ",") + `]}`)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp/register", body))
+		require.Equal(t, http.StatusBadRequest, rec.Code, "uris %v should be rejected", uris)
+	}
+	require.False(t, srv.clientIDAllowed("paprika-never"))
+}

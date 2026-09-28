@@ -43,4 +43,4 @@ output/
 .goreleaser-dist/
 .claude/
 .serena/
-paprika
+/paprika

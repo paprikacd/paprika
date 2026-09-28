@@ -15,9 +15,8 @@ export function Nav() {
     <header className="sticky top-0 z-50 border-b border-border bg-background">
       <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex min-h-11 items-center gap-2.5" aria-label="Paprika">
-          <span className="flex size-7 items-center justify-center rounded-sm bg-primary text-xs font-bold text-primary-foreground">
-            P
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/paprika-mark.png" alt="" className="size-7 rounded-sm" />
           <span className="text-sm font-semibold tracking-tight">Paprika</span>
         </Link>
 

@@ -1,0 +1,12 @@
+{
+  "name": "paprika",
+  "version": "0.1.0",
+  "description": "Operate Kubernetes application delivery with Paprika: fleet status, app health, drift, releases, rollouts, gates, and pipeline control.",
+  "author": {
+    "name": "Paprika",
+    "url": "https://paprika.benebsworth.com"
+  },
+  "homepage": "https://paprika.benebsworth.com",
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/"
+}

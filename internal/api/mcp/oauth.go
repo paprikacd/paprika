@@ -106,6 +106,97 @@ func (s *Server) RegisterOAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/mcp/authorize/pending", s.handleAuthorizePending)
 	mux.HandleFunc("/mcp/authorize/consent", s.handleAuthorizeConsent)
 	mux.HandleFunc("/mcp/token", s.handleToken)
+	mux.HandleFunc("/mcp/register", s.handleRegister)
+}
+
+// handleRegister implements RFC 7591 dynamic client registration for public
+// (PKCE-only, no secret) clients. Real MCP connectors — Claude, Codex —
+// register at connect time instead of being statically configured; the
+// issued client_id only ever unlocks the redirect URIs it was registered
+// with, and each URI must be a loopback (localhost/127.0.0.1/[::1], any
+// port) or an https:// URL, so a registered client can never mint a code
+// that lands on plain-HTTP off-box infrastructure.
+//
+//nolint:tagliatelle // RFC 7591 mandates snake_case field names.
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST only")
+		return
+	}
+	var req struct {
+		RedirectURIs            []string `json:"redirect_uris"`
+		ClientName              string   `json:"client_name,omitempty"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method,omitempty"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "malformed registration request")
+		return
+	}
+	if len(req.RedirectURIs) == 0 {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "redirect_uris is required")
+		return
+	}
+	if req.TokenEndpointAuthMethod != "" && req.TokenEndpointAuthMethod != "none" {
+		writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "only public clients (token_endpoint_auth_method=none) are supported")
+		return
+	}
+	for _, uri := range req.RedirectURIs {
+		if !redirectURIAllowedForRegistration(uri) {
+			writeOAuthError(w, http.StatusBadRequest, "invalid_client_metadata", "redirect_uris must be loopback http(s) or https")
+			return
+		}
+	}
+
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		writeOAuthError(w, http.StatusInternalServerError, "server_error", "client id generation failed")
+		return
+	}
+	clientID := "paprika-" + base64.RawURLEncoding.EncodeToString(raw)
+
+	s.dynMu.Lock()
+	if len(s.dynClients) >= dynClientCap {
+		// Evict an arbitrary entry — registrations are free to retry.
+		for k := range s.dynClients {
+			delete(s.dynClients, k)
+			break
+		}
+	}
+	s.dynClients[clientID] = append([]string(nil), req.RedirectURIs...)
+	s.dynMu.Unlock()
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"client_id":                  clientID,
+		"client_id_issued_at":        time.Now().Unix(),
+		"redirect_uris":              req.RedirectURIs,
+		"client_name":                req.ClientName,
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"token_endpoint_auth_method": "none",
+	})
+}
+
+// dynClientCap bounds registered dynamic clients — registration is
+// unauthenticated, so the map cannot grow without limit.
+const dynClientCap = 4096
+
+// redirectURIAllowedForRegistration restricts dynamically-registered
+// redirect URIs to loopback http(s) (any port — local clients bind
+// ephemeral listeners) or https:// on any host. Plain-HTTP off-box
+// redirects are refused: they would exfiltrate authorization codes.
+func redirectURIAllowedForRegistration(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := u.Hostname()
+	if u.Scheme == "https" {
+		return true
+	}
+	if u.Scheme != "http" {
+		return false
+	}
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // consentPath is where a browser lacking a console credential is redirected
@@ -141,6 +232,7 @@ type authorizationServerMetadata struct {
 	Issuer                        string   `json:"issuer"`
 	AuthorizationEndpoint         string   `json:"authorization_endpoint"`
 	TokenEndpoint                 string   `json:"token_endpoint"`
+	RegistrationEndpoint          string   `json:"registration_endpoint,omitempty"`
 	ResponseTypesSupported        []string `json:"response_types_supported"`
 	GrantTypesSupported           []string `json:"grant_types_supported"`
 	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported"`
@@ -153,6 +245,7 @@ func (s *Server) handleAuthorizationServerMetadata(w http.ResponseWriter, _ *htt
 		Issuer:                        s.publicURL,
 		AuthorizationEndpoint:         s.publicURL + "/mcp/authorize",
 		TokenEndpoint:                 s.publicURL + "/mcp/token",
+		RegistrationEndpoint:          s.publicURL + "/mcp/register",
 		ResponseTypesSupported:        []string{"code"},
 		GrantTypesSupported:           []string{"authorization_code", "refresh_token"},
 		CodeChallengeMethodsSupported: []string{"S256"},
@@ -443,7 +536,7 @@ func (s *Server) redirectToConsent(w http.ResponseWriter, r *http.Request) {
 	// over-length value never gets copied into rec at all (rec stays the
 	// zero value below), so nothing oversized ever reaches the cache.
 	if s.clientIDAllowed(q.Get("client_id")) &&
-		s.isRegisteredRedirect(q.Get("redirect_uri")) &&
+		s.isRegisteredRedirect(q.Get("client_id"), q.Get("redirect_uri")) &&
 		len(q.Get("state")) <= maxAuthorizeStateLen &&
 		len(q.Get("scope")) <= maxAuthorizeScopeLen &&
 		len(q.Get("code_challenge")) <= maxAuthorizeChallengeLen &&
@@ -630,7 +723,7 @@ func (s *Server) validateAuthorizeRequest(w http.ResponseWriter, q url.Values) (
 // collapsed into one generic "invalid_request" response rather than two
 // distinguishable ones.
 func (s *Server) validateClientAndRedirect(w http.ResponseWriter, clientID, redirectURI string) bool {
-	if !s.clientIDAllowed(clientID) || !s.isRegisteredRedirect(redirectURI) {
+	if !s.clientIDAllowed(clientID) || !s.isRegisteredRedirect(clientID, redirectURI) {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "client_id or redirect_uri is not registered")
 		return false
 	}
@@ -851,23 +944,33 @@ func consentedScope(requested []string) (string, bool) {
 // s.clientID is always configured here — an empty or mismatched clientID
 // is always rejected; there is no "unconfigured, skip the check" case.
 func (s *Server) clientIDAllowed(clientID string) bool {
-	return clientID != "" && clientID == s.clientID
+	if clientID == "" {
+		return false
+	}
+	if clientID == s.clientID {
+		return true
+	}
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	_, ok := s.dynClients[clientID]
+	return ok
 }
 
 // isRegisteredRedirect reports whether candidate is EXACTLY one of the
-// server's registered redirect URIs. This is a plain string comparison,
-// deliberately: no URL parsing, normalization, or canonicalization runs
-// first, because any of those could be tricked into treating a
-// traversal (".../..") or suffix-confusion
-// ("https://claude.ai.evil.example/...") variant as equivalent to a
-// registered URI. A byte-for-byte match is the only comparison that cannot
-// be fooled by such a variant, which is exactly what
-// TestAuthorizeRejectsUnregisteredRedirectURI exercises.
-func (s *Server) isRegisteredRedirect(candidate string) bool {
+// URIs registered for clientID — the static allowlist for the first-party
+// client, or the set the client supplied at dynamic registration.
+func (s *Server) isRegisteredRedirect(clientID, candidate string) bool {
 	if candidate == "" {
 		return false
 	}
 	for _, registered := range s.redirectURIs {
+		if candidate == registered {
+			return true
+		}
+	}
+	s.dynMu.Lock()
+	defer s.dynMu.Unlock()
+	for _, registered := range s.dynClients[clientID] {
 		if candidate == registered {
 			return true
 		}

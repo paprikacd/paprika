@@ -32,6 +32,8 @@ export function Hero() {
       <motion.div className="relative mx-auto max-w-7xl px-6 py-24 lg:py-32" style={{ opacity }}>
         <div className="mx-auto max-w-3xl text-center">
           <motion.div {...fadeUp(0)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand/paprika-mark.png" alt="" className="mx-auto mb-8 size-24 drop-shadow-lg sm:size-28" />
             <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/[0.06] px-4 py-1 text-xs font-medium text-primary">
               <span className="relative flex size-1.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />

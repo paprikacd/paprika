@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "paprika_hosted": {
+      "type": "http",
+      "url": "https://paprika.benebsworth.com/mcp"
+    }
+  }
+}
