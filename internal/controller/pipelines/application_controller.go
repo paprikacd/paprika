@@ -844,6 +844,9 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	if err := ctrl.SetControllerReference(app, expected, r.Scheme); err != nil {
 		return fmt.Errorf("failed to set controller reference on template: %w", err)
 	}
+	if err := r.preserveLegacyHelmConfig(ctx, app, expected); err != nil {
+		return err
+	}
 
 	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
 		func() *paprikav1.Template { return &paprikav1.Template{} },
@@ -1731,9 +1734,7 @@ func (r *ApplicationReconciler) resolveSourceHash(ctx context.Context, app *papr
 		return r.resolveTemplateSource(ctx, app, forceRefresh)
 	}
 
-	// For helm/local sources, compute a stable hash from the chart config.
-	h := sha256.Sum256([]byte(app.Spec.Source.Chart.Path + app.Spec.Source.Chart.Repo + app.Spec.Source.Chart.Name))
-	return hex.EncodeToString(h[:]), "", nil
+	return r.resolveHelmConfigHash(ctx, app)
 }
 
 func isRemoteSourceType(t string) bool {
