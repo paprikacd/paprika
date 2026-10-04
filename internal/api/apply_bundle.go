@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"connectrpc.com/connect"
 	"gopkg.in/yaml.v3"
@@ -125,7 +124,7 @@ func (s *PaprikaServer) ApplyBundle(
 
 	if req.Msg.DryRun {
 		app := s.buildApplication(appName, namespace, "", project)
-		rel := s.buildRelease(appName, namespace, "", project, bundle, evResult.Results)
+		rel := s.buildRelease(appName, namespace, "", project, s.generateReleaseName(appName, bundle), bundle, evResult.Results)
 		return connect.NewResponse(&paprikav1.ApplyBundleResponse{
 			Application:   convertApplication(app),
 			Release:       convertRelease(rel),
@@ -481,7 +480,7 @@ func (s *PaprikaServer) applyInline(
 	bundle []byte,
 	policyResults []policy.Result,
 ) (*pipelinesv1alpha1.Application, *pipelinesv1alpha1.Release, error) {
-	releaseName := generateReleaseName(appName, bundle)
+	releaseName := s.generateReleaseName(appName, bundle)
 	snapshotName := releaseName + "-manifests"
 	stageName := appName + "-default"
 	if err := s.preflightStageApplicationOwner(ctx, namespace, appName, stageName); err != nil {
@@ -498,7 +497,7 @@ func (s *PaprikaServer) applyInline(
 		return nil, nil, fmt.Errorf("ensure stage: %w", err)
 	}
 
-	release := s.buildRelease(appName, namespace, snapshotName, project, bundle, policyResults)
+	release := s.buildRelease(appName, namespace, snapshotName, project, releaseName, bundle, policyResults)
 	release.OwnerReferences = []metav1.OwnerReference{{
 		APIVersion: pipelinesv1alpha1.GroupVersion.String(),
 		Kind:       "Application",
@@ -843,11 +842,10 @@ func (s *PaprikaServer) buildApplication(appName, namespace, snapshotName, proje
 }
 
 func (s *PaprikaServer) buildRelease(
-	appName, namespace, snapshotName, project string,
+	appName, namespace, snapshotName, project, releaseName string,
 	bundle []byte,
 	policyResults []policy.Result,
 ) *pipelinesv1alpha1.Release {
-	releaseName := generateReleaseName(appName, bundle)
 	return &pipelinesv1alpha1.Release{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      releaseName,
@@ -880,10 +878,10 @@ func (s *PaprikaServer) baseLabels(appName, releaseName, project string) map[str
 	}
 }
 
-func generateReleaseName(appName string, bundle []byte) string {
+func (s *PaprikaServer) generateReleaseName(appName string, bundle []byte) string {
 	hash := sha256.Sum256(bundle)
 	short := hex.EncodeToString(hash[:4])
-	return fmt.Sprintf("%s-release-%s-%d", appName, short, time.Now().Unix())
+	return fmt.Sprintf("%s-release-%s-%d", appName, short, s.now().Unix())
 }
 
 func fullBundleSHA(bundle []byte) string {
