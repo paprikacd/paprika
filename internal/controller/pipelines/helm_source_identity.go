@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"strings"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
 
 const legacyHelmConfigAnnotation = "paprika.io/legacy-helm-config-hash"
@@ -19,11 +20,13 @@ const helmConfigHashPrefix = "helm-config-v1:"
 
 // helmConfigHash includes everything Helm renders from the generated Template:
 // chart version/reference, inline values, repository and effective namespace.
-func helmConfigHash(spec paprikav1.TemplateSpec) string {
-	// TemplateSpec contains only JSON-serializable fields.
-	encoded, _ := json.Marshal(spec)
+func helmConfigHash(spec *paprikav1.TemplateSpec) (string, error) {
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("encode Helm render configuration: %w", err)
+	}
 	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // Preserve the old Template configuration BEFORE converging its spec. Existing
@@ -34,31 +37,54 @@ func (r *ApplicationReconciler) preserveLegacyHelmConfig(ctx context.Context, ap
 	if isRemoteSourceType(app.Spec.Source.Type) || app.Status.SourceHash == "" || strings.HasPrefix(app.Status.SourceHash, helmConfigHashPrefix) {
 		return nil
 	}
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var current paprikav1.Template
-		if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("read legacy Helm configuration: %w", err)
-			}
-			// A missing legacy Template has no recoverable previous configuration.
-			// Recreating it must not force a release for an unchanged Application.
-			expected.Annotations = map[string]string{legacyHelmConfigAnnotation: helmConfigHash(expected.Spec)}
-			return nil
-		}
-		if current.Annotations[legacyHelmConfigAnnotation] != "" {
-			return nil
-		}
-		before := current.DeepCopy()
-		if current.Annotations == nil {
-			current.Annotations = map[string]string{}
-		}
-		current.Annotations[legacyHelmConfigAnnotation] = helmConfigHash(current.Spec)
-		return r.client.Patch(ctx, &current, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		return r.initializeLegacyHelmConfig(ctx, expected)
 	})
+	if retryErr != nil {
+		return fmt.Errorf("preserve legacy Helm configuration: %w", retryErr)
+	}
+	return nil
 }
 
-func (r *ApplicationReconciler) resolveHelmConfigHash(ctx context.Context, app *paprikav1.Application) (string, string, error) {
-	configHash := helmConfigHash(r.buildTemplateSpec(ctx, app))
+func (r *ApplicationReconciler) initializeLegacyHelmConfig(ctx context.Context, expected *paprikav1.Template) error {
+	var current paprikav1.Template
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("read legacy Helm configuration: %w", err)
+		}
+		// A missing legacy Template has no recoverable previous configuration.
+		// Recreating it must not force a release for an unchanged Application.
+		configHash, hashErr := helmConfigHash(&expected.Spec)
+		if hashErr != nil {
+			return hashErr
+		}
+		expected.Annotations = map[string]string{legacyHelmConfigAnnotation: configHash}
+		return nil
+	}
+	if current.Annotations[legacyHelmConfigAnnotation] != "" {
+		return nil
+	}
+	before := current.DeepCopy()
+	if current.Annotations == nil {
+		current.Annotations = map[string]string{}
+	}
+	configHash, hashErr := helmConfigHash(&current.Spec)
+	if hashErr != nil {
+		return hashErr
+	}
+	current.Annotations[legacyHelmConfigAnnotation] = configHash
+	if err := r.client.Patch(ctx, &current, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("patch legacy Helm configuration baseline: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) resolveHelmConfigHash(ctx context.Context, app *paprikav1.Application) (hash, revision string, err error) {
+	spec := r.buildTemplateSpec(ctx, app)
+	configHash, hashErr := helmConfigHash(&spec)
+	if hashErr != nil {
+		return "", "", hashErr
+	}
 	if app.Status.SourceHash != "" && !strings.HasPrefix(app.Status.SourceHash, helmConfigHashPrefix) {
 		var tmpl paprikav1.Template
 		key := client.ObjectKey{Namespace: app.Namespace, Name: app.Name + "-template"}

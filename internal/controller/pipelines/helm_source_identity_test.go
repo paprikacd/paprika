@@ -6,13 +6,21 @@ import (
 	"encoding/hex"
 	"testing"
 
-	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 )
+
+func requireHelmConfigHash(t *testing.T, spec *paprikav1.TemplateSpec) string {
+	t.Helper()
+	hash, err := helmConfigHash(spec)
+	require.NoError(t, err)
+	return hash
+}
 
 func legacyHelmTestApp() *paprikav1.Application {
 	app := &paprikav1.Application{
@@ -80,7 +88,7 @@ func TestHelmConfigChangesCreateNewReleaseIdentityWithoutUpgradeChurn(t *testing
 			var converged paprikav1.Template
 			require.NoError(t, r.client.Get(ctx, client.ObjectKeyFromObject(tmpl), &converged))
 			require.Equal(t, buildTemplateSpec(app), converged.Spec)
-			require.Equal(t, helmConfigHash(tmpl.Spec), converged.Annotations[legacyHelmConfigAnnotation])
+			require.Equal(t, requireHelmConfigHash(t, &tmpl.Spec), converged.Annotations[legacyHelmConfigAnnotation])
 		})
 	}
 }
@@ -105,7 +113,7 @@ func TestHelmConfigRevertRemainsStableAfterLegacyMigration(t *testing.T) {
 	changed, err = r.checkSourceChanged(ctx, app, false)
 	require.NoError(t, err)
 	require.True(t, changed)
-	require.Equal(t, helmConfigHashPrefix+helmConfigHash(tmpl.Spec), app.Status.SourceHash)
+	require.Equal(t, helmConfigHashPrefix+requireHelmConfigHash(t, &tmpl.Spec), app.Status.SourceHash)
 	changed, err = r.checkSourceChanged(ctx, app, false)
 	require.NoError(t, err)
 	require.False(t, changed)
@@ -130,5 +138,6 @@ func TestNewHelmApplicationHashesValuesImmediately(t *testing.T) {
 	changed, err := r.checkSourceChanged(ctx, app, false)
 	require.NoError(t, err)
 	require.False(t, changed, "initial source resolution is not a replacement")
-	require.Equal(t, helmConfigHashPrefix+helmConfigHash(buildTemplateSpec(app)), app.Status.SourceHash)
+	spec := buildTemplateSpec(app)
+	require.Equal(t, helmConfigHashPrefix+requireHelmConfigHash(t, &spec), app.Status.SourceHash)
 }
