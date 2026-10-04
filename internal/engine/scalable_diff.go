@@ -257,7 +257,7 @@ func (d *ScalableDiffEngine) fetchLiveResources(ctx context.Context, opts *DiffO
 
 func isClusterScopedKind(kind string) bool {
 	switch kind {
-	case "APIService", "ClusterRole", "ClusterRoleBinding", "CustomResourceDefinition", "GatewayClass", "Namespace", "Node", "PersistentVolume", "PriorityClass", "StorageClass", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration":
+	case "APIService", "ClusterRole", "ClusterRoleBinding", "ComputeClass", "CustomResourceDefinition", "GatewayClass", "Namespace", "Node", "PersistentVolume", "PriorityClass", "StorageClass", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration":
 		return true
 	default:
 		return false
