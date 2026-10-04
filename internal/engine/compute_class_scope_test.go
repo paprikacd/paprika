@@ -11,18 +11,22 @@ import (
 	ktesting "k8s.io/client-go/testing"
 )
 
-func TestComputeClassDiffListsRootResource(t *testing.T) {
+func TestComputeClassDiffReadsNamedRootResource(t *testing.T) {
 	t.Parallel()
 
 	gvr := schema.GroupVersionResource{Group: "cloud.google.com", Version: "v1", Resource: "computeclasses"}
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "ComputeClassList"})
-	listed := false
-	client.PrependReactor("list", "computeclasses", func(action ktesting.Action) (bool, runtime.Object, error) {
-		listed = true
+	read := false
+	client.PrependReactor("get", "computeclasses", func(action ktesting.Action) (bool, runtime.Object, error) {
+		read = true
 		if action.GetNamespace() != "" {
-			t.Fatalf("ComputeClass LIST used namespace %q", action.GetNamespace())
+			t.Fatalf("ComputeClass GET used namespace %q", action.GetNamespace())
 		}
-		return true, &unstructured.UnstructuredList{Object: map[string]interface{}{"apiVersion": "cloud.google.com/v1", "kind": "ComputeClassList"}}, nil
+		get, ok := action.(ktesting.GetAction)
+		if !ok || get.GetName() != "example" {
+			t.Fatal("GET must use only the desired name")
+		}
+		return true, &unstructured.Unstructured{Object: map[string]interface{}{"apiVersion": "cloud.google.com/v1", "kind": "ComputeClass", "metadata": map[string]interface{}{"name": "example"}}}, nil
 	})
 	diff := NewScalableDiffEngine(client)
 	diff.SetResolver(computeClassTestResolver{})
@@ -32,8 +36,13 @@ func TestComputeClassDiffListsRootResource(t *testing.T) {
 	obj.SetKind("ComputeClass")
 	obj.SetName("example")
 	_, err := diff.ComputeDiff(context.Background(), []unstructured.Unstructured{obj}, &DiffOptions{Namespace: "release-default", ApplicationName: "example"})
-	if err != nil || !listed {
-		t.Fatalf("diff did not query ComputeClass: listed=%v err=%v", listed, err)
+	if err != nil || !read {
+		t.Fatalf("diff did not query ComputeClass: read=%v err=%v", read, err)
+	}
+	for _, action := range client.Actions() {
+		if action.GetVerb() != "get" {
+			t.Fatalf("name-scoped reads must not use %s", action.GetVerb())
+		}
 	}
 }
 
