@@ -233,6 +233,17 @@ func resourceEqual(desired, live unstructured.Unstructured) bool {
 	if !metaEqual(desired, live) {
 		return false
 	}
+	if desired.GetAPIVersion() == "v1" && desired.GetKind() == "ResourceQuota" {
+		desired = normalizeQuotaQuantities(desired)
+		live = normalizeQuotaQuantities(live)
+	}
+	if desired.GetKind() == "NetworkPolicy" && strings.HasPrefix(desired.GetAPIVersion(), "networking.k8s.io/") {
+		var ok bool
+		desired, ok = normalizeEmptyNetworkPolicyRules(desired, live)
+		if !ok {
+			return false
+		}
+	}
 	return payloadContains(desired.Object, live.Object)
 }
 

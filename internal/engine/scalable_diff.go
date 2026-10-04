@@ -94,6 +94,7 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 	desiredMap := make(map[string]unstructured.Unstructured)
 	gvrSet := make(map[schema.GroupVersionResource]struct{})
 	gvrNamespaces := make(map[schema.GroupVersionResource]map[string]struct{})
+	namedResources := make(map[schema.GroupVersionResource]map[string]struct{})
 	for i := range desired {
 		obj := &desired[i]
 		if err := ensureManagedLabels(obj, opts); err != nil {
@@ -101,24 +102,15 @@ func (d *ScalableDiffEngine) ComputeDiff(ctx context.Context, desired []unstruct
 		}
 		key := resourceKey(obj)
 		desiredMap[key] = *obj
-		if gvr, err := gvrForObjectWithResolver(ctx, d.Resolver, obj); err == nil {
-			gvrSet[gvr] = struct{}{}
-			namespace := obj.GetNamespace()
-			if isClusterScopedKind(obj.GetKind()) {
-				namespace = ""
-			} else if namespace == "" {
-				namespace = opts.Namespace
-			}
-			if _, exists := gvrNamespaces[gvr]; !exists {
-				gvrNamespaces[gvr] = make(map[string]struct{})
-			}
-			gvrNamespaces[gvr][namespace] = struct{}{}
-		}
+		d.addDesiredResourceQuery(ctx, obj, opts.Namespace, gvrSet, gvrNamespaces, namedResources)
 	}
 
 	liveMap, err := d.fetchLiveResources(ctx, opts, gvrSet, gvrNamespaces)
 	if err != nil {
 		return nil, fmt.Errorf("fetch live resources: %w", err)
+	}
+	if err := d.fetchNamedLiveResources(ctx, opts, namedResources, liveMap); err != nil {
+		return nil, err
 	}
 
 	if len(opts.IgnoreDifferences) > 0 {
@@ -331,4 +323,29 @@ func regularPlural(s string) string {
 		}
 	}
 	return s + "s"
+}
+
+func (d *ScalableDiffEngine) addDesiredResourceQuery(ctx context.Context, obj *unstructured.Unstructured, defaultNamespace string, gvrSet map[schema.GroupVersionResource]struct{}, gvrNamespaces, namedResources map[schema.GroupVersionResource]map[string]struct{}) {
+	gvr, err := gvrForObjectWithResolver(ctx, d.Resolver, obj)
+	if err != nil {
+		return
+	}
+	if usesNamedLiveRead(gvr) {
+		if namedResources[gvr] == nil {
+			namedResources[gvr] = make(map[string]struct{})
+		}
+		namedResources[gvr][obj.GetName()] = struct{}{}
+		return
+	}
+	gvrSet[gvr] = struct{}{}
+	namespace := obj.GetNamespace()
+	if isClusterScopedKind(obj.GetKind()) {
+		namespace = ""
+	} else if namespace == "" {
+		namespace = defaultNamespace
+	}
+	if _, exists := gvrNamespaces[gvr]; !exists {
+		gvrNamespaces[gvr] = make(map[string]struct{})
+	}
+	gvrNamespaces[gvr][namespace] = struct{}{}
 }
