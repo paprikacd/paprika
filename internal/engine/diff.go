@@ -230,6 +230,10 @@ var serverManagedAnnotationPrefixes = []string{
 // Kubernetes-defaulted spec keys (present in live but absent in desired) are
 // ignored so that only user-declared configuration drives drift detection.
 func resourceEqual(desired, live unstructured.Unstructured) bool {
+	if desired.GetKind() == "PriorityClass" && strings.HasPrefix(desired.GetAPIVersion(), "scheduling.k8s.io/") {
+		desired = normalizePriorityClassDefaults(desired)
+		live = normalizePriorityClassDefaults(live)
+	}
 	if !metaEqual(desired, live) {
 		return false
 	}

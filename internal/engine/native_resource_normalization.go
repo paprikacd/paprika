@@ -2,6 +2,16 @@ package engine
 
 import "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+// PriorityClass serializes globalDefault with omitempty: an absent value means
+// false. Normalize both copies so a live true value still reports drift.
+func normalizePriorityClassDefaults(obj unstructured.Unstructured) unstructured.Unstructured {
+	normalized := obj.DeepCopy()
+	if _, present := normalized.Object["globalDefault"]; !present {
+		normalized.Object["globalDefault"] = false
+	}
+	return *normalized
+}
+
 // API storage canonicalizes ResourceQuota quantities just as it does container
 // requests. Compare quantity values, without normalizing unrelated CRD fields.
 func normalizeQuotaQuantities(obj unstructured.Unstructured) unstructured.Unstructured {

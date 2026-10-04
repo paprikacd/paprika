@@ -18,6 +18,13 @@ import (
 const legacyHelmConfigAnnotation = "paprika.io/legacy-helm-config-hash"
 const helmConfigHashPrefix = "helm-config-v1:"
 
+func (r *ApplicationReconciler) helmMetadataReader() client.Reader {
+	if r.sourceMetadataReader != nil {
+		return r.sourceMetadataReader
+	}
+	return r.client
+}
+
 // helmConfigHash includes everything Helm renders from the generated Template:
 // chart version/reference, inline values, repository and effective namespace.
 func helmConfigHash(spec *paprikav1.TemplateSpec) (string, error) {
@@ -48,7 +55,7 @@ func (r *ApplicationReconciler) preserveLegacyHelmConfig(ctx context.Context, ap
 
 func (r *ApplicationReconciler) initializeLegacyHelmConfig(ctx context.Context, expected *paprikav1.Template) error {
 	var current paprikav1.Template
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
+	if err := r.helmMetadataReader().Get(ctx, client.ObjectKeyFromObject(expected), &current); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("read legacy Helm configuration: %w", err)
 		}
@@ -88,7 +95,7 @@ func (r *ApplicationReconciler) resolveHelmConfigHash(ctx context.Context, app *
 	if app.Status.SourceHash != "" && !strings.HasPrefix(app.Status.SourceHash, helmConfigHashPrefix) {
 		var tmpl paprikav1.Template
 		key := client.ObjectKey{Namespace: app.Namespace, Name: app.Name + "-template"}
-		if err := r.client.Get(ctx, key, &tmpl); err != nil && !apierrors.IsNotFound(err) {
+		if err := r.helmMetadataReader().Get(ctx, key, &tmpl); err != nil && !apierrors.IsNotFound(err) {
 			return "", "", fmt.Errorf("read Helm configuration baseline: %w", err)
 		}
 		if tmpl.Annotations[legacyHelmConfigAnnotation] == configHash {

@@ -45,6 +45,49 @@ func helmIdentityReconciler(t *testing.T, app *paprikav1.Application, objs ...cl
 	return &ApplicationReconciler{client: c, Scheme: scheme}
 }
 
+// Simulate an informer that has not observed the baseline metadata patch yet.
+type staleHelmTemplateClient struct {
+	client.Client
+	template *paprikav1.Template
+}
+
+func (c *staleHelmTemplateClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if tmpl, ok := obj.(*paprikav1.Template); ok && key == client.ObjectKeyFromObject(c.template) {
+		c.template.DeepCopyInto(tmpl)
+		return nil
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func TestLegacyHelmMigrationReadsBaselineBeforeInformerCatchesUp(t *testing.T) {
+	ctx := context.Background()
+	app := legacyHelmTestApp()
+	tmpl := &paprikav1.Template{ObjectMeta: metav1.ObjectMeta{Name: "example-template", Namespace: app.Namespace}, Spec: buildTemplateSpec(app)}
+	r := helmIdentityReconciler(t, app, tmpl)
+	r.sourceMetadataReader = r.client
+	r.client = &staleHelmTemplateClient{Client: r.client, template: tmpl.DeepCopy()}
+	originalRelease := applicationReleaseName(app, nil)
+	require.NoError(t, r.preserveLegacyHelmConfig(ctx, app, tmpl))
+	var cached paprikav1.Template
+	require.NoError(t, r.client.Get(ctx, client.ObjectKeyFromObject(tmpl), &cached))
+	require.Empty(t, cached.Annotations[legacyHelmConfigAnnotation], "the regression requires a stale cache")
+	hash, _, err := r.resolveHelmConfigHash(ctx, app)
+	require.NoError(t, err)
+	require.Equal(t, app.Status.SourceHash, hash, "unchanged configuration must preserve legacy release identity")
+	require.Equal(t, originalRelease, applicationReleaseName(app, nil))
+
+	// Repeated migration attempts must use the persisted baseline, even if the
+	// cache still has neither its annotation nor the current resource version.
+	app.Spec.Source.ValuesFile = "replicas: 2\n"
+	require.NoError(t, r.preserveLegacyHelmConfig(ctx, app, tmpl))
+	hash, _, err = r.resolveHelmConfigHash(ctx, app)
+	require.NoError(t, err)
+	require.Contains(t, hash, helmConfigHashPrefix)
+	var stored paprikav1.Template
+	require.NoError(t, r.sourceMetadataReader.Get(ctx, client.ObjectKeyFromObject(tmpl), &stored))
+	require.Equal(t, requireHelmConfigHash(t, &tmpl.Spec), stored.Annotations[legacyHelmConfigAnnotation])
+}
+
 func TestHelmConfigChangesCreateNewReleaseIdentityWithoutUpgradeChurn(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(*paprikav1.Application){

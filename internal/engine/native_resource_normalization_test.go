@@ -7,6 +7,31 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
+func TestPriorityClassDefaultFalseMatchesOmissionWithoutHidingTrue(t *testing.T) {
+	desired := unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "scheduling.k8s.io/v1", "kind": "PriorityClass",
+		"metadata": map[string]interface{}{"name": "example"},
+		"value":    int64(-100), "globalDefault": false, "preemptionPolicy": "Never",
+	}}
+	live := desired.DeepCopy()
+	unstructured.RemoveNestedField(live.Object, "globalDefault")
+	require.True(t, resourceEqual(desired, *live))
+	require.Equal(t, false, desired.Object["globalDefault"], "do not mutate desired input")
+	require.NotContains(t, live.Object, "globalDefault", "do not mutate live input")
+
+	live.Object["globalDefault"] = true
+	require.False(t, resourceEqual(desired, *live), "a live global priority default must remain drift")
+	desired.Object["globalDefault"] = true
+	require.True(t, resourceEqual(desired, *live))
+	unstructured.RemoveNestedField(live.Object, "globalDefault")
+	require.False(t, resourceEqual(desired, *live), "an omitted live value cannot satisfy desired true")
+
+	desired.Object["globalDefault"] = false
+	desired.SetAPIVersion("example.test/v1")
+	live.SetAPIVersion("example.test/v1")
+	require.False(t, resourceEqual(desired, *live), "do not normalize unrelated CRD fields")
+}
+
 func TestQuotaCanonicalQuantitiesDoNotHideActualChanges(t *testing.T) {
 	desired := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "v1", "kind": "ResourceQuota", "metadata": map[string]interface{}{"name": "example"},

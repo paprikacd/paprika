@@ -272,6 +272,9 @@ type ApplicationReconciler struct {
 	EventBroker         *events.Broker
 	SyncWindowEvaluator syncwindow.Evaluator
 	Clock               clock.Clock
+	// Helm migration reads must observe the baseline patch immediately, before
+	// the informer cache receives its update.
+	sourceMetadataReader client.Reader
 	// MaxConcurrentWorkers bounds parallel reconciles; <=0 uses the default.
 	MaxConcurrentWorkers int
 	// TransientRequeue is the interval used for in-flight states (pending,
@@ -2612,6 +2615,7 @@ func (r *ApplicationReconciler) recordEvent(app *paprikav1.Application, eventTyp
 
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
+	r.sourceMetadataReader = mgr.GetAPIReader()
 	if r.now == nil {
 		if r.Clock != nil {
 			r.now = r.Clock.Now
