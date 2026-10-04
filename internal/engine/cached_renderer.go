@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -42,7 +45,11 @@ func NewCachedTemplateRenderer(inner templateRenderer, c manifestCache, workDir 
 
 // Render checks the cache before delegating to the inner renderer.
 func (r *CachedTemplateRenderer) Render(ctx context.Context, tmpl *paprika.Template, params map[string]string) ([]byte, error) {
-	key := cache.ManifestKey(tmpl.Spec.Type, manifestSourceURL(&tmpl.Spec), manifestSourceIdentity(tmpl), params)
+	identity, err := manifestRenderIdentity(tmpl)
+	if err != nil {
+		return nil, err
+	}
+	key := cache.ManifestKey(tmpl.Spec.Type, manifestSourceURL(&tmpl.Spec), identity, params)
 
 	cached, err := r.cache.Get(ctx, key)
 	if err != nil {
@@ -62,6 +69,22 @@ func (r *CachedTemplateRenderer) Render(ctx context.Context, tmpl *paprika.Templ
 	}
 
 	return rendered, nil
+}
+
+// Values and effective namespace change manifests even when source bytes and
+// parameters are identical. Repo-server requests reconstruct the Template from
+// its spec without status, so correctness cannot depend on SourceHash alone.
+func manifestRenderIdentity(tmpl *paprika.Template) (string, error) {
+	config := struct {
+		Spec      paprika.TemplateSpec `json:"spec"`
+		Namespace string               `json:"namespace"`
+	}{tmpl.Spec, tmpl.Namespace}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("encode manifest render configuration: %w", err)
+	}
+	sum := sha256.Sum256(encoded)
+	return manifestSourceIdentity(tmpl) + ":render-config-v1-" + hex.EncodeToString(sum[:]), nil
 }
 
 // RenderAll renders each template and concatenates the results, using the cache

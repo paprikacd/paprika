@@ -3,6 +3,8 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,6 +15,48 @@ import (
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/source"
 )
+
+func TestCachedRendererRendersChangedValuesAndNamespacesWithNoStatus(t *testing.T) {
+	chart := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(chart, "templates"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(chart, "Chart.yaml"), []byte("apiVersion: v2\nname: cache-regression\nversion: 1.0.0\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(chart, "templates", "deployment.yaml"), []byte(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: {{ .Release.Namespace }}
+spec:
+  template:
+    spec:
+      nodeSelector:
+        worker: {{ .Values.worker | quote }}
+      containers:
+        - name: worker
+          image: busybox:1.36
+`), 0o600))
+	ctx := context.Background()
+	renderer := engine.NewCachedTemplateRenderer(engine.NewHelmSDKRenderer(t.TempDir()), cache.NewMemoryCache(), t.TempDir(), 0)
+	tmpl := &paprika.Template{ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "management"}, Spec: paprika.TemplateSpec{
+		Type: "helm", Chart: paprika.ChartRef{Path: chart}, Namespace: "original", ValuesFile: "worker: removed\n",
+	}}
+	params := map[string]string{"release-name": "stable-worker"}
+	first, err := renderer.Render(ctx, tmpl, params)
+	require.NoError(t, err)
+	require.Contains(t, string(first), `worker: "removed"`)
+	require.Contains(t, string(first), "namespace: original")
+	tmpl.Spec.ValuesFile = "worker: replacement\n"
+	second, err := renderer.Render(ctx, tmpl, params)
+	require.NoError(t, err)
+	require.Contains(t, string(second), `worker: "replacement"`, "repo-server requests have no status: changed values must never hit the old cache entry")
+	require.NotContains(t, string(second), `worker: "removed"`)
+	tmpl.Spec.Namespace = "replacement-namespace"
+	third, err := renderer.Render(ctx, tmpl, params)
+	require.NoError(t, err)
+	require.Contains(t, string(third), "namespace: replacement-namespace")
+	again, err := renderer.Render(ctx, tmpl, params)
+	require.NoError(t, err)
+	require.Equal(t, third, again, "unchanged renders remain cacheable")
+}
 
 type fakeRenderer struct {
 	calls   int

@@ -850,6 +850,9 @@ func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *papr
 	if err := r.preserveLegacyHelmConfig(ctx, app, expected); err != nil {
 		return err
 	}
+	if err := r.preserveLegacyRemoteRenderConfig(ctx, app, expected); err != nil {
+		return err
+	}
 
 	if err := createOrConvergeSpecLabels(ctx, r.client, expected,
 		func() *paprikav1.Template { return &paprikav1.Template{} },
@@ -1766,7 +1769,8 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 	key := sourceResolveKey(&tmpl)
 	if !forceRefresh && r.SourceResolveTTL > 0 {
 		if cachedHash, cachedRevision, ok := r.sourceResolveCache().get(key); ok {
-			return cachedHash, cachedRevision, nil
+			resolvedHash, hashErr := r.remoteRenderSourceHash(ctx, app, &tmpl, cachedHash)
+			return resolvedHash, cachedRevision, hashErr
 		}
 	}
 
@@ -1780,7 +1784,8 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 	if r.SourceResolveTTL > 0 {
 		r.sourceResolveCache().put(key, result.Hash, result.Revision, r.SourceResolveTTL)
 	}
-	return result.Hash, result.Revision, nil
+	hash, err = r.remoteRenderSourceHash(ctx, app, &tmpl, result.Hash)
+	return hash, result.Revision, err
 }
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
