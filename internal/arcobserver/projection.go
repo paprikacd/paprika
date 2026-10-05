@@ -20,11 +20,17 @@ type Observation struct {
 }
 
 func number(o *unstructured.Unstructured, fields ...string) int64 {
-	v, _, _ := unstructured.NestedInt64(o.Object, fields...)
+	v, _, err := unstructured.NestedInt64(o.Object, fields...)
+	if err != nil {
+		return 0
+	}
 	return v
 }
 func str(o *unstructured.Unstructured, fields ...string) string {
-	v, _, _ := unstructured.NestedString(o.Object, fields...)
+	v, _, err := unstructured.NestedString(o.Object, fields...)
+	if err != nil {
+		return ""
+	}
 	return v
 }
 func belongs(o *unstructured.Unstructured, namespace, pool string) bool {
@@ -35,7 +41,10 @@ func readyPod(o *unstructured.Unstructured) bool {
 	if o.GetDeletionTimestamp() != nil || str(o, "status", "phase") != "Running" {
 		return false
 	}
-	conditions, _, _ := unstructured.NestedSlice(o.Object, "status", "conditions")
+	conditions, _, err := unstructured.NestedSlice(o.Object, "status", "conditions")
+	if err != nil {
+		return false
+	}
 	for _, c := range conditions {
 		m, ok := c.(map[string]any)
 		if ok && m["type"] == "Ready" && m["status"] == "True" {
@@ -56,114 +65,185 @@ func listenerOwned(o *unstructured.Unstructured) bool {
 
 // Project unions live reservations and surviving execution pods. ARC's ER
 // phase Running means assigned work; Pod phase Running alone does not.
-// A missing or partial read returns no sample, allowing the previous one to expire.
-func Project(s Source, snap Snapshot, now time.Time) (Observation, error) {
-	if !snap.Complete || snap.ObservedAt.IsZero() || now.Sub(snap.ObservedAt) > ReadDeadline || snap.ObservedAt.After(now) || snap.RunnerSet == nil || snap.Controller == nil {
+// Missing or partial reads never renew the receiver's previous sample.
+func Project(s *Source, snap *Snapshot, now time.Time) (Observation, error) {
+	if !validSnapshot(s, snap, now) {
 		return Observation{}, ErrIncomplete
 	}
-	rs := snap.RunnerSet
-	min, _, minErr := unstructured.NestedInt64(rs.Object, "spec", "minRunners")
-	max, hasMax, err := unstructured.NestedInt64(rs.Object, "spec", "maxRunners")
-	if rs.GetName() != s.PoolName || rs.GetNamespace() != s.RunnerNamespace || minErr != nil || min != s.ExpectedMinRunners || err != nil || !hasMax || max != s.ExpectedMaxRunners || snap.SystemPods == nil || snap.RunnerPods == nil || snap.EphemeralRunners == nil {
-		return Observation{}, ErrIncomplete
+	inventory := newWorkerInventory()
+	inventory.controllerReady = controllerReady(s, snap.Controller)
+	inventory.listenerReady = listenerReady(s, snap.SystemPods)
+	inventory.starting = !inventory.controllerReady || !inventory.listenerReady
+	if err := inventory.recordRunners(s, snap.EphemeralRunners); err != nil {
+		return Observation{}, err
 	}
-	o := Observation{ObservedAt: snap.ObservedAt, State: "healthy"}
-	d := snap.Controller
+	for i := range snap.RunnerPods {
+		if err := inventory.recordPod(s, &snap.RunnerPods[i]); err != nil {
+			return Observation{}, err
+		}
+	}
+	inventory.recordReservations()
+	return inventory.observation(snap)
+}
+
+func validSnapshot(s *Source, snap *Snapshot, now time.Time) bool {
+	if !snap.Complete || snap.ObservedAt.IsZero() || now.Sub(snap.ObservedAt) > ReadDeadline || snap.ObservedAt.After(now) {
+		return false
+	}
+	if snap.RunnerSet == nil || snap.Controller == nil || snap.SystemPods == nil || snap.RunnerPods == nil || snap.EphemeralRunners == nil {
+		return false
+	}
+	return runnerSetMatches(s, snap.RunnerSet)
+}
+
+func runnerSetMatches(s *Source, rs *unstructured.Unstructured) bool {
+	if rs.GetName() != s.PoolName || rs.GetNamespace() != s.RunnerNamespace {
+		return false
+	}
+	minimum, _, err := unstructured.NestedInt64(rs.Object, "spec", "minRunners")
+	if err != nil || minimum != s.ExpectedMinRunners {
+		return false
+	}
+	maximum, present, err := unstructured.NestedInt64(rs.Object, "spec", "maxRunners")
+	return err == nil && present && maximum == s.ExpectedMaxRunners
+}
+
+func controllerReady(s *Source, d *unstructured.Unstructured) bool {
 	desired := int64(1)
-	if n, ok, _ := unstructured.NestedInt64(d.Object, "spec", "replicas"); ok {
+	n, present, err := unstructured.NestedInt64(d.Object, "spec", "replicas")
+	if err != nil {
+		return false
+	}
+	if present {
 		desired = n
 	}
-	o.ControllerReady = d.GetDeletionTimestamp() == nil && d.GetName() == s.ControllerDeployment && d.GetNamespace() == s.SystemNamespace && desired > 0 && number(d, "status", "observedGeneration") >= d.GetGeneration() && number(d, "status", "readyReplicas") >= desired && number(d, "status", "availableReplicas") >= desired
-	for i := range snap.SystemPods {
-		p := &snap.SystemPods[i]
+	return d.GetDeletionTimestamp() == nil && d.GetName() == s.ControllerDeployment && d.GetNamespace() == s.SystemNamespace && desired > 0 && number(d, "status", "observedGeneration") >= d.GetGeneration() && number(d, "status", "readyReplicas") >= desired && number(d, "status", "availableReplicas") >= desired
+}
+
+func listenerReady(s *Source, pods []unstructured.Unstructured) bool {
+	for i := range pods {
+		p := &pods[i]
 		if belongs(p, s.SystemNamespace, s.PoolName) && p.GetLabels()["actions.github.com/scale-set-namespace"] == s.RunnerNamespace && p.GetLabels()["app.kubernetes.io/component"] == "runner-scale-set-listener" && listenerOwned(p) && readyPod(p) {
-			o.ListenerReady = true
+			return true
 		}
 	}
-	starting, inaccessible := !o.ControllerReady || !o.ListenerReady, false
-	runners := map[string]*unstructured.Unstructured{}
-	for i := range snap.EphemeralRunners {
-		r := &snap.EphemeralRunners[i]
+	return false
+}
+
+type workerInventory struct {
+	runners                        map[string]*unstructured.Unstructured
+	workers, busy, nodes, podUIDs  map[string]bool
+	podOwners                      map[string]int
+	starting, inaccessible         bool
+	controllerReady, listenerReady bool
+}
+
+func newWorkerInventory() *workerInventory {
+	return &workerInventory{runners: map[string]*unstructured.Unstructured{}, workers: map[string]bool{}, busy: map[string]bool{}, nodes: map[string]bool{}, podUIDs: map[string]bool{}, podOwners: map[string]int{}}
+}
+
+func (w *workerInventory) recordRunners(s *Source, runners []unstructured.Unstructured) error {
+	for i := range runners {
+		r := &runners[i]
 		if !belongs(r, s.RunnerNamespace, s.PoolName) {
-			return Observation{}, ErrIncomplete
+			return ErrIncomplete
 		}
 		uid := string(r.GetUID())
-		if uid == "" || runners[uid] != nil {
-			return Observation{}, ErrIncomplete
+		if uid == "" || w.runners[uid] != nil {
+			return ErrIncomplete
 		}
-		runners[uid] = r
+		w.runners[uid] = r
 	}
-	workers, busy, nodes := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	podOwners, podUIDs := map[string]int{}, map[string]bool{}
-	for i := range snap.RunnerPods {
-		p := &snap.RunnerPods[i]
-		if !belongs(p, s.RunnerNamespace, s.PoolName) {
-			return Observation{}, ErrIncomplete
-		}
-		if terminal(str(p, "status", "phase")) {
-			continue
-		}
-		uid := string(p.GetUID())
-		if uid == "" || podUIDs[uid] {
-			return Observation{}, ErrIncomplete
-		}
-		podUIDs[uid] = true
-		owner, owners := "", 0
-		for _, ref := range p.GetOwnerReferences() {
-			if ref.Kind == "EphemeralRunner" && ref.APIVersion == "actions.github.com/v1alpha1" && ref.Controller != nil && *ref.Controller {
-				owner, owners = string(ref.UID), owners+1
-			}
-		}
-		if owners != 1 || runners[owner] == nil {
-			inaccessible = true
-			workers["pod:"+uid] = true
-		} else {
-			workers["runner:"+owner] = true
-			podOwners[owner]++
-			if podOwners[owner] > 1 {
-				inaccessible = true
-				workers["extra:"+uid] = true
-			}
-		}
-		if node := str(p, "spec", "nodeName"); node != "" {
-			if !nodeName.MatchString(node) {
-				return Observation{}, ErrIncomplete
-			}
-			nodes[node] = true
-		}
-		if str(p, "status", "phase") == "Pending" {
-			starting = true
+	return nil
+}
+
+func (w *workerInventory) recordPod(s *Source, p *unstructured.Unstructured) error {
+	if !belongs(p, s.RunnerNamespace, s.PoolName) {
+		return ErrIncomplete
+	}
+	if terminal(str(p, "status", "phase")) {
+		return nil
+	}
+	uid := string(p.GetUID())
+	if uid == "" || w.podUIDs[uid] {
+		return ErrIncomplete
+	}
+	w.podUIDs[uid] = true
+	w.recordPodOwner(p, uid)
+	if err := w.recordNode(p); err != nil {
+		return err
+	}
+	if str(p, "status", "phase") == "Pending" {
+		w.starting = true
+	}
+	return nil
+}
+
+func (w *workerInventory) recordPodOwner(p *unstructured.Unstructured, uid string) {
+	owner, owners := "", 0
+	for _, ref := range p.GetOwnerReferences() {
+		if ref.Kind == "EphemeralRunner" && ref.APIVersion == "actions.github.com/v1alpha1" && ref.Controller != nil && *ref.Controller {
+			owner, owners = string(ref.UID), owners+1
 		}
 	}
-	for uid, r := range runners {
+	if owners != 1 || w.runners[owner] == nil {
+		w.inaccessible = true
+		w.workers["pod:"+uid] = true
+		return
+	}
+	w.workers["runner:"+owner] = true
+	w.podOwners[owner]++
+	if w.podOwners[owner] > 1 {
+		w.inaccessible = true
+		w.workers["extra:"+uid] = true
+	}
+}
+
+func (w *workerInventory) recordNode(p *unstructured.Unstructured) error {
+	node := str(p, "spec", "nodeName")
+	if node == "" {
+		return nil
+	}
+	if !nodeName.MatchString(node) {
+		return ErrIncomplete
+	}
+	w.nodes[node] = true
+	return nil
+}
+
+func (w *workerInventory) recordReservations() {
+	for uid, r := range w.runners {
 		phase := str(r, "status", "phase")
 		if !terminal(phase) && phase != "Outdated" {
-			workers["runner:"+uid] = true
+			w.workers["runner:"+uid] = true
 		}
 		switch phase {
 		case "Running":
-			busy["runner:"+uid] = true
+			w.busy["runner:"+uid] = true
 		case "Pending":
-			ready, _, _ := unstructured.NestedBool(r.Object, "status", "ready")
-			starting = starting || !ready
+			ready, _, err := unstructured.NestedBool(r.Object, "status", "ready")
+			w.starting = w.starting || err != nil || !ready
 		case "Succeeded", "Failed", "Outdated":
 		default:
-			inaccessible = true
+			w.inaccessible = true
 		}
 	}
-	if len(nodes) > 32 || len(workers) > 10000 {
+}
+
+func (w *workerInventory) observation(snap *Snapshot) (Observation, error) {
+	if len(w.nodes) > 32 || len(w.workers) > 10000 {
 		return Observation{}, ErrIncomplete
 	}
-	o.Workers, o.Busy = len(workers), len(busy)
-	for node := range nodes {
+	o := Observation{ObservedAt: snap.ObservedAt, State: "healthy", ControllerReady: w.controllerReady, ListenerReady: w.listenerReady, Workers: len(w.workers), Busy: len(w.busy)}
+	for node := range w.nodes {
 		o.Nodes = append(o.Nodes, node)
 	}
 	sort.Strings(o.Nodes)
-	if inaccessible {
+	if w.inaccessible {
 		o.State = "inaccessible"
-	} else if rs.GetDeletionTimestamp() != nil {
+	} else if snap.RunnerSet.GetDeletionTimestamp() != nil {
 		o.State = "draining"
-	} else if starting {
+	} else if w.starting {
 		o.State = "starting"
 	}
 	return o, nil

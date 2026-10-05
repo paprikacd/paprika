@@ -118,7 +118,8 @@ func TestProjection_TruthAndRedaction(t *testing.T) {
 			now := time.Now().UTC()
 			snap := fixture(now)
 			tc.change(&snap)
-			o, err := Project(testSource(), snap, now)
+			source := testSource()
+			o, err := Project(&source, &snap, now)
 			if tc.missing {
 				if !errors.Is(err, ErrIncomplete) {
 					t.Fatal("incomplete inventory published")
@@ -147,10 +148,10 @@ func TestConfig_DisabledAndBounded(t *testing.T) {
 	}
 	cfg := Config{Endpoint: "https://control.example", ProjectID: "project-a", Sources: []Source{testSource()}}
 	for _, mutate := range []func(*Config){func(c *Config) { c.Endpoint = "http://control.example" }, func(c *Config) { c.Endpoint = "https://user:password@control.example" }, func(c *Config) { c.ProjectID = "*" }, func(c *Config) { c.Sources[0].PoolName = "../other" }, func(c *Config) { c.Sources[0].ExpectedMaxRunners = 0 }, func(c *Config) { c.Sources = append(c.Sources, c.Sources[0]) }} {
-		copy := cfg
-		copy.Sources = append([]Source(nil), cfg.Sources...)
-		mutate(&copy)
-		raw, _ := json.Marshal(copy)
+		candidate := cfg
+		candidate.Sources = append([]Source(nil), cfg.Sources...)
+		mutate(&candidate)
+		raw, _ := json.Marshal(candidate)
 		if _, err := ParseConfig(string(raw)); err == nil {
 			t.Fatal("unsafe configuration accepted")
 		}
@@ -175,7 +176,11 @@ func TestCollector_CompletePaginationAndReadOnly(t *testing.T) {
 		pages++
 		l := &unstructured.UnstructuredList{}
 		l.SetResourceVersion("same-snapshot")
-		opts := a.(ktesting.ListActionImpl).GetListOptions()
+		listAction, ok := a.(ktesting.ListActionImpl)
+		if !ok {
+			t.Fatal("expected a list action")
+		}
+		opts := listAction.GetListOptions()
 		if opts.Continue == "" {
 			l.SetContinue("next-page")
 		} else if failSecond {
@@ -184,7 +189,8 @@ func TestCollector_CompletePaginationAndReadOnly(t *testing.T) {
 		return true, l, nil
 	})
 	c := KubernetesCollector{Client: client}
-	got, err := c.Collect(context.Background(), testSource())
+	source := testSource()
+	got, err := c.Collect(context.Background(), &source)
 	if err != nil || !got.Complete || pages != 2 {
 		t.Fatalf("pagination failed pages=%d err=%v", pages, err)
 	}
@@ -197,7 +203,7 @@ func TestCollector_CompletePaginationAndReadOnly(t *testing.T) {
 		}
 	}
 	failSecond = true
-	got, err = c.Collect(context.Background(), testSource())
+	got, err = c.Collect(context.Background(), &source)
 	if !errors.Is(err, ErrIncomplete) || got.Complete || strings.Contains(err.Error(), "canary") {
 		t.Fatal("partial read or raw error escaped")
 	}
@@ -208,7 +214,7 @@ type fakeCollector struct {
 	snap Snapshot
 }
 
-func (f fakeCollector) Collect(context.Context, Source) (Snapshot, error) { return f.snap, f.err }
+func (f fakeCollector) Collect(context.Context, *Source) (Snapshot, error) { return f.snap, f.err }
 
 type fakePublisher struct {
 	calls int
@@ -216,9 +222,9 @@ type fakePublisher struct {
 	seen  Observation
 }
 
-func (f *fakePublisher) Publish(_ context.Context, _ Source, o Observation) error {
+func (f *fakePublisher) Publish(_ context.Context, _ *Source, o *Observation) error {
 	f.calls++
-	f.seen = o
+	f.seen = *o
 	return f.err
 }
 
@@ -261,7 +267,7 @@ func TestPublisher_BindingRedactionAndNoRedirect(t *testing.T) {
 	status := 204
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
-		if r.Method != "POST" || r.URL.Path != "/api/fleet/pools/ci-pool/observations" || r.Header.Get("x-cuttle-project") != "project-a" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/fleet/pools/ci-pool/observations" || r.Header.Get("x-cuttle-project") != "project-a" {
 			t.Fatal("incorrect observation authority")
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -281,17 +287,17 @@ func TestPublisher_BindingRedactionAndNoRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	o := Observation{ObservedAt: time.Now(), State: "healthy"}
-	if err := p.Publish(context.Background(), s, o); err != nil {
+	if err := p.Publish(context.Background(), &s, &o); err != nil {
 		t.Fatal(err)
 	}
 	other := s
 	other.PoolName = "other"
-	if err := p.Publish(context.Background(), other, o); err == nil || hits != 1 {
+	if err := p.Publish(context.Background(), &other, &o); err == nil || hits != 1 {
 		t.Fatal("unbound pool accepted")
 	}
 	for _, code := range []int{401, 403, 302, 500} {
 		status = code
-		err := p.Publish(context.Background(), s, o)
+		err := p.Publish(context.Background(), &s, &o)
 		if err == nil || strings.Contains(err.Error(), "canary") {
 			t.Fatal("upstream error leaked")
 		}

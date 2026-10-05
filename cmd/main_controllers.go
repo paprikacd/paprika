@@ -138,21 +138,24 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 func setupARCObserver(mgr ctrl.Manager) error {
 	cfg, err := arcobserver.ParseConfig(os.Getenv("PAPRIKA_ARC_OBSERVER_CONFIG"))
 	if err != nil {
-		return err
+		return fmt.Errorf("parse ARC observer configuration: %w", err)
 	}
 	if len(cfg.Sources) == 0 {
 		return nil
 	}
 	publisher, err := arcobserver.NewHTTPPublisher(cfg, os.Getenv("PAPRIKA_ARC_OBSERVER_TOKEN_FILE"), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("configure ARC observer publisher: %w", err)
 	}
 	// Same REST configuration and ServiceAccount as the manager; no new grants.
 	dc, err := dynamic.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		return arcobserver.ErrInvalidConfig
 	}
-	return mgr.Add(&arcobserver.Runner{Config: cfg, Collector: arcobserver.KubernetesCollector{Client: dc}, Publisher: publisher, Log: ctrl.Log.WithName("arc-observer")})
+	if err := mgr.Add(&arcobserver.Runner{Config: cfg, Collector: arcobserver.KubernetesCollector{Client: dc}, Publisher: publisher, Log: ctrl.Log.WithName("arc-observer")}); err != nil {
+		return fmt.Errorf("register ARC observer: %w", err)
+	}
+	return nil
 }
 
 func setupPipelineControllers(ctx context.Context, mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, deps *operatorDependencies, projectValidator *governance.ProjectValidator, policyEvaluator *governance.PolicyEvaluator, rateLimiter *ratelimit.ControllerRateLimit, tuning controllerTuning) error {

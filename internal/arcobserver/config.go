@@ -53,17 +53,39 @@ func ParseConfig(raw string) (Config, error) {
 	if d.Decode(&cfg) != nil || d.Decode(new(any)) != io.EOF {
 		return Config{}, ErrInvalidConfig
 	}
-	u, err := url.Parse(cfg.Endpoint)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" || u.ForceQuery || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || !identifier.MatchString(cfg.ProjectID) || len(cfg.Sources) < 1 || len(cfg.Sources) > 2 {
+	if !validConfig(&cfg) {
 		return Config{}, ErrInvalidConfig
-	}
-	seen := map[string]bool{}
-	for _, s := range cfg.Sources {
-		if !kubeName.MatchString(s.PoolName) || !kubeName.MatchString(s.RunnerNamespace) || !kubeName.MatchString(s.SystemNamespace) || !kubeName.MatchString(s.ControllerDeployment) || seen[s.PoolName] || s.ExpectedMinRunners < 0 || s.ExpectedMaxRunners < 1 || s.ExpectedMaxRunners > 100 || s.ExpectedMinRunners > s.ExpectedMaxRunners {
-			return Config{}, ErrInvalidConfig
-		}
-		seen[s.PoolName] = true
 	}
 	cfg.Endpoint = strings.TrimSuffix(cfg.Endpoint, "/")
 	return cfg, nil
+}
+
+func validOrigin(u *url.URL) bool {
+	if u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Opaque != "" {
+		return false
+	}
+	return !u.ForceQuery && (u.Path == "" || u.Path == "/") && u.RawQuery == "" && u.Fragment == ""
+}
+
+func validSource(s *Source) bool {
+	if !kubeName.MatchString(s.PoolName) || !kubeName.MatchString(s.RunnerNamespace) || !kubeName.MatchString(s.SystemNamespace) || !kubeName.MatchString(s.ControllerDeployment) {
+		return false
+	}
+	return s.ExpectedMinRunners >= 0 && s.ExpectedMaxRunners >= 1 && s.ExpectedMaxRunners <= 100 && s.ExpectedMinRunners <= s.ExpectedMaxRunners
+}
+
+func validConfig(cfg *Config) bool {
+	u, err := url.Parse(cfg.Endpoint)
+	if err != nil || !validOrigin(u) || !identifier.MatchString(cfg.ProjectID) || len(cfg.Sources) < 1 || len(cfg.Sources) > 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for i := range cfg.Sources {
+		s := &cfg.Sources[i]
+		if !validSource(s) || seen[s.PoolName] {
+			return false
+		}
+		seen[s.PoolName] = true
+	}
+	return true
 }

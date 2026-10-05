@@ -49,7 +49,8 @@ func (r *Runner) ObserveOnce(ctx context.Context) error {
 		observation Observation
 	}
 	samples := make([]sample, 0, len(r.Config.Sources))
-	for _, source := range r.Config.Sources {
+	for i := range r.Config.Sources {
+		source := &r.Config.Sources[i]
 		snapshot, err := r.Collector.Collect(readCtx, source)
 		if errors.Is(err, ErrDenied) {
 			cancel()
@@ -59,15 +60,16 @@ func (r *Runner) ObserveOnce(ctx context.Context) error {
 			r.Log.Info("ARC observation skipped", "pool", source.PoolName, "reason", "read_incomplete")
 			continue
 		}
-		observation, err := Project(source, snapshot, time.Now().UTC())
+		observation, err := Project(source, &snapshot, time.Now().UTC())
 		if err != nil {
 			r.Log.Info("ARC observation skipped", "pool", source.PoolName, "reason", "projection_incomplete")
 			continue
 		}
-		samples = append(samples, sample{source, observation})
+		samples = append(samples, sample{*source, observation})
 	}
 	cancel()
-	for _, sample := range samples {
+	for i := range samples {
+		sample := &samples[i]
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -76,7 +78,7 @@ func (r *Runner) ObserveOnce(ctx context.Context) error {
 			continue
 		}
 		publishCtx, done := context.WithTimeout(ctx, PublishDeadline)
-		err := r.Publisher.Publish(publishCtx, sample.source, sample.observation)
+		err := r.Publisher.Publish(publishCtx, &sample.source, &sample.observation)
 		done()
 		if errors.Is(err, ErrDenied) {
 			return ErrDenied

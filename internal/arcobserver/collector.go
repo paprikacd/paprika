@@ -26,14 +26,14 @@ type Snapshot struct {
 }
 
 type Collector interface {
-	Collect(context.Context, Source) (Snapshot, error)
+	Collect(context.Context, *Source) (Snapshot, error)
 }
 
 // KubernetesCollector uses the manager's existing in-cluster identity and only
 // issues GET/LIST. It never requests mutations, logs, exec, Secrets or providers.
 type KubernetesCollector struct{ Client dynamic.Interface }
 
-func (c KubernetesCollector) Collect(ctx context.Context, s Source) (Snapshot, error) {
+func (c KubernetesCollector) Collect(ctx context.Context, s *Source) (Snapshot, error) {
 	var snap Snapshot
 	// Timestamp the beginning, not publication: slow reads cannot renew an old sample.
 	snap.ObservedAt = time.Now().UTC()

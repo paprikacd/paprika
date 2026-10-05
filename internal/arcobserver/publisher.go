@@ -12,7 +12,7 @@ import (
 )
 
 type Publisher interface {
-	Publish(context.Context, Source, Observation) error
+	Publish(context.Context, *Source, *Observation) error
 }
 
 type HTTPPublisher struct {
@@ -46,49 +46,69 @@ func NewHTTPPublisher(cfg Config, tokenFile string, client *http.Client) (*HTTPP
 	return &HTTPPublisher{endpoint: cfg.Endpoint, projectID: cfg.ProjectID, tokenFile: tokenFile, client: &c, sources: sources}, nil
 }
 
-func (p *HTTPPublisher) Publish(ctx context.Context, s Source, o Observation) error {
-	if allowed, ok := p.sources[s.PoolName]; !ok || allowed != s {
+func (p *HTTPPublisher) Publish(ctx context.Context, s *Source, o *Observation) error {
+	if allowed, ok := p.sources[s.PoolName]; !ok || allowed != *s {
 		return ErrRejected
 	}
-	info, err := os.Stat(p.tokenFile)
-	if err != nil || !info.Mode().IsRegular() {
-		return ErrRejected
-	}
-	file, err := os.Open(p.tokenFile)
+	token, err := p.readToken()
 	if err != nil {
-		return ErrRejected
+		return err
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, 4097))
-	_ = file.Close()
-	if err != nil || len(raw) > 4096 {
-		return ErrRejected
-	}
-	token := strings.TrimSpace(string(raw))
-	if len(token) < 20 || !strings.HasPrefix(token, "cf_sa_") || strings.ContainsAny(token, " \t\r\n") {
-		return ErrRejected
-	}
-	body, err := json.Marshal(o)
+	req, err := p.request(ctx, s.PoolName, token, o)
 	if err != nil {
-		return ErrRejected
+		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint+"/api/fleet/pools/"+s.PoolName+"/observations", bytes.NewReader(body))
-	if err != nil {
-		return ErrRejected
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-cuttle-project", p.projectID)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return ErrRejected
 	}
 	// Never log or interpret response bodies: upstream errors may contain secrets.
-	_ = resp.Body.Close()
+	closeErr := resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return ErrDenied
 	}
-	if resp.StatusCode != http.StatusNoContent {
+	if closeErr != nil || resp.StatusCode != http.StatusNoContent {
 		return ErrRejected
 	}
 	return nil
+}
+
+func (p *HTTPPublisher) readToken() (string, error) {
+	info, err := os.Stat(p.tokenFile)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", ErrRejected
+	}
+	file, err := os.Open(p.tokenFile)
+	if err != nil {
+		return "", ErrRejected
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, 4097))
+	closeErr := file.Close()
+	if err != nil || closeErr != nil || len(raw) > 4096 {
+		return "", ErrRejected
+	}
+	token := strings.TrimSpace(string(raw))
+	if !validToken(token) {
+		return "", ErrRejected
+	}
+	return token, nil
+}
+
+func validToken(token string) bool {
+	return len(token) >= 20 && strings.HasPrefix(token, "cf_sa_") && !strings.ContainsAny(token, " \t\r\n")
+}
+
+func (p *HTTPPublisher) request(ctx context.Context, poolName, token string, o *Observation) (*http.Request, error) {
+	body, err := json.Marshal(o)
+	if err != nil {
+		return nil, ErrRejected
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint+"/api/fleet/pools/"+poolName+"/observations", bytes.NewReader(body))
+	if err != nil {
+		return nil, ErrRejected
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-cuttle-project", p.projectID)
+	return req, nil
 }
