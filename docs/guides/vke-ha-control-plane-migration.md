@@ -1,6 +1,6 @@
 # VKE HA control plane: migration plan for `omega`
 
-Status: **executing** (started 2026-09-28). See the [Runbook log](#runbook-log-2026-09-28) at the end.
+Status: **complete** (migrated 2026-09-28; `omega` gone 2026-09-28/29; teardown cleanup 2026-10-06). See the [Runbook log](#runbook-log-2026-09-28) and [Post-migration](#post-migration-omega-deleted-early-and-teardown-2026-10-06) at the end.
 
 ## Why this is a migration and not a flag flip
 
@@ -470,3 +470,90 @@ curl -X DELETE -H "Authorization: Bearer $VULTR_API_KEY" \
   agent id; register a new agent. irsa-webhook was not installed (no ServiceAccount uses it).
 - The omega `dns-authority` still answers from a stale snapshot. Scale it to 0 after ~1 h.
 - Purge the malformed test message from `truelabel-scan-jobs-dlq`.
+
+## Post-migration: omega deleted early, and teardown (2026-10-06)
+
+### What happened to `omega`
+
+- `omega` (`7997fb87-…`) was deleted between **2026-09-28 15:41 and 2026-09-29 02:09 UTC**,
+  outside any agent session, most likely from the Vultr console with
+  **delete-with-linked-resources** (the option the teardown section above warns against). Vultr
+  lists only `omega-ha` now. Terraform state still held omega until 2026-10-06.
+- Volumes attached to omega-ha nodes at that moment survived, and so did every VFS volume,
+  including the 5 that were unattached. The one casualty was cuttlefish's backups block volume
+  `597adf62-…` (PV `pvc-6ffedd7b055d4d3a`). It was re-attached to omega-ha but only mounted
+  while the 02:00 backup Job ran, so at delete time it was unattached and went with the cluster.
+  Every nightly backup failed from 2026-09-29 (`storage not found: 597adf62…`, 4 stuck
+  VolumeAttachments). The live cuttlefish DB volume (`82a3a928`, 20Gi) was unaffected.
+
+### deephost DNS outage (2026-09-29 00:18 → 2026-10-05 22:53 UTC)
+
+- At 2026-09-29 00:18, deephost `0490449`/`ba66c09` (an image re-pin) re-applied the omega-ha
+  `dns` Application from repo values that **still carried omega's node IPs** (149.28.170.95,
+  139.180.160.11, 207.148.84.78). `dns-authoritative-external` and `dns-mail-external` dropped
+  the omega-ha node IPs that the ns1/ns2 glue and mail A records point at. Port 53 timed out,
+  `live.benebsworth.com` stopped resolving, and the "External delegated DNS canary" failed
+  from then on. **Lesson:** the migration patched the live Application inline but not the
+  repo values, so the next apply from the repo reverted it. Live-only fixes must also land in
+  the repo.
+- Fix: castlemilk/deephost#2 sets `externalIPService.addresses` and
+  `mail.externalAddresses.addresses` to omega-ha core nodes 45.77.235.78, 45.32.191.96 and
+  45.77.238.25 (with a comment that they change on node replacement), and updates the e2e
+  defaults and docs. Repo variables `DNS_NS1_ADDRESS`/`DNS_NS2_ADDRESS` (used by the canary) now
+  hold the new IPs. Applied 22:53:15; Paprika synced within seconds (`dns-release-5ff3315ec3`).
+- Verified: all three authorities answer `live.benebsworth.com` → 139.180.161.184 over UDP and
+  TCP; 1.1.1.1 and 8.8.8.8 resolve it; the site returns 200; mail ports 25/587/465/995 are open on
+  all three IPs, and MX/A for `mail.deephost` are unchanged. The canary run 37385322111 passed
+  (83 checks), its first pass since 09-29.
+
+### cuttlefish backups rebuilt (skunkworq/cuttlefish#441)
+
+- Backups claim moved to `vultr-vfs-storage-retain`, `ReadWriteMany`, under a new name
+  `cuttlefish-controlplane-release-db-backups-vfs`. storageClass and accessModes are immutable,
+  so an in-place edit would have failed the release. The new name also avoided racing
+  Paprika's self-heal.
+- A `db-backups-holder` Deployment (pause image, 1m CPU, read-only mount) keeps the claim
+  mounted at all times. The volume therefore always shows as attached to a serving-cluster node,
+  and never as an orphan to a cleanup sweep. Its pod deliberately lacks the chart's `name`
+  label, because the API Service and PDB select on name+instance.
+- **Why VFS + holder:** on 2026-09-28/29 the attached volumes and all VFS volumes survived; the
+  one unattached block volume did not. VFS RWX also removes the single-node attach, so the Job
+  runs on any node; the first run landed on a different node from the holder.
+- Rolled out by Paprika from main (new PV `pvc-93959388d8f24163`). The dead PVC/PV were deleted
+  by hand, and the 4 stale VolumeAttachments had their finalizers cleared after Vultr returned
+  404 for the volume.
+- First backup (manual `kubectl create job --from=cronjob/…`, 2026-10-05 22:58 UTC):
+  `cuttlefish-20261005-225817.dump`, 200 MB. `pg_restore -l` lists 65 TABLE DATA entries.
+- **Still single-site:** VFS lives in the same Vultr account and region. An off-site copy (GCS
+  through the existing `cuttlefish-d16cd` WIF) is the remaining gap.
+
+### Teardown done (2026-10-06)
+
+- WIF: providers `vke-omega/omega` in `uptime-485903`, `brandbrain-486909` and `cuttlefish-d16cd`
+  now hold **only omega-ha's key** (`or2MZ04V…`; omega's `9OjyRyvi…` removed). Pre-change
+  descriptions are saved in the scratch dir. Verified with a real STS exchange for the
+  telesis, brandbrain and cuttlefish runtime KSAs (all OK) and SA impersonation (telesis,
+  brandbrain OK).
+  - **Pre-existing, not caused by this change:** `cf-controlplane@cuttlefish-d16cd`'s
+    `workloadIdentityUser` binding names subject
+    `system:serviceaccount:paprika-e2e:cuttlefish-controlplane-release`, but the pod runs in
+    namespace `cuttlefish`, so impersonation is denied. cuttlefish logs show no GCP auth errors
+    in 7 days. Rebind it if cuttlefish needs GCP.
+- Terraform: `terraform state rm` of `vultr_kubernetes.omega`,
+  `vultr_kubernetes_node_pools.{core_large,search}`, `local_file.kubeconfig` and
+  `null_resource.github_actions_deployer_rbac` (state backup:
+  `/Volumes/gamma-systems-2/paprika-vke-ha-migration/terraform.tfstate.pre-omega-teardown-*`).
+  The code for those and their outputs was removed. The plan showed 0 resource actions, only
+  output removals plus the stale `paprika_lb_ip` output. That output-only plan was applied, and
+  the next `terraform plan` reported **No changes** (state serial 82). Deployer RBAC is now
+  applied by hand to omega-ha (see the comment in `main.tf`).
+- skunkworq/greenviel secret `PAPRIKA_KUBECONFIG` (omega) deleted. `deploy-paprika.yml` and
+  `search-release-admin.yml` prefer `PAPRIKA_KUBECONFIG_B64` (omega-ha) and only fell back
+  to it.
+- **Left for a human:** 5 unattached VFS volumes from the omega era, kept on purpose:
+  `pvc-c0628261f4c24359` (old brandbrain DB, 1.4 GB used), `pvc-40bad46460b74aae` (1.3 GB),
+  `pvc-8d29f1074d3f4f7b` (empty), `pvc-cc150377b5eb43c5` (1.5 GB) and `pvc-27ca0020dd5d401f`
+  (empty). ~$1/mo each. The old omega LBs (104.156.233.70, 149.28.166.65) and the old Meili/babybub block volumes
+  no longer appear in Vultr (gone with omega). The only LBs are omega-ha's envoy
+  (139.180.161.184) and kourier (104.156.232.122).
+
