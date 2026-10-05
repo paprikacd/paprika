@@ -1,16 +1,9 @@
-# Side-by-side HA replacement for `omega` (docs/guides/vke-ha-control-plane-migration.md).
-#
-# `ha_controlplanes` is ForceNew in the vultr provider, so HA cannot be enabled on
-# `vultr_kubernetes.omega` without destroying it. This file builds a second cluster
-# with the same worker shape. Every apply that touches it MUST be targeted, e.g.
-#
-#   terraform apply -target=vultr_kubernetes.omega_ha \
-#     -target=vultr_kubernetes_node_pools.omega_ha_core_large \
-#     -target=vultr_kubernetes_node_pools.omega_ha_search \
-#     -target=local_file.omega_ha_kubeconfig
-#
-# and its plan must show `0 to destroy`. Do not edit `vultr_kubernetes.omega` until
-# the retirement phase; rename omega_ha -> omega with a `moved {}` block then.
+# The serving VKE cluster (HA control plane). Built side by side with the old
+# non-HA `omega` because `ha_controlplanes` is ForceNew in the vultr provider
+# (docs/guides/vke-ha-control-plane-migration.md). `omega` was retired 2026-09-28/29
+# and removed from state on 2026-10-06, so these are now the only cluster
+# resources. A future rename omega_ha -> omega must use a `moved {}` block, never a
+# destroy/recreate.
 
 variable "vke_ha_kubernetes_version" {
   description = "Kubernetes version for the HA replacement cluster (v1.36.1+2 is no longer offered)"
