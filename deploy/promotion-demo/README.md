@@ -8,6 +8,8 @@ runs two real HTTP verification Jobs against dev, then promotes automatically.
 Production verifies staging and waits for approval of its exact Release UID.
 Both downstream environments also use controller HTTP and five-second duration
 gates. Every deployed environment has its own HTTP health check and stage gate.
+Each local stage waits 30 seconds before its HTTP gate, allowing the new Service
+DNS record and small workload to start. The HTTP gate still fails closed.
 
 The chart path is `config/samples/promotion-demo` in the public
 `https://github.com/paprikacd/paprika.git` repository. Each environment overrides
@@ -22,8 +24,9 @@ namespaces.
 
 ## Prepare and apply
 
-Run from this repository root after official `v0.3.0` publication and the Helm
-upgrade of the Vultr Paprika installation, including its CRDs and API server.
+Run from this repository root after upgrading the Vultr Paprika installation
+to official `v0.3.1`, including its CRDs and API server. The demo workload source
+remains pinned to `v0.3.0` to test operator recovery without changing its payload.
 The operator and its Job namespace must be able to reach the internal Service
 HTTP endpoints and the public Git/image registries. If the optional Paprika
 NetworkPolicy is enabled, check that it permits this namespace traffic first.
@@ -104,6 +107,45 @@ Keep the `v0.3.0` tag immutable. The resolved commit SHA is pinned into promoted
 Templates; environment values stay independent. A later release can be tested
 by changing dev's source revision to another immutable tag that contains this
 chart, then reviewing and approving the resulting new production candidate.
+
+## Retry a failed promotion attempt
+
+If deployment-stage verification fails after admission, retry the already
+accepted Release with manual sync. Paprika v0.3.1 tracks that same Release back
+to `Promoting` and `Complete` after checking its ownership and promotion
+provenance. Pending desired edits remain frozen until a new verified promotion.
+The consumed exact-UID approval still authorizes this accepted deployment.
+
+```sh
+kubectl config current-context
+test "$(kubectl config current-context)" = "$PAPRIKA_DEMO_CONTEXT"
+paprika_demo_retry="$(date +%s)"
+kubectl -n paprika-promotion-stg annotate application promotion-demo \
+  "paprika.io/sync=$paprika_demo_retry" "paprika.io/manual-sync=$paprika_demo_retry" --overwrite
+kubectl -n paprika-promotion-stg get application promotion-demo -o yaml
+```
+
+A failure before admission, such as a failed upstream verification Job, remains
+latched for that candidate. Advance to a new upstream Release UID to start a
+fresh verified attempt. Do not patch promotion status or reuse an old approval.
+
+For this demo, select a previously unused `promotionAttempt` parameter on dev.
+The demo chart ignores this Helm value, so workload manifests and the pinned
+Git commit stay the same; Paprika creates a new owned Release identity. The
+example uses `2`; choose another unused value for subsequent attempts.
+
+```sh
+kubectl config current-context
+test "$(kubectl config current-context)" = "$PAPRIKA_DEMO_CONTEXT"
+kubectl -n paprika-promotion-dev patch applications.pipelines.paprika.io promotion-demo \
+  --type=merge -p '{"spec":{"parameters":{"promotionAttempt":"2"}}}'
+kubectl -n paprika-promotion-dev get applications.pipelines.paprika.io promotion-demo -o yaml
+# Wait for fresh dev and staging Releases, then repeat the pre-approval checks:
+deploy/promotion-demo/verify.sh awaiting-approval "$paprika_demo_sha"
+```
+
+Approve the new staging Release UID using the earlier commands. Staging reruns
+its HTTP verification Jobs, and production requires a new exact-UID approval.
 
 ## Scoped cleanup
 

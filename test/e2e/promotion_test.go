@@ -208,6 +208,14 @@ var _ = Describe("ApplicationPromotion", Ordered, func() {
 
 	It("promotes a healthy deployed SHA across namespaces and clusters after real verification jobs", func() {
 		dev := promotionWaitHealthy(promotionDevNS, promotionDevApp, initialSHA)
+		By("executing a real deployment-stage duration gate through the manager dispatcher")
+		out, err := utils.Kubectl("-n", dev.Namespace, "get", "releases.pipelines.paprika.io", dev.Status.ReleaseRef, "-o", "json")
+		Expect(err).NotTo(HaveOccurred())
+		var devRelease paprikav1.Release
+		Expect(json.Unmarshal([]byte(out), &devRelease)).To(Succeed())
+		Expect(devRelease.Status.Phase).To(Equal(paprikav1.ReleaseComplete))
+		Expect(devRelease.Spec.Verify).To(HaveLen(1))
+		Expect(devRelease.Spec.Verify[0]).To(Equal(paprikav1.GateConfig{Type: "duration", Timeout: 1}))
 		stg := promotionWaitHealthy(promotionStgNS, promotionStgApp, initialSHA)
 		Expect(stg.Status.Promotion).NotTo(BeNil())
 		Expect(stg.Status.Promotion.Phase).To(Equal("Complete"))
@@ -471,7 +479,8 @@ func promotionHealthChecks(url string) []map[string]any {
 }
 
 func promotionAppManifest(namespace, name, environment string, from *paprikav1.ApplicationReference, manual bool, cluster map[string]string, upstreamURL, healthURL, initialSHA, failure string) string {
-	stage := map[string]any{"name": environment, "ring": 1}
+	stage := map[string]any{"name": environment, "ring": 1,
+		"gates": []map[string]any{{"type": "duration", "timeout": 1}}}
 	if len(cluster) > 0 {
 		stage["cluster"] = cluster
 	}
