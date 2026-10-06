@@ -1,0 +1,155 @@
+# Install the updated Paprika CRDs first. Register dev-cluster, stg-cluster,
+# and prod-cluster in paprika-system and provision target namespaces before
+# applying this example. Replace the repository, chart paths, and endpoints.
+# These namespaces hold Application/Stage/Release/Pipeline records on the
+# management cluster; source.targetNamespace selects the workload namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pipeline-dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pipeline-stg
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pipeline-prod
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+  namespace: pipeline-dev
+spec:
+  source:
+    type: git
+    repoUrl: https://github.com/example/checkout.git
+    revision: main
+    path: deploy/charts/checkout-dev
+    targetNamespace: checkout-dev
+    pollInterval: 30s
+    fetchTtl: 45s
+  trigger:
+    type: GitOps
+  syncPolicy: Auto
+  parameters:
+    environment: dev
+    replicaCount: "1"
+  stages:
+    - name: dev
+      ring: 0
+      cluster:
+        name: dev-cluster
+        namespace: paprika-system
+      strategy: Rolling
+      gates:
+        - type: smoke-test
+          endpoint: https://checkout-dev.example.com/healthz
+          timeout: 30
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+  namespace: pipeline-stg
+spec:
+  source:
+    type: git
+    repoUrl: https://github.com/example/checkout.git
+    # Promotion replaces this moving branch with dev's completed release SHA.
+    revision: main
+    path: deploy/charts/checkout-stg
+    targetNamespace: checkout-stg
+  trigger:
+    type: Promotion
+    from:
+      name: checkout
+      namespace: pipeline-dev
+    # Each candidate gets a Pipeline CR in pipeline-stg. Its Jobs run on the
+    # management cluster in the operator's configured execution namespace.
+    # These tests run BEFORE deploying stg and therefore probe dev.
+    tests:
+      maxParallel: 1
+      steps:
+        - name: dev-smoke
+          image: curlimages/curl:8.12.1
+          script: |
+            set -eu
+            printf 'Verifying %s/%s release %s at %s\n' \
+              "$PAPRIKA_PROMOTION_SOURCE_NAMESPACE" \
+              "$PAPRIKA_PROMOTION_SOURCE_APPLICATION" \
+              "$PAPRIKA_PROMOTION_SOURCE_RELEASE" \
+              "$PAPRIKA_PROMOTION_REVISION"
+            curl --fail --silent --show-error --max-time 10 \
+              https://checkout-dev.example.com/healthz
+          timeout: 60
+          retry: 2
+        - name: dev-api-check
+          image: curlimages/curl:8.12.1
+          depends:
+            - dev-smoke
+          script: |
+            set -eu
+            curl --fail --silent --show-error --max-time 10 \
+              https://checkout-dev.example.com/api/readiness
+          timeout: 60
+          retry: 1
+  syncPolicy: Auto
+  parameters:
+    environment: stg
+    replicaCount: "2"
+  stages:
+    - name: stg
+      ring: 0
+      cluster:
+        name: stg-cluster
+        namespace: paprika-system
+      strategy: Rolling
+      # This gate verifies stg AFTER its target-cluster deployment.
+      gates:
+        - type: smoke-test
+          endpoint: https://checkout-stg.example.com/healthz
+          timeout: 30
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+  namespace: pipeline-prod
+spec:
+  source:
+    type: git
+    repoUrl: https://github.com/example/checkout.git
+    revision: main
+    path: deploy/charts/checkout-prod
+    targetNamespace: checkout-prod
+  trigger:
+    type: Promotion
+    from:
+      name: checkout
+      namespace: pipeline-stg
+    # The controller probes stg before allowing its release into prod.
+    gates:
+      - type: smoke-test
+        endpoint: https://checkout-stg.example.com/healthz
+        timeout: 30
+  # Approve the particular upstream Release UID with paprika.io/promote.
+  # A generic sync request does not authorize a newer promotion candidate.
+  syncPolicy: Manual
+  parameters:
+    environment: prod
+    replicaCount: "3"
+  stages:
+    - name: prod
+      ring: 0
+      cluster:
+        name: prod-cluster
+        namespace: paprika-system
+      strategy: Rolling
+      gates:
+        - type: smoke-test
+          endpoint: https://checkout.example.com/healthz
+          timeout: 30

@@ -20,10 +20,15 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // dot-import for Ginkgo table tests
 )
@@ -54,6 +59,9 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
+	if err := verifyE2EClusterMutation(cmd); err != nil {
+		return "", err
+	}
 	command := strings.Join(cmd.Args, " ")
 	if _, err := fmt.Fprintf(GinkgoWriter, "running: %q\n", command); err != nil {
 		warnError(err)
@@ -64,6 +72,248 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// verifyE2EClusterMutation keeps suite setup, fixtures, and teardown on their
+// dedicated Kind clusters even when the caller's normal kubeconfig is VKE.
+func verifyE2EClusterMutation(cmd *exec.Cmd) error {
+	name, args := filepath.Base(cmd.Path), cmd.Args[1:]
+	if !isClusterMutation(name, args) {
+		return nil
+	}
+	if err := rejectE2EClusterOverrides(name, args); err != nil {
+		return err
+	}
+	kubeconfig := commandFlagValue(args, "--kubeconfig")
+	current, err := confirmedE2EContext(cmd, kubeconfig)
+	if err != nil {
+		return err
+	}
+	if err := verifyExpectedE2EContext(current, kubeconfig); err != nil {
+		return err
+	}
+	return verifyExplicitE2EContext(name, args, current)
+}
+
+func confirmedE2EContext(cmd *exec.Cmd, kubeconfig string) (string, error) {
+	probeArgs := []string{}
+	if kubeconfig != "" {
+		probeArgs = append(probeArgs, "--kubeconfig", kubeconfig)
+	}
+	probeArgs = append(probeArgs, "config", "current-context")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	//nolint:gosec // fixed kubectl read; kubeconfig path is supplied by the dedicated test fixture.
+	probe := exec.CommandContext(ctx, "kubectl", probeArgs...)
+	probe.Dir, probe.Env = cmd.Dir, cmd.Env
+	output, err := probe.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("refusing e2e cluster mutation: cannot confirm kubectl context: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+func expectedE2EContext() string {
+	if expected := os.Getenv("E2E_EXPECTED_CONTEXT"); expected != "" {
+		return expected
+	}
+	cluster := os.Getenv("E2E_KIND_CLUSTER")
+	if cluster == "" {
+		cluster = os.Getenv("KIND_CLUSTER")
+	}
+	if cluster == "" {
+		return ""
+	}
+	return "kind-" + cluster
+}
+
+func verifyExpectedE2EContext(current, kubeconfig string) error {
+	if !safeE2EContext(current) {
+		return fmt.Errorf("refusing e2e cluster mutation on context %q: a dedicated Kind context is required", current)
+	}
+	expected := expectedE2EContext()
+	// Explicit fixture configs may select only the management cluster or its
+	// known promotion target, never an arbitrary Kind context.
+	if kubeconfig != "" && current != expected {
+		targetExpected := os.Getenv("E2E_TARGET_EXPECTED_CONTEXT")
+		if targetExpected == "" {
+			targetExpected = "kind-paprika-promotion-target"
+		}
+		if current != targetExpected {
+			return fmt.Errorf("refusing e2e cluster mutation: explicit kubeconfig context %q does not match %q or %q", current, expected, targetExpected)
+		}
+		return nil
+	}
+	if expected != "" && current != expected {
+		return fmt.Errorf("refusing e2e cluster mutation on context %q: expected %q", current, expected)
+	}
+	return nil
+}
+
+func verifyExplicitE2EContext(name string, args []string, current string) error {
+	contextFlag := "--context"
+	if name == "helm" {
+		contextFlag = "--kube-context"
+	}
+	if explicit := commandFlagValue(args, contextFlag); explicit != "" && explicit != current {
+		return fmt.Errorf("refusing e2e cluster mutation: %s=%q differs from confirmed context %q", contextFlag, explicit, current)
+	}
+	if !slices.Contains([]string{"helm", "make"}, name) {
+		return nil
+	}
+	if explicit := os.Getenv("HELM_KUBECONTEXT"); explicit != "" && explicit != current {
+		return fmt.Errorf("refusing e2e Helm mutation: HELM_KUBECONTEXT=%q differs from confirmed context %q", explicit, current)
+	}
+	return nil
+}
+
+// Context selection is the only supported transport/identity selection for
+// mutating test commands. Server, credential, and impersonation overrides do
+// not change current-context, so its confirmation cannot authorize them.
+func rejectE2EClusterOverrides(name string, args []string) error {
+	if flag := e2eClusterOverrideFlag(name, args); flag != "" {
+		return fmt.Errorf("refusing e2e cluster mutation: %s overrides the confirmed context's transport or identity", flag)
+	}
+	if slices.Contains([]string{"helm", "make"}, name) {
+		if err := rejectHelmEnvironmentOverrides(); err != nil {
+			return err
+		}
+	}
+	if name == "make" {
+		return rejectMakeClusterOverrides(args)
+	}
+	return nil
+}
+
+func e2eClusterOverrideFlag(name string, args []string) string {
+	flags := map[string][]string{
+		"kubectl": {"--server", "-s", "--cluster", "--user", "--token", "--username", "--password",
+			"--client-certificate", "--client-key", "--certificate-authority", "--insecure-skip-tls-verify",
+			"--tls-server-name", "--proxy-url", "--as", "--as-group", "--as-uid", "--as-user-extra", "--kuberc"},
+		"helm": {"--kube-apiserver", "--kube-token", "--kube-as-user", "--kube-as-group",
+			"--kube-ca-file", "--kube-insecure-skip-tls-verify", "--kube-tls-server-name"},
+	}
+	for _, arg := range args {
+		if arg == "--" {
+			break // kubectl exec's subsequent arguments belong to the remote command.
+		}
+		for _, flag := range flags[name] {
+			if e2eArgumentOverridesFlag(arg, flag) {
+				return flag
+			}
+		}
+	}
+	return ""
+}
+
+func e2eArgumentOverridesFlag(arg, flag string) bool {
+	if arg == flag || strings.HasPrefix(arg, flag+"=") {
+		return true
+	}
+	return flag == "-s" && strings.HasPrefix(arg, "-s") && !strings.HasPrefix(arg, "--")
+}
+
+func rejectHelmEnvironmentOverrides() error {
+	for _, variable := range []string{"HELM_KUBEAPISERVER", "HELM_KUBETOKEN", "HELM_KUBEASUSER", "HELM_KUBEASGROUPS",
+		"HELM_KUBECAFILE", "HELM_KUBETLS_SERVER_NAME", "HELM_KUBEINSECURE_SKIP_TLS_VERIFY"} {
+		if os.Getenv(variable) != "" {
+			return fmt.Errorf("refusing e2e cluster mutation: %s overrides the confirmed context's transport or identity", variable)
+		}
+	}
+	return nil
+}
+
+func rejectMakeClusterOverrides(args []string) error {
+	// Make's nested tools must inherit the kubeconfig that the guard confirmed.
+	for _, arg := range args {
+		variable, _, assigned := strings.Cut(arg, "=")
+		if assigned && makeVariableOverridesCluster(variable) {
+			return fmt.Errorf("refusing e2e cluster mutation: Make variable %s overrides cluster targeting", variable)
+		}
+	}
+	if os.Getenv("HELM_EXTRA_ARGS") != "" {
+		return errors.New("refusing e2e cluster mutation: HELM_EXTRA_ARGS overrides nested Helm arguments")
+	}
+	return nil
+}
+
+func makeVariableOverridesCluster(variable string) bool {
+	return slices.Contains([]string{"KUBECONFIG", "KUBECTL", "HELM", "HELM_EXTRA_ARGS"}, variable) || strings.HasPrefix(variable, "HELM_KUBE")
+}
+
+func safeE2EContext(context string) bool {
+	return strings.HasPrefix(context, "kind-") && context != "kind-deephost"
+}
+
+func commandFlagValue(args []string, flag string) string {
+	var value string
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) {
+			value = args[i+1]
+		}
+		if strings.HasPrefix(arg, flag+"=") {
+			value = strings.TrimPrefix(arg, flag+"=")
+		}
+	}
+	return value
+}
+
+func isClusterMutation(name string, args []string) bool {
+	switch name {
+	case "make":
+		return makeTargetsMutateCluster(args)
+	case "helm":
+		return slices.Contains([]string{"install", "upgrade", "uninstall", "delete", "rollback", "test"}, clusterCommandVerb(args))
+	case "kubectl":
+		return kubectlMutatesCluster(clusterCommandVerb(args), args)
+	default:
+		return false
+	}
+}
+
+func makeTargetsMutateCluster(args []string) bool {
+	for _, arg := range args {
+		for _, target := range []string{"install", "deploy", "undeploy", "uninstall", "helm-deploy"} {
+			if arg == target || strings.HasPrefix(arg, target+"-") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func kubectlMutatesCluster(verb string, args []string) bool {
+	readOnly := []string{"get", "describe", "logs", "api-resources", "api-versions", "version", "wait", "top", "explain", "cluster-info", "kustomize", "port-forward", "proxy", "config", "auth", "completion"}
+	if slices.Contains(readOnly, verb) {
+		return false
+	}
+	if verb == "rollout" {
+		for _, arg := range args {
+			if slices.Contains([]string{"restart", "undo", "pause", "resume"}, arg) {
+				return true
+			}
+		}
+		return false
+	}
+	// Unknown verbs, including exec/cp, may change target state.
+	return true
+}
+
+func clusterCommandVerb(args []string) string {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+		if strings.Contains(arg, "=") {
+			continue
+		}
+		switch arg {
+		case "--kubeconfig", "--context", "--kube-context", "-n", "--namespace", "-s", "--server", "--token", "--user", "--cluster", "--as", "--as-group", "--request-timeout", "-v", "--v", "--kube-apiserver", "--kube-token", "--kube-as-user", "--kube-as-group", "--kube-ca-file", "--kube-tls-server-name":
+			i++
+		}
+	}
+	return ""
 }
 
 // UninstallCertManager uninstalls the cert manager

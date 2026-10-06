@@ -49,6 +49,12 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	if image := os.Getenv("E2E_MANAGER_IMAGE"); image != "" {
+		managerImage = image
+	}
+	if os.Getenv("E2E_EXPECTED_CONTEXT") == "" {
+		Expect(os.Setenv("E2E_EXPECTED_CONTEXT", "kind-"+kindClusterName)).To(Succeed())
+	}
 	By("checking for existing Kind cluster")
 	clusterExists, err := kindClusterExists(kindClusterName)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to check Kind clusters")

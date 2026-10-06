@@ -388,7 +388,16 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 func (r *ApplicationReconciler) reconcileObservedApplication(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	if !app.DeletionTimestamp.IsZero() {
 		metrics.DeleteHealthMetrics(app.Namespace, app.Name)
-		return ctrl.Result{}, nil
+		return r.finalizeApplication(ctx, app)
+	}
+	if !hasApplicationFinalizer(app) {
+		if err := r.ensureApplicationFinalizer(ctx, app); err != nil {
+			return ctrl.Result{}, err
+		}
+		// Persist lifecycle protection before creating any owned child.
+		if !app.DeletionTimestamp.IsZero() {
+			return r.finalizeApplication(ctx, app)
+		}
 	}
 	// Probe independently of release progress: deployments and failed releases
 	// must not hide downtime by preventing the uptime monitor from running.
@@ -396,7 +405,7 @@ func (r *ApplicationReconciler) reconcileObservedApplication(ctx context.Context
 		return ctrl.Result{}, err
 	}
 	ctrlResult, err := r.reconcileApp(ctx, app)
-	if len(app.Spec.HealthChecks) > 0 {
+	if len(effectiveDeploymentApp(app).Spec.HealthChecks) > 0 {
 		delay := nextHealthObservation(app, r.currentTime())
 		if ctrlResult.RequeueAfter == 0 || ctrlResult.RequeueAfter > delay {
 			ctrlResult.RequeueAfter = delay
@@ -410,19 +419,16 @@ func (r *ApplicationReconciler) isInlineSource(app *paprikav1.Application) bool 
 }
 
 func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
-	log := log.FromContext(ctx)
-
 	projectName := app.Spec.Project
 	if projectName == "" {
 		projectName = defaultProjectName
 	}
-
-	if !r.isInlineSource(app) {
-		if err := r.reconcileTemplate(ctx, app); err != nil {
-			log.Error(err, "Failed to reconcile Template")
-			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
-			return ctrl.Result{}, err
-		}
+	preparation, err := r.prepareApplicationDeployment(ctx, app)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if preparation != nil {
+		return *preparation, nil
 	}
 
 	if r.hasSyncTrigger(app) {
@@ -447,6 +453,24 @@ func (r *ApplicationReconciler) reconcileApp(ctx context.Context, app *paprikav1
 	}
 
 	return r.reconcileAppAfterStages(ctx, app, projectName)
+}
+
+// Select and admit the candidate before converging shared deployment children.
+func (r *ApplicationReconciler) prepareApplicationDeployment(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
+	if result, err := r.reconcilePromotionTrigger(ctx, app); result != nil || err != nil {
+		return result, err
+	}
+	if result, err := r.beginVerifiedPromotion(ctx, app); result != nil || err != nil {
+		return result, err
+	}
+	if !r.isInlineSource(app) {
+		if err := r.reconcileTemplate(ctx, app); err != nil {
+			log.FromContext(ctx).Error(err, "Failed to reconcile Template")
+			r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "TemplateReconciliationFailed", err.Error())
+			return nil, err
+		}
+	}
+	return r.prepareTriggeredSource(ctx, app)
 }
 
 func (r *ApplicationReconciler) handleReplacementReleaseFlow(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
@@ -603,6 +627,7 @@ func (r *ApplicationReconciler) reconcileReleaseFlow(ctx context.Context, app *p
 	r.evaluateHealth(ctx, app)
 	diff := r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app, diff)
+	r.recordDeploymentObservation(ctx, app, diff)
 
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
@@ -652,7 +677,7 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		return ctrl.Result{}, fmt.Errorf("clearing sync trigger annotation: %w", err)
 	}
 
-	if app.Status.Phase == paprikav1.ApplicationHealthy && !r.isInlineSource(app) {
+	if r.syncTriggerRefreshesSource(app) {
 		// Bypass the resolve cache: a sync trigger means the operator wants the
 		// latest commit now, not a result up to SourceResolveTTL stale.
 		sourceChanged, err := r.checkSourceChanged(ctx, app, true)
@@ -677,6 +702,10 @@ func (r *ApplicationReconciler) handleSyncTrigger(ctx context.Context, app *papr
 		}
 	}
 	return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+}
+
+func (r *ApplicationReconciler) syncTriggerRefreshesSource(app *paprikav1.Application) bool {
+	return app.Status.Phase == paprikav1.ApplicationHealthy && !r.isInlineSource(app) && !promotionTriggered(app)
 }
 
 func (r *ApplicationReconciler) patchAppStatus(ctx context.Context, app *paprikav1.Application) error {
@@ -727,6 +756,12 @@ func (r *ApplicationReconciler) patchAppStatusPreserving(ctx context.Context, ap
 
 func (r *ApplicationReconciler) reconcileAppPipeline(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	if awaitingFirstAcceptedDeployment(app) {
+		return nil, nil
+	}
+	original := app
+	app = effectiveDeploymentApp(app)
+	defer func() { original.Status.PipelineRef = app.Status.PipelineRef }()
 	if app.Spec.Build == nil || len(app.Spec.Build.Steps) == 0 {
 		app.Status.PipelineRef = ""
 		return nil, nil
@@ -814,23 +849,33 @@ func buildTemplateSpec(app *paprikav1.Application) paprikav1.TemplateSpec {
 }
 
 func (r *ApplicationReconciler) buildTemplateSpec(ctx context.Context, app *paprikav1.Application) paprikav1.TemplateSpec {
+	app = effectiveDeploymentApp(app)
 	spec := buildTemplateSpec(app)
 	if app.Spec.Source.RepoRef == "" {
-		return spec
+		return pinTriggeredTemplate(app, &spec)
 	}
 	resolver := repository.NewResolver(r.client)
 	resolved, err := resolver.ResolveTemplate(ctx, app.Namespace, &spec)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to resolve repository", "repoRef", app.Spec.Source.RepoRef)
-		return spec
+		return pinTriggeredTemplate(app, &spec)
 	}
 	if resolved != nil {
-		return resolved.Spec
+		return pinTriggeredTemplate(app, &resolved.Spec)
 	}
-	return spec
+	return pinTriggeredTemplate(app, &spec)
 }
 
 func (r *ApplicationReconciler) reconcileTemplate(ctx context.Context, app *paprikav1.Application) error {
+	if awaitingFirstAcceptedDeployment(app) {
+		return nil
+	}
+	original := app
+	app = effectiveDeploymentApp(app)
+	defer func() {
+		original.Status.TemplateRef = app.Status.TemplateRef
+		original.Status.Synced = app.Status.Synced
+	}()
 	templateName := app.Name + "-template"
 
 	expected := &paprikav1.Template{
@@ -985,6 +1030,12 @@ func (r *ApplicationReconciler) reconcilePipeline(ctx context.Context, app *papr
 }
 
 func (r *ApplicationReconciler) reconcileStages(ctx context.Context, app *paprikav1.Application) error {
+	if awaitingFirstAcceptedDeployment(app) {
+		return nil
+	}
+	original := app
+	app = effectiveDeploymentApp(app)
+	defer func() { original.Status.StageRefs = app.Status.StageRefs }()
 	templateName := app.Name + "-template"
 	stageRefs := make([]string, 0, len(app.Spec.Stages))
 
@@ -1194,7 +1245,8 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
-	targetStage := &app.Spec.Stages[0]
+	deployment := effectiveDeploymentApp(app)
+	targetStage := &deployment.Spec.Stages[0]
 	currentReleasePhase := r.getCurrentReleasePhase(ctx, app)
 
 	if currentReleasePhase != "" {
@@ -1209,17 +1261,8 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
 	}
 
-	if !manualOverride && app.Spec.SyncPolicy == paprikav1.SyncAuto && len(app.Spec.SyncWindows) > 0 {
-		if allowed, res := r.syncWindowAllows(ctx, app, targetStage.Name, false); !allowed {
-			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), res.Reason)
-			r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SyncWindowBlocked", res.Reason)
-			return ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}, nil
-		}
-	}
-
-	if app.Spec.SyncPolicy == paprikav1.SyncManual {
-		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingManualSync", "syncPolicy is Manual")
-		return ctrl.Result{}, nil
+	if result := r.releaseCreationGate(ctx, app, targetStage.Name, manualOverride); result != nil {
+		return *result, nil
 	}
 
 	release := r.buildRelease(app, targetStage)
@@ -1235,8 +1278,37 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 	}
 
 	app.Status.ReleaseRef = release.Name
+	markPromotionStarted(app)
 	r.updatePhase(ctx, app, paprikav1.ApplicationPromoting, "ReleaseCreated", "created release for stage "+targetStage.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *ApplicationReconciler) releaseCreationGate(ctx context.Context, app *paprikav1.Application, stageName string, manualOverride bool) *ctrl.Result {
+	if automaticReleaseWindowApplies(app, manualOverride) {
+		if allowed, res := r.syncWindowAllows(ctx, app, stageName, false); !allowed {
+			r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(res), res.Reason)
+			r.updatePhase(ctx, app, paprikav1.ApplicationPending, "SyncWindowBlocked", res.Reason)
+			return &ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(res.NextTransition)}
+		}
+	}
+
+	if releaseNeedsManualSync(app, manualOverride) {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingManualSync", "syncPolicy is Manual")
+		return &ctrl.Result{}
+	}
+	if promotionTriggered(app) && !promotionReady(app) {
+		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingPromotion", "waiting for a verified upstream release")
+		return &ctrl.Result{RequeueAfter: r.transientRequeue()}
+	}
+	return nil
+}
+
+func automaticReleaseWindowApplies(app *paprikav1.Application, manualOverride bool) bool {
+	return !manualOverride && app.Spec.SyncPolicy == paprikav1.SyncAuto && len(app.Spec.SyncWindows) > 0
+}
+
+func releaseNeedsManualSync(app *paprikav1.Application, manualOverride bool) bool {
+	return !manualOverride && (app.Spec.SyncPolicy == paprikav1.SyncManual || manualTriggered(app)) && !promotionReady(app)
 }
 
 //nolint:cyclop,nestif // adoption branches on terminal phase, retry-budget exhaustion, and manual override.
@@ -1247,6 +1319,7 @@ func (r *ApplicationReconciler) adoptExistingRelease(ctx context.Context, app *p
 	}
 
 	app.Status.ReleaseRef = releaseName
+	markPromotionStarted(app)
 	if applicationReleasePhaseTerminal(release.Status.Phase) {
 		manual := manualSyncRequested(app)
 		if !manual && releaseAutoRetriesExhausted(app, &release) {
@@ -1320,6 +1393,7 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 			}
 		}
 	}
+	updatePromotionReleasePhase(app, phase)
 
 	msg := mapping.reason + " on stage " + targetStage.Name
 	r.updatePhase(ctx, app, mapping.appPhase, mapping.reason, msg)
@@ -1347,6 +1421,15 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 	}
 	if app.Status.SourceRevision != "" {
 		annotations[sourceRevisionAnnotation] = app.Status.SourceRevision
+	}
+	if promotionTriggered(app) && app.Status.Promotion != nil {
+		candidate := app.Status.Promotion
+		annotations["paprika.io/promotion-source-application"] = candidate.SourceApplication.Name
+		annotations["paprika.io/promotion-source-namespace"] = candidate.SourceApplication.Namespace
+		annotations[promotionSourceUIDAnnotation] = candidate.SourceApplicationUID
+		annotations["paprika.io/promotion-source-release"] = candidate.SourceRelease
+		annotations[promotionReleaseUIDAnnotation] = candidate.SourceReleaseUID
+		annotations["paprika.io/promotion-verification-config"] = candidate.VerificationConfigHash
 	}
 
 	return &paprikav1.Release{
@@ -1387,6 +1470,11 @@ func applicationReleaseName(app *paprikav1.Application, targetStage *paprikav1.A
 }
 
 func releaseIdentity(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) string {
+	deployment := effectiveDeploymentApp(app)
+	if deployment != app && len(deployment.Spec.Stages) > 0 {
+		targetStage = &deployment.Spec.Stages[0]
+	}
+	app = deployment
 	if !hasReleaseIdentityInput(app, targetStage) {
 		return ""
 	}
@@ -1394,6 +1482,10 @@ func releaseIdentity(app *paprikav1.Application, targetStage *paprikav1.Applicat
 	var b strings.Builder
 	appendIdentityField(&b, "sourceHash", app.Status.SourceHash)
 	appendIdentityField(&b, "sourceRevision", app.Status.SourceRevision)
+	if promotionTriggered(app) && app.Status.Promotion != nil {
+		appendIdentityField(&b, "promotionApplicationUID", app.Status.Promotion.SourceApplicationUID)
+		appendIdentityField(&b, "promotionReleaseUID", app.Status.Promotion.SourceReleaseUID)
+	}
 	if targetStage != nil {
 		appendIdentityField(&b, "stage", targetStage.Name)
 	}
@@ -1403,7 +1495,8 @@ func releaseIdentity(app *paprikav1.Application, targetStage *paprikav1.Applicat
 
 func hasReleaseIdentityInput(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage) bool {
 	hasSourceIdentity := app.Status.SourceHash != "" || app.Status.SourceRevision != ""
-	return hasSourceIdentity || len(app.Spec.Parameters) > 0 || (targetStage != nil && len(targetStage.Parameters) > 0)
+	hasPromotionIdentity := promotionTriggered(app) && app.Status.Promotion != nil && app.Status.Promotion.SourceReleaseUID != ""
+	return hasSourceIdentity || hasPromotionIdentity || len(app.Spec.Parameters) > 0 || (targetStage != nil && len(targetStage.Parameters) > 0)
 }
 
 func appendIdentityField(b *strings.Builder, key, value string) {
@@ -1432,6 +1525,11 @@ func writeReleaseParametersIdentity(b *strings.Builder, params map[string]string
 }
 
 func releaseParameters(app *paprikav1.Application, targetStage *paprikav1.ApplicationPromotionStage, stableReleaseName string) map[string]string {
+	deployment := effectiveDeploymentApp(app)
+	if deployment != app && len(deployment.Spec.Stages) > 0 {
+		targetStage = &deployment.Spec.Stages[0]
+	}
+	app = deployment
 	params := make(map[string]string, len(app.Spec.Parameters))
 	for k, v := range app.Spec.Parameters {
 		params[k] = v
@@ -1535,6 +1633,9 @@ func (r *ApplicationReconciler) updatePhase(ctx context.Context, app *paprikav1.
 func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *paprikav1.Application, phase paprikav1.ApplicationPhase, reason, message string) bool {
 	previousPhase := app.Status.Phase
 	app.Status.Phase = phase
+	if phase != paprikav1.ApplicationHealthy {
+		app.Status.DeploymentObservation = nil
+	}
 
 	// Upsert by condition type (like every other controller here) instead of
 	// appending: a thrashing release once appended 3.7k conditions and grew
@@ -1567,6 +1668,13 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 		}
 	}
 
+	r.syncApplicationStageStatuses(ctx, app)
+
+	r.publishApplicationEvent(ctx, app, reason, previousPhase, message)
+	return true
+}
+
+func (r *ApplicationReconciler) syncApplicationStageStatuses(ctx context.Context, app *paprikav1.Application) {
 	for i := range app.Spec.Stages {
 		releasePhase := string(r.getCurrentReleasePhase(ctx, app))
 		if releasePhase == "" {
@@ -1595,9 +1703,6 @@ func (r *ApplicationReconciler) setApplicationPhase(ctx context.Context, app *pa
 			})
 		}
 	}
-
-	r.publishApplicationEvent(ctx, app, reason, previousPhase, message)
-	return true
 }
 
 // normalizePhaseConditions makes the condition for app.Status.Phase the only
@@ -1672,13 +1777,19 @@ func (r *ApplicationReconciler) publishApplicationEvent(ctx context.Context, app
 
 func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *paprikav1.Application, forceRefresh bool) (bool, error) {
 	log := log.FromContext(ctx)
+	if promotionSourceSelectionPending(app) {
+		return false, nil
+	}
 	newHash, newRevision, err := r.resolveSourceHash(ctx, app, forceRefresh)
 	if err != nil {
 		return false, err
 	}
 
-	if newHash == "" && newRevision == "" {
-		log.V(1).Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
+	usable, err := validateResolvedSourceIdentity(ctx, app, newHash, newRevision)
+	if err != nil {
+		return false, err
+	}
+	if !usable {
 		return false, nil
 	}
 
@@ -1719,6 +1830,21 @@ func (r *ApplicationReconciler) checkSourceChanged(ctx context.Context, app *pap
 	}
 
 	return changed, nil
+}
+
+func promotionSourceSelectionPending(app *paprikav1.Application) bool {
+	return promotionTriggered(app) && app.Status.SourceRevision == ""
+}
+
+func validateResolvedSourceIdentity(ctx context.Context, app *paprikav1.Application, hash, revision string) (bool, error) {
+	if hash == "" && revision == "" {
+		log.FromContext(ctx).V(1).Info("Source identity check returned empty result", "namespace", app.Namespace, "name", app.Name)
+		return false, nil
+	}
+	if promotionTriggered(app) && revision != app.Status.SourceRevision {
+		return false, fmt.Errorf("promoted source resolved revision %q instead of accepted revision %q", revision, app.Status.SourceRevision)
+	}
+	return true, nil
 }
 
 // sourceContentHash extracts the content-addressed segment of a source hash.
@@ -1790,6 +1916,14 @@ func (r *ApplicationReconciler) resolveTemplateSource(ctx context.Context, app *
 
 func (r *ApplicationReconciler) evaluateHealth(ctx context.Context, app *paprikav1.Application) {
 	log := log.FromContext(ctx)
+	original := app
+	app = effectiveDeploymentApp(app)
+	if app != original {
+		defer func() {
+			original.Status.Health = app.Status.Health
+			original.Status.HealthChecks = app.Status.HealthChecks
+		}()
+	}
 
 	if len(app.Spec.HealthChecks) == 0 || r.HealthEval == nil {
 		if len(app.Spec.HealthChecks) == 0 {
@@ -1879,33 +2013,34 @@ func evalResultFromHealthCheckResult(result *paprikav1.HealthCheckResult) health
 
 func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1.Application) *engine.DiffResult {
 	log := log.FromContext(ctx)
-
-	if r.DiffEngine == nil {
+	app.Status.DeploymentObservation = nil
+	// Reconciler embeddings may deliberately disable drift and live health
+	// entirely, retaining persisted status for independent self-heal checks.
+	if r.DiffEngine == nil && r.ClusterMgr == nil && r.ResHealth == nil {
 		return nil
 	}
 
-	manifests, err := r.desiredManifests(ctx, app)
+	diffEngine, stop, remote, err := r.applicationDiffEngine(ctx, app)
 	if err != nil {
-		log.Error(err, "Failed to get desired manifests for diff")
+		log.Error(err, "Failed to resolve application diff target")
+		markApplicationDiffUnavailable(app)
+		return nil
+	}
+	defer stop()
+	if diffEngine == nil {
 		return nil
 	}
 
-	targetNamespace := app.Namespace
-	if app.Spec.Source.TargetNamespace != "" {
-		targetNamespace = app.Spec.Source.TargetNamespace
-	}
-	desired := r.parsedManifests(manifests, targetNamespace)
-
-	labelSelector := engine.ManagedByAppSelector(app.Name).String()
-	result, err := r.DiffEngine.ComputeDiff(ctx, desired, &engine.DiffOptions{
-		Namespace:       targetNamespace,
-		LabelSelector:   labelSelector,
-		ApplicationName: app.Name,
-	})
+	result, err := r.computeApplicationDiff(ctx, app, diffEngine)
 	if err != nil {
-		log.Error(err, "Failed to compute diff")
+		log.Error(err, "Failed to compute application diff")
+		if remote {
+			markApplicationDiffUnavailable(app)
+		}
 		return nil
 	}
+
+	restoreApplicationDiffAvailability(app, result)
 
 	app.Status.Resources = convertDiffToResourceSyncs(result.ResourceSyncs())
 	app.Status.OutOfSync = result.OutOfSyncCount()
@@ -1915,6 +2050,40 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 	metrics.OutOfSyncGauge.WithLabelValues(app.Name, app.Namespace).Set(float64(result.OutOfSyncCount()))
 	metrics.PrunableGauge.WithLabelValues(app.Name, app.Namespace).Set(float64(len(result.Deleted)))
 
+	r.propagateApplicationHookStatuses(ctx, app)
+	return result
+}
+
+func (r *ApplicationReconciler) computeApplicationDiff(ctx context.Context, app *paprikav1.Application, diff DiffEngine) (*engine.DiffResult, error) {
+	app = effectiveDeploymentApp(app)
+	manifests, err := r.desiredManifests(ctx, app)
+	if err != nil {
+		return nil, fmt.Errorf("get desired manifests: %w", err)
+	}
+	targetNamespace := app.Namespace
+	if app.Spec.Source.TargetNamespace != "" {
+		targetNamespace = app.Spec.Source.TargetNamespace
+	}
+	desired := r.parsedManifests(manifests, targetNamespace)
+	result, err := diff.ComputeDiff(ctx, desired, &engine.DiffOptions{
+		Namespace:       targetNamespace,
+		LabelSelector:   engine.ManagedByAppSelector(app.Name).String(),
+		ApplicationName: app.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("compare desired resources: %w", err)
+	}
+	return result, nil
+}
+
+func restoreApplicationDiffAvailability(app *paprikav1.Application, result *engine.DiffResult) {
+	if applicationDiffUnavailable(app) && app.Status.Phase == paprikav1.ApplicationHealthy && result.OutOfSyncCount() == 0 {
+		app.Status.Synced = true
+	}
+	clearApplicationDiffUnavailable(app)
+}
+
+func (r *ApplicationReconciler) propagateApplicationHookStatuses(ctx context.Context, app *paprikav1.Application) {
 	if app.Status.ReleaseRef == "" {
 		app.Status.HookStatuses = nil
 	} else {
@@ -1924,12 +2093,10 @@ func (r *ApplicationReconciler) evaluateDiff(ctx context.Context, app *paprikav1
 		} else if apierrors.IsNotFound(err) {
 			app.Status.HookStatuses = nil
 		} else {
-			log.Error(err, "Failed to fetch active Release for hook status propagation")
+			log.FromContext(ctx).Error(err, "Failed to fetch active Release for hook status propagation")
 			app.Status.HookStatuses = nil
 		}
 	}
-
-	return result
 }
 
 // parseDesiredManifests splits rendered YAML manifests into unstructured objects,
@@ -1986,6 +2153,7 @@ type desiredManifestRenderContext struct {
 }
 
 func (r *ApplicationReconciler) desiredManifestRenderContext(ctx context.Context, app *paprikav1.Application) desiredManifestRenderContext {
+	app = effectiveDeploymentApp(app)
 	params := make(map[string]string, len(app.Spec.Parameters)+1)
 	for k, v := range app.Spec.Parameters {
 		params[k] = v
@@ -2000,6 +2168,9 @@ func (r *ApplicationReconciler) desiredManifestRenderContext(ctx context.Context
 		renderCtx.releaseName = app.Status.ReleaseRef
 		var activeRelease paprikav1.Release
 		if err := r.client.Get(ctx, types.NamespacedName{Name: renderCtx.releaseName, Namespace: app.Namespace}, &activeRelease); err == nil {
+			if promotionTriggered(app) {
+				renderCtx.params = map[string]string{}
+			}
 			mergeActiveReleaseRenderContext(&renderCtx, &activeRelease)
 		}
 	}
@@ -2102,17 +2273,11 @@ func resourceStatusSortKey(kind, namespace, name, status, message string) string
 // the API. When there is no diff result (engine disabled or diff failed) it
 // falls back to per-resource reads through the health checker.
 func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app *paprikav1.Application, result *engine.DiffResult) {
-	var liveIndex map[string]unstructured.Unstructured
-	if result != nil {
-		// An empty Live set is still authoritative: every desired resource is
-		// missing. Only a nil result (diff engine off or failed) falls back to
-		// per-resource reads.
-		liveIndex = make(map[string]unstructured.Unstructured, len(result.Live))
-		for i := range result.Live {
-			obj := &result.Live[i]
-			liveIndex[resourceHealthKey(obj.GetKind(), obj.GetNamespace(), obj.GetName())] = *obj
-		}
+	if result == nil && applicationDiffUnavailable(app) {
+		markApplicationResourceHealthUnavailable(app)
+		return
 	}
+	liveIndex := resourceHealthLiveIndex(result)
 	if liveIndex == nil && r.ResHealth == nil {
 		return
 	}
@@ -2140,6 +2305,21 @@ func (r *ApplicationReconciler) evaluateResourceHealth(ctx context.Context, app 
 
 	app.Status.ResourceHealth = healthResults
 	sortResourceHealth(app.Status.ResourceHealth)
+}
+
+func resourceHealthLiveIndex(result *engine.DiffResult) map[string]unstructured.Unstructured {
+	if result == nil {
+		return nil
+	}
+	// An empty Live set is still authoritative: every desired resource is
+	// missing. Only a nil result (engine disabled or failed) allows separate
+	// per-resource reads.
+	index := make(map[string]unstructured.Unstructured, len(result.Live))
+	for i := range result.Live {
+		obj := &result.Live[i]
+		index[resourceHealthKey(obj.GetKind(), obj.GetNamespace(), obj.GetName())] = *obj
+	}
+	return index
 }
 
 func resourceHealthKey(kind, namespace, name string) string {
@@ -2217,6 +2397,9 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	log := log.FromContext(ctx)
 
 	r.pruneReleasesIfInline(ctx, app)
+	if promotionTriggered(app) || manualTriggered(app) {
+		return r.handleTriggeredHealthyPhase(ctx, app)
+	}
 
 	if app.Status.ReleaseRef != "" {
 		phase := r.getCurrentReleasePhase(ctx, app)
@@ -2268,12 +2451,40 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 	return r.evaluateHealthyApplication(ctx, app, pollInterval)
 }
 
+func (r *ApplicationReconciler) handleTriggeredHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
+	// Source selection is controlled by promotion or explicit manual sync.
+	// Drift and health still use the active release's pinned manifests.
+	phase := r.getCurrentReleasePhase(ctx, app)
+	updatePromotionReleasePhase(app, phase)
+	if phase == paprikav1.ReleaseComplete {
+		if release := r.getCurrentRelease(ctx, app); release != nil {
+			app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
+		}
+		if app.Status.Phase != paprikav1.ApplicationHealthy {
+			r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
+		}
+		return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
+	}
+	if phase == "" || len(app.Spec.Stages) == 0 {
+		return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
+	}
+	result, err := r.handleActiveRelease(ctx, app, &app.Spec.Stages[0], phase)
+	if err != nil || result.RequeueAfter > 0 {
+		if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+			return ctrl.Result{}, patchErr
+		}
+		return result, err
+	}
+	return r.evaluateHealthyApplication(ctx, app, r.transientRequeue())
+}
+
 func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, app *paprikav1.Application, pollInterval time.Duration) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
 	r.evaluateHealth(ctx, app)
 	diff := r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app, diff)
+	r.recordDeploymentObservation(ctx, app, diff)
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
 	}
@@ -2297,6 +2508,13 @@ func (r *ApplicationReconciler) holdExhaustedRelease(ctx context.Context, app *p
 	logger := log.FromContext(ctx)
 	logger.Info("Release auto-retry budget exhausted; holding terminal release and polling source",
 		"release", release.Name, "retries", releaseAutoRetryCount(release))
+	if promotionTriggered(app) || manualTriggered(app) {
+		setReleaseRetriesExhaustedCondition(app, release)
+		if err := r.patchAppStatus(ctx, app); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+	}
 
 	pollInterval := r.transientRequeue()
 	if app.Spec.Source.PollInterval != "" {

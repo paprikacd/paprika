@@ -116,8 +116,8 @@ func StripFinalizers(resources ...string) {
 	for pass := 0; pass < 3; pass++ {
 		remaining := 0
 		for _, rsrc := range resources {
-			out, err := exec.CommandContext(context.Background(), "kubectl", "get", rsrc, "-A", //nolint:gosec // test-controlled args
-				"-o", "jsonpath={range .items[*]}{.metadata.namespace} {.metadata.name}{\"\\n\"}{end}").Output()
+			out, err := Kubectl("get", rsrc, "-A",
+				"-o", "jsonpath={range .items[*]}{.metadata.namespace} {.metadata.name}{\"\\n\"}{end}")
 			if err != nil {
 				continue
 			}
@@ -127,9 +127,8 @@ func StripFinalizers(resources ...string) {
 					continue
 				}
 				remaining++
-				if err := exec.CommandContext(context.Background(), "kubectl", "patch", //nolint:gosec // test-controlled args
-					rsrc, parts[1], "-n", parts[0],
-					"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`).Run(); err != nil {
+				if _, err := Kubectl("patch", rsrc, parts[1], "-n", parts[0],
+					"--type=merge", "-p", `{"metadata":{"finalizers":[]}}`); err != nil {
 					warnError(err)
 				}
 			}

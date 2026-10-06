@@ -395,6 +395,7 @@ func TestReleaseReconciler_routerForStage(t *testing.T) {
 			t.Parallel()
 			r := &ReleaseReconciler{
 				TrafficRouterFactory: tc.setupFactory,
+				DynamicClient:        dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()),
 			}
 
 			stage := &pipelinesv1alpha1.Stage{

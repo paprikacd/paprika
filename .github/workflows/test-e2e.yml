@@ -11,7 +11,7 @@ on:
         required: false
         default: ''
       retain_cluster:
-        description: 'Keep the Kind cluster after the run for debugging'
+        description: 'Keep both Kind clusters after the run for debugging'
         required: false
         default: 'false'
 
@@ -33,6 +33,9 @@ jobs:
       E2E_SKIP_IMAGE_BUILD: "true"
       E2E_SKIP_IMAGE_LOAD: "true"
       KIND_CLUSTER: paprika-test-e2e
+      KIND_TARGET_CLUSTER: paprika-promotion-target
+      E2E_EXPECTED_CONTEXT: kind-paprika-test-e2e
+      E2E_TARGET_EXPECTED_CONTEXT: kind-paprika-promotion-target
       KIND_SHA256: 50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54
     steps:
       - name: Clone the code
@@ -78,13 +81,63 @@ jobs:
           printf '%s  %s\n' "${KIND_SHA256}" "${kind_binary}" | sha256sum --check -
           sudo install -m 0755 "${kind_binary}" /usr/local/bin/kind
 
-      - name: Create kind cluster
-        run: make setup-test-e2e
-
-      - name: Load images into kind
+      - name: Create dedicated management and promotion target clusters
         run: |
-          kind load docker-image example.com/paprika:v0.0.1 --name "${KIND_CLUSTER}"
-          kind load docker-image localhost/paprika-demo:latest --name "${KIND_CLUSTER}"
+          set -euo pipefail
+          export KUBECONFIG="${RUNNER_TEMP}/paprika-e2e/management.yaml"
+          export E2E_PROMOTION_REMOTE_KUBECONFIG="${RUNNER_TEMP}/paprika-e2e/target-internal.yaml"
+          export E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG="${RUNNER_TEMP}/paprika-e2e/target-host.yaml"
+          printf '%s=%s\n' KUBECONFIG "${KUBECONFIG}" \
+            E2E_PROMOTION_REMOTE_KUBECONFIG "${E2E_PROMOTION_REMOTE_KUBECONFIG}" \
+            E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}" \
+            >> "${GITHUB_ENV}"
+          install -d -m 0700 "$(dirname "${KUBECONFIG}")"
+          kind create cluster --name "${KIND_CLUSTER}" --kubeconfig "${KUBECONFIG}"
+          test "$(kubectl config current-context)" = "${E2E_EXPECTED_CONTEXT}"
+          make setup-test-e2e
+          kind create cluster --name "${KIND_TARGET_CLUSTER}" \
+            --kubeconfig "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}"
+          kind get kubeconfig --name "${KIND_TARGET_CLUSTER}" --internal \
+            > "${E2E_PROMOTION_REMOTE_KUBECONFIG}"
+          chmod 0600 "${KUBECONFIG}" "${E2E_PROMOTION_REMOTE_KUBECONFIG}" \
+            "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}"
+          test "$(kubectl --kubeconfig "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}" \
+            config current-context)" = "${E2E_TARGET_EXPECTED_CONTEXT}"
+          management_uid="$(kubectl get namespace kube-system -o jsonpath='{.metadata.uid}')"
+          target_uid="$(kubectl --kubeconfig "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}" \
+            get namespace kube-system -o jsonpath='{.metadata.uid}')"
+          test -n "${management_uid}"
+          test -n "${target_uid}"
+          test "${management_uid}" != "${target_uid}"
+
+      - name: Load native images for cross-cluster promotion
+        run: |
+          set -euo pipefail
+          test "$(kubectl config current-context)" = "${E2E_EXPECTED_CONTEXT}"
+          arch="$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}')"
+          platform="linux/${arch}"
+          docker pull --platform "${platform}" alpine:3.19
+          docker pull --platform "${platform}" castlemilk/git-http-backend:latest
+          # Docker's platform-limited export avoids importing attestations or
+          # unavailable architectures. The Git fixture uses the same option.
+          docker save --help | grep -q -- --platform || {
+            echo 'Docker must support docker save --platform for promotion E2E' >&2
+            exit 1
+          }
+          image_dir="$(dirname "${KUBECONFIG}")"
+          docker save --platform "${platform}" example.com/paprika:v0.0.1 \
+            -o "${image_dir}/manager.tar"
+          docker save --platform "${platform}" localhost/paprika-demo:latest \
+            -o "${image_dir}/demo.tar"
+          docker save --platform "${platform}" alpine:3.19 \
+            -o "${image_dir}/alpine.tar"
+          docker save --platform "${platform}" castlemilk/git-http-backend:latest \
+            -o "${image_dir}/git-backend.tar"
+          kind load image-archive "${image_dir}/manager.tar" --name "${KIND_CLUSTER}"
+          kind load image-archive "${image_dir}/demo.tar" --name "${KIND_CLUSTER}"
+          kind load image-archive "${image_dir}/demo.tar" --name "${KIND_TARGET_CLUSTER}"
+          kind load image-archive "${image_dir}/alpine.tar" --name "${KIND_CLUSTER}"
+          kind load image-archive "${image_dir}/git-backend.tar" --name "${KIND_CLUSTER}"
 
       - name: Run e2e tests
         env:
@@ -94,8 +147,14 @@ jobs:
           if [ -n "${GINKGO_FOCUS}" ]; then
             focus_args+=("-ginkgo.focus=${GINKGO_FOCUS}")
           fi
-          go test -tags=e2e ./test/e2e/ -v -ginkgo.v -ginkgo.fail-on-empty -timeout=30m "${focus_args[@]}"
+          test -s "${E2E_PROMOTION_REMOTE_KUBECONFIG}"
+          test -s "${E2E_PROMOTION_REMOTE_KUBECTL_KUBECONFIG}"
+          go test -tags=e2e ./test/e2e/ -count=1 -v -ginkgo.v -ginkgo.fail-on-empty -timeout=30m "${focus_args[@]}"
 
-      - name: Cleanup kind cluster
+      - name: Cleanup dedicated kind clusters
         if: always() && inputs.retain_cluster != 'true'
-        run: make cleanup-test-e2e
+        run: |
+          cleanup_status=0
+          make cleanup-test-e2e || cleanup_status=$?
+          kind delete cluster --name "${KIND_TARGET_CLUSTER}" || cleanup_status=$?
+          exit "${cleanup_status}"

@@ -2010,10 +2010,140 @@ spec:
                       - schedule
                       type: object
                     type: array
+                  trigger:
+                    description: |-
+                      Trigger selects how new deployment candidates are discovered. Omitted
+                      preserves GitOps behavior; syncPolicy remains the authorization policy.
+                    properties:
+                      from:
+                        description: From is the upstream environment whose completed
+                          release is promoted.
+                        properties:
+                          name:
+                            description: Name of the Application.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the referencing Application's
+                              namespace.
+                            maxLength: 63
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      gates:
+                        description: Gates verify the upstream environment before
+                          its release is promoted.
+                        items:
+                          description: |-
+                            GateConfig defines a gate for stage promotion.
+                            GateConfig defines a gate for stage promotion.
+                          properties:
+                            endpoint:
+                              type: string
+                            timeout:
+                              type: integer
+                            type:
+                              enum:
+                              - smoke-test
+                              - duration
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        type: array
+                      tests:
+                        description: |-
+                          Tests runs a new verification pipeline for each upstream release before deployment.
+                          Its container steps execute on the management cluster.
+                        properties:
+                          artifacts:
+                            items:
+                              description: PipelineOutput defines an output artifact
+                                of a pipeline.
+                              properties:
+                                name:
+                                  type: string
+                                path:
+                                  type: string
+                                step:
+                                  type: string
+                              required:
+                              - name
+                              - path
+                              type: object
+                            type: array
+                          maxParallel:
+                            type: integer
+                          sources:
+                            items:
+                              description: Source defines a source for the pipeline.
+                              properties:
+                                secretRef:
+                                  type: string
+                                type:
+                                  enum:
+                                  - git
+                                  type: string
+                                url:
+                                  type: string
+                              required:
+                              - type
+                              type: object
+                            type: array
+                          steps:
+                            items:
+                              description: |-
+                                ApplicationBuildStep defines a step in the build pipeline.
+                                ApplicationBuildStep defines a step in the build pipeline.
+                              properties:
+                                depends:
+                                  items:
+                                    type: string
+                                  type: array
+                                image:
+                                  type: string
+                                name:
+                                  type: string
+                                retry:
+                                  type: integer
+                                script:
+                                  type: string
+                                timeout:
+                                  type: integer
+                              required:
+                              - image
+                              - name
+                              - script
+                              type: object
+                            type: array
+                        required:
+                        - steps
+                        type: object
+                      type:
+                        description: Type selects GitOps, Promotion, or Manual triggering.
+                        enum:
+                        - GitOps
+                        - Promotion
+                        - Manual
+                        type: string
+                    required:
+                    - type
+                    type: object
+                    x-kubernetes-validations:
+                    - message: from is required only for Promotion triggers
+                      rule: 'self.type == ''Promotion'' ? has(self.from) : !has(self.from)'
+                    - message: tests and gates require a Promotion trigger
+                      rule: self.type == 'Promotion' || (!has(self.tests) && !has(self.gates))
                 required:
                 - source
                 - stages
                 type: object
+                x-kubernetes-validations:
+                - message: Promotion triggers currently require a git source
+                  rule: '!has(self.trigger) || self.trigger.type != ''Promotion''
+                    || self.source.type == ''git'''
             required:
             - generators
             - template

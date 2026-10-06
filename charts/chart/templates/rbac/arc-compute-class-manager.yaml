@@ -1,0 +1,29 @@
+{{- $computeClass := .Values.rbac.arcComputeClass | default (dict) -}}
+{{- if $computeClass.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-compute-class" "context" .) }}
+rules:
+  # Kubernetes cannot constrain CREATE by resourceNames. Other mutations are named.
+  - apiGroups: [cloud.google.com]
+    resources: [computeclasses]
+    verbs: [create]
+  - apiGroups: [cloud.google.com]
+    resources: [computeclasses]
+    resourceNames: {{ $computeClass.resourceNames | default (list "arc-ci-fast") | toJson }}
+    verbs: [get, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-compute-class" "context" .) }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-compute-class" "context" .) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "paprika.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,90 @@
+{{- $arc := .Values.rbac.arc | default (dict) }}
+{{- if $arc.enabled }}
+{{- range $namespace := $arc.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-manager" "context" $) }}
+  namespace: {{ $namespace | quote }}
+rules:
+# Paprika must possess these permissions before binding ARC's own roles.
+# Scope is only the dedicated ARC namespaces, never the workload namespaces.
+- apiGroups: [actions.github.com]
+  resources:
+    - autoscalingrunnersets
+    - autoscalingrunnersets/status
+    - autoscalingrunnersets/finalizers
+    - autoscalinglisteners
+    - autoscalinglisteners/status
+    - autoscalinglisteners/finalizers
+    - ephemeralrunnersets
+    - ephemeralrunnersets/status
+    - ephemeralrunnersets/finalizers
+    - ephemeralrunners
+    - ephemeralrunners/status
+    - ephemeralrunners/finalizers
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [""]
+  resources: [secrets, serviceaccounts, resourcequotas, limitranges]
+  verbs: [get, list, watch, create, update, patch, delete]
+{{- if or (eq $namespace "arc-systems") (eq $namespace "arc-runners") }}
+# ARC's listener and scale-set manager Roles read this subresource; pod read alone does
+# not satisfy Kubernetes' check when Paprika creates that Role.
+- apiGroups: [""]
+  resources: [pods/status]
+  verbs: [get]
+{{- end }}
+- apiGroups: [rbac.authorization.k8s.io]
+  resources: [roles, rolebindings]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [coordination.k8s.io]
+  resources: [leases]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [networking.k8s.io]
+  resources: [networkpolicies]
+  verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-manager" "context" $) }}
+  namespace: {{ $namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-manager" "context" $) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "paprika.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-priority" "context" $) }}
+rules:
+# Kubernetes cannot constrain CREATE by resourceNames. This grants creation
+# only for the PriorityClass type; every subsequent mutation is name-scoped.
+- apiGroups: [scheduling.k8s.io]
+  resources: [priorityclasses]
+  verbs: [create]
+- apiGroups: [scheduling.k8s.io]
+  resources: [priorityclasses]
+  resourceNames: {{ $arc.priorityClasses | default (list "arc-spare") | toJson }}
+  verbs: [get, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-priority" "context" $) }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "paprika.resourceName" (dict "suffix" "arc-priority" "context" $) }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "paprika.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

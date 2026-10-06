@@ -42,6 +42,83 @@ const (
 	SyncManual SyncPolicy = "Manual"
 )
 
+// ApplicationTriggerType selects how a new deployment candidate is discovered.
+// +kubebuilder:validation:Enum=GitOps;Promotion;Manual
+type ApplicationTriggerType string
+
+const (
+	// ApplicationTriggerGitOps discovers candidates from the configured source.
+	ApplicationTriggerGitOps ApplicationTriggerType = "GitOps"
+	// ApplicationTriggerPromotion discovers candidates from a completed upstream Application release.
+	ApplicationTriggerPromotion ApplicationTriggerType = "Promotion"
+	// ApplicationTriggerManual discovers candidates only when an operator requests a sync.
+	ApplicationTriggerManual ApplicationTriggerType = "Manual"
+)
+
+// ApplicationReference identifies an Application on the Paprika management cluster.
+// The referenced Application's stages determine its deployment clusters.
+type ApplicationReference struct {
+	// Name of the Application.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+	// Namespace defaults to the referencing Application's namespace.
+	// +optional
+	// +kubebuilder:validation:MaxLength=63
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// ApplicationTrigger selects deployment candidates independently of syncPolicy,
+// which controls whether a selected candidate needs manual authorization.
+// Promotion currently supports git sources only, so every environment renders
+// the exact immutable Git commit deployed by its upstream Application.
+// +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' ? has(self.from) : !has(self.from)",message="from is required only for Promotion triggers"
+// +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' || (!has(self.tests) && !has(self.gates))",message="tests and gates require a Promotion trigger"
+type ApplicationTrigger struct {
+	// Type selects GitOps, Promotion, or Manual triggering.
+	Type ApplicationTriggerType `json:"type"`
+	// From is the upstream environment whose completed release is promoted.
+	// +optional
+	From *ApplicationReference `json:"from,omitempty"`
+	// Tests runs a new verification pipeline for each upstream release before deployment.
+	// Its container steps execute on the management cluster.
+	// +optional
+	Tests *ApplicationBuildSpec `json:"tests,omitempty"`
+	// Gates verify the upstream environment before its release is promoted.
+	// +optional
+	Gates []GateConfig `json:"gates,omitempty"`
+}
+
+// ApplicationPromotionStatus records the selected upstream release and its
+// verification state. The source identity stays fixed while promotion runs.
+type ApplicationPromotionStatus struct {
+	SourceApplication    ApplicationReference `json:"sourceApplication"`
+	SourceApplicationUID string               `json:"sourceApplicationUID,omitempty"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	SourceRelease        string               `json:"sourceRelease,omitempty"`
+	SourceReleaseUID     string               `json:"sourceReleaseUID,omitempty"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	Revision             string               `json:"revision,omitempty"`
+	// +kubebuilder:validation:Enum=Verifying;AwaitingApproval;Ready;Promoting;Complete;Failed
+	Phase                   string `json:"phase,omitempty"`
+	VerificationPipelineRef string `json:"verificationPipelineRef,omitempty"`
+	// VerificationConfigHash invalidates verification when tests or gates change.
+	VerificationConfigHash string `json:"verificationConfigHash,omitempty"`
+	// VerificationStartedAt records when gates began after verification tests passed.
+	// It is reset when the verification configuration changes.
+	// +optional
+	VerificationStartedAt *metav1.Time `json:"verificationStartedAt,omitempty"`
+	Message               string       `json:"message,omitempty"`
+}
+
+// ApplicationDeploymentObservation binds the last successful desired/live diff
+// and live resource-health snapshot to the exact deployed release.
+type ApplicationDeploymentObservation struct {
+	Release            string      `json:"release"`
+	ReleaseUID         string      `json:"releaseUID"` //nolint:tagliatelle // Preserve the deployed Kubernetes UID wire field.
+	Revision           string      `json:"revision"`
+	ObservedGeneration int64       `json:"observedGeneration"`
+	ObservedAt         metav1.Time `json:"observedAt"`
+}
+
 // DeliveryStrategy defines the deployment strategy.
 // DeliveryStrategy defines the deployment strategy.
 type DeliveryStrategy string
@@ -514,6 +591,7 @@ type HealthCheckResult struct {
 
 // ApplicationSpec defines the specification for an application.
 // ApplicationSpec defines the specification for an application.
+// +kubebuilder:validation:XValidation:rule="!has(self.trigger) || self.trigger.type != 'Promotion' || self.source.type == 'git'",message="Promotion triggers currently require a git source"
 type ApplicationSpec struct {
 	// Project references the AppProject that governs this application.
 	// +optional
@@ -522,6 +600,11 @@ type ApplicationSpec struct {
 
 	// Source defines where the application code/chart lives.
 	Source ApplicationSource `json:"source"`
+
+	// Trigger selects how new deployment candidates are discovered. Omitted
+	// preserves GitOps behavior; syncPolicy remains the authorization policy.
+	// +optional
+	Trigger *ApplicationTrigger `json:"trigger,omitempty"`
 
 	// Build defines the CI pipeline steps (optional — skip if no build needed).
 	// +optional
@@ -656,6 +739,21 @@ type ApplicationStatus struct {
 	PipelineRef    string   `json:"pipelineRef,omitempty"`
 	StageRefs      []string `json:"stageRefs,omitempty"`
 	ReleaseRef     string   `json:"releaseRef,omitempty"`
+
+	// Promotion records the upstream release selected by a Promotion trigger.
+	// +optional
+	Promotion *ApplicationPromotionStatus `json:"promotion,omitempty"`
+
+	// AcceptedDeployment preserves the deployment intent accepted by promotion.
+	// Generated Templates, Stages, and self-heal use this snapshot while spec
+	// changes await a future promotion candidate.
+	// +optional
+	AcceptedDeployment *ApplicationSpec `json:"acceptedDeployment,omitempty"`
+
+	// DeploymentObservation identifies the release observed by the most recent
+	// successful desired/live diff and live resource-health assessment.
+	// +optional
+	DeploymentObservation *ApplicationDeploymentObservation `json:"deploymentObservation,omitempty"`
 
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

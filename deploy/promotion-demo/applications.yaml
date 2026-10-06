@@ -1,0 +1,198 @@
+# Apply after bootstrap.yaml and publication of the immutable v0.3.0 Git tag.
+# Workload/health reads use the same cluster as the Paprika operator.
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-dev
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+spec:
+  project: promotion-demo
+  source:
+    type: git
+    repoRef: promotion-demo-source
+    revision: v0.3.0
+    path: config/samples/promotion-demo
+    targetNamespace: paprika-promotion-dev
+    pollInterval: 15s
+    fetchTtl: 45s
+    valuesFile: |
+      environment: dev
+      demoVersion: v0.3.0
+      replicaCount: 1
+  trigger:
+    type: GitOps
+  syncPolicy: Auto
+  strategy: Rolling
+  stages:
+  - name: dev
+    ring: 0
+    strategy: Rolling
+    gates:
+    - type: smoke-test
+      endpoint: http://promotion-demo.paprika-promotion-dev.svc/healthz
+      timeout: 10
+  healthChecks:
+  - name: internal-http
+    expression: http.statusCode == 200 && http.body == 'ok'
+    httpProbe:
+      url: http://promotion-demo.paprika-promotion-dev.svc/healthz
+      expectedStatus: 200
+      timeout: 5
+    interval: 5s
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-stg
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+spec:
+  project: promotion-demo
+  source:
+    type: git
+    repoRef: promotion-demo-source
+    revision: v0.3.0
+    path: config/samples/promotion-demo
+    targetNamespace: paprika-promotion-stg
+    pollInterval: 15s
+    fetchTtl: 45s
+    valuesFile: |
+      environment: stg
+      demoVersion: v0.3.0
+      replicaCount: 1
+  trigger:
+    type: Promotion
+    from:
+      name: promotion-demo
+      namespace: paprika-promotion-dev
+    tests:
+      maxParallel: 1
+      steps:
+      - name: upstream-health
+        image: docker.io/library/busybox@sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6
+        script: |
+          set -eu
+          test "${#PAPRIKA_PROMOTION_REVISION}" -eq 40
+          test "$PAPRIKA_PROMOTION_SOURCE_APPLICATION" = promotion-demo
+          test "$PAPRIKA_PROMOTION_SOURCE_NAMESPACE" = paprika-promotion-dev
+          test -n "$PAPRIKA_PROMOTION_SOURCE_RELEASE"
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-dev.svc/healthz)" = ok
+          printf 'Healthy upstream %s/%s release %s at %s\n' "$PAPRIKA_PROMOTION_SOURCE_NAMESPACE" "$PAPRIKA_PROMOTION_SOURCE_APPLICATION" "$PAPRIKA_PROMOTION_SOURCE_RELEASE" "$PAPRIKA_PROMOTION_REVISION"
+        timeout: 30
+        retry: 1
+      - name: upstream-identity
+        image: docker.io/library/busybox@sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6
+        depends:
+        - upstream-health
+        script: |
+          set -eu
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-dev.svc/environment)" = dev
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-dev.svc/version)" = v0.3.0
+          echo 'Upstream HTTP environment and immutable demo version verified'
+        timeout: 30
+        retry: 1
+    gates:
+    - type: smoke-test
+      endpoint: http://promotion-demo.paprika-promotion-dev.svc/healthz
+      timeout: 5
+    - type: duration
+      timeout: 5
+  syncPolicy: Auto
+  strategy: Rolling
+  stages:
+  - name: stg
+    ring: 0
+    strategy: Rolling
+    gates:
+    - type: smoke-test
+      endpoint: http://promotion-demo.paprika-promotion-stg.svc/healthz
+      timeout: 10
+  healthChecks:
+  - name: internal-http
+    expression: http.statusCode == 200 && http.body == 'ok'
+    httpProbe:
+      url: http://promotion-demo.paprika-promotion-stg.svc/healthz
+      expectedStatus: 200
+      timeout: 5
+    interval: 5s
+---
+apiVersion: pipelines.paprika.io/v1alpha1
+kind: Application
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-prod
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+spec:
+  project: promotion-demo
+  source:
+    type: git
+    repoRef: promotion-demo-source
+    revision: v0.3.0
+    path: config/samples/promotion-demo
+    targetNamespace: paprika-promotion-prod
+    pollInterval: 15s
+    fetchTtl: 45s
+    valuesFile: |
+      environment: prod
+      demoVersion: v0.3.0
+      replicaCount: 1
+  trigger:
+    type: Promotion
+    from:
+      name: promotion-demo
+      namespace: paprika-promotion-stg
+    tests:
+      maxParallel: 1
+      steps:
+      - name: upstream-health
+        image: docker.io/library/busybox@sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6
+        script: |
+          set -eu
+          test "${#PAPRIKA_PROMOTION_REVISION}" -eq 40
+          test "$PAPRIKA_PROMOTION_SOURCE_APPLICATION" = promotion-demo
+          test "$PAPRIKA_PROMOTION_SOURCE_NAMESPACE" = paprika-promotion-stg
+          test -n "$PAPRIKA_PROMOTION_SOURCE_RELEASE"
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-stg.svc/healthz)" = ok
+          printf 'Healthy upstream %s/%s release %s at %s\n' "$PAPRIKA_PROMOTION_SOURCE_NAMESPACE" "$PAPRIKA_PROMOTION_SOURCE_APPLICATION" "$PAPRIKA_PROMOTION_SOURCE_RELEASE" "$PAPRIKA_PROMOTION_REVISION"
+        timeout: 30
+        retry: 1
+      - name: upstream-identity
+        image: docker.io/library/busybox@sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6
+        depends:
+        - upstream-health
+        script: |
+          set -eu
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-stg.svc/environment)" = stg
+          test "$(wget -qO- -T 5 http://promotion-demo.paprika-promotion-stg.svc/version)" = v0.3.0
+          echo 'Upstream HTTP environment and immutable demo version verified'
+        timeout: 30
+        retry: 1
+    gates:
+    - type: smoke-test
+      endpoint: http://promotion-demo.paprika-promotion-stg.svc/healthz
+      timeout: 5
+    - type: duration
+      timeout: 5
+  syncPolicy: Manual
+  strategy: Rolling
+  stages:
+  - name: prod
+    ring: 0
+    strategy: Rolling
+    gates:
+    - type: smoke-test
+      endpoint: http://promotion-demo.paprika-promotion-prod.svc/healthz
+      timeout: 10
+  healthChecks:
+  - name: internal-http
+    expression: http.statusCode == 200 && http.body == 'ok'
+    httpProbe:
+      url: http://promotion-demo.paprika-promotion-prod.svc/healthz
+      expectedStatus: 200
+      timeout: 5
+    interval: 5s

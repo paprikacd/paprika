@@ -1,0 +1,13 @@
+# Verified linux/amd64 child manifest of docker.io/library/busybox:1.37.0-musl.
+# Pinning the child digest also prevents a mutable tag from changing this demo.
+image: docker.io/library/busybox@sha256:dc88b80842580654294472735332ec7c7789a4010ec9a68b69f9b88c19abede6
+environment: dev
+demoVersion: v0.3.0
+replicaCount: 1
+resources:
+  requests:
+    cpu: 10m
+    memory: 8Mi
+  limits:
+    cpu: 100m
+    memory: 24Mi
