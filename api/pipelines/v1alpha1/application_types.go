@@ -70,8 +70,8 @@ type ApplicationReference struct {
 
 // ApplicationTrigger selects deployment candidates independently of syncPolicy,
 // which controls whether a selected candidate needs manual authorization.
-// Promotion currently supports git sources only, so every environment renders
-// the exact immutable Git commit deployed by its upstream Application.
+// Promotion supports Git sources and independently rendered immutable inline
+// artifacts. Each environment retains its own deployment configuration.
 // +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' ? has(self.from) : !has(self.from)",message="from is required only for Promotion triggers"
 // +kubebuilder:validation:XValidation:rule="self.type == 'Promotion' || (!has(self.tests) && !has(self.gates))",message="tests and gates require a Promotion trigger"
 type ApplicationTrigger struct {
@@ -292,11 +292,39 @@ const (
 	SourceTypeInline    = "inline"
 )
 
+// ArtifactImageReference is a full immutable application image reference.
+// +kubebuilder:validation:MaxLength=512
+// +kubebuilder:validation:Pattern="^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$"
+type ArtifactImageReference string
+
+// InlineArtifact identifies the immutable application version inside a rendered
+// bundle. Environments may vary configuration and dependencies, while declared
+// application components must deploy exactly the same immutable image refs.
+type InlineArtifact struct {
+	// Repository is the logical Git repository URL; Paprika does not fetch it.
+	// +kubebuilder:validation:MinLength=1
+	Repository string `json:"repository"`
+	// Revision is the exact source/image commit represented by this bundle.
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{40}$"
+	Revision string `json:"revision"`
+	// Images maps primary application component names to immutable full image references.
+	// Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+	// with app.kubernetes.io/component and name its primary container accordingly.
+	// Other dependency images may differ between environments.
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=32
+	Images map[string]ArtifactImageReference `json:"images"`
+}
+
 // InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
 type InlineSourceSpec struct {
 	// ConfigMapRef is the name of the ConfigMap containing the rendered manifest bundle.
 	// +optional
 	ConfigMapRef string `json:"configMapRef,omitempty"`
+	// Artifact declares validated immutable provenance for cross-environment promotion.
+	// Its snapshot ConfigMap must be immutable and contain matching workload images.
+	// +optional
+	Artifact *InlineArtifact `json:"artifact,omitempty"`
 }
 
 // ApplicationSource defines the source of an application.
@@ -591,7 +619,7 @@ type HealthCheckResult struct {
 
 // ApplicationSpec defines the specification for an application.
 // ApplicationSpec defines the specification for an application.
-// +kubebuilder:validation:XValidation:rule="!has(self.trigger) || self.trigger.type != 'Promotion' || self.source.type == 'git'",message="Promotion triggers currently require a git source"
+// +kubebuilder:validation:XValidation:rule="!has(self.trigger) || self.trigger.type != 'Promotion' || self.source.type == 'git' || (self.source.type == 'inline' && has(self.source.inline) && has(self.source.inline.artifact))",message="Promotion requires a Git source or a versioned inline artifact"
 type ApplicationSpec struct {
 	// Project references the AppProject that governs this application.
 	// +optional

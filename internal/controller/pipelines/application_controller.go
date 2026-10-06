@@ -463,6 +463,13 @@ func (r *ApplicationReconciler) prepareApplicationDeployment(ctx context.Context
 	if result, err := r.beginVerifiedPromotion(ctx, app); result != nil || err != nil {
 		return result, err
 	}
+	if err := r.prepareInlineArtifactSource(ctx, app); err != nil {
+		r.updatePhase(ctx, app, paprikav1.ApplicationFailed, "InvalidInlineArtifact", err.Error())
+		if patchErr := r.patchAppStatus(ctx, app); patchErr != nil {
+			return nil, patchErr
+		}
+		return nil, err
+	}
 	if !r.isInlineSource(app) {
 		if err := r.reconcileTemplate(ctx, app); err != nil {
 			log.FromContext(ctx).Error(err, "Failed to reconcile Template")
@@ -1237,7 +1244,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return ctrl.Result{}, nil
 	}
 
-	if r.isInlineSource(app) && app.Status.ReleaseRef == "" {
+	if r.isInlineSource(app) && !promotionTriggered(app) && app.Status.ReleaseRef == "" {
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for ApplyBundle to create release")
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
@@ -1253,7 +1260,7 @@ func (r *ApplicationReconciler) reconcileRelease(ctx context.Context, app *papri
 		return r.handleActiveRelease(ctx, app, targetStage, currentReleasePhase)
 	}
 
-	if r.isInlineSource(app) && app.Status.ReleaseRef != "" {
+	if r.isInlineSource(app) && !promotionTriggered(app) && app.Status.ReleaseRef != "" {
 		r.updatePhase(ctx, app, paprikav1.ApplicationPending, "AwaitingInlineRelease", "waiting for referenced inline release to start")
 		if err := r.patchAppStatus(ctx, app); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch application status: %w", err)
@@ -1443,12 +1450,13 @@ func (r *ApplicationReconciler) buildRelease(app *paprikav1.Application, targetS
 			}),
 		},
 		Spec: paprikav1.ReleaseSpec{
-			Pipeline:    pipelineName,
-			Target:      stageName,
-			Verify:      targetStage.Gates,
-			OnFailure:   app.Spec.OnFailure,
-			Parameters:  params,
-			SyncOptions: app.Spec.SyncOptions,
+			Pipeline:       pipelineName,
+			ManifestSource: inlineReleaseManifestSource(app),
+			Target:         stageName,
+			Verify:         targetStage.Gates,
+			OnFailure:      app.Spec.OnFailure,
+			Parameters:     params,
+			SyncOptions:    app.Spec.SyncOptions,
 		},
 	}
 }
@@ -2213,6 +2221,9 @@ func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *pa
 	data, ok := cm.Data["manifests.yaml"]
 	if !ok {
 		return nil, fmt.Errorf("snapshot %q missing manifests.yaml", snapshotName)
+	}
+	if err := validateInlineArtifactReleaseSnapshot(&cm, &release, appTargetNamespace(effectiveDeploymentApp(app))); err != nil {
+		return nil, fmt.Errorf("validate active inline artifact snapshot: %w", err)
 	}
 	return []byte(data), nil
 }

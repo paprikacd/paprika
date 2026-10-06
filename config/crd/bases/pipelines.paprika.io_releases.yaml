@@ -46,6 +46,40 @@ spec:
                   ManifestSource references a pre-rendered inline manifest snapshot ConfigMap.
                   When set, the controller skips template rendering and applies manifests from the ConfigMap.
                 properties:
+                  artifact:
+                    description: Artifact freezes the validated version of this independently
+                      rendered bundle.
+                    properties:
+                      images:
+                        additionalProperties:
+                          description: ArtifactImageReference is a full immutable
+                            application image reference.
+                          maxLength: 512
+                          pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$
+                          type: string
+                        description: |-
+                          Images maps primary application component names to immutable full image references.
+                          Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+                          with app.kubernetes.io/component and name its primary container accordingly.
+                          Other dependency images may differ between environments.
+                        maxProperties: 32
+                        minProperties: 1
+                        type: object
+                      repository:
+                        description: Repository is the logical Git repository URL;
+                          Paprika does not fetch it.
+                        minLength: 1
+                        type: string
+                      revision:
+                        description: Revision is the exact source/image commit represented
+                          by this bundle.
+                        pattern: ^[a-f0-9]{40}$
+                        type: string
+                    required:
+                    - images
+                    - repository
+                    - revision
+                    type: object
                   configMapRef:
                     description: ConfigMapRef is the name of the snapshot ConfigMap.
                     type: string

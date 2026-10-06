@@ -161,6 +161,9 @@ func TestCreateStepJob(t *testing.T) {
 				if job.Labels["paprika.io/step"] != "build" {
 					t.Fatalf("expected step label 'build', got %q", job.Labels["paprika.io/step"])
 				}
+				if job.Spec.Template.Labels["paprika.io/pipeline"] != "test-pipeline" || job.Spec.Template.Labels["paprika.io/step"] != "build" {
+					t.Fatalf("step Pod labels must support network policies and log lookup: %v", job.Spec.Template.Labels)
+				}
 			},
 		},
 		{

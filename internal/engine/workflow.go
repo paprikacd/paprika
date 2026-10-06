@@ -390,6 +390,10 @@ func (e *WorkflowEngine) CreateStepJob(ctx context.Context, step *paprika.Pipeli
 			BackoffLimit:          &backoffLimit,
 			ActiveDeadlineSeconds: &timeoutSeconds,
 			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
+					"paprika.io/pipeline": pipelineName,
+					"paprika.io/step":     step.Name,
+				}},
 				Spec: corev1.PodSpec{
 					RestartPolicy: corev1.RestartPolicyNever,
 					SecurityContext: &corev1.PodSecurityContext{

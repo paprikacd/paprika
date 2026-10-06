@@ -636,6 +636,41 @@ spec:
                     description: Inline references a manifest snapshot ConfigMap (for
                       type=inline).
                     properties:
+                      artifact:
+                        description: |-
+                          Artifact declares validated immutable provenance for cross-environment promotion.
+                          Its snapshot ConfigMap must be immutable and contain matching workload images.
+                        properties:
+                          images:
+                            additionalProperties:
+                              description: ArtifactImageReference is a full immutable
+                                application image reference.
+                              maxLength: 512
+                              pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$
+                              type: string
+                            description: |-
+                              Images maps primary application component names to immutable full image references.
+                              Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+                              with app.kubernetes.io/component and name its primary container accordingly.
+                              Other dependency images may differ between environments.
+                            maxProperties: 32
+                            minProperties: 1
+                            type: object
+                          repository:
+                            description: Repository is the logical Git repository
+                              URL; Paprika does not fetch it.
+                            minLength: 1
+                            type: string
+                          revision:
+                            description: Revision is the exact source/image commit
+                              represented by this bundle.
+                            pattern: ^[a-f0-9]{40}$
+                            type: string
+                        required:
+                        - images
+                        - repository
+                        - revision
+                        type: object
                       configMapRef:
                         description: ConfigMapRef is the name of the ConfigMap containing
                           the rendered manifest bundle.
@@ -1774,9 +1809,10 @@ spec:
             - stages
             type: object
             x-kubernetes-validations:
-            - message: Promotion triggers currently require a git source
+            - message: Promotion requires a Git source or a versioned inline artifact
               rule: '!has(self.trigger) || self.trigger.type != ''Promotion'' || self.source.type
-                == ''git'''
+                == ''git'' || (self.source.type == ''inline'' && has(self.source.inline)
+                && has(self.source.inline.artifact))'
           status:
             description: |-
               ApplicationStatus represents the status of an application.
@@ -2374,6 +2410,41 @@ spec:
                         description: Inline references a manifest snapshot ConfigMap
                           (for type=inline).
                         properties:
+                          artifact:
+                            description: |-
+                              Artifact declares validated immutable provenance for cross-environment promotion.
+                              Its snapshot ConfigMap must be immutable and contain matching workload images.
+                            properties:
+                              images:
+                                additionalProperties:
+                                  description: ArtifactImageReference is a full immutable
+                                    application image reference.
+                                  maxLength: 512
+                                  pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$
+                                  type: string
+                                description: |-
+                                  Images maps primary application component names to immutable full image references.
+                                  Each component must label a Deployment/StatefulSet/DaemonSet/Rollout/Pod
+                                  with app.kubernetes.io/component and name its primary container accordingly.
+                                  Other dependency images may differ between environments.
+                                maxProperties: 32
+                                minProperties: 1
+                                type: object
+                              repository:
+                                description: Repository is the logical Git repository
+                                  URL; Paprika does not fetch it.
+                                minLength: 1
+                                type: string
+                              revision:
+                                description: Revision is the exact source/image commit
+                                  represented by this bundle.
+                                pattern: ^[a-f0-9]{40}$
+                                type: string
+                            required:
+                            - images
+                            - repository
+                            - revision
+                            type: object
                           configMapRef:
                             description: ConfigMapRef is the name of the ConfigMap
                               containing the rendered manifest bundle.
@@ -3524,9 +3595,10 @@ spec:
                 - stages
                 type: object
                 x-kubernetes-validations:
-                - message: Promotion triggers currently require a git source
+                - message: Promotion requires a Git source or a versioned inline artifact
                   rule: '!has(self.trigger) || self.trigger.type != ''Promotion''
-                    || self.source.type == ''git'''
+                    || self.source.type == ''git'' || (self.source.type == ''inline''
+                    && has(self.source.inline) && has(self.source.inline.artifact))'
               analysisResults:
                 description: AnalysisResults aggregate the latest background analysis
                   state.
