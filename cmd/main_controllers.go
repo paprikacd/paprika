@@ -152,7 +152,7 @@ func setupARCObserver(mgr ctrl.Manager) error {
 	if err != nil {
 		return arcobserver.ErrInvalidConfig
 	}
-	if err := mgr.Add(&arcobserver.Runner{Config: cfg, Collector: arcobserver.KubernetesCollector{Client: dc}, Publisher: publisher, Log: ctrl.Log.WithName("arc-observer")}); err != nil {
+	if err := mgr.Add(&arcobserver.Runner{Config: cfg, Collector: arcobserver.KubernetesCollector{Client: dc, Usage: cfg.Usage}, Publisher: publisher, Log: ctrl.Log.WithName("arc-observer")}); err != nil {
 		return fmt.Errorf("register ARC observer: %w", err)
 	}
 	return nil

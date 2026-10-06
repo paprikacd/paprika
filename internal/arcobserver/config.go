@@ -17,9 +17,10 @@ const ReadDeadline = 8 * time.Second
 const PublishDeadline = 3 * time.Second
 
 type Config struct {
-	Endpoint  string   `json:"endpoint"`
-	ProjectID string   `json:"projectId"`
-	Sources   []Source `json:"sources"`
+	Endpoint  string       `json:"endpoint"`
+	ProjectID string       `json:"projectId"`
+	Sources   []Source     `json:"sources"`
+	Usage     *UsageConfig `json:"usage,omitempty"`
 }
 
 type Source struct {
@@ -75,6 +76,9 @@ func validSource(s *Source) bool {
 }
 
 func validConfig(cfg *Config) bool {
+	if cfg.Usage != nil && !validUsageConfig(cfg.Usage) {
+		return false
+	}
 	u, err := url.Parse(cfg.Endpoint)
 	if err != nil || !validOrigin(u) || !identifier.MatchString(cfg.ProjectID) || len(cfg.Sources) < 1 || len(cfg.Sources) > 2 {
 		return false

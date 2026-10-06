@@ -10,13 +10,14 @@ import (
 // Observation is the entire outbound payload. Raw objects, logs, job titles,
 // repositories, service accounts and credential metadata cannot be serialized.
 type Observation struct {
-	ObservedAt      time.Time `json:"observedAt"`
-	State           string    `json:"state"`
-	ControllerReady bool      `json:"controllerReady"`
-	ListenerReady   bool      `json:"listenerReady"`
-	Workers         int       `json:"workers"`
-	Busy            int       `json:"busy"`
-	Nodes           []string  `json:"nodes,omitempty"`
+	ObservedAt      time.Time      `json:"observedAt"`
+	State           string         `json:"state"`
+	ControllerReady bool           `json:"controllerReady"`
+	ListenerReady   bool           `json:"listenerReady"`
+	Workers         int            `json:"workers"`
+	Busy            int            `json:"busy"`
+	Nodes           []string       `json:"nodes,omitempty"`
+	Usage           *UsageSnapshot `json:"usage,omitempty"`
 }
 
 func number(o *unstructured.Unstructured, fields ...string) int64 {
@@ -234,7 +235,7 @@ func (w *workerInventory) observation(snap *Snapshot) (Observation, error) {
 	if len(w.nodes) > 32 || len(w.workers) > 10000 {
 		return Observation{}, ErrIncomplete
 	}
-	o := Observation{ObservedAt: snap.ObservedAt, State: "healthy", ControllerReady: w.controllerReady, ListenerReady: w.listenerReady, Workers: len(w.workers), Busy: len(w.busy)}
+	o := Observation{ObservedAt: snap.ObservedAt, State: "healthy", ControllerReady: w.controllerReady, ListenerReady: w.listenerReady, Workers: len(w.workers), Busy: len(w.busy), Usage: snap.Usage}
 	for node := range w.nodes {
 		o.Nodes = append(o.Nodes, node)
 	}
