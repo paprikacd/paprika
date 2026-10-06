@@ -2,6 +2,8 @@
 
 Paprika's `Pipeline` CRD models CI-style workflows as Kubernetes resources. Pipelines run as a sequence of container steps, support dependencies and parallel execution, and can produce artifacts.
 
+For deployments across environments, see [Dev → Staging → Production Promotion](environment-promotion.md). Connect separate Applications through `spec.trigger.from` to deploy a completed upstream Git revision, run tests between environments, and select automatic or manual promotion for each target cluster.
+
 ## Pipeline CRD
 
 A minimal pipeline:

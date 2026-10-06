@@ -23,10 +23,10 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -71,12 +71,20 @@ var _ = ginkgo.Describe("Application Controller Self-Heal Envtest", ginkgo.Seria
 			gomega.Expect(k8sClient.Delete(ctx, release)).To(gomega.Succeed())
 		}
 
-		gomega.Eventually(func() error {
-			return client.IgnoreNotFound(k8sClient.Get(ctx, appKey, &pipelinesv1alpha1.Application{}))
-		}, 10*time.Second, 500*time.Millisecond).Should(gomega.Succeed())
-		gomega.Eventually(func() error {
-			return client.IgnoreNotFound(k8sClient.Get(ctx, releaseKey, &pipelinesv1alpha1.Release{}))
-		}, 10*time.Second, 500*time.Millisecond).Should(gomega.Succeed())
+		// Envtest has no running controller loop or garbage collector. Drive
+		// the normal finalization path after DELETE instead of leaving the
+		// new Application finalizer parked between specs.
+		r := &ApplicationReconciler{client: k8sClient, Scheme: k8sClient.Scheme()}
+		gomega.Eventually(func() bool {
+			if apierrors.IsNotFound(k8sClient.Get(ctx, appKey, &pipelinesv1alpha1.Application{})) {
+				return true
+			}
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: appKey})
+			return err == nil && apierrors.IsNotFound(k8sClient.Get(ctx, appKey, &pipelinesv1alpha1.Application{}))
+		}, 10*time.Second, 500*time.Millisecond).Should(gomega.BeTrue())
+		gomega.Eventually(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, releaseKey, &pipelinesv1alpha1.Release{}))
+		}, 10*time.Second, 500*time.Millisecond).Should(gomega.BeTrue())
 	})
 
 	createCompleteRelease := func(onFailure *pipelinesv1alpha1.FailureAction) *pipelinesv1alpha1.Release {

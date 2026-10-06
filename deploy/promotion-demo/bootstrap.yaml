@@ -1,0 +1,124 @@
+# Dedicated demo namespaces, restricted Projects, and public source references.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paprika-promotion-dev
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-dev
+spec:
+  description: Scoped dev promotion demo
+  sourceRepos:
+  - https://github.com/paprikacd/paprika.git
+  repositories:
+  - promotion-demo-source
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: paprika-promotion-dev
+  kinds:
+  - ConfigMap
+  - Deployment
+  - Service
+  clusterResourceBlacklist:
+  - '*'
+  limits:
+    maxApplications: 1
+    maxReleases: 10
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: Repository
+metadata:
+  name: promotion-demo-source
+  namespace: paprika-promotion-dev
+spec:
+  type: git
+  url: https://github.com/paprikacd/paprika.git
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paprika-promotion-stg
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-stg
+spec:
+  description: Scoped stg promotion demo
+  sourceRepos:
+  - https://github.com/paprikacd/paprika.git
+  repositories:
+  - promotion-demo-source
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: paprika-promotion-stg
+  kinds:
+  - ConfigMap
+  - Deployment
+  - Service
+  clusterResourceBlacklist:
+  - '*'
+  limits:
+    maxApplications: 1
+    maxReleases: 10
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: Repository
+metadata:
+  name: promotion-demo-source
+  namespace: paprika-promotion-stg
+spec:
+  type: git
+  url: https://github.com/paprikacd/paprika.git
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: paprika-promotion-prod
+  labels:
+    app.kubernetes.io/part-of: paprika-promotion-demo
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: AppProject
+metadata:
+  name: promotion-demo
+  namespace: paprika-promotion-prod
+spec:
+  description: Scoped prod promotion demo
+  sourceRepos:
+  - https://github.com/paprikacd/paprika.git
+  repositories:
+  - promotion-demo-source
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: paprika-promotion-prod
+  kinds:
+  - ConfigMap
+  - Deployment
+  - Service
+  clusterResourceBlacklist:
+  - '*'
+  limits:
+    maxApplications: 1
+    maxReleases: 10
+---
+apiVersion: core.paprika.io/v1alpha1
+kind: Repository
+metadata:
+  name: promotion-demo-source
+  namespace: paprika-promotion-prod
+spec:
+  type: git
+  url: https://github.com/paprikacd/paprika.git

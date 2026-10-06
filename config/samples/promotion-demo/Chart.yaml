@@ -1,0 +1,6 @@
+apiVersion: v2
+name: paprika-promotion-demo
+description: Internal HTTP workload for testing Application promotion.
+type: application
+version: 0.1.0
+appVersion: "0.3.0"

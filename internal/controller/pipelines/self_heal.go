@@ -29,7 +29,19 @@ func (r *ApplicationReconciler) currentTime() time.Time {
 
 //nolint:cyclop // self-heal branching is inherent to the flow.
 func (r *ApplicationReconciler) reconcileSelfHeal(ctx context.Context, app *paprikav1.Application) error {
+	original := app
+	app = effectiveDeploymentApp(app)
+	if app != original {
+		defer func() {
+			original.Status.Conditions = app.Status.Conditions
+			original.Status.LastSelfHealTime = app.Status.LastSelfHealTime
+		}()
+	}
 	if app.Spec.SelfHeal == nil {
+		return nil
+	}
+	if applicationDiffUnavailable(app) {
+		r.setSelfHealCondition(app, metav1.ConditionFalse, "TargetStateUnavailable", "Self-heal waits until the current deployment cluster can be observed.")
 		return nil
 	}
 

@@ -280,7 +280,7 @@ func (r *ReleaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ 
 		if err := r.ensureReleaseFinalizer(ctx, &release); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 	}
 
 	return r.reconcileReleasePhase(ctx, req, &release, start, &result)
@@ -460,7 +460,7 @@ func (r *ReleaseReconciler) transitionToVerifying(ctx context.Context, release *
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 }
 
 func (r *ReleaseReconciler) getCanaryInterval(canaryCfg *paprikav1.CanaryConfig) time.Duration {
@@ -500,7 +500,7 @@ func (r *ReleaseReconciler) handlePendingPhase(ctx context.Context, release *pap
 	if err := r.patchReleaseStatus(ctx, release, oldPhase); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to transition from pending to promoting: %w", err)
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 }
 
 func (r *ReleaseReconciler) handleAwaitingApprovalPhase(ctx context.Context, release *paprikav1.Release, result *string) (ctrl.Result, error) {
@@ -520,7 +520,7 @@ func (r *ReleaseReconciler) handleAwaitingApprovalPhase(ctx context.Context, rel
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("failed to transition from awaiting approval to promoting: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 	}
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
@@ -545,7 +545,7 @@ func (r *ReleaseReconciler) initiateRelease(ctx context.Context, release *paprik
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to set release promoting: %w", err)
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 }
 
 // requeueForHooks persists the in-memory HookStatuses (so progress survives
@@ -639,7 +639,7 @@ func (r *ReleaseReconciler) handlePromotingPhase(ctx context.Context, release *p
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to update release phase: %w", err)
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 }
 
 func (r *ReleaseReconciler) reconcileRolloutManagedRelease(ctx context.Context, release *paprikav1.Release, stage *paprikav1.Stage, result *string) (ctrl.Result, error) {
@@ -666,7 +666,7 @@ func (r *ReleaseReconciler) reconcileRolloutManagedRelease(ctx context.Context, 
 			*result = resultError
 			return ctrl.Result{}, fmt.Errorf("updating release status: %w", err)
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 	}
 
 	ro.Spec = expected.Spec
@@ -988,7 +988,7 @@ func (r *ReleaseReconciler) executeHookPhases(
 		return fmt.Errorf("classify hook manifests: %w", err)
 	}
 
-	dynClient, err := r.dynClientForRelease(ctx, release)
+	dynClient, err := r.dynClientForStage(ctx, stage, release.Namespace)
 	if err != nil {
 		return fmt.Errorf("resolve dynamic client for hooks: %w", err)
 	}
@@ -1201,10 +1201,10 @@ func (r *ReleaseReconciler) runGovernanceGate(ctx context.Context, release *papr
 	return app, nil
 }
 
-func (r *ReleaseReconciler) applyManifests(ctx context.Context, manifests []byte, namespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
+func (r *ReleaseReconciler) applyManifestsWithCredentialNamespace(ctx context.Context, manifests []byte, namespace, credentialNamespace, kubeconfigSecret, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) error {
 	log := logf.FromContext(ctx)
 
-	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, namespace)
+	dynClient, err := r.resolveDynamicClient(ctx, kubeconfigSecret, credentialNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to create dynamic client: %w", err)
 	}
@@ -1323,7 +1323,7 @@ func (r *ReleaseReconciler) applyManifestsForCluster(ctx context.Context, namesp
 		if cluster.KubeconfigSecret != "" {
 			kubeconfigSecret = cluster.KubeconfigSecret
 		}
-		err = r.applyManifests(ctx, manifests, namespace, kubeconfigSecret, appName, releaseName, opts, sel)
+		err = r.applyManifestsWithCredentialNamespace(ctx, manifests, namespace, clusterCredentialNamespace(cluster, namespace), kubeconfigSecret, appName, releaseName, opts, sel)
 	}
 	if selective {
 		metrics.SelectiveSyncTotal.Add(ctx, 1, metric.WithAttributes(
@@ -1389,12 +1389,18 @@ func (r *ReleaseReconciler) applyViaAgent(ctx context.Context, cluster *paprikav
 }
 
 func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfigSecret, namespace string) (dynamic.Interface, error) {
-	if r.ClusterMgr != nil && kubeconfigSecret != "" {
+	if kubeconfigSecret != "" {
+		if r.ClusterMgr == nil {
+			return nil, errors.New("remote cluster connection manager is not configured")
+		}
 		dynClient, err := r.ClusterMgr.GetClient(ctx, kubeconfigSecret, namespace)
 		if err != nil {
 			return nil, fmt.Errorf("getting cluster client: %w", err)
 		}
 		return dynClient, nil
+	}
+	if r.RestConfig == nil {
+		return nil, errors.New("local cluster connection configuration is not available")
 	}
 	dynClient, err := dynamic.NewForConfig(r.RestConfig)
 	if err != nil {
@@ -1405,7 +1411,8 @@ func (r *ReleaseReconciler) resolveDynamicClient(ctx context.Context, kubeconfig
 
 func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav1.ClusterRef, defaultNs string) (paprikav1.ClusterRef, error) {
 	if ref.Name == "" {
-		return *ref, nil
+		out := *ref
+		return validatedClusterRef(&out, nil)
 	}
 	ns := ref.Namespace
 	if ns == "" {
@@ -1417,11 +1424,26 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 		if client.IgnoreNotFound(err) != nil {
 			return *ref, fmt.Errorf("getting cluster %s/%s: %w", ns, ref.Name, err)
 		}
-		return *ref, nil
+		if ref.KubeconfigSecret == "" && ref.AgentAddress == "" && ref.Mode != paprikav1.ClusterModeInCluster {
+			return *ref, fmt.Errorf("cluster %s/%s is not registered and has no explicit deployment transport", ns, ref.Name)
+		}
+		out := *ref
+		return validatedClusterRef(&out, nil)
 	}
 
 	out := *ref
+	if cluster.Spec.Disabled || cluster.Status.Phase == clustersv1alpha1.ClusterPhaseDisabled {
+		return out, fmt.Errorf("cluster %s/%s is disabled", ns, ref.Name)
+	}
+	if ref.Mode != "" && ref.Mode != cluster.Spec.Mode {
+		return out, fmt.Errorf("cluster ref mode %q does not match registered cluster %s/%s mode %q", ref.Mode, ns, ref.Name, cluster.Spec.Mode)
+	}
+	out.Mode = cluster.Spec.Mode
+	out.Namespace = ns
 	if cluster.Spec.KubeconfigSecretRef != nil {
+		if key := cluster.Spec.KubeconfigSecretRef.Key; key != "" && key != "kubeconfig" {
+			return out, fmt.Errorf("cluster %s/%s deployment transport requires kubeconfigSecretRef.key to be kubeconfig", ns, ref.Name)
+		}
 		out.KubeconfigSecret = cluster.Spec.KubeconfigSecretRef.Name
 		if cluster.Spec.KubeconfigSecretRef.Namespace != "" {
 			out.Namespace = cluster.Spec.KubeconfigSecretRef.Namespace
@@ -1433,7 +1455,73 @@ func (r *ReleaseReconciler) resolveClusterRef(ctx context.Context, ref *paprikav
 	if cluster.Spec.ServiceAccount != "" {
 		out.ServiceAccount = cluster.Spec.ServiceAccount
 	}
-	return out, nil
+	return validatedClusterRef(&out, &cluster)
+}
+
+func validatedClusterRef(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) (paprikav1.ClusterRef, error) {
+	err := validateClusterApplyTransport(ref, registered)
+	return *ref, err
+}
+
+func clusterCredentialNamespace(cluster *paprikav1.ClusterRef, defaultNamespace string) string {
+	if cluster.Namespace != "" {
+		return cluster.Namespace
+	}
+	return defaultNamespace
+}
+
+func validateClusterApplyTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) error {
+	if ref.KubeconfigSecret != "" && ref.AgentAddress != "" {
+		return errors.New("cluster cannot combine kubeconfigSecret and agentAddress deployment transports")
+	}
+	if ref.Mode == "" {
+		if registered != nil {
+			return errors.New("registered cluster has no deployment mode")
+		}
+		switch {
+		case ref.AgentAddress != "":
+			ref.Mode = paprikav1.ClusterModeAgent
+		case ref.KubeconfigSecret != "":
+			ref.Mode = paprikav1.ClusterModeDirect
+		case ref.Server != "":
+			return errors.New("remote cluster server requires a kubeconfigSecret deployment transport")
+		default:
+			return nil
+		}
+	}
+	switch ref.Mode {
+	case paprikav1.ClusterModeInCluster:
+		if ref.KubeconfigSecret != "" || ref.AgentAddress != "" {
+			return errors.New("in-cluster mode cannot use a remote deployment transport")
+		}
+	case paprikav1.ClusterModeDirect:
+		return validateDirectClusterTransport(ref, registered)
+	case paprikav1.ClusterModeAgent:
+		return validateAgentClusterTransport(ref, registered)
+	default:
+		return fmt.Errorf("cluster deployment mode %q is unsupported", ref.Mode)
+	}
+	return nil
+}
+
+func validateDirectClusterTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) error {
+	if ref.AgentAddress != "" {
+		return errors.New("direct cluster mode cannot use agentAddress")
+	}
+	if ref.KubeconfigSecret == "" || (registered != nil && (registered.Spec.KubeconfigSecretRef == nil || registered.Spec.KubeconfigSecretRef.Name == "")) {
+		return errors.New("direct cluster deployment requires a kubeconfigSecretRef")
+	}
+	return nil
+}
+
+func validateAgentClusterTransport(ref *paprikav1.ClusterRef, registered *clustersv1alpha1.Cluster) error {
+	if ref.KubeconfigSecret != "" {
+		return errors.New("agent cluster mode cannot use kubeconfigSecret")
+	}
+	if ref.AgentAddress == "" && registered == nil {
+		return errors.New("agent deployment requires an explicit agentAddress or a registered Cluster")
+	}
+	return nil
 }
 
 func (r *ReleaseReconciler) applyAllDocuments(ctx context.Context, log logr.Logger, dynClient dynamic.Interface, docs [][]byte, namespace, appName, releaseName string, opts *paprikav1.SyncOptions, sel *syncResourcesPayload) (int, error) {
@@ -2323,11 +2411,28 @@ func (r *ReleaseReconciler) gvrFromKind(kind, group, version string) (schema.Gro
 	return schema.GroupVersionResource{Group: group, Version: version, Resource: resourceName}, nil
 }
 
-// dynClientForRelease resolves the dynamic client used to apply hook resources
-// for the release's target cluster. MVP is in-cluster only; future work will
-// route through the same ClusterRef resolution as applyManifestsForCluster.
-func (r *ReleaseReconciler) dynClientForRelease(_ context.Context, _ *paprikav1.Release) (dynamic.Interface, error) {
-	return r.DynamicClient, nil
+// dynClientForStage routes hooks through the same registration and credentials
+// as workload apply. The agent apply API does not support hook lifecycle reads.
+func (r *ReleaseReconciler) dynClientForStage(ctx context.Context, stage *paprikav1.Stage, namespace string) (dynamic.Interface, error) {
+	return r.dynamicClientForStage(ctx, stage, namespace, "hook lifecycle")
+}
+
+func (r *ReleaseReconciler) dynamicClientForStage(ctx context.Context, stage *paprikav1.Stage, namespace, operation string) (dynamic.Interface, error) {
+	cluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return r.dynamicClientForResolvedCluster(ctx, &cluster, namespace, operation)
+}
+
+func (r *ReleaseReconciler) dynamicClientForResolvedCluster(ctx context.Context, cluster *paprikav1.ClusterRef, namespace, operation string) (dynamic.Interface, error) {
+	if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
+		return nil, fmt.Errorf("%s is not supported by the agent apply transport; configure a direct cluster kubeconfigSecretRef", operation)
+	}
+	if cluster.KubeconfigSecret == "" && r.DynamicClient != nil {
+		return r.DynamicClient, nil
+	}
+	return r.resolveDynamicClient(ctx, cluster.KubeconfigSecret, clusterCredentialNamespace(cluster, namespace))
 }
 
 // executeHooks runs the given phase's hook resources in YAML declaration
@@ -2930,6 +3035,9 @@ func (r *ReleaseReconciler) patchApplicationReleaseRef(ctx context.Context, rele
 
 func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
+	if err := r.cleanupManagedResources(ctx, release); err != nil {
+		return err
+	}
 
 	if release.Status.RolloutRef != "" {
 		ro := &rolloutsv1alpha1.Rollout{
@@ -2942,12 +3050,6 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 			return fmt.Errorf("deleting rollout child: %w", err)
 		}
 		log.Info("Deleted Rollout child", "rollout", release.Status.RolloutRef)
-	}
-
-	if r.DynamicClient != nil {
-		if err := r.cleanupManagedResources(ctx, release); err != nil {
-			return err
-		}
 	}
 
 	// Delete the manifest snapshot last — cleanupManagedResources reads it to
@@ -2972,6 +3074,10 @@ func (r *ReleaseReconciler) cleanup(ctx context.Context, release *paprikav1.Rele
 func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release *paprikav1.Release) error {
 	log := logf.FromContext(ctx)
 	labelSelector := labels.Set{engine.ReleaseNameLabelKey: release.Name}.String()
+	targets, err := r.cleanupTargetClients(ctx, release)
+	if err != nil {
+		return fmt.Errorf("resolve release cleanup targets: %w", err)
+	}
 
 	gvrs, err := r.gvrsFromSnapshot(ctx, release)
 	if err != nil {
@@ -2982,27 +3088,91 @@ func (r *ReleaseReconciler) cleanupManagedResources(ctx context.Context, release
 	}
 
 	deleteOpts := metav1.DeleteOptions{PropagationPolicy: propagationPolicy(release.Spec.SyncOptions)}
-	for _, gvr := range gvrs {
-		items, err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: labelSelector,
-		})
-		if err != nil {
-			// The API may not be installed on this cluster (e.g. httproutes
-			// without Gateway API, or a CRD removed after apply) — nothing to
-			// clean up for it.
-			if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-				continue
+	for _, target := range targets {
+		for _, gvr := range gvrs {
+			items, err := target.Resource(gvr).Namespace(release.Namespace).List(ctx, metav1.ListOptions{
+				LabelSelector: labelSelector,
+			})
+			if err != nil {
+				// The API may not be installed on this cluster (e.g. httproutes
+				// without Gateway API, or a CRD removed after apply) — nothing to
+				// clean up for it.
+				if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+					continue
+				}
+				return fmt.Errorf("listing %s: %w", gvr.Resource, err)
 			}
-			return fmt.Errorf("listing %s: %w", gvr.Resource, err)
-		}
-		for _, item := range items.Items {
-			if err := r.DynamicClient.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
+			for _, item := range items.Items {
+				if err := target.Resource(gvr).Namespace(release.Namespace).Delete(ctx, item.GetName(), deleteOpts); err != nil && !apierrors.IsNotFound(err) {
+					return fmt.Errorf("deleting %s/%s: %w", gvr.Resource, item.GetName(), err)
+				}
+				log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
 			}
-			log.Info("Deleted managed resource", "resource", gvr.Resource, "name", item.GetName())
 		}
 	}
 	return nil
+}
+
+func (r *ReleaseReconciler) cleanupTargetClients(ctx context.Context, release *paprikav1.Release) ([]dynamic.Interface, error) {
+	stages := make(map[string]struct{})
+	for _, name := range []string{release.Spec.Target, release.Spec.From, release.Status.CurrentStage} {
+		if name != "" {
+			stages[name] = struct{}{}
+		}
+	}
+	for _, promotion := range release.Status.PromotionHistory {
+		if promotion.Stage != "" {
+			stages[promotion.Stage] = struct{}{}
+		}
+	}
+	if len(stages) == 0 {
+		// Old standalone releases without any stage reference could only have
+		// used the local transport. No missing reference is treated as local.
+		if r.DynamicClient != nil {
+			return []dynamic.Interface{r.DynamicClient}, nil
+		}
+		if r.RestConfig == nil {
+			return nil, nil
+		}
+		local, err := r.resolveDynamicClient(ctx, "", release.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		return []dynamic.Interface{local}, nil
+	}
+	names := make([]string, 0, len(stages))
+	for name := range stages {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	seen := make(map[string]struct{})
+	result := make([]dynamic.Interface, 0, len(stages))
+	for _, name := range names {
+		var stage paprikav1.Stage
+		if err := r.client.Get(ctx, types.NamespacedName{Namespace: release.Namespace, Name: name}, &stage); err != nil {
+			return nil, fmt.Errorf("get stage %s/%s for resource cleanup: %w", release.Namespace, name, err)
+		}
+		cluster, err := r.resolveClusterRef(ctx, &stage.Spec.Cluster, release.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("resolve stage %s cleanup cluster: %w", name, err)
+		}
+		key := "in-cluster"
+		if cluster.KubeconfigSecret != "" {
+			key = "direct:" + clusterCredentialNamespace(&cluster, release.Namespace) + "/" + cluster.KubeconfigSecret
+		} else if cluster.Mode == paprikav1.ClusterModeAgent || cluster.AgentAddress != "" {
+			key = "agent:" + cluster.AgentAddress + ":" + cluster.Namespace + "/" + cluster.Name
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		target, err := r.dynamicClientForResolvedCluster(ctx, &cluster, release.Namespace, "resource cleanup")
+		if err != nil {
+			return nil, fmt.Errorf("stage %s cleanup target: %w", name, err)
+		}
+		seen[key] = struct{}{}
+		result = append(result, target)
+	}
+	return result, nil
 }
 
 func propagationPolicy(opts *paprikav1.SyncOptions) *metav1.DeletionPropagation {
@@ -3132,7 +3302,7 @@ func (r *ReleaseReconciler) advanceCanaryStep(ctx context.Context, release *papr
 	// traffic to measure — so checks like podMetrics would fail spuriously on
 	// an empty selector rather than measuring real canary health.
 	if stepIdx > 0 {
-		if stop, analysisErr := r.runCanaryAnalysis(ctx, release, canaryCfg, result, log); analysisErr != nil {
+		if stop, analysisErr := r.runCanaryAnalysisForStage(ctx, release, stage, canaryCfg, result, log); analysisErr != nil {
 			return ctrl.Result{}, analysisErr
 		} else if stop {
 			return ctrl.Result{}, nil
@@ -3212,7 +3382,11 @@ func (r *ReleaseReconciler) routerForStage(ctx context.Context, stage *paprikav1
 	if canarySvc == "" {
 		canarySvc = release.Name + "-canary"
 	}
-	routerObj, err := r.TrafficRouterFactory(stage.Spec.TrafficRouter, r.DynamicClient, stableSvc, canarySvc, release.Namespace)
+	targetClient, err := r.dynamicClientForStage(ctx, stage, release.Namespace, "traffic routing")
+	if err != nil {
+		return nil, fmt.Errorf("resolve traffic routing target: %w", err)
+	}
+	routerObj, err := r.TrafficRouterFactory(stage.Spec.TrafficRouter, targetClient, stableSvc, canarySvc, release.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("creating traffic router: %w", err)
 	}
@@ -3341,7 +3515,7 @@ func (r *ReleaseReconciler) handleCanaryPromotion(ctx context.Context, release *
 		*result = resultError
 		return ctrl.Result{}, fmt.Errorf("failed to transition to verifying: %w", err)
 	}
-	return ctrl.Result{Requeue: true}, nil
+	return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 }
 
 //nolint:cyclop // canary weight rendering + governance + apply.

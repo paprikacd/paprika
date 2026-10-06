@@ -936,6 +936,22 @@ rbac:
     ##
     enable: false
 
+  ## Optional permissions for managing Actions Runner Controller resources.
+  ## Roles are restricted to the listed ARC namespaces; PriorityClass changes
+  ## are restricted to the configured names except creation (Kubernetes limitation).
+  arc:
+    enabled: false
+    namespaces: []
+    priorityClasses:
+      - arc-spare
+
+  ## Optional GKE ComputeClass permissions for ARC capacity management.
+  ## CREATE is type-scoped; later reads and changes are restricted to these names.
+  arcComputeClass:
+    enabled: false
+    resourceNames:
+      - arc-ci-fast
+
 ## ServiceAccount configuration
 ##
 serviceAccount:

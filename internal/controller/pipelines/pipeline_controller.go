@@ -94,7 +94,7 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 		if err := r.ensurePipelineFinalizer(ctx, &pipeline); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Millisecond}, nil
 	}
 
 	return r.reconcilePipeline(ctx, req, &pipeline, start, &result)

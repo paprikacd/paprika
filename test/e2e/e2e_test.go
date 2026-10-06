@@ -127,6 +127,14 @@ func deployManager() {
 	_, err = utils.Run(cmd)
 	Expect(err).NotTo(HaveOccurred(), "Failed to restart the controller-manager")
 
+	By("waiting for the restarted controller-manager rollout to finish")
+	rolloutCtx, rolloutCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer rolloutCancel()
+	cmd = exec.CommandContext(rolloutCtx, "kubectl", "rollout", "status", "-n", namespace,
+		"deployment/paprika-controller-manager", "--timeout=180s")
+	_, err = utils.Run(cmd)
+	Expect(err).NotTo(HaveOccurred(), "Controller-manager rollout did not finish")
+
 	By("waiting for the operator deployment to be ready")
 	cmd = exec.Command("kubectl", "wait", "--for=condition=available", "-n", namespace,
 		"deployment/paprika-controller-manager", "--timeout=180s")

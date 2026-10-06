@@ -24,6 +24,14 @@ func analysisRunName(appName, templateName string) string {
 
 func (r *ApplicationReconciler) reconcileAnalysisRuns(ctx context.Context, app *pipelinesv1alpha1.Application) error {
 	log := log.FromContext(ctx)
+	original := app
+	app = effectiveDeploymentApp(app)
+	if app != original {
+		defer func() {
+			original.Status.AnalysisResults = app.Status.AnalysisResults
+			original.Status.Conditions = app.Status.Conditions
+		}()
+	}
 
 	desiredRuns := map[string]bool{}
 	for _, ref := range app.Spec.AnalysisTemplates {
