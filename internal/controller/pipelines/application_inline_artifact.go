@@ -283,15 +283,15 @@ func (r *ApplicationReconciler) prepareInlineArtifactSource(ctx context.Context,
 		if release == nil || !artifactReleaseMatches(deployment, release) {
 			return nil
 		}
-		if release.Annotations[sourceHashAnnotation] != hash {
-			return errors.New("inline artifact release snapshot differs from its frozen source hash")
-		}
 	}
-	if app.Status.SourceHash == hash && app.Status.SourceRevision == artifact.Revision {
+	if app.Status.SourceHash == hash && app.Status.SourceRevision == artifact.Revision && app.Status.Synced {
 		return nil
 	}
 	app.Status.SourceHash = hash
 	app.Status.SourceRevision = artifact.Revision
+	// Match Template source convergence; rollout health, drift and deployment
+	// observations remain separate promotion readiness requirements.
+	app.Status.Synced = true
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		return fmt.Errorf("bind inline artifact source identity: %w", err)
 	}

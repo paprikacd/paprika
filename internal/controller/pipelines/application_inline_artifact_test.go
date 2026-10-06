@@ -213,19 +213,81 @@ func TestInlineArtifactPromotionRejectsMismatchedProof(t *testing.T) {
 
 func TestInlineArtifactExternalPublisherBindsOnlyMatchingRelease(t *testing.T) {
 	_, upstream, release, sourceCM, _ := inlineArtifactFixture()
+	upstream.Status.Synced = false
 	r := inlineArtifactReconciler(t, upstream, release, sourceCM)
 	require.NoError(t, r.prepareInlineArtifactSource(context.Background(), upstream))
 	require.Equal(t, promotionTestRevision, upstream.Status.SourceRevision)
 	require.NotEmpty(t, upstream.Status.SourceHash)
+	require.True(t, upstream.Status.Synced)
 	// Publishing a future desired bundle does not relabel the current Release.
 	upstream.Spec.Source.Inline.ConfigMapRef = "next-bundle"
 	upstream.Spec.Source.Inline.Artifact.Revision = strings.Repeat("b", 40)
 	next := sourceCM.DeepCopy()
 	next.Name, next.ResourceVersion = "next-bundle", ""
+	upstream.Status.Synced = false
 	require.NoError(t, r.client.Create(context.Background(), next))
 	require.NoError(t, r.prepareInlineArtifactSource(context.Background(), upstream))
 	require.Equal(t, promotionTestRevision, upstream.Status.SourceRevision)
+	require.False(t, upstream.Status.Synced)
 	require.Error(t, promotionSourceCommitReady(upstream, release))
+}
+
+func TestInlineArtifactExternalPublisherConvergesSyncedForBoundIdentity(t *testing.T) {
+	_, upstream, release, sourceCM, _ := inlineArtifactFixture()
+	upstream.Status.SourceHash = upstream.Spec.Source.Inline.ManifestHash
+	upstream.Status.SourceRevision = promotionTestRevision
+	upstream.Status.Synced = false
+	r := inlineArtifactReconciler(t, upstream, release, sourceCM)
+	require.NoError(t, r.prepareInlineArtifactSource(context.Background(), upstream))
+	persisted := getPromotionTestApp(t, r, client.ObjectKeyFromObject(upstream))
+	require.True(t, persisted.Status.Synced)
+	require.NoError(t, promotionSourceReady(persisted, release, promotionTestNow))
+	// Binding the source does not override resource health or drift gates.
+	for _, test := range []struct {
+		name   string
+		mutate func(*api.Application, *api.Release)
+	}{
+		{"release pending", func(_ *api.Application, rel *api.Release) { rel.Status.Phase = api.ReleasePending }},
+		{"release generation stale", func(_ *api.Application, rel *api.Release) { rel.Generation++ }},
+		{"application generation stale", func(app *api.Application, _ *api.Release) { app.Generation++ }},
+		{"drift", func(app *api.Application, _ *api.Release) { app.Status.OutOfSync = 1 }},
+		{"resource unhealthy", func(app *api.Application, _ *api.Release) { app.Status.ResourceHealth[0].Health = "Degraded" }},
+		{"resource health missing", func(app *api.Application, _ *api.Release) { app.Status.ResourceHealth = nil }},
+		{"observation missing", func(app *api.Application, _ *api.Release) { app.Status.DeploymentObservation = nil }},
+		{"observation stale", func(app *api.Application, _ *api.Release) {
+			app.Status.DeploymentObservation.ObservedAt = metav1.NewTime(promotionTestNow.Add(-3 * time.Minute))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app, rel := persisted.DeepCopy(), release.DeepCopy()
+			test.mutate(app, rel)
+			require.True(t, app.Status.Synced)
+			require.Error(t, promotionSourceReady(app, rel, promotionTestNow))
+		})
+	}
+}
+
+func TestInlineArtifactExternalPublisherDoesNotSyncMismatchedRelease(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*api.Release)
+	}{
+		{"owner", func(rel *api.Release) { rel.OwnerReferences[0].UID = "different-application" }},
+		{"artifact", func(rel *api.Release) { rel.Spec.ManifestSource.Artifact.Revision = strings.Repeat("b", 40) }},
+		{"snapshot hash", func(rel *api.Release) { rel.Annotations[sourceHashAnnotation] = strings.Repeat("b", 64) }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, upstream, release, sourceCM, _ := inlineArtifactFixture()
+			upstream.Status.Synced = false
+			upstream.Status.SourceHash = upstream.Spec.Source.Inline.ManifestHash
+			upstream.Status.SourceRevision = promotionTestRevision
+			test.mutate(release)
+			r := inlineArtifactReconciler(t, upstream, release, sourceCM)
+			require.NoError(t, r.prepareInlineArtifactSource(context.Background(), upstream))
+			require.False(t, upstream.Status.Synced)
+			require.False(t, getPromotionTestApp(t, r, client.ObjectKeyFromObject(upstream)).Status.Synced)
+		})
+	}
 }
 
 func TestInlineArtifactAcceptedIntentRemainsFrozen(t *testing.T) {
@@ -365,7 +427,11 @@ func TestInlineArtifactRejectsCanonicalDuplicateResources(t *testing.T) {
 }
 
 func TestInlineArtifactReleaseCanonicalizesTheCallersTargetNamespace(t *testing.T) {
-	_, _, release, snapshot, _ := inlineArtifactFixture()
+	release := &api.Release{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "dev", Annotations: map[string]string{sourceRevisionAnnotation: promotionTestRevision}},
+		Spec:       api.ReleaseSpec{ManifestSource: &api.ManifestSource{Artifact: artifactTestSpec()}},
+	}
+	snapshot := artifactTestSnapshot("dev", "dev")
 	explicit := artifactTestPayload("stg", "vocus", artifactTestImage)
 	implicit := strings.ReplaceAll(explicit, "  namespace: stg\n", "")
 	snapshot.Data["manifests.yaml"] = explicit + "\n---\n" + implicit
