@@ -371,7 +371,11 @@ func validateInlineArtifactReleaseSnapshot(snapshot *corev1.ConfigMap, release *
 	if release.Annotations[sourceHashAnnotation] != inlineArtifactPayloadHash(payload) {
 		return errors.New("inline artifact snapshot differs from its frozen release source hash")
 	}
-	return validateInlineArtifactDocuments(payload, artifact, targetNamespace, release.Namespace)
+	defaultNamespace := targetNamespace
+	if defaultNamespace == "" {
+		defaultNamespace = release.Namespace
+	}
+	return validateInlineArtifactDocuments(payload, artifact, targetNamespace, defaultNamespace)
 }
 
 func validateInlineArtifactApplicationSnapshot(snapshot *corev1.ConfigMap, release *paprikav1.Release, app *paprikav1.Application) error {

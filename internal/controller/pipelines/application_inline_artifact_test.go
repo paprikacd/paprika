@@ -363,3 +363,16 @@ func TestInlineArtifactRejectsCanonicalDuplicateResources(t *testing.T) {
 	clusterAlias := strings.ReplaceAll(clusterScoped, "ignored-a", "ignored-b")
 	require.ErrorContains(t, validateInlineArtifactPayload([]byte(valid+clusterScoped+clusterAlias), artifactTestSpec(), "stg"), "duplicate resource identities")
 }
+
+func TestInlineArtifactReleaseCanonicalizesTheCallersTargetNamespace(t *testing.T) {
+	_, _, release, snapshot, _ := inlineArtifactFixture()
+	explicit := artifactTestPayload("stg", "vocus", artifactTestImage)
+	implicit := strings.ReplaceAll(explicit, "  namespace: stg\n", "")
+	snapshot.Data["manifests.yaml"] = explicit + "\n---\n" + implicit
+	release.Annotations[sourceHashAnnotation] = inlineArtifactPayloadHash([]byte(snapshot.Data["manifests.yaml"]))
+	// Application observations use their frozen accepted target namespace.
+	require.ErrorContains(t, validateInlineArtifactReleaseSnapshot(snapshot, release, "stg"), "duplicate resource identities")
+	// The direct apply path defaults omitted namespaces to release.Namespace;
+	// here dev and explicit stg are distinct underlying Kubernetes objects.
+	require.NoError(t, validateInlineArtifactReleaseSnapshot(snapshot, release, ""))
+}
