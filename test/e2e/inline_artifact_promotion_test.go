@@ -62,7 +62,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 				"labels":          map[string]string{"app.paprika.io/name": inlineSourceApp, "app.paprika.io/managed-by": "paprika"},
 				"annotations":     map[string]string{"paprika.io/source-revision": inlineRevision, "paprika.io/source-hash": hex.EncodeToString(hash[:])},
 				"ownerReferences": []map[string]any{{"apiVersion": "pipelines.paprika.io/v1alpha1", "kind": "Application", "name": source.Name, "uid": string(source.UID), "controller": true}}},
-			"spec": map[string]any{"target": inlineSourceApp + "-development", "manifestSource": map[string]any{"configMapRef": "bundle-v1", "artifact": inlinePromotionArtifact(inlineRevision)},
+			"spec": map[string]any{"pipeline": "", "target": inlineSourceApp + "-development", "manifestSource": map[string]any{"configMapRef": "bundle-v1", "artifact": inlinePromotionArtifact(inlineRevision)},
 				"verify": []map[string]any{{"type": "duration", "timeout": 10}, {"type": "smoke-test", "endpoint": inlinePromotionURL(inlineSourceNS) + "/health", "timeout": 5}}},
 		}))
 		// The normal external publisher selects its owned ReleaseRef; it never
