@@ -317,10 +317,17 @@ type InlineArtifact struct {
 }
 
 // InlineSourceSpec references a manifest snapshot ConfigMap for inline sources.
+// +kubebuilder:validation:XValidation:rule="!has(self.artifact) || has(self.manifestHash)",message="versioned inline artifacts require manifestHash"
 type InlineSourceSpec struct {
 	// ConfigMapRef is the name of the ConfigMap containing the rendered manifest bundle.
 	// +optional
 	ConfigMapRef string `json:"configMapRef,omitempty"`
+	// ManifestHash is the SHA256 of the exact manifests.yaml bytes, independent
+	// per environment. It binds verification and approval to the staged payload.
+	// Required when Artifact is declared.
+	// +kubebuilder:validation:Pattern="^[a-f0-9]{64}$"
+	// +optional
+	ManifestHash string `json:"manifestHash,omitempty"`
 	// Artifact declares validated immutable provenance for cross-environment promotion.
 	// Its snapshot ConfigMap must be immutable and contain matching workload images.
 	// +optional

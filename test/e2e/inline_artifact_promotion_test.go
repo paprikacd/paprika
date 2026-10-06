@@ -14,6 +14,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+
 	api "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/test/utils"
 )
@@ -23,6 +25,8 @@ const (
 	inlineTargetNS      = "e2e-inline-tenant"
 	inlineBadImageNS    = "e2e-inline-bad-image"
 	inlineBadRevisionNS = "e2e-inline-bad-revision"
+	inlinePendingNS     = "e2e-inline-pending"
+	inlineDuplicateNS   = "e2e-inline-duplicate"
 	inlineSourceApp     = "artifact-source"
 	inlineTargetApp     = "artifact-tenant"
 	inlineRevision      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -39,7 +43,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		current, err := utils.Kubectl("config", "current-context")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.TrimSpace(current)).To(Equal("kind-" + kindClusterName))
-		for _, ns := range []string{inlineSourceNS, inlineTargetNS, inlineBadImageNS, inlineBadRevisionNS} {
+		for _, ns := range []string{inlineSourceNS, inlineTargetNS, inlineBadImageNS, inlineBadRevisionNS, inlinePendingNS, inlineDuplicateNS} {
 			fx.Apply(promotionJSON(map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": ns}}))
 			fx.Apply(promotionJSON(map[string]any{"apiVersion": "core.paprika.io/v1alpha1", "kind": "AppProject", "metadata": map[string]any{"name": "default", "namespace": ns}, "spec": map[string]any{"sourceRepos": []string{"https://example.test/sfh.git"}, "kinds": []string{"*"}, "destinations": []map[string]string{{"server": "*", "namespace": "*"}}}}))
 		}
@@ -75,7 +79,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		for _, target := range []struct{ namespace, name string }{{inlineTargetNS, inlineTargetApp}, {inlineBadImageNS, inlineTargetApp}, {inlineBadRevisionNS, inlineTargetApp}, {inlineSourceNS, inlineSourceApp}} {
+		for _, target := range []struct{ namespace, name string }{{inlineTargetNS, inlineTargetApp}, {inlineBadImageNS, inlineTargetApp}, {inlineBadRevisionNS, inlineTargetApp}, {inlinePendingNS, inlineTargetApp}, {inlineDuplicateNS, inlineTargetApp}, {inlineSourceNS, inlineSourceApp}} {
 			promotionCleanupApp(target.namespace, target.name)
 		}
 		fx.Teardown()
@@ -109,7 +113,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		}
 	})
 
-	It("rejects substituted primary images and a different declared source revision before deployment", func() {
+	It("rejects substituted primary images, duplicate resources and a different source revision before deployment", func() {
 		badImage := "docker.io/library/busybox@sha256:" + strings.Repeat("b", 64)
 		fx.Apply(inlinePromotionSnapshot(inlineBadImageNS, "bundle-v1", inlinePromotionPayload(inlineBadImageNS, "vocus", "vocus.example.test", badImage)))
 		fx.Apply(inlinePromotionApp(inlineBadImageNS, inlineTargetApp, "bundle-v1", inlineRevision, "vocus.example.test", true))
@@ -117,8 +121,15 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		fx.Apply(inlinePromotionSnapshot(inlineBadRevisionNS, "bundle-v1", inlinePromotionPayload(inlineBadRevisionNS, "vocus", "vocus.example.test", inlineArtifactImage)))
 		fx.Apply(inlinePromotionApp(inlineBadRevisionNS, inlineTargetApp, "bundle-v1", strings.Repeat("b", 40), "vocus.example.test", true))
 		inlinePromotionOwnSnapshot(inlineBadRevisionNS, inlineTargetApp, "bundle-v1")
+		valid := inlinePromotionPayload(inlineDuplicateNS, "vocus", "vocus.example.test", inlineArtifactImage)
+		duplicate := strings.Split(inlinePromotionPayload(inlineDuplicateNS, "vocus", "vocus.example.test", "ghcr.io/other/dependency@sha256:"+strings.Repeat("b", 64)), "\n---\n")[1]
+		duplicate = strings.ReplaceAll(duplicate, `"app.kubernetes.io/component":"backend"`, `"app.kubernetes.io/component":"dependency"`)
+		duplicate = strings.ReplaceAll(duplicate, `"name":"backend"`, `"name":"dependency"`)
+		fx.Apply(inlinePromotionSnapshot(inlineDuplicateNS, "bundle-v1", valid+"\n---\n"+duplicate))
+		fx.Apply(inlinePromotionApp(inlineDuplicateNS, inlineTargetApp, "bundle-v1", inlineRevision, "vocus.example.test", true))
+		inlinePromotionOwnSnapshot(inlineDuplicateNS, inlineTargetApp, "bundle-v1")
 		Consistently(func(g Gomega) {
-			for _, ns := range []string{inlineBadImageNS, inlineBadRevisionNS} {
+			for _, ns := range []string{inlineBadImageNS, inlineBadRevisionNS, inlineDuplicateNS} {
 				app, err := promotionGetApp(ns, inlineTargetApp)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(app.Status.ReleaseRef).To(BeEmpty())
@@ -135,6 +146,44 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		target := inlinePromotionWaitHealthy(inlineBadRevisionNS, inlineTargetApp)
 		Expect(target.Status.Promotion.SourceReleaseUID).To(Equal(acceptedUID))
 		promotionExpectPipeline(target, api.PipelineSucceeded)
+	})
+
+	It("binds manual approval to staged bytes before and after a same-name snapshot replacement", func() {
+		const domain = "reviewed.example.test"
+		payload := inlinePromotionPayload(inlinePendingNS, "reviewed", domain, inlineArtifactImage)
+		fx.Apply(inlinePromotionSnapshot(inlinePendingNS, "bundle-v1", payload))
+		manualApp := strings.Replace(inlinePromotionApp(inlinePendingNS, inlineTargetApp, "bundle-v1", inlineRevision, domain, true), `"syncPolicy":"Auto"`, `"syncPolicy":"Manual"`, 1)
+		fx.Apply(manualApp)
+		inlinePromotionOwnSnapshot(inlinePendingNS, inlineTargetApp, "bundle-v1")
+		candidate := promotionWaitCandidate(inlinePendingNS, inlineTargetApp, inlineRevision, "AwaitingApproval")
+		verifiedHash := candidate.Status.Promotion.VerificationConfigHash
+		// Recreate the immutable input under its original name with unchanged
+		// application images but substituted tenant configuration.
+		_, err := utils.Kubectl("-n", inlinePendingNS, "delete", "configmap", "bundle-v1", "--wait=true")
+		Expect(err).NotTo(HaveOccurred())
+		fx.Apply(inlinePromotionSnapshot(inlinePendingNS, "bundle-v1", inlinePromotionPayload(inlinePendingNS, "substituted", "substituted.example.test", inlineArtifactImage)))
+		inlinePromotionOwnSnapshot(inlinePendingNS, inlineTargetApp, "bundle-v1")
+		promotionAnnotate(inlinePendingNS, inlineTargetApp, "paprika.io/promote="+candidate.Status.Promotion.SourceReleaseUID)
+		Consistently(func(g Gomega) {
+			app, err := promotionGetApp(inlinePendingNS, inlineTargetApp)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(app.Status.ReleaseRef).To(BeEmpty())
+			g.Expect(app.Status.AcceptedDeployment).To(BeNil())
+		}, 12*time.Second, 2*time.Second).Should(Succeed())
+		// An explicit hash change is a target spec edit. The old approval token
+		// must be consumed and this source UID must await a fresh approval.
+		manualApp = strings.Replace(inlinePromotionApp(inlinePendingNS, inlineTargetApp, "bundle-v1", inlineRevision, "substituted.example.test", true), `"syncPolicy":"Auto"`, `"syncPolicy":"Manual"`, 1)
+		fx.Apply(manualApp)
+		Eventually(func(g Gomega) {
+			app, err := promotionGetApp(inlinePendingNS, inlineTargetApp)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(app.Status.Promotion.Phase).To(Equal("AwaitingApproval"))
+			g.Expect(app.Status.Promotion.VerificationConfigHash).NotTo(Equal(verifiedHash))
+			g.Expect(app.Annotations["paprika.io/promote"]).To(BeEmpty())
+			g.Expect(app.Status.ReleaseRef).To(BeEmpty())
+		}, time.Minute, time.Second).Should(Succeed())
+		promotionAnnotate(inlinePendingNS, inlineTargetApp, "paprika.io/promote="+candidate.Status.Promotion.SourceReleaseUID)
+		inlinePromotionWaitHealthy(inlinePendingNS, inlineTargetApp)
 	})
 
 	It("keeps accepted target manifests pinned while a different desired revision and domain wait", func() {
@@ -173,8 +222,13 @@ func inlinePromotionSnapshot(namespace, name, payload string) string {
 }
 
 func inlinePromotionApp(namespace, name, snapshot, revision, domain string, promote bool) string {
+	raw, err := utils.Kubectl("-n", namespace, "get", "configmap", snapshot, "-o", "json")
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	var bundle corev1.ConfigMap
+	ExpectWithOffset(1, json.Unmarshal([]byte(raw), &bundle)).To(Succeed())
+	digest := sha256.Sum256([]byte(bundle.Data["manifests.yaml"]))
 	spec := map[string]any{
-		"project": "default", "source": map[string]any{"type": "inline", "targetNamespace": namespace, "inline": map[string]any{"configMapRef": snapshot, "artifact": inlinePromotionArtifact(revision)}},
+		"project": "default", "source": map[string]any{"type": "inline", "targetNamespace": namespace, "inline": map[string]any{"configMapRef": snapshot, "manifestHash": hex.EncodeToString(digest[:]), "artifact": inlinePromotionArtifact(revision)}},
 		"syncPolicy": "Manual", "parameters": map[string]string{"release-name": "artifact-app"},
 		"stages":       []map[string]any{{"name": "development", "ring": 0, "gates": []map[string]any{{"type": "duration", "timeout": 10}, {"type": "smoke-test", "endpoint": inlinePromotionURL(namespace) + "/health", "timeout": 5}}}},
 		"healthChecks": []map[string]any{{"name": "tenant-domain", "interval": "5s", "httpProbe": map[string]any{"url": inlinePromotionURL(namespace) + "/domain", "method": "GET", "timeout": 5, "expectedStatus": 200}, "expression": fmt.Sprintf("http.statusCode == 200 && http.body == %q", domain)}},

@@ -1033,7 +1033,17 @@ spec:
                             description: ConfigMapRef is the name of the ConfigMap
                               containing the rendered manifest bundle.
                             type: string
+                          manifestHash:
+                            description: |-
+                              ManifestHash is the SHA256 of the exact manifests.yaml bytes, independent
+                              per environment. It binds verification and approval to the staged payload.
+                              Required when Artifact is declared.
+                            pattern: ^[a-f0-9]{64}$
+                            type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: versioned inline artifacts require manifestHash
+                          rule: '!has(self.artifact) || has(self.manifestHash)'
                       insecure:
                         description: Insecure allows plain HTTP for OCI registries
                           (type=oci)

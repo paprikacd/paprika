@@ -58,8 +58,11 @@ func inlineArtifactFixture() (*api.Application, *api.Application, *api.Release, 
 	target.Spec.Stages = []api.ApplicationPromotionStage{{Name: "stg"}}
 	release.Spec.ManifestSource = &api.ManifestSource{ConfigMapRef: "bundle", Artifact: artifactTestSpec()}
 	sourceCM := artifactTestSnapshot(upstream.Namespace, "dev")
-	release.Annotations[sourceHashAnnotation] = inlineArtifactPayloadHash([]byte(sourceCM.Data["manifests.yaml"]))
-	return target, upstream, release, sourceCM, artifactTestSnapshot(target.Namespace, "vocus")
+	targetCM := artifactTestSnapshot(target.Namespace, "vocus")
+	upstream.Spec.Source.Inline.ManifestHash = inlineArtifactPayloadHash([]byte(sourceCM.Data["manifests.yaml"]))
+	target.Spec.Source.Inline.ManifestHash = inlineArtifactPayloadHash([]byte(targetCM.Data["manifests.yaml"]))
+	release.Annotations[sourceHashAnnotation] = upstream.Spec.Source.Inline.ManifestHash
+	return target, upstream, release, sourceCM, targetCM
 }
 
 func inlineArtifactReconciler(t *testing.T, objects ...client.Object) *ApplicationReconciler {
@@ -166,6 +169,12 @@ func TestInlineArtifactPromotionRejectsMismatchedProof(t *testing.T) {
 		}},
 		{"images", func(target, _ *api.Application, _ *api.Release, _, _ *corev1.ConfigMap) {
 			target.Spec.Source.Inline.Artifact.Images["backend"] = api.ArtifactImageReference("ghcr.io/example/api@sha256:" + strings.Repeat("b", 64))
+		}},
+		{"missing manifest hash", func(target, _ *api.Application, _ *api.Release, _, _ *corev1.ConfigMap) {
+			target.Spec.Source.Inline.ManifestHash = ""
+		}},
+		{"wrong manifest hash", func(target, _ *api.Application, _ *api.Release, _, _ *corev1.ConfigMap) {
+			target.Spec.Source.Inline.ManifestHash = strings.Repeat("b", 64)
 		}},
 		{"mutable source snapshot", func(_, _ *api.Application, _ *api.Release, source, _ *corev1.ConfigMap) {
 			source.Immutable = kptr.To(false)
@@ -292,4 +301,65 @@ func TestInlineArtifactReplacedSnapshotCannotChangeAcceptedPayload(t *testing.T)
 	require.NoError(t, r.client.Create(context.Background(), &snapshot))
 	_, err = r.loadInlineManifests(context.Background(), target)
 	require.ErrorContains(t, err, "frozen release source hash")
+}
+
+func TestInlineArtifactPendingApprovalRejectsReplacementPayload(t *testing.T) {
+	target, upstream, release, sourceCM, targetCM := inlineArtifactFixture()
+	target.Spec.SyncPolicy = api.SyncManual
+	r := inlineArtifactReconciler(t, target, upstream, release, sourceCM, targetCM)
+	_, err := r.reconcileApp(context.Background(), target)
+	require.NoError(t, err)
+	require.Equal(t, "AwaitingApproval", target.Status.Promotion.Phase)
+	verifiedHash := target.Status.Promotion.VerificationConfigHash
+	// Same-name CM replacement must not inherit authorization for the old bytes.
+	var snapshot corev1.ConfigMap
+	require.NoError(t, r.client.Get(context.Background(), client.ObjectKeyFromObject(targetCM), &snapshot))
+	require.NoError(t, r.client.Delete(context.Background(), &snapshot))
+	snapshot.ResourceVersion, snapshot.UID = "", ""
+	snapshot.Data["manifests.yaml"] = artifactTestPayload(target.Namespace, "substituted", artifactTestImage)
+	require.NoError(t, r.client.Create(context.Background(), &snapshot))
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+	target.Annotations = map[string]string{promotionApprovalAnnotation: string(release.UID)}
+	require.NoError(t, r.client.Update(context.Background(), target))
+	_, err = r.reconcileApp(context.Background(), target)
+	require.NoError(t, err)
+	require.Empty(t, target.Status.ReleaseRef)
+	require.Nil(t, target.Status.AcceptedDeployment)
+	var releases api.ReleaseList
+	require.NoError(t, r.client.List(context.Background(), &releases, client.InNamespace(target.Namespace)))
+	require.Empty(t, releases.Items)
+	// Explicitly declaring the new payload is a spec edit and consumes the old
+	// approval. The same upstream UID must await a new approval for that intent.
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+	target.Spec.Source.Inline.ManifestHash = inlineArtifactPayloadHash([]byte(snapshot.Data["manifests.yaml"]))
+	require.NoError(t, r.client.Update(context.Background(), target))
+	_, err = r.reconcileApp(context.Background(), target)
+	require.NoError(t, err)
+	require.Equal(t, "AwaitingApproval", target.Status.Promotion.Phase)
+	require.NotEqual(t, verifiedHash, target.Status.Promotion.VerificationConfigHash)
+	require.Empty(t, target.Annotations[promotionApprovalAnnotation])
+	require.Empty(t, target.Status.ReleaseRef)
+}
+
+func TestInlineArtifactRejectsCanonicalDuplicateResources(t *testing.T) {
+	valid := artifactTestPayload("stg", "vocus", artifactTestImage)
+	replacement := strings.ReplaceAll(valid, "app.kubernetes.io/component: backend", "app.kubernetes.io/component: dependency")
+	replacement = strings.ReplaceAll(replacement, "name: backend", "name: dependency")
+	replacement = strings.ReplaceAll(replacement, artifactTestImage, "ghcr.io/other/dependency@sha256:"+strings.Repeat("b", 64))
+	for name, duplicate := range map[string]string{
+		"exact identity":             valid,
+		"later primary substitution": replacement,
+		"default namespace":          strings.ReplaceAll(replacement, "  namespace: stg\n", ""),
+		"served version alias":       strings.ReplaceAll(replacement, "apiVersion: apps/v1", "apiVersion: apps/v1beta1"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.ErrorContains(t, validateInlineArtifactPayload([]byte(valid+"\n---\n"+duplicate), artifactTestSpec(), "stg"), "duplicate resource identities")
+		})
+	}
+	// Distinct API groups remain different resources even when Kind/name match.
+	otherGroup := strings.ReplaceAll(valid, "apiVersion: apps/v1", "apiVersion: example.test/v1")
+	require.NoError(t, validateInlineArtifactPayload([]byte(valid+"\n---\n"+otherGroup), artifactTestSpec(), "stg"))
+	clusterScoped := "\n---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: target\n  namespace: ignored-a\n"
+	clusterAlias := strings.ReplaceAll(clusterScoped, "ignored-a", "ignored-b")
+	require.ErrorContains(t, validateInlineArtifactPayload([]byte(valid+clusterScoped+clusterAlias), artifactTestSpec(), "stg"), "duplicate resource identities")
 }

@@ -259,6 +259,7 @@ source:
   targetNamespace: sfh-vocus-dev
   inline:
     configMapRef: sfh-vocus-dev-bundle-<payload-hash>-<revision>
+    manifestHash: <sha256-of-this-environment-manifests.yaml-bytes>
     artifact:
       repository: https://github.com/example/sfh.git
       revision: 0123456789abcdef0123456789abcdef01234567
@@ -274,6 +275,12 @@ syncPolicy: Auto
 ```
 
 Every snapshot must set `immutable: true` and contain `data.manifests.yaml`.
+`source.inline.manifestHash` is required with artifact provenance and must equal
+the exact SHA256 of that environment's manifest bytes. Unlike the shared artifact
+identity, this hash differs between environments. It binds pending verification
+and approval to the full reviewed tenant configuration. Replacing a same-name
+ConfigMap with different bytes is rejected even before admission; declaring a new
+hash is a spec change and requires fresh manual approval.
 Paprika requires the same logical repository, exact 40-character source/image
 commit and full digest-pinned application image map in both environments. The
 repository obeys the AppProject's source allow/deny lists; it is provenance and
@@ -287,10 +294,13 @@ StatefulSet, DaemonSet, Rollout or Pod must carry
 substitute for a missing or differently versioned API deployment. All containers
 and init containers reusing a declared application image repository must use the
 same declared reference, including migrations. Dependency images from other
-repositories may vary by tenant.
+repositories may vary by tenant. Duplicate Kubernetes identities are rejected,
+including served-version and implicit-namespace aliases, so a later YAML document
+cannot replace an already validated primary component.
 
 An external upstream publisher creates its ordinary owned Release, adding the
-same `artifact` under `spec.manifestSource` and these annotations:
+same `artifact` under `spec.manifestSource` and these annotations. Its source-hash
+annotation must equal its Application's declared `manifestHash`:
 
 ```yaml
 metadata:

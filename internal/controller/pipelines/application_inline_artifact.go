@@ -76,7 +76,7 @@ func artifactImageRepository(component string, image paprikav1.ArtifactImageRefe
 	return reference.TrimNamed(ref).String(), nil
 }
 
-func readInlineArtifactSnapshot(ctx context.Context, c client.Reader, namespace, name, targetNamespace string, artifact *paprikav1.InlineArtifact) (payload []byte, sourceHash string, err error) {
+func readInlineArtifactSnapshot(ctx context.Context, c client.Reader, namespace, name, targetNamespace, expectedHash string, artifact *paprikav1.InlineArtifact) (payload []byte, sourceHash string, err error) {
 	var snapshot corev1.ConfigMap
 	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &snapshot); err != nil {
 		return nil, "", fmt.Errorf("get inline artifact snapshot: %w", err)
@@ -85,6 +85,9 @@ func readInlineArtifactSnapshot(ctx context.Context, c client.Reader, namespace,
 		return nil, "", errors.New("inline artifact snapshot must be immutable")
 	}
 	payload = []byte(snapshot.Data["manifests.yaml"])
+	if expectedHash == "" || expectedHash != inlineArtifactPayloadHash(payload) {
+		return nil, "", errors.New("inline artifact snapshot differs from its declared manifestHash")
+	}
 	if err := validateInlineArtifactPayload(payload, artifact, targetNamespace); err != nil {
 		return nil, "", err
 	}
@@ -92,13 +95,18 @@ func readInlineArtifactSnapshot(ctx context.Context, c client.Reader, namespace,
 }
 
 func validateInlineArtifactPayload(payload []byte, artifact *paprikav1.InlineArtifact, targetNamespace string) error {
+	return validateInlineArtifactDocuments(payload, artifact, targetNamespace, targetNamespace)
+}
+
+func validateInlineArtifactDocuments(payload []byte, artifact *paprikav1.InlineArtifact, targetNamespace, defaultNamespace string) error {
 	repositories, err := artifactImageRepositories(artifact)
 	if err != nil {
 		return err
 	}
 	seen := make(map[string]bool, len(artifact.Images))
+	identities := make(map[string]struct{})
 	for _, document := range engine.SplitYAMLDocuments(payload) {
-		if err := validateArtifactDocument(document, artifact.Images, repositories, seen, targetNamespace); err != nil {
+		if err := validateArtifactDocument(document, artifact.Images, repositories, seen, identities, targetNamespace, defaultNamespace); err != nil {
 			return err
 		}
 	}
@@ -110,7 +118,7 @@ func validateInlineArtifactPayload(payload []byte, artifact *paprikav1.InlineArt
 	return nil
 }
 
-func validateArtifactDocument(document []byte, images map[string]paprikav1.ArtifactImageReference, repositories map[string]string, seen map[string]bool, targetNamespace string) error {
+func validateArtifactDocument(document []byte, images map[string]paprikav1.ArtifactImageReference, repositories map[string]string, seen map[string]bool, identities map[string]struct{}, targetNamespace, defaultNamespace string) error {
 	var object map[string]interface{}
 	if err := yaml.Unmarshal(document, &object); err != nil {
 		return fmt.Errorf("decode inline artifact manifest: %w", err)
@@ -122,7 +130,34 @@ func validateArtifactDocument(document []byte, images map[string]paprikav1.Artif
 	if namespace := resource.GetNamespace(); targetNamespace != "" && namespace != "" && namespace != targetNamespace && !isClusterScopedKind(resource.GetKind()) {
 		return errors.New("inline artifact payload contains a different workload namespace")
 	}
+	identity, err := artifactResourceIdentity(&resource, defaultNamespace)
+	if err != nil {
+		return err
+	}
+	if _, duplicate := identities[identity]; duplicate {
+		return errors.New("inline artifact payload contains duplicate resource identities")
+	}
+	identities[identity] = struct{}{}
 	return validateArtifactWorkload(&resource, images, repositories, seen)
+}
+
+func artifactResourceIdentity(resource *unstructured.Unstructured, defaultNamespace string) (string, error) {
+	if resource.GetAPIVersion() == "" || resource.GetKind() == "" || resource.GetName() == "" {
+		return "", errors.New("inline artifact resources require apiVersion, kind and name")
+	}
+	namespace := resource.GetNamespace()
+	if isClusterScopedKind(resource.GetKind()) {
+		namespace = ""
+	} else if namespace == "" {
+		namespace = defaultNamespace
+	}
+	// Served versions address the same underlying Kubernetes object. Preserve
+	// the API group so unrelated resources with the same Kind stay distinct.
+	group := ""
+	if parts := strings.SplitN(resource.GetAPIVersion(), "/", 2); len(parts) == 2 {
+		group = parts[0]
+	}
+	return strings.Join([]string{group, resource.GetKind(), namespace, resource.GetName()}, "\x00"), nil
 }
 
 func artifactPodSpecPath(kind string) []string {
@@ -227,7 +262,7 @@ func artifactReleaseMatches(app *paprikav1.Application, release *paprikav1.Relea
 		release.Spec.ManifestSource.ConfigMapRef == app.Spec.Source.Inline.ConfigMapRef &&
 		reflect.DeepEqual(release.Spec.ManifestSource.Artifact, artifact) &&
 		release.Annotations[sourceRevisionAnnotation] == artifact.Revision &&
-		release.Annotations[sourceHashAnnotation] != "" && metav1.IsControlledBy(release, app)
+		app.Spec.Source.Inline.ManifestHash != "" && release.Annotations[sourceHashAnnotation] == app.Spec.Source.Inline.ManifestHash && metav1.IsControlledBy(release, app)
 }
 
 // External publishers retain ownership of creating their inline Releases. Bind
@@ -239,7 +274,7 @@ func (r *ApplicationReconciler) prepareInlineArtifactSource(ctx context.Context,
 	if artifact == nil {
 		return nil
 	}
-	_, hash, err := readInlineArtifactSnapshot(ctx, r.client, deployment.Namespace, deployment.Spec.Source.Inline.ConfigMapRef, appTargetNamespace(deployment), artifact)
+	_, hash, err := readInlineArtifactSnapshot(ctx, r.client, deployment.Namespace, deployment.Spec.Source.Inline.ConfigMapRef, appTargetNamespace(deployment), deployment.Spec.Source.Inline.ManifestHash, artifact)
 	if err != nil {
 		return err
 	}
@@ -272,7 +307,7 @@ func (r *ApplicationReconciler) compatibleInlineArtifacts(ctx context.Context, t
 		return errors.New("upstream release does not bind the declared inline artifact and snapshot")
 	}
 	for _, app := range []*paprikav1.Application{upstream, target} {
-		_, hash, err := readInlineArtifactSnapshot(ctx, r.client, app.Namespace, app.Spec.Source.Inline.ConfigMapRef, appTargetNamespace(app), inlineArtifact(app))
+		_, hash, err := readInlineArtifactSnapshot(ctx, r.client, app.Namespace, app.Spec.Source.Inline.ConfigMapRef, appTargetNamespace(app), app.Spec.Source.Inline.ManifestHash, inlineArtifact(app))
 		if err != nil {
 			return err
 		}
@@ -336,5 +371,16 @@ func validateInlineArtifactReleaseSnapshot(snapshot *corev1.ConfigMap, release *
 	if release.Annotations[sourceHashAnnotation] != inlineArtifactPayloadHash(payload) {
 		return errors.New("inline artifact snapshot differs from its frozen release source hash")
 	}
-	return validateInlineArtifactPayload(payload, artifact, targetNamespace)
+	return validateInlineArtifactDocuments(payload, artifact, targetNamespace, release.Namespace)
+}
+
+func validateInlineArtifactApplicationSnapshot(snapshot *corev1.ConfigMap, release *paprikav1.Release, app *paprikav1.Application) error {
+	if release.Spec.ManifestSource == nil || release.Spec.ManifestSource.Artifact == nil {
+		return nil
+	}
+	deployment := effectiveDeploymentApp(app)
+	if inlineArtifact(deployment) == nil || deployment.Spec.Source.Inline.ManifestHash != release.Annotations[sourceHashAnnotation] {
+		return errors.New("inline artifact release source hash differs from the accepted manifestHash")
+	}
+	return validateInlineArtifactReleaseSnapshot(snapshot, release, appTargetNamespace(deployment))
 }

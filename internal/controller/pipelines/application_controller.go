@@ -2222,7 +2222,7 @@ func (r *ApplicationReconciler) loadInlineManifests(ctx context.Context, app *pa
 	if !ok {
 		return nil, fmt.Errorf("snapshot %q missing manifests.yaml", snapshotName)
 	}
-	if err := validateInlineArtifactReleaseSnapshot(&cm, &release, appTargetNamespace(effectiveDeploymentApp(app))); err != nil {
+	if err := validateInlineArtifactApplicationSnapshot(&cm, &release, app); err != nil {
 		return nil, fmt.Errorf("validate active inline artifact snapshot: %w", err)
 	}
 	return []byte(data), nil
