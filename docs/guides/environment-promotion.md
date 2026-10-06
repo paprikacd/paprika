@@ -275,6 +275,12 @@ syncPolicy: Auto
 ```
 
 Every snapshot must set `immutable: true` and contain `data.manifests.yaml`.
+Manage these Applications with full Kubernetes manifests or a publisher that
+preserves the complete contract. The legacy `paprika apply` / `ApplyBundle` path
+cannot represent promotion or artifact declarations and refuses to replace an
+Application with either desired or accepted promotion/artifact intent. Inspect
+the full Kubernetes Application when reviewing artifact and promotion status.
+
 `source.inline.manifestHash` is required with artifact provenance and must equal
 the exact SHA256 of that environment's manifest bytes. Unlike the shared artifact
 identity, this hash differs between environments. It binds pending verification
