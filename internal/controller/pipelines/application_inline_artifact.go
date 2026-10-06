@@ -184,14 +184,18 @@ func validateArtifactPrimaryComponent(resource *unstructured.Unstructured, path 
 		if !ok {
 			continue
 		}
-		name, hasName := container["name"].(string)
-		image, hasImage := container["image"].(string)
-		if hasName && hasImage && name == component && image == string(expected) {
+		if artifactContainerMatches(container, component, expected) {
 			seen[component] = true
 			return nil
 		}
 	}
 	return fmt.Errorf("inline artifact primary component %q does not deploy its declared image", component)
+}
+
+func artifactContainerMatches(container map[string]interface{}, component string, expected paprikav1.ArtifactImageReference) bool {
+	name, hasName := container["name"].(string)
+	image, hasImage := container["image"].(string)
+	return hasName && hasImage && name == component && image == string(expected)
 }
 
 func validateArtifactContainer(container map[string]interface{}, images map[string]paprikav1.ArtifactImageReference, repositories map[string]string) error {
