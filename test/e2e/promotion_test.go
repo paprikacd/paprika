@@ -497,15 +497,17 @@ case "$PAPRIKA_PROMOTION_REVISION" in '%s') expected=v1 ;; *) expected=v2 ;; esa
 actual="$(wget -qO- -T 5 '%s')"
 test "$actual" = "$expected"
 `, from.Name, from.Namespace, initialSHA, upstreamURL)
+		verificationRetries := 2 // allow transient Kind networking; the candidate SHA/body must still match.
 		if failure == "tests" {
 			script += "echo intentionally-rejected-promotion\nexit 9\n"
+			verificationRetries = 0
 		}
 		gates := []map[string]any{{"type": "smoke-test", "endpoint": upstreamURL, "timeout": 5}, {"type": "duration", "timeout": 1}}
 		if failure == "gate" {
 			gates[0]["endpoint"] = "http://" + promotionProbeName + "." + promotionDevNS + ".svc:1/health"
 		}
 		spec["trigger"] = map[string]any{"type": "Promotion", "from": from,
-			"tests": map[string]any{"steps": []map[string]any{{"name": "verify-upstream", "image": "alpine:3.19", "script": script, "timeout": 30}}}, "gates": gates}
+			"tests": map[string]any{"steps": []map[string]any{{"name": "verify-upstream", "image": "alpine:3.19", "script": script, "timeout": 30, "retry": verificationRetries}}}, "gates": gates}
 	}
 	return promotionJSON(map[string]any{"apiVersion": "pipelines.paprika.io/v1alpha1", "kind": "Application", "metadata": map[string]any{"name": name, "namespace": namespace}, "spec": spec})
 }
