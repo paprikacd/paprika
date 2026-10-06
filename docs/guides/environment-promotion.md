@@ -225,8 +225,13 @@ kubectl -n pipeline-prod get application checkout -o yaml
 
 The annotation approves only that upstream Release UID. A replacement
 candidate needs its own approval; a generic sync annotation does not approve
-an unreviewed upstream version. Promotion verification and the target's native
-release approval gates still apply.
+an unreviewed upstream version. Once verified, an unchanged candidate and target
+specification retain authorization across temporary upstream health holds;
+deployment stays blocked until upstream readiness recovers. Replacing the
+upstream Application or Release UID, or changing the deployment or verification
+specification, revokes that authorization and requires fresh approval.
+Promotion verification and the target's native release approval gates still
+apply.
 
 ## Keep Environment Configuration Explicit
 

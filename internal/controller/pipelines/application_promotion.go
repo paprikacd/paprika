@@ -50,7 +50,7 @@ func (r *ApplicationReconciler) reconcilePromotionTrigger(ctx context.Context, a
 		return nil, err
 	}
 	if candidate.Phase == "Ready" {
-		return nil, nil
+		return nil, r.restoreReadyPromotion(ctx, app)
 	}
 	ready, err := r.reconcilePromotionTests(ctx, app)
 	if err != nil {
@@ -250,16 +250,34 @@ func (r *ApplicationReconciler) completePromotionVerification(ctx context.Contex
 			return nil, err
 		}
 	}
+	r.markPromotionReady(app)
+	if err := r.persistReadyPromotion(ctx, app); err != nil {
+		return nil, fmt.Errorf("persisting verified promotion: %w", err)
+	}
+	return nil, nil
+}
+
+// A temporary health hold blocks admission without consuming authorization.
+// Restore readiness only after the same candidate and target intent revalidate.
+func (r *ApplicationReconciler) restoreReadyPromotion(ctx context.Context, app *paprikav1.Application) error {
+	if meta.IsStatusConditionTrue(app.Status.Conditions, promotionReadyCondition) {
+		return nil
+	}
+	r.markPromotionReady(app)
+	if err := r.persistReadyPromotion(ctx, app); err != nil {
+		return fmt.Errorf("restoring verified promotion readiness: %w", err)
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) markPromotionReady(app *paprikav1.Application) {
+	candidate := app.Status.Promotion
 	candidate.Phase = "Ready"
 	candidate.Message = "Upstream release verified and ready for deployment."
 	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
 		Type: promotionReadyCondition, Status: metav1.ConditionTrue, Reason: "CandidateVerified",
 		Message: candidate.Message, ObservedGeneration: app.Generation, LastTransitionTime: metav1.NewTime(r.currentTime()),
 	})
-	if err := r.persistReadyPromotion(ctx, app); err != nil {
-		return nil, fmt.Errorf("persisting verified promotion: %w", err)
-	}
-	return nil, nil
 }
 
 func ptrToPromotionTime(now time.Time) *metav1.Time {
@@ -487,7 +505,15 @@ func (r *ApplicationReconciler) revalidatePromotionSource(ctx context.Context, c
 }
 
 func (r *ApplicationReconciler) waitForPromotion(ctx context.Context, app *paprikav1.Application, reason, message string) (*ctrl.Result, error) {
-	updateWaitingPromotionCandidate(app.Status.Promotion, reason, message)
+	preserveReady, err := promotionReadyMayWait(app, reason)
+	if err != nil {
+		return nil, err
+	}
+	if preserveReady {
+		app.Status.Promotion.Message = message
+	} else {
+		updateWaitingPromotionCandidate(app.Status.Promotion, reason, message)
+	}
 	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
 		Type: promotionReadyCondition, Status: metav1.ConditionFalse, Reason: reason, Message: message,
 		ObservedGeneration: app.Generation, LastTransitionTime: metav1.NewTime(r.currentTime()),
@@ -495,10 +521,25 @@ func (r *ApplicationReconciler) waitForPromotion(ctx context.Context, app *papri
 	if err := r.patchAppStatus(ctx, app); err != nil {
 		return nil, fmt.Errorf("persisting promotion wait: %w", err)
 	}
+	if preserveReady {
+		return r.holdVerifiedPromotion(ctx, app, r.transientRequeue())
+	}
 	if app.Status.ReleaseRef != "" {
 		return nil, nil
 	}
 	return &ctrl.Result{RequeueAfter: r.transientRequeue()}, nil
+}
+
+func promotionReadyMayWait(app *paprikav1.Application, reason string) (bool, error) {
+	candidate := app.Status.Promotion
+	if reason != "UpstreamNotReady" || candidate == nil || candidate.Phase != "Ready" || candidate.VerificationConfigHash == "" {
+		return false, nil
+	}
+	configurationHash, err := promotionVerificationConfigHash(app)
+	if err != nil {
+		return false, err
+	}
+	return candidate.VerificationConfigHash == configurationHash, nil
 }
 
 func updateWaitingPromotionCandidate(candidate *paprikav1.ApplicationPromotionStatus, reason, message string) {
@@ -710,9 +751,12 @@ func (r *ApplicationReconciler) writeReadyPromotion(ctx context.Context, app *pa
 	if latest.UID != app.UID || latest.Generation != app.Generation || latestHash != configurationHash {
 		return errors.New("promotion target specification changed during verification; retrying")
 	}
-	preservePromotionDeploymentStatus(desired, &latest.Status)
-	desired.ObservedGeneration = latest.Generation
-	latest.Status = *desired
+	// A conflicting cached read must not carry an old ReleaseRef into the next
+	// attempt after the API has already persisted its removal.
+	attemptStatus := desired.DeepCopy()
+	preservePromotionDeploymentStatus(attemptStatus, &latest.Status)
+	attemptStatus.ObservedGeneration = latest.Generation
+	latest.Status = *attemptStatus
 	if err := r.client.Status().Update(ctx, &latest); err != nil {
 		return fmt.Errorf("writing verified promotion target: %w", err)
 	}

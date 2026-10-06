@@ -3,6 +3,7 @@ package pipelines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,13 +11,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kptr "k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	api "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/health"
@@ -355,18 +359,117 @@ func TestPromotionReadyRevalidatesHealthAndVerificationConfig(t *testing.T) {
 	require.Equal(t, "Ready", target.Status.Promotion.Phase)
 	upstream.Status.ResourceHealth[0].Health = "Degraded"
 	require.NoError(t, r.client.Status().Update(ctx, upstream))
-	_, err = r.reconcilePromotionTrigger(ctx, target)
+	result, err := r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
-	require.Equal(t, "Verifying", target.Status.Promotion.Phase, "an unhealthy upstream cannot remain Ready")
+	require.NotNil(t, result, "an unhealthy upstream must block deployment admission")
+	require.Equal(t, "Ready", target.Status.Promotion.Phase, "a temporary health hold retains verified authorization")
+	require.True(t, meta.IsStatusConditionFalse(target.Status.Conditions, promotionReadyCondition))
 	upstream.Status.ResourceHealth[0].Health = "Healthy"
 	require.NoError(t, r.client.Status().Update(ctx, upstream))
 	_, err = r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
 	require.Equal(t, "Ready", target.Status.Promotion.Phase)
+	require.True(t, meta.IsStatusConditionTrue(target.Status.Conditions, promotionReadyCondition), "health recovery restores admission readiness")
 	target.Spec.Trigger.Tests = &api.ApplicationBuildSpec{Steps: []api.ApplicationBuildStep{{Name: "new-tests", Image: "test", Script: "test"}}}
 	_, err = r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
 	require.Equal(t, "Verifying", target.Status.Promotion.Phase, "test edits require fresh verification")
+}
+
+func TestPromotionApprovedCandidateSurvivesTemporaryUpstreamHealthHold(t *testing.T) {
+	t.Parallel()
+	for _, releaseRef := range []string{"stg-old-release", ""} {
+		t.Run("accepted release "+releaseRef, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			target, upstream, release := promotionFixture()
+			target.Spec.SyncPolicy = api.SyncManual
+			target.Spec.Trigger.Tests = &api.ApplicationBuildSpec{Steps: []api.ApplicationBuildStep{{Name: "integration", Image: "test", Script: "test"}}}
+			target.Spec.Trigger.Gates = []api.GateConfig{{Type: "duration", Timeout: 1}}
+			target.Annotations = map[string]string{promotionApprovalAnnotation: string(release.UID)}
+			target.Status.ReleaseRef = releaseRef
+			target.Status.SourceRevision, target.Status.SourceHash = strings.Repeat("a", 40), "accepted-hash"
+			target.Status.AcceptedDeployment = target.Spec.DeepCopy()
+			r := newPromotionTestReconciler(t, target, upstream, release)
+			_, err := r.reconcilePromotionTrigger(ctx, target)
+			require.NoError(t, err)
+			var pipeline api.Pipeline
+			require.NoError(t, r.client.Get(ctx, types.NamespacedName{Namespace: target.Namespace, Name: target.Status.Promotion.VerificationPipelineRef}, &pipeline))
+			pipeline.Status.Phase = api.PipelineSucceeded
+			pipeline.Status.ObservedGeneration = pipeline.Generation
+			pipeline.Status.StepStatuses = []api.StepStatus{{Name: "integration", Phase: api.StepSucceeded}}
+			require.NoError(t, r.client.Status().Update(ctx, &pipeline))
+			_, err = r.reconcilePromotionTrigger(ctx, target)
+			require.NoError(t, err)
+			r.now = func() time.Time { return promotionTestNow.Add(time.Second) }
+			result, err := r.reconcilePromotionTrigger(ctx, target)
+			require.NoError(t, err)
+			require.Nil(t, result)
+			require.Equal(t, "Ready", target.Status.Promotion.Phase)
+			verified := target.Status.Promotion.DeepCopy()
+			accepted := target.Status.AcceptedDeployment.DeepCopy()
+			upstream.Status.ResourceHealth[0].Health = "Degraded"
+			require.NoError(t, r.client.Status().Update(ctx, upstream))
+			for range 3 {
+				target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+				require.Empty(t, target.Annotations[promotionApprovalAnnotation], "the single candidate approval was consumed")
+				result, err = r.reconcilePromotionTrigger(ctx, target)
+				require.NoError(t, err)
+				require.NotNil(t, result, "temporary upstream failure must hold admission even with an accepted release")
+				require.Equal(t, "Ready", target.Status.Promotion.Phase)
+				require.True(t, meta.IsStatusConditionFalse(target.Status.Conditions, promotionReadyCondition))
+				require.Equal(t, verified.VerificationConfigHash, target.Status.Promotion.VerificationConfigHash)
+				require.Equal(t, verified.VerificationStartedAt.Time.UTC(), target.Status.Promotion.VerificationStartedAt.Time.UTC())
+				require.Equal(t, verified.VerificationPipelineRef, target.Status.Promotion.VerificationPipelineRef)
+				require.Equal(t, releaseRef, target.Status.ReleaseRef)
+				require.Equal(t, strings.Repeat("a", 40), target.Status.SourceRevision)
+				require.Equal(t, "accepted-hash", target.Status.SourceHash)
+				require.Equal(t, accepted, target.Status.AcceptedDeployment)
+			}
+			upstream.Status.ResourceHealth[0].Health = "Healthy"
+			require.NoError(t, r.client.Status().Update(ctx, upstream))
+			target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+			result, err = r.reconcilePromotionTrigger(ctx, target)
+			require.NoError(t, err)
+			require.Nil(t, result, "the unchanged verified candidate resumes without another approval")
+			require.Equal(t, "Ready", target.Status.Promotion.Phase)
+			require.True(t, meta.IsStatusConditionTrue(target.Status.Conditions, promotionReadyCondition))
+			require.Equal(t, verified.VerificationStartedAt.Time.UTC(), target.Status.Promotion.VerificationStartedAt.Time.UTC())
+			var pipelines api.PipelineList
+			require.NoError(t, r.client.List(ctx, &pipelines))
+			require.Len(t, pipelines.Items, 1, "health recovery reuses successful verification")
+			persisted := getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+			require.True(t, meta.IsStatusConditionTrue(persisted.Status.Conditions, promotionReadyCondition), "readiness recovery must persist before delivery admission")
+		})
+	}
+}
+
+func TestPromotionHealthHoldDoesNotAuthorizeEditedTarget(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	target, upstream, release := promotionFixture()
+	target.Spec.SyncPolicy = api.SyncManual
+	target.Annotations = map[string]string{promotionApprovalAnnotation: string(release.UID)}
+	r := newPromotionTestReconciler(t, target, upstream, release)
+	_, err := r.reconcilePromotionTrigger(ctx, target)
+	require.NoError(t, err)
+	require.Equal(t, "Ready", target.Status.Promotion.Phase)
+	upstream.Status.ResourceHealth[0].Health = "Degraded"
+	require.NoError(t, r.client.Status().Update(ctx, upstream))
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+	target.Spec.Parameters = map[string]string{"image.tag": "changed"}
+	target.Generation++
+	require.NoError(t, r.client.Update(ctx, target))
+	_, err = r.reconcilePromotionTrigger(ctx, target)
+	require.NoError(t, err)
+	require.Equal(t, "Verifying", target.Status.Promotion.Phase, "an edited target cannot retain the prior authorization during a health hold")
+	upstream.Status.ResourceHealth[0].Health = "Healthy"
+	require.NoError(t, r.client.Status().Update(ctx, upstream))
+	result, err := r.reconcilePromotionTrigger(ctx, target)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "AwaitingApproval", target.Status.Promotion.Phase)
+	require.True(t, meta.IsStatusConditionFalse(target.Status.Conditions, promotionReadyCondition))
 }
 
 func TestPromotionBlocksRepositoryMismatch(t *testing.T) {
@@ -624,4 +727,38 @@ func TestPromotionSpecEditExpiresPendingApproval(t *testing.T) {
 	_, err = r.reconcilePromotionTrigger(ctx, fresh)
 	require.NoError(t, err)
 	require.Equal(t, "Ready", fresh.Status.Promotion.Phase)
+}
+
+func TestPromotionReadyRetryDoesNotRestoreSupersededReleaseRef(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	target, _, _ := promotionFixture()
+	target.Status.Promotion = &api.ApplicationPromotionStatus{Phase: "Ready"}
+	r := newPromotionTestReconciler(t)
+	statusWrites := 0
+	r.client = fake.NewClientBuilder().WithScheme(r.Scheme).WithStatusSubresource(&api.Application{}).WithObjects(target).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if err := c.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			if statusWrites == 0 {
+				app, ok := obj.(*api.Application)
+				require.True(t, ok)
+				app.Status.ReleaseRef = "superseded-release"
+			}
+			return nil
+		},
+		SubResourceUpdate: func(ctx context.Context, c client.Client, subresource string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			statusWrites++
+			if statusWrites == 1 {
+				return apierrors.NewConflict(schema.GroupResource{Group: api.GroupVersion.Group, Resource: "applications"}, target.Name, errors.New("stale cached release reference"))
+			}
+			return c.SubResource(subresource).Update(ctx, obj, opts...)
+		},
+	}).Build()
+	require.NoError(t, r.persistReadyPromotion(ctx, target))
+	require.Equal(t, 2, statusWrites)
+	require.Empty(t, target.Status.ReleaseRef, "a retry must preserve the current API release reference instead of an earlier cached value")
+	persisted := getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+	require.Empty(t, persisted.Status.ReleaseRef)
 }

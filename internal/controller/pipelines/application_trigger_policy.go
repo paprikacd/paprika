@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
@@ -64,17 +67,8 @@ func (r *ApplicationReconciler) beginVerifiedPromotion(ctx context.Context, app 
 	if err := validateVerifiedPromotionConfiguration(app); err != nil {
 		return nil, err
 	}
-	if allowed, window := r.syncWindowAllows(ctx, app, app.Spec.Stages[0].Name, false); !allowed {
-		r.setSyncWindowCondition(app, "False", syncWindowReason(window), window.Reason)
-		result := ctrl.Result{RequeueAfter: r.syncWindowRequeueAfter(window.NextTransition)}
-		if app.Status.ReleaseRef != "" {
-			healthResult, err := r.evaluateHealthyApplication(ctx, app, result.RequeueAfter)
-			return &healthResult, err
-		}
-		if err := r.patchAppStatus(ctx, app); err != nil {
-			return nil, err
-		}
-		return &result, nil
+	if result, err := r.promotionAdmissionHold(ctx, app); result != nil || err != nil {
+		return result, err
 	}
 	if app.Status.ReleaseRef != "" {
 		result, err := r.startNewReleaseFlow(ctx, app, false, "PromotionReady", "verified upstream revision selected for promotion")
@@ -89,6 +83,30 @@ func (r *ApplicationReconciler) beginVerifiedPromotion(ctx context.Context, app 
 		}
 	}
 	return nil, nil
+}
+
+// Authorization survives a transient upstream readiness loss, but deployment
+// admission must wait for fresh evidence even when an old release is active.
+func (r *ApplicationReconciler) promotionAdmissionHold(ctx context.Context, app *paprikav1.Application) (*ctrl.Result, error) {
+	if condition := meta.FindStatusCondition(app.Status.Conditions, promotionReadyCondition); condition != nil && condition.Status == metav1.ConditionFalse {
+		return r.holdVerifiedPromotion(ctx, app, r.transientRequeue())
+	}
+	if allowed, window := r.syncWindowAllows(ctx, app, app.Spec.Stages[0].Name, false); !allowed {
+		r.setSyncWindowCondition(app, metav1.ConditionFalse, syncWindowReason(window), window.Reason)
+		return r.holdVerifiedPromotion(ctx, app, r.syncWindowRequeueAfter(window.NextTransition))
+	}
+	return nil, nil
+}
+
+func (r *ApplicationReconciler) holdVerifiedPromotion(ctx context.Context, app *paprikav1.Application, delay time.Duration) (*ctrl.Result, error) {
+	if app.Status.ReleaseRef != "" {
+		result, err := r.evaluateHealthyApplication(ctx, app, delay)
+		return &result, err
+	}
+	if err := r.patchAppStatus(ctx, app); err != nil {
+		return nil, err
+	}
+	return &ctrl.Result{RequeueAfter: delay}, nil
 }
 
 func validateVerifiedPromotionConfiguration(app *paprikav1.Application) error {
