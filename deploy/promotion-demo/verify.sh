@@ -15,7 +15,7 @@ check_healthy() {
   app="$(kubectl -n "$ns" get application promotion-demo -o json)"
   jq -e --arg sha "$revision" '
     .status.phase == "Healthy" and .status.health == "Healthy" and
-    .status.synced == true and .status.outOfSync == 0 and
+    .status.synced == true and (.status.outOfSync // 0) == 0 and
     .status.sourceRevision == $sha and .status.revision == $sha and
     .status.deploymentObservation.revision == $sha and
     .status.deploymentObservation.observedGeneration == .metadata.generation and
