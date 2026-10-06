@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/discovery"
@@ -36,6 +37,7 @@ import (
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/analysis"
 	"github.com/benebsworth/paprika/internal/api/events"
+	"github.com/benebsworth/paprika/internal/arcobserver"
 	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/clock"
 	"github.com/benebsworth/paprika/internal/conftest"
@@ -116,6 +118,9 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	if err := setupCoreControllers(mgr); err != nil {
 		return fmt.Errorf("setup core controllers: %w", err)
 	}
+	if err := setupARCObserver(mgr); err != nil {
+		return fmt.Errorf("setup ARC observer: %w", err)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -126,6 +131,29 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	}
 	if err := mgr.AddReadyzCheck("fleet-index", fleetReadyChecker(deps.fleetReader)); err != nil {
 		return fmt.Errorf("failed to set up fleet index ready check: %w", err)
+	}
+	return nil
+}
+
+func setupARCObserver(mgr ctrl.Manager) error {
+	cfg, err := arcobserver.ParseConfig(os.Getenv("PAPRIKA_ARC_OBSERVER_CONFIG"))
+	if err != nil {
+		return fmt.Errorf("parse ARC observer configuration: %w", err)
+	}
+	if len(cfg.Sources) == 0 {
+		return nil
+	}
+	publisher, err := arcobserver.NewHTTPPublisher(cfg, os.Getenv("PAPRIKA_ARC_OBSERVER_TOKEN_FILE"), nil)
+	if err != nil {
+		return fmt.Errorf("configure ARC observer publisher: %w", err)
+	}
+	// Same REST configuration and ServiceAccount as the manager; no new grants.
+	dc, err := dynamic.NewForConfig(mgr.GetConfig())
+	if err != nil {
+		return arcobserver.ErrInvalidConfig
+	}
+	if err := mgr.Add(&arcobserver.Runner{Config: cfg, Collector: arcobserver.KubernetesCollector{Client: dc}, Publisher: publisher, Log: ctrl.Log.WithName("arc-observer")}); err != nil {
+		return fmt.Errorf("register ARC observer: %w", err)
 	}
 	return nil
 }
