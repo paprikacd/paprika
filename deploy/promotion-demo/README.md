@@ -117,7 +117,7 @@ for paprika_demo_env in prod stg dev; do
   test "$(kubectl config current-context)" = "$PAPRIKA_DEMO_CONTEXT"
   kubectl -n "paprika-promotion-$paprika_demo_env" delete application promotion-demo \
     --cascade=background --wait=true --timeout=180s
-  kubectl -n "paprika-promotion-$paprika_demo_env" get releases,deployments,services,configmaps
+  kubectl -n "paprika-promotion-$paprika_demo_env" get releases.pipelines.paprika.io,deployments,services,configmaps
   # Confirm owned Releases and demo workloads are gone before the namespace write.
   kubectl config current-context
   test "$(kubectl config current-context)" = "$PAPRIKA_DEMO_CONTEXT"
