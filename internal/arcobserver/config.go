@@ -83,9 +83,13 @@ func validConfig(cfg *Config) bool {
 	if err != nil || !validOrigin(u) || !identifier.MatchString(cfg.ProjectID) || len(cfg.Sources) < 1 || len(cfg.Sources) > 2 {
 		return false
 	}
+	return validSources(cfg.Sources)
+}
+
+func validSources(sources []Source) bool {
 	seen := map[string]bool{}
-	for i := range cfg.Sources {
-		s := &cfg.Sources[i]
+	for i := range sources {
+		s := &sources[i]
 		if !validSource(s) || seen[s.PoolName] {
 			return false
 		}
