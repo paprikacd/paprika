@@ -184,9 +184,9 @@ func validateArtifactPrimaryComponent(resource *unstructured.Unstructured, path 
 		if !ok {
 			continue
 		}
-		name, _ := container["name"].(string)
-		image, _ := container["image"].(string)
-		if name == component && image == string(expected) {
+		name, hasName := container["name"].(string)
+		image, hasImage := container["image"].(string)
+		if hasName && hasImage && name == component && image == string(expected) {
 			seen[component] = true
 			return nil
 		}
@@ -195,8 +195,11 @@ func validateArtifactPrimaryComponent(resource *unstructured.Unstructured, path 
 }
 
 func validateArtifactContainer(container map[string]interface{}, images map[string]paprikav1.ArtifactImageReference, repositories map[string]string) error {
-	name, _ := container["name"].(string)
-	image, _ := container["image"].(string)
+	name, hasName := container["name"].(string)
+	image, hasImage := container["image"].(string)
+	if !hasName || !hasImage {
+		return errors.New("inline artifact container must declare a name and image")
+	}
 	if expected, declared := images[name]; declared {
 		if image != string(expected) {
 			return fmt.Errorf("inline artifact container %q does not use its declared immutable image", name)
