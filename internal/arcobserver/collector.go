@@ -23,6 +23,7 @@ type Snapshot struct {
 	Complete                                 bool
 	RunnerSet, Controller                    *unstructured.Unstructured
 	SystemPods, RunnerPods, EphemeralRunners []unstructured.Unstructured
+	Usage                                    *UsageSnapshot
 }
 
 type Collector interface {
@@ -31,7 +32,10 @@ type Collector interface {
 
 // KubernetesCollector uses the manager's existing in-cluster identity and only
 // issues GET/LIST. It never requests mutations, logs, exec, Secrets or providers.
-type KubernetesCollector struct{ Client dynamic.Interface }
+type KubernetesCollector struct {
+	Client dynamic.Interface
+	Usage  *UsageConfig
+}
 
 func (c KubernetesCollector) Collect(ctx context.Context, s *Source) (Snapshot, error) {
 	var snap Snapshot
@@ -60,6 +64,12 @@ func (c KubernetesCollector) Collect(ctx context.Context, s *Source) (Snapshot, 
 		return Snapshot{}, err
 	}
 	snap.Complete = true
+	if c.Usage != nil {
+		snap.Usage, err = c.collectUsage(ctx, s, &snap)
+		if err != nil {
+			return Snapshot{}, err
+		}
+	}
 	return snap, nil
 }
 

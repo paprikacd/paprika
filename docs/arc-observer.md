@@ -57,9 +57,55 @@ means assigned work in ARC 0.15.0; Pod Running alone never implies busy. Termina
 records disappear only after surviving execution Pods disappear. Node names are
 execution Pod placement, not cloud VM inventory or a zero-billing assertion.
 
-The outbound payload is limited to `observedAt`, `state`, `controllerReady`,
+In counts-only mode, the outbound payload is limited to `observedAt`, `state`, `controllerReady`,
 `listenerReady`, `workers`, `busy` and `nodes`. Raw objects, job identities,
-repositories and credentials never enter it. Unit/race tests use isolated fake
+repositories and credentials never enter that counts-only payload. Historical opt-in adds the typed metadata described below; credentials remain excluded. Unit/race tests use isolated fake
 Kubernetes and HTTPS endpoints to cover pagination, partial data, drift,
 ownership, stale data, redaction, binding, denial and redirects. No new UI, CRD
 or resource mutation exists; live observer acceptance remains a deployment test.
+
+## Optional cluster usage history
+
+Historical collection is separately opted into with `usage` in the observer
+configuration. It is not activated by installing the default-off adapter. Set
+`clusterId` to the matching deployment-owned Cuttlefish pool cluster name and
+`clusterUid` to the verified UID of that cluster's `kube-system` namespace.
+`dedicatedNodePools` is a finite list of at most two dedicated CI pools; omit it
+on shared-node clusters. Pin the same UID, system namespace and dedicated pool
+list in the receiver's `usagePolicy`. Repository metadata is accepted only for
+that receiver pool's exact approved repositories.
+
+The adapter still runs inside the existing Paprika manager under its existing
+leader election, with 20-second complete reconciliation polls and bounded
+collection/publication deadlines. It does not install another agent, enqueue
+native Cuttlefish work, change runner concurrency or scale any resources.
+Failures do not refresh observations; authorization denial stops publication.
+
+The new reads are GET `namespaces/kube-system`, GET referenced nodes and LIST
+nodes selected by the finite dedicated pool label list, plus namespaced GET/LIST
+pods for the full selected controller Deployment selector. Kubernetes RBAC
+cannot constrain a general node LIST by label alone: granting node LIST is a
+security-sensitive permission, even though this implementation constrains its
+requests. Verify existing authorization, and obtain explicit approval before
+any missing permission or private metadata publishing is enabled. No RBAC or
+Secret is created by this source change.
+
+Only typed metadata leaves the collector: cluster/UID, resource UID/version,
+namespace, owner/node UID, lifecycle timestamps, phase, scheduler CPU/memory
+requests, selected node pool/machine/Spot labels and known ARC job identity.
+`jobRepositoryName`, `workflowRunId`, string `jobId` and `runnerId` are read from
+[pinned ARC 0.15.0 status](https://github.com/actions/actions-runner-controller/blob/gha-runner-scale-set-0.15.0/apis/actions.github.com/v1alpha1/ephemeralrunner_types.go).
+Workflow text, names, refs, environment, logs, addresses, provider IDs and
+credentials are excluded. Unknown IDs stay absent. Pod container start/finish
+timestamps describe container runtime, not exact GitHub job duration.
+
+A full finite dedicated-pool node LIST can establish observed zero; failure or
+an omitted dedicated pool configuration cannot. Shared application nodes are
+classified separately and excluded from incremental CI billing. Node objects
+and their disappearance do not prove physical VM billing start or stop. This
+adapter reports neither an always-on CI node topology nor a hypothetical
+always-on spend as actual spend.
+
+The protocol fixture in `internal/arcobserver/testdata` is also consumed by the
+Cuttlefish Postgres/API/UI tests. It contains synthetic identifiers and no
+credentials or live cluster configuration.
