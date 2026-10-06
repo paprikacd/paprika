@@ -36,7 +36,10 @@ const pipelineFinalizer = "paprika.io/pipeline-cleanup"
 
 // PipelineReconciler reconciles Pipeline resources.
 type PipelineReconciler struct {
-	client         client.Client
+	client client.Client
+	// APIReader admits executions from live status so stale cached Running
+	// objects cannot replay a workflow that has already reached a terminal phase.
+	APIReader      client.Reader
 	Scheme         *runtime.Scheme
 	K8sClient      kubernetes.Interface
 	Namespace      string
@@ -68,8 +71,12 @@ func (r *PipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 		metrics.ReconcileDuration.WithLabelValues("pipeline").Observe(metrics.Since(r.Clock, start))
 	}()
 
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.client
+	}
 	var pipeline pipelinesv1alpha1.Pipeline
-	if err := r.client.Get(ctx, req.NamespacedName, &pipeline); err != nil {
+	if err := reader.Get(ctx, req.NamespacedName, &pipeline); err != nil {
 		result = resultError
 		if k8sErr := client.IgnoreNotFound(err); k8sErr != nil {
 			return ctrl.Result{}, fmt.Errorf("getting pipeline: %w", k8sErr)

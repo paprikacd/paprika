@@ -15,7 +15,7 @@ check_healthy() {
   app="$(kubectl -n "$ns" get application promotion-demo -o json)"
   jq -e --arg sha "$revision" '
     .status.phase == "Healthy" and .status.health == "Healthy" and
-    .status.synced == true and .status.outOfSync == 0 and
+    .status.synced == true and (.status.outOfSync // 0) == 0 and
     .status.sourceRevision == $sha and .status.revision == $sha and
     .status.deploymentObservation.revision == $sha and
     .status.deploymentObservation.observedGeneration == .metadata.generation and
@@ -26,7 +26,7 @@ check_healthy() {
     (now - (.status.deploymentObservation.observedAt | fromdateiso8601)) <= 120
   ' <<< "$app" >/dev/null
   release_name="$(jq -r '.status.releaseRef' <<< "$app")"
-  release="$(kubectl -n "$ns" get release "$release_name" -o json)"
+  release="$(kubectl -n "$ns" get releases.pipelines.paprika.io "$release_name" -o json)"
   jq -e --arg sha "$revision" --arg uid "$(jq -r '.metadata.uid' <<< "$app")" '
     .status.phase == "Complete" and .metadata.annotations["paprika.io/source-revision"] == $sha and
     any(.metadata.ownerReferences[]; .kind == "Application" and .uid == $uid and .controller == true)
@@ -45,7 +45,7 @@ check_verification() {
   local env="$1" upstream="$2" ns="paprika-promotion-$1" app source source_release pipeline pipeline_name
   app="$(kubectl -n "$ns" get application promotion-demo -o json)"
   source="$(kubectl -n "paprika-promotion-$upstream" get application promotion-demo -o json)"
-  source_release="$(kubectl -n "paprika-promotion-$upstream" get release "$(jq -r '.status.releaseRef' <<< "$source")" -o json)"
+  source_release="$(kubectl -n "paprika-promotion-$upstream" get releases.pipelines.paprika.io "$(jq -r '.status.releaseRef' <<< "$source")" -o json)"
   jq -e --arg ns "paprika-promotion-$upstream" --arg app_uid "$(jq -r '.metadata.uid' <<< "$source")"     --arg release_uid "$(jq -r '.metadata.uid' <<< "$source_release")" --arg sha "$revision" '
       .status.promotion.sourceApplication.name == "promotion-demo" and
       .status.promotion.sourceApplication.namespace == $ns and

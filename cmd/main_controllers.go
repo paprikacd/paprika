@@ -200,6 +200,7 @@ func setupNotificationController(mgr ctrl.Manager, broker *events.Broker) error 
 
 func setupPipelineController(mgr ctrl.Manager, k8sClient kubernetes.Interface, operatorNamespace string, shardFilter *sharding.Filter, broker *events.Broker, maxConcurrent int) error {
 	if err := (&controller.PipelineReconciler{
+		APIReader: mgr.GetAPIReader(),
 		Scheme:    mgr.GetScheme(),
 		K8sClient: k8sClient, Namespace: operatorNamespace,
 		WorkflowEngine:       workflowRunnerAdapter{engine.NewWorkflowEngine(k8sClient, operatorNamespace)},
@@ -308,7 +309,7 @@ func setupReleaseController(ctx context.Context, mgr ctrl.Manager, k8sClient kub
 	}
 	releaseRec.ClusterMgr = clusterMgr
 	releaseRec.Clock = clock.Real{}
-	releaseRec.GateExecutor = gates.NewSmokeGate(http.DefaultClient)
+	releaseRec.GateExecutor = gates.NewExecutor(http.DefaultClient)
 	releaseRec.ApprovalGateEvaluator = gates.NewApprovalGateEvaluator(http.DefaultClient)
 	releaseRec.Analyzer = analysis.NewCELAnalyzer(k8sClient, operatorNamespace, mgr.GetConfig(), http.DefaultClient)
 	releaseRec.TemplateRenderer = renderer

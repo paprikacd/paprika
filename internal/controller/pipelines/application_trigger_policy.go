@@ -183,19 +183,87 @@ func markPromotionStarted(app *paprikav1.Application) {
 	}
 }
 
-func updatePromotionReleasePhase(app *paprikav1.Application, phase paprikav1.ReleasePhase) {
-	if !promotionTriggered(app) || app.Status.Promotion == nil || app.Status.Promotion.Phase != "Promoting" {
+func updatePromotionReleasePhase(app *paprikav1.Application, release *paprikav1.Release) {
+	if !promotionTracksRelease(app, release) {
 		return
 	}
-	switch phase {
+	switch release.Status.Phase {
 	case paprikav1.ReleasePending, paprikav1.ReleasePromoting, paprikav1.ReleaseCanarying,
 		paprikav1.ReleaseVerifying, paprikav1.ReleaseAwaitingApproval:
-		return
+		if app.Status.Promotion.Phase == "Failed" {
+			markAcceptedPromotionRetry(app)
+		}
 	case paprikav1.ReleaseComplete:
+		if app.Status.Promotion.Phase == "Failed" {
+			markAcceptedPromotionRetry(app)
+		}
 		app.Status.Promotion.Phase = "Complete"
 		app.Status.Promotion.Message = "Promoted release completed; application health is evaluated independently"
 	case paprikav1.ReleaseFailed, paprikav1.ReleaseRolledBack, paprikav1.ReleaseSuperseded:
 		app.Status.Promotion.Phase = "Failed"
-		app.Status.Promotion.Message = "Promoted release ended in phase " + string(phase)
+		app.Status.Promotion.Message = "Promoted release ended in phase " + string(release.Status.Phase)
 	}
+}
+
+func promotionTracksRelease(app *paprikav1.Application, release *paprikav1.Release) bool {
+	if !promotionTriggered(app) || app.Status.Promotion == nil || release == nil {
+		return false
+	}
+	switch app.Status.Promotion.Phase {
+	case "Promoting":
+		return true
+	case "Failed":
+		return acceptedPromotionReleaseMatches(app, release)
+	default:
+		return false
+	}
+}
+
+// An admitted release may retry without another approval. Prove its original
+// authorization from the accepted intent and owned release, rather than letting
+// an older successful deployment clear a newer candidate's verification failure.
+func acceptedPromotionReleaseMatches(app *paprikav1.Application, release *paprikav1.Release) bool {
+	candidate := app.Status.Promotion
+	if app.Status.AcceptedDeployment == nil || app.Status.SourceRevision != candidate.Revision || !ownedActivePromotionRelease(app, release) {
+		return false
+	}
+	configurationHash, err := promotionVerificationConfigHash(effectiveDeploymentApp(app))
+	if err != nil || configurationHash != candidate.VerificationConfigHash {
+		return false
+	}
+	expected := map[string]string{
+		sourceRevisionAnnotation:                   candidate.Revision,
+		"paprika.io/promotion-source-application":  candidate.SourceApplication.Name,
+		"paprika.io/promotion-source-namespace":    candidate.SourceApplication.Namespace,
+		promotionSourceUIDAnnotation:               candidate.SourceApplicationUID,
+		"paprika.io/promotion-source-release":      candidate.SourceRelease,
+		promotionReleaseUIDAnnotation:              candidate.SourceReleaseUID,
+		"paprika.io/promotion-verification-config": configurationHash,
+	}
+	for key, value := range expected {
+		if value == "" || release.Annotations[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func ownedActivePromotionRelease(app *paprikav1.Application, release *paprikav1.Release) bool {
+	if app.UID == "" || release.UID == "" || release.Name != app.Status.ReleaseRef || release.Namespace != app.Namespace {
+		return false
+	}
+	if release.Status.ObservedGeneration != release.Generation {
+		return false
+	}
+	owner := metav1.GetControllerOf(release)
+	return owner != nil && owner.Kind == "Application" && owner.Name == app.Name && owner.UID == app.UID
+}
+
+func markAcceptedPromotionRetry(app *paprikav1.Application) {
+	app.Status.Promotion.Phase = "Promoting"
+	app.Status.Promotion.Message = "Retrying the already accepted promoted release"
+	meta.SetStatusCondition(&app.Status.Conditions, metav1.Condition{
+		Type: promotionReadyCondition, Status: metav1.ConditionTrue, Reason: "AcceptedDeploymentRetry",
+		Message: app.Status.Promotion.Message, ObservedGeneration: app.Generation, LastTransitionTime: metav1.Now(),
+	})
 }

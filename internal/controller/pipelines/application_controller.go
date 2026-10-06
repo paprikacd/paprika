@@ -1386,14 +1386,13 @@ func (r *ApplicationReconciler) handleActiveRelease(ctx context.Context, app *pa
 	// Surface the deployed revision (the kubectl REVISION printer column reads
 	// status.revision, which nothing populated before). The completed
 	// release's source-revision annotation is the revision actually live.
-	if phase == paprikav1.ReleaseComplete {
-		if release := r.getCurrentRelease(ctx, app); release != nil {
-			if rev := release.Annotations[sourceRevisionAnnotation]; rev != "" {
-				app.Status.Revision = rev
-			}
+	release := r.getCurrentRelease(ctx, app)
+	if phase == paprikav1.ReleaseComplete && release != nil {
+		if rev := release.Annotations[sourceRevisionAnnotation]; rev != "" {
+			app.Status.Revision = rev
 		}
 	}
-	updatePromotionReleasePhase(app, phase)
+	updatePromotionReleasePhase(app, release)
 
 	msg := mapping.reason + " on stage " + targetStage.Name
 	r.updatePhase(ctx, app, mapping.appPhase, mapping.reason, msg)
@@ -2454,12 +2453,14 @@ func (r *ApplicationReconciler) handleHealthyPhase(ctx context.Context, app *pap
 func (r *ApplicationReconciler) handleTriggeredHealthyPhase(ctx context.Context, app *paprikav1.Application) (ctrl.Result, error) {
 	// Source selection is controlled by promotion or explicit manual sync.
 	// Drift and health still use the active release's pinned manifests.
-	phase := r.getCurrentReleasePhase(ctx, app)
-	updatePromotionReleasePhase(app, phase)
+	release := r.getCurrentRelease(ctx, app)
+	var phase paprikav1.ReleasePhase
+	if release != nil {
+		phase = release.Status.Phase
+	}
+	updatePromotionReleasePhase(app, release)
 	if phase == paprikav1.ReleaseComplete {
-		if release := r.getCurrentRelease(ctx, app); release != nil {
-			app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
-		}
+		app.Status.Revision = release.Annotations[sourceRevisionAnnotation]
 		if app.Status.Phase != paprikav1.ApplicationHealthy {
 			r.updatePhase(ctx, app, paprikav1.ApplicationHealthy, "ReleaseComplete", "active release completed")
 		}
