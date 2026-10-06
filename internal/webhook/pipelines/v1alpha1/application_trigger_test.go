@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -44,6 +45,19 @@ func promotionTestSteps() *pipelinesv1alpha1.ApplicationBuildSpec {
 	}
 }
 
+func inlinePromotionTestSource() pipelinesv1alpha1.ApplicationSource {
+	return pipelinesv1alpha1.ApplicationSource{
+		Type: pipelinesv1alpha1.SourceTypeInline,
+		Inline: &pipelinesv1alpha1.InlineSourceSpec{
+			ConfigMapRef: "snapshot", ManifestHash: strings.Repeat("a", 64),
+			Artifact: &pipelinesv1alpha1.InlineArtifact{
+				Repository: "https://github.com/example/service.git", Revision: strings.Repeat("b", 40),
+				Images: map[string]pipelinesv1alpha1.ArtifactImageReference{"backend": pipelinesv1alpha1.ArtifactImageReference("ghcr.io/example/service@sha256:" + strings.Repeat("c", 64))},
+			},
+		},
+	}
+}
+
 func TestApplicationTriggerValidationAcceptsSupportedModes(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -60,6 +74,10 @@ func TestApplicationTriggerValidationAcceptsSupportedModes(t *testing.T) {
 		{name: "GitOps permits inline sources", modify: func(app *pipelinesv1alpha1.Application) {
 			app.Spec.Trigger = &pipelinesv1alpha1.ApplicationTrigger{Type: pipelinesv1alpha1.ApplicationTriggerGitOps}
 			app.Spec.Source = pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline, Inline: &pipelinesv1alpha1.InlineSourceSpec{ConfigMapRef: "snapshot"}}
+		}},
+		{name: "Promotion permits versioned inline artifacts", modify: func(app *pipelinesv1alpha1.Application) {
+			app.Spec.Trigger = promotionTestTrigger()
+			app.Spec.Source = inlinePromotionTestSource()
 		}},
 		{name: "Promotion with tests gates and manual authorization", modify: func(app *pipelinesv1alpha1.Application) {
 			app.Spec.Trigger = promotionTestTrigger()
@@ -111,6 +129,21 @@ func TestApplicationTriggerValidationRejectsInvalidConfiguration(t *testing.T) {
 		}},
 		{name: "Promotion rejects mutable OCI source", field: "spec.source.type", modify: func(app *pipelinesv1alpha1.Application) {
 			app.Spec.Source = pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeOCI, OCI: &pipelinesv1alpha1.OCISourceSpec{URL: "oci://example.com/service:latest"}}
+		}},
+		{name: "Promotion rejects absent inline source", field: "spec.source.type", modify: func(app *pipelinesv1alpha1.Application) {
+			app.Spec.Source = pipelinesv1alpha1.ApplicationSource{Type: pipelinesv1alpha1.SourceTypeInline}
+		}},
+		{name: "Promotion rejects legacy inline source", field: "spec.source.type", modify: func(app *pipelinesv1alpha1.Application) {
+			app.Spec.Source = inlinePromotionTestSource()
+			app.Spec.Source.Inline.Artifact = nil
+		}},
+		{name: "Promotion rejects missing inline manifest hash", field: "spec.source.inline.manifestHash", modify: func(app *pipelinesv1alpha1.Application) {
+			app.Spec.Source = inlinePromotionTestSource()
+			app.Spec.Source.Inline.ManifestHash = ""
+		}},
+		{name: "Promotion rejects malformed inline manifest hash", field: "spec.source.inline.manifestHash", modify: func(app *pipelinesv1alpha1.Application) {
+			app.Spec.Source = inlinePromotionTestSource()
+			app.Spec.Source.Inline.ManifestHash = strings.Repeat("A", 64)
 		}},
 		{name: "GitOps forbids promotion configuration", field: "spec.trigger.from", modify: func(app *pipelinesv1alpha1.Application) {
 			app.Spec.Trigger.Type = pipelinesv1alpha1.ApplicationTriggerGitOps

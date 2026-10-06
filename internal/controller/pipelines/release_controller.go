@@ -1265,6 +1265,11 @@ func (r *ReleaseReconciler) loadManifestsFromConfigMap(ctx context.Context, rele
 	if !ok {
 		return nil, fmt.Errorf("manifest snapshot %q missing manifests.yaml key", cm.Name)
 	}
+	if artifact := release.Spec.ManifestSource.Artifact; artifact != nil {
+		if err := validateInlineArtifactReleaseSnapshot(&cm, release, ""); err != nil {
+			return nil, fmt.Errorf("validate inline artifact release: %w", err)
+		}
+	}
 	return []byte(data), nil
 }
 

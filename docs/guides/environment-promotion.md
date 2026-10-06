@@ -50,7 +50,7 @@ trigger:
     namespace: pipeline-dev
 ```
 
-Promotion initially supports `source.type: git`. The upstream and downstream
+Git promotion uses `source.type: git`. The upstream and downstream
 Applications must resolve to the same repository. They can use different
 paths, inline Helm values, parameters, and target namespaces. Every downstream
 render pins the upstream completed release's immutable commit SHA instead of
@@ -246,6 +246,102 @@ explicit per-environment image parameters. Promoting a Git SHA does not
 automatically promote an image built by `spec.build` or a Pipeline artifact,
 and a mutable image tag can refer to different bytes in each environment even
 when the Git revision is identical.
+
+## Promote Independently Rendered Inline Artifacts
+
+CI publishers can retain immutable manifest bundles and tenant-specific rendering.
+Both Applications declare `source.type: inline` with their own namespace-local
+ConfigMap and the same explicit artifact identity:
+
+```yaml
+source:
+  type: inline
+  targetNamespace: sfh-vocus-dev
+  inline:
+    configMapRef: sfh-vocus-dev-bundle-<payload-hash>-<revision>
+    manifestHash: <sha256-of-this-environment-manifests.yaml-bytes>
+    artifact:
+      repository: https://github.com/example/sfh.git
+      revision: 0123456789abcdef0123456789abcdef01234567
+      images:
+        backend: ghcr.io/example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        frontend: ghcr.io/example/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+trigger:
+  type: Promotion
+  from:
+    name: sfh-next-dev
+    namespace: sfh-next
+syncPolicy: Auto
+```
+
+Every snapshot must set `immutable: true` and contain `data.manifests.yaml`.
+Manage these Applications with full Kubernetes manifests or a publisher that
+preserves the complete contract. The legacy `paprika apply` / `ApplyBundle` path
+cannot represent promotion or artifact declarations and refuses to replace an
+Application with either desired or accepted promotion/artifact intent. Inspect
+the full Kubernetes Application when reviewing artifact and promotion status.
+
+`source.inline.manifestHash` is required with artifact provenance and must equal
+the exact SHA256 of that environment's manifest bytes. Unlike the shared artifact
+identity, this hash differs between environments. It binds pending verification
+and approval to the full reviewed tenant configuration. Replacing a same-name
+ConfigMap with different bytes is rejected even before admission; declaring a new
+hash is a spec change and requires fresh manual approval.
+Paprika requires the same logical repository, exact 40-character source/image
+commit and full digest-pinned application image map in both environments. The
+repository obeys the AppProject's source allow/deny lists; it is provenance and
+is not fetched by the controller. Git and inline source modes cannot be mixed
+within one promotion edge.
+
+Each image map key names a primary application component. Its Deployment,
+StatefulSet, DaemonSet, Rollout or Pod must carry
+`app.kubernetes.io/component: <key>` and contain a regular container named
+`<key>` using that exact image reference. A correctly pinned migration Job cannot
+substitute for a missing or differently versioned API deployment. All containers
+and init containers reusing a declared application image repository must use the
+same declared reference, including migrations. Dependency images from other
+repositories may vary by tenant. Duplicate Kubernetes identities are rejected,
+including served-version and implicit-namespace aliases, so a later YAML document
+cannot replace an already validated primary component.
+
+An external upstream publisher creates its ordinary owned Release, adding the
+same `artifact` under `spec.manifestSource` and these annotations. Its source-hash
+annotation must equal its Application's declared `manifestHash`:
+
+```yaml
+metadata:
+  annotations:
+    paprika.io/source-revision: 0123456789abcdef0123456789abcdef01234567
+    paprika.io/source-hash: <sha256-of-exact-manifests.yaml-bytes>
+spec:
+  manifestSource:
+    configMapRef: upstream-immutable-bundle
+    artifact: # same repository/revision/images object as the upstream source
+```
+
+The publisher selects its owned ReleaseRef through its normal publication flow;
+Paprika derives source revision and deployment observations after verifying this
+binding. Never backfill provenance onto an old Complete Release to qualify it.
+Create a new Release and a distinct snapshot when adopting artifact metadata.
+Existing inline Applications without artifact declarations keep their current
+external publication behavior and cannot qualify for artifact promotion.
+
+The downstream publisher stages only its own immutable ConfigMap and Application.
+The snapshot may remain owned by the downstream Application. Paprika runs the
+configured upstream tests/gates, applies any required exact-UID approval, then
+creates the downstream Release referencing the downstream snapshot. It never
+copies upstream manifests, environment values, domains, credentials or databases.
+Pending snapshot ownership also keeps these control-plane inputs out of workload
+drift and prune observations.
+
+Publishers can stage source and target sequentially. A repository, revision or
+image-map mismatch waits without accepting the incoming candidate. Once the
+matching target bundle arrives, that upstream UID can verify normally. Accepted
+deployment settings and exact payload hashes stay frozen while later desired
+bundles wait. Deleting and recreating a same-name immutable ConfigMap cannot
+silently change a release: both applying and healthy drift reads check its frozen
+payload hash. Verification failure still latches that selected candidate as in
+Git promotion.
 
 ## Focused Kind Validation
 

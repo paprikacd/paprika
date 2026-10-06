@@ -43,8 +43,10 @@ func (v *ApplicationCustomValidator) validateApplicationTrigger(ctx context.Cont
 func (v *ApplicationCustomValidator) validatePromotionTrigger(ctx context.Context, app *pipelinesv1alpha1.Application, path *field.Path) field.ErrorList {
 	var errs field.ErrorList
 	trigger := app.Spec.Trigger
-	if app.Spec.Source.Type != pipelinesv1alpha1.SourceTypeGit {
-		errs = append(errs, field.Invalid(field.NewPath("spec", "source", "type"), app.Spec.Source.Type, "Promotion triggers currently require a git source to pin an immutable commit"))
+	source := app.Spec.Source
+	versionedInline := source.Type == pipelinesv1alpha1.SourceTypeInline && source.Inline != nil && source.Inline.Artifact != nil
+	if source.Type != pipelinesv1alpha1.SourceTypeGit && !versionedInline {
+		errs = append(errs, field.Invalid(field.NewPath("spec", "source", "type"), source.Type, "Promotion requires a Git source or a versioned inline artifact"))
 	}
 	if trigger.From == nil {
 		errs = append(errs, field.Required(path.Child("from"), "Promotion requires an upstream Application reference"))

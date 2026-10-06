@@ -40,6 +40,9 @@ type ManifestSource struct {
 	// ConfigMapRef is the name of the snapshot ConfigMap.
 	// +optional
 	ConfigMapRef string `json:"configMapRef,omitempty"`
+	// Artifact freezes the validated version of this independently rendered bundle.
+	// +optional
+	Artifact *InlineArtifact `json:"artifact,omitempty"`
 }
 
 // ReleasePolicyResult records the outcome of a single policy evaluation for a release.

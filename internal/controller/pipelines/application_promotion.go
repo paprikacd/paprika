@@ -374,6 +374,9 @@ func promotionSourceReleaseReady(app *paprikav1.Application, release *paprikav1.
 
 func promotionSourceCommitReady(app *paprikav1.Application, release *paprikav1.Release) error {
 	revision := release.Annotations[sourceRevisionAnnotation]
+	if artifact := inlineArtifact(app); artifact != nil && (!artifactReleaseMatches(app, release) || artifact.Revision != revision) {
+		return errors.New("the upstream release does not identify its declared inline artifact")
+	}
 	decoded, err := hex.DecodeString(revision)
 	if err != nil || len(decoded) != 20 || app.Status.Revision != revision {
 		return errors.New("the upstream release does not identify the exact deployed Git commit")
@@ -460,8 +463,11 @@ func promotionAnalysisResultReady(analysis paprikav1.AnalysisResult, completedAt
 
 func (r *ApplicationReconciler) compatiblePromotionRepositories(ctx context.Context, target, upstream *paprikav1.Application) error {
 	upstream = effectiveDeploymentApp(upstream)
+	if target.Spec.Source.Type == paprikav1.SourceTypeInline && upstream.Spec.Source.Type == paprikav1.SourceTypeInline {
+		return r.compatibleInlineArtifacts(ctx, target, upstream)
+	}
 	if target.Spec.Source.Type != paprikav1.SourceTypeGit || upstream.Spec.Source.Type != paprikav1.SourceTypeGit {
-		return errors.New("promotion currently requires Git sources in both Applications")
+		return errors.New("promotion requires Git sources in both Applications or matching versioned inline artifacts")
 	}
 	targetURL, err := r.promotionRepositoryURL(ctx, target)
 	if err != nil {

@@ -49,6 +49,9 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	if cluster := os.Getenv("E2E_KIND_CLUSTER"); cluster != "" {
+		kindClusterName = cluster
+	}
 	if image := os.Getenv("E2E_MANAGER_IMAGE"); image != "" {
 		managerImage = image
 	}
