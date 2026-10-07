@@ -87,6 +87,71 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		fx.Teardown()
 	})
 
+	It("converges an already healthy external publisher's missing or stale deployed revision without rollout", func() {
+		// Reproduce an upgrade from a controller that never populated this legacy
+		// display field. All health, provenance and observations come from the real
+		// completed source deployment; only status.revision is changed by the test.
+		original := source.DeepCopy()
+		before, err := inlinePromotionSourceRuntimeIdentity()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before).NotTo(BeEmpty())
+		for _, legacyRevision := range []string{"", strings.Repeat("b", 40)} {
+			By(fmt.Sprintf("emulating the legacy deployed revision %q on the already healthy source", legacyRevision))
+			var patched api.Application
+			Eventually(func() error {
+				current, err := promotionGetApp(inlineSourceNS, inlineSourceApp)
+				if err != nil {
+					return err
+				}
+				operation := map[string]any{"op": "remove", "path": "/status/revision"}
+				if legacyRevision != "" {
+					operation["op"], operation["value"] = "replace", legacyRevision
+				}
+				patch := promotionJSON([]map[string]any{
+					{"op": "test", "path": "/metadata/uid", "value": string(original.UID)},
+					{"op": "test", "path": "/metadata/generation", "value": original.Generation},
+					{"op": "test", "path": "/metadata/resourceVersion", "value": current.ResourceVersion},
+					{"op": "test", "path": "/status/phase", "value": api.ApplicationHealthy},
+					{"op": "test", "path": "/status/releaseRef", "value": original.Status.ReleaseRef},
+					{"op": "test", "path": "/status/revision", "value": inlineRevision},
+					operation,
+				})
+				raw, err := utils.Kubectl("-n", inlineSourceNS, "patch", "applications.pipelines.paprika.io", inlineSourceApp, "--subresource=status", "--type=json", "-p", patch, "-o", "json")
+				if err != nil {
+					return err
+				}
+				return json.Unmarshal([]byte(raw), &patched)
+			}, 20*time.Second, time.Second).Should(Succeed())
+			Expect(patched.Status.Revision).To(Equal(legacyRevision))
+			Expect(patched.Spec).To(Equal(original.Spec))
+			Expect(patched.Status.Phase).To(Equal(api.ApplicationHealthy))
+			Expect(patched.Status.SourceRevision).To(Equal(inlineRevision))
+			Expect(patched.Status.SourceHash).To(Equal(original.Status.SourceHash))
+			Expect(patched.Status.DeploymentObservation).NotTo(BeNil())
+			Expect(patched.Status.DeploymentObservation.ReleaseUID).To(Equal(original.Status.DeploymentObservation.ReleaseUID))
+			Eventually(func(g Gomega) {
+				current, err := promotionGetApp(inlineSourceNS, inlineSourceApp)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(current.UID).To(Equal(original.UID))
+				g.Expect(current.Generation).To(Equal(original.Generation))
+				g.Expect(current.Spec).To(Equal(original.Spec))
+				g.Expect(current.Status.Phase).To(Equal(api.ApplicationHealthy))
+				g.Expect(current.Status.ObservedGeneration).To(Equal(current.Generation))
+				g.Expect(current.Status.Revision).To(Equal(inlineRevision))
+				g.Expect(current.Status.SourceRevision).To(Equal(inlineRevision))
+				g.Expect(current.Status.SourceHash).To(Equal(original.Status.SourceHash))
+				g.Expect(current.Status.ReleaseRef).To(Equal(original.Status.ReleaseRef))
+				g.Expect(current.Status.DeploymentObservation).NotTo(BeNil())
+				g.Expect(current.Status.DeploymentObservation.ReleaseUID).To(Equal(original.Status.DeploymentObservation.ReleaseUID))
+				g.Expect(current.Status.DeploymentObservation.ObservedGeneration).To(Equal(current.Generation))
+				source = current
+			}, 90*time.Second, time.Second).Should(Succeed())
+			after, err := inlinePromotionSourceRuntimeIdentity()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(after).To(Equal(before), "revision convergence must retain source Releases, workload generation, ReplicaSets and Pods")
+		}
+	})
+
 	It("promotes exact source images through real HTTP Jobs while retaining tenant configuration", func() {
 		fx.Apply(inlinePromotionSnapshot(inlineTargetNS, "bundle-v1", inlinePromotionPayload(inlineTargetNS, "vocus", "vocus.example.test", inlineArtifactImage)))
 		fx.Apply(inlinePromotionApp(inlineTargetNS, inlineTargetApp, "bundle-v1", inlineRevision, "vocus.example.test", true))
@@ -105,6 +170,24 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		Expect(json.Unmarshal([]byte(raw), &release)).To(Succeed())
 		Expect(release.Spec.ManifestSource.ConfigMapRef).To(Equal("bundle-v1"))
 		Expect(string(release.Spec.ManifestSource.Artifact.Images["backend"])).To(Equal(inlineArtifactImage))
+		var quota corev1.ResourceQuota
+		raw, err = utils.Kubectl("-n", inlineTargetNS, "get", "resourcequota", "artifact-tenant-quota", "-o", "json")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal([]byte(raw), &quota)).To(Succeed())
+		podsLimit := quota.Spec.Hard[corev1.ResourcePods]
+		requestsCPU := quota.Spec.Hard[corev1.ResourceRequestsCPU]
+		Expect(podsLimit.String()).To(Equal("4"))
+		Expect(requestsCPU.String()).To(Equal("500m"))
+		Expect(quota.Labels["app.paprika.io/name"]).To(Equal(inlineTargetApp))
+		var limits corev1.LimitRange
+		raw, err = utils.Kubectl("-n", inlineTargetNS, "get", "limitrange", "artifact-tenant-limits", "-o", "json")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal([]byte(raw), &limits)).To(Succeed())
+		Expect(limits.Spec.Limits).To(HaveLen(1))
+		Expect(limits.Spec.Limits[0].Type).To(Equal(corev1.LimitTypeContainer))
+		Expect(limits.Spec.Limits[0].Default.Cpu().String()).To(Equal("100m"))
+		Expect(limits.Spec.Limits[0].DefaultRequest.Memory().String()).To(Equal("32Mi"))
+		Expect(limits.Labels["app.paprika.io/name"]).To(Equal(inlineTargetApp))
 		for ns, domain := range map[string]string{inlineSourceNS: "next.example.test", inlineTargetNS: "vocus.example.test"} {
 			actual, err := utils.Kubectl("-n", ns, "get", "configmap", "artifact-settings", "-o", "jsonpath={.data.domain}")
 			Expect(err).NotTo(HaveOccurred())
@@ -248,7 +331,18 @@ func inlinePromotionPayload(namespace, environment, domain, image string) string
 	settings := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "artifact-settings", "namespace": namespace}, "data": map[string]string{"health": "ok", "environment": environment, "domain": domain}}
 	deployment := map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "artifact-app", "namespace": namespace, "labels": map[string]string{"app.kubernetes.io/component": "backend"}}, "spec": map[string]any{"replicas": 1, "selector": map[string]any{"matchLabels": map[string]string{"app": "artifact-app"}}, "template": map[string]any{"metadata": map[string]any{"labels": map[string]string{"app": "artifact-app"}}, "spec": map[string]any{"securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000}, "containers": []map[string]any{{"name": "backend", "image": image, "command": []string{"httpd", "-f", "-p", "8080", "-h", "/www"}, "ports": []map[string]any{{"containerPort": 8080}}, "readinessProbe": map[string]any{"httpGet": map[string]any{"path": "/health", "port": 8080}, "initialDelaySeconds": 1, "periodSeconds": 2}, "volumeMounts": []map[string]any{{"name": "settings", "mountPath": "/www", "readOnly": true}}}}, "volumes": []map[string]any{{"name": "settings", "configMap": map[string]string{"name": "artifact-settings"}}}}}}}
 	service := map[string]any{"apiVersion": "v1", "kind": "Service", "metadata": map[string]any{"name": "artifact-app", "namespace": namespace}, "spec": map[string]any{"selector": map[string]string{"app": "artifact-app"}, "ports": []map[string]any{{"port": 8080, "targetPort": 8080}}}}
-	return promotionJSON(settings) + "\n---\n" + promotionJSON(deployment) + "\n---\n" + promotionJSON(service)
+	payload := promotionJSON(settings) + "\n---\n" + promotionJSON(deployment) + "\n---\n" + promotionJSON(service)
+	if namespace != inlineSourceNS {
+		// Tenant bootstrap policy must be managed through the same Release as
+		// its workload. Apply policy before Pods need quota/default resources.
+		metadata := func(name string) map[string]any {
+			return map[string]any{"name": name, "namespace": namespace, "annotations": map[string]string{"paprika.io/sync-wave": "-1"}}
+		}
+		quota := map[string]any{"apiVersion": "v1", "kind": "ResourceQuota", "metadata": metadata("artifact-tenant-quota"), "spec": map[string]any{"hard": map[string]string{"pods": "4", "requests.cpu": "500m", "requests.memory": "256Mi", "limits.cpu": "1", "limits.memory": "512Mi"}}}
+		limits := map[string]any{"apiVersion": "v1", "kind": "LimitRange", "metadata": metadata("artifact-tenant-limits"), "spec": map[string]any{"limits": []map[string]any{{"type": "Container", "default": map[string]string{"cpu": "100m", "memory": "64Mi"}, "defaultRequest": map[string]string{"cpu": "50m", "memory": "32Mi"}}}}}
+		payload += "\n---\n" + promotionJSON(quota) + "\n---\n" + promotionJSON(limits)
+	}
+	return payload
 }
 
 func inlinePromotionOwnSnapshot(namespace, application, snapshot string) {
@@ -261,21 +355,76 @@ func inlinePromotionOwnSnapshot(namespace, application, snapshot string) {
 
 func inlinePromotionWaitHealthy(namespace, application string) *api.Application {
 	promotionWaitHealthy(namespace, application, inlineRevision)
+	resourceCount := 3
+	if namespace != inlineSourceNS {
+		resourceCount += 2
+	}
 	var app *api.Application
 	EventuallyWithOffset(1, func(g Gomega) {
 		current, err := promotionGetApp(namespace, application)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(current.Status.Health).To(Equal(api.HealthHealthy), "status: %s", promotionJSON(current.Status))
 		g.Expect(current.Status.Synced).To(BeTrue())
-		g.Expect(current.Status.Resources).To(HaveLen(3))
+		g.Expect(current.Status.Resources).To(HaveLen(resourceCount))
 		for _, resource := range current.Status.Resources {
 			g.Expect(resource.Status).To(Equal("Synced"))
 		}
-		g.Expect(current.Status.ResourceHealth).To(HaveLen(3))
+		g.Expect(current.Status.ResourceHealth).To(HaveLen(resourceCount))
 		for _, resource := range current.Status.ResourceHealth {
 			g.Expect(resource.Health).To(Equal("Healthy"))
 		}
 		app = current
 	}, time.Minute, time.Second).Should(Succeed())
 	return app
+}
+
+// Capture immutable identities and desired workload generation separately from
+// changing health timestamps. The dedicated source namespace contains only this
+// external publisher's resources, so additional Releases or rollout Pods count.
+func inlinePromotionSourceRuntimeIdentity() (map[string]string, error) {
+	raw, err := utils.Kubectl("-n", inlineSourceNS, "get", "releases.pipelines.paprika.io,deployments.apps,replicasets.apps,pods", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	var objects corev1.List
+	if err := json.Unmarshal([]byte(raw), &objects); err != nil {
+		return nil, err
+	}
+	identities := make(map[string]string, len(objects.Items))
+	counts := make(map[string]int, 4)
+	for _, object := range objects.Items {
+		var resource struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name       string `json:"name"`
+				UID        string `json:"uid"`
+				Generation int64  `json:"generation"`
+			} `json:"metadata"`
+			Spec json.RawMessage `json:"spec"`
+		}
+		if err := json.Unmarshal(object.Raw, &resource); err != nil {
+			return nil, err
+		}
+		counts[resource.Kind]++
+		key := resource.Kind + "/" + resource.Metadata.Name
+		identities[key] = fmt.Sprintf("%s:%d", resource.Metadata.UID, resource.Metadata.Generation)
+		if resource.Kind == "Deployment" {
+			var spec any
+			if err := json.Unmarshal(resource.Spec, &spec); err != nil {
+				return nil, err
+			}
+			canonical, err := json.Marshal(spec)
+			if err != nil {
+				return nil, err
+			}
+			digest := sha256.Sum256(canonical)
+			identities[key+"/spec"] = hex.EncodeToString(digest[:])
+		}
+	}
+	for _, kind := range []string{"Release", "Deployment", "ReplicaSet", "Pod"} {
+		if counts[kind] == 0 {
+			return nil, fmt.Errorf("source runtime identity has no %s", kind)
+		}
+	}
+	return identities, nil
 }
