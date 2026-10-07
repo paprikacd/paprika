@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,12 +21,14 @@ import (
 )
 
 type pipelineAdmissionRunner struct {
-	client client.Client
-	calls  int
+	client          client.Client
+	calls           int
+	initialStatuses []api.StepStatus
 }
 
 func (r *pipelineAdmissionRunner) RunPipeline(ctx context.Context, pipeline *api.Pipeline, onProgress progress.StepProgressCallback) ([]api.StepStatus, error) {
 	r.calls++
+	r.initialStatuses = append([]api.StepStatus{}, pipeline.Status.StepStatuses...)
 	statuses := make([]api.StepStatus, 0, len(pipeline.Spec.Steps))
 	for _, step := range pipeline.Spec.Steps {
 		onProgress(ctx, pipeline, api.StepStatus{Name: step.Name, Phase: api.StepRunning})
@@ -173,5 +176,119 @@ func TestPipelineExecutionAdmissionFailsClosedOnAuthoritativeReadError(t *testin
 	}
 	if current.Status.Phase != api.PipelineSucceeded {
 		t.Fatalf("read failure replaced terminal phase with %s", current.Status.Phase)
+	}
+}
+
+func TestPipelineTerminalReconcileDoesNotObserveUnexecutedSpecification(t *testing.T) {
+	t.Parallel()
+	r, runner, live, pipeline := newPipelineAdmissionFixture(t, api.PipelineFailed, api.PipelineFailed)
+	pipeline.Generation = 2
+	pipeline.Spec.Steps[0].Script = "different-prerequisite"
+	if err := live.Update(t.Context(), pipeline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pipeline)}); err != nil {
+		t.Fatal(err)
+	}
+	var current api.Pipeline
+	if err := live.Get(t.Context(), client.ObjectKeyFromObject(pipeline), &current); err != nil {
+		t.Fatal(err)
+	}
+	if runner.calls != 0 || current.Status.ObservedGeneration != 1 || current.Generation != 2 {
+		t.Fatalf("terminal spec edit was incorrectly observed: calls=%d pipeline=%+v", runner.calls, current)
+	}
+}
+
+func TestPipelineStatusRejectsOldExecutionAndChangedIdentity(t *testing.T) {
+	t.Parallel()
+	for _, change := range []string{"execution", "generation", "uid", "cancelled"} {
+		t.Run(change, func(t *testing.T) {
+			t.Parallel()
+			r, _, live, old := newPipelineAdmissionFixture(t, api.PipelineRunning, api.PipelineRunning)
+			fresh := old.DeepCopy()
+			switch change {
+			case "execution":
+				fresh.Status.LastExecutionID = "retry-new-attempt"
+			case "generation":
+				fresh.Generation++
+			case "uid":
+				fresh.UID = "replacement-pipeline"
+			case "cancelled":
+				fresh.Status.Phase = api.PipelineCancelled
+			}
+			changedStatus := fresh.Status.DeepCopy()
+			if err := live.Update(t.Context(), fresh); err != nil {
+				t.Fatal(err)
+			}
+			fresh.Status = *changedStatus
+			if err := live.Status().Update(t.Context(), fresh); err != nil {
+				t.Fatal(err)
+			}
+			old.Status.StepStatuses = []api.StepStatus{{Name: "upstream-health", Phase: api.StepSucceeded}}
+			if err := r.patchPipelineStatus(t.Context(), old); err == nil {
+				t.Fatal("stale execution overwrote a changed Pipeline")
+			}
+			var current api.Pipeline
+			if err := live.Get(t.Context(), client.ObjectKeyFromObject(old), &current); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(current.Status, fresh.Status) {
+				t.Fatalf("stale progress replaced current status: got %+v, want %+v", current.Status, fresh.Status)
+			}
+		})
+	}
+}
+
+func TestPipelineExecutionStartClearsUnobservedResults(t *testing.T) {
+	t.Parallel()
+	for _, phase := range []api.PipelinePhase{"", "Pending", api.PipelineRunning} {
+		t.Run("phase="+string(phase), func(t *testing.T) {
+			t.Parallel()
+			r, runner, live, pipeline := newPipelineAdmissionFixture(t, phase, phase)
+			pipeline.Status.ObservedGeneration = 0
+			pipeline.Status.StepStatuses = []api.StepStatus{{Name: "upstream-health", Phase: api.StepSucceeded}}
+			if err := live.Status().Update(t.Context(), pipeline); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pipeline)}); err != nil {
+				t.Fatal(err)
+			}
+			var current api.Pipeline
+			if err := live.Get(t.Context(), client.ObjectKeyFromObject(pipeline), &current); err != nil {
+				t.Fatal(err)
+			}
+			if runner.calls != 1 || len(runner.initialStatuses) != 0 || current.Status.ObservedGeneration != 1 {
+				t.Fatalf("unobserved execution reused results or failed to stamp generation: initial=%+v status=%+v calls=%d", runner.initialStatuses, current.Status, runner.calls)
+			}
+		})
+	}
+}
+
+func TestPipelineRunningGenerationChangeDoesNotExecuteNewSpecification(t *testing.T) {
+	t.Parallel()
+	r, runner, live, pipeline := newPipelineAdmissionFixture(t, api.PipelineRunning, api.PipelineRunning)
+	pipeline.Generation = 2
+	if err := live.Update(t.Context(), pipeline); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pipeline)}); err == nil || runner.calls != 0 {
+		t.Fatalf("unobserved spec edit admitted execution: calls=%d error=%v", runner.calls, err)
+	}
+}
+
+func TestPipelineRetryResultPreservesUnrelatedFailure(t *testing.T) {
+	t.Parallel()
+	r, _, live, pipeline := newPipelineAdmissionFixture(t, api.PipelineRunning, api.PipelineRunning)
+	statuses := []api.StepStatus{{Name: "retried", Phase: api.StepSucceeded}, {Name: "unrelated", Phase: api.StepFailed}, {Name: "blocked", Phase: api.StepSkipped}}
+	result := "success"
+	if _, err := r.handlePipelineResult(t.Context(), pipeline, statuses, time.Now(), &result); err != nil {
+		t.Fatal(err)
+	}
+	var current api.Pipeline
+	if err := live.Get(t.Context(), client.ObjectKeyFromObject(pipeline), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Status.Phase != api.PipelineFailed || !reflect.DeepEqual(current.Status.StepStatuses, statuses) {
+		t.Fatalf("successful retried branch concealed an unrelated failure: %+v", current.Status)
 	}
 }

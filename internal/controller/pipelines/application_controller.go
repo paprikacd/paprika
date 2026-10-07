@@ -256,7 +256,7 @@ func withProjectLabels(app *paprikav1.Application, labels map[string]string) map
 type ApplicationReconciler struct {
 	client              client.Client
 	Scheme              *runtime.Scheme
-	K8sClient           *kubernetes.Clientset
+	K8sClient           kubernetes.Interface
 	Namespace           string
 	RestConfig          *rest.Config
 	WorkDir             string

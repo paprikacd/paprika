@@ -111,11 +111,17 @@ func (r *PipelineReconciler) patchPipelineStatus(ctx context.Context, pipeline *
 	desiredStatus := pipeline.Status.DeepCopy()
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var fresh pipelinesv1alpha1.Pipeline
-		if err := r.client.Get(ctx, types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, &fresh); err != nil {
+		reader := r.APIReader
+		if reader == nil {
+			reader = r.client
+		}
+		if err := reader.Get(ctx, types.NamespacedName{Name: pipeline.Name, Namespace: pipeline.Namespace}, &fresh); err != nil {
 			return fmt.Errorf("fetching pipeline for status update: %w", err)
 		}
+		if !pipelineStatusWriteMatches(&fresh, pipeline) {
+			return errors.New("pipeline identity, specification or execution changed during status update")
+		}
 		fresh.Status = *desiredStatus
-		fresh.Status.ObservedGeneration = fresh.Generation
 		if err := r.client.Status().Update(ctx, &fresh); err != nil {
 			return fmt.Errorf("updating pipeline status: %w", err)
 		}
@@ -126,10 +132,38 @@ func (r *PipelineReconciler) patchPipelineStatus(ctx context.Context, pipeline *
 	return nil
 }
 
+func pipelineStatusWriteMatches(fresh, desired *pipelinesv1alpha1.Pipeline) bool {
+	if fresh.UID != desired.UID || fresh.Generation != desired.Generation {
+		return false
+	}
+	if fresh.Status.ObservedGeneration != desired.Status.ObservedGeneration && !pipelineInitialGenerationWrite(fresh, desired) {
+		return false
+	}
+	if isTerminalPipelinePhase(fresh.Status.Phase) && fresh.Status.Phase != desired.Status.Phase {
+		return false
+	}
+	return pipelineExecutionIDWriteMatches(fresh, desired)
+}
+
+func pipelineExecutionIDWriteMatches(fresh, desired *pipelinesv1alpha1.Pipeline) bool {
+	if fresh.Status.LastExecutionID == desired.Status.LastExecutionID {
+		return true
+	}
+	// Only the initial admission may introduce an execution identity. Later
+	// progress must never overwrite an API retry or a replacement Pipeline.
+	return pipelineNeedsExecutionStart(fresh) && fresh.Status.LastExecutionID == "" &&
+		desired.Status.Phase == pipelinesv1alpha1.PipelineRunning && desired.Status.ObservedGeneration == desired.Generation
+}
+
+func pipelineInitialGenerationWrite(fresh, desired *pipelinesv1alpha1.Pipeline) bool {
+	return fresh.Status.ObservedGeneration == 0 && desired.Status.ObservedGeneration == desired.Generation &&
+		!isTerminalPipelinePhase(fresh.Status.Phase) && desired.Status.Phase == pipelinesv1alpha1.PipelineRunning
+}
+
 func (r *PipelineReconciler) handlePipelineResult(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline, stepStatuses []pipelinesv1alpha1.StepStatus, start time.Time, result *string) (ctrl.Result, error) {
 	allSucceeded := true
 	for _, s := range stepStatuses {
-		if s.Phase == pipelinesv1alpha1.StepFailed {
+		if s.Phase != pipelinesv1alpha1.StepSucceeded && s.Phase != pipelinesv1alpha1.StepSkipped {
 			allSucceeded = false
 			break
 		}
@@ -194,17 +228,12 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, nil
 	}
 
-	if pipeline.Status.Phase == "" {
-		pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
-		metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Running").Inc()
-		pipeline.Status.LastExecutionID = "run-" + req.Name
-		now := metav1.Now()
-		pipeline.Status.LastExecutionTime = &now
-		if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
-			*result = resultError
-			return ctrl.Result{}, fmt.Errorf("failed to set pipeline running: %w", err)
-		}
-		r.publishPipelineEvent(ctx, pipeline, "")
+	if err := r.startPipelineExecutionIfNeeded(ctx, pipeline); err != nil {
+		*result = resultError
+		return ctrl.Result{}, err
+	}
+	if pipeline.Status.ObservedGeneration != pipeline.Generation {
+		return ctrl.Result{}, errors.New("pipeline specification changed after execution began; create a new Pipeline")
 	}
 
 	pipelineCopy := pipeline.DeepCopy()
@@ -234,6 +263,31 @@ func (r *PipelineReconciler) reconcilePipeline(ctx context.Context, req ctrl.Req
 
 	pipeline.Status.StepStatuses = stepStatuses
 	return r.handlePipelineResult(ctx, pipeline, stepStatuses, start, result)
+}
+
+func pipelineNeedsExecutionStart(pipeline *pipelinesv1alpha1.Pipeline) bool {
+	return pipeline.Status.Phase == "" || pipeline.Status.Phase == "Pending" ||
+		(pipeline.Status.ObservedGeneration == 0 && pipeline.Generation > 0)
+}
+
+func (r *PipelineReconciler) startPipelineExecutionIfNeeded(ctx context.Context, pipeline *pipelinesv1alpha1.Pipeline) error {
+	if !pipelineNeedsExecutionStart(pipeline) {
+		return nil
+	}
+	pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
+	pipeline.Status.ObservedGeneration = pipeline.Generation
+	pipeline.Status.StepStatuses = nil
+	metrics.PipelinePhaseTotal.WithLabelValues(pipeline.Name, pipeline.Namespace, "Running").Inc()
+	if pipeline.Status.LastExecutionID == "" {
+		pipeline.Status.LastExecutionID = "run-" + pipeline.Name
+	}
+	now := metav1.Now()
+	pipeline.Status.LastExecutionTime = &now
+	if err := r.patchPipelineStatus(ctx, pipeline); err != nil {
+		return fmt.Errorf("failed to set pipeline running: %w", err)
+	}
+	r.publishPipelineEvent(ctx, pipeline, "")
+	return nil
 }
 
 func isTerminalPipelinePhase(phase pipelinesv1alpha1.PipelinePhase) bool {

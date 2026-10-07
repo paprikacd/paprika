@@ -176,9 +176,15 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 
 	var stepStatuses []paprika.StepStatus
 	completed := make(map[string]bool)
+	previous := make(map[string]paprika.StepStatus)
+	if pipeline.Status.ObservedGeneration == pipeline.Generation {
+		for _, status := range pipeline.Status.StepStatuses {
+			previous[status.Name] = status
+		}
+	}
 
 	for _, batch := range batches {
-		if err := e.executeBatch(ctx, batch, pipeline, maxParallel, completed, &stepStatuses, onProgress); err != nil {
+		if err := e.executeBatch(ctx, batch, pipeline, maxParallel, completed, previous, &stepStatuses, onProgress); err != nil {
 			return stepStatuses, fmt.Errorf("execute batch: %w", err)
 		}
 	}
@@ -186,26 +192,26 @@ func (e *WorkflowEngine) RunPipeline(ctx context.Context, pipeline *paprika.Pipe
 	return stepStatuses, nil
 }
 
-func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, maxParallel int, completed map[string]bool, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
+func (e *WorkflowEngine) executeBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, maxParallel int, completed map[string]bool, previous map[string]paprika.StepStatus, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
 	for i := 0; i < len(batch); i += maxParallel {
 		end := min(i+maxParallel, len(batch))
 		subBatch := batch[i:end]
 
-		if err := e.executeSubBatch(ctx, subBatch, pipeline, completed, stepStatuses, onProgress); err != nil {
+		if err := e.executeSubBatch(ctx, subBatch, pipeline, completed, previous, stepStatuses, onProgress); err != nil {
 			return fmt.Errorf("execute sub-batch: %w", err)
 		}
 	}
 	return nil
 }
 
-func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, completed map[string]bool, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
+func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.PipelineStep, pipeline *paprika.Pipeline, completed map[string]bool, previous map[string]paprika.StepStatus, stepStatuses *[]paprika.StepStatus, onProgress StepProgressCallback) error {
 	var mu sync.Mutex
 	g, gCtx := errgroup.WithContext(ctx)
 
 	for _, step := range batch {
 		g.Go(func(s paprika.PipelineStep) func() error {
 			return func() error {
-				return e.runStepJob(gCtx, pipeline, &s, completed, stepStatuses, &mu, onProgress)
+				return e.runStepJob(gCtx, pipeline, &s, completed, previous, stepStatuses, &mu, onProgress)
 			}
 		}(step))
 	}
@@ -217,8 +223,14 @@ func (e *WorkflowEngine) executeSubBatch(ctx context.Context, batch []paprika.Pi
 }
 
 //nolint:cyclop // step execution has many sequential branches.
-func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, completed map[string]bool, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, onProgress StepProgressCallback) error {
+func (e *WorkflowEngine) runStepJob(ctx context.Context, pipeline *paprika.Pipeline, s *paprika.PipelineStep, completed map[string]bool, previous map[string]paprika.StepStatus, stepStatuses *[]paprika.StepStatus, mu *sync.Mutex, onProgress StepProgressCallback) error {
 	mu.Lock()
+	if status, ok := previous[s.Name]; ok && (status.Phase == paprika.StepSucceeded || status.Phase == paprika.StepFailed || status.Phase == paprika.StepSkipped || status.Phase == paprika.StepCancelled) {
+		*stepStatuses = append(*stepStatuses, status)
+		completed[s.Name] = status.Phase == paprika.StepSucceeded
+		mu.Unlock()
+		return nil
+	}
 	depsSatisfied := true
 	for dep := range s.Depends {
 		if !completed[s.Depends[dep]] {

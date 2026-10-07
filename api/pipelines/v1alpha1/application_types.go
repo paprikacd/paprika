@@ -102,6 +102,15 @@ type ApplicationPromotionStatus struct {
 	VerificationPipelineRef string `json:"verificationPipelineRef,omitempty"`
 	// VerificationConfigHash invalidates verification when tests or gates change.
 	VerificationConfigHash string `json:"verificationConfigHash,omitempty"`
+	// VerificationAttempt is the last consumed explicit retry token. Each retry
+	// receives a fresh Pipeline identity; replaying this token cannot reopen it.
+	// +optional
+	VerificationAttempt string `json:"verificationAttempt,omitempty"`
+	// ConsumedVerificationAttempts prevents replay of older retry requests for
+	// this candidate. At most 32 retries are admitted; history is never evicted.
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	ConsumedVerificationAttempts []string `json:"consumedVerificationAttempts,omitempty"`
 	// VerificationStartedAt records when gates began after verification tests passed.
 	// It is reset when the verification configuration changes.
 	// +optional

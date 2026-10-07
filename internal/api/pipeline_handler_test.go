@@ -112,6 +112,7 @@ func TestRetryStep_IdempotencyGuard(t *testing.T) {
 		&pipelinesv1alpha1.Pipeline{
 			ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns", Labels: map[string]string{"app.paprika.io/project": "default"}},
 			Status: pipelinesv1alpha1.PipelineStatus{
+				Phase: pipelinesv1alpha1.PipelineRunning,
 				StepStatuses: []pipelinesv1alpha1.StepStatus{
 					{Name: "build", Phase: pipelinesv1alpha1.StepRunning},
 				},
@@ -135,7 +136,9 @@ func TestRetryStep_Success(t *testing.T) {
 	cl := newPipelineTestClient(
 		&pipelinesv1alpha1.Pipeline{
 			ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns", Labels: map[string]string{"app.paprika.io/project": "default"}},
+			Spec:       pipelinesv1alpha1.PipelineSpec{Steps: []pipelinesv1alpha1.PipelineStep{{Name: "build", Image: "test", Script: "test"}}},
 			Status: pipelinesv1alpha1.PipelineStatus{
+				Phase: pipelinesv1alpha1.PipelineFailed,
 				StepStatuses: []pipelinesv1alpha1.StepStatus{
 					{Name: "build", Phase: pipelinesv1alpha1.StepFailed, CompletedAt: &metav1.Time{Time: time.Unix(1000, 0)}},
 				},
@@ -143,7 +146,7 @@ func TestRetryStep_Success(t *testing.T) {
 		},
 	)
 	broker := events.NewBroker(logr.Discard())
-	srv := NewPaprikaServer(cl, broker)
+	srv := NewPaprikaServer(cl, broker, WithK8sClient(fake.NewSimpleClientset()), WithControlPlaneNamespace("jobs"))
 
 	_, err := srv.RetryStep(context.Background(), connect.NewRequest(
 		&paprikav1.RetryStepRequest{

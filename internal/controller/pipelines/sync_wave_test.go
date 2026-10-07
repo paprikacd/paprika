@@ -187,6 +187,29 @@ func TestGateSyncWave(t *testing.T) {
 		}
 	})
 
+	t.Run("previous generation counters cannot release next wave", func(t *testing.T) {
+		live := liveDeployment("web", "ns", true)
+		live.SetGeneration(2)
+		if err := unstructured.SetNestedField(live.Object, int64(1), "status", "observedGeneration"); err != nil {
+			t.Fatal(err)
+		}
+		r, dyn := waveGateReconciler(t, newRelease(), live)
+		objs := []map[string]interface{}{waveObj("Deployment", "web", "0")}
+		if err := r.gateSyncWave(ctx, log, dyn, objs, "ns", "rel-1", "my-app"); !errors.Is(err, errSyncWavePending) {
+			t.Fatalf("stale healthy counters released wave: %v", err)
+		}
+		if err := unstructured.SetNestedField(live.Object, int64(2), "status", "observedGeneration"); err != nil {
+			t.Fatal(err)
+		}
+		resource := dyn.Resource(appsv1.SchemeGroupVersion.WithResource("deployments")).Namespace("ns")
+		if _, err := resource.Update(ctx, live, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.gateSyncWave(ctx, log, dyn, objs, "ns", "rel-1", "my-app"); err != nil {
+			t.Fatalf("observed rollout did not release wave: %v", err)
+		}
+	})
+
 	t.Run("missing resource returns pending", func(t *testing.T) {
 		r, dyn := waveGateReconciler(t, newRelease(), nil)
 		err := r.gateSyncWave(ctx, log, dyn, []map[string]interface{}{waveObj("Deployment", "web", "0")}, "ns", "rel-1", "my-app")
