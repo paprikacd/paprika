@@ -62,6 +62,9 @@ const (
 	releaseFinalizer   = "paprika.io/release-cleanup"
 	rollbackAnnotation = "paprika.io/rollback-requested"
 	resyncAnnotation   = "paprika.io/resync"
+	// hookAttemptAnnotation marks a hook object with the release UID and
+	// HookAttempt that applied it. See hookAttemptID.
+	hookAttemptAnnotation = "app.paprika.io/hook-attempt"
 )
 
 // Hook execution lifecycle states mirrored on Release.Status.HookStatuses.
@@ -432,6 +435,7 @@ func (r *ReleaseReconciler) handleResyncAnnotation(ctx context.Context, release 
 		// A new attempt must run its hooks again. Carrying Succeeded skips
 		// migration; carrying Failed makes every explicit retry fail immediately.
 		release.Status.HookStatuses = nil
+		release.Status.HookAttempt++
 		for _, condition := range []string{"Failed", "VerificationFailed", "CanaryFailed", "CanaryPromotionFailed", "CanaryAnalysis", "RolledBack"} {
 			meta.RemoveStatusCondition(&release.Status.Conditions, condition)
 		}
@@ -2512,14 +2516,26 @@ func (r *ReleaseReconciler) applyNewHook(
 	log := logf.FromContext(ctx)
 	obj := res.Obj
 
+	// A cached Release can lag behind the Running status that an earlier
+	// reconcile stamped. The hook object carries the attempt identity, so the
+	// Job this attempt created is adopted here instead of deleted and applied
+	// again.
+	var adopted *unstructured.Unstructured
 	if beforeHookCreation(res.DeletePolicy) {
-		if err := r.deleteExistingHook(ctx, dynClient, obj, timeout); err != nil {
+		live, err := r.deleteExistingHook(ctx, dynClient, obj, release, timeout)
+		if err != nil {
 			return fmt.Errorf("before-hook-creation delete %s/%s: %w",
 				obj.GetKind(), obj.GetName(), err)
 		}
+		adopted = live
 	}
-	if err := r.applyHookObject(ctx, dynClient, obj, release); err != nil {
-		return fmt.Errorf("apply hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+	if adopted == nil {
+		if err := r.applyHookObject(ctx, dynClient, obj, release); err != nil {
+			return fmt.Errorf("apply hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		}
+	} else {
+		log.Info("Hook already applied by this attempt; adopting it", "kind", obj.GetKind(),
+			"name", obj.GetName(), "phase", phase)
 	}
 
 	checker := hooks.CompletionFor(obj.GroupVersionKind().String())
@@ -2531,7 +2547,13 @@ func (r *ReleaseReconciler) applyNewHook(
 		return nil
 	}
 
-	idx = setHookStatus(release, idx, obj, phase, hookStatusRunning, "", r.Clock.Now())
+	startedAt := r.Clock.Now()
+	if adopted != nil {
+		if created := adopted.GetCreationTimestamp(); !created.IsZero() {
+			startedAt = created.Time
+		}
+	}
+	idx = setHookStatus(release, idx, obj, phase, hookStatusRunning, "", startedAt)
 	done, succeeded, msg, err := r.pollHook(ctx, dynClient, obj)
 	if err != nil {
 		return fmt.Errorf("poll hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
@@ -2680,28 +2702,33 @@ func beforeHookCreation(value string) bool {
 
 // deleteExistingHook waits across reconciles for foreground deletion. Applying
 // after merely accepting DELETE races Job finalizers and can overlap migrations.
-func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dynamic.Interface, obj *unstructured.Unstructured, timeout time.Duration) error {
+// A live hook that the current attempt of release applied is returned instead
+// of deleted, so a reconcile that works from a stale status adopts it.
+func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dynamic.Interface, obj *unstructured.Unstructured, release *paprikav1.Release, timeout time.Duration) (*unstructured.Unstructured, error) {
 	group, version := parseAPIVersion(obj.GetAPIVersion())
 	gvr, err := r.gvrFromKind(obj.GetKind(), group, version)
 	if err != nil {
-		return fmt.Errorf("resolve GVR: %w", err)
+		return nil, fmt.Errorf("resolve GVR: %w", err)
 	}
 	ri := dynClient.Resource(gvr).Namespace(obj.GetNamespace())
 	live, err := ri.Get(ctx, obj.GetName(), metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return fmt.Errorf("get prior hook: %w", err)
+		return nil, fmt.Errorf("get prior hook: %w", err)
 	}
 	if deletedAt := live.GetDeletionTimestamp(); deletedAt != nil {
 		if timeout <= 0 {
 			timeout = defaultHookTimeout
 		}
 		if r.Clock.Now().Sub(deletedAt.Time) > timeout {
-			return fmt.Errorf("prior hook %s/%s deletion timed out after %s; inspect finalizers", obj.GetKind(), obj.GetName(), timeout)
+			return nil, fmt.Errorf("prior hook %s/%s deletion timed out after %s; inspect finalizers", obj.GetKind(), obj.GetName(), timeout)
 		}
-		return errHookPhasePending
+		return nil, errHookPhasePending
+	}
+	if hookBelongsToAttempt(live, release) {
+		return live, nil
 	}
 	policy := metav1.DeletePropagationForeground
 	uid := live.GetUID()
@@ -2710,9 +2737,37 @@ func (r *ReleaseReconciler) deleteExistingHook(ctx context.Context, dynClient dy
 		Preconditions:     &metav1.Preconditions{UID: &uid},
 	})
 	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
-		return fmt.Errorf("delete hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		return nil, fmt.Errorf("delete hook %s/%s: %w", obj.GetKind(), obj.GetName(), err)
 	}
-	return errHookPhasePending
+	return nil, errHookPhasePending
+}
+
+// hookAttemptID identifies one hook run of a release: the release UID plus
+// its HookAttempt counter. Every explicit retry increments the counter, so a
+// hook object from an earlier attempt never matches the current one.
+func hookAttemptID(release *paprikav1.Release) string {
+	return string(release.UID) + "/" + strconv.FormatInt(release.Status.HookAttempt, 10)
+}
+
+// hookBelongsToAttempt reports whether live was applied by the current attempt
+// of release. Objects applied by older controllers carry no attempt
+// annotation, so they are replaced as before.
+func hookBelongsToAttempt(live *unstructured.Unstructured, release *paprikav1.Release) bool {
+	if live.GetLabels()[engine.ReleaseNameLabelKey] != release.Name {
+		return false
+	}
+	attempt, ok := live.GetAnnotations()[hookAttemptAnnotation]
+	return ok && attempt == hookAttemptID(release)
+}
+
+// setHookAttemptAnnotation stamps the attempt identity on hook metadata.
+func setHookAttemptAnnotation(metadata map[string]interface{}, attempt string) {
+	annotations, ok := metadata["annotations"].(map[string]interface{})
+	if !ok || annotations == nil {
+		annotations = make(map[string]interface{})
+		metadata["annotations"] = annotations
+	}
+	annotations[hookAttemptAnnotation] = attempt
 }
 
 // applyHookObject stamps paprika labels on the hook metadata and applies it
@@ -2729,6 +2784,7 @@ func (r *ReleaseReconciler) applyHookObject(
 		return errors.New("hook metadata is not an object")
 	}
 	setPaprikaLabels(metadata, appName, release.Name)
+	setHookAttemptAnnotation(metadata, hookAttemptID(release))
 
 	if obj.GetNamespace() == "" {
 		obj.SetNamespace(release.Namespace)
