@@ -22,6 +22,7 @@ import (
 	paprikav1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	"github.com/benebsworth/paprika/internal/engine"
 	"github.com/benebsworth/paprika/internal/gates"
+	"github.com/benebsworth/paprika/internal/health"
 	"github.com/benebsworth/paprika/internal/repository"
 )
 
@@ -471,11 +472,31 @@ func promotionHealthChecksReady(app *paprikav1.Application, completedAt, now tim
 	checks := healthResultsByName(app.Status.HealthChecks)
 	for _, check := range app.Spec.HealthChecks {
 		result := checks[check.Name]
-		if result == nil || result.Status != paprikav1.HealthHealthy || !configuredHealthResultFresh(check, result, now) || result.CheckedAt.Time.Before(completedAt) {
+		if result == nil || result.Status != paprikav1.HealthHealthy || !promotionHealthResultFresh(check, result, now) || result.CheckedAt.Time.Before(completedAt) {
 			return errors.New("every upstream health check must have a current healthy observation before promotion")
 		}
 	}
 	return nil
+}
+
+// Promotion reads may race the next scheduled probe and its status publication.
+// Allow one additional observation period, independently of the evaluator's due
+// predicate. Missing, changed, future, or older evidence still blocks admission.
+func promotionHealthResultFresh(check paprikav1.HealthCheck, result *paprikav1.HealthCheckResult, now time.Time) bool {
+	if result == nil || result.CheckedAt == nil || result.ConfigurationHash != health.MeasurementHash(check) {
+		return false
+	}
+	period := applicationHealthCheckInterval(check.Interval)
+	if check.SLO != nil {
+		var err error
+		_, period, err = health.SLODurations(check)
+		if err != nil {
+			return false
+		}
+	}
+	period = max(time.Second, period) // Match the health scheduler's minimum delay.
+	age := now.Sub(result.CheckedAt.Time)
+	return age >= 0 && age/period < 2 // Division avoids overflowing twice the period.
 }
 
 func promotionBackgroundAnalysisReady(app *paprikav1.Application, completedAt, now time.Time) error {
