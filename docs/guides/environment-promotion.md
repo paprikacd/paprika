@@ -70,6 +70,13 @@ waiting on a sync window cannot redirect repairs of the existing release.
 Editing a pending candidate's settings invalidates verification and expires
 its manual approval, so review and approve the revised settings again.
 
+Configured health checks must be Healthy, match their current configuration, and
+have run after deployment completed. Promotion accepts a result for less than two
+observation periods (with a one-second minimum period), allowing the next scheduled
+probe to finish and publish its result. A newer unhealthy result blocks immediately;
+missing, future-dated, changed, or expired evidence resets the observation window.
+This also applies to SLO checks without changing their sampling schedule.
+
 Promotion requires a recent desired/live resource observation tied to the
 exact upstream Release UID and revision. Custom health checks and analyses
 must also pass after that deployment became Healthy. Missing or stale target

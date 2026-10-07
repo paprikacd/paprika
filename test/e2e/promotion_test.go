@@ -228,6 +228,9 @@ var _ = Describe("ApplicationPromotion", Ordered, func() {
 			Expect(err).To(HaveOccurred(), "staging resources must exist only on the remote cluster")
 		}
 		prod := promotionWaitCandidate(promotionProdNS, promotionProdApp, initialSHA, "AwaitingApproval")
+		By("completing an uninterrupted observation window across multiple two-second probe refreshes")
+		Expect(prod.Status.Promotion.VerificationStartedAt).NotTo(BeNil())
+		Expect(time.Since(prod.Status.Promotion.VerificationStartedAt.Time)).To(BeNumerically(">=", 6*time.Second))
 		Expect(prod.Status.ReleaseRef).To(BeEmpty())
 		Expect(prod.Status.SourceRevision).To(BeEmpty())
 		initialProdUID = prod.Status.Promotion.SourceReleaseUID
@@ -511,7 +514,7 @@ test "$actual" = "$expected"
 			script += "echo intentionally-rejected-promotion\nexit 9\n"
 			verificationRetries = 0
 		}
-		gates := []map[string]any{{"type": "smoke-test", "endpoint": upstreamURL, "timeout": 5}, {"type": "duration", "timeout": 1}}
+		gates := []map[string]any{{"type": "smoke-test", "endpoint": upstreamURL, "timeout": 5}, {"type": "duration", "timeout": 6}}
 		if failure == "gate" {
 			gates[0]["endpoint"] = "http://" + promotionProbeName + "." + promotionDevNS + ".svc:1/health"
 		}
