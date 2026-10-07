@@ -24,7 +24,9 @@ rules:
   - ""
   resources:
   - configmaps
+  - limitranges
   - persistentvolumeclaims
+  - resourcequotas
   - serviceaccounts
   - services
   verbs:

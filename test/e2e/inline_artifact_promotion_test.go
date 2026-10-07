@@ -170,6 +170,24 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		Expect(json.Unmarshal([]byte(raw), &release)).To(Succeed())
 		Expect(release.Spec.ManifestSource.ConfigMapRef).To(Equal("bundle-v1"))
 		Expect(string(release.Spec.ManifestSource.Artifact.Images["backend"])).To(Equal(inlineArtifactImage))
+		var quota corev1.ResourceQuota
+		raw, err = utils.Kubectl("-n", inlineTargetNS, "get", "resourcequota", "artifact-tenant-quota", "-o", "json")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal([]byte(raw), &quota)).To(Succeed())
+		podsLimit := quota.Spec.Hard[corev1.ResourcePods]
+		requestsCPU := quota.Spec.Hard[corev1.ResourceRequestsCPU]
+		Expect(podsLimit.String()).To(Equal("4"))
+		Expect(requestsCPU.String()).To(Equal("500m"))
+		Expect(quota.Labels["app.paprika.io/name"]).To(Equal(inlineTargetApp))
+		var limits corev1.LimitRange
+		raw, err = utils.Kubectl("-n", inlineTargetNS, "get", "limitrange", "artifact-tenant-limits", "-o", "json")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(json.Unmarshal([]byte(raw), &limits)).To(Succeed())
+		Expect(limits.Spec.Limits).To(HaveLen(1))
+		Expect(limits.Spec.Limits[0].Type).To(Equal(corev1.LimitTypeContainer))
+		Expect(limits.Spec.Limits[0].Default.Cpu().String()).To(Equal("100m"))
+		Expect(limits.Spec.Limits[0].DefaultRequest.Memory().String()).To(Equal("32Mi"))
+		Expect(limits.Labels["app.paprika.io/name"]).To(Equal(inlineTargetApp))
 		for ns, domain := range map[string]string{inlineSourceNS: "next.example.test", inlineTargetNS: "vocus.example.test"} {
 			actual, err := utils.Kubectl("-n", ns, "get", "configmap", "artifact-settings", "-o", "jsonpath={.data.domain}")
 			Expect(err).NotTo(HaveOccurred())
@@ -313,7 +331,18 @@ func inlinePromotionPayload(namespace, environment, domain, image string) string
 	settings := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "artifact-settings", "namespace": namespace}, "data": map[string]string{"health": "ok", "environment": environment, "domain": domain}}
 	deployment := map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "artifact-app", "namespace": namespace, "labels": map[string]string{"app.kubernetes.io/component": "backend"}}, "spec": map[string]any{"replicas": 1, "selector": map[string]any{"matchLabels": map[string]string{"app": "artifact-app"}}, "template": map[string]any{"metadata": map[string]any{"labels": map[string]string{"app": "artifact-app"}}, "spec": map[string]any{"securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 1000}, "containers": []map[string]any{{"name": "backend", "image": image, "command": []string{"httpd", "-f", "-p", "8080", "-h", "/www"}, "ports": []map[string]any{{"containerPort": 8080}}, "readinessProbe": map[string]any{"httpGet": map[string]any{"path": "/health", "port": 8080}, "initialDelaySeconds": 1, "periodSeconds": 2}, "volumeMounts": []map[string]any{{"name": "settings", "mountPath": "/www", "readOnly": true}}}}, "volumes": []map[string]any{{"name": "settings", "configMap": map[string]string{"name": "artifact-settings"}}}}}}}
 	service := map[string]any{"apiVersion": "v1", "kind": "Service", "metadata": map[string]any{"name": "artifact-app", "namespace": namespace}, "spec": map[string]any{"selector": map[string]string{"app": "artifact-app"}, "ports": []map[string]any{{"port": 8080, "targetPort": 8080}}}}
-	return promotionJSON(settings) + "\n---\n" + promotionJSON(deployment) + "\n---\n" + promotionJSON(service)
+	payload := promotionJSON(settings) + "\n---\n" + promotionJSON(deployment) + "\n---\n" + promotionJSON(service)
+	if namespace != inlineSourceNS {
+		// Tenant bootstrap policy must be managed through the same Release as
+		// its workload. Apply policy before Pods need quota/default resources.
+		metadata := func(name string) map[string]any {
+			return map[string]any{"name": name, "namespace": namespace, "annotations": map[string]string{"paprika.io/sync-wave": "-1"}}
+		}
+		quota := map[string]any{"apiVersion": "v1", "kind": "ResourceQuota", "metadata": metadata("artifact-tenant-quota"), "spec": map[string]any{"hard": map[string]string{"pods": "4", "requests.cpu": "500m", "requests.memory": "256Mi", "limits.cpu": "1", "limits.memory": "512Mi"}}}
+		limits := map[string]any{"apiVersion": "v1", "kind": "LimitRange", "metadata": metadata("artifact-tenant-limits"), "spec": map[string]any{"limits": []map[string]any{{"type": "Container", "default": map[string]string{"cpu": "100m", "memory": "64Mi"}, "defaultRequest": map[string]string{"cpu": "50m", "memory": "32Mi"}}}}}
+		payload += "\n---\n" + promotionJSON(quota) + "\n---\n" + promotionJSON(limits)
+	}
+	return payload
 }
 
 func inlinePromotionOwnSnapshot(namespace, application, snapshot string) {
@@ -326,17 +355,21 @@ func inlinePromotionOwnSnapshot(namespace, application, snapshot string) {
 
 func inlinePromotionWaitHealthy(namespace, application string) *api.Application {
 	promotionWaitHealthy(namespace, application, inlineRevision)
+	resourceCount := 3
+	if namespace != inlineSourceNS {
+		resourceCount += 2
+	}
 	var app *api.Application
 	EventuallyWithOffset(1, func(g Gomega) {
 		current, err := promotionGetApp(namespace, application)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(current.Status.Health).To(Equal(api.HealthHealthy), "status: %s", promotionJSON(current.Status))
 		g.Expect(current.Status.Synced).To(BeTrue())
-		g.Expect(current.Status.Resources).To(HaveLen(3))
+		g.Expect(current.Status.Resources).To(HaveLen(resourceCount))
 		for _, resource := range current.Status.Resources {
 			g.Expect(resource.Status).To(Equal("Synced"))
 		}
-		g.Expect(current.Status.ResourceHealth).To(HaveLen(3))
+		g.Expect(current.Status.ResourceHealth).To(HaveLen(resourceCount))
 		for _, resource := range current.Status.ResourceHealth {
 			g.Expect(resource.Health).To(Equal("Healthy"))
 		}
