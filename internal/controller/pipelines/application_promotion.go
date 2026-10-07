@@ -120,14 +120,15 @@ func (r *ApplicationReconciler) promotionSourceApplication(ctx context.Context, 
 		return nil, promotionBlocked("InvalidUpstreamReference", "An Application cannot promote from itself.")
 	}
 	if err := r.validatePromotionReferenceChain(ctx, app, ref); err != nil {
+		var blocked *promotionBlockedError
+		if errors.As(err, &blocked) {
+			return nil, err
+		}
 		return nil, promotionBlocked("InvalidPromotionChain", err.Error())
 	}
 	var upstream paprikav1.Application
 	if err := r.client.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ref.Namespace}, &upstream); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, promotionBlocked("UpstreamUnavailable", "The upstream Application does not exist.")
-		}
-		return nil, fmt.Errorf("getting promotion source Application: %w", err)
+		return nil, promotionBlocked("UpstreamUnavailable", "The upstream Application could not be read; waiting for current evidence.")
 	}
 	return &upstream, nil
 }
@@ -138,14 +139,14 @@ func (r *ApplicationReconciler) promotionSourceRelease(ctx context.Context, upst
 		return &release, nil
 	}
 	if err := r.client.Get(ctx, types.NamespacedName{Name: upstream.Status.ReleaseRef, Namespace: upstream.Namespace}, &release); err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("getting promotion source Release: %w", err)
+		return nil, promotionBlocked("UpstreamUnavailable", "The upstream Release could not be read; waiting for current evidence.")
 	}
 	return &release, nil
 }
 
 func activePromotionCandidateChanged(candidate *paprikav1.ApplicationPromotionStatus, upstream *paprikav1.Application, release *paprikav1.Release) bool {
 	return candidate != nil && candidate.SourceReleaseUID != "" && candidate.Phase != "Complete" &&
-		candidate.Phase != "Failed" && !promotionCandidateMatches(candidate, upstream, release)
+		candidate.Phase != "Failed" && promotionCandidateIdentityChanged(candidate, upstream, release)
 }
 
 func (r *ApplicationReconciler) selectPromotionCandidate(ctx context.Context, app, upstream *paprikav1.Application, release *paprikav1.Release) error {
@@ -260,8 +261,11 @@ func (r *ApplicationReconciler) completePromotionVerification(ctx context.Contex
 	candidate.VerificationConfigHash = configurationHash
 	// Health and release identity may have changed while a gate was running.
 	if err := r.revalidatePromotionSource(ctx, candidate); err != nil {
-		candidate.Phase = "Failed"
-		return r.waitForPromotion(ctx, app, "UpstreamCandidateChanged", err.Error())
+		var blocked *promotionBlockedError
+		if errors.As(err, &blocked) && blocked.reason == "UpstreamCandidateChanged" {
+			candidate.Phase = "Failed"
+		}
+		return r.handlePromotionTriggerError(ctx, app, err)
 	}
 	if app.Spec.SyncPolicy == paprikav1.SyncManual {
 		if app.Annotations[promotionApprovalAnnotation] != candidate.SourceReleaseUID {
@@ -319,7 +323,7 @@ func (r *ApplicationReconciler) validatePromotionReferenceChain(ctx context.Cont
 		visited[key] = true
 		var upstream paprikav1.Application
 		if err := r.client.Get(ctx, key, &upstream); err != nil {
-			return errors.New("an Application in the promotion reference chain is unavailable")
+			return promotionBlocked("UpstreamUnavailable", "An Application in the promotion reference chain is unavailable.")
 		}
 		if upstream.Spec.Trigger == nil || upstream.Spec.Trigger.Type != paprikav1.ApplicationTriggerPromotion {
 			return nil
@@ -339,6 +343,16 @@ func promotionCandidateMatches(candidate *paprikav1.ApplicationPromotionStatus, 
 	return candidate.SourceApplication.Name == upstream.Name && candidate.SourceApplication.Namespace == upstream.Namespace &&
 		candidate.SourceApplicationUID == string(upstream.UID) && candidate.SourceRelease == release.Name &&
 		candidate.SourceReleaseUID == string(release.UID) && candidate.Revision == release.Annotations[sourceRevisionAnnotation]
+}
+
+// Missing evidence blocks readiness; only positive identity evidence can reject
+// an immutable candidate. An empty Release from a failed read is not a new UID.
+func promotionCandidateIdentityChanged(candidate *paprikav1.ApplicationPromotionStatus, upstream *paprikav1.Application, release *paprikav1.Release) bool {
+	revision := release.Annotations[sourceRevisionAnnotation]
+	return (upstream.UID != "" && candidate.SourceApplicationUID != string(upstream.UID)) ||
+		(upstream.Status.ReleaseRef != "" && candidate.SourceRelease != upstream.Status.ReleaseRef) ||
+		(release.UID != "" && candidate.SourceReleaseUID != string(release.UID)) ||
+		(revision != "" && candidate.Revision != revision)
 }
 
 // Require positive evidence for every managed resource and configured probe.
@@ -523,13 +537,22 @@ func (r *ApplicationReconciler) promotionRepositoryURL(ctx context.Context, app 
 func (r *ApplicationReconciler) revalidatePromotionSource(ctx context.Context, candidate *paprikav1.ApplicationPromotionStatus) error {
 	var app paprikav1.Application
 	if err := r.client.Get(ctx, types.NamespacedName{Name: candidate.SourceApplication.Name, Namespace: candidate.SourceApplication.Namespace}, &app); err != nil {
-		return errors.New("the upstream Application became unavailable during verification")
+		return promotionBlocked("UpstreamUnavailable", "The upstream Application became unavailable during verification.")
 	}
 	var release paprikav1.Release
-	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil || !promotionCandidateMatches(candidate, &app, &release) {
-		return errors.New("the upstream release changed during verification")
+	if promotionCandidateIdentityChanged(candidate, &app, &release) {
+		return promotionBlocked("UpstreamCandidateChanged", "The upstream Application or selected release changed during verification.")
 	}
-	return promotionSourceReady(&app, &release, r.currentTime())
+	if err := r.client.Get(ctx, types.NamespacedName{Name: app.Status.ReleaseRef, Namespace: app.Namespace}, &release); err != nil {
+		return promotionBlocked("UpstreamUnavailable", "The upstream Release became unavailable during verification.")
+	}
+	if promotionCandidateIdentityChanged(candidate, &app, &release) {
+		return promotionBlocked("UpstreamCandidateChanged", "The upstream release UID or revision changed during verification.")
+	}
+	if err := promotionSourceReady(&app, &release, r.currentTime()); err != nil {
+		return promotionBlocked("UpstreamNotReady", err.Error())
+	}
+	return nil
 }
 
 func (r *ApplicationReconciler) waitForPromotion(ctx context.Context, app *paprikav1.Application, reason, message string) (*ctrl.Result, error) {
@@ -572,7 +595,7 @@ func promotionObservationInterrupted(reason string) bool {
 
 func promotionReadyMayWait(app *paprikav1.Application, reason string) (bool, error) {
 	candidate := app.Status.Promotion
-	if (reason != "UpstreamNotReady" && reason != "PromotionObservationPending") || candidate == nil || candidate.Phase != "Ready" || candidate.VerificationConfigHash == "" {
+	if (reason != "UpstreamNotReady" && reason != "UpstreamUnavailable" && reason != "PromotionObservationPending") || candidate == nil || candidate.Phase != "Ready" || candidate.VerificationConfigHash == "" {
 		return false, nil
 	}
 	configurationHash, err := promotionVerificationConfigHash(app)
