@@ -27,6 +27,8 @@ const (
 	inlineBadRevisionNS = "e2e-inline-bad-revision"
 	inlinePendingNS     = "e2e-inline-pending"
 	inlineDuplicateNS   = "e2e-inline-duplicate"
+	inlineRetryNS       = "e2e-inline-retry"
+	inlineWindowNS      = "e2e-inline-window"
 	inlineSourceApp     = "artifact-source"
 	inlineTargetApp     = "artifact-tenant"
 	inlineRevision      = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -43,7 +45,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		current, err := utils.Kubectl("config", "current-context")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.TrimSpace(current)).To(Equal("kind-" + kindClusterName))
-		for _, ns := range []string{inlineSourceNS, inlineTargetNS, inlineBadImageNS, inlineBadRevisionNS, inlinePendingNS, inlineDuplicateNS} {
+		for _, ns := range []string{inlineSourceNS, inlineTargetNS, inlineBadImageNS, inlineBadRevisionNS, inlinePendingNS, inlineDuplicateNS, inlineRetryNS, inlineWindowNS} {
 			fx.Apply(promotionJSON(map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": ns}}))
 			fx.Apply(promotionJSON(map[string]any{"apiVersion": "core.paprika.io/v1alpha1", "kind": "AppProject", "metadata": map[string]any{"name": "default", "namespace": ns}, "spec": map[string]any{"sourceRepos": []string{"https://example.test/sfh.git"}, "kinds": []string{"*"}, "destinations": []map[string]string{{"server": "*", "namespace": "*"}}}}))
 		}
@@ -79,7 +81,7 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 	})
 
 	AfterAll(func() {
-		for _, target := range []struct{ namespace, name string }{{inlineTargetNS, inlineTargetApp}, {inlineBadImageNS, inlineTargetApp}, {inlineBadRevisionNS, inlineTargetApp}, {inlinePendingNS, inlineTargetApp}, {inlineDuplicateNS, inlineTargetApp}, {inlineSourceNS, inlineSourceApp}} {
+		for _, target := range []struct{ namespace, name string }{{inlineTargetNS, inlineTargetApp}, {inlineBadImageNS, inlineTargetApp}, {inlineBadRevisionNS, inlineTargetApp}, {inlinePendingNS, inlineTargetApp}, {inlineDuplicateNS, inlineTargetApp}, {inlineRetryNS, inlineTargetApp}, {inlineWindowNS, inlineTargetApp}, {inlineSourceNS, inlineSourceApp}} {
 			promotionCleanupApp(target.namespace, target.name)
 		}
 		fx.Teardown()
@@ -185,6 +187,8 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		promotionAnnotate(inlinePendingNS, inlineTargetApp, "paprika.io/promote="+candidate.Status.Promotion.SourceReleaseUID)
 		inlinePromotionWaitHealthy(inlinePendingNS, inlineTargetApp)
 	})
+
+	inlinePromotionRetrySpecs(&fx)
 
 	It("keeps accepted target manifests pinned while a different desired revision and domain wait", func() {
 		fx.Apply(inlinePromotionSnapshot(inlineTargetNS, "bundle-v2", inlinePromotionPayload(inlineTargetNS, "pending", "pending.example.test", inlineArtifactImage)))

@@ -20,6 +20,7 @@ import (
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/events"
 	paprikav1 "github.com/benebsworth/paprika/internal/api/paprika/v1"
+	"github.com/benebsworth/paprika/internal/engine"
 )
 
 const (
@@ -70,23 +71,17 @@ func (s *PaprikaServer) RetryStep(
 		return nil, err
 	}
 
-	found := false
-	for i, st := range pipeline.Status.StepStatuses {
-		if st.Name != req.Msg.StepName {
-			continue
-		}
-		if st.Phase != pipelinesv1alpha1.StepFailed && st.Phase != pipelinesv1alpha1.StepSkipped {
-			return nil, connect.NewError(connect.CodeFailedPrecondition,
-				fmt.Errorf("cannot retry step %q in phase %s", req.Msg.StepName, st.Phase))
-		}
-		pipeline.Status.StepStatuses[i].Phase = pipelinesv1alpha1.StepPending
-		pipeline.Status.StepStatuses[i].CompletedAt = nil
-		found = true
-		break
+	if err := validatePipelineRetry(pipeline); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
-	if !found {
-		return nil, connect.NewError(connect.CodeNotFound,
-			fmt.Errorf("step %q not found", req.Msg.StepName))
+	if err := validatePipelineRetryStep(pipeline, req.Msg.StepName); err != nil {
+		return nil, err
+	}
+	if err := s.validatePipelineRetryJobs(ctx, pipeline.Name); err != nil {
+		return nil, err
+	}
+	if err := resetPipelineRetry(pipeline, req.Msg.StepName); err != nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 
 	if err := s.client.Status().Update(ctx, pipeline); err != nil {
@@ -94,6 +89,91 @@ func (s *PaprikaServer) RetryStep(
 	}
 	s.publishPipelineEvent(ctx, pipeline, req.Msg.StepName)
 	return connect.NewResponse(&paprikav1.RetryStepResponse{}), nil
+}
+
+func validatePipelineRetry(pipeline *pipelinesv1alpha1.Pipeline) error {
+	if pipeline.Status.Phase != pipelinesv1alpha1.PipelineFailed || pipeline.Status.ObservedGeneration != pipeline.Generation {
+		return fmt.Errorf("retry requires an observed Failed pipeline; cancelled executions require a new Pipeline (current phase is %q)", pipeline.Status.Phase)
+	}
+	if _, err := engine.ResolveDAG(pipeline.Spec.Steps); err != nil {
+		return fmt.Errorf("invalid pipeline specification: %w", err)
+	}
+	return nil
+}
+
+func validatePipelineRetryStep(pipeline *pipelinesv1alpha1.Pipeline, name string) error {
+	for _, st := range pipeline.Status.StepStatuses {
+		if st.Name != name {
+			continue
+		}
+		if st.Phase != pipelinesv1alpha1.StepFailed && st.Phase != pipelinesv1alpha1.StepSkipped {
+			return connect.NewError(connect.CodeFailedPrecondition,
+				fmt.Errorf("cannot retry step %q in phase %s", name, st.Phase))
+		}
+		return nil
+	}
+	return connect.NewError(connect.CodeNotFound, fmt.Errorf("step %q not found", name))
+}
+
+func (s *PaprikaServer) validatePipelineRetryJobs(ctx context.Context, pipelineName string) error {
+	if err := engine.ValidatePipelineJobsStopped(ctx, s.k8sClient, s.controlPlaneNamespace, pipelineName); err != nil {
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+	return nil
+}
+
+// Reset the requested step and its descendants, preserving unrelated successful
+// work. The workflow engine gives every pending step its full configured retry
+// budget and creates new Jobs; timestamps and logs cannot describe the old run.
+func resetPipelineRetry(pipeline *pipelinesv1alpha1.Pipeline, name string) error {
+	if err := validatePipelineRetryDependencies(pipeline, name); err != nil {
+		return err
+	}
+	affected := pipelineRetryAffectedSteps(pipeline.Spec.Steps, name)
+	for i, status := range pipeline.Status.StepStatuses {
+		if affected[status.Name] {
+			pipeline.Status.StepStatuses[i] = pipelinesv1alpha1.StepStatus{Name: status.Name, Phase: pipelinesv1alpha1.StepPending}
+		}
+	}
+	now := metav1.Now()
+	pipeline.Status.Phase = pipelinesv1alpha1.PipelineRunning
+	pipeline.Status.LastExecutionTime = &now
+	pipeline.Status.LastExecutionID = fmt.Sprintf("retry-%d", now.UnixNano())
+	return nil
+}
+
+func validatePipelineRetryDependencies(pipeline *pipelinesv1alpha1.Pipeline, name string) error {
+	phases := make(map[string]pipelinesv1alpha1.StepPhase, len(pipeline.Status.StepStatuses))
+	for _, status := range pipeline.Status.StepStatuses {
+		phases[status.Name] = status.Phase
+	}
+	for _, step := range pipeline.Spec.Steps {
+		if step.Name != name {
+			continue
+		}
+		for _, dependency := range step.Depends {
+			if phases[dependency] != pipelinesv1alpha1.StepSucceeded {
+				return fmt.Errorf("retry prerequisite %q before step %q", dependency, name)
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("step %q is absent from the current pipeline specification", name)
+}
+
+func pipelineRetryAffectedSteps(steps []pipelinesv1alpha1.PipelineStep, name string) map[string]bool {
+	affected := map[string]bool{name: true}
+	for changed := true; changed; {
+		changed = false
+		for _, step := range steps {
+			for _, dependency := range step.Depends {
+				if affected[dependency] && !affected[step.Name] {
+					affected[step.Name], changed = true, true
+				}
+			}
+		}
+	}
+	return affected
 }
 
 // SkipStep marks a pending step as skipped.

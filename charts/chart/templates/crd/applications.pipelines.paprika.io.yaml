@@ -3945,6 +3945,14 @@ spec:
                 description: Promotion records the upstream release selected by a
                   Promotion trigger.
                 properties:
+                  consumedVerificationAttempts:
+                    description: |-
+                      ConsumedVerificationAttempts prevents replay of older retry requests for
+                      this candidate. At most 32 retries are admitted; history is never evicted.
+                    items:
+                      type: string
+                    maxItems: 32
+                    type: array
                   message:
                     type: string
                   phase:
@@ -3981,6 +3989,11 @@ spec:
                   sourceRelease:
                     type: string
                   sourceReleaseUID:
+                    type: string
+                  verificationAttempt:
+                    description: |-
+                      VerificationAttempt is the last consumed explicit retry token. Each retry
+                      receives a fresh Pipeline identity; replaying this token cannot reopen it.
                     type: string
                   verificationConfigHash:
                     description: VerificationConfigHash invalidates verification when

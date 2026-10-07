@@ -76,10 +76,50 @@ must also pass after that deployment became Healthy. Missing or stale target
 observations block promotion, including agent-only clusters without a direct
 read transport.
 
-Step retries run within the verification Pipeline. Once tests or an upstream
-gate fail, that candidate stays failed; the currently accepted downstream
-release remains in place. A different completed upstream release starts a
-fresh candidate and verification run.
+Configured step retries run within the verification Pipeline. Once tests or an
+upstream gate fail, that candidate stays failed; the currently accepted downstream
+release remains in place. A different completed upstream release starts a fresh
+candidate. To explicitly retry a failed candidate before admission, review the
+current upstream Release UID and target settings, then supply a fresh UUID:
+
+```sh
+paprika_candidate_uid="$(kubectl -n pipeline-stg get application checkout \
+  -o jsonpath='{.status.promotion.sourceReleaseUID}')"
+paprika_retry_token="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+kubectl config current-context
+kubectl -n pipeline-stg annotate application checkout \
+  "paprika.io/promotion-retry=$paprika_candidate_uid:$paprika_retry_token" --overwrite
+```
+
+The retry requires the same current upstream Application and Release UIDs and
+fresh healthy, synced source evidence. It expires the old approval and window,
+records `status.promotion.verificationAttempt`, and creates a new verification
+Pipeline and Jobs bound to the current target settings. The annotation is consumed;
+replaying its token cannot reopen that attempt. Manual approval must be supplied
+again after the new tests and gates pass. A manual sync cannot retry a rejected
+candidate. An already admitted Release uses manual sync to repair its accepted
+deployment instead of this verification retry.
+
+Paprika remembers all consumed retry UUIDs for the candidate, including retries
+without a test Pipeline. Replaying any consumed UUID cannot reopen verification.
+Each candidate permits at most 32 explicit retries; history is never discarded
+to make room. A new upstream Release starts a new candidate and retry history.
+
+`RetryStep` applies to observed Failed Pipelines. It resets the
+requested failed or skipped step and its descendants, including their
+timestamps and log references, and restores their configured retry budgets. It
+preserves successful prerequisites and unrelated terminal results. Retrying a
+step in the old promotion Pipeline does not retry its rejected candidate: use the
+Application annotation to obtain a fresh verification attempt.
+
+Before reopening execution, the API checks prior Jobs in the configured operator
+execution namespace. Every prior Job must have a terminal Complete or Failed
+condition, no active Pods, and no pending deletion. Missing Job access or unknown
+execution namespace blocks retry. Cancelled Pipelines and cancelled steps require
+a new Pipeline, since cancellation does not establish that the old execution has
+stopped.
+The Application promotion retry performs the same check for its previous
+verification Pipeline before creating a fresh attempt.
 
 For cleanup, delete Applications with the default background cascade and wait
 for their Releases to disappear before deleting their namespaces or cluster
@@ -132,6 +172,7 @@ Each verification step receives these environment variables:
 | `PAPRIKA_PROMOTION_SOURCE_APPLICATION` | Upstream Application name. |
 | `PAPRIKA_PROMOTION_SOURCE_NAMESPACE` | Upstream Application's management-cluster namespace. |
 | `PAPRIKA_PROMOTION_SOURCE_RELEASE` | Upstream Release name. |
+| `PAPRIKA_PROMOTION_ATTEMPT` | Explicit retry UUID; absent for the initial attempt. |
 
 These describe the candidate and contain no credentials. The workflow engine
 currently does not check out `tests.sources`. Probe the deployed upstream
@@ -140,8 +181,15 @@ the repository and check out `PAPRIKA_PROMOTION_REVISION`. Choose a container
 image with Git and the required test tools when running source-based tests.
 
 Use `trigger.gates` for controller-executed checks of the upstream environment.
-`smoke-test` performs an HTTP GET and requires a 2xx response; `timeout` is its
-request timeout in seconds. `duration` waits for `timeout` seconds. These
+`smoke-test` performs an HTTP GET without following redirects and requires a 2xx
+response; `timeout` is its request timeout in seconds. It does not validate the
+response body or authenticate a user. An upstream `duration` requires `timeout`
+seconds of uninterrupted sampled source readiness: an observed unhealthy, missing
+or stale source resets its window. An approved candidate waiting for a sync window
+retains its authorization, but must earn a fresh duration window after an upstream
+readiness interruption before admission. Observations are sampled at reconcile and
+health-check intervals; this does not prove the absence of outages between samples.
+A deployment-stage `duration` remains a fixed delay. These
 checks must be reachable from the management cluster. A remote cluster's
 `*.svc.cluster.local` address normally cannot be used from the management
 cluster; use an appropriate reachable endpoint.

@@ -585,6 +585,11 @@ func (in *ApplicationPromotionStage) DeepCopy() *ApplicationPromotionStage {
 func (in *ApplicationPromotionStatus) DeepCopyInto(out *ApplicationPromotionStatus) {
 	*out = *in
 	out.SourceApplication = in.SourceApplication
+	if in.ConsumedVerificationAttempts != nil {
+		in, out := &in.ConsumedVerificationAttempts, &out.ConsumedVerificationAttempts
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.VerificationStartedAt != nil {
 		in, out := &in.VerificationStartedAt, &out.VerificationStartedAt
 		*out = (*in).DeepCopy()
