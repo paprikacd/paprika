@@ -298,6 +298,43 @@ func (r *ApplicationReconciler) prepareInlineArtifactSource(ctx context.Context,
 	return nil
 }
 
+// An external publisher can replace an already Healthy inline deployment
+// without passing through handleActiveRelease. Converge its deployed revision
+// only after this reconcile has recorded current live deployment evidence.
+func (r *ApplicationReconciler) convergeInlineDeployedRevision(ctx context.Context, app *paprikav1.Application) error {
+	deployment := effectiveDeploymentApp(app)
+	artifact := inlineArtifact(deployment)
+	if artifact == nil || app.Status.Revision == artifact.Revision {
+		return nil
+	}
+	release := r.getCurrentRelease(ctx, app)
+	if release == nil || !r.inlineDeployedRevisionReady(deployment, release) {
+		return nil
+	}
+	if _, _, err := readInlineArtifactSnapshot(ctx, r.client, deployment.Namespace, deployment.Spec.Source.Inline.ConfigMapRef, appTargetNamespace(deployment), deployment.Spec.Source.Inline.ManifestHash, artifact); err != nil {
+		return fmt.Errorf("validate deployed inline artifact snapshot: %w", err)
+	}
+	app.Status.Revision = artifact.Revision
+	return nil
+}
+
+func (r *ApplicationReconciler) inlineDeployedRevisionReady(app *paprikav1.Application, release *paprikav1.Release) bool {
+	if !artifactReleaseMatches(app, release) || app.Status.SourceRevision != release.Annotations[sourceRevisionAnnotation] || app.Status.SourceHash != release.Annotations[sourceHashAnnotation] {
+		return false
+	}
+	for _, err := range []error{
+		promotionSourceApplicationReady(app),
+		promotionSourceReleaseReady(app, release),
+		promotionDeploymentObservationReady(app, release, r.currentTime()),
+		promotionManagedResourcesReady(app),
+	} {
+		if err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (r *ApplicationReconciler) compatibleInlineArtifacts(ctx context.Context, target, upstream *paprikav1.Application) error {
 	if err := compatibleInlineArtifactIdentity(inlineArtifact(target), inlineArtifact(upstream)); err != nil {
 		return err

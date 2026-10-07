@@ -2497,6 +2497,9 @@ func (r *ApplicationReconciler) evaluateHealthyApplication(ctx context.Context, 
 	diff := r.evaluateDiff(ctx, app)
 	r.evaluateResourceHealth(ctx, app, diff)
 	r.recordDeploymentObservation(ctx, app, diff)
+	if err := r.convergeInlineDeployedRevision(ctx, app); err != nil {
+		log.Error(err, "Failed to converge deployed inline revision")
+	}
 	if err := r.reconcileAnalysisRuns(ctx, app); err != nil {
 		log.Error(err, "Failed to reconcile analysis runs")
 	}

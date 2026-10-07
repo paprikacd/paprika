@@ -87,6 +87,71 @@ var _ = Describe("InlineArtifactPromotion", Ordered, func() {
 		fx.Teardown()
 	})
 
+	It("converges an already healthy external publisher's missing or stale deployed revision without rollout", func() {
+		// Reproduce an upgrade from a controller that never populated this legacy
+		// display field. All health, provenance and observations come from the real
+		// completed source deployment; only status.revision is changed by the test.
+		original := source.DeepCopy()
+		before, err := inlinePromotionSourceRuntimeIdentity()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(before).NotTo(BeEmpty())
+		for _, legacyRevision := range []string{"", strings.Repeat("b", 40)} {
+			By(fmt.Sprintf("emulating the legacy deployed revision %q on the already healthy source", legacyRevision))
+			var patched api.Application
+			Eventually(func() error {
+				current, err := promotionGetApp(inlineSourceNS, inlineSourceApp)
+				if err != nil {
+					return err
+				}
+				operation := map[string]any{"op": "remove", "path": "/status/revision"}
+				if legacyRevision != "" {
+					operation["op"], operation["value"] = "replace", legacyRevision
+				}
+				patch := promotionJSON([]map[string]any{
+					{"op": "test", "path": "/metadata/uid", "value": string(original.UID)},
+					{"op": "test", "path": "/metadata/generation", "value": original.Generation},
+					{"op": "test", "path": "/metadata/resourceVersion", "value": current.ResourceVersion},
+					{"op": "test", "path": "/status/phase", "value": api.ApplicationHealthy},
+					{"op": "test", "path": "/status/releaseRef", "value": original.Status.ReleaseRef},
+					{"op": "test", "path": "/status/revision", "value": inlineRevision},
+					operation,
+				})
+				raw, err := utils.Kubectl("-n", inlineSourceNS, "patch", "applications.pipelines.paprika.io", inlineSourceApp, "--subresource=status", "--type=json", "-p", patch, "-o", "json")
+				if err != nil {
+					return err
+				}
+				return json.Unmarshal([]byte(raw), &patched)
+			}, 20*time.Second, time.Second).Should(Succeed())
+			Expect(patched.Status.Revision).To(Equal(legacyRevision))
+			Expect(patched.Spec).To(Equal(original.Spec))
+			Expect(patched.Status.Phase).To(Equal(api.ApplicationHealthy))
+			Expect(patched.Status.SourceRevision).To(Equal(inlineRevision))
+			Expect(patched.Status.SourceHash).To(Equal(original.Status.SourceHash))
+			Expect(patched.Status.DeploymentObservation).NotTo(BeNil())
+			Expect(patched.Status.DeploymentObservation.ReleaseUID).To(Equal(original.Status.DeploymentObservation.ReleaseUID))
+			Eventually(func(g Gomega) {
+				current, err := promotionGetApp(inlineSourceNS, inlineSourceApp)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(current.UID).To(Equal(original.UID))
+				g.Expect(current.Generation).To(Equal(original.Generation))
+				g.Expect(current.Spec).To(Equal(original.Spec))
+				g.Expect(current.Status.Phase).To(Equal(api.ApplicationHealthy))
+				g.Expect(current.Status.ObservedGeneration).To(Equal(current.Generation))
+				g.Expect(current.Status.Revision).To(Equal(inlineRevision))
+				g.Expect(current.Status.SourceRevision).To(Equal(inlineRevision))
+				g.Expect(current.Status.SourceHash).To(Equal(original.Status.SourceHash))
+				g.Expect(current.Status.ReleaseRef).To(Equal(original.Status.ReleaseRef))
+				g.Expect(current.Status.DeploymentObservation).NotTo(BeNil())
+				g.Expect(current.Status.DeploymentObservation.ReleaseUID).To(Equal(original.Status.DeploymentObservation.ReleaseUID))
+				g.Expect(current.Status.DeploymentObservation.ObservedGeneration).To(Equal(current.Generation))
+				source = current
+			}, 90*time.Second, time.Second).Should(Succeed())
+			after, err := inlinePromotionSourceRuntimeIdentity()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(after).To(Equal(before), "revision convergence must retain source Releases, workload generation, ReplicaSets and Pods")
+		}
+	})
+
 	It("promotes exact source images through real HTTP Jobs while retaining tenant configuration", func() {
 		fx.Apply(inlinePromotionSnapshot(inlineTargetNS, "bundle-v1", inlinePromotionPayload(inlineTargetNS, "vocus", "vocus.example.test", inlineArtifactImage)))
 		fx.Apply(inlinePromotionApp(inlineTargetNS, inlineTargetApp, "bundle-v1", inlineRevision, "vocus.example.test", true))
@@ -278,4 +343,55 @@ func inlinePromotionWaitHealthy(namespace, application string) *api.Application 
 		app = current
 	}, time.Minute, time.Second).Should(Succeed())
 	return app
+}
+
+// Capture immutable identities and desired workload generation separately from
+// changing health timestamps. The dedicated source namespace contains only this
+// external publisher's resources, so additional Releases or rollout Pods count.
+func inlinePromotionSourceRuntimeIdentity() (map[string]string, error) {
+	raw, err := utils.Kubectl("-n", inlineSourceNS, "get", "releases.pipelines.paprika.io,deployments.apps,replicasets.apps,pods", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	var objects corev1.List
+	if err := json.Unmarshal([]byte(raw), &objects); err != nil {
+		return nil, err
+	}
+	identities := make(map[string]string, len(objects.Items))
+	counts := make(map[string]int, 4)
+	for _, object := range objects.Items {
+		var resource struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name       string `json:"name"`
+				UID        string `json:"uid"`
+				Generation int64  `json:"generation"`
+			} `json:"metadata"`
+			Spec json.RawMessage `json:"spec"`
+		}
+		if err := json.Unmarshal(object.Raw, &resource); err != nil {
+			return nil, err
+		}
+		counts[resource.Kind]++
+		key := resource.Kind + "/" + resource.Metadata.Name
+		identities[key] = fmt.Sprintf("%s:%d", resource.Metadata.UID, resource.Metadata.Generation)
+		if resource.Kind == "Deployment" {
+			var spec any
+			if err := json.Unmarshal(resource.Spec, &spec); err != nil {
+				return nil, err
+			}
+			canonical, err := json.Marshal(spec)
+			if err != nil {
+				return nil, err
+			}
+			digest := sha256.Sum256(canonical)
+			identities[key+"/spec"] = hex.EncodeToString(digest[:])
+		}
+	}
+	for _, kind := range []string{"Release", "Deployment", "ReplicaSet", "Pod"} {
+		if counts[kind] == 0 {
+			return nil, fmt.Errorf("source runtime identity has no %s", kind)
+		}
+	}
+	return identities, nil
 }
