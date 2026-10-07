@@ -128,6 +128,14 @@ type ReleaseStatus struct {
 	// Cleared at the start of each promote. Populated as hooks run.
 	// +optional
 	HookStatuses []HookStatus `json:"hookStatuses,omitempty"`
+
+	// HookAttempt counts the hook runs this release has started. The
+	// controller increments it on every explicit retry and stamps the value
+	// on each hook object it applies. A reconcile that works from a stale
+	// status can then recognize the Job the current attempt created, and it
+	// does not delete that Job as a leftover of a prior attempt.
+	// +optional
+	HookAttempt int64 `json:"hookAttempt,omitempty"`
 }
 
 // +kubebuilder:object:root=true

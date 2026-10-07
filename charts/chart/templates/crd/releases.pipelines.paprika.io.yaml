@@ -262,6 +262,15 @@ spec:
                 type: array
               currentStage:
                 type: string
+              hookAttempt:
+                description: |-
+                  HookAttempt counts the hook runs this release has started. The
+                  controller increments it on every explicit retry and stamps the value
+                  on each hook object it applies. A reconcile that works from a stale
+                  status can then recognize the Job the current attempt created, and it
+                  does not delete that Job as a leftover of a prior attempt.
+                format: int64
+                type: integer
               hookStatuses:
                 description: |-
                   HookStatuses tracks per-hook execution state across the four phases.
