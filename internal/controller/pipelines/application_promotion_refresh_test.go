@@ -121,7 +121,8 @@ func TestPromotionTargetEditRunsFreshPipelineGatesAndApproval(t *testing.T) {
 func TestPromotionTargetRefreshCannotReuseEarlierPipeline(t *testing.T) {
 	t.Parallel()
 	r, target := completedPromotionRefreshFixture(t, nil)
-	names, attempts := []string{target.Status.Promotion.VerificationPipelineRef}, []string{target.Status.Promotion.VerificationAttempt}
+	names, attempts := make([]string, 1, 3), make([]string, 1, 3)
+	names[0], attempts[0] = target.Status.Promotion.VerificationPipelineRef, target.Status.Promotion.VerificationAttempt
 	for _, tenant := range []string{"B", "A"} {
 		editPromotionRefreshTarget(t, r, target, tenant)
 		_, err := r.reconcilePromotionTrigger(t.Context(), target)
