@@ -113,17 +113,19 @@ func (r *ApplicationReconciler) activatePromotionRetry(ctx context.Context, app 
 		}
 	}
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		return r.writePromotionRetry(ctx, app, original, next, request)
+		return r.writePromotionVerificationAttempt(ctx, app, original, next, request)
 	}); err != nil {
 		return fmt.Errorf("persisting promotion retry: %w", err)
 	}
 	return r.consumePromotionRetry(ctx, app, request)
 }
 
-func (r *ApplicationReconciler) writePromotionRetry(ctx context.Context, app *api.Application, original, next *api.ApplicationPromotionStatus, request string) error {
+// Both explicit retries and target edits must commit a fresh attempt against
+// the exact target intent before creating any verification workload.
+func (r *ApplicationReconciler) writePromotionVerificationAttempt(ctx context.Context, app *api.Application, original, next *api.ApplicationPromotionStatus, request string) error {
 	var latest api.Application
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(app), &latest); err != nil {
-		return fmt.Errorf("reading promotion retry target: %w", err)
+		return fmt.Errorf("reading promotion verification target: %w", err)
 	}
 	latestHash, err := promotionVerificationConfigHash(&latest)
 	if err != nil {
@@ -133,11 +135,11 @@ func (r *ApplicationReconciler) writePromotionRetry(ctx context.Context, app *ap
 		return errors.New("promotion candidate, retry request or target settings changed; retrying")
 	}
 	if err := r.revalidatePromotionSource(ctx, original); err != nil {
-		return fmt.Errorf("revalidating promotion retry source: %w", err)
+		return fmt.Errorf("revalidating promotion verification source: %w", err)
 	}
 	latest.Status.Promotion = next.DeepCopy()
 	if err := r.client.Status().Update(ctx, &latest); err != nil {
-		return fmt.Errorf("writing promotion retry target: %w", err)
+		return fmt.Errorf("writing promotion verification target: %w", err)
 	}
 	*app = latest
 	return nil
