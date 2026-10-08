@@ -65,10 +65,16 @@ repair does not silently deploy a newer branch head.
 
 Paprika retains the accepted deployment settings in
 `status.acceptedDeployment`. Changes to a downstream source path, values,
-parameters, or cluster wait for the next promotion. An approved candidate
-waiting on a sync window cannot redirect repairs of the existing release.
+parameters, or cluster start fresh verification of the same completed upstream
+release; a new upstream release is not required. The accepted settings remain
+active until that verification and deployment admission succeed. An approved
+candidate waiting on a sync window cannot redirect repairs of the existing release.
 Editing a pending candidate's settings invalidates verification and expires
 its manual approval, so review and approve the revised settings again.
+Target edits receive a fresh verification Pipeline and observation window,
+including when returning to previously used settings. The prior verification
+Pipeline and its Jobs must stop first. These automatic attempts do not consume
+the explicit retry budget, and a failed candidate still requires an explicit retry.
 
 Configured health checks must be Healthy, match their current configuration, and
 have run after deployment completed. Promotion accepts a result for less than two

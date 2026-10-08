@@ -91,7 +91,9 @@ func TestAcceptedPromotionManualRetryRecoversCandidate(t *testing.T) {
 				require.True(t, meta.IsStatusConditionTrue(app.Status.Conditions, promotionReadyCondition))
 			}
 			setPromotionRetryReleasePhase(t, r, release, api.ReleaseComplete)
-			for range 3 {
+			// Completion first recovers the accepted release. A subsequent
+			// reconciliation separately qualifies the pending target edit.
+			{
 				app = reconcilePromotionRetryApp(t, r, key)
 				require.Equal(t, "Complete", app.Status.Promotion.Phase)
 				require.Equal(t, api.ApplicationHealthy, app.Status.Phase)
@@ -109,6 +111,11 @@ func TestAcceptedPromotionManualRetryRecoversCandidate(t *testing.T) {
 			require.Len(t, releases.Items, 1, "retry must not replace or duplicate the admitted release")
 			require.Equal(t, release.UID, releases.Items[0].UID)
 			require.Equal(t, "2", releases.Items[0].Spec.Parameters["replicas"])
+			app = reconcilePromotionRetryApp(t, r, key)
+			require.Equal(t, "AwaitingApproval", app.Status.Promotion.Phase)
+			require.NotEqual(t, candidate.VerificationConfigHash, app.Status.Promotion.VerificationConfigHash)
+			require.Equal(t, accepted, app.Status.AcceptedDeployment)
+			require.Equal(t, release.Name, app.Status.ReleaseRef)
 		})
 	}
 }

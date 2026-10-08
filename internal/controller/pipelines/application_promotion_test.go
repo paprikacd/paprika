@@ -370,7 +370,9 @@ func TestPromotionReadyRevalidatesHealthAndVerificationConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Ready", target.Status.Promotion.Phase)
 	require.True(t, meta.IsStatusConditionTrue(target.Status.Conditions, promotionReadyCondition), "health recovery restores admission readiness")
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
 	target.Spec.Trigger.Tests = &api.ApplicationBuildSpec{Steps: []api.ApplicationBuildStep{{Name: "new-tests", Image: "test", Script: "test"}}}
+	require.NoError(t, r.client.Update(ctx, target))
 	_, err = r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
 	require.Equal(t, "Verifying", target.Status.Promotion.Phase, "test edits require fresh verification")
@@ -539,7 +541,9 @@ func TestPromotionManualPolicyChangeInvalidatesReadyApproval(t *testing.T) {
 	_, err := r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
 	require.Equal(t, "Ready", target.Status.Promotion.Phase)
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
 	target.Spec.SyncPolicy = api.SyncManual
+	require.NoError(t, r.client.Update(ctx, target))
 	result, err := r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -663,7 +667,7 @@ func TestPromotionAutoAcceptanceRejectsTargetEditDuringGate(t *testing.T) {
 	require.Empty(t, fresh.Status.SourceRevision)
 }
 
-func TestCompletedPromotionKeepsAcceptedDeploymentForSameUpstream(t *testing.T) {
+func TestCompletedPromotionReverifiesTargetEditForSameUpstream(t *testing.T) {
 	t.Parallel()
 	target, upstream, release := promotionFixture()
 	target.Spec.Parameters = map[string]string{"image.tag": "accepted"}
@@ -676,11 +680,13 @@ func TestCompletedPromotionKeepsAcceptedDeploymentForSameUpstream(t *testing.T) 
 	target.Status.SourceRevision = target.Status.Promotion.Revision
 	target.Status.Promotion.Phase = "Complete"
 	require.NoError(t, r.client.Status().Update(ctx, target))
-	target.Spec.Parameters["image.tag"] = "waiting-next-candidate"
+	target = getPromotionTestApp(t, r, client.ObjectKeyFromObject(target))
+	target.Spec.Parameters["image.tag"] = "updated-target-settings"
 	require.NoError(t, r.client.Update(ctx, target))
 	_, err = r.reconcilePromotionTrigger(ctx, target)
 	require.NoError(t, err)
-	require.Equal(t, "Complete", target.Status.Promotion.Phase)
+	require.Equal(t, "Ready", target.Status.Promotion.Phase)
+	require.NotEmpty(t, target.Status.Promotion.VerificationAttempt)
 	require.Equal(t, "accepted", target.Status.AcceptedDeployment.Parameters["image.tag"])
 }
 

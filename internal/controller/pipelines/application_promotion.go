@@ -42,13 +42,13 @@ func (r *ApplicationReconciler) reconcilePromotionTrigger(ctx context.Context, a
 	if err := r.preparePromotionCandidate(ctx, app); err != nil {
 		return r.handlePromotionTriggerError(ctx, app, err)
 	}
+	configurationHash, err := r.preparePromotionVerification(ctx, app)
+	if err != nil {
+		return r.handlePromotionTriggerError(ctx, app, err)
+	}
 	candidate := app.Status.Promotion
 	if candidate.Phase == "Complete" {
 		return nil, nil
-	}
-	configurationHash, err := r.preparePromotionVerification(ctx, app)
-	if err != nil {
-		return nil, err
 	}
 	if candidate.Phase == "Ready" {
 		if promotionDurationPending(app, r.currentTime()) {
@@ -192,11 +192,8 @@ func (r *ApplicationReconciler) preparePromotionVerification(ctx context.Context
 	if candidate.VerificationConfigHash == configurationHash {
 		return configurationHash, nil
 	}
-	if candidate.VerificationConfigHash != "" && app.Annotations[promotionApprovalAnnotation] == candidate.SourceReleaseUID {
-		// Approval for the previous target intent cannot authorize a spec edit.
-		if err := r.consumePromotionApproval(ctx, app, candidate.SourceReleaseUID); err != nil {
-			return "", err
-		}
+	if candidate.VerificationConfigHash != "" {
+		return configurationHash, r.refreshPromotionVerification(ctx, app, configurationHash)
 	}
 	candidate.Phase = "Verifying"
 	candidate.VerificationStartedAt = nil
