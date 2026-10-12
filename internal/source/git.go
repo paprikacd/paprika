@@ -235,7 +235,9 @@ func (g *GitSource) fetchMirrorClean(ctx context.Context, repo *git.Repository, 
 	if err := removePartialPacks(mirrorDir); err != nil {
 		return err
 	}
-	fetchErr := g.fetchMirror(ctx, repo, auth)
+	// The mirror already holds the branch's last tip, so only what a push
+	// changed is fetched (depth 0, see incrementalDepth).
+	fetchErr := g.fetchMirror(ctx, repo, auth, incrementalDepth)
 	if fetchErr == nil {
 		return nil
 	}
@@ -245,13 +247,23 @@ func (g *GitSource) fetchMirrorClean(ctx context.Context, repo *git.Repository, 
 	return fetchErr
 }
 
-func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth transport.AuthMethod) error {
+// incrementalDepth is the depth of a fetch into a mirror that already exists:
+// none. A shallow depth makes go-git's request carry no thin-pack capability,
+// so the server re-sends the whole tree on every push (on omega-ha a 4.8 GB
+// tree per push to brandbrain, 2026-10-12). Without a depth the existing
+// shallow boundary stays, and the server sends only the objects since the tip
+// the mirror holds. A tip with no history in common with the mirror (a force
+// push onto unrelated history) fetches that history in full, bounded by
+// mirrorFetchBudget and the repo-server's /tmp sizeLimit.
+const incrementalDepth = 0
+
+func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, depth int) error {
 	fetchCtx, cancel := mirrorFetchContext(ctx)
 	defer cancel()
 	fetchErr := repo.FetchContext(fetchCtx, &git.FetchOptions{
 		Auth:     auth,
 		Progress: nil,
-		Depth:    g.depth(),
+		Depth:    depth,
 		RefSpecs: g.mirrorRefSpecs(),
 	})
 	// Fallbacks: a short revision may name a tag rather than a branch, and
@@ -268,7 +280,7 @@ func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth 
 		}
 		if retry != nil {
 			fetchErr = repo.FetchContext(fetchCtx, &git.FetchOptions{
-				Auth: auth, Depth: g.depth(), RefSpecs: retry,
+				Auth: auth, Depth: depth, RefSpecs: retry,
 			})
 		}
 	}
@@ -363,7 +375,7 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 		return nil, fmt.Errorf("create remote %s: %w", g.RepoURL, err)
 	}
 
-	if err := g.fetchMirror(ctx, repo, auth); err != nil {
+	if err := g.fetchMirror(ctx, repo, auth, g.depth()); err != nil {
 		// A first clone that failed (a 5 GB clone cancelled at the client's
 		// timeout) holds nothing usable; leave nothing behind.
 		if rmErr := os.RemoveAll(mirrorDir); rmErr != nil {
