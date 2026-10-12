@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -20,8 +21,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -219,7 +222,7 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 		if headErr := g.refreshMirrorHEAD(repo); headErr != nil {
 			return nil, headErr
 		}
-		touchFetchClock(mirrorDir)
+		g.touchFetchClockIfResolvable(repo, mirrorDir)
 		return repo, nil
 	}
 	if !errors.Is(err, git.ErrRepositoryNotExists) {
@@ -229,13 +232,40 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 	return g.createMirror(ctx, mirrorDir, auth)
 }
 
-// fetchMirrorClean is fetchMirror with the partial packs of failed fetches
-// removed: those left by an earlier try, and this one's if it fails.
+// fetchMirrorClean is the depth-0 fetchMirror and its repair, with the
+// partial packs of failed fetches removed: those left by an earlier try, and
+// this one's if it fails.
 func (g *GitSource) fetchMirrorClean(ctx context.Context, repo *git.Repository, mirrorDir string, auth transport.AuthMethod) error {
+	return withPartialPacksRemoved(mirrorDir, func() error {
+		// The mirror already holds the branch's last tip, so only what a push
+		// changed is fetched (depth 0, see incrementalDepth).
+		specs, upToDate, err := g.fetchMirror(ctx, repo, auth, incrementalDepth)
+		if err != nil {
+			return err
+		}
+		// Nothing arrived, and in a full mirror nothing dangles: skip the scans
+		// of the mirror's refs (0.2 to 0.6 s each at 3000 heads and 3000
+		// tags). Never in a shallow mirror. go-git wants every ref there at
+		// depth 0, so up to date would mean none of them arrived, the case
+		// the repair is for; v5.19 never reports it there (it compares the
+		// mirror's shallow boundary with the none a depth-0 fetch sends).
+		if upToDate && !isShallow(repo) {
+			return nil
+		}
+		if err := g.repairDanglingRefs(ctx, repo, auth, specs); err != nil {
+			return err
+		}
+		return peelTags(repo)
+	})
+}
+
+// withPartialPacksRemoved runs fetch with the partial packs of failed fetches
+// removed: those left by an earlier try, and fetch's own if it fails.
+func withPartialPacksRemoved(mirrorDir string, fetch func() error) error {
 	if err := removePartialPacks(mirrorDir); err != nil {
 		return err
 	}
-	fetchErr := g.fetchMirror(ctx, repo, auth)
+	fetchErr := fetch()
 	if fetchErr == nil {
 		return nil
 	}
@@ -245,37 +275,275 @@ func (g *GitSource) fetchMirrorClean(ctx context.Context, repo *git.Repository, 
 	return fetchErr
 }
 
-func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth transport.AuthMethod) error {
+// incrementalDepth is the depth of a fetch into a mirror that already exists:
+// none. A depth makes go-git send deepen plus the mirror's shallow boundary,
+// and the server re-sends the new tip's whole tree on every push (on omega-ha
+// a 4.8 GB tree per push to brandbrain, 2026-10-12). Without one the server
+// assumes the mirror holds the full history behind its refs and sends only
+// what those cannot reach. That is right for a fast-forward, and wrong for a
+// tip whose merge base is below the boundary (a rollback, a rebase, an old
+// tag), or, on a bitmapped server such as GitHub, for a tip that restores a
+// tree or blob from below it (a revert): repairDanglingRefs re-fetches at
+// depth 1 a ref left on a missing commit, and refetchTip a tip whose tree or
+// blob is missing, each for about one tree. Changed blobs still arrive whole
+// (go-git requests no thin pack).
+//
+// What those repairs do not bound: refetchTip cannot repair a commit that is
+// not a tip while another ref names a descendant of it (go-git offers that
+// ref as a have), so that shape still falls back to the wipe and re-clone. A
+// rollback or rebase whose old tip the origin has already pruned (repack
+// -adb) fetches the new tip's full history (+3.1 MB against +1.05 MB for one
+// tree in the review's fixture). Rewording the last N commits re-sends about
+// N trees (2.10 MB against 1.05 MB for N = 2). A repair that fails (a
+// timeout, a dropped connection) leaves its ref on a commit the mirror lacks,
+// which offers no have, so the next fetch brings the history no other ref
+// reaches: all of it when that ref is the mirror's only one (+2.10 MB against
+// +1.05 MB in the fixture; about one tree for brandbrain, whose packed size
+// is about its tree). Repairing it before that fetch, with this source's
+// refspecs, would fetch every moved ref at depth 1 too: a tree per push for as
+// long as any ref dangles, and a head deleted upstream in a FetchAllRefs
+// mirror always does.
+//
+// Decided, not overlooked: a tip with no history in common with the mirror
+// (a force push onto unrelated or rewritten history, a new orphan branch, a
+// FetchAllRefs branch cut from below the boundary) fetches that history in
+// full rather than one tree: about a tree per commit of it (+5.25 MB for five
+// 1 MiB commits, against +1.05 MB for one tree, in the tests). Such pushes
+// are rare, the cost is bounded by the repository's packed size,
+// mirrorFetchBudget and the repo-server's /tmp sizeLimit, and for the
+// repositories omega-ha follows the packed size is about one tip tree
+// (brandbrain: about 5 GB packed, against a 4.8 GB tree). Fetching such tips
+// at the shallow depth would need an ancestry check per ref before every
+// fetch.
+const incrementalDepth = 0
+
+// repairDanglingRefs re-fetches, at depth 1, the refs fetched by specs that
+// a depth-0 fetch left on a commit the mirror lacks: the server sends an
+// empty pack for a tip it thinks the mirror's haves reach (a rollback, a tag
+// moved back, an older tag on a shared mirror). Depth 1 sends the shallow
+// boundary, so the server sends the tip's tree, as a first clone does.
+func (g *GitSource) repairDanglingRefs(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, specs []config.RefSpec) error {
+	dangling, hidden, err := danglingRefs(repo, specs)
+	if err != nil || !dangling {
+		return err
+	}
 	fetchCtx, cancel := mirrorFetchContext(ctx)
 	defer cancel()
-	fetchErr := repo.FetchContext(fetchCtx, &git.FetchOptions{
-		Auth:     auth,
-		Progress: nil,
-		Depth:    g.depth(),
-		RefSpecs: g.mirrorRefSpecs(),
-	})
-	// Fallbacks: a short revision may name a tag rather than a branch, and
-	// servers without uploadpack.allowAnySHA1InWant reject exact-SHA
-	// refspecs — the commit may still be reachable from a branch head.
-	if (isRefNotFoundError(fetchErr) || errors.Is(fetchErr, git.ErrExactSHA1NotSupported)) && !g.FetchAllRefs {
-		rev := strings.TrimSpace(g.Revision)
-		var retry []config.RefSpec
-		switch {
-		case rev == "" || isHexSHA(rev):
-			retry = []config.RefSpec{"+refs/heads/*:refs/heads/*"}
-		case !strings.HasPrefix(rev, "refs/"):
-			retry = []config.RefSpec{config.RefSpec("+refs/tags/" + rev + ":refs/tags/" + rev)}
-		}
-		if retry != nil {
-			fetchErr = repo.FetchContext(fetchCtx, &git.FetchOptions{
-				Auth: auth, Depth: g.depth(), RefSpecs: retry,
-			})
-		}
-	}
+	fetchErr := fetchRefs(fetchCtx, hiddenRemote(repo, g.RepoURL, hidden), auth, 1, specs)
 	if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("fetch repo %s: %w", g.RepoURL, fetchErr)
 	}
 	return nil
+}
+
+// danglingRefs reports whether a ref fetched by specs is left on a commit
+// the mirror lacks, and returns the annotated tags among them: a tag object
+// that arrived without its commit is present, so go-git would not want it
+// again unless it is hidden. A dangling plain commit is absent already, and
+// a ref on an object that is not a commit is not one to repair.
+func danglingRefs(repo *git.Repository, specs []config.RefSpec) (dangling bool, hidden map[plumbing.Hash]bool, err error) {
+	iter, err := repo.References()
+	if err != nil {
+		return false, nil, fmt.Errorf("list mirror refs: %w", err)
+	}
+	defer iter.Close()
+	hidden = map[plumbing.Hash]bool{}
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference || !matchesDst(specs, ref.Name()) {
+			return nil
+		}
+		if target, ok := tagTarget(repo, ref.Hash()); ok {
+			if !hasObject(repo, target) {
+				dangling, hidden[ref.Hash()] = true, true
+			}
+			return nil
+		}
+		if !hasObject(repo, ref.Hash()) {
+			dangling = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, nil, fmt.Errorf("iterate mirror refs: %w", err)
+	}
+	return dangling, hidden, nil
+}
+
+// isShallow reports whether the mirror has a shallow boundary, or may have.
+func isShallow(repo *git.Repository) bool {
+	shallow, err := repo.Storer.Shallow()
+	return err != nil || len(shallow) > 0
+}
+
+// matchesDst reports whether name is the destination of any of specs.
+func matchesDst(specs []config.RefSpec, name plumbing.ReferenceName) bool {
+	for _, spec := range specs {
+		if spec.Reverse().Match(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// tagTarget returns the commit the annotated tag h points to, if h is one.
+// The type is read first, so a lightweight tag's commit is never decoded.
+func tagTarget(repo *git.Repository, h plumbing.Hash) (plumbing.Hash, bool) {
+	obj, err := repo.Storer.EncodedObject(plumbing.AnyObject, h)
+	if err != nil || obj.Type() != plumbing.TagObject {
+		return plumbing.ZeroHash, false
+	}
+	tag, err := object.DecodeTag(repo.Storer, obj)
+	if err != nil || tag.TargetType != plumbing.CommitObject {
+		return plumbing.ZeroHash, false
+	}
+	return tag.Target, true
+}
+
+// hasObject reports whether the mirror holds h, of any type.
+func hasObject(repo *git.Repository, h plumbing.Hash) bool {
+	return !errors.Is(repo.Storer.HasEncodedObject(h), plumbing.ErrObjectNotFound)
+}
+
+// peeledRefPrefix holds, for each annotated tag in the mirror, a ref on the
+// tag's commit. go-git reads every have as a commit, so it never offers an
+// annotated tag as one: without these, a mirror only a tag uses fetched the
+// tag's whole history at depth 0 on every move.
+const peeledRefPrefix = "refs/paprika-peeled/"
+
+// peelTags points refs/paprika-peeled/tags/<tag> at the commit of each
+// annotated tag the mirror holds whole, and removes the peeled ref of a tag
+// that is gone. One pass over the mirror's refs, and a write only for a
+// peeled ref that changes: it runs after every fetch.
+func peelTags(repo *git.Repository) error {
+	tags, peeled, err := tagRefs(repo)
+	if err != nil {
+		return err
+	}
+	for name, h := range tags {
+		target, ok := tagTarget(repo, h)
+		if !ok || peeled[name] == target || !hasObject(repo, target) {
+			continue
+		}
+		if err := repo.Storer.SetReference(plumbing.NewHashReference(name, target)); err != nil {
+			return fmt.Errorf("peel mirror tag %s: %w", name, err)
+		}
+	}
+	for name := range peeled {
+		if _, ok := tags[name]; ok {
+			continue
+		}
+		if err := repo.Storer.RemoveReference(name); err != nil {
+			return fmt.Errorf("remove peeled ref %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// tagRefs returns the mirror's tags and its peeled refs, both keyed by the
+// peeled ref's name.
+func tagRefs(repo *git.Repository) (tags, peeled map[plumbing.ReferenceName]plumbing.Hash, err error) {
+	iter, err := repo.References()
+	if err != nil {
+		return nil, nil, fmt.Errorf("list mirror tags: %w", err)
+	}
+	defer iter.Close()
+	tags, peeled = map[plumbing.ReferenceName]plumbing.Hash{}, map[plumbing.ReferenceName]plumbing.Hash{}
+	err = iter.ForEach(func(ref *plumbing.Reference) error {
+		if ref.Type() != plumbing.HashReference {
+			return nil
+		}
+		switch name := ref.Name().String(); {
+		case strings.HasPrefix(name, "refs/tags/"):
+			tags[plumbing.ReferenceName(peeledRefPrefix+strings.TrimPrefix(name, "refs/"))] = ref.Hash()
+		case strings.HasPrefix(name, peeledRefPrefix+"tags/"):
+			peeled[ref.Name()] = ref.Hash()
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("iterate mirror tags: %w", err)
+	}
+	return tags, peeled, nil
+}
+
+// hiddenRemote is the mirror's origin, fetching into its storage with hidden
+// reported missing: go-git wants a ref's object only when it is missing, and
+// offers every commit a ref names as a have.
+func hiddenRemote(repo *git.Repository, url string, hidden map[plumbing.Hash]bool) *git.Remote {
+	return git.NewRemote(hiddenObjects{Storer: repo.Storer, hidden: hidden},
+		&config.RemoteConfig{Name: "origin", URLs: []string{url}})
+}
+
+// hiddenObjects is the mirror's storage with some objects reported missing.
+type hiddenObjects struct {
+	storage.Storer
+	hidden map[plumbing.Hash]bool
+}
+
+func (s hiddenObjects) EncodedObject(t plumbing.ObjectType, h plumbing.Hash) (plumbing.EncodedObject, error) {
+	if s.hidden[h] {
+		return nil, plumbing.ErrObjectNotFound
+	}
+	return s.Storer.EncodedObject(t, h) //nolint:wrapcheck // go-git compares the storer's sentinel errors
+}
+
+// PackfileWriter keeps a fetch writing one pack, as it does into the mirror.
+func (s hiddenObjects) PackfileWriter() (io.WriteCloser, error) {
+	pw, ok := s.Storer.(storer.PackfileWriter)
+	if !ok {
+		return nil, errors.New("mirror storage cannot write a packfile")
+	}
+	return pw.PackfileWriter() //nolint:wrapcheck // passed through to go-git
+}
+
+// mirrorFetcher is a repository or a remote of one.
+type mirrorFetcher interface {
+	FetchContext(ctx context.Context, o *git.FetchOptions) error
+}
+
+// fetchRefs fetches specs at depth. Every update is forced: a mirror's refs
+// are the remote's, and a fast-forward check through hiddenObjects cannot
+// see a commit the fetch has just written.
+func fetchRefs(ctx context.Context, repo mirrorFetcher, auth transport.AuthMethod, depth int, specs []config.RefSpec) error {
+	return repo.FetchContext(ctx, &git.FetchOptions{ //nolint:wrapcheck // callers wrap, and compare go-git's sentinels
+		Auth: auth, Depth: depth, RefSpecs: specs, Force: true,
+	})
+}
+
+// fetchMirror fetches this source's refs at depth and returns the refspecs
+// the fetch used, and whether go-git reported them up to date.
+func (g *GitSource) fetchMirror(ctx context.Context, repo mirrorFetcher, auth transport.AuthMethod, depth int) ([]config.RefSpec, bool, error) {
+	fetchCtx, cancel := mirrorFetchContext(ctx)
+	defer cancel()
+	specs := g.mirrorRefSpecs()
+	fetchErr := fetchRefs(fetchCtx, repo, auth, depth, specs)
+	// Fallbacks: a short revision may name a tag rather than a branch, and
+	// servers without uploadpack.allowAnySHA1InWant reject exact-SHA
+	// refspecs — the commit may still be reachable from a branch head.
+	if (isRefNotFoundError(fetchErr) || errors.Is(fetchErr, git.ErrExactSHA1NotSupported)) && !g.FetchAllRefs {
+		if retry := g.retryRefSpecs(); retry != nil {
+			specs = retry
+			fetchErr = fetchRefs(fetchCtx, repo, auth, depth, retry)
+		}
+	}
+	upToDate := errors.Is(fetchErr, git.NoErrAlreadyUpToDate)
+	if fetchErr != nil && !upToDate {
+		return nil, false, fmt.Errorf("fetch repo %s: %w", g.RepoURL, fetchErr)
+	}
+	return specs, upToDate, nil
+}
+
+// retryRefSpecs is what fetchMirror fetches when mirrorRefSpecs names no ref.
+func (g *GitSource) retryRefSpecs() []config.RefSpec {
+	rev := strings.TrimSpace(g.Revision)
+	switch {
+	case rev == "" || isHexSHA(rev):
+		return []config.RefSpec{"+refs/heads/*:refs/heads/*"}
+	case !strings.HasPrefix(rev, "refs/"):
+		return []config.RefSpec{config.RefSpec("+refs/tags/" + rev + ":refs/tags/" + rev)}
+	default:
+		return nil
+	}
 }
 
 func isRefNotFoundError(err error) bool {
@@ -320,6 +588,20 @@ func (g *GitSource) mirrorFresh(repo *git.Repository, mirrorDir string) bool {
 // so we stamp our own after every successful fetch.
 func fetchClockFile(mirrorDir string) string { return mirrorDir + ".lastfetch" }
 
+// touchFetchClockIfResolvable stamps the clock only when the revision
+// resolves to a commit in the mirror: a fetch that left it missing must not
+// cache that failure for the whole FetchTTL.
+func (g *GitSource) touchFetchClockIfResolvable(repo *git.Repository, mirrorDir string) {
+	hash, err := g.resolveRevision(repo, g.Revision)
+	if err != nil {
+		return
+	}
+	if _, err := object.GetCommit(repo.Storer, *hash); err != nil {
+		return
+	}
+	touchFetchClock(mirrorDir)
+}
+
 func touchFetchClock(mirrorDir string) {
 	// Best-effort: a failed touch just means the next resolve re-fetches.
 	if err := os.WriteFile(fetchClockFile(mirrorDir),
@@ -343,7 +625,8 @@ func (g *GitSource) mirrorRefSpecs() []config.RefSpec {
 		// branch without pulling every head.
 		return []config.RefSpec{"+HEAD:" + defaultMirrorRef}
 	case isHexSHA(rev):
-		return []config.RefSpec{config.RefSpec(rev + ":" + pinnedCommitRefPrefix + rev)}
+		// Forced like every other spec: a pinned SHA is immutable.
+		return []config.RefSpec{config.RefSpec("+" + rev + ":" + pinnedCommitRefPrefix + rev)}
 	case strings.HasPrefix(rev, "refs/"):
 		return []config.RefSpec{config.RefSpec("+" + rev + ":" + rev)}
 	default:
@@ -363,7 +646,7 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 		return nil, fmt.Errorf("create remote %s: %w", g.RepoURL, err)
 	}
 
-	if err := g.fetchMirror(ctx, repo, auth); err != nil {
+	if _, _, err := g.fetchMirror(ctx, repo, auth, g.depth()); err != nil {
 		// A first clone that failed (a 5 GB clone cancelled at the client's
 		// timeout) holds nothing usable; leave nothing behind.
 		if rmErr := os.RemoveAll(mirrorDir); rmErr != nil {
@@ -371,10 +654,13 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 		}
 		return nil, err
 	}
+	if err := peelTags(repo); err != nil {
+		return nil, err
+	}
 	if err := g.refreshMirrorHEAD(repo); err != nil {
 		return nil, err
 	}
-	touchFetchClock(mirrorDir)
+	g.touchFetchClockIfResolvable(repo, mirrorDir)
 	return repo, nil
 }
 
@@ -453,10 +739,54 @@ func (g *GitSource) resolveAndCheckout(ctx context.Context, mirrorRepo *git.Repo
 		return "", err
 	}
 
-	if err := g.checkoutTree(mirrorRepo, hash, worktreeDir); err != nil {
+	err = g.checkoutTree(mirrorRepo, hash, worktreeDir)
+	if errors.Is(err, plumbing.ErrObjectNotFound) {
+		// A tree or blob a depth-0 fetch left out (see incrementalDepth).
+		// Fetch the tip again at depth 1, which sends the whole tree, before
+		// the recoverable error wipes the mirror and every source's refs.
+		if fetchErr := g.refetchTip(ctx, mirrorRepo, mirrorDir, *hash); fetchErr == nil {
+			err = g.checkoutTree(mirrorRepo, hash, worktreeDir)
+		}
+	}
+	if err != nil {
 		return "", err
 	}
 	return hash.String(), nil
+}
+
+// refetchTip fetches this source's refs again at depth 1 with commit, and
+// the annotated tags on it, hidden: go-git wants only a ref whose object is
+// missing, and the commit is present, only its tree or a blob under it is
+// not. Depth 1 sends the shallow boundary, so the server sends the whole
+// tree rather than assuming the mirror holds the history below it. The token
+// is minted under the fetch's detached context, as fetchPinnedCommit's is:
+// the fetch before this one may have outlived the request.
+func (g *GitSource) refetchTip(ctx context.Context, repo *git.Repository, mirrorDir string, commit plumbing.Hash) error {
+	fetchCtx, cancel := mirrorFetchContext(ctx)
+	defer cancel()
+	auth, err := g.authMethod(fetchCtx)
+	if err != nil {
+		return err
+	}
+	hidden := map[plumbing.Hash]bool{commit: true}
+	tags, err := repo.Tags()
+	if err != nil {
+		return fmt.Errorf("list mirror tags: %w", err)
+	}
+	defer tags.Close()
+	err = tags.ForEach(func(ref *plumbing.Reference) error {
+		if target, ok := tagTarget(repo, ref.Hash()); ok && target == commit {
+			hidden[ref.Hash()] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("iterate mirror tags: %w", err)
+	}
+	return withPartialPacksRemoved(mirrorDir, func() error {
+		_, _, fetchErr := g.fetchMirror(ctx, hiddenRemote(repo, g.RepoURL, hidden), auth, 1)
+		return fetchErr
+	})
 }
 
 // defaultMirrorRef names the mirror-local ref that records the remote's
@@ -473,6 +803,7 @@ const defaultMirrorRef = "refs/paprika-default/HEAD"
 // materialized, so templates with different paths never shadow each other.
 func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, worktreeDir string) error {
 	marker := checkoutMarker(worktreeDir, g.Path)
+	stamp := checkoutMarkerFormat + hash.String()
 
 	tree, dest, err := g.checkoutScope(repo, hash, worktreeDir)
 	if err != nil {
@@ -480,7 +811,7 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 	}
 
 	// #nosec G304 -- marker path is derived from our own WorkDir.
-	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == hash.String() {
+	if existing, readErr := os.ReadFile(marker); readErr == nil && string(existing) == stamp {
 		if info, statErr := os.Stat(dest); statErr == nil && info.IsDir() {
 			return nil
 		}
@@ -499,11 +830,16 @@ func (g *GitSource) checkoutTree(repo *git.Repository, hash *plumbing.Hash, work
 		return err
 	}
 
-	if err := os.WriteFile(marker, []byte(hash.String()), 0o600); err != nil {
+	if err := os.WriteFile(marker, []byte(stamp), 0o600); err != nil {
 		return fmt.Errorf("checkout tree: write revision marker: %w", err)
 	}
 	return nil
 }
+
+// checkoutMarkerFormat prefixes the hash in a revision marker. A marker
+// without it may record a checkout that a missing subtree truncated (the
+// TreeWalker read one as the end of the tree), so that scope is written again.
+const checkoutMarkerFormat = "v2 "
 
 // checkoutMarker names the per-scope revision marker next to the worktree
 // dir — ".rev" for a full-tree checkout, ".rev-<path>" for a subtree.
@@ -529,56 +865,107 @@ func (g *GitSource) checkoutScope(repo *git.Repository, hash *plumbing.Hash, wor
 	if g.Path == "" {
 		return root, worktreeDir, nil
 	}
-	entry, findErr := root.FindEntry(g.Path)
-	if findErr != nil || entry.Mode != filemode.Dir {
-		return nil, "", fmt.Errorf("checkout tree: path %q is not a directory in %s", g.Path, *hash)
+	// One component at a time. root.FindEntry(g.Path) reads each component
+	// as a tree, and the mirror reports an object of another type (a symlink,
+	// a file, a gitlink) as ErrObjectNotFound, which would send a Path that is
+	// not a directory through refetchTip and the wipe on every resolve.
+	// root.Tree(g.Path) reports a missing tree as ErrDirectoryNotFound, which
+	// no recovery matches (see incrementalDepth).
+	tree, dir := root, ""
+	for _, name := range strings.Split(g.Path, "/") {
+		entry, findErr := tree.FindEntry(name)
+		if findErr != nil || entry.Mode != filemode.Dir {
+			return nil, "", fmt.Errorf("checkout tree: path %q is not a directory in %s", g.Path, *hash)
+		}
+		dir = path.Join(dir, name)
+		if tree, err = readSubtree(repo, entry.Hash, dir); err != nil {
+			return nil, "", err
+		}
 	}
-	subtree, treeErr := root.Tree(g.Path)
-	if treeErr != nil {
-		return nil, "", fmt.Errorf("checkout tree: read subtree %s: %w", g.Path, treeErr)
-	}
-	return subtree, filepath.Join(worktreeDir, g.Path), nil
+	return tree, filepath.Join(worktreeDir, g.Path), nil
 }
 
-// materializeTree walks every entry in tree and writes it under dest.
+// readSubtree reads the tree of the directory entry h, found at name. Only an
+// absent tree is ErrObjectNotFound, the cache error refetchTip repairs: the
+// mirror reports an object of another type the same way, and that is not a
+// cache error. Any other failure (a malformed tree) is wrapped as it is and
+// classified as on master: isRecoverableGitCacheError wipes the mirror once
+// per resolve, as it did for the TreeWalker's error.
+func readSubtree(repo *git.Repository, h plumbing.Hash, name string) (*object.Tree, error) {
+	tree, err := object.GetTree(repo.Storer, h)
+	switch {
+	case err == nil:
+		return tree, nil
+	case errors.Is(err, plumbing.ErrObjectNotFound) && hasObject(repo, h):
+		return nil, fmt.Errorf("checkout tree: entry %q is not a tree", name)
+	default:
+		return nil, fmt.Errorf("checkout tree: read tree %s: %w", name, err)
+	}
+}
+
+// maxCheckoutTreeDepth is go-git's TreeWalker depth cap: a crafted tree
+// nested deeper is an error, not a recursion as deep as the tree.
+const maxCheckoutTreeDepth = 1024
+
+// materializeTree writes every entry of tree under dest. A subtree the
+// mirror lacks is a recoverable error, never a truncated checkout: go-git's
+// TreeWalker ended at one with io.EOF, as at the end of the tree. Names are
+// validated as the walker validated them, by FindEntry for a directory and
+// TreeEntryFile for a file.
 func (g *GitSource) materializeTree(repo *git.Repository, tree *object.Tree, dest string) error {
-	walker := object.NewTreeWalker(tree, true, nil)
-	defer walker.Close()
-	for {
-		name, entry, walkErr := walker.Next()
-		if errors.Is(walkErr, io.EOF) {
-			return nil
+	return g.materializeDir(repo, tree, dest, "", 0)
+}
+
+// materializeDir writes tree, found at dir and depth below the checkout's
+// root, under dest.
+func (g *GitSource) materializeDir(repo *git.Repository, tree *object.Tree, dest, dir string, depth int) error {
+	if depth > maxCheckoutTreeDepth {
+		return fmt.Errorf("checkout tree: %s: %w", dir, object.ErrMaxTreeDepth)
+	}
+	for i := range tree.Entries {
+		entry := &tree.Entries[i]
+		name := path.Join(dir, entry.Name)
+		if entry.Mode != filemode.Dir {
+			if err := g.materializeEntry(tree, name, entry, dest); err != nil {
+				return err
+			}
+			continue
 		}
-		if walkErr != nil {
-			return fmt.Errorf("checkout tree: walk tree: %w", walkErr)
+		if _, err := tree.FindEntry(entry.Name); err != nil {
+			return fmt.Errorf("checkout tree: tree entry %q in %s: %w", entry.Name, dir, err)
 		}
-		if err := g.materializeEntry(repo, name, entry, dest); err != nil {
+		subtree, err := readSubtree(repo, entry.Hash, name)
+		if err != nil {
+			return err
+		}
+		if err := g.materializeDir(repo, subtree, dest, name, depth+1); err != nil {
 			return err
 		}
 	}
+	return nil
 }
 
-// materializeEntry writes one tree entry under dest.
-func (g *GitSource) materializeEntry(repo *git.Repository, name string, entry object.TreeEntry, dest string) error {
+// materializeEntry writes one entry of tree, found at name, under dest.
+func (g *GitSource) materializeEntry(tree *object.Tree, name string, entry *object.TreeEntry, dest string) error {
 	target := filepath.Join(dest, name)
 	mode := entry.Mode
 	switch {
 	case mode.IsRegular():
-		blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
-		if blobErr != nil {
-			return fmt.Errorf("checkout tree: read blob %s: %w", name, blobErr)
+		file, fileErr := tree.TreeEntryFile(entry)
+		if fileErr != nil {
+			return fmt.Errorf("checkout tree: read blob %s: %w", name, fileErr)
 		}
 		perm := 0o640
 		if mode == filemode.Executable {
 			perm = 0o750
 		}
-		return writeBlob(target, blob, os.FileMode(perm))
+		return writeBlob(target, &file.Blob, os.FileMode(perm))
 	case mode == filemode.Symlink:
-		blob, blobErr := object.GetBlob(repo.Storer, entry.Hash)
-		if blobErr != nil {
-			return fmt.Errorf("checkout tree: read symlink %s: %w", name, blobErr)
+		file, fileErr := tree.TreeEntryFile(entry)
+		if fileErr != nil {
+			return fmt.Errorf("checkout tree: read symlink %s: %w", name, fileErr)
 		}
-		targetContent, readErr := blobReaderString(blob)
+		targetContent, readErr := blobReaderString(&file.Blob)
 		if readErr != nil {
 			return readErr
 		}
@@ -705,7 +1092,7 @@ func (g *GitSource) fetchPinnedCommit(ctx context.Context, repo *git.Repository,
 	if err != nil {
 		return fmt.Errorf("auth for pinned commit fetch: %w", err)
 	}
-	refSpec := config.RefSpec(sha + ":" + pinnedCommitRefPrefix + sha)
+	refSpec := config.RefSpec("+" + sha + ":" + pinnedCommitRefPrefix + sha)
 	fetchErr := repo.FetchContext(fetchCtx, &git.FetchOptions{
 		Auth:     auth,
 		Depth:    1,

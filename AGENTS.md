@@ -114,7 +114,10 @@ helm upgrade paprika-e2e charts/chart/ \
   the exact-commit fetch recovery in `internal/source/git.go`
   (`fetchPinnedCommit` + `refs/paprika-pinned/`). Never force-push over
   commits a release has pinned; upstream-unreachable SHAs permanently fail
-  that release's renders.
+  that release's renders. Only the first clone is shallow: fetches into an
+  existing mirror run at depth 0 (`incrementalDepth`), and what that leaves
+  out below the boundary is re-fetched at depth 1 by `repairDanglingRefs` (a
+  ref on a missing commit) and `refetchTip` (a tip missing a tree or blob).
 - Git resolve is pure go-git — no `git` binary and no second worktree repo:
   the mirror fetches the minimal refspec for the revision (`+HEAD:` for
   default, `+refs/heads/<rev>` for branches, `+<sha>:refs/paprika-pinned/`

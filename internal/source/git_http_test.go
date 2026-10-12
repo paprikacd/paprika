@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -31,6 +32,10 @@ func dockerCmd(docker string, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, docker, args...)
 }
 
+// httpGitServers numbers the containers this process starts: with the pid,
+// a name no parallel test or package run can also pick.
+var httpGitServers atomic.Int64
+
 type httpGitServer struct {
 	url string
 }
@@ -49,7 +54,7 @@ func startHTTPGitServer(t *testing.T) *httpGitServer {
 		t.Skipf("docker daemon not available: %v (%s)", err, out)
 	}
 
-	name := fmt.Sprintf("paprika-git-http-%d", time.Now().UnixNano())
+	name := fmt.Sprintf("paprika-git-http-%d-%d-%d", os.Getpid(), httpGitServers.Add(1), time.Now().UnixNano())
 	port := freeTCPPort(t)
 	cmd := dockerCmd(docker, "run", "-d", "--rm",
 		"-p", fmt.Sprintf("127.0.0.1:%d:3000", port),
