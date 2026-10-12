@@ -662,8 +662,16 @@ repoServer:
   #   periodSeconds: 10
   #   failureThreshold: 6
 
+  ## /tmp holds the git mirror cache. sizeLimit bounds it: past it the kubelet
+  ## evicts the pod, which restarts with an empty cache, instead of the cache
+  ## filling the node's disk (117 GB of one repository's packs did, 2026-10-11).
+  ## A shallow source of a large, often-pushed repository still adds a pack per
+  ## push, so expect evictions for one; `shallow: false` on its Template stops
+  ## that. Overriding repoServer.extraVolumes replaces this list and drops the
+  ## limit.
   extraVolumes:
-    - emptyDir: {}
+    - emptyDir:
+        sizeLimit: 50Gi
       name: tmp
 
   extraVolumeMounts:
