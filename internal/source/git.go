@@ -105,6 +105,13 @@ func (g *GitSource) resolve(ctx context.Context) (*ResolveResult, error) {
 	lock := repoLock(key)
 	lock.Lock()
 	defer lock.Unlock()
+	// A request can wait here behind a detached fetch for up to
+	// mirrorFetchBudget, long after its client gave up. One that is already
+	// done starts nothing: only a request still live when it takes the lock
+	// may start a fetch that outlives it (mirrorFetchContext).
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("resolve %s: request ended while waiting for the repository: %w", g.RepoURL, err)
+	}
 
 	result, err := g.resolveLocked(ctx, mirrorDir, worktreeDir)
 	if err == nil || (!g.isRecoverableGitCacheError(err) && !g.isStalePinnedRevisionError(err)) {
@@ -373,7 +380,7 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 
 // mirrorFetchBudget bounds one mirror fetch, which runs detached from the
 // cancellation of the request that started it (mirrorFetchContext).
-const mirrorFetchBudget = 30 * time.Minute
+var mirrorFetchBudget = 30 * time.Minute
 
 // mirrorFetchContext is the context a mirror fetch runs under: the request's
 // values without its cancellation or deadline, bounded by mirrorFetchBudget.
@@ -694,7 +701,7 @@ func (g *GitSource) isStalePinnedRevisionError(err error) bool {
 func (g *GitSource) fetchPinnedCommit(ctx context.Context, repo *git.Repository, sha string) error {
 	fetchCtx, cancel := mirrorFetchContext(ctx)
 	defer cancel()
-	auth, err := g.authMethod(ctx)
+	auth, err := g.authMethod(fetchCtx)
 	if err != nil {
 		return fmt.Errorf("auth for pinned commit fetch: %w", err)
 	}

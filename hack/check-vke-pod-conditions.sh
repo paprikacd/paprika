@@ -31,10 +31,13 @@ for component in controller-manager api-server webhook-receiver repo-server; do
   fi
 
   pod_json="$(kubectl get pods -n "${VKE_NAMESPACE}" -l "$selector" -o json)"
-  active="$(printf '%s' "$pod_json" | jq '[.items[] | select(.metadata.deletionTimestamp == null)] | length')"
+  # Terminal pods (evicted at the repo-server's /tmp sizeLimit) are history,
+  # not members of the rollout.
+  active="$(printf '%s' "$pod_json" | jq '[.items[] | select(.metadata.deletionTimestamp == null) | select(.status.phase != "Succeeded" and .status.phase != "Failed")] | length')"
   ready="$(printf '%s' "$pod_json" | jq '[
     .items[]
     | select(.metadata.deletionTimestamp == null)
+    | select(.status.phase != "Succeeded" and .status.phase != "Failed")
     | select(.status.phase == "Running")
     | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
   ] | length')"
