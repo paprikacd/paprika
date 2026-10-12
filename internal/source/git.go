@@ -206,7 +206,7 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 		if g.mirrorFresh(repo, mirrorDir) {
 			return repo, nil
 		}
-		if fetchErr := g.fetchMirror(ctx, repo, auth); fetchErr != nil {
+		if fetchErr := g.fetchMirrorClean(ctx, repo, mirrorDir, auth); fetchErr != nil {
 			return nil, fetchErr
 		}
 		if headErr := g.refreshMirrorHEAD(repo); headErr != nil {
@@ -222,8 +222,26 @@ func (g *GitSource) openOrCloneMirror(ctx context.Context, mirrorDir string) (*g
 	return g.createMirror(ctx, mirrorDir, auth)
 }
 
+// fetchMirrorClean is fetchMirror with the partial packs of failed fetches
+// removed: those left by an earlier try, and this one's if it fails.
+func (g *GitSource) fetchMirrorClean(ctx context.Context, repo *git.Repository, mirrorDir string, auth transport.AuthMethod) error {
+	if err := removePartialPacks(mirrorDir); err != nil {
+		return err
+	}
+	fetchErr := g.fetchMirror(ctx, repo, auth)
+	if fetchErr == nil {
+		return nil
+	}
+	if err := removePartialPacks(mirrorDir); err != nil {
+		return fmt.Errorf("%w; additionally %w", fetchErr, err)
+	}
+	return fetchErr
+}
+
 func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth transport.AuthMethod) error {
-	fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+	fetchCtx, cancel := mirrorFetchContext(ctx)
+	defer cancel()
+	fetchErr := repo.FetchContext(fetchCtx, &git.FetchOptions{
 		Auth:     auth,
 		Progress: nil,
 		Depth:    g.depth(),
@@ -242,7 +260,7 @@ func (g *GitSource) fetchMirror(ctx context.Context, repo *git.Repository, auth 
 			retry = []config.RefSpec{config.RefSpec("+refs/tags/" + rev + ":refs/tags/" + rev)}
 		}
 		if retry != nil {
-			fetchErr = repo.FetchContext(ctx, &git.FetchOptions{
+			fetchErr = repo.FetchContext(fetchCtx, &git.FetchOptions{
 				Auth: auth, Depth: g.depth(), RefSpecs: retry,
 			})
 		}
@@ -339,6 +357,11 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 	}
 
 	if err := g.fetchMirror(ctx, repo, auth); err != nil {
+		// A first clone that failed (a 5 GB clone cancelled at the client's
+		// timeout) holds nothing usable; leave nothing behind.
+		if rmErr := os.RemoveAll(mirrorDir); rmErr != nil {
+			return nil, fmt.Errorf("%w; additionally failed to remove the partial mirror: %w", err, rmErr)
+		}
 		return nil, err
 	}
 	if err := g.refreshMirrorHEAD(repo); err != nil {
@@ -346,6 +369,40 @@ func (g *GitSource) createMirror(ctx context.Context, mirrorDir string, auth tra
 	}
 	touchFetchClock(mirrorDir)
 	return repo, nil
+}
+
+// mirrorFetchBudget bounds one mirror fetch, which runs detached from the
+// cancellation of the request that started it (mirrorFetchContext).
+const mirrorFetchBudget = 30 * time.Minute
+
+// mirrorFetchContext is the context a mirror fetch runs under: the request's
+// values without its cancellation or deadline, bounded by mirrorFetchBudget.
+// A first fetch of a large repository takes longer than the repo-server
+// client's 5-minute timeout (brandbrain's 3.3 GB shallow tree, at about 10
+// MB/s), and a fetch bound to the request was cancelled at 5 minutes every
+// time: it never completed, and each try left a partial pack (omega-ha,
+// 2026-10-11/12). Detached, the fetch completes while the client retries;
+// the repo lock keeps the retry waiting for it rather than starting another.
+func mirrorFetchContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), mirrorFetchBudget)
+}
+
+// removePartialPacks deletes a mirror's objects/pack/tmp_pack_* files: the
+// pack a fetch writes as it downloads, which go-git leaves behind when the
+// fetch fails or is cancelled. It runs under the repo lock, so no fetch of
+// this mirror is writing one.
+func removePartialPacks(mirrorDir string) error {
+	matches, err := filepath.Glob(filepath.Join(mirrorDir, "objects", "pack", "tmp_pack_*"))
+	if err != nil {
+		return fmt.Errorf("find partial packs: %w", err)
+	}
+	var errs []error
+	for _, m := range matches {
+		if rmErr := os.Remove(m); rmErr != nil && !os.IsNotExist(rmErr) {
+			errs = append(errs, fmt.Errorf("remove partial pack: %w", rmErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // refreshMirrorHEAD points the mirror's HEAD at the fetched ref so
@@ -635,12 +692,14 @@ func (g *GitSource) isStalePinnedRevisionError(err error) bool {
 // transport.ErrExactSHA1NotSupported and the caller falls back to a full
 // cache rebuild.
 func (g *GitSource) fetchPinnedCommit(ctx context.Context, repo *git.Repository, sha string) error {
+	fetchCtx, cancel := mirrorFetchContext(ctx)
+	defer cancel()
 	auth, err := g.authMethod(ctx)
 	if err != nil {
 		return fmt.Errorf("auth for pinned commit fetch: %w", err)
 	}
 	refSpec := config.RefSpec(sha + ":" + pinnedCommitRefPrefix + sha)
-	fetchErr := repo.FetchContext(ctx, &git.FetchOptions{
+	fetchErr := repo.FetchContext(fetchCtx, &git.FetchOptions{
 		Auth:     auth,
 		Depth:    1,
 		RefSpecs: []config.RefSpec{refSpec},
