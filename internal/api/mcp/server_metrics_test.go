@@ -47,7 +47,10 @@ func TestToolErrorResultRecordsErrorOutcomeWithoutChangingWireResult(t *testing.
 		assert.Empty(t, wire.Error, "tool failures remain MCP results, not protocol errors")
 		assert.Equal(t, isError, wire.Result.IsError)
 		require.Len(t, wire.Result.Content, 1)
-		assert.Equal(t, "provider result", wire.Result.Content[0].(*sdkmcp.TextContent).Text)
+		content, ok := wire.Result.Content[0].(*sdkmcp.TextContent)
+		require.True(t, ok, "the wire result must retain its text content type")
+		require.NotNil(t, content)
+		assert.Equal(t, "provider result", content.Text)
 	}
 
 	var data metricdata.ResourceMetrics

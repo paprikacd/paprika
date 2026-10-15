@@ -1209,6 +1209,8 @@ func authCodeKey(code string) string {
 // refreshKey. Display identity comes only from the original authenticated
 // grant and survives rotation. Display fields are optional; the client and
 // audience bindings are mandatory, so pre-upgrade unbound records fail closed.
+//
+//nolint:tagliatelle // Retain the established OAuth grant cache format and RFC 6749 client_id binding.
 type refreshRecord struct {
 	Audience string `json:"aud"`
 	ClientID string `json:"client_id"`

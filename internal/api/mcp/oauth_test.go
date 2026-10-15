@@ -1677,6 +1677,7 @@ func TestRegisterCapacityPreservesEveryExistingClient(t *testing.T) {
 	request := registrationRequest{RedirectURIs: []string{redirect}, ClientName: "capacity-test"}
 	last := postJSON(t, mux, "/mcp/register", "", request)
 	require.Equal(t, http.StatusCreated, last.Code)
+	//nolint:tagliatelle // RFC 7591 registration response uses client_id on the wire.
 	var registered struct {
 		ClientID string `json:"client_id"`
 	}

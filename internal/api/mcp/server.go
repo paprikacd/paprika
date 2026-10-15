@@ -206,29 +206,8 @@ type Server struct {
 //
 //nolint:gocritic // cfg is ServerConfig by value per the spec's literal constructor signature (Task 15's buildMCPHandlers constructs one inline); switching to a pointer would change the public API.
 func NewServer(cfg ServerConfig) (*Server, error) {
-	if cfg.Registry == nil {
-		return nil, errors.New("mcp: ServerConfig.Registry is required")
-	}
-	if cfg.Authenticator == nil {
-		return nil, errors.New("mcp: ServerConfig.Authenticator is required")
-	}
-	if cfg.Cache == nil {
-		return nil, errors.New("mcp: ServerConfig.Cache is required")
-	}
-	if len(cfg.Secret) == 0 {
-		return nil, errors.New("mcp: ServerConfig.Secret is required")
-	}
-	if err := validatePublicURL(cfg.PublicURL); err != nil {
+	if err := validateServerConfig(&cfg); err != nil {
 		return nil, err
-	}
-	// Preserve the fleet's required static pair by default. A DCR-only
-	// surface may explicitly omit both, without installing a placeholder
-	// client or weakening the clientIDAllowed gate.
-	if cfg.ClientID == "" && (len(cfg.RedirectURIs) > 0 || !cfg.AllowDynamicRegistrationOnly) {
-		return nil, errors.New("mcp: ServerConfig.ClientID is required")
-	}
-	if len(cfg.RedirectURIs) == 0 && (cfg.ClientID != "" || !cfg.AllowDynamicRegistrationOnly) {
-		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
 	}
 	shape, err := resolveSurfaceShape(&cfg)
 	if err != nil {
@@ -269,6 +248,41 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
 	s.streamable = newStreamableHandler(s, cfg.Registry)
 	return s, nil
+}
+
+// validateServerConfig checks dependencies before constructing a serving
+// instance. OAuth registration policy is validated separately from those
+// dependencies so DCR-only operation remains an explicit, closed choice.
+func validateServerConfig(cfg *ServerConfig) error {
+	if cfg.Registry == nil {
+		return errors.New("mcp: ServerConfig.Registry is required")
+	}
+	if cfg.Authenticator == nil {
+		return errors.New("mcp: ServerConfig.Authenticator is required")
+	}
+	if cfg.Cache == nil {
+		return errors.New("mcp: ServerConfig.Cache is required")
+	}
+	if len(cfg.Secret) == 0 {
+		return errors.New("mcp: ServerConfig.Secret is required")
+	}
+	if err := validatePublicURL(cfg.PublicURL); err != nil {
+		return err
+	}
+	return validateOAuthClientConfig(cfg)
+}
+
+func validateOAuthClientConfig(cfg *ServerConfig) error {
+	// Preserve the fleet's required static pair by default. A DCR-only
+	// surface may explicitly omit both, without installing a placeholder
+	// client or weakening the clientIDAllowed gate.
+	if cfg.ClientID == "" && (len(cfg.RedirectURIs) > 0 || !cfg.AllowDynamicRegistrationOnly) {
+		return errors.New("mcp: ServerConfig.ClientID is required")
+	}
+	if len(cfg.RedirectURIs) == 0 && (cfg.ClientID != "" || !cfg.AllowDynamicRegistrationOnly) {
+		return errors.New("mcp: ServerConfig.RedirectURIs is required")
+	}
+	return nil
 }
 
 // surfaceShape is everything resolveSurfaceShape defaulted and validated
@@ -673,28 +687,9 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 	name := req.Params.Name
 	start := time.Now()
 	result, err := s.invoke(ctx, auth.PrincipalFromContext(ctx), name, req.Params.Arguments)
-	outcome := "ok"
-	if err != nil {
-		var confirmErr *ConfirmationRequiredError
-		switch {
-		case errors.As(err, &confirmErr):
-			outcome = "confirmation_required"
-		case errors.Is(err, ErrScopeDenied):
-			outcome = "scope_denied"
-		case errors.Is(err, ErrToolNotFound):
-			outcome = "not_found"
-		default:
-			outcome = "error"
-		}
-	} else if toolResult, ok := result.(*sdkmcp.CallToolResult); ok && toolResult != nil && toolResult.IsError {
-		// Provider failures can be successful JSON-RPC exchanges carrying an
-		// MCP tool error result. Keep that wire result intact while recording
-		// the failed operation rather than an "ok" transport exchange.
-		outcome = "error"
-	}
 	attrs := metric.WithAttributes(
 		attribute.String("tool", name),
-		attribute.String("outcome", outcome),
+		attribute.String("outcome", toolCallOutcome(result, err)),
 	)
 	paprikametrics.MCPToolCalls.Add(ctx, 1, attrs)
 	paprikametrics.MCPToolDuration.Record(ctx, time.Since(start).Milliseconds(), attrs)
@@ -712,6 +707,28 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 		}
 	}
 	return res, err
+}
+
+// toolCallOutcome classifies the operation independently of its wire form:
+// a successful JSON-RPC exchange may still contain an MCP tool error.
+func toolCallOutcome(result any, err error) string {
+	if err == nil {
+		if sdkResult, ok := result.(*sdkmcp.CallToolResult); ok && sdkResult != nil && sdkResult.IsError {
+			return "error"
+		}
+		return "ok"
+	}
+	var confirmErr *ConfirmationRequiredError
+	switch {
+	case errors.As(err, &confirmErr):
+		return "confirmation_required"
+	case errors.Is(err, ErrScopeDenied):
+		return "scope_denied"
+	case errors.Is(err, ErrToolNotFound):
+		return "not_found"
+	default:
+		return "error"
+	}
 }
 
 // invoke feeds Invoker.Call the per-request connection info. (The invoker is

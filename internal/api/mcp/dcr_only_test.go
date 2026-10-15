@@ -60,6 +60,7 @@ func TestDCROnlyObserveRegistrationStillRequiresConsentAndPKCE(t *testing.T) {
 	const redirect = "http://127.0.0.1:8791/callback"
 	registration := postJSON(t, mux, "/observe/register", "", registrationRequest{RedirectURIs: []string{redirect}, ClientName: "contract-test"})
 	require.Equal(t, http.StatusCreated, registration.Code)
+	//nolint:tagliatelle // RFC 7591 registration response uses client_id on the wire.
 	var client struct {
 		ClientID string `json:"client_id"`
 	}
