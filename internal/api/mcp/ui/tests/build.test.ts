@@ -18,4 +18,8 @@ test("the production console embeds the real Paprika icon without fetching an im
   assert.deepEqual(Buffer.from(embedded[1], "base64"), brand);
   assert.doesNotMatch(html, /<(?:img|script)\b[^>]*\bsrc=["'](?:https?:)?\/\//);
   assert.doesNotMatch(html, /<link\b[^>]*\bhref=["'](?:https?:)?\/\//);
+  assert.doesNotMatch(html, /^[\t ]+$/m, "generated template literals must not restore trailing whitespace");
+  await promisify(execFile)(process.execPath, [fileURLToPath(new URL("../build.mjs", import.meta.url))]);
+  assert.equal(await readFile(new URL("../dist/console.html", import.meta.url), "utf8"), html,
+    "repeated builds must produce identical embedded console bytes");
 });
