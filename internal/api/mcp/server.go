@@ -60,6 +60,12 @@ type ServerConfig struct {
 	AccessTTL     time.Duration
 	RefreshTTL    time.Duration
 
+	// AllowDynamicRegistrationOnly permits omitting both static ClientID and
+	// RedirectURIs. It is an explicit opt-in for a DCR-only server; a partial
+	// static pair is always rejected. Unregistered/empty client IDs remain
+	// invalid, and dynamic clients still require consent and PKCE.
+	AllowDynamicRegistrationOnly bool
+
 	// RoutePrefix is the mount root of this server's OAuth surface: the
 	// authorize/consent/token/register endpoints and well-known metadata all
 	// live at RoutePrefix+"/…". Empty defaults to "/mcp". A second Paprika
@@ -211,15 +217,13 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if err := validatePublicURL(cfg.PublicURL); err != nil {
 		return nil, err
 	}
-	// Static client registration is mandatory in the OAuth 2.1 spec this
-	// package implements. An unconfigured ClientID must fail construction
-	// loudly rather than let clientIDAllowed fail OPEN and accept every
-	// client_id — the same failure mode NewSelfSignedAuthenticatorForAudience
-	// already closes for an empty audience.
-	if cfg.ClientID == "" {
+	// Preserve the fleet's required static pair by default. A DCR-only
+	// surface may explicitly omit both, without installing a placeholder
+	// client or weakening the clientIDAllowed gate.
+	if cfg.ClientID == "" && (len(cfg.RedirectURIs) > 0 || !cfg.AllowDynamicRegistrationOnly) {
 		return nil, errors.New("mcp: ServerConfig.ClientID is required")
 	}
-	if len(cfg.RedirectURIs) == 0 {
+	if len(cfg.RedirectURIs) == 0 && (cfg.ClientID != "" || !cfg.AllowDynamicRegistrationOnly) {
 		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
 	}
 	shape, err := resolveSurfaceShape(&cfg)

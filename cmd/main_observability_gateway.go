@@ -136,8 +136,8 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 
 // validateObservabilityGatewayConfig fails fast, with the same loudness the
 // api-server's MCP config validation uses, on the flags the gateway cannot
-// start without: every MCP surface flag is required here too (a gateway that
-// starts without issuer metadata mints tokens no client can discover), and
+// start without: public issuer metadata and authentication remain required.
+// Static OAuth configuration may be fully absent for DCR-only operation, and
 // auth must be enabled because the authorize/consent surface authenticates
 // console users — the alternative would be minting observability tokens for
 // anyone.
@@ -145,10 +145,10 @@ func validateObservabilityGatewayConfig(cfg *cliConfig) error {
 	if cfg.MCPPublicURL == "" {
 		return errors.New("observability-gateway: --mcp-public-url is required; it is embedded in RFC 9728/8414 discovery metadata and used as the minted token's issuer")
 	}
-	if cfg.MCPOAuthClientID == "" {
+	if cfg.MCPOAuthClientID == "" && len(cfg.MCPOAuthRedirectURIs) > 0 {
 		return errors.New("observability-gateway: --mcp-oauth-client-id is required")
 	}
-	if len(cfg.MCPOAuthRedirectURIs) == 0 {
+	if len(cfg.MCPOAuthRedirectURIs) == 0 && cfg.MCPOAuthClientID != "" {
 		return errors.New("observability-gateway: --mcp-oauth-redirect-uris is required")
 	}
 	if !cfg.AuthEnabled {
@@ -250,23 +250,24 @@ func buildObservabilityServer(ctx context.Context, cfg *cliConfig, authCfg auth.
 		auditor = audit.NewLogAuditor()
 	}
 	srv, err := mcp.NewServer(mcp.ServerConfig{
-		Registry:                registry,
-		Authenticator:           authenticator,
-		ConsoleAuthenticator:    consoleAuthenticator,
-		Confirmer:               mcp.NewConfirmer(cacheClient, mcpConfirmationTTL),
-		Auditor:                 auditor,
-		Cache:                   cacheClient,
-		Secret:                  authCfg.TokenSecret,
-		PublicURL:               cfg.MCPPublicURL,
-		ClientID:                cfg.MCPOAuthClientID,
-		RedirectURIs:            cfg.MCPOAuthRedirectURIs,
-		AccessTTL:               cfg.MCPAccessTokenTTL,
-		RefreshTTL:              cfg.MCPRefreshTokenTTL,
-		RoutePrefix:             observabilityGatewayRoutePrefix,
-		ProtocolPath:            observabilityGatewayRoutePrefix + "/mcp",
-		Audience:                mcp.ObservabilityTokenAudience,
-		SupportedScopes:         []mcp.Scope{mcp.ScopeObserve},
-		DisableConsoleResources: true,
+		Registry:                     registry,
+		Authenticator:                authenticator,
+		ConsoleAuthenticator:         consoleAuthenticator,
+		Confirmer:                    mcp.NewConfirmer(cacheClient, mcpConfirmationTTL),
+		Auditor:                      auditor,
+		Cache:                        cacheClient,
+		Secret:                       authCfg.TokenSecret,
+		PublicURL:                    cfg.MCPPublicURL,
+		ClientID:                     cfg.MCPOAuthClientID,
+		RedirectURIs:                 cfg.MCPOAuthRedirectURIs,
+		AllowDynamicRegistrationOnly: cfg.MCPOAuthClientID == "" && len(cfg.MCPOAuthRedirectURIs) == 0,
+		AccessTTL:                    cfg.MCPAccessTokenTTL,
+		RefreshTTL:                   cfg.MCPRefreshTokenTTL,
+		RoutePrefix:                  observabilityGatewayRoutePrefix,
+		ProtocolPath:                 observabilityGatewayRoutePrefix + "/mcp",
+		Audience:                     mcp.ObservabilityTokenAudience,
+		SupportedScopes:              []mcp.Scope{mcp.ScopeObserve},
+		DisableConsoleResources:      true,
 		// Query tool results are large, highly repetitive JSON; level 3 keeps
 		// most of the ratio while cutting the flate CPU several-fold at the
 		// gateway's fan-out rates.

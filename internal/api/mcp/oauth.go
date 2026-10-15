@@ -1043,9 +1043,8 @@ func (s *Server) supportsScope(sc Scope) bool {
 }
 
 // clientIDAllowed reports whether clientID may use this authorization
-// server. NewServer requires ServerConfig.ClientID to be non-empty, so
-// s.clientID is always configured here — an empty or mismatched clientID
-// is always rejected; there is no "unconfigured, skip the check" case.
+// server. A DCR-only server has no static client: only IDs created through
+// registration pass. An empty ID is always rejected, regardless of mode.
 func (s *Server) clientIDAllowed(clientID string) bool {
 	if clientID == "" {
 		return false

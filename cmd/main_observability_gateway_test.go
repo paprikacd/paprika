@@ -15,10 +15,41 @@ import (
 
 	"github.com/benebsworth/paprika/internal/api/auth"
 	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/cache"
 	"github.com/benebsworth/paprika/internal/observabilitygateway"
 )
 
 const usageTestIssuer = "https://paprika.example"
+
+func TestObservabilityGatewayAllowsDCRWithoutStaticClient(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		client    string
+		redirects []string
+		wantError bool
+	}{
+		{name: "dynamic only"},
+		{name: "complete static pair", client: "existing-client", redirects: []string{"http://127.0.0.1/callback"}},
+		{name: "client only", client: "partial", wantError: true},
+		{name: "redirect only", redirects: []string{"http://127.0.0.1/callback"}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &cliConfig{MCPPublicURL: usageTestIssuer, AuthEnabled: true, MCPOAuthClientID: tc.client, MCPOAuthRedirectURIs: tc.redirects}
+			err := validateObservabilityGatewayConfig(cfg)
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			store, err := cache.New(t.Context(), cache.Config{Backend: cache.BackendMemory})
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, store.Close()) })
+			srv, _, _, err := buildObservabilityServer(t.Context(), cfg, auth.Config{Enabled: true, TokenSecret: []byte("test-observe-startup-secret")}, nil, store)
+			require.NoError(t, err)
+			require.NotNil(t, srv)
+		})
+	}
+}
 
 // usageTestToken mints a paprika-observability token the way the gateway's
 // own OAuth flow would: audience-bound to this surface, issued by the public
