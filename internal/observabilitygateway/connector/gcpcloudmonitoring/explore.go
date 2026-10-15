@@ -39,6 +39,7 @@ import (
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/gcpcommon"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
 )
 
 // exploreMaxPages bounds every metricDescriptors walk so one project with
@@ -129,7 +130,7 @@ func exploreMetricNames(ctx context.Context, client *http.Client, cfg gcpcommon.
 	if prefix != "" {
 		filter = fmt.Sprintf(`metric.type = starts_with(%q)`, prefix)
 	}
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, descriptorPageSize(limit), func(page descriptorPage) bool {
 		for _, raw := range page.Descriptors {
 			var head descriptorType
 			if err := json.Unmarshal(raw, &head); err == nil && head.Type != "" {
@@ -159,7 +160,11 @@ func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.C
 	} else if prefix != "" {
 		filter = fmt.Sprintf(`metric.type = starts_with(%q)`, prefix)
 	}
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
+	pageSize := descriptorPageSize(limit)
+	if metric != "" {
+		pageSize = 1
+	}
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, pageSize, func(page descriptorPage) bool {
 		for _, raw := range page.Descriptors {
 			var labels struct {
 				Labels []struct {
@@ -192,7 +197,7 @@ func exploreLabelNames(ctx context.Context, client *http.Client, cfg gcpcommon.C
 func exploreMetricMetadata(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, metric string) *connector.ExploreResult {
 	filter := fmt.Sprintf(`metric.type = %q`, metric)
 	var match json.RawMessage
-	err := walkDescriptorPages(ctx, client, cfg, project, filter, func(page descriptorPage) bool {
+	err := walkDescriptorPages(ctx, client, cfg, project, filter, 1, func(page descriptorPage) bool {
 		for _, raw := range page.Descriptors {
 			var head descriptorType
 			if err := json.Unmarshal(raw, &head); err != nil {
@@ -221,9 +226,9 @@ func exploreMetricMetadata(ctx context.Context, client *http.Client, cfg gcpcomm
 // stopping early when visit returns false, when the token runs out, or after
 // exploreMaxPages pages. Backend and decode errors return wrapped for
 // exploreError to classify.
-func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, filter string, visit func(descriptorPage) bool) error {
+func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon.Config, project, filter string, pageSize int, visit func(descriptorPage) bool) error {
 	params := url.Values{
-		"pageSize": []string{strconv.Itoa(maxLimit)},
+		"pageSize": []string{strconv.Itoa(descriptorPageSize(pageSize))},
 		"filter":   []string{projectFilter(project, filter)},
 	}
 	token := ""
@@ -263,6 +268,13 @@ func walkDescriptorPages(ctx context.Context, client *http.Client, cfg gcpcommon
 		seenTokens[token] = true
 	}
 	return errors.New("schema discovery exceeded its pagination bound")
+}
+
+// Descriptor count is a server-side bound, distinct from the number of
+// label keys projected from each descriptor. Exact metric lookups use one;
+// broader discovery uses the caller's bounded requested result limit.
+func descriptorPageSize(limit int) int {
+	return httphelp.ClampLimit(limit, defaultLimit, maxLimit)
 }
 
 // sortedKeys returns the set's keys sorted, capped at limit when positive so

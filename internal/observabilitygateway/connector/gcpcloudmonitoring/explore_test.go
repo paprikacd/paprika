@@ -96,7 +96,7 @@ func TestExploreMetricNamesPrefixFilterOnWire(t *testing.T) {
 
 	res, err := CloudMonitoring{}.Explore(context.Background(), exploreRequest(
 		testConfig(t, fake.server.URL), creds, connector.ExploreMetricNames,
-		func(req *connector.ExploreRequest) { req.Prefix = "custom." }))
+		func(req *connector.ExploreRequest) { req.Prefix = "custom."; req.Limit = 10 }))
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
 
@@ -110,6 +110,7 @@ func TestExploreMetricNamesPrefixFilterOnWire(t *testing.T) {
 	got := fake.last(t)
 	require.Equal(t, "/v3/projects/test-proj/metricDescriptors", got.path)
 	require.Equal(t, `project = "test-proj" AND (metric.type = starts_with("custom."))`, got.query.Get("filter"))
+	require.Equal(t, "10", got.query.Get("pageSize"))
 }
 
 func TestExploreMetricNamesNoPrefix(t *testing.T) {
@@ -140,13 +141,14 @@ func TestExploreLabelNamesUnion(t *testing.T) {
 
 	res, err := CloudMonitoring{}.Explore(context.Background(), exploreRequest(
 		testConfig(t, fake.server.URL), creds, connector.ExploreLabelNames,
-		func(req *connector.ExploreRequest) { req.Prefix = "custom." }))
+		func(req *connector.ExploreRequest) { req.Prefix = "custom."; req.Limit = 10 }))
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
 
 	var decoded envelopeData
 	require.NoError(t, json.Unmarshal(res.Data, &decoded))
 	require.Equal(t, []string{"env", "pod", "region"}, decoded.Data)
+	require.Equal(t, "10", fake.last(t).query.Get("pageSize"))
 }
 
 func TestExploreLabelNamesScopedToMetric(t *testing.T) {
@@ -165,6 +167,7 @@ func TestExploreLabelNamesScopedToMetric(t *testing.T) {
 	require.Equal(t, []string{"env", "region"}, decoded.Data)
 
 	require.Equal(t, `project = "test-proj" AND (metric.type = "custom.googleapis.com/bar")`, fake.last(t).query.Get("filter"))
+	require.Equal(t, "1", fake.last(t).query.Get("pageSize"))
 }
 
 func TestExploreMetricMetadataRoundTrip(t *testing.T) {
@@ -193,6 +196,33 @@ func TestExploreMetricMetadataRoundTrip(t *testing.T) {
 	require.Equal(t, "1", decoded.Unit)
 	require.Equal(t, "GAUGE", decoded.MetricKind)
 	require.Equal(t, "DOUBLE", decoded.ValueType)
+	require.Equal(t, "1", fake.last(t).query.Get("pageSize"))
+}
+
+func TestSmallDescriptorPagesStopAtRequestedResultLimit(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	fake := newFakeGCP(t, false, func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		require.Equal(t, "2", r.URL.Query().Get("pageSize"))
+		require.Equal(t, `project = "test-proj" AND (metric.type = starts_with("custom."))`, r.URL.Query().Get("filter"))
+		if n == 1 {
+			require.Empty(t, r.URL.Query().Get("pageToken"))
+			fmt.Fprint(w, `{"metricDescriptors":[{"type":"custom.one"}],"nextPageToken":"second-page"}`)
+			return
+		}
+		require.EqualValues(t, 2, n, "the result limit must stop before a third page")
+		require.Equal(t, "second-page", r.URL.Query().Get("pageToken"))
+		fmt.Fprint(w, `{"metricDescriptors":[{"type":"custom.two"}],"nextPageToken":"unused-third-page"}`)
+	})
+	res, err := CloudMonitoring{}.Explore(context.Background(), connector.ExploreRequest{
+		Kind: connector.ExploreMetricNames, Prefix: "custom.", Limit: 2,
+		Config: testConfig(t, fake.server.URL), Credentials: fakeServiceAccountCreds(t, fake.server.URL+"/token", "test-proj"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, connector.StateOK, res.State)
+	require.EqualValues(t, 2, calls.Load())
+	require.JSONEq(t, `{"status":"success","data":["custom.one","custom.two"],"warnings":["result limit reached; narrow the prefix to discover more names"]}`, string(res.Data))
 }
 
 func TestExploreLabelValuesNotAvailable(t *testing.T) {
