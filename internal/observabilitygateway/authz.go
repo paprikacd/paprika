@@ -62,7 +62,7 @@ func (b *authorizedBackend) ListProviders(ctx context.Context) ([]ProviderInfo, 
 	}
 	providers, err := b.backend.ListProviders(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list authorized observability providers: %w", err)
 	}
 	visible := make([]ProviderInfo, 0, len(providers))
 	for _, provider := range providers {
@@ -73,18 +73,28 @@ func (b *authorizedBackend) ListProviders(ctx context.Context) ([]ProviderInfo, 
 	return visible, nil
 }
 
+//nolint:gocritic // QueryRequest travels by value to satisfy the shared Backend interface.
 func (b *authorizedBackend) Query(ctx context.Context, provider string, req connector.QueryRequest) (*connector.QueryResult, error) {
 	if err := b.authorize(ctx, provider); err != nil {
 		return nil, err
 	}
-	return b.backend.Query(ctx, provider, req)
+	result, err := b.backend.Query(ctx, provider, req)
+	if err != nil {
+		return nil, fmt.Errorf("query authorized observability provider: %w", err)
+	}
+	return result, nil
 }
 
+//nolint:gocritic // ExploreRequest travels by value to satisfy the shared Backend interface.
 func (b *authorizedBackend) Explore(ctx context.Context, provider string, req connector.ExploreRequest) (*connector.ExploreResult, error) {
 	if err := b.authorize(ctx, provider); err != nil {
 		return nil, err
 	}
-	return b.backend.Explore(ctx, provider, req)
+	result, err := b.backend.Explore(ctx, provider, req)
+	if err != nil {
+		return nil, fmt.Errorf("explore authorized observability provider: %w", err)
+	}
+	return result, nil
 }
 
 // gatewayError is the RFC 6749-shaped error body every HTTP surface of this

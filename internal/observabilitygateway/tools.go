@@ -34,7 +34,7 @@ const textPreviewMaxBytes = 16 << 10
 func providerToolPreview(value any, state connector.State) (*sdkmcp.CallToolResult, error) {
 	result, err := mcp.PreviewToolResult(value, textPreviewMaxBytes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("render observability provider result: %w", err)
 	}
 	result.IsError = state != connector.StateOK
 	return result, nil
@@ -104,22 +104,41 @@ func decodeArgs(raw json.RawMessage) (toolArgs, error) {
 	if m == nil {
 		m = map[string]any{}
 	}
-	if rawLimit, present := m["limit"]; present {
-		limit, ok := rawLimit.(float64)
-		if !ok || math.Trunc(limit) != limit || limit < 1 || limit > maxQueryResults {
-			return nil, errors.New("limit must be an integer between 1 and 1000")
-		}
+	if err := validateToolLimit(toolArgs(m)); err != nil {
+		return nil, err
 	}
-	if rawToken, present := m["page_token"]; present {
-		token, ok := rawToken.(string)
-		if !ok || len(token) > 4096 {
-			return nil, errors.New("page_token must be a string of at most 4096 bytes")
-		}
-		if token != "" && (toolArgs(m).string("start") == "" || toolArgs(m).string("end") == "") {
-			return nil, errors.New("page_token requires explicit start and end matching the original query")
-		}
+	if err := validateToolPageToken(toolArgs(m)); err != nil {
+		return nil, err
 	}
+
 	return toolArgs(m), nil
+}
+
+func validateToolLimit(in toolArgs) error {
+	rawLimit, present := in["limit"]
+	if !present {
+		return nil
+	}
+	limit, ok := rawLimit.(float64)
+	if !ok || math.Trunc(limit) != limit || limit < 1 || limit > maxQueryResults {
+		return errors.New("limit must be an integer between 1 and 1000")
+	}
+	return nil
+}
+
+func validateToolPageToken(in toolArgs) error {
+	rawToken, present := in["page_token"]
+	if !present {
+		return nil
+	}
+	token, ok := rawToken.(string)
+	if !ok || len(token) > connector.MaxPageTokenBytes {
+		return errors.New("page_token must be a string of at most 4096 bytes")
+	}
+	if token != "" && (in.string("start") == "" || in.string("end") == "") {
+		return errors.New("page_token requires explicit start and end matching the original query")
+	}
+	return nil
 }
 
 func (a toolArgs) string(key string) string {
@@ -313,59 +332,20 @@ func getObservabilityProviderTool(b Backend) mcp.Tool {
 }
 
 func queryMetricsTool(b Backend) mcp.Tool {
-	return mcp.Tool{
-		Name:        "query_metrics",
-		Description: "Run a metrics query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).",
-		Scope:       mcp.ScopeObserve,
-		InputSchema: json.RawMessage(`{
-			"type":"object",
-			"properties":{
-				"provider":{"type":"string"},
-				"query":{"type":"string"},
-				"start":{"type":"string"},
-				"end":{"type":"string"},
-				"limit":{"type":"integer","minimum":1,"maximum":1000,"default":100},
-				"page_token":{"type":"string","maxLength":4096,"description":"GCP continuation token; resend the original query, start, end and limit unchanged"}
-			},
-			"required":["provider","query"],
-			"additionalProperties":false
-		}`),
-		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
-			in, err := decodeArgs(args)
-			if err != nil {
-				return nil, connect.NewError(connect.CodeInvalidArgument, err)
-			}
-			provider, err := requiredString(in, "query_metrics", "provider")
-			if err != nil {
-				return nil, err
-			}
-			query, err := requiredString(in, "query_metrics", "query")
-			if err != nil {
-				return nil, err
-			}
-			window, err := queryWindow(in)
-			if err != nil {
-				return nil, err
-			}
-			result, err := b.Query(ctx, provider, connector.QueryRequest{
-				Signal:    connector.SignalMetrics,
-				Query:     query,
-				Range:     window,
-				Limit:     limitArg(in, 100),
-				PageToken: in.string("page_token"),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("query_metrics: %w", err)
-			}
-			return providerToolPreview(queryToolResponse(provider, "metrics", result), result.State)
-		},
-	}
+	return nativeQueryTool(b, connector.SignalMetrics)
 }
 
 func queryLogsTool(b Backend) mcp.Tool {
+	return nativeQueryTool(b, connector.SignalLogs)
+}
+
+// Metrics and logs share the same bounded query contract; only the native
+// signal selects the connector's query language and response label.
+func nativeQueryTool(b Backend, signal connector.Signal) mcp.Tool {
+	name := "query_" + string(signal)
 	return mcp.Tool{
-		Name:        "query_logs",
-		Description: "Run a logs query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).",
+		Name:        name,
+		Description: fmt.Sprintf("Run a %s query in the configured provider's native query language. Read-only; start and end default to the trailing thirty minutes, with a maximum window of 24 hours. Limit defaults to 100 (maximum 1000).", signal),
 		Scope:       mcp.ScopeObserve,
 		InputSchema: json.RawMessage(`{
 			"type":"object",
@@ -385,11 +365,11 @@ func queryLogsTool(b Backend) mcp.Tool {
 			if err != nil {
 				return nil, connect.NewError(connect.CodeInvalidArgument, err)
 			}
-			provider, err := requiredString(in, "query_logs", "provider")
+			provider, err := requiredString(in, name, "provider")
 			if err != nil {
 				return nil, err
 			}
-			query, err := requiredString(in, "query_logs", "query")
+			query, err := requiredString(in, name, "query")
 			if err != nil {
 				return nil, err
 			}
@@ -398,16 +378,16 @@ func queryLogsTool(b Backend) mcp.Tool {
 				return nil, err
 			}
 			result, err := b.Query(ctx, provider, connector.QueryRequest{
-				Signal:    connector.SignalLogs,
+				Signal:    signal,
 				Query:     query,
 				Range:     window,
 				Limit:     limitArg(in, 100),
 				PageToken: in.string("page_token"),
 			})
 			if err != nil {
-				return nil, fmt.Errorf("query_logs: %w", err)
+				return nil, fmt.Errorf("%s: %w", name, err)
 			}
-			return providerToolPreview(queryToolResponse(provider, "logs", result), result.State)
+			return providerToolPreview(queryToolResponse(provider, string(signal), result), result.State)
 		},
 	}
 }

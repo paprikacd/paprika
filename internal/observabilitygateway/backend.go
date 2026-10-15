@@ -188,39 +188,16 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 	defer done()
 	log := logr.FromContextOrDiscard(ctx)
 
-	namespace, name, found := strings.Cut(provider, "/")
-	if !found || namespace == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
-	}
-
-	var cr observabilityv1alpha1.ObservabilityProvider
-	if err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr); err != nil {
-		if contextErr := contextError(ctx); contextErr != nil {
-			return nil, contextErr
-		}
-		if apierrors.IsNotFound(err) {
-			return nil, connect.NewError(connect.CodeNotFound,
-				fmt.Errorf("observability provider %s not found", provider))
-		}
-		return nil, fmt.Errorf("get observability provider %s: %w", provider, err)
-	}
-
-	conn, err := b.connectorFor(cr.Spec.Type)
+	cr, conn, err := b.resolveProvider(ctx, provider)
 	if err != nil {
-		// The webhook's validator is the first line against a bad type;
-		// this is defense in depth for CRs it never saw.
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, err
 	}
-	if req.PageToken != "" && cr.Spec.Type != connector.ProviderGCPCloudLogging && cr.Spec.Type != connector.ProviderGCPCloudMonitoring && cr.Spec.Type != connector.ProviderGCPCloudTrace {
+	if req.PageToken != "" && !supportsQueryPageToken(cr.Spec.Type) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("this provider does not support query page tokens"))
 	}
 
-	credentials, err := b.resolveCredentials(ctx, &cr)
+	credentials, err := b.resolveCredentials(ctx, cr)
 	if err != nil {
-		if contextErr := contextError(ctx); contextErr != nil {
-			return nil, contextErr
-		}
 		return nil, err
 	}
 
@@ -248,13 +225,8 @@ func (b *k8sBackend) Query(ctx context.Context, provider string, req connector.Q
 //
 //nolint:gocritic // req travels by value because the Backend contract says so; ExploreRequest holds only per-call state built fresh by each caller.
 func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector.ExploreRequest) (*connector.ExploreResult, error) {
-	limit, err := boundedLimit(req.Limit, 100)
-	if err != nil {
+	if err := boundExplore(&req); err != nil {
 		return nil, err
-	}
-	req.Limit = limit
-	if len(req.Metric) > maxQueryBytes || len(req.Label) > maxQueryBytes || len(req.Prefix) > maxQueryBytes {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exploration filter exceeds its size limit"))
 	}
 	ctx, done, err := b.executionBudget().begin(ctx)
 	if err != nil {
@@ -263,27 +235,9 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 	defer done()
 	log := logr.FromContextOrDiscard(ctx)
 
-	namespace, name, found := strings.Cut(provider, "/")
-	if !found || namespace == "" || name == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument,
-			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
-	}
-
-	var cr observabilityv1alpha1.ObservabilityProvider
-	if err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr); err != nil {
-		if contextErr := contextError(ctx); contextErr != nil {
-			return nil, contextErr
-		}
-		if apierrors.IsNotFound(err) {
-			return nil, connect.NewError(connect.CodeNotFound,
-				fmt.Errorf("observability provider %s not found", provider))
-		}
-		return nil, fmt.Errorf("get observability provider %s: %w", provider, err)
-	}
-
-	conn, err := b.connectorFor(cr.Spec.Type)
+	cr, conn, err := b.resolveProvider(ctx, provider)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, err
 	}
 	explorer, ok := conn.(connector.Explorer)
 	if !ok {
@@ -293,11 +247,8 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		}, nil
 	}
 
-	credentials, err := b.resolveCredentials(ctx, &cr)
+	credentials, err := b.resolveCredentials(ctx, cr)
 	if err != nil {
-		if contextErr := contextError(ctx); contextErr != nil {
-			return nil, contextErr
-		}
 		return nil, err
 	}
 
@@ -315,6 +266,54 @@ func (b *k8sBackend) Explore(ctx context.Context, provider string, req connector
 		return nil, contextErr
 	}
 	return finishExplore(log, provider, cr.Spec.Type, result, err)
+}
+
+// resolveProvider keeps query and discovery resolution consistent: callers
+// share reference validation, cancellation reporting and missing-provider codes.
+func (b *k8sBackend) resolveProvider(ctx context.Context, provider string) (*observabilityv1alpha1.ObservabilityProvider, connector.Connector, error) {
+	namespace, name, found := strings.Cut(provider, "/")
+	if !found || namespace == "" || name == "" || strings.Contains(name, "/") {
+		return nil, nil, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("provider must be %q, got %q", "namespace/name", provider))
+	}
+	var cr observabilityv1alpha1.ObservabilityProvider
+	readErr := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cr)
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, nil, contextErr
+	}
+	if apierrors.IsNotFound(readErr) {
+		return nil, nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("observability provider %s not found", provider))
+	}
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("get observability provider %s: %w", provider, readErr)
+	}
+	conn, err := b.connectorFor(cr.Spec.Type)
+	if err != nil {
+		// Admission is the first defense; old CRs still fail closed here.
+		return nil, nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return &cr, conn, nil
+}
+
+func supportsQueryPageToken(providerType string) bool {
+	switch providerType {
+	case connector.ProviderGCPCloudLogging, connector.ProviderGCPCloudMonitoring, connector.ProviderGCPCloudTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+func boundExplore(req *connector.ExploreRequest) error {
+	limit, err := boundedLimit(req.Limit, 100)
+	if err != nil {
+		return err
+	}
+	req.Limit = limit
+	if len(req.Metric) > maxQueryBytes || len(req.Label) > maxQueryBytes || len(req.Prefix) > maxQueryBytes {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("exploration filter exceeds its size limit"))
+	}
+	return nil
 }
 
 // finishExplore maps one Explorer outcome onto what Backend.Explore returns,
@@ -383,13 +382,8 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 	if namespace == "" {
 		namespace = cr.Namespace
 	}
-	// A shared credential reference must not turn access to a provider in one
-	// namespace into access to another tenant's Secret through the gateway SA.
-	if namespace != cr.Namespace && b.credentialAuthorizer != nil {
-		principal := auth.PrincipalFromContext(ctx)
-		if principal == nil || b.credentialAuthorizer.Authorize(ctx, principal, auth.ActionRead, auth.ResourceObservabilityProviders, namespace, "") != nil {
-			return nil, connect.NewError(connect.CodePermissionDenied, errors.New("observability credential namespace access is not authorized"))
-		}
+	if err := b.authorizeCredentialNamespace(ctx, cr.Namespace, namespace); err != nil {
+		return nil, err
 	}
 	key := ref.Key
 	if key == "" {
@@ -397,6 +391,9 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 	}
 	var secret corev1.Secret
 	err := b.client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: ref.Name}, &secret)
+	if contextErr := contextError(ctx); contextErr != nil {
+		return nil, contextErr
+	}
 	if apierrors.IsNotFound(err) {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			fmt.Errorf("credentials secret %s/%s not found", namespace, ref.Name))
@@ -405,11 +402,24 @@ func (b *k8sBackend) resolveCredentials(ctx context.Context, cr *observabilityv1
 		return nil, fmt.Errorf("get credentials secret %s/%s: %w", namespace, ref.Name, err)
 	}
 	credentials, present := secret.Data[key]
-	if !present || len(strings.TrimSpace(string(credentials))) == 0 {
+	if !present || strings.TrimSpace(string(credentials)) == "" {
 		return nil, connect.NewError(connect.CodeFailedPrecondition,
 			errors.New("configured credentials secret key is missing or empty"))
 	}
 	return credentials, nil
+}
+
+// A shared reference must not turn provider access in one namespace into
+// access to another tenant's Secret through the gateway service account.
+func (b *k8sBackend) authorizeCredentialNamespace(ctx context.Context, providerNamespace, secretNamespace string) error {
+	if secretNamespace == providerNamespace || b.credentialAuthorizer == nil {
+		return nil
+	}
+	principal := auth.PrincipalFromContext(ctx)
+	if principal == nil || b.credentialAuthorizer.Authorize(ctx, principal, auth.ActionRead, auth.ResourceObservabilityProviders, secretNamespace, "") != nil {
+		return connect.NewError(connect.CodePermissionDenied, errors.New("observability credential namespace access is not authorized"))
+	}
+	return nil
 }
 
 // sentinelState maps an error a connector returned without a result onto the

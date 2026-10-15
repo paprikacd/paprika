@@ -19,17 +19,17 @@ import (
 // fakeBackend is a Backend stub recording the calls the tools make, so tool
 // behaviour is asserted without a client or a live connector.
 type fakeBackend struct {
-	providers      []ProviderInfo
-	listErr        error
-	queryResult    *connector.QueryResult
-	queryErr       error
-	exploreResult  *connector.ExploreResult
-	exploreErr     error
-	lastProvider   string
-	lastReq        connector.QueryRequest
-	lastExplore    connector.ExploreRequest
-	listCalls      int
-	exploreCalls   int
+	providers     []ProviderInfo
+	listErr       error
+	queryResult   *connector.QueryResult
+	queryErr      error
+	exploreResult *connector.ExploreResult
+	exploreErr    error
+	lastProvider  string
+	lastReq       connector.QueryRequest
+	lastExplore   connector.ExploreRequest
+	listCalls     int
+	exploreCalls  int
 }
 
 func (f *fakeBackend) ListProviders(_ context.Context) ([]ProviderInfo, error) {

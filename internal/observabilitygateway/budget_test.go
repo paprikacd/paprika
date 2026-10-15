@@ -117,7 +117,7 @@ func TestBoundQueryRejectsUnboundedWork(t *testing.T) {
 		"too many":                   {Limit: maxQueryResults + 1},
 		"negative":                   {Limit: -1},
 		"expression":                 {Query: strings.Repeat("x", maxQueryBytes+1)},
-		"token without stable range": {PageToken: "opaque-next-page"},
+		"token without stable range": {PageToken: "opaque-next-page"}, //nolint:gosec // G101: a fixed noncredential pagination fixture.
 		"oversized token":            {PageToken: strings.Repeat("x", 4097)},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -149,7 +149,7 @@ func TestUnsupportedProviderRejectsPageTokenBeforeCredentialRead(t *testing.T) {
 		cr.Spec.CredentialsSecretRef = &observabilityv1alpha1.CredentialsSecretRef{Name: "must-not-be-read"}
 	}))
 	end := time.Now()
-	_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up", PageToken: "opaque-next-page", Range: connector.TimeRange{Start: end.Add(-time.Minute), End: end}})
+	_, err := b.Query(context.Background(), "obs/prom", connector.QueryRequest{Query: "up", PageToken: "opaque-next-page", Range: connector.TimeRange{Start: end.Add(-time.Minute), End: end}}) //nolint:gosec // G101: a fixed noncredential pagination fixture.
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	require.Nil(t, stub.gotCtx)
 }
