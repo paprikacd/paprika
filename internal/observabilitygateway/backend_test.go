@@ -116,7 +116,13 @@ func (s *stubConnector) Query(ctx context.Context, req connector.QueryRequest) (
 func newStubBackend(t *testing.T, objects ...runtime.Object) (*k8sBackend, *stubConnector) {
 	t.Helper()
 	stub := &stubConnector{result: &connector.QueryResult{State: connector.StateOK, Data: json.RawMessage(`{"ok":true}`)}}
-	cl := fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithRuntimeObjects(objects...).Build()
+	// The fake tracker sets ResourceVersion on its input objects. Give each
+	// backend private fixtures so parallel cases can safely reuse templates.
+	fixtures := make([]runtime.Object, len(objects))
+	for i, object := range objects {
+		fixtures[i] = object.DeepCopyObject()
+	}
+	cl := fake.NewClientBuilder().WithScheme(newBackendScheme(t)).WithRuntimeObjects(fixtures...).Build()
 	return &k8sBackend{
 		client: cl,
 		newConnector: func(providerType string) (connector.Connector, error) {
