@@ -52,7 +52,8 @@ func TestExploreLabelValuesEnumeratesLiveInstances(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, `{"status":"success","data":["core-node","worker-node"]}`, string(res.Data))
-	require.Len(t, fake.queries, 1)
+	queries, _ := fake.recordedRequests()
+	require.Len(t, queries, 1)
 }
 
 func TestExploreLabelValuesForInstanceID(t *testing.T) {
@@ -83,7 +84,8 @@ func TestExploreUnknownLabelIsNotAvailable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateNotAvailable, res.State)
 	require.Equal(t, reasonNotEnumerated, res.Reason)
-	require.Empty(t, fake.queries)
+	queries, _ := fake.recordedRequests()
+	require.Empty(t, queries)
 }
 
 func TestExploreMetricMetadata(t *testing.T) {

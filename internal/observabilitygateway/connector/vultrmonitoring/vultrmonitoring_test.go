@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,16 +21,25 @@ import (
 // assumed.
 type fakeVultrAPI struct {
 	srv     *httptest.Server
+	mu      sync.Mutex
 	queries []string
 	auths   []string
+}
+
+func (f *fakeVultrAPI) recordedRequests() (queries, auths []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.queries), slices.Clone(f.auths)
 }
 
 func newFakeVultrAPI(t *testing.T, accountBandwidth, instances, instanceBandwidth string) *fakeVultrAPI {
 	t.Helper()
 	fake := &fakeVultrAPI{}
 	fake.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fake.mu.Lock()
 		fake.queries = append(fake.queries, r.URL.RequestURI())
 		fake.auths = append(fake.auths, r.Header.Get("Authorization"))
+		fake.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v2/account/bandwidth":
@@ -85,8 +96,9 @@ func TestQueryAccountBandwidth(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateOK, res.State)
 	require.JSONEq(t, cannedAccountBandwidth, string(res.Data))
-	require.Equal(t, []string{"/v2/account/bandwidth"}, fake.queries)
-	require.Equal(t, "Bearer test-api-key", fake.auths[0])
+	queries, auths := fake.recordedRequests()
+	require.Equal(t, []string{"/v2/account/bandwidth"}, queries)
+	require.Equal(t, []string{"Bearer test-api-key"}, auths)
 }
 
 func TestQueryEmptyQueryIsProbe(t *testing.T) {
@@ -130,7 +142,9 @@ func TestQueryInstanceBandwidthFanout(t *testing.T) {
 	require.Equal(t, "abc-1", body.Series[0].InstanceID)
 	require.Equal(t, [][]interface{}{{"2026-10-14", float64(1000)}, {"2026-10-15", float64(3000)}}, body.Series[0].Points)
 	// One instances list read + one bandwidth read per instance.
-	require.Len(t, fake.queries, 3)
+	queries, auths := fake.recordedRequests()
+	require.Len(t, queries, 3)
+	require.Equal(t, []string{"Bearer test-api-key", "Bearer test-api-key", "Bearer test-api-key"}, auths)
 }
 
 func TestQueryUnknownMetricIsACallerBug(t *testing.T) {
@@ -160,7 +174,8 @@ func TestQueryMissingCredentialsReportsNotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, connector.StateNotConfigured, res.State)
 	require.Equal(t, reasonCredentials, res.Reason)
-	require.Empty(t, fake.queries)
+	queries, _ := fake.recordedRequests()
+	require.Empty(t, queries)
 }
 
 func TestQueryBackendErrorsBecomeStates(t *testing.T) {
