@@ -8,9 +8,6 @@
 {{- if ne .Values.deploymentMode "split" }}
 {{- fail "observabilityGateway.enabled=true requires deploymentMode: split. The gateway is its own microservice Deployment with its own MCP/OAuth surface; the monolith manager does not render it, which would otherwise be a silent no-op." }}
 {{- end }}
-{{- if not .Values.mcp.enabled }}
-{{- fail "observabilityGateway.enabled=true requires mcp.enabled: the gateway mints and verifies OAuth tokens with the deployment's MCP configuration (public URL, static client, TTLs) and refuses to start without it" }}
-{{- end }}
 {{- if not .Values.auth.enabled }}
 {{- fail "observabilityGateway.enabled=true requires auth.enabled: the gateway's authorize/consent surface authenticates console users; unauthenticated it would mint observability tokens for anyone" }}
 {{- end }}
@@ -23,11 +20,8 @@
 {{- if and (not $gwHasTokenSecret) (eq (len .Values.observabilityGateway.extraEnvFrom) 0) }}
 {{- fail "observabilityGateway.enabled=true requires a non-empty auth token secret: set PAPRIKA_AUTH_TOKEN_SECRET via observabilityGateway.extraEnv or observabilityGateway.extraEnvFrom (the gateway signs and verifies paprika-observability tokens with the same HMAC secret the api-server's self-signed authenticator uses)" }}
 {{- end }}
-{{- if not .Values.mcp.oauth.clientId }}
-{{- fail "observabilityGateway.enabled=true requires mcp.oauth.clientId (shared with the api-server's MCP surface)" }}
-{{- end }}
-{{- if eq (len .Values.mcp.oauth.redirectUris) 0 }}
-{{- fail "observabilityGateway.enabled=true requires mcp.oauth.redirectUris (shared with the api-server's MCP surface)" }}
+{{- if ne (empty .Values.mcp.oauth.clientId) (empty .Values.mcp.oauth.redirectUris) }}
+{{- fail "observabilityGateway static OAuth clientId and redirectUris must both be configured or both omitted for dynamic registration only" }}
 {{- end }}
 {{- if not .Values.mcp.publicURL }}
 {{- fail "observabilityGateway.enabled=true requires mcp.publicURL: the gateway's discovery metadata, token issuer, and consent redirects are all derived from it" }}
@@ -113,8 +107,10 @@ spec:
         # carry the paprika-observability audience, not paprika-mcp.
         - --mcp-access-token-ttl={{ .Values.mcp.accessTokenTTL }}
         - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
+        {{- if .Values.mcp.oauth.clientId }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        {{- end }}
         {{- range .Values.observabilityGateway.args }}
         - {{ . }}
         {{- end }}

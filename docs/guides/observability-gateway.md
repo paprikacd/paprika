@@ -242,10 +242,16 @@ helm upgrade paprika-e2e charts/chart/ \
 ```
 
 Preconditions enforced at render time (`helm template` fails otherwise):
-`deploymentMode: split`, `mcp.enabled`, `auth.enabled`, a non-empty
+`deploymentMode: split`, `auth.enabled`, a non-empty
 `PAPRIKA_AUTH_TOKEN_SECRET` via `observabilityGateway.extraEnv(From)`, and
-`mcp.oauth.clientId` / `mcp.oauth.redirectUris` / `mcp.publicURL`. Public
-exposure reuses the api-server's Gateway/hostname:
+`mcp.publicURL`. A preconfigured OAuth client is optional for the gateway: leave
+both `mcp.oauth.clientId` and `mcp.oauth.redirectUris` empty for dynamic
+registration only, or provide both for an approved static client. Partial
+configuration is rejected. Rendering and DCR-only startup configure no persistent
+client; native OAuth sign-in and client-access approval are separate actions.
+The shared `mcp` configuration fields do not require `mcp.enabled`: that switch
+controls the independent fleet MCP surface and may remain disabled.
+Public exposure reuses the api-server's Gateway/hostname:
 
 ```yaml
 observabilityGateway:
@@ -257,9 +263,9 @@ observabilityGateway:
 Verify:
 
 ```sh
-curl -s https://paprika.benebsworth.com/observe/.well-known/oauth-protected-resource | jq .
+curl -s https://paprika.benebsworth.com/.well-known/oauth-protected-resource/observe/mcp | jq .
 # { "resource": "https://paprika.benebsworth.com/observe/mcp",
-#   "authorization_servers": ["https://paprika.benebsworth.com"],
+#   "authorization_servers": ["https://paprika.benebsworth.com/observe"],
 #   "scopes_supported": ["paprika:observe"] }
 ```
 

@@ -63,6 +63,35 @@ assert len(provenance["sourceCommit"]) == 40
 PY
 rg -q -- '--atomic --wait' "$work/private-command"
 rg -q -- '--kube-context synthetic-offline-context' "$work/private-command"
+grep -Eq -- '--mcp-oauth-client-id=synthetic-render-client$' "$work/private/manifests.yaml"
+grep -Eq -- '--mcp-oauth-redirect-uris=http://localhost:8791/callback$' "$work/private/manifests.yaml"
+cat > "$work/dcr-only.yaml" <<'YAML'
+mcp:
+  enabled: false
+  oauth:
+    clientId: ""
+    redirectUris: []
+YAML
+render --values "$work/dcr-only.yaml" --output-dir "$work/dcr-only" > "$work/dcr-only-command"
+if grep -Eq -- '--mcp-enabled=true|--mcp-oauth-(client-id|redirect-uris)=' "$work/dcr-only/manifests.yaml"; then
+  echo 'DCR-only add-on unexpectedly enabled fleet MCP or configured a static OAuth client' >&2; exit 1
+fi
+for partial in 'clientId: ""' 'redirectUris: []'; do
+  printf 'mcp:\n  oauth:\n    %s\n' "$partial" > "$work/partial-oauth.yaml"
+  if render --values "$work/partial-oauth.yaml" --output-dir "$work/partial-oauth" > "$work/partial-oauth-error" 2>&1; then
+    echo 'Add-on accepted a partial static OAuth client configuration' >&2; exit 1
+  fi
+  grep -Fq 'must both be configured or both omitted' "$work/partial-oauth-error"
+done
+for invalid in auth.enabled=false mcp.publicURL=; do
+  case "$invalid" in
+    auth.enabled=false) printf 'auth: {enabled: false}\n' > "$work/invalid-auth.yaml" ;;
+    mcp.publicURL=) printf 'mcp: {publicURL: ""}\n' > "$work/invalid-auth.yaml" ;;
+  esac
+  if render --values "$work/dcr-only.yaml" --values "$work/invalid-auth.yaml" --output-dir "$work/invalid-auth" > "$work/error" 2>&1; then
+    echo 'DCR-only add-on accepted missing authentication or public URL' >&2; exit 1
+  fi
+done
 if "$HELM_BIN" template other-release "$work/private/chart" --namespace paprika-system > "$work/wrong-release" 2>&1; then
   echo 'Frozen chart accepted another release identity' >&2; exit 1
 fi

@@ -15,6 +15,17 @@ existing identity without granting it permissions. Disable
 `observabilityGateway.discovery.enabled` to avoid starting the Service discovery
 writer when providers are installed explicitly.
 
+The gateway can start with dynamic client registration only: leave both
+`mcp.oauth.clientId` and `mcp.oauth.redirectUris` empty. With fleet MCP disabled,
+the full chart and standalone add-on emit no static-client arguments; startup
+creates no preconfigured persistent client. Preconfigured clients are optional and require
+both fields; partial configuration is rejected. Rendering and startup do not
+perform native OAuth sign-in or approve client access. Obtain separate approval
+before registering a client or configuring persistent client access.
+The gateway uses shared MCP configuration fields independently of `mcp.enabled`,
+which enables the fleet surface. Leave fleet MCP disabled when only the gateway
+is required; the existing fleet startup requirements remain unchanged.
+
 Backend calls have a 30 second overall deadline and a four-operation process limit.
 Excess work is rejected immediately. Query windows default to the trailing 30 minutes,
 must be ordered, and cannot exceed 24 hours. The default result limit is 100 and the
@@ -59,13 +70,15 @@ GOMAXPROCS=4 go test -p 2 ./internal/engine ./internal/controller/pipelines -cou
 GOMAXPROCS=4 go vet -p 2 ./internal/... ./cmd/...
 GOMAXPROCS=4 go test -race -p 2 ./internal/observabilitygateway ./internal/observabilitygateway/connector/httphelp ./internal/observabilitygateway/connector/gcpcommon ./internal/api/mcp -count=1
 bash hack/test-observability-chart-rendering.sh
+bash hack/test-observability-addon-rendering.sh
 helm lint charts/chart/
 helm template paprika charts/chart/ >/dev/null
 ```
 
 The chart tests exercise the identity reference, immutable digest, offline render,
-authentication requirements, explicit backend egress, canonical OAuth metadata
-routes, and singleton deployment requirements. The optional observe package has
+authentication requirements, DCR-only and partial-client contracts, explicit
+backend egress, canonical OAuth metadata routes, and singleton deployment
+requirements. The optional observe package has
 Node contract tests and can be validated using Claude's supported CLI:
 
 ```sh

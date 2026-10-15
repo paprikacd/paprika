@@ -17,6 +17,17 @@ references in `observabilityGateway.extraEnv`. Never export live secret values
 or a whole release's potentially sensitive Helm values into this workflow.
 The source gateway's normal authentication prerequisites still apply.
 
+Preconfigured OAuth clients are optional for the gateway. For dynamic client
+registration only, leave both `mcp.oauth.clientId` and
+`mcp.oauth.redirectUris` empty; the renderer omits both static-client arguments,
+and startup creates no preconfigured persistent client. Providing just one field
+is rejected. Configuring an approved static client requires both fields. Rendering
+does not register a client, sign anyone in or approve client access. Native OAuth
+sign-in and client registration/access approval remain separate actions.
+The gateway reads the shared `mcp.publicURL`, token TTLs and optional OAuth
+fields without requiring `mcp.enabled`; that setting controls the independent
+fleet MCP surface. The add-on keeps fleet MCP disabled in its isolated render.
+
 ```sh
 bash hack/render-observability-addon.sh \
   --namespace paprika-system \

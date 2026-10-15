@@ -85,6 +85,7 @@ path, namespace, release, image, route = sys.argv[1:]
 overrides = {
     "nameOverride": release, "fullnameOverride": release,
     "deploymentMode": "split", "networkPolicy": {"enabled": True},
+    "mcp": {"enabled": False},
     "observabilityGateway": {
         "enabled": True, "discovery": {"enabled": False},
         "image": {"repository": image, "tag": ""},
