@@ -211,11 +211,11 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 		}
 	}
 	rec := httptest.NewRecorder()
-	limited.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/observe/mcp", nil))
+	limited.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/observe/mcp", nil))
 	require.Equal(t, http.StatusTooManyRequests, rec.Code)
 	require.Equal(t, "1", rec.Header().Get("Retry-After"))
 	health := httptest.NewRecorder()
-	limited.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	limited.ServeHTTP(health, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil))
 	require.Equal(t, http.StatusOK, health.Code)
 	// Release the admitted writers and prove their slots become reusable.
 	for range 4 {
@@ -226,6 +226,6 @@ func TestObservabilityRequestSlotsCoverResponseWriting(t *testing.T) {
 	}
 	rec = httptest.NewRecorder()
 	go func() { release <- struct{}{} }()
-	limited.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/observe/mcp", nil))
+	limited.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/observe/mcp", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 }

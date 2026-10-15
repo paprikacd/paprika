@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -108,22 +109,9 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 	// that port, and an async exit cancels the gateway: discovery silently
 	// gone while queries still serve is the failure mode this avoids.
 	if cfg.ObservabilityDiscoveryEnabled {
-		discoveryMgr, err := ctrl.NewManager(clusterconfig.WithRateLimits(negotiateProtobuf(restCfg), 50, 100), ctrl.Options{
-			Scheme:  scheme,
-			Metrics: metricsserver.Options{BindAddress: "0"},
-		})
-		if err != nil {
-			return fmt.Errorf("create provider-discovery manager: %w", err)
+		if err := startObservabilityProviderDiscovery(gwCtx, cancel, restCfg, scheme); err != nil {
+			return err
 		}
-		if err := (&observecontroller.ProviderDiscoveryReconciler{}).SetupWithManager(discoveryMgr); err != nil {
-			return fmt.Errorf("setup provider-discovery controller: %w", err)
-		}
-		go func() {
-			if mgrErr := discoveryMgr.Start(gwCtx); mgrErr != nil {
-				setupLog.Error(mgrErr, "Provider-discovery manager exited with error")
-				cancel()
-			}
-		}()
 	}
 
 	telemetry := observability.NewTelemetry(gwCtx, observability.ConfigFromEnv())
@@ -132,6 +120,25 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 
 	mux := buildObservabilityMux(srv, authenticator, cfg.MCPPublicURL, usage)
 	return serveGatewayHTTP(gwCtx, cfg, mux)
+}
+
+func startObservabilityProviderDiscovery(ctx context.Context, cancel context.CancelFunc, restCfg *rest.Config, scheme *runtime.Scheme) error {
+	discoveryMgr, err := ctrl.NewManager(clusterconfig.WithRateLimits(negotiateProtobuf(restCfg), 50, 100), ctrl.Options{
+		Scheme: scheme, Metrics: metricsserver.Options{BindAddress: "0"},
+	})
+	if err != nil {
+		return fmt.Errorf("create provider-discovery manager: %w", err)
+	}
+	if err := (&observecontroller.ProviderDiscoveryReconciler{}).SetupWithManager(discoveryMgr); err != nil {
+		return fmt.Errorf("setup provider-discovery controller: %w", err)
+	}
+	go func() {
+		if mgrErr := discoveryMgr.Start(ctx); mgrErr != nil {
+			log.FromContext(ctx).Error(mgrErr, "Provider-discovery manager exited with error")
+			cancel()
+		}
+	}()
+	return nil
 }
 
 // validateObservabilityGatewayConfig fails fast, with the same loudness the
