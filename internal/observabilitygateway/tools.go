@@ -1,0 +1,785 @@
+package observabilitygateway
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"connectrpc.com/connect"
+
+	"github.com/benebsworth/paprika/internal/api/mcp"
+	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/catalog"
+	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
+)
+
+// defaultQueryWindow is the lookback the query tools assume when a caller
+// passes start without end (end defaults to now): the trailing thirty
+// minutes, wide enough to be useful and narrow enough to keep backend
+// responses small.
+const defaultQueryWindow = 30 * time.Minute
+
+// textPreviewMaxBytes caps the TextContent rendering of a query tool
+// result; the full payload always travels in structuredContent (see
+// mcp.PreviewToolResult).
+const textPreviewMaxBytes = 16 << 10
+
+// RegisterTools registers the observability gateway's thirteen MCP tools on
+// registry. Every tool is read-only and carries ScopeObserve: querying logs,
+// metrics and traces — browsing the provider catalog, exploring backend
+// schema, and validating prospective configurations — never mutates the
+// fleet or the backends behind the providers.
+//
+// The Invoke closures capture b and ignore the v1connect client parameter:
+// these tools close over the observability backend, not the fleet Connect
+// API that client speaks — the client exists for the console read/write
+// tools (see internal/api/mcp/tools_read.go). The catalog tools close over
+// the catalog metadata alone.
+//
+// When usage is non-nil every tool's Invoke is wrapped so its outcome is
+// recorded in the tracker; a nil tracker disables recording without the
+// wrappers existing at all, so the disabled configuration adds no work per
+// call.
+func RegisterTools(registry *mcp.Registry, b Backend, usage *UsageTracker) error {
+	tools := []mcp.Tool{
+		listObservabilityProvidersTool(b),
+		getObservabilityProviderTool(b),
+		queryMetricsTool(b),
+		queryLogsTool(b),
+		queryTracesTool(b),
+		listProviderTypesTool(),
+		describeProviderTypeTool(),
+		validateProviderTool(),
+		listMetricNamesTool(b),
+		listLabelNamesTool(b),
+		listLabelValuesTool(b),
+		getMetricMetadataTool(b),
+		listTraceServicesTool(b),
+	}
+	for i := range tools {
+		if usage != nil {
+			tools[i].Invoke = recordUsage(usage, tools[i].Name, tools[i].Invoke)
+		}
+		if err := registry.Register(tools[i]); err != nil {
+			return fmt.Errorf("register observability tools: %w", err)
+		}
+	}
+	return nil
+}
+
+// toolArgs is a decoded tool-call argument object, mirroring the
+// decodeArgs convention in internal/api/mcp: the wire protocol's field names
+// are snake_case by MCP convention, which this repo's tagliatelle
+// configuration (camelCase json tags) would otherwise flag on every struct
+// field. Local copy because mcp's helper is unexported.
+type toolArgs map[string]any
+
+// decodeArgs parses a tool call's raw arguments. Absent or literal-null
+// arguments decode to an empty toolArgs rather than erroring, since every
+// field has a documented default.
+func decodeArgs(raw json.RawMessage) (toolArgs, error) {
+	if len(raw) == 0 {
+		return toolArgs{}, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("decode arguments: %w", err)
+	}
+	if m == nil {
+		m = map[string]any{}
+	}
+	return toolArgs(m), nil
+}
+
+func (a toolArgs) string(key string) string {
+	if s, ok := a[key].(string); ok {
+		return s
+	}
+	return ""
+}
+
+// int reads a JSON number field. JSON numbers decode to float64 in a
+// map[string]any, so absent or non-numeric values read as 0 and are left to
+// the caller's own defaulting logic.
+func (a toolArgs) int(key string) int {
+	f, ok := a[key].(float64)
+	if !ok {
+		return 0
+	}
+	return int(f)
+}
+
+// requiredString reads an argument that must be present and non-empty.
+func requiredString(in toolArgs, tool, key string) (string, error) {
+	s := in.string(key)
+	if s == "" {
+		return "", connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%s: %s is required", tool, key))
+	}
+	return s, nil
+}
+
+// parseTimeArg reads one optional RFC3339 timestamp argument.
+func parseTimeArg(in toolArgs, key string) (time.Time, error) {
+	raw := in.string(key)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, connect.NewError(connect.CodeInvalidArgument,
+			fmt.Errorf("%s must be an RFC3339 timestamp, got %q", key, raw))
+	}
+	return ts, nil
+}
+
+// queryWindow resolves the optional start/end pair onto an absolute range:
+// end defaults to now, start defaults to end minus the trailing window.
+func queryWindow(in toolArgs) (connector.TimeRange, error) {
+	end, err := parseTimeArg(in, "end")
+	if err != nil {
+		return connector.TimeRange{}, err
+	}
+	start, err := parseTimeArg(in, "start")
+	if err != nil {
+		return connector.TimeRange{}, err
+	}
+	if end.IsZero() {
+		end = time.Now().UTC()
+	}
+	if start.IsZero() {
+		start = end.Add(-defaultQueryWindow)
+	}
+	return connector.TimeRange{Start: start, End: end}, nil
+}
+
+// limitArg reads an optional result limit, defaulting an absent or
+// non-positive value to def — the same "0 means unset" reading the console
+// tools apply to page sizes.
+func limitArg(in toolArgs, def int) int {
+	if n := in.int("limit"); n > 0 {
+		return n
+	}
+	return def
+}
+
+// observedAt stamps a tool response with the UTC instant it was produced, so
+// a caller paging through results can tell when each snapshot was taken.
+func observedAt() string {
+	return time.Now().UTC().Format(time.RFC3339)
+}
+
+// providerDetail is the get_observability_provider response: the provider's
+// public summary plus the signals its connector advertises.
+type providerDetail struct {
+	ProviderInfo
+	Signals    []string `json:"signals"`
+	Supported  bool     `json:"supported"`
+	ObservedAt string   `json:"observedAt"`
+}
+
+// describeProvider builds the detail for one provider. A type New does not
+// know is reported as supported=false rather than an error — the CR still
+// exists and its status fields carry whatever the controllers last observed.
+func describeProvider(info *ProviderInfo) providerDetail {
+	detail := providerDetail{
+		ProviderInfo: *info,
+		Signals:      []string{},
+		ObservedAt:   observedAt(),
+	}
+	conn, err := New(info.Type)
+	if err != nil {
+		return detail
+	}
+	detail.Supported = true
+	for _, s := range conn.Descriptor().Signals {
+		detail.Signals = append(detail.Signals, string(s))
+	}
+	return detail
+}
+
+// queryToolResult is the wire shape every query_* tool returns: which
+// provider answered, which signal was asked, the connector's state verdict
+// with its fixed-sentence reason, and the backend's JSON passed through
+// untouched.
+type queryToolResult struct {
+	Provider   string          `json:"provider"`
+	Signal     string          `json:"signal"`
+	State      connector.State `json:"state"`
+	Reason     string          `json:"reason,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
+	ObservedAt string          `json:"observedAt"`
+}
+
+func queryToolResponse(provider, signalLabel string, result *connector.QueryResult) queryToolResult {
+	return queryToolResult{
+		Provider:   provider,
+		Signal:     signalLabel,
+		State:      result.State,
+		Reason:     result.Reason,
+		Data:       result.Data,
+		ObservedAt: observedAt(),
+	}
+}
+
+func listObservabilityProvidersTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_observability_providers",
+		Description: "List the observability providers (Prometheus, Loki, Tempo, OTLP, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) configured in this cluster and visible to this gateway, with each provider's current state.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, _ json.RawMessage) (any, error) {
+			providers, err := b.ListProviders(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("list_observability_providers: %w", err)
+			}
+			return map[string]any{
+				"providers":  providers,
+				"observedAt": observedAt(),
+			}, nil
+		},
+	}
+}
+
+func getObservabilityProviderTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "get_observability_provider",
+		Description: "Describe one observability provider by \"namespace/name\": its type, current state, and which signals (logs, metrics, traces) its connector can serve.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{"provider":{"type":"string"}},
+			"required":["provider"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "get_observability_provider", "provider")
+			if err != nil {
+				return nil, err
+			}
+			infos, err := b.ListProviders(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("get_observability_provider: %w", err)
+			}
+			for i := range infos {
+				if infos[i].Name == provider {
+					return describeProvider(&infos[i]), nil
+				}
+			}
+			return nil, connect.NewError(connect.CodeNotFound,
+				fmt.Errorf("observability provider %q not found", provider))
+		},
+	}
+}
+
+func queryMetricsTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "query_metrics",
+		Description: "Run a PromQL query through a configured observability provider. Read-only; start and end default to the trailing thirty minutes.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"query":{"type":"string"},
+				"start":{"type":"string"},
+				"end":{"type":"string"}
+			},
+			"required":["provider","query"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "query_metrics", "provider")
+			if err != nil {
+				return nil, err
+			}
+			query, err := requiredString(in, "query_metrics", "query")
+			if err != nil {
+				return nil, err
+			}
+			window, err := queryWindow(in)
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Query(ctx, provider, connector.QueryRequest{
+				Signal: connector.SignalMetrics,
+				Query:  query,
+				Range:  window,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("query_metrics: %w", err)
+			}
+			return mcp.PreviewToolResult(queryToolResponse(provider, "metrics", result), textPreviewMaxBytes)
+		},
+	}
+}
+
+func queryLogsTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "query_logs",
+		Description: "Run a LogQL query through a configured observability provider. Read-only; start and end default to the trailing thirty minutes, limit defaults to 100.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"query":{"type":"string"},
+				"start":{"type":"string"},
+				"end":{"type":"string"},
+				"limit":{"type":"integer","default":100}
+			},
+			"required":["provider","query"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "query_logs", "provider")
+			if err != nil {
+				return nil, err
+			}
+			query, err := requiredString(in, "query_logs", "query")
+			if err != nil {
+				return nil, err
+			}
+			window, err := queryWindow(in)
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Query(ctx, provider, connector.QueryRequest{
+				Signal: connector.SignalLogs,
+				Query:  query,
+				Range:  window,
+				Limit:  limitArg(in, 100),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("query_logs: %w", err)
+			}
+			return mcp.PreviewToolResult(queryToolResponse(provider, "logs", result), textPreviewMaxBytes)
+		},
+	}
+}
+
+func queryTracesTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "query_traces",
+		Description: "Query traces through a configured observability provider, either with a TraceQL query or by trace ID (at least one of query or trace_id is required). Read-only; start and end default to the trailing thirty minutes.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"query":{"type":"string"},
+				"trace_id":{"type":"string"},
+				"start":{"type":"string"},
+				"end":{"type":"string"},
+				"limit":{"type":"integer"}
+			},
+			"required":["provider"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "query_traces", "provider")
+			if err != nil {
+				return nil, err
+			}
+			query := in.string("query")
+			traceID := in.string("trace_id")
+			if query == "" && traceID == "" {
+				return nil, connect.NewError(connect.CodeInvalidArgument,
+					errors.New("query_traces: one of query or trace_id is required"))
+			}
+			window, err := queryWindow(in)
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Query(ctx, provider, connector.QueryRequest{
+				Signal:  connector.SignalTraces,
+				Query:   query,
+				TraceID: traceID,
+				Range:   window,
+				Limit:   in.int("limit"),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("query_traces: %w", err)
+			}
+			return mcp.PreviewToolResult(queryToolResponse(provider, "traces", result), textPreviewMaxBytes)
+		},
+	}
+}
+
+// exploreToolResult is the wire shape every exploration tool returns: which
+// provider answered, which schema slice was asked for, the state verdict
+// with its fixed-sentence reason, and the backend's JSON passed through
+// untouched. Kinds map onto connector.ExploreKind values.
+type exploreToolResult struct {
+	Provider   string          `json:"provider"`
+	Kind       string          `json:"kind"`
+	State      connector.State `json:"state"`
+	Reason     string          `json:"reason,omitempty"`
+	Data       json.RawMessage `json:"data,omitempty"`
+	ObservedAt string          `json:"observedAt"`
+}
+
+func exploreToolResponse(provider string, kind connector.ExploreKind, result *connector.ExploreResult) exploreToolResult {
+	return exploreToolResult{
+		Provider:   provider,
+		Kind:       string(kind),
+		State:      result.State,
+		Reason:     result.Reason,
+		Data:       result.Data,
+		ObservedAt: observedAt(),
+	}
+}
+
+func listMetricNamesTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_metric_names",
+		Description: "List the metric names a metrics observability provider exposes, so you can work out what to query before writing a query. Optional prefix filters to names containing the substring; limit defaults to the backend's full list. The optional namespace scopes AWS CloudWatch metrics enumeration to one namespace; other provider types ignore it.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"prefix":{"type":"string"},
+				"namespace":{"type":"string"},
+				"limit":{"type":"integer"}
+			},
+			"required":["provider"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "list_metric_names", "provider")
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+				Kind:   connector.ExploreMetricNames,
+				Prefix: in.string("prefix"),
+				Limit:  in.int("limit"),
+				Params: exploreParams(in),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list_metric_names: %w", err)
+			}
+			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreMetricNames, result), textPreviewMaxBytes)
+		},
+	}
+}
+
+// exploreParams builds the optional provider-specific filter map from the
+// tool arguments. Only keys a provider type documents are forwarded; today
+// that is "namespace" for AWS CloudWatch metrics.
+func exploreParams(in toolArgs) map[string]string {
+	if ns := in.string("namespace"); ns != "" {
+		return map[string]string{"namespace": ns}
+	}
+	return nil
+}
+
+func listLabelNamesTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_label_names",
+		Description: "List the label names a provider exposes — Prometheus labels globally or on one metric; Loki stream labels; Tempo search tags; AWS CloudWatch metric dimension names; Google Cloud Monitoring descriptor label keys. The optional namespace scopes CloudWatch dimension enumeration; other provider types ignore it.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"metric":{"type":"string"},
+				"namespace":{"type":"string"}
+			},
+			"required":["provider"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "list_label_names", "provider")
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+				Kind:   connector.ExploreLabelNames,
+				Metric: in.string("metric"),
+				Params: exploreParams(in),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list_label_names: %w", err)
+			}
+			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreLabelNames, result), textPreviewMaxBytes)
+		},
+	}
+}
+
+func listLabelValuesTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_label_values",
+		Description: "List the values one label takes on a provider — a Prometheus or Loki label globally, or constrained to one metric when metric is set (Prometheus); a Tempo search tag's values; an AWS CloudWatch metric dimension's values. The optional namespace scopes CloudWatch dimension enumeration; other provider types ignore it. Note Google Cloud Monitoring descriptor label values are not enumerable (keys only) and answer NotAvailable.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"label":{"type":"string"},
+				"metric":{"type":"string"},
+				"namespace":{"type":"string"}
+			},
+			"required":["provider","label"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "list_label_values", "provider")
+			if err != nil {
+				return nil, err
+			}
+			label, err := requiredString(in, "list_label_values", "label")
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+				Kind:   connector.ExploreLabelValues,
+				Label:  label,
+				Metric: in.string("metric"),
+				Params: exploreParams(in),
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list_label_values: %w", err)
+			}
+			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreLabelValues, result), textPreviewMaxBytes)
+		},
+	}
+}
+
+func getMetricMetadataTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "get_metric_metadata",
+		Description: "Describe one metric on a metrics provider (Prometheus-compatible APIs and Google Cloud Monitoring): its type (counter, gauge, histogram, summary / metricKind + valueType), help text or description, and unit, as the backend's metadata API reports it. Use it to write a correct query — rate() a counter, read a gauge directly.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"},
+				"metric":{"type":"string"}
+			},
+			"required":["provider","metric"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "get_metric_metadata", "provider")
+			if err != nil {
+				return nil, err
+			}
+			metric, err := requiredString(in, "get_metric_metadata", "metric")
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+				Kind:   connector.ExploreMetricMetadata,
+				Metric: metric,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("get_metric_metadata: %w", err)
+			}
+			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreMetricMetadata, result), textPreviewMaxBytes)
+		},
+	}
+}
+
+func listTraceServicesTool(b Backend) mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_trace_services",
+		Description: "List the service names a trace observability provider (Tempo) has spans for, so you can target a TraceQL query or interpret results by service.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"provider":{"type":"string"}
+			},
+			"required":["provider"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			provider, err := requiredString(in, "list_trace_services", "provider")
+			if err != nil {
+				return nil, err
+			}
+			result, err := b.Explore(ctx, provider, connector.ExploreRequest{
+				Kind: connector.ExploreTraceServices,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list_trace_services: %w", err)
+			}
+			return mcp.PreviewToolResult(exploreToolResponse(provider, connector.ExploreTraceServices, result), textPreviewMaxBytes)
+		},
+	}
+}
+
+// listProviderTypesTool is the list_provider_types tool: the provider-type
+// catalog the library view renders — one light summary per backend the
+// gateway can connect to, no config schema or walkthrough.
+func listProviderTypesTool() mcp.Tool {
+	return mcp.Tool{
+		Name:        "list_provider_types",
+		Description: "List the observability provider types this gateway can connect to: the catalog of backends (Prometheus, Loki, Tempo, OTLP, Google Cloud Logging/Monitoring/Trace, AWS CloudWatch Logs/Metrics, X-Ray, CloudTrail, Vultr Monitoring, mock) with vendor, category, supported signals and a one-line summary for each.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+		Invoke: func(_ context.Context, _ v1connect.PaprikaServiceClient, _ json.RawMessage) (any, error) {
+			return map[string]any{
+				"types":      catalog.Summaries(),
+				"observedAt": observedAt(),
+			}, nil
+		},
+	}
+}
+
+// describeProviderTypeTool is the describe_provider_type tool: the full
+// TypeInfo for one provider type — display metadata, config-field schema,
+// credential shape, onboarding steps and the probe shape — everything the
+// onboarding wizard renders.
+func describeProviderTypeTool() mcp.Tool {
+	return mcp.Tool{
+		Name:        "describe_provider_type",
+		Description: "Describe one observability provider type: its display metadata, config-field schema, credential shape, onboarding steps and health-probe shape, as configured in this gateway's provider catalog.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{"type":{"type":"string"}},
+			"required":["type"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(_ context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			providerType, err := requiredString(in, "describe_provider_type", "type")
+			if err != nil {
+				return nil, err
+			}
+			info, ok := catalog.Get(providerType)
+			if !ok {
+				return nil, connect.NewError(connect.CodeNotFound,
+					fmt.Errorf("observability provider type %q is not in the catalog", providerType))
+			}
+			return info, nil
+		},
+	}
+}
+
+// validateToolResult is the validate_provider response: which provider type
+// was probed, the probe's state verdict with its fixed-sentence reason, and
+// the instant the probe ran. A Forbidden verdict is tool-success with the
+// state in the payload — the same result-as-data contract the query tools
+// honor.
+type validateToolResult struct {
+	Type       string          `json:"type"`
+	State      connector.State `json:"state"`
+	Reason     string          `json:"reason,omitempty"`
+	ObservedAt string          `json:"observedAt"`
+}
+
+// validateProviderTool is the validate_provider tool: the same health probe
+// the HTTP validate endpoint serves, for a config (and optional credential)
+// document that has not been committed to a CR yet.
+func validateProviderTool() mcp.Tool {
+	return mcp.Tool{
+		Name:        "validate_provider",
+		Description: "Probe a prospective observability provider configuration before creating it: runs the provider type's cheapest health-check read against the given config and optional credential, and reports the verdict (OK, Forbidden, NotConfigured, NotAvailable or Error). Read-only; never creates or mutates a provider.",
+		Scope:       mcp.ScopeObserve,
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"type":{"type":"string"},
+				"config":{"type":"object"},
+				"credentials":{"type":"string"}
+			},
+			"required":["type"],
+			"additionalProperties":false
+		}`),
+		Invoke: func(ctx context.Context, _ v1connect.PaprikaServiceClient, args json.RawMessage) (any, error) {
+			in, err := decodeArgs(args)
+			if err != nil {
+				return nil, connect.NewError(connect.CodeInvalidArgument, err)
+			}
+			providerType, err := requiredString(in, "validate_provider", "type")
+			if err != nil {
+				return nil, err
+			}
+			cfg, err := toolConfigObject(in)
+			if err != nil {
+				return nil, err
+			}
+			var credentials []byte
+			if c := in.string("credentials"); c != "" {
+				credentials = []byte(c)
+			}
+
+			result, err := runProbe(ctx, providerType, cfg, credentials)
+			if err != nil {
+				return nil, fmt.Errorf("validate_provider: %w", err)
+			}
+			return validateToolResult{
+				Type:       providerType,
+				State:      result.State,
+				Reason:     result.Reason,
+				ObservedAt: observedAt(),
+			}, nil
+		},
+	}
+}
+
+// toolConfigObject re-marshals the optional validate_provider "config"
+// argument — a JSON object — into the canonical RawMessage a probe request
+// carries. An absent or null argument yields nil, which the connectors read
+// as "not configured"; any non-object value is a caller bug.
+func toolConfigObject(in toolArgs) (json.RawMessage, error) {
+	raw, ok := in["config"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("validate_provider: config must be a JSON object"))
+	}
+	cfg, err := json.Marshal(obj)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument,
+			errors.New("validate_provider: config must be a JSON object"))
+	}
+	return cfg, nil
+}
