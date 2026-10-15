@@ -135,7 +135,11 @@ func benchmarkConcurrentQueries(b *testing.B, concurrency int, invoke func() err
 // path, with all query slots deliberately occupied. It never calls a cloud
 // provider or a Kubernetes API server and is not end-to-end MCP latency.
 func BenchmarkSyntheticGatewayOverload(b *testing.B) {
-	backend := NewBackend(fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()).(*k8sBackend)
+	configured := NewBackend(fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build())
+	backend, ok := configured.(*k8sBackend)
+	if !ok {
+		b.Fatalf("overload benchmark requires Kubernetes backend, got %T", configured)
+	}
 	budget := backend.executionBudget()
 	for range cap(budget.active) {
 		_, finish, err := budget.begin(context.Background())
