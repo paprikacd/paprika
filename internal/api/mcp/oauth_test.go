@@ -446,6 +446,87 @@ func TestRefreshTokenRotatesAndRevokesPredecessor(t *testing.T) {
 		"a rotated refresh token must not work twice")
 }
 
+func TestRefreshPreservesConsentedAccountAndScopes(t *testing.T) {
+	const redirect = "http://127.0.0.1:8791/callback"
+	for _, scopes := range [][]string{{"paprika:read"}, {"paprika:read", "paprika:write"}} {
+		t.Run(strings.Join(scopes, "+"), func(t *testing.T) {
+			srv := newTestServerWithRedirects(t, []string{redirect})
+			mux := http.NewServeMux()
+			srv.RegisterOAuthRoutes(mux)
+
+			consent := postJSON(t, mux, "/mcp/authorize/consent", consoleBearerFor(t, "profile-user"), consentRequest{
+				ClientID: "test", RedirectURI: redirect, State: "profile-state",
+				CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+				Scopes: scopes, Decision: decisionApprove,
+			})
+			require.Equal(t, http.StatusOK, consent.Code, consent.Body.String())
+			var handoff consentResponse
+			require.NoError(t, json.Unmarshal(consent.Body.Bytes(), &handoff))
+			dest, err := url.Parse(handoff.RedirectTo)
+			require.NoError(t, err)
+			require.NotEmpty(t, dest.Query().Get("code"))
+
+			resp := postForm(t, mux, "/mcp/token", url.Values{
+				"grant_type": {"authorization_code"}, "client_id": {"test"},
+				"code": {dest.Query().Get("code")}, "redirect_uri": {redirect},
+				"code_verifier": {pkceVerifierForFix1},
+			})
+			mcpAuth := mustAudienceAuthenticator(t, testSecret, MCPTokenAudience, testIssuer)
+			for generation := range 3 {
+				require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+				var pair tokenResponse
+				require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &pair))
+				require.NotEmpty(t, pair.RefreshToken)
+				principal, authErr := mcpAuth.Authenticate(ctxWithBearer(pair.AccessToken))
+				require.NoError(t, authErr)
+				assert.Equal(t, "profile-user", principal.Subject)
+				assert.Equal(t, "profile-user@example.com", principal.Email, "generation %d", generation)
+				assert.Equal(t, "Test User", principal.Name, "generation %d", generation)
+				assert.Equal(t, scopes, principal.Scopes)
+				assert.Equal(t, strings.Join(scopes, " "), pair.Scope)
+				if generation < 2 {
+					resp = postForm(t, mux, "/mcp/token", url.Values{
+						"grant_type": {"refresh_token"}, "client_id": {"test"},
+						"refresh_token": {pair.RefreshToken},
+						// Refresh inputs cannot replace verified display identity
+						// or turn a read-only grant into a write grant.
+						"email": {"different@example.com"}, "name": {"Different user"},
+						"scope": {"paprika:read paprika:write"},
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestLegacyRefreshRecordsKeepEmptyDisplayIdentity(t *testing.T) {
+	srv, store := newTestServerWithCache(t)
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+	// This helper writes the old exact JSON shape: only sub and scope.
+	refresh := seedRefreshToken(t, store, "legacy-user", "paprika:read")
+	mcpAuth := mustAudienceAuthenticator(t, testSecret, MCPTokenAudience, testIssuer)
+	for range 2 {
+		resp := postForm(t, mux, "/mcp/token", url.Values{
+			"grant_type": {"refresh_token"}, "client_id": {"test"}, "refresh_token": {refresh},
+			"email": {"invented@example.com"}, "name": {"Invented account"},
+			"scope": {"paprika:read paprika:write"},
+		})
+		require.Equal(t, http.StatusOK, resp.Code, resp.Body.String())
+		var pair tokenResponse
+		require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &pair))
+		principal, err := mcpAuth.Authenticate(ctxWithBearer(pair.AccessToken))
+		require.NoError(t, err)
+		assert.Equal(t, "legacy-user", principal.Subject)
+		assert.Empty(t, principal.Email)
+		assert.Empty(t, principal.Name)
+		assert.Equal(t, []string{"paprika:read"}, principal.Scopes)
+		require.NotEmpty(t, pair.RefreshToken)
+		assert.NotEqual(t, refresh, pair.RefreshToken)
+		refresh = pair.RefreshToken
+	}
+}
+
 func TestIssuedAccessTokenCarriesMCPAudience(t *testing.T) {
 	srv, store := newTestServerWithCache(t)
 	mux := http.NewServeMux()
@@ -1176,6 +1257,35 @@ func TestConsentRequiresAuthentication(t *testing.T) {
 		Scopes: []string{"paprika:read"},
 	})
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestConsentHandoffResponsesAreNotCached(t *testing.T) {
+	const redirect = "http://127.0.0.1:8791/callback"
+	srv := newTestServerWithRedirects(t, []string{redirect})
+	mux := http.NewServeMux()
+	srv.RegisterOAuthRoutes(mux)
+
+	bearer := consoleBearerFor(t, "console-user")
+	for _, decision := range []string{"approve", "deny"} {
+		t.Run(decision, func(t *testing.T) {
+			rec := postJSON(t, mux, "/mcp/authorize/consent", bearer, consentRequest{
+				ClientID: "test", RedirectURI: redirect, State: "keep-this-state",
+				CodeChallenge: pkceChallengeForFix1, CodeChallengeMethod: "S256",
+				Scopes: []string{"paprika:read"}, Decision: decision,
+			})
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+			assert.Equal(t, "no-cache", rec.Header().Get("Pragma"))
+		})
+	}
+
+	// Error responses follow the same policy; cache behaviour must not
+	// disclose which authorization requests can be resolved.
+	for _, credential := range []string{"", bearer} {
+		rec := getPendingAuthz(t, mux, "missing-rid", credential)
+		assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
+		assert.Equal(t, "no-cache", rec.Header().Get("Pragma"))
+	}
 }
 
 // TestConsentRejectsMCPAudienceToken is the regression test for the second,

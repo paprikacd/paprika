@@ -15,11 +15,12 @@ import (
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
-func TestRegisterReadToolsRegistersAllFourteen(t *testing.T) {
+func TestRegisterReadToolsRegistersAllTools(t *testing.T) {
 	r := NewRegistry()
 	require.NoError(t, RegisterReadTools(r))
 
 	want := []string{
+		"open_fleet", "search_mentions", "get_application_health", "get_connection",
 		"fleet_status", "list_clusters", "fleet_map", "list_applications",
 		"get_application", "investigate", "get_resource_tree", "get_logs",
 		"list_pipelines", "get_pipeline_run", "list_releases", "list_rollouts",

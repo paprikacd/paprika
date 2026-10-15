@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/benebsworth/paprika/internal/api/paprika/v1/v1connect"
 )
 
@@ -18,12 +20,16 @@ type InvokeFunc func(ctx context.Context, client v1connect.PaprikaServiceClient,
 // the procedure name — see the spec's Context section for why that derivation
 // is unsafe.
 type Tool struct {
-	Name        string
-	Description string
-	Scope       Scope
-	Destructive bool
-	InputSchema json.RawMessage
-	Invoke      InvokeFunc
+	Name         string
+	Title        string
+	Description  string
+	Scope        Scope
+	Destructive  bool
+	InputSchema  json.RawMessage
+	OutputSchema json.RawMessage
+	Meta         sdkmcp.Meta
+	Icons        []sdkmcp.Icon
+	Invoke       InvokeFunc
 }
 
 // Registry holds the tools exposed over MCP.
@@ -39,8 +45,8 @@ func (r *Registry) Register(t Tool) error { //nolint:gocritic
 	switch {
 	case t.Name == "":
 		return errors.New("tool name is required")
-	case t.Scope != ScopeRead && t.Scope != ScopeWrite:
-		return fmt.Errorf("tool %q: scope must be %q or %q", t.Name, ScopeRead, ScopeWrite)
+	case t.Scope != ScopeRead && t.Scope != ScopeWrite && t.Scope != ScopeObserve:
+		return fmt.Errorf("tool %q: scope must be %q, %q or %q", t.Name, ScopeRead, ScopeWrite, ScopeObserve)
 	case t.Invoke == nil:
 		return fmt.Errorf("tool %q: Invoke is required", t.Name)
 	case t.Destructive && t.Scope != ScopeWrite:
@@ -63,8 +69,8 @@ func (r *Registry) Lookup(name string) (Tool, bool) {
 // All returns tools sorted by name so listings are stable across calls.
 func (r *Registry) All() []Tool {
 	out := make([]Tool, 0, len(r.tools))
-	for _, t := range r.tools {
-		out = append(out, t)
+	for name := range r.tools {
+		out = append(out, r.tools[name])
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

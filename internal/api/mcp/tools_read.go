@@ -28,20 +28,24 @@ const (
 // exposed as a tool or explicitly opted out. get_resource_tree and get_logs
 // each dispatch to two RPCs behind a parameter, so both must be listed.
 var readToolRPCs = map[string][]string{
-	"fleet_status":      {"GetSystemStatus"},
-	"list_clusters":     {"ListClusters"},
-	"fleet_map":         {"QueryFleetMap"},
-	"list_applications": {"QueryApplications"},
-	"get_application":   {"GetApplication"},
-	"investigate":       {"Investigate"},
-	"get_resource_tree": {"GetResourceTree", "GetResourceTreeDetailed"},
-	"get_logs":          {"GetResourceLogs", "GetStepLogs"},
-	"list_pipelines":    {"ListPipelines"},
-	"get_pipeline_run":  {"GetPipelineRun"},
-	"list_releases":     {"ListReleases"},
-	"list_rollouts":     {"ListRollouts"},
-	"get_rollout":       {"GetRollout"},
-	"query_cost":        {"QueryCost"},
+	"get_connection":         {}, // Server/credential metadata; no fleet API call.
+	"open_fleet":             {"GetSystemStatus", "QueryApplications"},
+	"search_mentions":        {"QueryApplications"},
+	"fleet_status":           {"GetSystemStatus"},
+	"list_clusters":          {"ListClusters"},
+	"fleet_map":              {"QueryFleetMap"},
+	"list_applications":      {"QueryApplications"},
+	"get_application":        {"GetApplication"},
+	"get_application_health": {"GetApplication", "ListReleases", "GetRollout", "ListDriftDetails", "Investigate"},
+	"investigate":            {"Investigate"},
+	"get_resource_tree":      {"GetResourceTree", "GetResourceTreeDetailed"},
+	"get_logs":               {"GetResourceLogs", "GetStepLogs"},
+	"list_pipelines":         {"ListPipelines"},
+	"get_pipeline_run":       {"GetPipelineRun"},
+	"list_releases":          {"ListReleases"},
+	"list_rollouts":          {"ListRollouts"},
+	"get_rollout":            {"GetRollout"},
+	"query_cost":             {"QueryCost"},
 }
 
 // fleetGroupDimensions and fleetSizeMetrics translate the string enums used
@@ -99,11 +103,15 @@ func lookupFleetSizeMetric(s string) (v1.FleetSizeMetric, error) {
 // unambiguous.
 func RegisterReadTools(r *Registry) error {
 	tools := []Tool{
+		readGetConnectionTool(),
+		readOpenFleetTool(),
+		readSearchMentionsTool(),
 		readFleetStatusTool(),
 		readListClustersTool(),
 		readFleetMapTool(),
 		readListApplicationsTool(),
 		readGetApplicationTool(),
+		readGetApplicationHealthTool(),
 		readInvestigateTool(),
 		readGetResourceTreeTool(),
 		readGetLogsTool(),
@@ -114,8 +122,8 @@ func RegisterReadTools(r *Registry) error {
 		readGetRolloutTool(),
 		readQueryCostTool(),
 	}
-	for _, t := range tools {
-		if err := r.Register(t); err != nil {
+	for i := range tools {
+		if err := r.Register(tools[i]); err != nil {
 			return err
 		}
 	}

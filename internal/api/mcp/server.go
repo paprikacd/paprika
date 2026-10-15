@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -59,6 +60,55 @@ type ServerConfig struct {
 	AccessTTL     time.Duration
 	RefreshTTL    time.Duration
 
+	// RoutePrefix is the mount root of this server's OAuth surface: the
+	// authorize/consent/token/register endpoints and well-known metadata all
+	// live at RoutePrefix+"/…". Empty defaults to "/mcp". A second Paprika
+	// component serving its own MCP surface (the observability gateway) mounts
+	// at its own prefix — "/observe" — on the same public hostname, so OAuth
+	// endpoints and discovery metadata never collide with the console's.
+	RoutePrefix string
+
+	// ProtocolPath is where the MCP protocol handler itself (what Handler()
+	// serves) is mounted on the public hostname; it is the URL clients connect
+	// to and the "resource" discovery metadata advertises. Empty defaults to
+	// RoutePrefix: the console surface predates the split and serves the
+	// protocol at its root (/mcp). The observability gateway sets
+	// RoutePrefix="/observe" with ProtocolPath="/observe/mcp".
+	ProtocolPath string
+
+	// ConsentPath is where handleAuthorize redirects browsers to collect
+	// explicit consent. Empty defaults to RoutePrefix+"/consent" (the console
+	// UI serves that page for the default surface). A component mounting its
+	// own prefix serves its own consent page at this path.
+	ConsentPath string
+
+	// Audience is the token audience this server mints access tokens for and
+	// its Authenticator must therefore verify. Empty defaults to
+	// MCPTokenAudience. Distinct surfaces use distinct audiences so a token
+	// minted for one can never be replayed against another that shares the
+	// HMAC secret.
+	Audience string
+
+	// SupportedScopes is the set of scopes this authorization server grants
+	// and advertises in discovery metadata. Empty defaults to read+write. The
+	// observability gateway grants only ScopeObserve.
+	SupportedScopes []Scope
+
+	// DisableConsoleResources suppresses registration of the interactive
+	// fleet-console resource and its companion tools (open_fleet,
+	// search_mentions, application resource templates) — console affordances
+	// that only make sense on the surface whose tools they invoke. Servers
+	// that only serve non-console tools (the observability gateway) set this.
+	DisableConsoleResources bool
+
+	// GzipLevel sets the compression level the protocol handler applies to
+	// responses for clients that send Accept-Encoding: gzip. Zero selects
+	// the gziphandler default (6). Surfaces that ship large, highly
+	// repetitive JSON payloads to many concurrent clients (the observability
+	// gateway's query tools) may trade a few percent of compression ratio
+	// for a several-fold cut in flate CPU by setting 1-3.
+	GzipLevel int
+
 	// ConsoleAuthenticator authenticates the OAuth authorize/consent surface
 	// (GET /mcp/authorize, POST /mcp/authorize/consent) as a console user —
 	// the same Google OIDC + Paprika self-signed authenticator stack the
@@ -80,10 +130,15 @@ type ServerConfig struct {
 	// buildMCPHandlers constructs it over NewInProcessTransport(connectHandler),
 	// so a tool call re-enters the SAME otel -> auth -> audit -> service chain
 	// that serves console requests — see the package doc on the blocker this
-	// closes. Client is deliberately not part of NewServer's required-field
-	// validation: a server built without one still serves tools/list and the
-	// unauthenticated-401 path (what this task's given tests exercise); it
-	// only fails a tools/call, cleanly, with no client configured.
+	// closes. A surface whose tools do not call the Connect API at all (the
+	// observability gateway's tools close over their own connector backend)
+	// leaves Client nil: the Invoker still dispatches, passing the nil client
+	// through to Invoke funcs that ignore it. Client is deliberately not part
+	// of NewServer's required-field validation: a server built without one
+	// still serves tools/list and the unauthenticated-401 path; a tools/call
+	// reaches the tool's Invoke with a nil client, which console tools would
+	// dereference — which is exactly why no console tool is ever registered on
+	// a no-client surface.
 	Client v1connect.PaprikaServiceClient
 }
 
@@ -110,6 +165,19 @@ type Server struct {
 	accessTTL  time.Duration
 	refreshTTL time.Duration
 	streamable http.Handler
+	gzipLevel  int
+
+	// routePrefix, consentPath, audience and supportedScopes shape this
+	// server's OAuth surface and discovery metadata — see ServerConfig. They
+	// exist so a second component (the observability gateway) can serve its
+	// own MCP endpoint from the same binary without colliding with the
+	// console surface's routes, scopes, or token audience.
+	routePrefix             string
+	protocolPath            string
+	consentPath             string
+	audience                string
+	supportedScopes         []Scope
+	disableConsoleResources bool
 
 	// authorizeAuthenticator authenticates GET /mcp/authorize and POST
 	// /mcp/authorize/consent — see ServerConfig.ConsoleAuthenticator. The
@@ -154,6 +222,10 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	if len(cfg.RedirectURIs) == 0 {
 		return nil, errors.New("mcp: ServerConfig.RedirectURIs is required")
 	}
+	shape, err := resolveSurfaceShape(&cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	consoleAuthenticator := cfg.ConsoleAuthenticator
 	if consoleAuthenticator == nil {
@@ -161,24 +233,125 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	}
 
 	s := &Server{
-		registry:               cfg.Registry,
-		authenticator:          cfg.Authenticator,
-		authorizeAuthenticator: consoleAuthenticator,
-		cache:                  cfg.Cache,
-		publicURL:              cfg.PublicURL,
-		clientID:               cfg.ClientID,
-		redirectURIs:           cfg.RedirectURIs,
-		dynClients:             map[string][]string{},
-		secret:                 cfg.Secret,
-		accessTTL:              defaultDuration(cfg.AccessTTL, defaultAccessTTL),
-		refreshTTL:             defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
-		rateLimit:              newPrincipalRateLimiter(),
+		registry:                cfg.Registry,
+		authenticator:           cfg.Authenticator,
+		authorizeAuthenticator:  consoleAuthenticator,
+		cache:                   cfg.Cache,
+		publicURL:               cfg.PublicURL,
+		clientID:                cfg.ClientID,
+		redirectURIs:            cfg.RedirectURIs,
+		dynClients:              map[string][]string{},
+		secret:                  cfg.Secret,
+		accessTTL:               defaultDuration(cfg.AccessTTL, defaultAccessTTL),
+		refreshTTL:              defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
+		rateLimit:               newPrincipalRateLimiter(),
+		routePrefix:             shape.routePrefix,
+		protocolPath:            shape.protocolPath,
+		consentPath:             shape.consentPath,
+		audience:                shape.audience,
+		supportedScopes:         shape.supportedScopes,
+		disableConsoleResources: cfg.DisableConsoleResources,
+		gzipLevel:               cfg.GzipLevel,
 	}
-	if cfg.Client != nil {
-		s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
-	}
+	// The Invoker is built unconditionally: surfaces without a Connect client
+	// (the observability gateway) still dispatch tools — their Invoke funcs
+	// close over their own backend and never touch the client — and console
+	// surfaces keep the identical single dispatch path.
+	s.invoker = NewInvoker(cfg.Registry, cfg.Client, cfg.Confirmer, cfg.Auditor)
 	s.streamable = newStreamableHandler(s, cfg.Registry)
 	return s, nil
+}
+
+// surfaceShape is everything resolveSurfaceShape defaulted and validated
+// about this server's public surface — mount prefixes, consent redirect,
+// token audience, and the granted scope set — returned as one value so the
+// constructor stays readable.
+type surfaceShape struct {
+	routePrefix     string
+	consentPath     string
+	protocolPath    string
+	audience        string
+	supportedScopes []Scope
+}
+
+// resolveSurfaceShape combines the mount-path and grant resolvers; every rule
+// inside them fails construction loudly rather than letting a misconfigured
+// surface start.
+func resolveSurfaceShape(cfg *ServerConfig) (surfaceShape, error) {
+	routePrefix, consentPath, protocolPath, err := resolveMountPaths(cfg)
+	if err != nil {
+		return surfaceShape{}, err
+	}
+	audience, supportedScopes, err := resolveGrants(cfg)
+	if err != nil {
+		return surfaceShape{}, err
+	}
+	return surfaceShape{
+		routePrefix:     routePrefix,
+		consentPath:     consentPath,
+		protocolPath:    protocolPath,
+		audience:        audience,
+		supportedScopes: supportedScopes,
+	}, nil
+}
+
+// resolveMountPaths defaults and validates where this surface lives on the
+// public hostname: the OAuth root, the consent redirect target, and the MCP
+// protocol endpoint.
+func resolveMountPaths(cfg *ServerConfig) (routePrefix, consentPath, protocolPath string, err error) {
+	routePrefix, err = normalizeRoutePrefix(cfg.RoutePrefix)
+	if err != nil {
+		return "", "", "", err
+	}
+	consentPath = cfg.ConsentPath
+	if consentPath == "" {
+		consentPath = routePrefix + "/consent"
+	}
+	if !strings.HasPrefix(consentPath, "/") {
+		return "", "", "", fmt.Errorf("mcp: ServerConfig.ConsentPath must start with /, got %q", consentPath)
+	}
+	protocolPath = cfg.ProtocolPath
+	if protocolPath == "" {
+		protocolPath = routePrefix
+	}
+	if !strings.HasPrefix(protocolPath, "/") || strings.HasSuffix(protocolPath, "/") {
+		return "", "", "", fmt.Errorf("mcp: ServerConfig.ProtocolPath must start with / and not end with one, got %q", protocolPath)
+	}
+	return routePrefix, consentPath, protocolPath, nil
+}
+
+// resolveGrants defaults and validates what this surface may grant: the token
+// audience minting uses and the supported (advertised, consent-enforced) scope
+// set.
+func resolveGrants(cfg *ServerConfig) (string, []Scope, error) {
+	supportedScopes := cfg.SupportedScopes
+	if len(supportedScopes) == 0 {
+		supportedScopes = []Scope{ScopeRead, ScopeWrite}
+	}
+	for _, sc := range supportedScopes {
+		if sc != ScopeRead && sc != ScopeWrite && sc != ScopeObserve {
+			return "", nil, fmt.Errorf("mcp: ServerConfig.SupportedScopes contains unknown scope %q", sc)
+		}
+	}
+	audience := cfg.Audience
+	if audience == "" {
+		audience = MCPTokenAudience
+	}
+	return audience, supportedScopes, nil
+}
+
+// normalizeRoutePrefix applies the ServerConfig.RoutePrefix default and
+// rejects shapes that would produce broken or ambiguous OAuth route mounts:
+// the prefix must start with "/" (it is a path prefix, never a full URL) and
+// must not end with one (every mount appends "/…" literally).
+func normalizeRoutePrefix(prefix string) (string, error) {
+	if prefix == "" {
+		return defaultRoutePrefix, nil
+	}
+	if !strings.HasPrefix(prefix, "/") || strings.HasSuffix(prefix, "/") {
+		return "", fmt.Errorf("mcp: ServerConfig.RoutePrefix must start with / and not end with one, got %q", prefix)
+	}
+	return prefix, nil
 }
 
 // validatePublicURL requires publicURL to be an absolute URL. It is embedded
@@ -205,21 +378,52 @@ func validatePublicURL(publicURL string) error {
 // invoke a tool without first running the initialize handshake.
 func newStreamableHandler(s *Server, r *Registry) *sdkmcp.StreamableHTTPHandler {
 	sdkSrv := sdkmcp.NewServer(&sdkmcp.Implementation{
-		Name:    implementationName,
-		Version: version.Version,
-	}, nil)
+		Name:        implementationName,
+		Title:       "Paprika",
+		Description: "Application delivery, fleet health, drift, and deployment diagnostics.",
+		Version:     version.Version,
+		WebsiteURL:  s.publicURL,
+		Icons:       paprikaIcons(),
+	}, &sdkmcp.ServerOptions{
+		Instructions: "Use open_fleet for the interactive fleet console and get_application_health for a bounded application health report. Diagnose before taking actions; preserve explicit unknown and unavailable evidence. Writes require paprika:write and destructive actions use the existing confirmation flow.",
+		SetCacheable: func(_ context.Context, _ sdkmcp.Request, c *sdkmcp.Cacheable) {
+			// All protocol requests are authenticated. Never let a host cache
+			// project-scoped resource contents across authenticated subjects.
+			c.CacheScope = "private"
+			c.TTLMs = 0
+		},
+	})
 
-	for _, tool := range r.All() {
+	tools := r.All()
+	for i := range tools {
+		tool := &tools[i]
 		destructive := tool.Destructive
+		title := tool.Title
+		if title == "" {
+			title = strings.ReplaceAll(tool.Name, "_", " ")
+			title = strings.ToUpper(title[:1]) + title[1:]
+		}
+		var outputSchema any
+		if len(tool.OutputSchema) > 0 {
+			outputSchema = tool.OutputSchema
+		}
 		sdkSrv.AddTool(&sdkmcp.Tool{
-			Name:        tool.Name,
-			Description: tool.Description,
-			InputSchema: tool.InputSchema,
+			Name:         tool.Name,
+			Title:        title,
+			Description:  tool.Description,
+			InputSchema:  tool.InputSchema,
+			OutputSchema: outputSchema,
+			Meta:         tool.Meta,
+			Icons:        tool.Icons,
 			Annotations: &sdkmcp.ToolAnnotations{
-				ReadOnlyHint:    tool.Scope == ScopeRead,
+				ReadOnlyHint:    tool.Scope == ScopeRead || tool.Scope == ScopeObserve,
+				IdempotentHint:  tool.Scope == ScopeRead || tool.Scope == ScopeObserve,
 				DestructiveHint: &destructive,
 			},
 		}, s.callTool)
+	}
+	if !s.disableConsoleResources {
+		s.registerAppResources(sdkSrv)
 	}
 
 	return sdkmcp.NewStreamableHTTPHandler(
@@ -236,8 +440,14 @@ func (s *Server) Handler() http.Handler {
 	// Tool results carry the payload twice on the wire (structuredContent and
 	// a serialized TextContent fallback); gzip collapses the duplication for
 	// clients that send Accept-Encoding. Stateless+JSONResponse mode means no
-	// SSE streams flow through here, so buffering is safe.
-	return gziphandler.GzipHandler(http.HandlerFunc(s.serveHTTP))
+	// SSE streams flow through here, so buffering is safe. Surfaces with a
+	// configured GzipLevel (the observability gateway) trade a little ratio
+	// for a large flate-CPU cut; everyone else keeps the gziphandler default.
+	inner := http.HandlerFunc(s.serveHTTP)
+	if s.gzipLevel >= gzip.BestSpeed && s.gzipLevel <= gzip.BestCompression {
+		return gziphandler.MustNewGzipLevelHandler(s.gzipLevel)(inner)
+	}
+	return gziphandler.GzipHandler(inner)
 }
 
 // consoleCredentialTTL bounds the lifetime of the internal credential
@@ -315,14 +525,22 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	credential, err := s.mintConsoleCredential(principal)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "mcp: mint internal console credential failed")
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	ctx = withInternalCredential(ctx, credential)
+	// The console credential exists solely for the in-process Connect hop
+	// tools/call issues through NewInProcessTransport, so it is minted only
+	// when a Connect client is configured. The principal-bearing context is
+	// attached unconditionally: scope gates in resource and tool handlers read
+	// the principal from it regardless of whether a Connect client exists.
 	r = r.WithContext(ctx)
+	if s.invoker != nil {
+		credential, err := s.mintConsoleCredential(principal)
+		if err != nil {
+			log.FromContext(ctx).Error(err, "mcp: mint internal console credential failed")
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		ctx = withInternalCredential(ctx, credential)
+		r = r.WithContext(ctx)
+	}
 	// Bound the JSON-RPC body — tool args are small JSON payloads and no
 	// legitimate call needs more than a megabyte; an unbounded body is a
 	// memory-DoS vector on an authenticated-but-untrusted surface.
@@ -400,10 +618,13 @@ func isZeroQuality(params string) bool {
 // writeUnauthenticated writes the 401 response an MCP client needs to
 // discover this server's authorization server and re-run OAuth: the
 // WWW-Authenticate challenge points at protected-resource metadata rather
-// than naming any credential, so nothing sensitive appears in it.
+// than naming any credential, so nothing sensitive appears in it. The
+// metadata URL carries this server's route prefix, so challenges issued by
+// one surface (e.g. the observability gateway at /observe) lead a client to
+// THAT surface's metadata even when several share a hostname.
 func (s *Server) writeUnauthenticated(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate",
-		fmt.Sprintf(`Bearer resource_metadata="%s/.well-known/oauth-protected-resource"`, s.publicURL))
+		fmt.Sprintf(`Bearer resource_metadata="%s%s/.well-known/oauth-protected-resource"`, s.publicURL, s.routePrefix))
 	w.WriteHeader(http.StatusUnauthorized)
 }
 
@@ -451,9 +672,9 @@ func (s *Server) callTool(ctx context.Context, req *sdkmcp.CallToolRequest) (*sd
 	return res, err
 }
 
-// invoke guards Invoker.Call against a Server built with no Client: calling
-// a tool on one would otherwise panic inside the tool's own Invoke func,
-// which dereferences the client unconditionally.
+// invoke feeds Invoker.Call the per-request connection info. (The invoker is
+// constructed unconditionally in NewServer, so the nil guard below is a
+// should-never-happen defense, not a reachable configuration.)
 func (s *Server) invoke(ctx context.Context, p *auth.Principal, name string, args json.RawMessage) (any, error) {
 	if s.invoker == nil {
 		return nil, &sdkjsonrpc.Error{
@@ -461,6 +682,11 @@ func (s *Server) invoke(ctx context.Context, p *auth.Principal, name string, arg
 			Message: "mcp: server has no Connect client configured",
 		}
 	}
+	connection, err := s.connectionInfo(p)
+	if err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, connectionInfoKey{}, connection)
 	return s.invoker.Call(ctx, p, name, args)
 }
 
@@ -584,12 +810,43 @@ func confirmationResult(e *ConfirmationRequiredError) (*sdkmcp.CallToolResult, e
 // conventions an MCP client actually expects (snake_case JSON names,
 // well-known-type handling); anything else falls back to encoding/json.
 func toolResult(v any) (*sdkmcp.CallToolResult, error) {
+	if result, ok := v.(*sdkmcp.CallToolResult); ok {
+		return result, nil
+	}
 	data, err := marshalToolResult(v)
 	if err != nil {
 		return nil, err
 	}
 	return &sdkmcp.CallToolResult{
 		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: string(data)}},
+		StructuredContent: json.RawMessage(data),
+	}, nil
+}
+
+// PreviewToolResult is toolResult for tools whose payload can be large (the
+// observability gateway's query tools): structuredContent carries the full
+// value verbatim, while the TextContent fallback renders at most maxTextBytes
+// of the serialized JSON followed by a truncation marker pointing at
+// structuredContent. Carrying multi-hundred-KB backend responses twice on
+// the wire — once as text, once as structured content — doubles both
+// bandwidth and the flate CPU the compression layer spends on a payload an
+// LLM text consumer cannot usefully read whole anyway.
+func PreviewToolResult(v any, maxTextBytes int) (*sdkmcp.CallToolResult, error) {
+	data, err := marshalToolResult(v)
+	if err != nil {
+		return nil, err
+	}
+	preview := data
+	truncated := len(data) - maxTextBytes
+	if truncated > 0 {
+		preview = data[:maxTextBytes]
+	}
+	text := string(preview)
+	if truncated > 0 {
+		text += fmt.Sprintf(" … truncated %d bytes; the full payload is in structuredContent", truncated)
+	}
+	return &sdkmcp.CallToolResult{
+		Content:           []sdkmcp.Content{&sdkmcp.TextContent{Text: text}},
 		StructuredContent: json.RawMessage(data),
 	}, nil
 }

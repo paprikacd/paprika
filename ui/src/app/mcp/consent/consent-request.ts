@@ -109,6 +109,8 @@ export async function fetchPendingAuthz(
   try {
     res = await fetch(`/mcp/authorize/pending?rid=${encodeURIComponent(rid)}`, {
       headers: { Authorization: `Bearer ${idToken}` },
+      cache: "no-store",
+      referrerPolicy: "no-referrer",
     })
   } catch {
     return { ok: false, missing: ["rid"] }
