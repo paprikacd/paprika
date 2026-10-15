@@ -154,8 +154,12 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 
 ##@ Build
 
+.PHONY: build-mcp-ui
+build-mcp-ui: ## Build the standalone MCP application console for embedding.
+	cd internal/api/mcp/ui && npm ci && npm run build
+
 .PHONY: build-ui
-build-ui: ## Build the Next.js UI and copy static assets into the Go embed directory.
+build-ui: build-mcp-ui ## Build the Next.js UI and copy static assets into the Go embed directory.
 	cd ui && npm ci && npm run build
 	rm -rf internal/api/uistatic/*
 	cp -r ui/out/* internal/api/uistatic/

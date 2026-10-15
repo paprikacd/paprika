@@ -1,0 +1,23 @@
+{
+  "name": "paprika-mcp-console",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "harness": "npm run build && node tests/build-harness.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@openai/mcp-extensions": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.7.0",
+    "esbuild": "0.25.10",
+    "typescript": "5.9.3"
+  }
+}

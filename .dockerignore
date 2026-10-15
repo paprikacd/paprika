@@ -25,3 +25,9 @@ ui/**/node_modules/
 # Re-include the committed prebuilt UI export so Dockerfile.fast can
 # embed the real dashboard without rebuilding the UI
 !internal/api/uistatic/**
+
+# MCP App sources for the full build and the committed standalone bundle
+# for Go-only builds. The view needs no external assets at runtime.
+!internal/api/mcp/ui/**
+internal/api/mcp/ui/**/node_modules/
+internal/api/mcp/ui/dist/harness.html

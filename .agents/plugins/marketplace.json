@@ -1,0 +1,20 @@
+{
+  "name": "paprika",
+  "interface": {
+    "displayName": "Paprika"
+  },
+  "plugins": [
+    {
+      "name": "paprika",
+      "source": {
+        "source": "local",
+        "path": "./plugins/paprika"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
