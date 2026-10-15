@@ -22,11 +22,17 @@ func TestCallClassifiesCompletedResponses(t *testing.T) {
 		want   string
 	}{
 		{"success", 200, `{"result":{"structuredContent":{"state":"OK"}}}`, ""},
+		{"bounded page success", 200, `{"result":{"structuredContent":{"state":"OK","nextPageToken":"synthetic-page"}}}`, ""},
 		{"list success", 200, `{"result":{"structuredContent":{"providers":[]}}}`, ""},
 		{"tool error", 200, `{"result":{"isError":true}}`, "tool_error"},
 		{"provider failure", 200, `{"result":{"structuredContent":{"state":"Forbidden"}}}`, "tool_Forbidden"},
+		{"provider unavailable", 200, `{"result":{"structuredContent":{"state":"NotAvailable"}}}`, "tool_NotAvailable"},
+		{"provider unconfigured", 200, `{"result":{"structuredContent":{"state":"NotConfigured"}}}`, "tool_NotConfigured"},
+		{"provider error", 200, `{"result":{"structuredContent":{"state":"Error"}}}`, "tool_Error"},
+		{"unknown provider state", 200, `{"result":{"structuredContent":{"state":"unexpected"}}}`, "tool_unknown_state"},
 		{"rpc error", 200, `{"error":{"code":-32602,"message":"invalid"}}`, "rpc_error"},
 		{"http throttle", 429, `{}`, "http_429"},
+		{"http error before tool result", 500, `{"result":{"isError":true}}`, "http_500"},
 		{"malformed", 200, `{`, "decode"},
 		{"empty envelope", 200, `{}`, "missing_result"},
 		{"null result", 200, `{"result":null}`, "missing_result"},
@@ -51,7 +57,10 @@ func TestCallLatencyIncludesBodyRead(t *testing.T) {
 	const delay = 60 * time.Millisecond
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("flush response headers: %v", err)
+			return
+		}
 		time.Sleep(delay)
 		_, _ = io.WriteString(w, `{"result":{}}`)
 	}))
@@ -81,7 +90,10 @@ func TestCallBodyReadHonorsDeadline(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("flush response headers: %v", err)
+			return
+		}
 		<-r.Context().Done()
 	}))
 	defer srv.Close()

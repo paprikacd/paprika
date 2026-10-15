@@ -66,21 +66,17 @@ type options struct {
 // Bound both concurrency and retained samples: even an unpaced run must
 // stop before its per-call statistics can consume arbitrary memory.
 func (o options) validate() error {
-	u, err := url.Parse(o.gateway)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return errors.New("gateway must be an HTTP(S) base URL without credentials, query or fragment")
+	if err := validateGateway(o.gateway); err != nil {
+		return err
 	}
 	if o.clients < 1 || o.clients > 256 {
 		return errors.New("clients must be between 1 and 256")
 	}
-	if o.secs < 1 || o.secs > 3600 {
-		return errors.New("secs must be between 1 and 3600")
+	if err := o.validateDurationLimits(); err != nil {
+		return err
 	}
-	if math.IsNaN(o.rps) || math.IsInf(o.rps, 0) || o.rps < 0 || o.rps > 1000 || (o.rps > 0 && o.rps < 0.001) {
-		return errors.New("rps must be 0 (unpaced) or finite and between 0.001 and 1000")
-	}
-	if o.timeout <= 0 || o.timeout > 5*time.Minute {
-		return errors.New("timeout must be positive and no greater than 5m")
+	if err := validateRate(o.rps); err != nil {
+		return err
 	}
 	if o.maxCalls < 1 || o.maxCalls > 1000000 {
 		return errors.New("max-calls must be between 1 and 1000000")
@@ -88,7 +84,38 @@ func (o options) validate() error {
 	return nil
 }
 
+func validateGateway(gateway string) error {
+	u, err := url.Parse(gateway)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("gateway must be an HTTP(S) base URL without credentials, query or fragment")
+	}
+	return nil
+}
+
+func (o options) validateDurationLimits() error {
+	if o.secs < 1 || o.secs > 3600 {
+		return errors.New("secs must be between 1 and 3600")
+	}
+	if o.timeout <= 0 || o.timeout > 5*time.Minute {
+		return errors.New("timeout must be positive and no greater than 5m")
+	}
+	return nil
+}
+
+func validateRate(rps float64) error {
+	if math.IsNaN(rps) || math.IsInf(rps, 0) || rps < 0 || rps > 1000 || (rps > 0 && rps < 0.001) {
+		return errors.New("rps must be 0 (unpaced) or finite and between 0.001 and 1000")
+	}
+	return nil
+}
+
 func main() {
+	os.Exit(run())
+}
+
+// run returns the CLI status after deferred cancellation and connection
+// cleanup, including report encoding or output failures.
+func run() int {
 	var (
 		gateway    = flag.String("gateway", "http://localhost:18090", "gateway base URL (forwarded /observe port)")
 		secret     = flag.String("secret", "", "HMAC secret the gateway signs paprika-observability tokens with (the perf stack uses the literal PAPRIKA_AUTH_TOKEN_SECRET value)")
@@ -106,22 +133,22 @@ func main() {
 	flag.Parse()
 	if err := (options{*gateway, *clients, *secs, *rps, *timeout, *maxCalls}).validate(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 
 	if *secret == "" || *issuer == "" {
 		fmt.Fprintln(os.Stderr, "-secret and -issuer are required (use the perf stack's PAPRIKA_AUTH_TOKEN_SECRET literal and --mcp-public-url)")
-		os.Exit(2)
+		return 2
 	}
 	tools, err := parseMix(*mix)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 	providerList, err := parseProviders(*providers)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 
 	transport := &http.Transport{
@@ -155,15 +182,16 @@ func main() {
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "marshal report: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	if *reportPath != "" {
 		if err := os.WriteFile(*reportPath, encoded, 0o644); err != nil { //nolint:gosec // perf artifact, not a credential.
 			fmt.Fprintf(os.Stderr, "write report: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	}
 	fmt.Println(string(encoded))
+	return 0
 }
 
 // runClient drives one token-bearing client until the deadline, returning
@@ -237,7 +265,7 @@ func reserveCall(total *atomic.Int64, limit int64) bool {
 
 // call issues one tools/call and classifies the outcome: HTTP status, then
 // JSON-RPC error, then the tool-level state for the query tools.
-func call(ctx context.Context, client *http.Client, endpoint, token, tool string, args map[string]any) (time.Duration, int, string) {
+func call(ctx context.Context, client *http.Client, endpoint, token, tool string, args map[string]any) (latency time.Duration, responseBytes int, class string) {
 	return callWithLimit(ctx, client, endpoint, token, tool, args, maxResponseBytes)
 }
 
@@ -266,24 +294,12 @@ func callWithLimit(ctx context.Context, client *http.Client, endpoint, token, to
 
 	resp, err := client.Do(req)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return latency, 0, "timeout"
-		}
-		if errors.Is(err, context.Canceled) {
-			return latency, 0, "canceled"
-		}
-		return latency, 0, "transport"
+		return latency, 0, callFailureClass(err, "transport")
 	}
 	defer func() { _ = resp.Body.Close() }() //nolint:errcheck // loadgen: body is fully read before close.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return latency, len(body), "timeout"
-		}
-		if errors.Is(err, context.Canceled) {
-			return latency, len(body), "canceled"
-		}
-		return latency, len(body), "read_body"
+		return latency, len(body), callFailureClass(err, "read_body")
 	}
 	if int64(len(body)) > maxBytes {
 		return latency, len(body), "response_too_large"
@@ -291,6 +307,21 @@ func callWithLimit(ctx context.Context, client *http.Client, endpoint, token, to
 	if resp.StatusCode != http.StatusOK {
 		return latency, len(body), fmt.Sprintf("http_%d", resp.StatusCode)
 	}
+	return latency, len(body), toolResultClass(body)
+}
+
+func callFailureClass(err error, fallback string) string {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	default:
+		return fallback
+	}
+}
+
+func toolResultClass(body []byte) string {
 	var envelope struct {
 		Error  any `json:"error"`
 		Result *struct {
@@ -301,25 +332,25 @@ func callWithLimit(ctx context.Context, client *http.Client, endpoint, token, to
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return latency, len(body), "decode"
+		return "decode"
 	}
 	if envelope.Error != nil {
-		return latency, len(body), "rpc_error"
+		return "rpc_error"
 	}
 	if envelope.Result == nil {
-		return latency, len(body), "missing_result"
+		return "missing_result"
 	}
 	if envelope.Result.IsError {
-		return latency, len(body), "tool_error"
+		return "tool_error"
 	}
 	switch state := envelope.Result.StructuredContent.State; state {
 	case "", "OK":
 	case "Forbidden", "Error", "NotConfigured", "NotAvailable":
-		return latency, len(body), "tool_" + state
+		return "tool_" + state
 	default:
-		return latency, len(body), "tool_unknown_state"
+		return "tool_unknown_state"
 	}
-	return latency, len(body), ""
+	return ""
 }
 
 // buildArgs renders one tool's arguments. Query texts embed the client and
@@ -465,23 +496,7 @@ func buildReport(tools []toolSpec, stats [][]callStats, elapsed time.Duration, c
 		byTool[tool.name] = toolReport{}
 	}
 	for name, calls := range perTool {
-		toolLat := make([]time.Duration, 0, len(calls))
-		var sum time.Duration
-		toolErrs := 0
-		for _, s := range calls {
-			toolLat = append(toolLat, s.latency)
-			sum += s.latency
-			if s.err != "" {
-				toolErrs++
-			}
-		}
-		sortDurations(toolLat)
-		byTool[name] = toolReport{
-			Calls:  len(calls),
-			Errors: toolErrs,
-			P90MS:  float64(percentile(toolLat, 0.90)) / float64(time.Millisecond),
-			AvgMS:  float64(sum) / float64(len(calls)) / float64(time.Millisecond),
-		}
+		byTool[name] = summarizeTool(calls)
 	}
 	sortDurations(lat)
 	wall := elapsed.Seconds()
@@ -510,6 +525,29 @@ func buildReport(tools []toolSpec, stats [][]callStats, elapsed time.Duration, c
 		BytesTotal:  bytesTotal,
 		BytesPerSec: float64(bytesTotal) / wall,
 		ByTool:      byTool,
+	}
+}
+
+func summarizeTool(calls []callStats) toolReport {
+	if len(calls) == 0 {
+		return toolReport{}
+	}
+	latencies := make([]time.Duration, 0, len(calls))
+	var sum time.Duration
+	errs := 0
+	for _, call := range calls {
+		latencies = append(latencies, call.latency)
+		sum += call.latency
+		if call.err != "" {
+			errs++
+		}
+	}
+	sortDurations(latencies)
+	return toolReport{
+		Calls:  len(calls),
+		Errors: errs,
+		P90MS:  float64(percentile(latencies, 0.90)) / float64(time.Millisecond),
+		AvgMS:  float64(sum) / float64(len(calls)) / float64(time.Millisecond),
 	}
 }
 
