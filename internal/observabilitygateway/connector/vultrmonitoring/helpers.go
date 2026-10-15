@@ -8,8 +8,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/url"
-	"strings"
+	"strconv"
 
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector"
 	"github.com/benebsworth/paprika/internal/observabilitygateway/connector/httphelp"
@@ -17,7 +16,7 @@ import (
 
 // Fixed sentences the results carry; raw error text never reaches them.
 const (
-	reasonCredentials   = "a Vultr API key credential is required"
+	reasonCredentials   = "a Vultr API key credential is required" //nolint:gosec // G101: a fixed status message, not a credential.
 	reasonNotEnumerated = "that label is not enumerable on the vultr-monitoring connector"
 )
 
@@ -39,43 +38,27 @@ var instanceLabels = []string{"instance_id", "label", "region", "status"}
 // and insecureSkipTLS keys, and nothing else. Unlike the httphelp connectors
 // an endpoint is NOT required — api.vultr.com is the default.
 func parseConfig(config json.RawMessage) (httphelp.Config, error) {
-	cfg := httphelp.Config{Endpoint: defaultEndpoint}
-	if len(bytes.TrimSpace(config)) == 0 {
-		return cfg, nil
-	}
 	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(config, &raw); err != nil {
-		return httphelp.Config{}, fmt.Errorf("config: invalid JSON document: %w", err)
-	}
-	for key := range raw {
-		if key != "endpoint" && key != "headers" && key != "insecureSkipTLS" {
-			return httphelp.Config{}, fmt.Errorf("config: unknown key %q", key)
+	if len(bytes.TrimSpace(config)) > 0 {
+		if err := json.Unmarshal(config, &raw); err != nil {
+			return httphelp.Config{}, fmt.Errorf("config: invalid JSON document: %w", err)
 		}
 	}
-	if value, ok := raw["endpoint"]; ok {
-		var endpoint string
-		if err := json.Unmarshal(value, &endpoint); err != nil {
-			return httphelp.Config{}, fmt.Errorf("config: key %q must be a string", "endpoint")
-		}
-		parsed, err := url.Parse(endpoint)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return httphelp.Config{}, fmt.Errorf("config: key %q must be an absolute http(s) URL", "endpoint")
-		}
-		cfg.Endpoint = strings.TrimRight(endpoint, "/")
+	if raw == nil {
+		raw = map[string]json.RawMessage{}
 	}
-	if value, ok := raw["headers"]; ok {
-		var headers map[string]string
-		if err := json.Unmarshal(value, &headers); err != nil {
-			return httphelp.Config{}, fmt.Errorf("config: key %q must be an object of string values", "headers")
-		}
-		cfg.Headers = headers
+	if _, present := raw["endpoint"]; !present {
+		raw["endpoint"] = json.RawMessage(strconv.Quote(defaultEndpoint))
 	}
-	if value, ok := raw["insecureSkipTLS"]; ok {
-		var insecure bool
-		if err := json.Unmarshal(value, &insecure); err != nil {
-			return httphelp.Config{}, fmt.Errorf("config: key %q must be a boolean", "insecureSkipTLS")
-		}
-		cfg.InsecureSkipTLS = insecure
+	normalized, err := json.Marshal(raw)
+	if err != nil {
+		return httphelp.Config{}, fmt.Errorf("config: encoding configuration: %w", err)
+	}
+	// Reuse the strict endpoint/header rules so the vendor default cannot
+	// bypass inline-credential, header-injection or request-size protections.
+	cfg, err := httphelp.ParseConfig(normalized)
+	if err != nil {
+		return httphelp.Config{}, fmt.Errorf("config: %w", err)
 	}
 	return cfg, nil
 }

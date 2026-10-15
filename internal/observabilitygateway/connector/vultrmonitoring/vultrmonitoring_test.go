@@ -117,7 +117,7 @@ func TestQueryInstanceBandwidthFanout(t *testing.T) {
 	require.Equal(t, connector.StateOK, res.State)
 	var body struct {
 		Series []struct {
-			InstanceID string          `json:"instance_id"`
+			InstanceID string          `json:"instance_id"` //nolint:tagliatelle // Assert the existing connector wire field.
 			Label      string          `json:"label"`
 			Points     [][]interface{} `json:"points"`
 		} `json:"series"`
@@ -209,4 +209,40 @@ func TestExplorerInterfaceIsSatisfied(t *testing.T) {
 	t.Parallel()
 
 	var _ connector.Explorer = VultrMonitoring{}
+}
+
+func TestConfigRejectsInlineCredentialsAndUnsafeHeaders(t *testing.T) {
+	t.Parallel()
+	for name, config := range map[string]string{
+		"URL userinfo":                   `{"endpoint":"https://test-only-sentinel@api.vultr.com"}`,
+		"URL query":                      `{"endpoint":"https://api.vultr.com?token=test-only-sentinel"}`,
+		"URL fragment":                   `{"endpoint":"https://api.vultr.com#test-only-sentinel"}`,
+		"authorization":                  `{"headers":{"Authorization":"test-only-sentinel"}}`,
+		"cookie":                         `{"headers":{"Cookie":"test-only-sentinel"}}`,
+		"proxy authorization":            `{"headers":{"Proxy-Authorization":"test-only-sentinel"}}`,
+		"case insensitive authorization": `{"headers":{"aUtHoRiZaTiOn":"test-only-sentinel"}}`,
+		"invalid header":                 `{"headers":{"X-Test":"test-only-sentinel\r\nInjected: true"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := (VultrMonitoring{}).ValidateConfig(json.RawMessage(config))
+			require.Error(t, err)
+			require.NotContains(t, err.Error(), "test-only-sentinel", "configuration errors must never reproduce credential values")
+		})
+	}
+}
+
+func TestConfigPreservesVendorDefaultAndSharedOptions(t *testing.T) {
+	t.Parallel()
+	for _, config := range []string{"", "null", `{}`, `{"insecureSkipTLS":true}`, `{"headers":{"X-Scope-OrgID":"tenant-one"}}`} {
+		cfg, err := parseConfig(json.RawMessage(config))
+		require.NoError(t, err)
+		require.Equal(t, defaultEndpoint, cfg.Endpoint)
+	}
+	cfg, err := parseConfig(json.RawMessage(`{"endpoint":"https://vultr.internal.example/v2-proxy","insecureSkipTLS":true,"headers":{"X-Scope-OrgID":"tenant-one"}}`))
+	require.NoError(t, err)
+	require.Equal(t, "https://vultr.internal.example/v2-proxy", cfg.Endpoint)
+	require.True(t, cfg.InsecureSkipTLS)
+	require.Equal(t, "tenant-one", cfg.Headers["X-Scope-OrgID"])
+	// Region remains outside this account-wide connector's existing schema.
+	require.Error(t, (VultrMonitoring{}).ValidateConfig(json.RawMessage(`{"region":"lax"}`)))
 }
