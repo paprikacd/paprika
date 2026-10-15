@@ -42,6 +42,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | **Drift Metrics** | `paprika_out_of_sync` and `paprika_prunable` gauges updated on every diff evaluation. | [Metrics and Alerting](guides/metrics.md) |
 | **Prune Metrics** | `paprika_prune_total` counter per application and kind. | [Metrics and Alerting](guides/metrics.md) |
 | **OTel Metrics** | Render, git, auth, SSE, and event metrics via OpenTelemetry with Prometheus export. | [Metrics and Alerting](guides/metrics.md) |
+| **Observability Gateway** | Second MCP surface at `/observe/mcp` for querying logs, metrics, and traces through pluggable `ObservabilityProvider` connectors (Prometheus, Loki, Tempo, OTLP), with its own `paprika:observe` scope and token audience. | [Observability Gateway](guides/observability-gateway.md) |
 
 ## Interfaces
 
@@ -50,6 +51,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 | **Dashboard** | Built-in web UI served on port `3000` with live SSE updates. | [Dashboard Guide](frontend.md) |
 | **CLI** | Cobra-based `paprika` CLI for listing resources, syncing apps, and approving gates. | [CLI Guide](cli.md) |
 | **API** | Connect-RPC service `paprika.v1.PaprikaService` for programmatic access. | [API Reference](api.md) |
+| **Codex and Claude plugin** | Authenticated MCP tools for fleet inspection, app health, drift, workload logs, and delivery actions, with an interactive console and app mentions in supporting hosts. | [Plugin Installation and Usage](guides/mcp-plugin.md) |
 
 ## Security
 
@@ -61,6 +63,7 @@ Paprika is a Kubernetes-native application delivery platform that combines conti
 
 - New to Paprika? Start with [Getting Started](getting-started.md).
 - Want to automate deployments? Read the [CLI](cli.md) or [API](api.md) guides.
+- Working in Codex or Claude? [Install and use the Paprika plugin](guides/mcp-plugin.md).
 - Need progressive delivery? See [Canary](guides/canary.md) and [Gates](guides/gates.md).
 - Running across clusters? See [Multi-cluster](guides/multi-cluster.md).
 - Delivering DeepHost? See [DeepHost Integration](guides/deephost.md).

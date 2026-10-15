@@ -109,21 +109,39 @@ func WithAuditor(a audit.Auditor) ServerOption {
 	return func(s *PaprikaServer) { s.Auditor = a }
 }
 
+// WithObservabilityGateway points the console's observability surface at
+// the in-cluster observability gateway and supplies the credentials the
+// server uses to call it: the HMAC token secret the gateway shares with the
+// console's self-signed authenticator, and the public URL the gateway
+// validates as token issuer (the same --mcp-public-url value the gateway
+// binary is started with). An empty addr leaves GetObservabilityUsage in
+// its NOT_CONFIGURED shell — "installed" and "wired" stay different facts.
+func WithObservabilityGateway(addr string, tokenSecret []byte, issuer string) ServerOption {
+	return func(s *PaprikaServer) {
+		s.observabilityGatewayAddr = addr
+		s.observabilityGatewayTokenSecret = tokenSecret
+		s.observabilityGatewayIssuer = issuer
+	}
+}
+
 // PaprikaServer implements the PaprikaService connectrpc handler.
 type PaprikaServer struct {
-	client                    client.Client
-	k8sClient                 kubernetes.Interface
-	dynamicClient             dynamic.Interface
-	restMapper                meta.RESTMapper
-	broker                    *events.Broker
-	renderer                  pipelines.SourceResolvingRenderer
-	evaluator                 Evaluator
-	governanceValidator       *governance.ProjectValidator
-	governancePolicyEvaluator *governance.PolicyEvaluator
-	authorizer                auth.Authorizer
-	fleetIndex                fleet.Reader
-	capacityProviders         *dataprovider.Registry
-	controlPlaneNamespace     string
+	client                          client.Client
+	k8sClient                       kubernetes.Interface
+	dynamicClient                   dynamic.Interface
+	restMapper                      meta.RESTMapper
+	broker                          *events.Broker
+	renderer                        pipelines.SourceResolvingRenderer
+	evaluator                       Evaluator
+	governanceValidator             *governance.ProjectValidator
+	governancePolicyEvaluator       *governance.PolicyEvaluator
+	authorizer                      auth.Authorizer
+	fleetIndex                      fleet.Reader
+	capacityProviders               *dataprovider.Registry
+	controlPlaneNamespace           string
+	observabilityGatewayAddr        string
+	observabilityGatewayTokenSecret []byte
+	observabilityGatewayIssuer      string
 	// Auditor records structured audit events for mutating API operations. When
 	// nil, the AuditInterceptor falls back to a NoopAuditor.
 	Auditor audit.Auditor

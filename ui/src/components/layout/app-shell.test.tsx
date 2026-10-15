@@ -59,6 +59,7 @@ describe("AppShell navigation", () => {
       ["Repositories", "/dashboard/repositories/"],
       ["Templates", "/dashboard/templates/"],
       ["Clusters", "/dashboard/clusters/"],
+      ["Observability", "/dashboard/observability/"],
     ])
     // next/link normalises the trailing slash here; `trailingSlash: true`
     // restores it in the export, which e2e asserts against the real build.
@@ -132,7 +133,7 @@ describe("AppShell navigation", () => {
     const first = within(drawer).getByRole("link", { name: "Paprika operations overview" })
     first.focus()
     await user.tab({ shift: true })
-    expect(within(drawer).getByRole("link", { name: "Clusters" })).toHaveFocus()
+    expect(within(drawer).getByRole("link", { name: "Observability" })).toHaveFocus()
     await user.tab()
     expect(first).toHaveFocus()
 

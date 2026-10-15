@@ -68,6 +68,7 @@ import (
 	clustersv1alpha1 "github.com/benebsworth/paprika/api/clusters/v1alpha1"
 	corev1alpha1 "github.com/benebsworth/paprika/api/core/v1alpha1"
 	featureflagsv1alpha1 "github.com/benebsworth/paprika/api/featureflags/v1alpha1"
+	observabilityv1alpha1 "github.com/benebsworth/paprika/api/observability/v1alpha1"
 	pipelinesv1alpha1 "github.com/benebsworth/paprika/api/pipelines/v1alpha1"
 	policyv1alpha1 "github.com/benebsworth/paprika/api/policy/v1alpha1"
 	providersv1alpha1 "github.com/benebsworth/paprika/api/providers/v1alpha1"
@@ -134,6 +135,7 @@ func newScheme() *runtime.Scheme {
 	utilruntime.Must(policyv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(providersv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(observabilityv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 	return scheme
 }
@@ -172,6 +174,7 @@ type cliConfig struct {
 	ShardIDSource      string `mapstructure:"shard-id-source"`
 	APIMaxConns        int    `mapstructure:"api-max-conns"`
 	AuditLogEnabled    bool   `mapstructure:"audit-enabled"`
+	ObservabilityGatewayAddr   string        `mapstructure:"observability-gateway-addr"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
 	SecureMetrics        bool `mapstructure:"metrics-secure"`
@@ -283,7 +286,7 @@ func newManagerCommand(start func(context.Context, *cliConfig) error) (*cobra.Co
 		panic(fmt.Errorf("bind flags: %w", err))
 	}
 
-	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent"} {
+	for _, mode := range []string{"operator", "api", "webhook", "repo-server", "agent", "satellite", "observability-gateway"} {
 		mode := mode
 		root.AddCommand(&cobra.Command{
 			Use:   mode,
@@ -382,12 +385,20 @@ func dispatchMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, s
 	if err := validateControllerTuning(cfg); err != nil {
 		return err
 	}
+	return startMode(ctx, cfg, scheme, setupLog)
+}
 
+// startMode switches on the run mode and invokes its runner. Split from
+// dispatchMode so the validation guard chain and the (growing) mode table
+// each stay readable.
+func startMode(ctx context.Context, cfg *cliConfig, scheme *runtime.Scheme, setupLog logr.Logger) error {
 	switch cfg.Mode {
 	case "agent":
 		return runAgentMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.AgentClusterID, cfg.MetricsAddr, cfg.PprofAddr, setupLog)
 	case "repo-server":
 		return runRepoServerMode(ctx, cfg.UIAddr, cfg.ProbeAddr, cfg.RepoWorkDir, cfg.MetricsAddr, cfg.PprofAddr, scheme, setupLog, cfg.cacheConfig(), nil, nil)
+	case "observability-gateway":
+		return runObservabilityGatewayMode(ctx, cfg, scheme, setupLog)
 	case "api":
 		return runAPIMode(ctx, cfg, scheme, setupLog, nil)
 	case "webhook":
@@ -419,8 +430,8 @@ func (cfg *cliConfig) shardFilter() *sharding.Filter {
 }
 
 func validateMode(mode string) error {
-	if mode != "operator" && mode != "api" && mode != "webhook" && mode != "repo-server" && mode != "agent" {
-		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', or 'agent')", mode)
+	if mode != "operator" && mode != "api" && mode != "webhook" && mode != "repo-server" && mode != "agent" && mode != "satellite" && mode != "observability-gateway" {
+		return fmt.Errorf("invalid mode: %s (must be 'operator', 'api', 'webhook', 'repo-server', 'agent', 'satellite', or 'observability-gateway')", mode)
 	}
 	return nil
 }
@@ -731,6 +742,10 @@ func registerRepoServerFlags(fs *pflag.FlagSet) {
 		"Address of the repo server. When set, controllers delegate source resolution/rendering to it.")
 	fs.String("repo-workdir", "",
 		"Working directory for the repo server. Only used in 'repo-server' mode.")
+	fs.String("observability-gateway-addr", "",
+		"Address of the observability gateway (e.g. http://paprika-observability-gateway.paprika-e2e.svc.cluster.local:8090). "+
+			"When set, the console's observability usage surface proxies the gateway's per-tool counters; "+
+			"when empty, GetObservabilityUsage answers NOT_CONFIGURED.")
 }
 
 func buildAPIServerOptions(
@@ -1070,6 +1085,7 @@ func buildConnectHandler(apiClient client.Client, k8sClient kubernetes.Interface
 	opts = append(opts,
 		apiserver.WithCapacityProviders(capacityRegistry),
 		apiserver.WithControlPlaneNamespace(cfg.OperatorNamespace),
+		apiserver.WithObservabilityGateway(cfg.ObservabilityGatewayAddr, authCfg.TokenSecret, cfg.MCPPublicURL),
 	)
 	paprikaServer := apiserver.NewPaprikaServer(apiClient, broker, opts...)
 
@@ -1245,7 +1261,10 @@ func buildMCPHandlers(
 		return nil, err
 	}
 
-	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, "")
+	// OAuth signs access tokens with this deployment's public URL as issuer.
+	// Require the same issuer when verifying so tokens from another Paprika
+	// instance cannot be replayed here, even if the signing secret is shared.
+	authenticator, err := auth.NewSelfSignedAuthenticatorForAudience(authCfg.TokenSecret, mcp.MCPTokenAudience, cfg.MCPPublicURL)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: build authenticator: %w", err)
 	}

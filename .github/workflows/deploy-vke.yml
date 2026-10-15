@@ -173,6 +173,7 @@ jobs:
           helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART}" \
             --namespace "${VKE_NAMESPACE}" \
             --values "${TEST_VALUES}" \
+            --values deploy/omega-values.yaml \
             --set-string manager.image.repository="${IMAGE_REFERENCE}" \
             --set-string apiServer.image.repository="${IMAGE_REFERENCE}" \
             --set-string repoServer.image.repository="${IMAGE_REFERENCE}" \
@@ -181,7 +182,6 @@ jobs:
             --set-string auth.oidc.existingSecretName=paprika-oidc \
             --set-string auth.oidc.existingSecretKey=client-secret \
             --set-string auth.tokenSecret="${VKE_AUTH_TOKEN_SECRET}" \
-            --set-string auth.basic.passwordHash="${VKE_BASIC_PASSWORD_HASH}" \
             --wait \
             --timeout 5m \
             --create-namespace

@@ -1,0 +1,16 @@
+# Omega (VKE) deployment overrides — applied AFTER deploy/test-values.yaml on
+# the shared omega cluster:
+#
+#   helm upgrade paprika-e2e charts/chart/ -n paprika-e2e \
+#     -f deploy/test-values.yaml -f deploy/omega-values.yaml ...
+#
+# auth.basic stays enabled in test-values because the kind e2e suite uses
+# admin/admin123 as the interactive stand-in user when exercising the OAuth
+# consent flow on a localhost cluster. Omega is publicly exposed, so basic
+# auth must be OFF here: the only interactive login is OIDC (Google) and the
+# only machine auth path is OAuth 2.1 tokens (or HMAC-minted test tokens).
+# Without these flags the binary's buildAuthConfig leaves basic auth
+# unconfigured. CI's deploy-vke workflow applies this file too.
+auth:
+  basic:
+    enabled: false

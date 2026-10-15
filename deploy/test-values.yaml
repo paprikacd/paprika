@@ -233,6 +233,38 @@ repoServer:
 agent:
   enabled: false
 
+# ── Observability gateway ─────────────────────────────────────────────────────
+# Serves https://paprika.benebsworth.com/observe/mcp — a second MCP surface
+# (scope paprika:observe, audience paprika-observability) for querying logs,
+# metrics, and traces through ObservabilityProvider CRs. Shares the api-server's
+# Envoy Gateway + hostname; only the /observe path prefix routes here.
+observabilityGateway:
+  enabled: true
+  replicas: 1
+
+  image:
+    repository: ghcr.io/paprikacd/paprika
+    tag: "latest"
+    pullPolicy: Always
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      value: "dev-test-secret-do-not-use-in-production-0123456789abcdef"
+
+  ingress:
+    enabled: true
+
+  pdb:
+    enabled: false
+
 # ── Auth ──────────────────────────────────────────────────────────────────────
 auth:
   enabled: true

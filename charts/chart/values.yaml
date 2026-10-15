@@ -701,6 +701,87 @@ repoServer:
     enabled: false
     minAvailable: 1
 
+## Observability gateway: the MCP surface for querying observability backends
+## (logs, metrics, traces) through pluggable connectors. Runs as its own
+## Deployment in split mode and serves https://<mcp.publicURL>/observe/mcp with
+## the paprika:observe scope and paprika-observability token audience — tokens
+## minted for the console MCP surface at /mcp are not valid here and vice
+## versa. Requires mcp.enabled, auth.enabled, deploymentMode: split, and the
+## shared HMAC token secret via extraEnv/extraEnvFrom.
+##
+observabilityGateway:
+  enabled: false
+  replicas: 1
+
+  image:
+    repository: controller
+    ## Image tag (defaults to Chart.appVersion if not set)
+    ##
+    # tag: ""
+    pullPolicy: IfNotPresent
+
+  ## Extra args for the gateway container. --ui-bind-address is the serve
+  ## address (the gateway reuses the binary's UI listener flag, like
+  ## repo-server); it must match service.port below.
+  args:
+    - --ui-bind-address=:8090
+
+  ## The gateway reads ObservabilityProvider CRs and credential Secrets through
+  ## the Kubernetes API — the service account token must stay mounted.
+  automountServiceAccountToken: true
+
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 96Mi
+
+  service:
+    type: ClusterIP
+    port: 8090
+    annotations: {}
+
+  ## Public exposure. The gateway reuses the api-server's Gateway API
+  ## gatewayRef and hostname and routes only the /observe path prefix — no
+  ## separate DNS name or TLS identity is needed.
+  ingress:
+    enabled: false
+    annotations: {}
+
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 75
+
+  vpa:
+    enabled: false
+    mode: "Off"
+
+  pdb:
+    enabled: false
+    minAvailable: 1
+
 ## In-cluster agent for remote cluster deployments.
 ## The agent runs as a DaemonSet and applies manifests sent by the controller.
 ##

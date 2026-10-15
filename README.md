@@ -31,6 +31,7 @@ Built with the [Kubebuilder](https://book.kubebuilder.io) framework, paprika ext
 - **Approval Gates** — Manual approval gates that pause promotion between stages
 - **Pipeline Workflows** — Sequential step execution (build, test, deploy) with Kubernetes Job backing
 - **Dashboard UI** — Next.js dashboard with real-time application, release, and resource status
+- **Codex and Claude plugin** — Inspect app health, debug failures, and manage delivery through authenticated MCP tools; [installation and usage guide](docs/guides/mcp-plugin.md)
 - **Prometheus Metrics** — Controller-runtime and OTel metrics for reconciliation, phase transitions, drift, and prune activity
 
 ## CLI Quickstart
@@ -64,6 +65,17 @@ task install
 
 Source installs write to `GOBIN` when it is set, or to Go's default bin directory otherwise. Ensure
 that Go bin directory is on `PATH` before invoking `paprika`.
+
+## Codex and Claude plugin
+
+Install the Paprika plugin to inspect your fleet, investigate app health and drift,
+read workload logs, and request delivery actions from Codex or Claude. Supporting
+hosts also provide an interactive fleet console and app mentions through MCP Apps
+and OpenAI MCP Extensions.
+
+The [plugin guide](docs/guides/mcp-plugin.md) covers installation into Codex and
+Claude, OAuth sign-in, example prompts, permissions, and troubleshooting. The
+plugin package is in [`plugins/paprika/`](plugins/paprika/).
 
 ## Architecture
 

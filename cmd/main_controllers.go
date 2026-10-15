@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -44,6 +45,7 @@ import (
 	clusterscontroller "github.com/benebsworth/paprika/internal/controller/clusters"
 	corecontroller "github.com/benebsworth/paprika/internal/controller/core"
 	featureflagscontroller "github.com/benebsworth/paprika/internal/controller/featureflags"
+	observecontroller "github.com/benebsworth/paprika/internal/controller/observe"
 	controller "github.com/benebsworth/paprika/internal/controller/pipelines"
 	progress "github.com/benebsworth/paprika/internal/controller/pipelines/progress"
 	policycontroller "github.com/benebsworth/paprika/internal/controller/policy"
@@ -53,6 +55,7 @@ import (
 	"github.com/benebsworth/paprika/internal/gates"
 	"github.com/benebsworth/paprika/internal/governance"
 	"github.com/benebsworth/paprika/internal/health"
+	"github.com/benebsworth/paprika/internal/observabilitygateway"
 	"github.com/benebsworth/paprika/internal/ratelimit"
 	reposerverclient "github.com/benebsworth/paprika/internal/reposerverclient"
 	"github.com/benebsworth/paprika/internal/sharding"
@@ -61,6 +64,7 @@ import (
 	webhookclustersv1alpha1 "github.com/benebsworth/paprika/internal/webhook/clusters/v1alpha1"
 	webhookcorev1alpha1 "github.com/benebsworth/paprika/internal/webhook/core/v1alpha1"
 	webhookfeatureflagsv1alpha1 "github.com/benebsworth/paprika/internal/webhook/featureflags/v1alpha1"
+	webhookobservabilityv1alpha1 "github.com/benebsworth/paprika/internal/webhook/observability/v1alpha1"
 	webhookpipelinesv1alpha1 "github.com/benebsworth/paprika/internal/webhook/pipelines/v1alpha1"
 	webhookpolicyv1alpha1 "github.com/benebsworth/paprika/internal/webhook/policy/v1alpha1"
 	webhookprovidersv1alpha1 "github.com/benebsworth/paprika/internal/webhook/providers/v1alpha1"
@@ -111,7 +115,7 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 		return fmt.Errorf("setup notification controller: %w", err)
 	}
 
-	if err := setupWebhooks(mgr, enableWebhooks, operatorNamespace, capacityRegistry); err != nil {
+	if err := setupWebhooks(mgr, enableWebhooks, operatorNamespace, capacityRegistry, observabilityConfigValidator()); err != nil {
 		return fmt.Errorf("setup webhooks: %w", err)
 	}
 
@@ -120,6 +124,9 @@ func setupOperatorControllers(ctx context.Context, mgr ctrl.Manager, k8sClient k
 	}
 	if err := setupARCObserver(mgr); err != nil {
 		return fmt.Errorf("setup ARC observer: %w", err)
+	}
+	if err := (&observecontroller.ProviderDiscoveryReconciler{}).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("setup observability provider discovery controller: %w", err)
 	}
 	// +kubebuilder:scaffold:builder
 
@@ -450,7 +457,7 @@ func setupApplicationController(ctx context.Context, mgr ctrl.Manager, k8sClient
 // and capacityRegistry are the two facts the provider validators cannot derive
 // from the manager: which namespace may declare a Global-scoped binding, and
 // which provider implementations this build actually has.
-func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace string, capacityRegistry *dataprovider.Registry) error {
+func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace string, capacityRegistry *dataprovider.Registry, observabilityValidator webhookobservabilityv1alpha1.ConfigValidator) error {
 	if !enableWebhooks {
 		return nil
 	}
@@ -458,6 +465,12 @@ func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace 
 		// Refuse at startup rather than mounting a validator that would panic
 		// on the first CapacityProvider it is asked to admit.
 		return errors.New("capacity provider registry is required to mount the provider webhooks")
+	}
+	if observabilityValidator == nil {
+		// Same contract as the capacity registry: the ObservabilityProvider
+		// webhook delegates each connector's opaque-config judgement to this
+		// validator at admission time.
+		return errors.New("observability config validator is required to mount the observability provider webhook")
 	}
 	// +kubebuilder:scaffold:webhook
 	webhooks := []struct {
@@ -488,6 +501,9 @@ func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace 
 		{"DataProviderBinding", func(m ctrl.Manager) error {
 			return webhookprovidersv1alpha1.SetupDataProviderBindingWebhookWithManager(m, controlPlaneNamespace)
 		}},
+		{"ObservabilityProvider", func(m ctrl.Manager) error {
+			return webhookobservabilityv1alpha1.SetupObservabilityProviderWebhookWithManager(m, observabilityValidator)
+		}},
 	}
 	for _, w := range webhooks {
 		if err := w.fn(mgr); err != nil {
@@ -495,6 +511,25 @@ func setupWebhooks(mgr ctrl.Manager, enableWebhooks bool, controlPlaneNamespace 
 		}
 	}
 	return nil
+}
+
+// observabilityConfigValidator is the admission-time config validator the
+// ObservabilityProvider webhook delegates to: the connector for the declared
+// type judges its own opaque config (the CRD deliberately does not union every
+// connector's fields). Wired here — not imported by the webhook package — so
+// the webhook stays decoupled from the connector implementations, exactly like
+// the capacity provider registry's injection above.
+func observabilityConfigValidator() webhookobservabilityv1alpha1.ConfigValidator {
+	return func(providerType string, config json.RawMessage) error {
+		c, err := observabilitygateway.New(providerType)
+		if err != nil {
+			return fmt.Errorf("unknown observability provider type: %w", err)
+		}
+		if err := c.ValidateConfig(config); err != nil {
+			return fmt.Errorf("validate observability provider config: %w", err)
+		}
+		return nil
+	}
 }
 
 type coreController interface {
