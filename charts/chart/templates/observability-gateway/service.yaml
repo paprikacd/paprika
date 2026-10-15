@@ -1,0 +1,41 @@
+{{- if .Values.observabilityGateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: observability-gateway
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.observabilityGateway.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ports:
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
+  - name: gateway
+    port: {{ .Values.observabilityGateway.service.port }}
+    protocol: TCP
+    targetPort: 8090
+    # Pod serves prior-knowledge h2c on :8090 — the hint lets mesh/Gateway
+    # upstreams multiplex h2 instead of one h1 request per connection.
+    appProtocol: kubernetes.io/h2c
+  - name: metrics
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    app.kubernetes.io/component: observability-gateway
+  type: {{ .Values.observabilityGateway.service.type }}
+{{- end }}

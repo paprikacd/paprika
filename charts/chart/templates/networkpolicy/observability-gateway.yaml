@@ -1,0 +1,82 @@
+{{- $metricsBindAddress := toString .Values.metrics.bindAddress }}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "paprika.resourceName" (dict "suffix" "observability-gateway" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "paprika.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- range $k, $v := .Values.commonLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "paprika.name" . }}
+      app.kubernetes.io/component: observability-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8090
+    {{- if and .Values.observabilityGateway.ingress.enabled .Values.apiServer.ingress.gateway.gatewayRef }}
+    # The Gateway API controller's data plane (e.g. Envoy in
+    # envoy-gateway-system) reaches the gateway Service through the HTTPRoute;
+    # it lives outside the release namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.apiServer.ingress.gateway.gatewayRef.namespace }}
+      ports:
+        - protocol: TCP
+          port: 8090
+    {{- end }}
+    {{- if and (ne $metricsBindAddress "") (ne $metricsBindAddress "0") (ne $metricsBindAddress ":0") }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # Observability backends (Prometheus/Loki/Tempo/Grafana Cloud) plus the
+    # Kubernetes API and DNS.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+    {{- if .Values.redis.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+{{- end }}
