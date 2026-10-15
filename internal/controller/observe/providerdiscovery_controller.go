@@ -96,6 +96,10 @@ type ProviderDiscoveryReconciler struct {
 
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=observability.paprika.io,resources=observabilityproviders,verbs=get;list;watch;create;update;patch;delete
+// The gateway's status prober shares this identity (discovery runs inside the
+// gateway pod): it probes every provider and writes the reachability verdict
+// through the status subresource.
+// +kubebuilder:rbac:groups=observability.paprika.io,resources=observabilityproviders/status,verbs=get;update;patch
 
 // Reconcile materializes (or removes) the ObservabilityProvider for one
 // Service. Un-annotated Services reconcile to "no provider": the only CRs

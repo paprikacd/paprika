@@ -175,6 +175,7 @@ type cliConfig struct {
 	APIMaxConns        int    `mapstructure:"api-max-conns"`
 	AuditLogEnabled    bool   `mapstructure:"audit-enabled"`
 	ObservabilityGatewayAddr   string        `mapstructure:"observability-gateway-addr"`
+	ObsProviderProbeInterval   time.Duration `mapstructure:"obs-provider-probe-interval"`
 
 	EnableLeaderElection bool `mapstructure:"leader-elect"`
 	SecureMetrics        bool `mapstructure:"metrics-secure"`
@@ -746,6 +747,8 @@ func registerRepoServerFlags(fs *pflag.FlagSet) {
 		"Address of the observability gateway (e.g. http://paprika-observability-gateway.paprika-e2e.svc.cluster.local:8090). "+
 			"When set, the console's observability usage surface proxies the gateway's per-tool counters; "+
 			"when empty, GetObservabilityUsage answers NOT_CONFIGURED.")
+	fs.Duration("obs-provider-probe-interval", 5*time.Minute,
+		"How often the observability gateway probes registered providers and writes reachability status onto their CRs (0 disables status writes)")
 }
 
 func buildAPIServerOptions(

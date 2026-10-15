@@ -235,6 +235,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - observability.paprika.io
+  resources:
+  - observabilityproviders/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - pipelines.paprika.io
   resources:
   - analysisruns

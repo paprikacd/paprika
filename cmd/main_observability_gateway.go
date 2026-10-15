@@ -56,7 +56,7 @@ const observabilityGatewayRoutePrefix = "/observe"
 // runObservabilityGatewayMode runs the observability gateway: the MCP
 // surface for querying observability backends (logs, metrics, traces)
 // through ObservabilityProvider CRs. It is its own microservice — nothing
-// here joins the console's Connect chain; the eight registered tools close
+// here joins the console's Connect chain; the thirteen registered tools close
 // over the connector backend and the MCP server verifies the
 // paprika-observability audience so console or fleet-MCP tokens can never be
 // replayed against this surface.
@@ -124,6 +124,22 @@ func runObservabilityGatewayMode(ctx context.Context, cfg *cliConfig, scheme *ru
 			cancel()
 		}
 	}()
+
+	// The status prober is the writer behind the provider board's STATE
+	// column: it re-runs the catalog's per-type health probe against every
+	// registered provider on --obs-provider-probe-interval and patches the
+	// verdict (state, fixed-sentence reason, observedGeneration, Ready
+	// condition) onto each CR's status, so `kubectl get observabilityproviders`
+	// and the console show reachability without anyone running a query. It
+	// rides the gateway's own client and identity (the gateway pod already
+	// holds the observabilityproviders/status RBAC rule), and a zero interval
+	// disables status writes entirely.
+	if cfg.ObsProviderProbeInterval > 0 {
+		prober := observabilitygateway.NewStatusProber(k8sClient,
+			observabilitygateway.WithProbeInterval(cfg.ObsProviderProbeInterval))
+		go prober.Run(gwCtx)
+		setupLog.Info("Provider status prober started", "interval", cfg.ObsProviderProbeInterval.String())
+	}
 
 	telemetry := observability.NewTelemetry(gwCtx, observability.ConfigFromEnv())
 	defer func() { _ = telemetry.Shutdown(gwCtx) }() //nolint:errcheck // shutdown in defer; error is best-effort

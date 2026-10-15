@@ -245,7 +245,13 @@ helm upgrade paprika-e2e charts/chart/ \
   PaprikaService RPCs — `ListObservabilityProviders` and
   `GetObservabilityUsage` (proxied to the gateway's authenticated
   `/observe/api/usage` tracker; `NOT_CONFIGURED` when the gateway is
-  disabled) — rendered on `/dashboard/observability/`. See
+  disabled) — rendered on `/dashboard/observability/`. A status prober in the
+  gateway re-runs the catalog's per-type health probe on
+  `--obs-provider-probe-interval` (default 5m, 0 disables) and writes the
+  reachability verdict (`status.state`, fixed-sentence `status.reason`,
+  `observedGeneration`, `Ready` condition) onto every provider CR, so
+  `kubectl get observabilityproviders` and the console provider board show
+  backend health without anyone running a query. See
   `docs/guides/observability-gateway.md`.
 - `/mcp` is ENABLED on VKE at https://paprika.benebsworth.com/mcp (RFC
   8414/9728 discovery + OAuth 2.1/PKCE). Real connectors (Claude, Codex)

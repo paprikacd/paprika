@@ -713,6 +713,11 @@ observabilityGateway:
   enabled: false
   replicas: 1
 
+  ## How often the gateway probes every registered provider and writes the
+  ## reachability verdict (state, reason, Ready condition) onto each CR's
+  ## status. 0 disables status writes.
+  probeInterval: 5m
+
   image:
     repository: controller
     ## Image tag (defaults to Chart.appVersion if not set)

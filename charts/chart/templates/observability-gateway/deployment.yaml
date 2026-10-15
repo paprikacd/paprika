@@ -108,6 +108,10 @@ spec:
         - --mcp-refresh-token-ttl={{ .Values.mcp.refreshTokenTTL }}
         - --mcp-oauth-client-id={{ .Values.mcp.oauth.clientId }}
         - --mcp-oauth-redirect-uris={{ join "," .Values.mcp.oauth.redirectUris }}
+        # The provider-status prober re-runs the catalog's per-type health
+        # probe on this interval and patches the verdict onto each CR's
+        # status (0 disables status writes).
+        - --obs-provider-probe-interval={{ .Values.observabilityGateway.probeInterval }}
         {{- range .Values.observabilityGateway.args }}
         - {{ . }}
         {{- end }}

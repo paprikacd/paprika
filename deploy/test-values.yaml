@@ -242,6 +242,9 @@ observabilityGateway:
   enabled: true
   replicas: 1
 
+  # Fast status probing so kind e2e sees reachability verdicts on CRs quickly.
+  probeInterval: 30s
+
   image:
     repository: ghcr.io/paprikacd/paprika
     tag: "latest"

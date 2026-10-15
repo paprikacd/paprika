@@ -372,7 +372,9 @@ rules:
 # The observability gateway resolves ObservabilityProviders and hands them to
 # the matching connector; the provider-discovery controller also writes them
 # (materializing annotated Services — core Services are already granted
-# above). Status writes still have no path yet.
+# above). The gateway's status prober writes reachability verdicts (state,
+# reason, Ready condition) through the status subresource on the same
+# identity, so `kubectl get observabilityproviders` shows backend health.
 - apiGroups:
   - observability.paprika.io
   resources:
@@ -385,6 +387,14 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - observability.paprika.io
+  resources:
+  - observabilityproviders/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - pipelines.paprika.io
   resources:

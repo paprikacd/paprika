@@ -309,6 +309,22 @@ kubectl annotate svc tempo-query-frontend -n tracing observability.paprika.io/di
 kubectl get observabilityproviders -A
 ```
 
+## Provider status
+
+The gateway is also the writer behind the provider board's STATE column: its
+status prober re-runs the catalog's per-type health probe — the cheapest read
+each backend accepts, the same probe the onboarding wizard's **Test
+connection** runs — against every registered provider on
+`--obs-provider-probe-interval` (chart `observabilityGateway.probeInterval`,
+default `5m`; `0` disables status writes) and patches the verdict onto each
+CR's `status`: `state` (`OK`/`NotConfigured`/`NotAvailable`/`Error`/
+`Forbidden`), a fixed-sentence `reason` that never carries credential or
+endpoint detail, `observedGeneration`, and a `Ready` condition mirroring the
+state. The probe resolves credentials through the same path a query does, so
+status shows what a query would experience right now; `kubectl get
+observabilityproviders` and the console's provider board read the same
+fields.
+
 ## Managing providers in the console
 
 The dashboard's **Observability** page (`/dashboard/observability/`, listed
