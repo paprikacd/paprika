@@ -203,6 +203,50 @@ helm upgrade paprika-e2e charts/chart/ \
 - `/mcp` and embedded UI responses are gzip-compressed when the client
   sends Accept-Encoding: gzip — a 20KB fleet_map result is ~2KB on the
   wire (the structuredContent/text duplication compresses away).
+- The observability gateway is a new split-mode component
+  (`--mode=observability-gateway`, chart `observabilityGateway.enabled`)
+  serving a second MCP surface at `https://<host>/observe/mcp` for
+  querying logs/metrics/traces through `ObservabilityProvider` CRs
+  (group `observability.paprika.io`). Eleven connectors: prometheus, loki,
+  tempo, otlp; GCP cloudlogging/cloudmonitoring/cloudtrace (x/oauth2
+  service_account/external_account/impersonated JSON or ambient WI —
+  `gcpcommon`, hand-rolled REST); AWS cloudwatch-logs/cloudwatch-metrics/
+  xray/cloudtrail (SDK v2, snake_case key JSON matching the EKS provider or
+  ambient IRSA chain — `awscommon`). Cloud credentials follow the cluster
+  provider document conventions exactly; empty query on a cloud connector
+  is its health probe. A catalog (`internal/observabilitygateway/catalog`)
+  describes all 11 types — config fields, credential kinds, onboarding
+  steps with IAM/gcloud snippets — and drives the console's provider
+  library board + setup wizard (`/dashboard/observability/`), the
+  `ListObservabilityProviderTypes`/`GetObservabilityProviderType`/
+  `ValidateObservabilityProvider`/`CreateObservabilityProvider` RPCs
+  (catalog/validate proxied to the gateway with minted
+  paprika-observability tokens; create makes the `<name>-credentials`
+  Secret + CR, authorized `write` on `observabilityproviders`, webhook
+  rejection cleans the secret up), and the MCP tools `list_provider_types`/
+  `describe_provider_type`/`validate_provider`. It mints/verifies the
+  `paprika-observability` audience
+  (distinct from `paprika-api` and `paprika-mcp`) and grants only the
+  `paprika:observe` scope; the shared `mcp.Server` was generalized with
+  RoutePrefix/ProtocolPath/Audience/SupportedScopes so both surfaces run
+  from one implementation. Admission validation (webhook
+  `rejectInlineCredentials` + per-connector `ValidateConfig`) lives in
+  `internal/webhook/observability/v1alpha1`, wired with an injected
+  validator closure over `observabilitygateway.New` in
+  `cmd/main_controllers.go`. The provider-discovery controller
+  (`internal/controller/observe`) materializes Services annotated
+  `observability.paprika.io/discover: "true"` as ObservabilityProvider
+  CRs (type inferred from the Service name, port from well-known port
+  names, ownerRef cascade cleanup; dropping the
+  `observability.paprika.io/discovered` label hands ownership to the
+  operator). Connector config accepts `headers` (≤16, e.g. Loki/Mimir
+  `X-Scope-OrgID`), `insecureSkipTLS` (self-signed in-cluster only), and
+  prometheus-only `step`. The console manages providers over two new
+  PaprikaService RPCs — `ListObservabilityProviders` and
+  `GetObservabilityUsage` (proxied to the gateway's authenticated
+  `/observe/api/usage` tracker; `NOT_CONFIGURED` when the gateway is
+  disabled) — rendered on `/dashboard/observability/`. See
+  `docs/guides/observability-gateway.md`.
 - `/mcp` is ENABLED on VKE at https://paprika.benebsworth.com/mcp (RFC
   8414/9728 discovery + OAuth 2.1/PKCE). Real connectors (Claude, Codex)
   self-register via POST /mcp/register (RFC 7591 DCR, `paprika-<rand>` ids
@@ -272,6 +316,13 @@ docker build --platform linux/amd64 -t ttl.sh/paprika-amd64:<tag> . && \
   docker push ttl.sh/paprika-amd64:<tag>
 ```
 
+`make docker-build-fast` targets VKE (`--platform linux/amd64`, and its
+buildx `--push` needs a registry) — for the local kind perf/e2e clusters
+build native instead, exactly as `task perf:up` does:
+`docker build -f Dockerfile.fast -t <img> . && kind load docker-image <img> --name <cluster>`.
+A wrong-arch image fails on the pod with
+`CreateContainerError: no match for platform in manifest`.
+
 ### Deploy
 
 ```sh
@@ -285,9 +336,93 @@ source .env && helm upgrade paprika-e2e charts/chart/ \
   --namespace paprika-e2e \
   --values deploy/test-values.yaml \
   --set "auth.oidc.clientID=$PAPRIKA_OIDC_CLIENT_ID" \
-  --set "auth.oidc.clientSecret=$PAPRIKA_OIDC_CLIENT_SECRET" \
   --wait --timeout 5m
 ```
+
+(`auth.oidc.clientSecret` is rejected by the chart — the OIDC
+client secret comes from the `paprika-oidc` Kubernetes Secret via
+`auth.oidc.existingSecretName/existingSecretKey`; `clientID` is
+committed in `deploy/test-values.yaml`.)
+
+### Omega cluster (VKE, terraform/omega.kubeconfig)
+
+The `omega` VKE cluster (`terraform/`, admin kubeconfig at
+`terraform/omega.kubeconfig`, always pass `--kubeconfig` — the default
+context is a GKE cluster) runs the shared paprika-e2e deployment plus the
+promotion/demo workloads. Its helm release may be AHEAD of the local
+checkout (chart `0.3.6+<sha>` from master vs the local WIP base) — check
+`helm history paprika-e2e -n paprika-e2e` before upgrading; never helm
+upgrade omega from a stale tree, it would prune chart-managed resources
+added on master and downgrade component images.
+
+**Observability gateway (standalone add-on, 2026-10-13; auth-flow hardening
+2026-10-14; schema-exploration tools 2026-10-15):** deployed on omega
+independent of the helm release while the gateway feature branch is
+uncommitted — CRD
+`observabilityproviders.observability.paprika.io`,
+Deployment/Service/HTTPRoute `paprika-e2e-observability-gateway` (image
+`ghcr.io/paprikacd/paprika:dev-obs-20261015c-a7210a3`; the webhook-receiver
+runs the same image so admission knows the vultr-monitoring type), one extra
+rule on
+ClusterRole `paprika-e2e-manager-role` (full verbs on
+`observabilityproviders`). Serves https://paprika.benebsworth.com/observe/mcp.
+Test fixtures live in ns `observability` (`mock-0`); three real backends are
+registered by autodiscovery (Service annotation
+`observability.paprika.io/discover: "true"`): cuttlefish prometheus, deephost
+prometheus, telesis tempo. A full user-driven OAuth 2.1 flow (DCR → Google
+consent → loopback callback → token → live query) was verified 2026-10-14 and
+works end to end. The exploration tools (`list_metric_names`,
+`list_label_names`, `list_label_values`, `get_metric_metadata`,
+`list_trace_services`) are backed by connector.Explorer, an optional
+per-provider capability — prometheus, loki, tempo, mock plus the cloud
+connectors (cloudwatch-metrics/logs, xray, cloudtrail, gcp
+cloudmonitoring/cloudlogging) each map the generic kinds onto their own
+native discovery APIs; gcp-cloudtrace and otlp honestly answer
+StateNotAvailable. Verified live against the prometheus/tempo backends
+2026-10-15; the cloud explorers are unit-tested against mocked SDK responses
+(no live GCP/AWS telemetry account on omega). The `vultr-monitoring`
+connector (type added to the CRD enum + webhook image) reads the Vultr v2
+bandwidth APIs — account_bandwidth, and per-instance daily in/out bytes
+fanned out across the fleet — with a raw Vultr API key credential; a live
+provider `observability/vultr-bandwidth` (creds from `paprika-e2e/vultr-creds`)
+was verified against the real API 2026-10-15 (7 node series, 0 partial).
+
+Provider discovery runs IN the gateway pod (gateway mode hosts a
+controller-runtime manager for `ProviderDiscoveryReconciler`, leader
+election off — single replica; enable it before scaling the gateway
+horizontally). The pipeline manager also registers the reconciler, so
+once the feature lands on master both run it; the reconciler converges on
+AlreadyExists (error → requeue → converge), so dual-running is safe.
+
+**Browser-flow fixes baked into the image (found by live-driving the
+flow):** the pre-consent pending record TTL is 10 minutes (5 lost anyone
+whose OIDC login took longer); the embedded consent page authenticates
+with the `paprika_id_token` localStorage bearer (console session is
+token-based, no cookie) and redirects to `/login/` with `paprika_return_to`
+on 401 instead of rendering "invalid or expired"; and the approve POST's
+response key is camelCase `redirectTo` (guarded by a contract assertion in
+`consent_test.go`). DCR clients live in pod memory — re-register after a
+gateway restart. Cloudflare 1010-blocks python-urllib's user-agent: use
+curl for scripted calls against the public URL.
+
+**Auth posture (2026-10-13):** basic auth is DISABLED on omega — the only
+interactive login is OIDC (Google) and the only machine path is OAuth 2.1
+tokens. `deploy/omega-values.yaml` layers `auth.basic.enabled: false` over
+test-values; the live api-server and gateway Deployments were patched to drop
+the `--auth-basic-*` flags directly (drift until the next upgrade — always
+pass `-f deploy/omega-values.yaml` on omega upgrades; deploy-vke.yml CI does).
+Basic auth survives ONLY as the kind e2e suite's interactive stand-in user
+(admin/admin123 against a localhost cluster) when a spec exercises the OAuth
+consent flow (test/e2e mcp/observability specs). Every functional and perf
+test uses HMAC-minted tokens (`auth.IssueTokenWithOptions`,
+e.g. `hack/obsloadgen`'s per-client minting) — never basic auth.
+
+**Helm adoption (fixed 2026-10-13):** the standalone CRD, Deployment,
+Service and HTTPRoute carry `meta.helm.sh/release-name/release-namespace`
+annotations (and the chart's `managed-by: Helm` label), so when the
+feature lands on master the next `helm upgrade` imports them instead of
+failing with existing-resource conflict — no delete-first dance. The
+manager-role rule converges to chart-managed automatically.
 
 ### Local E2E & Perf (kind)
 
@@ -311,7 +446,28 @@ task perf:profile SECS=30 COMPONENT=api  # pprof CPU/heap/allocs -> /tmp/paprika
 task perf:metrics   # snapshot paprika_* metrics -> /tmp/paprika-perf
 task perf:status    # fleet_status + list_clusters via MCP
 task perf:down      # delete the cluster
+
+# Observability-gateway perf (mock backends, multi-client):
+task perf:obs-seed COUNT=50     # seed varied mock providers (idempotent)
+task perf:obs-load SECS=60 CLIENTS=32 RPS=5
+task perf:obs-profile SECS=30   # combined load + pprof -> /tmp/paprika-perf
+task perf:obs-metrics           # gateway /metrics + kubectl top
+# obsloadgen (hack/obsloadgen) mints one paprika-observability token per
+# client with a distinct subject, so the per-subject limiter binds each
+# client independently and aggregate load scales with CLIENTS.
 ```
+
+Gateway perf baseline (kind paprika-perf, mock providers, 32 clients ×
+5 rps): **~125 calls/s, p50 ~30ms, p99 ~310ms** after the 2026-10-13
+tuning; was 57/s p50 413ms before. The fixes: the gateway's k8s client now
+runs 200 QPS/400 burst (`clusterconfig.WithRateLimits` — every query fans
+into a provider-CR read, and the controller's 50-QPS ceiling throttled the
+gateway below serving capacity); the gateway's MCP gzip runs at level 3
+(`mcp.ServerConfig.GzipLevel`) since query results are large repetitive
+JSON; query tool results use `mcp.PreviewToolResult` — full payload in
+structuredContent, text fallback capped at 16 KiB (was carried twice).
+Remaining allocs: segmentio request decode (upstream MCP SDK, ~30%),
+JSON string escaping + flate (inherent), mock payload generation.
 
 E2E coverage notes: `test/e2e/cluster_test.go` covers Cluster registration
 (in-cluster health, inventory, no-provider honesty, bad-kubeconfig
@@ -411,11 +567,28 @@ kubectl apply -f config/crd/bases/pipelines.paprika.io_releases.yaml
 - `docs/guides/operations.md`: Build, deploy, and debug operations.
 - `docs/guides/drift-and-prune.md`: Drift detection and pruning guide.
 - `docs/guides/metrics.md`: Metrics and alerting guide.
+- `docs/guides/observability-gateway.md`: Observability gateway (MCP
+  surface at /observe/mcp, ObservabilityProvider CRD, connectors).
 
 ## Progress
 
 ### Done
 
+- **Cloud observability connectors + provider library**: GCP
+  (cloudlogging/cloudmonitoring/cloudtrace via x/oauth2 service-account /
+  external-account / impersonated JSON or ambient WI, hand-rolled REST) and
+  AWS (cloudwatch-logs/cloudwatch-metrics/xray/cloudtrail via SDK v2,
+  snake_case key JSON or ambient chain) join the four OSS connectors, all
+  behind the same Connector contract and CRD enum. A catalog package
+  describes all 11 types (fields, credential kinds, onboarding steps with
+  IAM/gcloud snippets) and drives the console provider-library board + setup
+  wizard, four new PaprikaService RPCs (list/get types, validate, create —
+  create makes Secret+CR with `write` authz, webhook rejection cleans up),
+  three new MCP tools, and the gateway's authenticated catalog/validate
+  endpoints. Missing ambient GCP identity reports NotConfigured (never a
+  phantom Forbidden — the backend was never contacted). E2E in kind covers
+  the full onboard→query flow against LocalStack (logs/metrics) and JWT-
+  issuing fakes (GCP REST, AWS xray/cloudtrail), plus the negative matrix.
 - **Null-drift false positives**: declared JSON `null` values (e.g. `env
   value: null`) were flagged as drift forever because server-side apply drops
   the key. Fixed: null = "field absent" in mapContains.

@@ -370,6 +370,7 @@ make uninstall
 - Review the `config/samples/` directory for more examples
 - Explore the [API types](../api/pipelines/v1alpha1/) for all available fields
 - See the [design docs](superpowers/specs/) for detailed design decisions
+- [Install the Paprika plugin in Codex or Claude](guides/mcp-plugin.md) to inspect app health, debug failures, and manage delivery from chat
 - Learn about [drift detection and pruning](guides/drift-and-prune.md)
 - Set up [metrics and alerting](guides/metrics.md)
 - Read the [operations guide](guides/operations.md) for build, deploy, and debug workflows
