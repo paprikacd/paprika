@@ -159,6 +159,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		writeOAuthError(w, http.StatusMethodNotAllowed, "invalid_request", "POST only")
 		return
 	}
+	if !s.registrationLimit.Allow() {
+		w.Header().Set("Retry-After", "1")
+		writeOAuthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "client registration is temporarily rate limited")
+		return
+	}
 	var req registrationRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeOAuthError(w, http.StatusBadRequest, "invalid_request", "malformed registration request")
@@ -178,11 +183,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	s.dynMu.Lock()
 	if len(s.dynClients) >= dynClientCap {
-		// Evict an arbitrary entry — registrations are free to retry.
-		for k := range s.dynClients {
-			delete(s.dynClients, k)
-			break
-		}
+		// Registration is public: replacing an existing entry would let an
+		// unauthenticated caller invalidate another client's active grants.
+		s.dynMu.Unlock()
+		w.Header().Set("Retry-After", "60")
+		writeOAuthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "client registration capacity is temporarily unavailable")
+		return
 	}
 	s.dynClients[clientID] = append([]string(nil), req.RedirectURIs...)
 	s.dynMu.Unlock()
@@ -229,6 +235,13 @@ func (r registrationRequest) validate() string {
 // dynClientCap bounds registered dynamic clients — registration is
 // unauthenticated, so the map cannot grow without limit.
 const dynClientCap = 4096
+
+// Public DCR requests share a bounded bucket; interactive clients register
+// infrequently, and no untrusted peer/header-derived map keys are retained.
+const (
+	registrationRatePerSecond = 5
+	registrationRateBurst     = 10
+)
 
 // redirectURIAllowedForRegistration restricts dynamically-registered
 // redirect URIs to loopback http(s) (any port — local clients bind

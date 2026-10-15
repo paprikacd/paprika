@@ -18,6 +18,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -194,6 +195,9 @@ type Server struct {
 
 	// rateLimit bounds /mcp protocol requests per authenticated subject.
 	rateLimit *principalRateLimiter
+	// Public registration has no authenticated subject. Use one fixed
+	// server-lifetime bucket, without trusting caller-supplied IP headers.
+	registrationLimit *rate.Limiter
 }
 
 // NewServer validates cfg and builds a Server. Registry, Authenticator,
@@ -249,6 +253,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		accessTTL:               defaultDuration(cfg.AccessTTL, defaultAccessTTL),
 		refreshTTL:              defaultDuration(cfg.RefreshTTL, defaultRefreshTTL),
 		rateLimit:               newPrincipalRateLimiter(),
+		registrationLimit:       rate.NewLimiter(registrationRatePerSecond, registrationRateBurst),
 		routePrefix:             shape.routePrefix,
 		protocolPath:            shape.protocolPath,
 		consentPath:             shape.consentPath,
