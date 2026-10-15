@@ -44,3 +44,5 @@ output/
 .claude/
 .serena/
 /paprika
+/obsloadgen
+.DS_Store
