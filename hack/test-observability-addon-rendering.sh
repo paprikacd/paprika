@@ -62,8 +62,8 @@ assert provenance["image"] == image and not provenance["publicRouteIncluded"]
 assert len(provenance["manifestSHA256"]) == len(provenance["sourceTemplatesSHA256"]) == 64
 assert len(provenance["sourceCommit"]) == 40
 PY
-rg -q -- '--atomic --wait' "$work/private-command"
-rg -q -- '--kube-context synthetic-offline-context' "$work/private-command"
+grep -q -- '--atomic --wait' "$work/private-command"
+grep -q -- '--kube-context synthetic-offline-context' "$work/private-command"
 cat > "$work/rbac.yaml" <<'YAML'
 auth:
   rbac:
@@ -134,7 +134,7 @@ if "$HELM_BIN" template paprika-observe "$work/private/chart" --namespace other-
   echo 'Frozen chart accepted another namespace' >&2; exit 1
 fi
 render --include-route --output-dir "$work/public" > "$work/public-command"
-[[ $(rg -c '^kind: HTTPRoute$' "$work/public/manifests.yaml") -eq 1 ]]
+[[ $(grep -c '^kind: HTTPRoute$' "$work/public/manifests.yaml") -eq 1 ]]
 grep -Eq '^    sectionName: "https"$' "$work/public/manifests.yaml"
 if render --image ghcr.io/paprikacd/paprika:latest --output-dir "$work/mutable" > "$work/error" 2>&1; then
   echo 'Mutable image was accepted' >&2; exit 1
