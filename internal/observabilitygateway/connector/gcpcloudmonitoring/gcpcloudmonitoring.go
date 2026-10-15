@@ -70,6 +70,11 @@ func (CloudMonitoring) Query(ctx context.Context, req connector.QueryRequest) (*
 	if reason := queryShapeError(&req); reason != "" {
 		return unsupported(reason)
 	}
+	filter, err := gcpcommon.PrepareFilter(req.Query, false)
+	if err != nil {
+		return unsupported(err.Error())
+	}
+	req.Query = filter
 	cfg, err := gcpcommon.ParseConfig(req.Config)
 	if err != nil {
 		return nil, fmt.Errorf("gcp-cloudmonitoring: %w", err)
