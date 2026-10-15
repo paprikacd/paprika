@@ -15,6 +15,14 @@ existing identity without granting it permissions. Disable
 `observabilityGateway.discovery.enabled` to avoid starting the Service discovery
 writer when providers are installed explicitly.
 
+The gateway Deployment passes approved nonsecret `auth.rbac` rules directly as
+JSON in `PAPRIKA_AUTH_RBAC_RULES`; the add-on requires no auth ConfigMap. Empty
+rules retain deny-all behavior. Scope application rules to an exact approved
+subject, `read` on `observabilityproviders`, and provider namespace. Application
+RBAC grants require separate approval; Kubernetes or cloud permissions do not
+grant user access. Do not combine `auth.rbac` with a manual gateway extraEnv entry
+for `PAPRIKA_AUTH_RBAC_RULES`; the chart rejects that ambiguous configuration.
+
 The gateway can start with dynamic client registration only: leave both
 `mcp.oauth.clientId` and `mcp.oauth.redirectUris` empty. With fleet MCP disabled,
 the full chart and standalone add-on emit no static-client arguments; startup
@@ -104,6 +112,8 @@ Coordinate the rollout/query window with other cluster owners. Before changing
 IAM/RBAC, creating persistent client access or exposing routes, obtain approval for
 the exact principal, resource scope and action. Use native browser OAuth and Secret
 references; never export tokens, keys, kubeconfigs or Secret payloads.
+For an approved public HTTPRoute, set the Gateway parent `sectionName` to its
+approved HTTPS listener so the route does not intercept an HTTP redirect listener.
 
 Record target context, active identity, namespace, existing Helm history, previous
 images and candidate digest. Render and compare the candidate; avoid applying a

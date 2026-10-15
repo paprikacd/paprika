@@ -51,6 +51,43 @@ grep -Eq -- '--mcp-oauth-redirect-uris=http://localhost:8791/callback$' "$work/d
 if grep -Eq '^kind: (Secret|ServiceAccount|Role|RoleBinding|ClusterRole|ClusterRoleBinding)$' "$work/deployment.yaml"; then
   echo 'Custom identity must not implicitly grant permissions' >&2; exit 1
 fi
+if grep -Fq 'PAPRIKA_AUTH_RBAC_RULES' "$work/deployment.yaml"; then
+  echo 'Empty default auth.rbac unexpectedly installed application permissions' >&2; exit 1
+fi
+cat > "$work/rbac.yaml" <<'YAML'
+auth:
+  rbac:
+    - subjects: [fixture-observe-subject]
+      actions: [read]
+      resources: [observabilityproviders]
+      namespaces: [paprika-system]
+YAML
+render -f "$work/rbac.yaml" --show-only templates/observability-gateway/deployment.yaml > "$work/rbac-deployment.yaml"
+python3 - "$work/rbac-deployment.yaml" <<'PY'
+import json, pathlib, re, sys
+manifest = pathlib.Path(sys.argv[1]).read_text()
+values = re.findall(r'^        - name: PAPRIKA_AUTH_RBAC_RULES\n          value: (.+)$', manifest, re.M)
+assert len(values) == 1
+assert json.loads(json.loads(values[0])) == [{"subjects": ["fixture-observe-subject"], "actions": ["read"], "resources": ["observabilityproviders"], "namespaces": ["paprika-system"]}]
+assert re.findall(r'^kind: (\S+)$', manifest, re.M) == ["Deployment"]
+assert "configMapKeyRef:" not in manifest
+PY
+cat > "$work/manual-rbac.yaml" <<'YAML'
+observabilityGateway:
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      valueFrom:
+        secretKeyRef: {name: preexisting-auth, key: token-secret}
+    - name: PAPRIKA_AUTH_RBAC_RULES
+      value: '[{"subjects":["manual-observe-subject"],"actions":["read"],"resources":["observabilityproviders"],"namespaces":["paprika-system"]}]'
+YAML
+render -f "$work/manual-rbac.yaml" --show-only templates/observability-gateway/deployment.yaml > "$work/manual-rbac-deployment.yaml"
+[[ $(grep -c 'name: PAPRIKA_AUTH_RBAC_RULES$' "$work/manual-rbac-deployment.yaml") -eq 1 ]]
+grep -Fq 'manual-observe-subject' "$work/manual-rbac-deployment.yaml"
+if render -f "$work/manual-rbac.yaml" -f "$work/rbac.yaml" > "$work/duplicate-rbac-error" 2>&1; then
+  echo 'Duplicate application RBAC settings unexpectedly rendered' >&2; exit 1
+fi
+grep -Fq 'must not be set in observabilityGateway.extraEnv when auth.rbac is configured' "$work/duplicate-rbac-error"
 cat > "$work/dcr-only.yaml" <<'YAML'
 mcp:
   enabled: false
@@ -72,7 +109,8 @@ for partial in 'clientId: ""' 'redirectUris: []'; do
   fi
   grep -Fq 'must both be configured or both omitted' "$work/partial-oauth-error"
 done
-render --show-only templates/observability-gateway/httproute.yaml --set observabilityGateway.ingress.enabled=true --set apiServer.ingress.gateway.hostname=paprika.example.test --set apiServer.ingress.gateway.gatewayRef.name=preexisting-gateway --set apiServer.ingress.gateway.gatewayRef.namespace=paprika-system > "$work/route.yaml"
+render --show-only templates/observability-gateway/httproute.yaml --set observabilityGateway.ingress.enabled=true --set apiServer.ingress.gateway.hostname=paprika.example.test --set apiServer.ingress.gateway.gatewayRef.name=preexisting-gateway --set apiServer.ingress.gateway.gatewayRef.namespace=paprika-system --set apiServer.ingress.gateway.gatewayRef.sectionName=https > "$work/route.yaml"
+grep -Eq '^    sectionName: "https"$' "$work/route.yaml"
 for path in /observe /.well-known/oauth-authorization-server/observe /.well-known/oauth-protected-resource/observe/mcp; do
   grep -Fq "value: $path" "$work/route.yaml"
 done

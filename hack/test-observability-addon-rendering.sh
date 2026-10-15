@@ -35,7 +35,7 @@ apiServer:
   ingress:
     gateway:
       hostname: paprika.example.test
-      gatewayRef: {name: preexisting-gateway, namespace: paprika-system}
+      gatewayRef: {name: preexisting-gateway, namespace: paprika-system, sectionName: https}
 YAML
 image=ghcr.io/paprikacd/paprika@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 render() {
@@ -56,6 +56,7 @@ assert "type: ClusterIP" in manifest
 assert "app.kubernetes.io/name: paprika-observe" in manifest
 assert "name: paprika-observe-observability-gateway" in manifest
 assert "kind: HTTPRoute" not in manifest
+assert "PAPRIKA_AUTH_RBAC_RULES" not in manifest
 provenance = json.loads((out / "provenance.json").read_text())
 assert provenance["image"] == image and not provenance["publicRouteIncluded"]
 assert len(provenance["manifestSHA256"]) == len(provenance["sourceTemplatesSHA256"]) == 64
@@ -63,6 +64,40 @@ assert len(provenance["sourceCommit"]) == 40
 PY
 rg -q -- '--atomic --wait' "$work/private-command"
 rg -q -- '--kube-context synthetic-offline-context' "$work/private-command"
+cat > "$work/rbac.yaml" <<'YAML'
+auth:
+  rbac:
+    - subjects: [fixture-observe-subject]
+      actions: [read]
+      resources: [observabilityproviders]
+      namespaces: [paprika-system]
+YAML
+render --values "$work/rbac.yaml" --output-dir "$work/rbac" > "$work/rbac-command"
+python3 - "$work/rbac/manifests.yaml" <<'PY'
+import json, pathlib, re, sys
+manifest = pathlib.Path(sys.argv[1]).read_text()
+values = re.findall(r'^        - name: PAPRIKA_AUTH_RBAC_RULES\n          value: (.+)$', manifest, re.M)
+assert len(values) == 1
+assert json.loads(json.loads(values[0])) == [{"subjects": ["fixture-observe-subject"], "actions": ["read"], "resources": ["observabilityproviders"], "namespaces": ["paprika-system"]}]
+assert sorted(re.findall(r'^kind: (\S+)$', manifest, re.M)) == ["Deployment", "NetworkPolicy", "Service"]
+assert "configMapKeyRef:" not in manifest
+PY
+cat > "$work/manual-rbac.yaml" <<'YAML'
+observabilityGateway:
+  extraEnv:
+    - name: PAPRIKA_AUTH_TOKEN_SECRET
+      valueFrom:
+        secretKeyRef: {name: preexisting-auth, key: token-secret}
+    - name: PAPRIKA_AUTH_RBAC_RULES
+      value: '[{"subjects":["manual-observe-subject"],"actions":["read"],"resources":["observabilityproviders"],"namespaces":["paprika-system"]}]'
+YAML
+render --values "$work/manual-rbac.yaml" --output-dir "$work/manual-rbac" > "$work/manual-rbac-command"
+[[ $(grep -c 'name: PAPRIKA_AUTH_RBAC_RULES$' "$work/manual-rbac/manifests.yaml") -eq 1 ]]
+grep -Fq 'manual-observe-subject' "$work/manual-rbac/manifests.yaml"
+if render --values "$work/manual-rbac.yaml" --values "$work/rbac.yaml" --output-dir "$work/duplicate-rbac" > "$work/duplicate-rbac-error" 2>&1; then
+  echo 'Add-on accepted duplicate application RBAC settings' >&2; exit 1
+fi
+grep -Fq 'must not be set in observabilityGateway.extraEnv when auth.rbac is configured' "$work/duplicate-rbac-error"
 grep -Eq -- '--mcp-oauth-client-id=synthetic-render-client$' "$work/private/manifests.yaml"
 grep -Eq -- '--mcp-oauth-redirect-uris=http://localhost:8791/callback$' "$work/private/manifests.yaml"
 cat > "$work/dcr-only.yaml" <<'YAML'
@@ -100,6 +135,7 @@ if "$HELM_BIN" template paprika-observe "$work/private/chart" --namespace other-
 fi
 render --include-route --output-dir "$work/public" > "$work/public-command"
 [[ $(rg -c '^kind: HTTPRoute$' "$work/public/manifests.yaml") -eq 1 ]]
+grep -Eq '^    sectionName: "https"$' "$work/public/manifests.yaml"
 if render --image ghcr.io/paprikacd/paprika:latest --output-dir "$work/mutable" > "$work/error" 2>&1; then
   echo 'Mutable image was accepted' >&2; exit 1
 fi

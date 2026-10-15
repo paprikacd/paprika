@@ -12,7 +12,11 @@
 {{- fail "observabilityGateway.enabled=true requires auth.enabled: the gateway's authorize/consent surface authenticates console users; unauthenticated it would mint observability tokens for anyone" }}
 {{- end }}
 {{- $gwHasTokenSecret := false }}
+{{- $gwHasRBACRules := and .Values.auth.enabled (gt (len .Values.auth.rbac) 0) }}
 {{- range .Values.observabilityGateway.extraEnv }}
+{{- if and $gwHasRBACRules (eq .name "PAPRIKA_AUTH_RBAC_RULES") }}
+{{- fail "PAPRIKA_AUTH_RBAC_RULES must not be set in observabilityGateway.extraEnv when auth.rbac is configured" }}
+{{- end }}
 {{- if eq .name "PAPRIKA_AUTH_TOKEN_SECRET" }}
 {{- $gwHasTokenSecret = true }}
 {{- end }}
@@ -171,6 +175,12 @@ spec:
         {{- include "paprika.oidcSecretEnv" . | nindent 8 }}
         - name: PAPRIKA_MCP_PUBLIC_URL
           value: {{ .Values.mcp.publicURL | quote }}
+        {{- if $gwHasRBACRules }}
+        # Rules are nonsecret configuration. Inline JSON keeps the standalone
+        # add-on independent of the main release's auth ConfigMap.
+        - name: PAPRIKA_AUTH_RBAC_RULES
+          value: {{ .Values.auth.rbac | toJson | quote }}
+        {{- end }}
         {{- if .Values.mtls.enabled }}
         - name: PAPRIKA_MTLS_ENABLED
           value: "true"

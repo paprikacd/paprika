@@ -17,6 +17,14 @@ references in `observabilityGateway.extraEnv`. Never export live secret values
 or a whole release's potentially sensitive Helm values into this workflow.
 The source gateway's normal authentication prerequisites still apply.
 
+Application authorization is explicit: approved `auth.rbac` rules are passed to
+the gateway as nonsecret JSON in `PAPRIKA_AUTH_RBAC_RULES`, without a ConfigMap
+dependency. An empty rule list grants no provider access. Scope rules to the
+approved subject, `read` action, `observabilityproviders` resource and provider
+namespace. Adding or expanding application RBAC requires approval independently
+of Kubernetes permissions. A legacy manual `PAPRIKA_AUTH_RBAC_RULES` extraEnv
+entry remains supported only when `auth.rbac` is empty; combining both is rejected.
+
 Preconfigured OAuth clients are optional for the gateway. For dynamic client
 registration only, leave both `mcp.oauth.clientId` and
 `mcp.oauth.redirectUris` empty; the renderer omits both static-client arguments,
@@ -49,6 +57,9 @@ Public routing is absent even when a supplied values file enables ingress.
 Only `--include-route` adds an HTTPRoute, using the source chart's normal Gateway
 reference and hostname values. Public routing requires approval of the exact
 paths and target; selecting the rendering flag does not grant that approval.
+Set `apiServer.ingress.gateway.gatewayRef.sectionName` to the approved HTTPS
+listener name when preparing a public route. This restricts attachment to that
+listener and preserves an existing HTTP listener's redirect behavior.
 
 Review `manifests.yaml`, `provenance.json` and `chart/Chart.yaml` before installing.
 Provenance records the Git commit, whether the source worktree was dirty, hashes

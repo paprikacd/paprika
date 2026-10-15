@@ -41,6 +41,9 @@ spec:
     kind: Gateway
     name: {{ $gw.gatewayRef.name }}
     namespace: {{ $gw.gatewayRef.namespace }}
+    {{- with $gw.gatewayRef.sectionName }}
+    sectionName: {{ . | quote }}
+    {{- end }}
   hostnames:
   - {{ $gw.hostname | quote }}
   rules:
